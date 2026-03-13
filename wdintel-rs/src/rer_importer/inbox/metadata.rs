@@ -5,23 +5,169 @@ use chrono::{NaiveDateTime, Utc};
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
-use regex::Regex;
+use regex::{Match, Regex};
 use sea_orm::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct InboxMetadata {
     pub cc: Option<String>,
+    pub cc_start_index: Option<i32>,
+    pub cc_end_index: Option<i32>,
     pub cg: Option<String>,
+    pub cg_start_index: Option<i32>,
+    pub cg_end_index: Option<i32>,
     pub cg_name: Option<String>,
+    pub cg_name_start_index: Option<i32>,
+    pub cg_name_end_index: Option<i32>,
     pub id: Option<String>,
+    pub id_start_index: Option<i32>,
+    pub id_end_index: Option<i32>,
     pub id_name: Option<String>,
+    pub id_name_start_index: Option<i32>,
+    pub id_name_end_index: Option<i32>,
     pub hash_id: Option<String>,
+    pub hash_id_start_index: Option<i32>,
+    pub hash_id_end_index: Option<i32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CgKind {
     Receiver,
     ReceiverGroup,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SourceSpan {
+    start_index: i32,
+    end_index: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct MatchedValue {
+    value: Option<String>,
+    start_index: Option<i32>,
+    end_index: Option<i32>,
+    raw_text: Option<String>,
+}
+
+impl MatchedValue {
+    fn has_value(&self) -> bool {
+        self.value.as_ref().is_some_and(|value| !value.is_empty())
+    }
+
+    fn conflicts_with(&self, other: &Self) -> bool {
+        conflicts_with_option(self.value.as_ref(), other.value.as_ref())
+    }
+
+    fn merge_from(&mut self, other: Self) {
+        if self.value.is_none() {
+            *self = other;
+        }
+    }
+
+    fn into_parts(self) -> (Option<String>, Option<i32>, Option<i32>) {
+        (self.value, self.start_index, self.end_index)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct NormalizedLine {
+    text: String,
+    raw_text: String,
+    source_spans: Vec<SourceSpan>,
+}
+
+impl NormalizedLine {
+    fn new(raw_text: String) -> Self {
+        let chars = raw_text.chars().collect::<Vec<_>>();
+        let mut text = String::new();
+        let mut source_spans = vec![];
+        let mut idx = 0_usize;
+        while idx < chars.len() {
+            if let Some((digit, consumed)) = keycap_digit_at(&chars, idx) {
+                text.push(digit);
+                source_spans.push(SourceSpan {
+                    start_index: idx as i32,
+                    end_index: (idx + consumed - 1) as i32,
+                });
+                idx += consumed;
+                continue;
+            }
+
+            text.push(chars[idx]);
+            source_spans.push(SourceSpan {
+                start_index: idx as i32,
+                end_index: idx as i32,
+            });
+            idx += 1;
+        }
+
+        Self {
+            text,
+            raw_text,
+            source_spans,
+        }
+    }
+
+    fn standalone_prefix(&self, match_start: usize) -> bool {
+        match self.text[..match_start]
+            .chars()
+            .rev()
+            .find(|ch| !ch.is_whitespace())
+        {
+            None => true,
+            Some(ch) => !ch.is_alphanumeric() && ch != '_',
+        }
+    }
+
+    fn has_forbidden_suffix(&self, match_end: usize) -> bool {
+        self.text[match_end..]
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_alphanumeric() || ch == '_')
+    }
+
+    fn to_char_index(&self, byte_index: usize) -> usize {
+        self.text[..byte_index].chars().count()
+    }
+
+    fn slice_raw_chars(&self, start: usize, end_exclusive: usize) -> String {
+        self.raw_text
+            .chars()
+            .skip(start)
+            .take(end_exclusive - start)
+            .collect()
+    }
+
+    fn build_value<F>(
+        &self,
+        value_match: Match<'_>,
+        normalize_value: F,
+    ) -> Option<MatchedValue>
+    where
+        F: FnOnce(&str) -> Option<String>,
+    {
+        let start_char = self.to_char_index(value_match.start());
+        let end_char = self.to_char_index(value_match.end());
+        if start_char >= end_char || end_char > self.source_spans.len() {
+            return None;
+        }
+
+        let value = normalize_value(value_match.as_str())?;
+        let source_start = self.source_spans[start_char].start_index;
+        let source_end = self.source_spans[end_char - 1].end_index;
+        let raw_text = self.slice_raw_chars(
+            source_start as usize,
+            source_end as usize + 1,
+        );
+
+        Some(MatchedValue {
+            value: Some(value),
+            start_index: Some(source_start),
+            end_index: Some(source_end),
+            raw_text: Some(raw_text),
+        })
+    }
 }
 
 impl InboxMetadata {
@@ -47,90 +193,109 @@ impl InboxMetadata {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct WorkingMetadata {
-    cc: Option<String>,
-    receiver: Option<String>,
-    receiver_name: Option<String>,
-    receiver_group: Option<String>,
-    receiver_group_name: Option<String>,
-    id: Option<String>,
-    id_name: Option<String>,
-    hash_id: Option<String>,
+    cc: MatchedValue,
+    receiver: MatchedValue,
+    receiver_name: MatchedValue,
+    receiver_group: MatchedValue,
+    receiver_group_name: MatchedValue,
+    id: MatchedValue,
+    id_name: MatchedValue,
+    hash_id: MatchedValue,
 }
 
 impl WorkingMetadata {
     fn has_some_value(&self) -> bool {
-        self.cc.is_some()
-            || self.receiver.is_some()
-            || self
-                .receiver_name
-                .as_ref()
-                .is_some_and(|value| !value.is_empty())
-            || self.receiver_group.is_some()
-            || self
-                .receiver_group_name
-                .as_ref()
-                .is_some_and(|value| !value.is_empty())
-            || self.id.is_some()
-            || self.id_name.as_ref().is_some_and(|value| !value.is_empty())
-            || self.hash_id.is_some()
+        self.cc.has_value()
+            || self.receiver.has_value()
+            || self.receiver_name.has_value()
+            || self.receiver_group.has_value()
+            || self.receiver_group_name.has_value()
+            || self.id.has_value()
+            || self.id_name.has_value()
+            || self.hash_id.has_value()
     }
 
     fn conflicts_with(&self, other: &Self) -> bool {
-        conflicts_with_option(self.cc.as_ref(), other.cc.as_ref())
-            || conflicts_with_option(
-                self.receiver.as_ref(),
-                other.receiver.as_ref(),
-            )
-            || conflicts_with_option(
-                self.receiver_name.as_ref(),
-                other.receiver_name.as_ref(),
-            )
-            || conflicts_with_option(
-                self.receiver_group.as_ref(),
-                other.receiver_group.as_ref(),
-            )
-            || conflicts_with_option(
-                self.receiver_group_name.as_ref(),
-                other.receiver_group_name.as_ref(),
-            )
-            || conflicts_with_option(self.id.as_ref(), other.id.as_ref())
-            || conflicts_with_option(
-                self.id_name.as_ref(),
-                other.id_name.as_ref(),
-            )
-            || conflicts_with_option(
-                self.hash_id.as_ref(),
-                other.hash_id.as_ref(),
-            )
+        self.cc.conflicts_with(&other.cc)
+            || self.receiver.conflicts_with(&other.receiver)
+            || self.receiver_name.conflicts_with(&other.receiver_name)
+            || self.receiver_group.conflicts_with(&other.receiver_group)
+            || self
+                .receiver_group_name
+                .conflicts_with(&other.receiver_group_name)
+            || self.id.conflicts_with(&other.id)
+            || self.id_name.conflicts_with(&other.id_name)
+            || self.hash_id.conflicts_with(&other.hash_id)
     }
 
     fn merge_from(&mut self, other: Self) {
-        merge_option(&mut self.cc, other.cc);
-        merge_option(&mut self.receiver, other.receiver);
-        merge_option(&mut self.receiver_name, other.receiver_name);
-        merge_option(&mut self.receiver_group, other.receiver_group);
-        merge_option(&mut self.receiver_group_name, other.receiver_group_name);
-        merge_option(&mut self.id, other.id);
-        merge_option(&mut self.id_name, other.id_name);
-        merge_option(&mut self.hash_id, other.hash_id);
+        self.cc.merge_from(other.cc);
+        self.receiver.merge_from(other.receiver);
+        self.receiver_name.merge_from(other.receiver_name);
+        self.receiver_group.merge_from(other.receiver_group);
+        self.receiver_group_name.merge_from(other.receiver_group_name);
+        self.id.merge_from(other.id);
+        self.id_name.merge_from(other.id_name);
+        self.hash_id.merge_from(other.hash_id);
     }
 
     fn into_public(self) -> InboxMetadata {
-        let (cg, cg_name) = if self.receiver_group.is_some()
-            || self.receiver_group_name.is_some()
+        let (cg, cg_start_index, cg_end_index, cg_name, cg_name_start_index, cg_name_end_index) =
+            if self.receiver_group.has_value() || self.receiver_group_name.has_value()
         {
-            (self.receiver_group, self.receiver_group_name)
-        } else {
-            (self.receiver, self.receiver_name)
-        };
+                let (cg, cg_start_index, cg_end_index) =
+                    self.receiver_group.into_parts();
+                let (cg_name, cg_name_start_index, cg_name_end_index) =
+                    self.receiver_group_name.into_parts();
+                (
+                    cg,
+                    cg_start_index,
+                    cg_end_index,
+                    cg_name,
+                    cg_name_start_index,
+                    cg_name_end_index,
+                )
+            } else {
+                let (cg, cg_start_index, cg_end_index) =
+                    self.receiver.into_parts();
+                let (cg_name, cg_name_start_index, cg_name_end_index) =
+                    self.receiver_name.into_parts();
+                (
+                    cg,
+                    cg_start_index,
+                    cg_end_index,
+                    cg_name,
+                    cg_name_start_index,
+                    cg_name_end_index,
+                )
+            };
+
+        let (cc, cc_start_index, cc_end_index) = self.cc.into_parts();
+        let (id, id_start_index, id_end_index) = self.id.into_parts();
+        let (id_name, id_name_start_index, id_name_end_index) =
+            self.id_name.into_parts();
+        let (hash_id, hash_id_start_index, hash_id_end_index) =
+            self.hash_id.into_parts();
 
         InboxMetadata {
-            cc: self.cc,
+            cc,
+            cc_start_index,
+            cc_end_index,
             cg,
+            cg_start_index,
+            cg_end_index,
             cg_name,
-            id: self.id,
-            id_name: self.id_name,
-            hash_id: self.hash_id,
+            cg_name_start_index,
+            cg_name_end_index,
+            id,
+            id_start_index,
+            id_end_index,
+            id_name,
+            id_name_start_index,
+            id_name_end_index,
+            hash_id,
+            hash_id_start_index,
+            hash_id_end_index,
         }
     }
 }
@@ -158,11 +323,23 @@ where
             id: NotSet,
             sigint_inbox_item_id: Set(sigint_inbox_item_id),
             color_code: Set(e.cc),
+            color_code_start_index: Set(e.cc_start_index),
+            color_code_end_index: Set(e.cc_end_index),
             call_group_id: Set(e.cg),
+            call_group_id_start_index: Set(e.cg_start_index),
+            call_group_id_end_index: Set(e.cg_end_index),
             call_group_name: Set(e.cg_name),
+            call_group_name_start_index: Set(e.cg_name_start_index),
+            call_group_name_end_index: Set(e.cg_name_end_index),
             sender_id: Set(e.id),
+            sender_id_start_index: Set(e.id_start_index),
+            sender_id_end_index: Set(e.id_end_index),
             sender_name: Set(e.id_name),
+            sender_name_start_index: Set(e.id_name_start_index),
+            sender_name_end_index: Set(e.id_name_end_index),
             hash_id: Set(e.hash_id),
+            hash_id_start_index: Set(e.hash_id_start_index),
+            hash_id_end_index: Set(e.hash_id_end_index),
             created_at: NotSet,
         });
     }
@@ -271,11 +448,21 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
     let mut result = vec![];
     let mut current = WorkingMetadata::default();
     let mut last_cg_kind = None;
-    let lines = message.lines().collect::<Vec<&str>>();
-    for line in lines {
-        let line = normalize_metadata_digits(&line.trim().to_uppercase());
+    let mut line_start_index = 0_i32;
+    for line in message.split_inclusive('\n') {
+        let line_len = line.chars().count() as i32;
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let (line, trim_offset) = trim_line(line);
+        if line.is_empty() {
+            line_start_index += line_len;
+            continue;
+        }
 
-        for line_metadata in parse_metadata_line(&line) {
+        let normalized_line =
+            NormalizedLine::new(line);
+        for mut line_metadata in parse_metadata_line(&normalized_line) {
+            offset_metadata(&mut line_metadata, line_start_index + trim_offset);
             if !line_metadata.has_some_value() {
                 continue;
             }
@@ -298,18 +485,21 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
                 last_cg_kind = Some(kind);
             }
         }
+
+        line_start_index += line_len;
     }
 
     push_metadata_if_nonempty(&mut result, current);
     let result = result
         .into_iter()
+        .pipe(expand_multi_source_ids)
         .map(WorkingMetadata::into_public)
         .filter(InboxMetadata::has_some_value)
         .collect();
-    reduce_metadata_list(expand_multi_source_ids(result))
+    reduce_metadata_list(result)
 }
 
-fn parse_color_code(line: &str) -> Option<String> {
+fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_CC: Regex =
             Regex::new(r#"[cCсС]{2}\s*:\s*(\d+)"#).unwrap();
@@ -317,7 +507,7 @@ fn parse_color_code(line: &str) -> Option<String> {
     parse_value_from_regexes(line, &[&RE_CC])
 }
 
-fn parse_mid(line: &str) -> Option<String> {
+fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_CG: Regex = Regex::new(r#"➡️\s*:\s*(\d+)"#).unwrap();
     }
@@ -333,7 +523,7 @@ fn parse_mid(line: &str) -> Option<String> {
     })
 }
 
-fn parse_mid_id(line: &str) -> Option<String> {
+fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_CG: Regex =
             Regex::new(r#"➡️\s*:\s*(\d+)\s*\(([^)]+)\)"#).unwrap();
@@ -353,13 +543,14 @@ fn parse_mid_id(line: &str) -> Option<String> {
         })
 }
 
-fn parse_value_from_regexes(line: &str, regexes: &[&Regex]) -> Option<String> {
+fn parse_value_from_regexes(
+    line: &NormalizedLine,
+    regexes: &[&Regex],
+) -> Option<MatchedValue> {
     for regex in regexes {
         if let Some(caps) = regex.captures(line) {
             if let Some(value) = caps.get(1) {
-                if let Some(value) = normalize_metadata_value(value.as_str()) {
-                    return Some(value);
-                }
+                return line.build_value(value, normalize_metadata_value);
             }
         }
     }
@@ -367,22 +558,16 @@ fn parse_value_from_regexes(line: &str, regexes: &[&Regex]) -> Option<String> {
 }
 
 fn parse_numeric_value_from_regexes(
-    line: &str,
+    line: &NormalizedLine,
     regexes: &[&Regex],
-) -> Option<String> {
+) -> Option<MatchedValue> {
     for regex in regexes {
         if let Some(caps) = regex.captures(line) {
             if let Some(value) = caps.get(1) {
-                let has_forbidden_suffix = line[value.end()..]
-                    .chars()
-                    .next()
-                    .is_some_and(|ch| ch.is_alphanumeric() || ch == '_');
-                if has_forbidden_suffix {
+                if line.has_forbidden_suffix(value.end()) {
                     continue;
                 }
-                if let Some(value) = normalize_metadata_value(value.as_str()) {
-                    return Some(value);
-                }
+                return line.build_value(value, normalize_metadata_value);
             }
         }
     }
@@ -390,28 +575,22 @@ fn parse_numeric_value_from_regexes(
 }
 
 fn parse_numeric_value_from_standalone_regexes(
-    line: &str,
+    line: &NormalizedLine,
     regexes: &[&Regex],
-) -> Option<String> {
+) -> Option<MatchedValue> {
     for regex in regexes {
         if let Some(caps) = regex.captures(line) {
             let Some(full_match) = caps.get(0) else {
                 continue;
             };
-            if !has_standalone_prefix(line, full_match.start()) {
+            if !line.standalone_prefix(full_match.start()) {
                 continue;
             }
             if let Some(value) = caps.get(1) {
-                let has_forbidden_suffix = line[value.end()..]
-                    .chars()
-                    .next()
-                    .is_some_and(|ch| ch.is_alphanumeric() || ch == '_');
-                if has_forbidden_suffix {
+                if line.has_forbidden_suffix(value.end()) {
                     continue;
                 }
-                if let Some(value) = normalize_metadata_value(value.as_str()) {
-                    return Some(value);
-                }
+                return line.build_value(value, normalize_metadata_value);
             }
         }
     }
@@ -419,16 +598,14 @@ fn parse_numeric_value_from_standalone_regexes(
 }
 
 fn parse_string_from_regexes(
-    line: &str,
+    line: &NormalizedLine,
     regexes: &[&Regex],
     group_idx: usize,
-) -> Option<String> {
+) -> Option<MatchedValue> {
     for regex in regexes {
         if let Some(caps) = regex.captures(line) {
             if let Some(value) = caps.get(group_idx) {
-                if let Some(value) = normalize_metadata_value(value.as_str()) {
-                    return Some(value);
-                }
+                return line.build_value(value, normalize_metadata_value);
             }
         }
     }
@@ -436,37 +613,24 @@ fn parse_string_from_regexes(
 }
 
 fn parse_string_from_standalone_regexes(
-    line: &str,
+    line: &NormalizedLine,
     regexes: &[&Regex],
     group_idx: usize,
-) -> Option<String> {
+) -> Option<MatchedValue> {
     for regex in regexes {
         if let Some(caps) = regex.captures(line) {
             let Some(full_match) = caps.get(0) else {
                 continue;
             };
-            if !has_standalone_prefix(line, full_match.start()) {
+            if !line.standalone_prefix(full_match.start()) {
                 continue;
             }
             if let Some(value) = caps.get(group_idx) {
-                if let Some(value) = normalize_metadata_value(value.as_str()) {
-                    return Some(value);
-                }
+                return line.build_value(value, normalize_metadata_value);
             }
         }
     }
     None
-}
-
-fn has_standalone_prefix(line: &str, match_start: usize) -> bool {
-    match line[..match_start]
-        .chars()
-        .rev()
-        .find(|ch| !ch.is_whitespace())
-    {
-        None => true,
-        Some(ch) => !ch.is_alphanumeric() && ch != '_',
-    }
 }
 
 fn normalize_metadata_value(value: &str) -> Option<String> {
@@ -482,7 +646,7 @@ fn normalize_metadata_digits(line: &str) -> String {
     RE.replace_all(line, "$1").into_owned()
 }
 
-fn parse_hash_id(line: &str) -> Option<String> {
+fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_HASH_ID: Regex =
             Regex::new(r#"ХЕШ\s+[іІiI]D\s*:\s*([0-9A-F]+)"#).unwrap();
@@ -491,7 +655,7 @@ fn parse_hash_id(line: &str) -> Option<String> {
         .map(|hash_id| hash_id.to_lowercase())
 }
 
-fn parse_metadata_line(line: &str) -> Vec<WorkingMetadata> {
+fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
     let mut result = vec![WorkingMetadata {
         cc: parse_color_code(line),
         id: parse_mid(line),
@@ -507,7 +671,7 @@ fn parse_metadata_line(line: &str) -> Vec<WorkingMetadata> {
     result
 }
 
-fn parse_cg_parts(line: &str) -> Vec<(usize, WorkingMetadata)> {
+fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     lazy_static! {
         static ref RE_RECEIVER_ARROW: Regex =
             Regex::new(r#"⬅️\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
@@ -538,17 +702,18 @@ fn parse_cg_parts(line: &str) -> Vec<(usize, WorkingMetadata)> {
             let Some(value) = caps.get(1) else {
                 continue;
             };
-            let Some(receiver) = normalize_metadata_value(value.as_str())
+            let Some(receiver) =
+                line.build_value(value, normalize_metadata_value)
             else {
                 continue;
             };
             let receiver_name = caps
                 .get(2)
-                .and_then(|name| normalize_metadata_value(name.as_str()));
+                .and_then(|name| line.build_value(name, normalize_metadata_value));
             parts.push((
-                value.start(),
+                line.to_char_index(value.start()),
                 WorkingMetadata {
-                    receiver: Some(receiver),
+                    receiver,
                     receiver_name,
                     ..Default::default()
                 },
@@ -564,17 +729,18 @@ fn parse_cg_parts(line: &str) -> Vec<(usize, WorkingMetadata)> {
             let Some(value) = caps.get(1) else {
                 continue;
             };
-            let Some(receiver_group) = normalize_metadata_value(value.as_str())
+            let Some(receiver_group) =
+                line.build_value(value, normalize_metadata_value)
             else {
                 continue;
             };
             let receiver_group_name = caps
                 .get(2)
-                .and_then(|name| normalize_metadata_value(name.as_str()));
+                .and_then(|name| line.build_value(name, normalize_metadata_value));
             parts.push((
-                value.start(),
+                line.to_char_index(value.start()),
                 WorkingMetadata {
-                    receiver_group: Some(receiver_group),
+                    receiver_group,
                     receiver_group_name,
                     ..Default::default()
                 },
@@ -586,19 +752,22 @@ fn parse_cg_parts(line: &str) -> Vec<(usize, WorkingMetadata)> {
         let Some(value) = caps.get(1) else {
             continue;
         };
-        let receiver_group = format!("x:{}", value.as_str());
-        let Some(receiver_group) =
-            normalize_metadata_value(receiver_group.as_str())
+        let Some(mut receiver_group) =
+            line.build_value(value, normalize_metadata_value)
         else {
             continue;
         };
+        receiver_group.value =
+            receiver_group.value.map(|value| format!("x:{value}"));
+        receiver_group.raw_text =
+            receiver_group.raw_text.map(|value| format!("x:{value}"));
         let receiver_group_name = caps
             .get(2)
-            .and_then(|name| normalize_metadata_value(name.as_str()));
+            .and_then(|name| line.build_value(name, normalize_metadata_value));
         parts.push((
-            value.start(),
+            line.to_char_index(value.start()),
             WorkingMetadata {
-                receiver_group: Some(receiver_group),
+                receiver_group,
                 receiver_group_name,
                 ..Default::default()
             },
@@ -610,11 +779,11 @@ fn parse_cg_parts(line: &str) -> Vec<(usize, WorkingMetadata)> {
 
 impl WorkingMetadata {
     fn cg_kind(&self) -> Option<CgKind> {
-        if self.receiver_group.is_some() || self.receiver_group_name.is_some() {
+        if self.receiver_group.has_value() || self.receiver_group_name.has_value() {
             return Some(CgKind::ReceiverGroup);
         }
 
-        if self.receiver.is_some() || self.receiver_name.is_some() {
+        if self.receiver.has_value() || self.receiver_name.has_value() {
             return Some(CgKind::Receiver);
         }
 
@@ -631,37 +800,74 @@ fn push_metadata_if_nonempty(
     }
 }
 
-fn expand_multi_source_ids(items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
+fn expand_multi_source_ids(items: Vec<WorkingMetadata>) -> Vec<WorkingMetadata> {
     let mut result = vec![];
     for item in items {
-        let Some(ids) = split_multi_source_id(item.id.as_deref()) else {
+        let Some(ids) = split_multi_source_id(&item.id) else {
             result.push(item);
             continue;
         };
 
         for id in ids {
             let mut item = item.clone();
-            item.id = Some(id);
+            item.id = id;
             result.push(item);
         }
     }
     result
 }
 
-fn split_multi_source_id(id: Option<&str>) -> Option<Vec<String>> {
-    let id = id?;
-    if !id.contains(',') {
+fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
+    let raw_text = id.raw_text.as_ref()?;
+    let start_index = id.start_index?;
+    if !raw_text.contains(',') {
         return None;
     }
 
-    let ids = id
-        .split(',')
-        .filter_map(normalize_metadata_value)
-        .collect::<Vec<_>>();
+    let chars = raw_text.chars().collect::<Vec<_>>();
+    let mut ids = vec![];
+    let mut part_start = 0_usize;
+    for idx in 0..=chars.len() {
+        if idx < chars.len() && chars[idx] != ',' {
+            continue;
+        }
+
+        let mut trimmed_start = part_start;
+        let mut trimmed_end = idx;
+        while trimmed_start < trimmed_end
+            && chars[trimmed_start].is_whitespace()
+        {
+            trimmed_start += 1;
+        }
+        while trimmed_end > trimmed_start
+            && chars[trimmed_end - 1].is_whitespace()
+        {
+            trimmed_end -= 1;
+        }
+        if trimmed_start < trimmed_end {
+            let raw_part = chars[trimmed_start..trimmed_end]
+                .iter()
+                .collect::<String>();
+            let normalized_part = normalize_metadata_digits(&raw_part);
+            let Some(value) = normalize_metadata_value(&normalized_part) else {
+                return None;
+            };
+            ids.push(MatchedValue {
+                value: Some(value),
+                start_index: Some(start_index + trimmed_start as i32),
+                end_index: Some(start_index + trimmed_end as i32 - 1),
+                raw_text: Some(raw_part),
+            });
+        }
+        part_start = idx + 1;
+    }
+
     if ids.len() <= 1
-        || ids
-            .iter()
-            .any(|id| !id.chars().all(|ch| ch.is_ascii_digit()))
+        || ids.iter().any(|id| {
+            id.value
+                .as_ref()
+                .is_none_or(|value| !value.chars().all(|ch| ch.is_ascii_digit()))
+        })
     {
         return None;
     }
@@ -702,10 +908,62 @@ fn conflicts_with_option<T: PartialEq>(
     matches!((left, right), (Some(left), Some(right)) if left != right)
 }
 
-fn merge_option<T>(left: &mut Option<T>, right: Option<T>) {
-    if left.is_none() {
-        *left = right;
+fn trim_line(line: &str) -> (String, i32) {
+    let chars = line.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return (String::new(), 0);
     }
+
+    let mut start = 0_usize;
+    let mut end = chars.len();
+    while start < end && chars[start].is_whitespace() {
+        start += 1;
+    }
+    while end > start && chars[end - 1].is_whitespace() {
+        end -= 1;
+    }
+
+    (
+        chars[start..end].iter().collect::<String>(),
+        start as i32,
+    )
+}
+
+fn offset_metadata(metadata: &mut WorkingMetadata, offset: i32) {
+    for value in [
+        &mut metadata.cc,
+        &mut metadata.receiver,
+        &mut metadata.receiver_name,
+        &mut metadata.receiver_group,
+        &mut metadata.receiver_group_name,
+        &mut metadata.id,
+        &mut metadata.id_name,
+        &mut metadata.hash_id,
+    ] {
+        if let Some(start_index) = value.start_index.as_mut() {
+            *start_index += offset;
+        }
+        if let Some(end_index) = value.end_index.as_mut() {
+            *end_index += offset;
+        }
+    }
+}
+
+fn keycap_digit_at(chars: &[char], idx: usize) -> Option<(char, usize)> {
+    let digit = *chars.get(idx)?;
+    if !digit.is_ascii_digit() {
+        return None;
+    }
+
+    let variation_selector = chars.get(idx + 1).copied();
+    let combining_keycap = chars.get(idx + 2).copied();
+    if variation_selector == Some('\u{FE0F}')
+        && combining_keycap == Some('\u{20E3}')
+    {
+        return Some((digit, 3));
+    }
+
+    None
 }
 
 fn matches_option<T: PartialEq>(left: Option<&T>, right: Option<&T>) -> bool {
