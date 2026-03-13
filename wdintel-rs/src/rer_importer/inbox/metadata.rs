@@ -68,6 +68,11 @@ impl MatchedValue {
     fn into_parts(self) -> (Option<String>, Option<i32>, Option<i32>) {
         (self.value, self.start_index, self.end_index)
     }
+
+    fn lowercase_value(mut self) -> Self {
+        self.value = self.value.map(|value| value.to_lowercase());
+        self
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -156,10 +161,8 @@ impl NormalizedLine {
         let value = normalize_value(value_match.as_str())?;
         let source_start = self.source_spans[start_char].start_index;
         let source_end = self.source_spans[end_char - 1].end_index;
-        let raw_text = self.slice_raw_chars(
-            source_start as usize,
-            source_end as usize + 1,
-        );
+        let raw_text = self
+            .slice_raw_chars(source_start as usize, source_end as usize + 1);
 
         Some(MatchedValue {
             value: Some(value),
@@ -233,42 +236,49 @@ impl WorkingMetadata {
         self.receiver.merge_from(other.receiver);
         self.receiver_name.merge_from(other.receiver_name);
         self.receiver_group.merge_from(other.receiver_group);
-        self.receiver_group_name.merge_from(other.receiver_group_name);
+        self.receiver_group_name
+            .merge_from(other.receiver_group_name);
         self.id.merge_from(other.id);
         self.id_name.merge_from(other.id_name);
         self.hash_id.merge_from(other.hash_id);
     }
 
     fn into_public(self) -> InboxMetadata {
-        let (cg, cg_start_index, cg_end_index, cg_name, cg_name_start_index, cg_name_end_index) =
-            if self.receiver_group.has_value() || self.receiver_group_name.has_value()
+        let (
+            cg,
+            cg_start_index,
+            cg_end_index,
+            cg_name,
+            cg_name_start_index,
+            cg_name_end_index,
+        ) = if self.receiver_group.has_value()
+            || self.receiver_group_name.has_value()
         {
-                let (cg, cg_start_index, cg_end_index) =
-                    self.receiver_group.into_parts();
-                let (cg_name, cg_name_start_index, cg_name_end_index) =
-                    self.receiver_group_name.into_parts();
-                (
-                    cg,
-                    cg_start_index,
-                    cg_end_index,
-                    cg_name,
-                    cg_name_start_index,
-                    cg_name_end_index,
-                )
-            } else {
-                let (cg, cg_start_index, cg_end_index) =
-                    self.receiver.into_parts();
-                let (cg_name, cg_name_start_index, cg_name_end_index) =
-                    self.receiver_name.into_parts();
-                (
-                    cg,
-                    cg_start_index,
-                    cg_end_index,
-                    cg_name,
-                    cg_name_start_index,
-                    cg_name_end_index,
-                )
-            };
+            let (cg, cg_start_index, cg_end_index) =
+                self.receiver_group.into_parts();
+            let (cg_name, cg_name_start_index, cg_name_end_index) =
+                self.receiver_group_name.into_parts();
+            (
+                cg,
+                cg_start_index,
+                cg_end_index,
+                cg_name,
+                cg_name_start_index,
+                cg_name_end_index,
+            )
+        } else {
+            let (cg, cg_start_index, cg_end_index) = self.receiver.into_parts();
+            let (cg_name, cg_name_start_index, cg_name_end_index) =
+                self.receiver_name.into_parts();
+            (
+                cg,
+                cg_start_index,
+                cg_end_index,
+                cg_name,
+                cg_name_start_index,
+                cg_name_end_index,
+            )
+        };
 
         let (cc, cc_start_index, cc_end_index) = self.cc.into_parts();
         let (id, id_start_index, id_end_index) = self.id.into_parts();
@@ -459,8 +469,7 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
             continue;
         }
 
-        let normalized_line =
-            NormalizedLine::new(line);
+        let normalized_line = NormalizedLine::new(line);
         for mut line_metadata in parse_metadata_line(&normalized_line) {
             offset_metadata(&mut line_metadata, line_start_index + trim_offset);
             if !line_metadata.has_some_value() {
@@ -470,8 +479,8 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
             if last_cg_kind == Some(CgKind::Receiver)
                 && line_metadata.cg_kind() == Some(CgKind::ReceiverGroup)
             {
-                current.receiver = None;
-                current.receiver_name = None;
+                current.receiver = MatchedValue::default();
+                current.receiver_name = MatchedValue::default();
             }
 
             if current.conflicts_with(&line_metadata) {
@@ -490,9 +499,8 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
     }
 
     push_metadata_if_nonempty(&mut result, current);
-    let result = result
+    let result = expand_multi_source_ids(result)
         .into_iter()
-        .pipe(expand_multi_source_ids)
         .map(WorkingMetadata::into_public)
         .filter(InboxMetadata::has_some_value)
         .collect();
@@ -504,7 +512,12 @@ fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
         static ref RE_CC: Regex =
             Regex::new(r#"[cCсС]{2}\s*:\s*(\d+)"#).unwrap();
     }
+    lazy_static! {
+        static ref RE_CC_NO_COLON: Regex =
+            Regex::new(r#"(?:^|\s)[cCсС]{2}\s+(\d+)"#).unwrap();
+    }
     parse_value_from_regexes(line, &[&RE_CC])
+        .or_else(|| parse_numeric_value_from_regexes(line, &[&RE_CC_NO_COLON]))
 }
 
 fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
@@ -512,11 +525,12 @@ fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
         static ref RE_CG: Regex = Regex::new(r#"➡️\s*:\s*(\d+)"#).unwrap();
     }
     lazy_static! {
-        static ref RE_ID: Regex = Regex::new(r#"[іІiI]D\s*:\s*(\d+)"#).unwrap();
+        static ref RE_ID: Regex =
+            Regex::new(r#"[іІiI][dD]\s*:\s*(\d+)"#).unwrap();
     }
     lazy_static! {
         static ref RE_SOURCE_ID: Regex =
-            Regex::new(r#"SOURCE\s+ID\s*:\s*([\d,\s]+)"#).unwrap();
+            Regex::new(r#"(?i)SOURCE\s+ID\s*:\s*([\d,\s]+)"#).unwrap();
     }
     parse_numeric_value_from_standalone_regexes(line, &[&RE_ID]).or_else(|| {
         parse_numeric_value_from_regexes(line, &[&RE_CG, &RE_SOURCE_ID])
@@ -530,11 +544,11 @@ fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
     }
     lazy_static! {
         static ref RE_ID: Regex =
-            Regex::new(r#"[іІiI]D\s*:\s*(\d+)\s*\(([^)]+)\)"#).unwrap();
+            Regex::new(r#"[іІiI][dD]\s*:\s*(\d+)\s*\(([^)]+)\)"#).unwrap();
     }
     lazy_static! {
         static ref RE_ID_TEXT: Regex =
-            Regex::new(r#"[іІiI]D\s*:\s*([^;]+)\s*;"#).unwrap();
+            Regex::new(r#"[іІiI][dD]\s*:\s*([^;]+)\s*;"#).unwrap();
     }
     parse_string_from_standalone_regexes(line, &[&RE_ID], 2)
         .or_else(|| parse_string_from_regexes(line, &[&RE_CG], 2))
@@ -548,7 +562,7 @@ fn parse_value_from_regexes(
     regexes: &[&Regex],
 ) -> Option<MatchedValue> {
     for regex in regexes {
-        if let Some(caps) = regex.captures(line) {
+        if let Some(caps) = regex.captures(&line.text) {
             if let Some(value) = caps.get(1) {
                 return line.build_value(value, normalize_metadata_value);
             }
@@ -562,7 +576,7 @@ fn parse_numeric_value_from_regexes(
     regexes: &[&Regex],
 ) -> Option<MatchedValue> {
     for regex in regexes {
-        if let Some(caps) = regex.captures(line) {
+        if let Some(caps) = regex.captures(&line.text) {
             if let Some(value) = caps.get(1) {
                 if line.has_forbidden_suffix(value.end()) {
                     continue;
@@ -579,7 +593,7 @@ fn parse_numeric_value_from_standalone_regexes(
     regexes: &[&Regex],
 ) -> Option<MatchedValue> {
     for regex in regexes {
-        if let Some(caps) = regex.captures(line) {
+        if let Some(caps) = regex.captures(&line.text) {
             let Some(full_match) = caps.get(0) else {
                 continue;
             };
@@ -603,7 +617,7 @@ fn parse_string_from_regexes(
     group_idx: usize,
 ) -> Option<MatchedValue> {
     for regex in regexes {
-        if let Some(caps) = regex.captures(line) {
+        if let Some(caps) = regex.captures(&line.text) {
             if let Some(value) = caps.get(group_idx) {
                 return line.build_value(value, normalize_metadata_value);
             }
@@ -618,7 +632,7 @@ fn parse_string_from_standalone_regexes(
     group_idx: usize,
 ) -> Option<MatchedValue> {
     for regex in regexes {
-        if let Some(caps) = regex.captures(line) {
+        if let Some(caps) = regex.captures(&line.text) {
             let Some(full_match) = caps.get(0) else {
                 continue;
             };
@@ -649,18 +663,18 @@ fn normalize_metadata_digits(line: &str) -> String {
 fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_HASH_ID: Regex =
-            Regex::new(r#"ХЕШ\s+[іІiI]D\s*:\s*([0-9A-F]+)"#).unwrap();
+            Regex::new(r#"(?i)ХЕШ\s+[іІiI][dD]\s*:\s*([0-9a-f]+)"#).unwrap();
     }
     parse_value_from_regexes(line, &[&RE_HASH_ID])
-        .map(|hash_id| hash_id.to_lowercase())
+        .map(MatchedValue::lowercase_value)
 }
 
 fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
     let mut result = vec![WorkingMetadata {
-        cc: parse_color_code(line),
-        id: parse_mid(line),
-        id_name: parse_mid_id(line),
-        hash_id: parse_hash_id(line),
+        cc: parse_color_code(line).unwrap_or_default(),
+        id: parse_mid(line).unwrap_or_default(),
+        id_name: parse_mid_id(line).unwrap_or_default(),
+        hash_id: parse_hash_id(line).unwrap_or_default(),
         ..Default::default()
     }];
 
@@ -687,7 +701,8 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     }
     lazy_static! {
         static ref RE_RECEIVER_GROUP_EN: Regex =
-            Regex::new(r#"GROUP\s+ID\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
+            Regex::new(r#"(?i)GROUP\s+ID\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
+                .unwrap();
     }
     lazy_static! {
         static ref RE_RECEIVER_GROUP_X: Regex =
@@ -698,7 +713,7 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     let mut parts = vec![];
 
     for regex in [&*RE_RECEIVER_ARROW as &Regex, &*RE_RECEIVER_ID as &Regex] {
-        for caps in regex.captures_iter(line) {
+        for caps in regex.captures_iter(&line.text) {
             let Some(value) = caps.get(1) else {
                 continue;
             };
@@ -707,14 +722,14 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
             else {
                 continue;
             };
-            let receiver_name = caps
-                .get(2)
-                .and_then(|name| line.build_value(name, normalize_metadata_value));
+            let receiver_name = caps.get(2).and_then(|name| {
+                line.build_value(name, normalize_metadata_value)
+            });
             parts.push((
                 line.to_char_index(value.start()),
                 WorkingMetadata {
                     receiver,
-                    receiver_name,
+                    receiver_name: receiver_name.unwrap_or_default(),
                     ..Default::default()
                 },
             ));
@@ -725,7 +740,7 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
         &*RE_RECEIVER_GROUP as &Regex,
         &*RE_RECEIVER_GROUP_EN as &Regex,
     ] {
-        for caps in regex.captures_iter(line) {
+        for caps in regex.captures_iter(&line.text) {
             let Some(value) = caps.get(1) else {
                 continue;
             };
@@ -734,21 +749,22 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
             else {
                 continue;
             };
-            let receiver_group_name = caps
-                .get(2)
-                .and_then(|name| line.build_value(name, normalize_metadata_value));
+            let receiver_group_name = caps.get(2).and_then(|name| {
+                line.build_value(name, normalize_metadata_value)
+            });
             parts.push((
                 line.to_char_index(value.start()),
                 WorkingMetadata {
                     receiver_group,
-                    receiver_group_name,
+                    receiver_group_name: receiver_group_name
+                        .unwrap_or_default(),
                     ..Default::default()
                 },
             ));
         }
     }
 
-    for caps in RE_RECEIVER_GROUP_X.captures_iter(line) {
+    for caps in RE_RECEIVER_GROUP_X.captures_iter(&line.text) {
         let Some(value) = caps.get(1) else {
             continue;
         };
@@ -768,7 +784,7 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
             line.to_char_index(value.start()),
             WorkingMetadata {
                 receiver_group,
-                receiver_group_name,
+                receiver_group_name: receiver_group_name.unwrap_or_default(),
                 ..Default::default()
             },
         ));
@@ -779,7 +795,9 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
 
 impl WorkingMetadata {
     fn cg_kind(&self) -> Option<CgKind> {
-        if self.receiver_group.has_value() || self.receiver_group_name.has_value() {
+        if self.receiver_group.has_value()
+            || self.receiver_group_name.has_value()
+        {
             return Some(CgKind::ReceiverGroup);
         }
 
@@ -800,7 +818,9 @@ fn push_metadata_if_nonempty(
     }
 }
 
-fn expand_multi_source_ids(items: Vec<WorkingMetadata>) -> Vec<WorkingMetadata> {
+fn expand_multi_source_ids(
+    items: Vec<WorkingMetadata>,
+) -> Vec<WorkingMetadata> {
     let mut result = vec![];
     for item in items {
         let Some(ids) = split_multi_source_id(&item.id) else {
@@ -845,13 +865,10 @@ fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
             trimmed_end -= 1;
         }
         if trimmed_start < trimmed_end {
-            let raw_part = chars[trimmed_start..trimmed_end]
-                .iter()
-                .collect::<String>();
+            let raw_part =
+                chars[trimmed_start..trimmed_end].iter().collect::<String>();
             let normalized_part = normalize_metadata_digits(&raw_part);
-            let Some(value) = normalize_metadata_value(&normalized_part) else {
-                return None;
-            };
+            let value = normalize_metadata_value(&normalized_part)?;
             ids.push(MatchedValue {
                 value: Some(value),
                 start_index: Some(start_index + trimmed_start as i32),
@@ -864,9 +881,9 @@ fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
 
     if ids.len() <= 1
         || ids.iter().any(|id| {
-            id.value
-                .as_ref()
-                .is_none_or(|value| !value.chars().all(|ch| ch.is_ascii_digit()))
+            id.value.as_ref().is_none_or(|value| {
+                !value.chars().all(|ch| ch.is_ascii_digit())
+            })
         })
     {
         return None;
@@ -923,10 +940,7 @@ fn trim_line(line: &str) -> (String, i32) {
         end -= 1;
     }
 
-    (
-        chars[start..end].iter().collect::<String>(),
-        start as i32,
-    )
+    (chars[start..end].iter().collect::<String>(), start as i32)
 }
 
 fn offset_metadata(metadata: &mut WorkingMetadata, offset: i32) {
@@ -988,144 +1002,124 @@ mod tests {
 
     #[test]
     fn parse_metadata_handles_cyrillic_cc_and_emoji_digits() {
-        let metadata = parse_metadata("СС:1️⃣4️⃣\nCG:5️⃣0️⃣");
+        let metadata =
+            metadata_without_spans(parse_metadata("СС:1️⃣4️⃣\nCG:5️⃣0️⃣"));
         assert_eq!(
             metadata,
             vec![InboxMetadata {
                 cc: Some("14".to_string()),
                 cg: Some("50".to_string()),
-                cg_name: None,
-                id: None,
-                id_name: None,
-                hash_id: None,
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_handles_cyrillic_cc_and_emoji_digits2() {
-        let metadata = parse_metadata(
+        let metadata = metadata_without_spans(parse_metadata(
             "25.02.2026 12:09:42 F=145.0260 (МГц)
 УКХ р/м вБпЛА 121 мсп 68 мсд 6 А 🆓 (ЛИМАН ПЕРШИЙ) СС:1️⃣ CG:5️⃣0️⃣
 ID➡️:110(ЯРУС)
 ID(CG)⬅️:50📣",
-        );
+        ));
         assert_eq!(
             metadata,
             vec![InboxMetadata {
                 cc: Some("1".to_string()),
                 cg: Some("50".to_string()),
-                cg_name: None,
                 id: Some("110".to_string()),
                 id_name: Some("ЯРУС".to_string()),
-                hash_id: None,
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_handles_plain_id_variants_without_arrows() {
-        let metadata = parse_metadata("СС:8\nІD:21152\nID(CG):395251");
+        let metadata = metadata_without_spans(parse_metadata(
+            "СС:8\nІD:21152\nID(CG):395251",
+        ));
         assert_eq!(
             metadata,
             vec![InboxMetadata {
                 cc: Some("8".to_string()),
                 cg: Some("395251".to_string()),
-                cg_name: None,
                 id: Some("21152".to_string()),
-                id_name: None,
-                hash_id: None,
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_handles_textual_id_after_colon_before_semicolon() {
-        let metadata = parse_metadata(" Id:96МГ1_1; ");
+        let metadata = metadata_without_spans(parse_metadata(" Id:96МГ1_1; "));
         assert_eq!(
             metadata,
             vec![InboxMetadata {
-                cc: None,
-                cg: None,
-                cg_name: None,
-                id: None,
                 id_name: Some("96МГ1_1".to_string()),
-                hash_id: None,
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_handles_hash_id_with_prefix() {
-        let metadata = parse_metadata(" Хеш ID: 2324d327 ");
+        let metadata =
+            metadata_without_spans(parse_metadata(" Хеш ID: 2324d327 "));
         assert_eq!(
             metadata,
             vec![InboxMetadata {
-                cc: None,
-                cg: None,
-                cg_name: None,
-                id: None,
-                id_name: None,
                 hash_id: Some("2324d327".to_string()),
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_line_handles_hash_id_with_prefix() {
-        let metadata = parse_metadata_line(" ХЕШ ID: 2324D327 ");
+        let metadata = working_metadata_without_spans(parse_metadata_line(
+            &NormalizedLine::new("ХЕШ ID: 2324D327".to_string()),
+        ));
         assert_eq!(
             metadata,
             vec![WorkingMetadata {
-                cc: None,
-                receiver: None,
-                receiver_name: None,
-                receiver_group: None,
-                receiver_group_name: None,
-                id: None,
-                id_name: None,
-                hash_id: Some("2324d327".to_string()),
+                hash_id: matched_value("2324d327"),
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_handles_source_id_variant() {
-        let metadata = parse_metadata(" source id: 0 ");
+        let metadata = metadata_without_spans(parse_metadata(" source id: 0 "));
         assert_eq!(
             metadata,
             vec![InboxMetadata {
-                cc: None,
-                cg: None,
-                cg_name: None,
                 id: Some("0".to_string()),
-                id_name: None,
-                hash_id: None,
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_handles_multiple_source_ids_variant() {
-        let metadata = parse_metadata("CC:23 SOURCE ID: 1, 33; GROUP ID: 6");
+        let metadata = metadata_without_spans(parse_metadata(
+            "CC:23 SOURCE ID: 1, 33; GROUP ID: 6",
+        ));
         assert_eq!(
             metadata,
             vec![
                 InboxMetadata {
                     cc: Some("23".to_string()),
                     cg: Some("6".to_string()),
-                    cg_name: None,
                     id: Some("1".to_string()),
-                    id_name: None,
-                    hash_id: None,
+                    ..Default::default()
                 },
                 InboxMetadata {
                     cc: Some("23".to_string()),
                     cg: Some("6".to_string()),
-                    cg_name: None,
                     id: Some("33".to_string()),
-                    id_name: None,
-                    hash_id: None,
+                    ..Default::default()
                 }
             ]
         );
@@ -1133,48 +1127,36 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_line_handles_source_id_variant() {
-        let metadata = parse_metadata_line(" SOURCE ID: 0 ");
+        let metadata = working_metadata_without_spans(parse_metadata_line(
+            &NormalizedLine::new("SOURCE ID: 0".to_string()),
+        ));
         assert_eq!(
             metadata,
             vec![WorkingMetadata {
-                cc: None,
-                receiver: None,
-                receiver_name: None,
-                receiver_group: None,
-                receiver_group_name: None,
-                id: Some("0".to_string()),
-                id_name: None,
-                hash_id: None,
+                id: matched_value("0"),
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_line_handles_multiple_source_ids_variant() {
-        let metadata =
-            parse_metadata_line(" CC:23 SOURCE ID: 1, 33; GROUP ID: 6 ");
+        let metadata = working_metadata_without_spans(parse_metadata_line(
+            &NormalizedLine::new(
+                "CC:23 SOURCE ID: 1, 33; GROUP ID: 6".to_string(),
+            ),
+        ));
         assert_eq!(
             metadata,
             vec![
                 WorkingMetadata {
-                    cc: Some("23".to_string()),
-                    receiver: None,
-                    receiver_name: None,
-                    receiver_group: None,
-                    receiver_group_name: None,
-                    id: Some("1, 33".to_string()),
-                    id_name: None,
-                    hash_id: None,
+                    cc: matched_value("23"),
+                    id: matched_value("1, 33"),
+                    ..Default::default()
                 },
                 WorkingMetadata {
-                    cc: None,
-                    receiver: None,
-                    receiver_name: None,
-                    receiver_group: Some("6".to_string()),
-                    receiver_group_name: None,
-                    id: None,
-                    id_name: None,
-                    hash_id: None,
+                    receiver_group: matched_value("6"),
+                    ..Default::default()
                 }
             ]
         );
@@ -1182,45 +1164,28 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_group_id_variant() {
-        let metadata = parse_metadata(" group id: 0 ");
+        let metadata = metadata_without_spans(parse_metadata(" group id: 0 "));
         assert_eq!(
             metadata,
             vec![InboxMetadata {
-                cc: None,
                 cg: Some("0".to_string()),
-                cg_name: None,
-                id: None,
-                id_name: None,
-                hash_id: None,
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_line_handles_group_id_variant() {
-        let metadata = parse_metadata_line(" GROUP ID: 0 ");
+        let metadata = working_metadata_without_spans(parse_metadata_line(
+            &NormalizedLine::new("GROUP ID: 0".to_string()),
+        ));
         assert_eq!(
             metadata,
             vec![
+                WorkingMetadata::default(),
                 WorkingMetadata {
-                    cc: None,
-                    receiver: None,
-                    receiver_name: None,
-                    receiver_group: None,
-                    receiver_group_name: None,
-                    id: None,
-                    id_name: None,
-                    hash_id: None,
-                },
-                WorkingMetadata {
-                    cc: None,
-                    receiver: None,
-                    receiver_name: None,
-                    receiver_group: Some("0".to_string()),
-                    receiver_group_name: None,
-                    id: None,
-                    id_name: None,
-                    hash_id: None,
+                    receiver_group: matched_value("0"),
+                    ..Default::default()
                 }
             ]
         );
@@ -1228,25 +1193,18 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_double_cg_ocr_variant() {
-        let metadata = parse_metadata("CG:10 CG:x:12112027");
+        let metadata =
+            metadata_without_spans(parse_metadata("CG:10 CG:x:12112027"));
         assert_eq!(
             metadata,
             vec![
                 InboxMetadata {
-                    cc: None,
                     cg: Some("10".to_string()),
-                    cg_name: None,
-                    id: None,
-                    id_name: None,
-                    hash_id: None,
+                    ..Default::default()
                 },
                 InboxMetadata {
-                    cc: None,
                     cg: Some("x:12112027".to_string()),
-                    cg_name: None,
-                    id: None,
-                    id_name: None,
-                    hash_id: None,
+                    ..Default::default()
                 }
             ]
         );
@@ -1257,23 +1215,15 @@ ID(CG)⬅️:50📣",
         let message = load_fixture_message(14627919);
 
         assert_eq!(
-            parse_metadata(&message.content),
+            metadata_without_spans(parse_metadata(&message.content)),
             vec![
                 InboxMetadata {
-                    cc: None,
                     cg: Some("10".to_string()),
-                    cg_name: None,
-                    id: None,
-                    id_name: None,
-                    hash_id: None,
+                    ..Default::default()
                 },
                 InboxMetadata {
-                    cc: None,
                     cg: Some("x:12112027".to_string()),
-                    cg_name: None,
-                    id: None,
-                    id_name: None,
-                    hash_id: None,
+                    ..Default::default()
                 }
             ]
         );
@@ -1281,75 +1231,108 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_splits_on_conflicting_metadata_and_drops_duplicates() {
-        let metadata = parse_metadata(
+        let metadata = metadata_without_spans(parse_metadata(
             "CC:1 CG:10
 CC:2 CG:20
 CC:1 CG:10",
-        );
+        ));
 
         assert_eq!(metadata.len(), 2);
         assert!(metadata.contains(&InboxMetadata {
             cc: Some("1".to_string()),
             cg: Some("10".to_string()),
-            cg_name: None,
-            id: None,
-            id_name: None,
-            hash_id: None,
+            ..Default::default()
         }));
         assert!(metadata.contains(&InboxMetadata {
             cc: Some("2".to_string()),
             cg: Some("20".to_string()),
-            cg_name: None,
-            id: None,
-            id_name: None,
-            hash_id: None,
+            ..Default::default()
         }));
     }
 
     #[test]
     fn parse_metadata_prefers_receiver_group_over_receiver() {
-        let metadata = parse_metadata(
+        let metadata = metadata_without_spans(parse_metadata(
             "ID(CG):50
 CG:12112027",
-        );
+        ));
 
         assert_eq!(
             metadata,
             vec![InboxMetadata {
-                cc: None,
                 cg: Some("12112027".to_string()),
-                cg_name: None,
-                id: None,
-                id_name: None,
-                hash_id: None,
+                ..Default::default()
             }]
         );
     }
 
     #[test]
     fn parse_metadata_splits_on_conflicting_metadata_and_drops_duplicates2() {
-        let metadata = parse_metadata(
+        let metadata = metadata_without_spans(parse_metadata(
             "CC:1 CG:10
 CC:1 CG:10
 CC:2 CG:20",
-        );
+        ));
 
         assert_eq!(metadata.len(), 2);
         assert!(metadata.contains(&InboxMetadata {
             cc: Some("1".to_string()),
             cg: Some("10".to_string()),
-            cg_name: None,
-            id: None,
-            id_name: None,
-            hash_id: None,
+            ..Default::default()
         }));
         assert!(metadata.contains(&InboxMetadata {
             cc: Some("2".to_string()),
             cg: Some("20".to_string()),
-            cg_name: None,
-            id: None,
-            id_name: None,
-            hash_id: None,
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn parse_metadata_tracks_global_inclusive_spans() {
+        let metadata = parse_metadata("hello cc 545\nID:99");
+
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("545".to_string()),
+                cc_start_index: Some(9),
+                cc_end_index: Some(11),
+                id: Some("99".to_string()),
+                id_start_index: Some(16),
+                id_end_index: Some(17),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_tracks_spans_for_split_source_ids() {
+        let metadata = parse_metadata("CC:23 SOURCE ID: 1, 33; GROUP ID: 6");
+
+        assert_eq!(metadata.len(), 2);
+        assert!(metadata.contains(&InboxMetadata {
+            cc: Some("23".to_string()),
+            cc_start_index: Some(3),
+            cc_end_index: Some(4),
+            cg: Some("6".to_string()),
+            cg_start_index: Some(34),
+            cg_end_index: Some(34),
+            id: Some("1".to_string()),
+            id_start_index: Some(17),
+            id_end_index: Some(17),
+            ..Default::default()
+        }));
+        assert!(metadata.contains(&InboxMetadata {
+            cc: Some("23".to_string()),
+            cc_start_index: Some(3),
+            cc_end_index: Some(4),
+            cg: Some("6".to_string()),
+            cg_start_index: Some(34),
+            cg_end_index: Some(34),
+            id: Some("33".to_string()),
+            id_start_index: Some(20),
+            id_end_index: Some(21),
+            ..Default::default()
         }));
     }
 
@@ -1432,5 +1415,62 @@ CC:2 CG:20",
                 .as_ref()
                 .is_some_and(|dest| !dest.is_empty())
             || metadata.hash_id.is_some()
+    }
+
+    fn matched_value(value: &str) -> MatchedValue {
+        MatchedValue {
+            value: Some(value.to_string()),
+            ..Default::default()
+        }
+    }
+
+    fn metadata_without_spans(items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
+        items
+            .into_iter()
+            .map(|mut item| {
+                item.cc_start_index = None;
+                item.cc_end_index = None;
+                item.cg_start_index = None;
+                item.cg_end_index = None;
+                item.cg_name_start_index = None;
+                item.cg_name_end_index = None;
+                item.id_start_index = None;
+                item.id_end_index = None;
+                item.id_name_start_index = None;
+                item.id_name_end_index = None;
+                item.hash_id_start_index = None;
+                item.hash_id_end_index = None;
+                item
+            })
+            .collect()
+    }
+
+    fn working_metadata_without_spans(
+        items: Vec<WorkingMetadata>,
+    ) -> Vec<WorkingMetadata> {
+        items
+            .into_iter()
+            .map(clear_working_metadata_spans)
+            .collect()
+    }
+
+    fn clear_working_metadata_spans(
+        mut metadata: WorkingMetadata,
+    ) -> WorkingMetadata {
+        clear_matched_value_spans(&mut metadata.cc);
+        clear_matched_value_spans(&mut metadata.receiver);
+        clear_matched_value_spans(&mut metadata.receiver_name);
+        clear_matched_value_spans(&mut metadata.receiver_group);
+        clear_matched_value_spans(&mut metadata.receiver_group_name);
+        clear_matched_value_spans(&mut metadata.id);
+        clear_matched_value_spans(&mut metadata.id_name);
+        clear_matched_value_spans(&mut metadata.hash_id);
+        metadata
+    }
+
+    fn clear_matched_value_spans(value: &mut MatchedValue) {
+        value.start_index = None;
+        value.end_index = None;
+        value.raw_text = None;
     }
 }

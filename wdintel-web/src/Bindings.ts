@@ -368,11 +368,23 @@ export type InboxMessage = {
 
 export type InboxMessageMetadata = {
   colorCode: string | null;
+  colorCodeStartIndex: number | null;
+  colorCodeEndIndex: number | null;
   callGroupId: string | null;
+  callGroupIdStartIndex: number | null;
+  callGroupIdEndIndex: number | null;
   callGroupName: string | null;
+  callGroupNameStartIndex: number | null;
+  callGroupNameEndIndex: number | null;
   senderId: string | null;
+  senderIdStartIndex: number | null;
+  senderIdEndIndex: number | null;
   senderName: string | null;
+  senderNameStartIndex: number | null;
+  senderNameEndIndex: number | null;
   hashId: string | null;
+  hashIdStartIndex: number | null;
+  hashIdEndIndex: number | null;
 };
 
 export type InboxMessageTag = {
