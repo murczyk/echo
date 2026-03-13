@@ -29,6 +29,7 @@ import { PowerChip } from '../../components/PowerChip';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
@@ -144,6 +145,23 @@ const EMPTY_ADD_FORM: AddUserForm = {
   organismId: null,
   useDelta: true,
 };
+
+function buildUserLoadingRows(): Login[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    login: `loading-${index}`,
+    roles: [],
+    deleted: false,
+    deactivationReason: null,
+    organismEnabled: true,
+    sigintZoneId: null,
+    organismName: null,
+    organismId: null,
+    sigintZoneName: null,
+    deltaLogin: null,
+    createdAt: 0,
+    lastActiveAt: null,
+  }));
+}
 
 const DEBUG_USERS_NEO =
   typeof window !== 'undefined' && window.localStorage.getItem('debugUsersNeo') === '1';
@@ -902,7 +920,7 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildUserLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -911,7 +929,7 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
     enableColumnFilterModes: true,
     enableFacetedValues: true,
     enableRowVirtualization: false,
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => <RowActions login={row.original} onEdit={props.onEdit} />,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
@@ -1049,7 +1067,19 @@ function AdminUsersNeoPageBody() {
 
   const renderTable = () => {
     return (
-      <TableContentState status={status} errorMessage={error || 'Помилка завантаження'}>
+      <TableContentState
+        status={status}
+        errorMessage={error || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <UsersTable
+              data={logins}
+              loading
+              onEdit={(login) => setEditingLogin(login)}
+            />
+          </div>
+        }
+      >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
           <UsersTable
             data={logins}
@@ -1067,8 +1097,8 @@ function AdminUsersNeoPageBody() {
       <TablePageToolbar
         title="Користувачі"
         withGlobalTextFilter
-        hideGlobalTextFilter={status === 'loading'}
-        internalActionsDisabled={status === 'loading'}
+        hideGlobalTextFilter={status !== 'success'}
+        internalActionsDisabled={status !== 'success'}
         actions={
           <div className="flex gap-3">
             <Button variant="contained" onClick={() => setCreateOpen(true)}>

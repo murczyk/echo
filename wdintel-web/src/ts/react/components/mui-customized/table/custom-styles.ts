@@ -32,6 +32,15 @@ export const PAGE_SCROLL_TABLE_CONTAINER_SX = {
   WebkitOverflowScrolling: 'touch',
 };
 
+export const FULL_HEIGHT_LOADING_ROW_COUNT = 24;
+
+function getAuthUserNameFromShell(): string {
+  if (typeof document === 'undefined') return '';
+  const name = document.querySelector('.app-shell')?.getAttribute('data-auth-user-name');
+  if (!name || name === 'anonymous') return '';
+  return name;
+}
+
 export const CUSTOM_STYLES = {
   muiTableHeadCellProps: {
     sx: {
@@ -59,7 +68,12 @@ export const CUSTOM_STYLES = {
     sx: {
       ...CUSTOM_CELL_STYLES,
       padding: '10px',
-      backgroundColor: 'var(--bs-body-bg)',
+      backgroundColor: 'transparent',
+    },
+  },
+  muiTableBodyProps: {
+    sx: {
+      backgroundColor: 'transparent',
     },
   },
   displayColumnDefOptions: {
@@ -98,7 +112,7 @@ export const CUSTOM_STYLES = {
           ...CUSTOM_CELL_STYLES,
           justifyContent: 'center',
           padding: '10px!important',
-          backgroundColor: 'var(--bs-body-bg)',
+          backgroundColor: 'transparent',
         },
       },
       grow: false,
@@ -131,7 +145,7 @@ export const CUSTOM_STYLES = {
         sx: {
           justifyContent: 'center',
           ...CUSTOM_CELL_STYLES,
-          backgroundColor: 'var(--bs-body-bg)',
+          backgroundColor: 'transparent',
         },
       },
     },
@@ -159,19 +173,56 @@ export const CUSTOM_STYLES = {
         sx: {
           justifyContent: 'center',
           ...CUSTOM_CELL_STYLES,
-          backgroundColor: 'var(--bs-body-bg)',
+          backgroundColor: 'transparent',
         },
       },
     },
   },
   muiTablePaperProps: ({ table }: { table: any }) => ({
+    'data-table-watermark': getAuthUserNameFromShell(),
     sx: {
+      ...(table.getState().showSkeletons
+        ? {
+            backgroundImage:
+              'repeating-linear-gradient(to bottom, transparent 0, transparent 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 55px)',
+            backgroundSize: '100% 56px',
+            backgroundPosition: '0 56px',
+          }
+        : {}),
       borderRadius: 0,
       boxShadow: 'none',
       display: 'flex',
       flexDirection: 'column',
+      position: 'relative',
       bgcolor: 'var(--bs-body-bg)',
       color: 'var(--bs-body-color)',
+      '&::before, &::after': {
+        content: 'attr(data-table-watermark)',
+        position: 'absolute',
+        fontSize: 'clamp(2.2rem, 4vw, 3.8rem)',
+        fontWeight: 600,
+        lineHeight: 1,
+        letterSpacing: '0.02em',
+        color: 'var(--bs-body-color)',
+        opacity: 0.14,
+        transform: 'rotate(-28deg)',
+        pointerEvents: 'none',
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
+        zIndex: 0,
+      },
+      '&::before': {
+        left: '8%',
+        top: '16%',
+      },
+      '&::after': {
+        right: '6%',
+        top: '56%',
+      },
+      '& > *': {
+        position: 'relative',
+        zIndex: 1,
+      },
     },
     style: {
       padding: table.getState().isFullScreen ? 16 : undefined,
@@ -201,12 +252,18 @@ export const CUSTOM_STYLES = {
         backgroundColor: 'var(--bs-body-bg)',
         color: 'var(--bs-body-color)',
       },
+      '& .MuiTable-root': {
+        backgroundColor: 'transparent',
+      },
+      '& .MuiTableBody-root': {
+        backgroundColor: 'transparent',
+      },
       '& .MuiTableBody-root .MuiTableRow-root': {
-        backgroundColor: 'var(--bs-body-bg)',
+        backgroundColor: 'transparent',
         color: 'var(--bs-body-color)',
       },
       '& .MuiTableBody-root .MuiTableCell-root': {
-        backgroundColor: 'var(--bs-body-bg)',
+        backgroundColor: 'transparent',
         color: 'var(--bs-body-color)',
       },
     },

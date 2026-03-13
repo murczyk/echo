@@ -1,6 +1,7 @@
 import { CircularProgress } from '@mui/material';
 
 import { PageErrorState } from './PageErrorState';
+import { SectionLoadingOverlay } from './SectionLoadingOverlay';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -9,6 +10,7 @@ type Props = {
   errorMessage: string;
   children: React.ReactNode;
   fillAvailableHeight?: boolean;
+  loadingContent?: React.ReactNode;
 };
 
 function TableLoadingSlot(props: { fillAvailableHeight: boolean }) {
@@ -34,6 +36,7 @@ export function TableContentState({
   errorMessage,
   children,
   fillAvailableHeight = true,
+  loadingContent,
 }: Props) {
   const containerClassName = fillAvailableHeight
     ? 'flex w-full min-w-0 flex-1 min-h-0 overflow-hidden'
@@ -48,6 +51,20 @@ export function TableContentState({
   }
 
   if (status !== 'success') {
+    if (loadingContent) {
+      return (
+        <div className={`${containerClassName} relative`}>
+          {loadingContent}
+          <SectionLoadingOverlay
+            open
+            ariaLabel="Завантаження таблиці"
+            spinnerMode="center"
+            sx={{ zIndex: 12 }}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className={containerClassName}>
         <TableLoadingSlot fillAvailableHeight={fillAvailableHeight} />

@@ -10,6 +10,7 @@ import Route.Path
 import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Shared.Model exposing (ThemeMode)
+import String
 import Utils.Utils exposing (..)
 
 
@@ -58,7 +59,7 @@ navBar user shared activeName props =
             menuItemWithSubs props activeName
 
         adminSubs =
-            [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
+            [ Menu (Internal Route.Path.Admin_DirectionsNeo) "zones" "напрямки"
             , Menu (Internal Route.Path.Admin_UsersNeo) "users-neo" "користувачі"
             , Menu (Internal Route.Path.Admin_OrganismsNeo) "organisms-neo" "організми"
             , Menu (Internal Route.Path.Admin_TagsNeo) "tags-neo" "теги"
@@ -66,14 +67,14 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.Admin_KeysNeo) "keys-neo" "ключі"
             , Menu (Internal Route.Path.Admin_MessengerNeo) "messenger-neo" "месенджери"
             , Menu (Internal Route.Path.Admin_ControlPanelNeo) "control-panel-neo" "панель керування"
-            , Menu (Internal Route.Path.AdminOld) "zones-old" "напрямки (стара)"
+            , Menu (Internal Route.Path.Admin_Directions) "zones-old" "напрямки (стара)"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі (стара)"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми (стара)"
             , Menu (Internal Route.Path.Admin_Tags) "tags" "теги (стара)"
             , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
             , Menu (Internal Route.Path.Admin_Keys) "keys" "ключі (стара)"
             , Menu (Internal Route.Path.Admin_Messenger) "messenger" "месенджери (стара)"
-            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель (стара)"
+            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
             ]
 
         etalonkaSubs =
@@ -297,11 +298,41 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
 
         menuItemLabel : Menu -> Html msg
         menuItemLabel sub =
+            let
+                oldSuffix =
+                    " (стара)"
+
+                hasOldBadge =
+                    String.endsWith oldSuffix sub.label
+
+                baseLabel =
+                    if hasOldBadge then
+                        String.dropRight (String.length oldSuffix) sub.label
+
+                    else
+                        sub.label
+            in
             span [ class "inline-flex items-center gap-2" ]
-                ([ text sub.label ]
+                ([ text baseLabel ]
+                    ++ (if hasOldBadge then
+                            [ span
+                                [ class "rounded-full border border-slate-500/40 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-slate-600"
+                                ]
+                                [ text "стара" ]
+                            ]
+
+                        else
+                            []
+                       )
                     ++ (if sub.activeName == "callsigns-neo" || sub.activeName == "rer-duty-neo" then
                             [ span
-                                [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700"
+                                [ class
+                                    (if sub.activeName == "callsigns-neo" then
+                                        "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700"
+
+                                     else
+                                        "rounded-full border border-rose-500/40 bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-rose-700"
+                                    )
                                 ]
                                 [ text
                                     (if sub.activeName == "callsigns-neo" then
@@ -345,7 +376,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         , div [ class "absolute left-0 pt-2 z-[3001]" ]
             [ ul
                 [ id dropdownMenuId
-                , class "w-56 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
+                , class "w-64 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )

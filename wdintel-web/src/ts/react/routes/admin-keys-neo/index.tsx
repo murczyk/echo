@@ -8,6 +8,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Stack,
   TextField,
   Tooltip,
   Typography,
@@ -25,6 +26,7 @@ import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { Button } from '../../components/mui-customized/button';
 import {
   CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
@@ -86,6 +88,16 @@ function formatDate(value: number | null | undefined): string {
 
 function getOrganismLabel(organismId: number, organismNames: Map<number, string>) {
   return organismNames.get(organismId) || `#${organismId}`;
+}
+
+function buildKeyPolicyLoadingRows(): SigintKeySharePolicy[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    grantFrom: 0,
+    grantTo: 0,
+    author: '',
+    createdAt: 0,
+  }));
 }
 
 function usePolicyColumns(organismNames: Map<number, string>): MRT_ColumnDef<SigintKeySharePolicy>[] {
@@ -163,7 +175,7 @@ function KeyPoliciesTable(props: {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildKeyPolicyLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -183,7 +195,7 @@ function KeyPoliciesTable(props: {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
       <MrtRowActionButton
@@ -342,7 +354,21 @@ function AdminKeysNeoPageBody() {
 
   const renderTable = () => {
     return (
-      <TableContentState status={status} errorMessage={error || 'Помилка завантаження'} fillAvailableHeight={false}>
+      <TableContentState
+        status={status}
+        errorMessage={error || 'Помилка завантаження'}
+        fillAvailableHeight={status !== 'success'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <KeyPoliciesTable
+              data={policies}
+              loading
+              organismNames={organismNames}
+              onDelete={(policy) => setDeleteState({ policy, isDeleting: false, error: null })}
+            />
+          </div>
+        }
+      >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
           <KeyPoliciesTable
             data={policies}
@@ -356,7 +382,8 @@ function AdminKeysNeoPageBody() {
   };
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6">
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       {organismsStatus === 'error' ? (
         <Alert severity="error" onClose={() => setOrganismsError(null)}>
           {organismsError || 'Помилка завантаження організацій'}
@@ -376,8 +403,8 @@ function AdminKeysNeoPageBody() {
           </Box>
         }
         withGlobalTextFilter
-        hideGlobalTextFilter={status === 'loading'}
-        internalActionsDisabled={status === 'loading'}
+        hideGlobalTextFilter={status !== 'success'}
+        internalActionsDisabled={status !== 'success'}
         actions={
           <div className="flex gap-3">
             <Button variant="contained" onClick={openCreateDialog}>
@@ -387,7 +414,7 @@ function AdminKeysNeoPageBody() {
         }
       />
 
-      <div className="w-full min-w-0">{renderTable()}</div>
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
 
       <Dialog open={createOpen} onClose={closeCreateDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Додати політику доступу</DialogTitle>
@@ -459,7 +486,8 @@ function AdminKeysNeoPageBody() {
               : ''}
           </Typography>
       </ConfirmDangerDialog>
-    </div>
+      </Stack>
+    </Box>
   );
 }
 

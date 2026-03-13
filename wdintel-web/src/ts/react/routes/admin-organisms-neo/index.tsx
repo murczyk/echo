@@ -17,6 +17,7 @@ import { Button } from '../../components/mui-customized/button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
@@ -118,6 +119,19 @@ function formatGroupLabel(group: SignalGroupFull | undefined, fallbackKey: strin
 function formatAorLabel(aor: AreaOfResponsibility | undefined, fallbackId: number): string {
   if (!aor) return String(fallbackId);
   return aor.name || String(fallbackId);
+}
+
+function buildOrganismLoadingRows(): Organism[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    name: '',
+    parentId: null,
+    roles: [],
+    enabled: false,
+    aorIds: [],
+    loginsCount: 0,
+    createdAt: 0,
+  }));
 }
 
 type GroupLabel = { key: string; label: string };
@@ -352,7 +366,7 @@ function OrganismsTable(props: {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildOrganismLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -372,7 +386,7 @@ function OrganismsTable(props: {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
       <RowActions organism={row.original} onEdit={props.onEdit} onDelete={props.onDelete} />
@@ -655,7 +669,22 @@ function AdminOrganismsNeoPageBody() {
 
   const renderTable = () => {
     return (
-      <TableContentState status={organismsStatus} errorMessage={organismsError || 'Помилка завантаження'}>
+      <TableContentState
+        status={organismsStatus}
+        errorMessage={organismsError || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <OrganismsTable
+              data={organisms}
+              loading
+              lookup={lookup}
+              computedGroupsStatus={computedGroupsStatus}
+              onEdit={openEdit}
+              onDelete={openDelete}
+            />
+          </div>
+        }
+      >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
           <OrganismsTable
             data={organisms}
@@ -682,8 +711,8 @@ function AdminOrganismsNeoPageBody() {
       <TablePageToolbar
         title="Організми"
         withGlobalTextFilter
-        hideGlobalTextFilter={organismsStatus === 'loading'}
-        internalActionsDisabled={organismsStatus === 'loading'}
+        hideGlobalTextFilter={organismsStatus !== 'success'}
+        internalActionsDisabled={organismsStatus !== 'success'}
         actions={
           <div className="flex gap-3">
             <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>

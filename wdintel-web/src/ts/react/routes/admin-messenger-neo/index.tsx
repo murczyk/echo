@@ -46,6 +46,7 @@ import { Button } from '../../components/mui-customized/button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
@@ -322,6 +323,31 @@ function getStatusColorClass(account: EchoAccountF1): string {
   return 'text-orange-600';
 }
 
+function buildMessengerLoadingRows(): EchoAccountF1[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    areaOfResponsibility: null,
+    status: '',
+    createdAt: 0,
+    clientId: null,
+    displayName: '',
+    systemServiceName: null,
+    description: null,
+    messenger: 'signal',
+    phoneNumber: '',
+    apiLogin: null,
+    apiEndpoint: null,
+    isLinked: false,
+    isImported: false,
+    signalPort: null,
+    processName: null,
+    attachmentsPath: null,
+    echoClientId: null,
+    echoAccountId: null,
+    echoClientLockId: null,
+  }));
+}
+
 function buildDebugDetails(account: EchoAccountF1) {
   return [
     { label: 'echo_client_config.process_name', value: account.processName },
@@ -592,7 +618,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildMessengerLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -610,7 +636,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     renderRowActions: ({ row }) => (
       <TableRowActions
         account={row.original}
@@ -648,14 +674,35 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          ...FULL_WIDTH_TABLE_PAPER_SX,
+          ...(props.loading
+            ? FULL_WIDTH_TABLE_PAPER_SX
+            : {
+                minWidth: 0,
+                maxWidth: '100%',
+                width: '100%',
+                height: 'auto',
+                minHeight: 0,
+                overflow: 'hidden',
+              }),
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+        ...(props.loading
+          ? PAGE_SCROLL_TABLE_CONTAINER_SX
+          : {
+              minHeight: 0,
+              minWidth: 0,
+              maxWidth: '100%',
+              width: '100%',
+              maxHeight: '100%',
+              height: 'auto',
+              overflowX: 'auto',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+            }),
       },
     },
     state,
@@ -1147,7 +1194,25 @@ function AdminMessengerNeoPageBody() {
 
   const renderAccountsTable = () => {
     return (
-      <TableContentState status={accountsStatus} errorMessage={accountsError || 'Помилка завантаження'}>
+      <TableContentState
+        status={accountsStatus}
+        errorMessage={accountsError || 'Помилка завантаження'}
+        fillAvailableHeight={accountsStatus !== 'success'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <MessengerAccountsTable
+              data={accounts}
+              loading
+              actionsDisabled={isMutating}
+              onRestart={handleRestartDatasource}
+              onEdit={openEditSidebar}
+              onDelete={setDeleteAccountId}
+              onToggleStatus={handleToggleStatus}
+              onConnect={handleConnectExisting}
+            />
+          </div>
+        }
+      >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
           <MessengerAccountsTable
             data={accounts}
@@ -1541,14 +1606,14 @@ function AdminMessengerNeoPageBody() {
   );
 
   return (
-    <Box className="w-full">
-      <Stack spacing={3} useFlexGap>
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       <TablePageToolbar
         title="Месенджери"
         titleInfo="Управління прив'язаними акаунтами месенджерів"
         withGlobalTextFilter
-        hideGlobalTextFilter={accountsStatus === 'loading'}
-        internalActionsDisabled={accountsStatus === 'loading'}
+        hideGlobalTextFilter={accountsStatus !== 'success'}
+        internalActionsDisabled={accountsStatus !== 'success'}
         actions={
           <Button variant="contained" onClick={openLinkSidebar}>
             Прив'язати новий
@@ -1564,7 +1629,7 @@ function AdminMessengerNeoPageBody() {
           {actionStatus.message}
         </Alert>
       ) : null}
-      <Box className="w-full min-w-0">{renderAccountsTable()}</Box>
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderAccountsTable()}</Box>
       {renderDeleteDialog()}
       {renderLinkSidebar()}
       {renderEditSidebar()}

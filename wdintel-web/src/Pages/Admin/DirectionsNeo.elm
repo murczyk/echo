@@ -1,4 +1,4 @@
-module Pages.Admin exposing (Model, Msg, page)
+module Pages.Admin.DirectionsNeo exposing (Model, Msg, page)
 
 import Auth
 import Effect as E exposing (Effect)
@@ -79,7 +79,9 @@ view : Model -> View Msg
 view _ =
     { title = "Адмін: напрямки"
     , body =
-        [ div [ class "w-full px-6 pt-6 pb-6" ]
-            [ node "admin-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "admin-neo" [ class "react-fill-host block w-full h-full" ] [] ]
+            ]
         ]
     }

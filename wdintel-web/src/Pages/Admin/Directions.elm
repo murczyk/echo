@@ -1,4 +1,4 @@
-module Pages.AdminOld exposing (Model, Msg, page)
+module Pages.Admin.Directions exposing (Model, Msg, page)
 import Shared.Model exposing (isDarkMode)
 
 import Api

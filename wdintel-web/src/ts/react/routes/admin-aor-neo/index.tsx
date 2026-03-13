@@ -17,6 +17,7 @@ import { Button } from '../../components/mui-customized/button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
@@ -90,8 +91,9 @@ function formatCoords(coords: AorCoordinates | null): string {
   return `${coords.latitude}, ${coords.longitude}`;
 }
 
-function formatLocationConfigs(configs: string[]): string {
-  return configs.length > 0 ? configs.join(', ') : 'За замовчуванням (config.toml)';
+function formatLocationConfigs(configs: string[] | null | undefined): string {
+  if (!configs || configs.length === 0) return 'За замовчуванням (config.toml)';
+  return configs.join(', ');
 }
 
 function buildAorRows(aors: AreaOfResponsibility[], locationConfigsByAorId: Map<number, string[]>): AorRow[] {
@@ -103,6 +105,21 @@ function buildAorRows(aors: AreaOfResponsibility[], locationConfigsByAorId: Map<
 
 function buildLocationConfigsByAorId(items: Awaited<ReturnType<typeof listAorLocationConfigs>>['items']): Map<number, string[]> {
   return new Map(items.map((item) => [item.aorId, item.selectedConfigs ?? []]));
+}
+
+function buildAorLoadingRows(): AorRow[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    name: '',
+    description: null,
+    leftBound: 0,
+    rightBound: 0,
+    leftCoordinates: null,
+    rightCoordinates: null,
+    isTopLevel: false,
+    createdAt: 0,
+    locationConfigs: [],
+  }));
 }
 
 function useAorColumns(): MRT_ColumnDef<AorRow>[] {
@@ -226,7 +243,7 @@ function AorTable(props: AorTableProps) {
 
   const table = useMaterialReactTable<AorRow>({
     columns,
-    data: props.data,
+    data: props.loading ? buildAorLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -245,7 +262,7 @@ function AorTable(props: AorTableProps) {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => <RowActions aor={row.original} onConfigure={props.onConfigure} />,
     defaultColumn: {
@@ -406,6 +423,11 @@ function AdminAorNeoPageBody() {
       <TableContentState
         status={loadStatus}
         errorMessage={loadError || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <AorTable data={aors} loading onConfigure={openLocationConfigDialog} />
+          </div>
+        }
       >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
           <AorTable data={aors} loading={false} onConfigure={openLocationConfigDialog} />
@@ -420,8 +442,8 @@ function AdminAorNeoPageBody() {
         <TablePageToolbar
           title="Смуги відповідальності"
           withGlobalTextFilter
-          hideGlobalTextFilter={loadStatus === 'loading'}
-          internalActionsDisabled={loadStatus === 'loading'}
+          hideGlobalTextFilter={loadStatus !== 'success'}
+          internalActionsDisabled={loadStatus !== 'success'}
           actions={
             <div className="flex gap-3">
               <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>

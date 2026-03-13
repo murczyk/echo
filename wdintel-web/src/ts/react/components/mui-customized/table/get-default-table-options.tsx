@@ -1,8 +1,10 @@
+import { Box } from '@mui/material';
 import { Theme } from '@mui/material';
 import { TableRowProps } from '@mui/material/TableRow';
 import { MRT_ColumnOrderState, MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
 import { MRT_Localization_UK } from 'material-react-table/locales/uk';
 
+import { TableEmptyState } from '../../TableEmptyState';
 import { CUSTOM_STYLES } from './custom-styles';
 import { windowWidth } from '../../../utils/browser';
 
@@ -18,6 +20,26 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
   getRowId: (row) => row.id,
   localization: MRT_Localization_UK,
   positionToolbarAlertBanner: 'bottom',
+  renderEmptyRowsFallback: ({ table }) => {
+    const hasFilters =
+      Boolean(table.getState().globalFilter) ||
+      Boolean(table.getState().columnFilters?.length);
+
+    return (
+      <Box
+        sx={{
+          width: '100%',
+          minHeight: 260,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          px: 2,
+        }}
+      >
+        <TableEmptyState message={hasFilters ? 'Нічого не знайдено' : 'Немає даних'} />
+      </Box>
+    );
+  },
   ...CUSTOM_STYLES,
 });
 

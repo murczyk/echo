@@ -12,6 +12,7 @@ import { Button } from '../../components/mui-customized/button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
@@ -63,6 +64,18 @@ function buildEditHref(tagId: number): string {
 
 function buildCreateHref(): string {
   return withBackTo('/admin/tags-neo/edit');
+}
+
+function buildTagLoadingRows(): TagAdmin[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    tagId: -index - 1,
+    label: '',
+    extra: null,
+    ord: null,
+    enabled: false,
+    keywords: [],
+    isPalitra: false,
+  }));
 }
 
 function useTagColumns(): MRT_ColumnDef<TagAdmin>[] {
@@ -138,7 +151,7 @@ function TagsTable(props: { data: TagAdmin[]; loading: boolean }) {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildTagLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -157,7 +170,7 @@ function TagsTable(props: { data: TagAdmin[]; loading: boolean }) {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => <RowActions tag={row.original} />,
     defaultColumn: {
@@ -230,7 +243,15 @@ function AdminTagsNeoPageBody() {
 
   const renderTable = () => {
     return (
-      <TableContentState status={status} errorMessage={error || 'Помилка завантаження'}>
+      <TableContentState
+        status={status}
+        errorMessage={error || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <TagsTable data={tags} loading />
+          </div>
+        }
+      >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
           <TagsTable data={tags} loading={false} />
         </div>
@@ -244,8 +265,8 @@ function AdminTagsNeoPageBody() {
       <TablePageToolbar
         title="Теги"
         withGlobalTextFilter
-        hideGlobalTextFilter={status === 'loading'}
-        internalActionsDisabled={status === 'loading'}
+        hideGlobalTextFilter={status !== 'success'}
+        internalActionsDisabled={status !== 'success'}
         actions={
           <div className="flex gap-3">
             <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
