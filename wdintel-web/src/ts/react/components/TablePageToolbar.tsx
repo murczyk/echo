@@ -29,7 +29,7 @@ type Props = {
 
 export function TablePageToolbar(props: Props) {
   const tableStateContext = useTableStateContext();
-  const shouldRenderInternalActions = !props.internalActionsHidden && (tableStateContext.tableInstance || props.internalActionsDisabled);
+  const shouldRenderInternalActions = !props.internalActionsHidden;
   const internalActions =
     shouldRenderInternalActions ? (
       <InternalTableActions

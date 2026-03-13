@@ -20,6 +20,7 @@ import {
   DeleteAreaOfResponsibilityReq,
   UpdateAreaOfResponsibilityReq,
 } from '../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
 import { FormPageHeader } from '../../components/FormPageHeader';
 import { FormPageLayout } from '../../components/FormPageLayout';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -134,42 +135,45 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
   const update = (patch: Partial<AorFormState>) => props.onChange({ ...props.form, ...patch });
 
   return (
-    <div className="space-y-6">
-      <TextField
-        label="Назва *"
-        value={props.form.name}
-        onChange={(event) => update({ name: event.target.value })}
-        fullWidth
-      />
-      <TextField
-        label="Опис"
-        value={props.form.description}
-        onChange={(event) => update({ description: event.target.value })}
-        fullWidth
-      />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="space-y-8">
+      <div>
         <TextField
-          label="Ліва межа *"
-          value={props.form.leftBound}
-          onChange={(event) => update({ leftBound: event.target.value })}
+          label="Назва *"
+          value={props.form.name}
+          onChange={(event) => update({ name: event.target.value })}
           fullWidth
-          type="number"
-          slotProps={{ htmlInput: { step: 0.1 } }}
         />
         <TextField
-          label="Права межа *"
-          value={props.form.rightBound}
-          onChange={(event) => update({ rightBound: event.target.value })}
+          className="mt-4"
+          label="Опис"
+          value={props.form.description}
+          onChange={(event) => update({ description: event.target.value })}
           fullWidth
-          type="number"
-          slotProps={{ htmlInput: { step: 0.1 } }}
         />
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <TextField
+            label="Ліва межа *"
+            value={props.form.leftBound}
+            onChange={(event) => update({ leftBound: event.target.value })}
+            fullWidth
+            type="number"
+            slotProps={{ htmlInput: { step: 0.1 } }}
+          />
+          <TextField
+            label="Права межа *"
+            value={props.form.rightBound}
+            onChange={(event) => update({ rightBound: event.target.value })}
+            fullWidth
+            type="number"
+            slotProps={{ htmlInput: { step: 0.1 } }}
+          />
+        </div>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-5 pt-2">
         <Typography variant="subtitle1" className="!font-medium">
           Координати лівої межі
         </Typography>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <TextField
             label="Широта"
             value={props.form.leftLatitude}
@@ -194,11 +198,11 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
           />
         </div>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-5 pt-2">
         <Typography variant="subtitle1" className="!font-medium">
           Координати правої межі
         </Typography>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <TextField
             label="Широта"
             value={props.form.rightLatitude}
@@ -223,12 +227,14 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
           />
         </div>
       </div>
-      <FormControlLabel
-        control={
-          <MuiCheckbox checked={props.form.isTopLevel} onChange={(event) => update({ isTopLevel: event.target.checked })} />
-        }
-        label="Топ-рівень"
-      />
+      <div className="pt-2">
+        <FormControlLabel
+          control={
+            <MuiCheckbox checked={props.form.isTopLevel} onChange={(event) => update({ isTopLevel: event.target.checked })} />
+          }
+          label="Топ-рівень"
+        />
+      </div>
     </div>
   );
 }
@@ -264,7 +270,7 @@ function FormActions(props: {
         <div />
       )}
       <div className="flex gap-3">
-        <Button variant="outlined" onClick={props.onCancel} disabled={props.isMutating}>
+        <Button onClick={props.onCancel} disabled={props.isMutating}>
           Скасувати
         </Button>
         <Button variant="contained" onClick={props.onSubmit} disabled={props.isMutating}>
@@ -282,8 +288,8 @@ function DeleteDialog(props: { open: boolean; onClose: () => void; onConfirm: ()
       <DialogContent>
         <Typography className="text-sm text-muted-foreground">Ви впевнені, що хочете видалити цю смугу?</Typography>
       </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" onClick={props.onClose}>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <Button onClick={props.onClose}>
           Скасувати
         </Button>
         <Button variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>

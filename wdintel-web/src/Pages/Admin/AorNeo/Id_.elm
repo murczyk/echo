@@ -79,7 +79,7 @@ view : Route { id : String } -> Model -> View Msg
 view route _ =
     { title = "Адмін: смуги відповідальності (neo)"
     , body =
-        [ div [ class "mt-2 w-full" ]
+        [ div [ class "pt-4 pb-6 w-full" ]
             [ node "aor-neo-form" [ attribute "data-aor-id" route.params.id ] [] ]
         ]
     }

@@ -24,6 +24,7 @@ type IntrernalTableActionsProps<T extends MRT_RowData> = {
 export function InternalTableActions<T extends MRT_RowData>(props: IntrernalTableActionsProps<T>) {
   const tableStateContext = useTableStateContext();
   const table = props.table ?? tableStateContext.tableInstance;
+  const tableControlsDisabled = !table;
 
   return (
     <div className="flex items-center gap-1">
@@ -31,10 +32,10 @@ export function InternalTableActions<T extends MRT_RowData>(props: IntrernalTabl
       {!props.filtersHidden && <ClearFiltersButton disabled={props.filtersDisabled} />}
       {props.fullScreenEnabled && table ? <MRT_ToggleFullScreenButton table={table} disabled={props.fullScreenDisabled} /> : null}
       <ColumnsVisibilityButton
-        disabled={props.columnsVisibilityDisabled}
+        disabled={props.columnsVisibilityDisabled || tableControlsDisabled}
         rowNumberAppearanceControl={props.rowNumberAppearanceControl}
       />
-      {!props.densityHidden && <DensityToggleButton disabled={props.densityDisabled} />}
+      {!props.densityHidden && <DensityToggleButton disabled={props.densityDisabled || tableControlsDisabled} />}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { ListOrganismsReq, Organism } from '../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -390,7 +391,7 @@ function AdminKeysNeoPageBody() {
 
       <Dialog open={createOpen} onClose={closeCreateDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Додати політику доступу</DialogTitle>
-        <DialogContent className="space-y-4">
+        <DialogContent className="space-y-3">
           {createError ? <Alert severity="error">{createError}</Alert> : null}
           <Autocomplete
             options={organismOptions}
@@ -429,8 +430,13 @@ function AdminKeysNeoPageBody() {
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
         </DialogContent>
-        <DialogActions>
-          <Button variant="outlined" onClick={closeCreateDialog} disabled={createSaving}>
+        <DialogActions
+          sx={{
+            ...STANDARD_DIALOG_ACTIONS_SX,
+            pt: 2,
+          }}
+        >
+          <Button onClick={closeCreateDialog} disabled={createSaving}>
             Скасувати
           </Button>
           <Button variant="contained" onClick={handleCreate} disabled={createSaving}>

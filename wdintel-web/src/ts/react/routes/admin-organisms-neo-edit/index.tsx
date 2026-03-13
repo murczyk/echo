@@ -232,6 +232,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           renderValue: (selected) => (selected as string[]).join(', ') || '—',
         }}
         disabled={props.isSubmitting}
+        helperText=" "
       >
         {ROLE_OPTIONS.map((role) => (
           <MenuItem key={role} value={role}>
@@ -257,15 +258,16 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           },
         }}
         disabled={props.isSubmitting}
+        helperText=" "
       >
         {aorOptions}
       </TextField>
 
-      <Box className="space-y-2">
+      <Box className="space-y-3 pt-2 pb-3">
         <Typography variant="subtitle2" className="text-muted-foreground">
           Доступні групи для організму
         </Typography>
-        <Box className="p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <Box className="mt-2 p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           {props.isComputing ? (
             <div className="flex items-center gap-2">
               <CircularProgress size={18} />
@@ -367,10 +369,10 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
       ) : null}
 
       <Box className="space-y-4 border-t border-gray-200 dark:border-gray-700 pt-6">
-        <Typography variant="h6" className="!font-semibold">
+        <Typography variant="h6" className="!font-semibold pb-3">
           ГОІ
         </Typography>
-        <Alert severity="info">
+        <Alert severity="info" className="!mb-4">
           Для організму можна запустити контейнер з ПЗ ГОІ, після чого налаштувати їхню інтеграцію. ГОІ має слабкий
           захист та не підтримує повноцінну авторизацію, але має дуже потужну роботу з палітрами. Для налаштування
           необхідно буде вказати деталі SSH-доступу. При завантаженні палітри в організм ЕХО -- вона з&apos;являтиметься
@@ -382,6 +384,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           value={props.form.goiSshHost}
           onChange={(event) => props.onChange({ goiSshHost: event.target.value })}
           fullWidth
+          helperText=" "
           disabled={props.isSubmitting || props.isCheckingGoiConnection}
         />
 
@@ -390,6 +393,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           value={props.form.goiSshUser}
           onChange={(event) => props.onChange({ goiSshUser: event.target.value })}
           fullWidth
+          helperText=" "
           disabled={props.isSubmitting || props.isCheckingGoiConnection}
         />
 
@@ -419,7 +423,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           disabled={props.isSubmitting || props.isCheckingGoiConnection}
         />
 
-        <div className="flex items-center gap-3">
+        <div className="mt-3 flex items-center gap-3">
           <Button
             variant="outlined"
             onClick={props.onCheckGoiConnection}
@@ -779,7 +783,13 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
       <div className="w-full space-y-6">
         <FormPageHeader
           title={isNew ? 'Створити організм' : 'Редагувати організм'}
-          subtitle={!isNew && props.organismId ? `ID: ${props.organismId}` : undefined}
+          subtitle={
+            isNew
+              ? 'Додайте новий організм'
+              : props.organismId
+                ? `ID: ${props.organismId}`
+                : undefined
+          }
           onBack={navigateBack}
         />
 

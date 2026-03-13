@@ -19,6 +19,7 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -496,7 +497,7 @@ function AddUserDialog(props: {
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
       <DialogTitle>Додати користувача</DialogTitle>
-      <DialogContent className="space-y-4">
+      <DialogContent className="space-y-5">
         <FormControlLabel
           control={
             <Checkbox
@@ -519,7 +520,7 @@ function AddUserDialog(props: {
         ) : null}
         {submitError ? <Alert severity="error">{submitError}</Alert> : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-4 md:grid-cols-2">
           <TextField
             label="Логін"
             value={form.login}
@@ -531,7 +532,6 @@ function AddUserDialog(props: {
             helperText={errors.login || ' '}
             fullWidth
             disabled={isSubmitting}
-            className="xl:col-span-2"
           />
 
           <TextField
@@ -545,7 +545,6 @@ function AddUserDialog(props: {
             helperText={errors.password || ' '}
             fullWidth
             disabled={isSubmitting || form.useDelta}
-            className="xl:col-span-2"
           />
 
           <TextField
@@ -564,7 +563,6 @@ function AddUserDialog(props: {
             error={Boolean(errors.roles)}
             helperText={errors.roles || ' '}
             disabled={isSubmitting}
-            className="xl:col-span-2"
           >
             {ROLE_OPTIONS.map((role) => (
               <MenuItem key={role} value={role}>
@@ -586,7 +584,6 @@ function AddUserDialog(props: {
             disabled={isSubmitting}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
-            className="xl:col-span-2"
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -609,7 +606,7 @@ function AddUserDialog(props: {
             disabled={isSubmitting}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
-            className="xl:col-span-2"
+            className="md:col-span-2"
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -619,8 +616,8 @@ function AddUserDialog(props: {
           />
         </div>
       </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" onClick={handleClose} disabled={isSubmitting}>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <Button onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </Button>
         <Button variant="contained" onClick={handleCreateUser} disabled={!canSubmit}>
