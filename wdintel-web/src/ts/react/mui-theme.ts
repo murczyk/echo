@@ -1,21 +1,27 @@
-import { createTheme } from '@mui/material/styles';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
 import React from 'react';
 
-function getMuiPaletteMode(): 'light' | 'dark' {
+export function getMuiPaletteMode(): 'light' | 'dark' {
   return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
 }
 
-function useMuiPaletteMode() {
+export function useMuiPaletteMode() {
   const [mode, setMode] = React.useState(getMuiPaletteMode);
 
   React.useEffect(() => {
-    const observer = new MutationObserver(() => setMode(getMuiPaletteMode()));
+    const syncMode = () => setMode(getMuiPaletteMode());
+    const observer = new MutationObserver(syncMode);
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-bs-theme'],
     });
 
-    return () => observer.disconnect();
+    window.addEventListener('echo-theme-applied', syncMode);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('echo-theme-applied', syncMode);
+    };
   }, []);
 
   return mode;
@@ -65,4 +71,11 @@ export function useNeoMuiTheme() {
       }),
     [mode],
   );
+}
+
+export function NeoMuiThemeProvider({ children }: { children: React.ReactNode }) {
+  const mode = useMuiPaletteMode();
+  const theme = useNeoMuiTheme();
+
+  return React.createElement(ThemeProvider, { theme, key: mode }, children);
 }

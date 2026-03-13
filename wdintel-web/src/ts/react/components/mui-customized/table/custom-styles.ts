@@ -2,6 +2,7 @@ export const CUSTOM_CELL_STYLES = {
   borderRight: '1px solid',
   borderBottom: '1px solid',
   borderColor: 'var(--bs-border-color)',
+  color: 'var(--bs-body-color)',
   '&:hover': {},
   '&:last-child': {
     borderRight: 0,
@@ -58,6 +59,7 @@ export const CUSTOM_STYLES = {
     sx: {
       ...CUSTOM_CELL_STYLES,
       padding: '10px',
+      backgroundColor: 'var(--bs-body-bg)',
     },
   },
   displayColumnDefOptions: {
@@ -96,6 +98,7 @@ export const CUSTOM_STYLES = {
           ...CUSTOM_CELL_STYLES,
           justifyContent: 'center',
           padding: '10px!important',
+          backgroundColor: 'var(--bs-body-bg)',
         },
       },
       grow: false,
@@ -128,6 +131,7 @@ export const CUSTOM_STYLES = {
         sx: {
           justifyContent: 'center',
           ...CUSTOM_CELL_STYLES,
+          backgroundColor: 'var(--bs-body-bg)',
         },
       },
     },
@@ -155,6 +159,7 @@ export const CUSTOM_STYLES = {
         sx: {
           justifyContent: 'center',
           ...CUSTOM_CELL_STYLES,
+          backgroundColor: 'var(--bs-body-bg)',
         },
       },
     },
@@ -166,6 +171,7 @@ export const CUSTOM_STYLES = {
       display: 'flex',
       flexDirection: 'column',
       bgcolor: 'var(--bs-body-bg)',
+      color: 'var(--bs-body-color)',
     },
     style: {
       padding: table.getState().isFullScreen ? 16 : undefined,
@@ -186,12 +192,22 @@ export const CUSTOM_STYLES = {
       '& .MuiTableHead-root': {
         opacity: 1,
         backgroundColor: 'var(--bs-body-bg)',
+        color: 'var(--bs-body-color)',
       },
       '& .MuiTableHead-root .MuiTableRow-root': {
         backgroundColor: 'var(--bs-body-bg)',
       },
       '& .MuiTableHead-root .MuiTableCell-head': {
         backgroundColor: 'var(--bs-body-bg)',
+        color: 'var(--bs-body-color)',
+      },
+      '& .MuiTableBody-root .MuiTableRow-root': {
+        backgroundColor: 'var(--bs-body-bg)',
+        color: 'var(--bs-body-color)',
+      },
+      '& .MuiTableBody-root .MuiTableCell-root': {
+        backgroundColor: 'var(--bs-body-bg)',
+        color: 'var(--bs-body-color)',
       },
     },
   },
