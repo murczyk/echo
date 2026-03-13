@@ -118,9 +118,6 @@ isRefreshing remoteData =
         RD.Loading ->
             True
 
-        RD.NeedsReload _ ->
-            True
-
         _ ->
             False
 
