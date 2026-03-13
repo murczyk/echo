@@ -1,7 +1,6 @@
 import ClearIcon from '@mui/icons-material/Clear';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import { InputAdornment, TextField } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
 import clsx from 'clsx';
 
 import { IconButton } from '../../../../icon-button';
@@ -14,16 +13,21 @@ type GlobalFilterTextFieldProps = {
 };
 
 export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
-  const theme = useTheme();
-
   return (
     <TextField
       className={clsx('!min-w-40', props.className)}
       placeholder="Пошук"
       sx={{
-        backgroundColor: theme.palette.mode === 'dark' ? 'background.default' : 'background.paper',
+        backgroundColor: 'var(--bs-body-bg)',
         '& .MuiOutlinedInput-root': {
           borderRadius: 0,
+          backgroundColor: 'var(--bs-body-bg)',
+          '& .MuiOutlinedInput-notchedOutline': {
+            borderColor: 'var(--bs-border-color)',
+          },
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: 'var(--bs-border-color)',
+          },
           ...(props.disabled
             ? {
                 pointerEvents: 'none',

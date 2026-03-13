@@ -1,7 +1,6 @@
-import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
-import { useNeoMuiTheme } from './mui-theme';
+import { NeoMuiThemeProvider } from './mui-theme';
 import { RerCallsignsNeoPage } from './routes/rer-callsigns-neo';
 
 function getAuthUserRolesFromShell(el: Element): string[] {
@@ -22,12 +21,10 @@ function getAuthUserRolesFromShell(el: Element): string[] {
 }
 
 function RerCallsignsNeoRoot({ authUserRoles }: { authUserRoles: string[] }) {
-  const theme = useNeoMuiTheme();
-
   return (
-    <ThemeProvider theme={theme}>
+    <NeoMuiThemeProvider>
       <RerCallsignsNeoPage authUserRoles={authUserRoles} />
-    </ThemeProvider>
+    </NeoMuiThemeProvider>
   );
 }
 

@@ -1,16 +1,13 @@
-import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
 import { AdminAorNeoPage } from './routes/admin-aor-neo';
-import { useNeoMuiTheme } from './mui-theme';
+import { NeoMuiThemeProvider } from './mui-theme';
 
 function AorNeoRoot() {
-  const theme = useNeoMuiTheme();
-
   return (
-    <ThemeProvider theme={theme}>
+    <NeoMuiThemeProvider>
       <AdminAorNeoPage />
-    </ThemeProvider>
+    </NeoMuiThemeProvider>
   );
 }
 

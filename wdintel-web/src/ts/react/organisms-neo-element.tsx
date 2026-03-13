@@ -1,16 +1,13 @@
-import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
 import { AdminOrganismsNeoPage } from './routes/admin-organisms-neo';
-import { useNeoMuiTheme } from './mui-theme';
+import { NeoMuiThemeProvider } from './mui-theme';
 
 function OrganismsNeoRoot() {
-  const theme = useNeoMuiTheme();
-
   return (
-    <ThemeProvider theme={theme}>
+    <NeoMuiThemeProvider>
       <AdminOrganismsNeoPage />
-    </ThemeProvider>
+    </NeoMuiThemeProvider>
   );
 }
 

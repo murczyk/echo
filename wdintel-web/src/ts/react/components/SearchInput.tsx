@@ -1,8 +1,9 @@
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import { CircularProgress, IconButton, InputAdornment, TextField } from '@mui/material';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
 import React, { useCallback, useRef, useState } from 'react';
+
+import { NeoMuiThemeProvider } from '../mui-theme';
 
 const DEFAULT_DEBOUNCE_MS = 300;
 const SEARCH_TEXT = 'Пошук...';
@@ -37,19 +38,6 @@ export function SearchInput(props: SearchInputProps) {
     clearOnEscape = true,
     emptyEndAdornment,
   } = props;
-
-  const mode = useMuiPaletteMode();
-  const theme = React.useMemo(
-    () =>
-      createTheme({
-        palette: { mode },
-        typography: {
-          fontFamily:
-            'var(--bs-body-font-family, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif)',
-        },
-      }),
-    [mode],
-  );
 
   const [value, setValue] = useState(initialValue ?? '');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,7 +113,7 @@ export function SearchInput(props: SearchInputProps) {
   }, [initialValue, searchWithDebounce]);
 
   return (
-    <ThemeProvider theme={theme}>
+    <NeoMuiThemeProvider>
       <div className="analysis-map-search-wrap">
         <div className="flex flex-row items-center">
           <TextField
@@ -214,25 +202,6 @@ export function SearchInput(props: SearchInputProps) {
           </div>
         ) : null}
       </div>
-    </ThemeProvider>
+    </NeoMuiThemeProvider>
   );
-}
-
-function getMuiPaletteMode(): 'light' | 'dark' {
-  return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
-}
-
-function useMuiPaletteMode() {
-  const [mode, setMode] = React.useState(getMuiPaletteMode);
-
-  React.useEffect(() => {
-    const observer = new MutationObserver(() => setMode(getMuiPaletteMode()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-bs-theme'],
-    });
-    return () => observer.disconnect();
-  }, []);
-
-  return mode;
 }

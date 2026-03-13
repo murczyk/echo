@@ -1,16 +1,13 @@
-import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
 import { AdminMessengerNeoPage } from './routes/admin-messenger-neo';
-import { useNeoMuiTheme } from './mui-theme';
+import { NeoMuiThemeProvider } from './mui-theme';
 
 function MessengerNeoRoot() {
-  const theme = useNeoMuiTheme();
-
   return (
-    <ThemeProvider theme={theme}>
+    <NeoMuiThemeProvider>
       <AdminMessengerNeoPage />
-    </ThemeProvider>
+    </NeoMuiThemeProvider>
   );
 }
 
