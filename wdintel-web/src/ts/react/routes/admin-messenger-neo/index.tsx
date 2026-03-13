@@ -39,6 +39,7 @@ import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../.
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { Info } from '../../components/info';
 import { Button } from '../../components/mui-customized/button';
@@ -1164,30 +1165,14 @@ function AdminMessengerNeoPageBody() {
   };
 
   const renderDeleteDialog = () => (
-    <Dialog
+    <ConfirmDangerDialog
       open={deleteAccountId !== null}
       onClose={() => setDeleteAccountId(null)}
-    >
-      <DialogTitle>Підтвердження видалення</DialogTitle>
-      <DialogContent>
-        <Typography className="text-sm text-muted-foreground">
-          Ви впевнені, що хочете видалити цей акаунт месенджера?
-        </Typography>
-      </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" onClick={() => setDeleteAccountId(null)}>
-          Скасувати
-        </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={handleDeleteConfirm}
-          disabled={isMutating}
-        >
-          Видалити
-        </Button>
-      </DialogActions>
-    </Dialog>
+      onConfirm={handleDeleteConfirm}
+      description="Ви впевнені, що хочете видалити цей акаунт месенджера?"
+      submitting={isMutating}
+      disabled={deleteAccountId === null}
+    />
   );
 
   const renderLinkSidebar = () => (
@@ -1537,8 +1522,8 @@ function AdminMessengerNeoPageBody() {
   );
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+    <Box className="w-full">
+      <Stack spacing={3} useFlexGap>
       <TablePageToolbar
         title="Месенджери"
         titleInfo="Управління прив'язаними акаунтами месенджерів"
@@ -1560,7 +1545,7 @@ function AdminMessengerNeoPageBody() {
           {actionStatus.message}
         </Alert>
       ) : null}
-      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderAccountsTable()}</Box>
+      <Box className="w-full min-w-0">{renderAccountsTable()}</Box>
       {renderDeleteDialog()}
       {renderLinkSidebar()}
       {renderEditSidebar()}

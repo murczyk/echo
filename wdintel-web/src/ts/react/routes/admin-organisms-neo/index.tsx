@@ -8,6 +8,7 @@ import React from 'react';
 
 import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
@@ -534,8 +535,8 @@ function DeleteOrganismDialog(props: {
           </Alert>
         ) : null}
       </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" onClick={props.onClose} disabled={isSubmitting}>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <Button onClick={props.onClose} disabled={isSubmitting}>
           Скасувати
         </Button>
         <Button variant="outlined" color="error" onClick={handleSoftDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
@@ -685,11 +686,8 @@ function AdminOrganismsNeoPageBody() {
         internalActionsDisabled={organismsStatus === 'loading'}
         actions={
           <div className="flex gap-3">
-            <Button variant="outlined" onClick={reloadAll} disabled={organismsStatus === 'loading'}>
-              Оновити
-            </Button>
             <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-              Створити
+              Створити організм
             </Button>
           </div>
         }

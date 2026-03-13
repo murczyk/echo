@@ -38,6 +38,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { Button } from '../../components/mui-customized/button';
 import { PowerChip } from '../../components/PowerChip';
 import {
@@ -1316,12 +1317,8 @@ function AdminNeoPageBody() {
       <TablePageToolbar
         title="Напрямки"
         withGlobalTextFilter={false}
+        internalActionsHidden
         internalActionsDisabled={status === 'loading'}
-        actions={
-          <Button variant="outlined" onClick={loadData} disabled={status === 'loading'}>
-            Оновити
-          </Button>
-        }
       />
 
       {renderContent()}
@@ -1585,39 +1582,20 @@ function AdminNeoPageBody() {
         </DialogActions>
       </Dialog>
 
-      <Dialog
+      <ConfirmDangerDialog
         open={Boolean(deleteDialog)}
         onClose={() => setDeleteDialog(null)}
-        maxWidth="sm"
-        fullWidth
+        onConfirm={handleDeleteGroup}
+        submitting={Boolean(deleteDialog?.isDeleting)}
+        disabled={!deleteDialog}
       >
-        <DialogTitle>Підтвердження видалення</DialogTitle>
-        <DialogContent className="space-y-3">
           {deleteDialog?.error ? (
             <Alert severity="error">{deleteDialog.error}</Alert>
           ) : null}
           <Typography variant="body2" className="text-muted-foreground">
             Ви впевнені, що хочете видалити групу {deleteDialog?.groupName}?
           </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            variant="outlined"
-            onClick={() => setDeleteDialog(null)}
-            disabled={deleteDialog?.isDeleting}
-          >
-            Скасувати
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={handleDeleteGroup}
-            disabled={deleteDialog?.isDeleting}
-          >
-            Видалити
-          </Button>
-        </DialogActions>
-      </Dialog>
+      </ConfirmDangerDialog>
     </div>
   );
 }
