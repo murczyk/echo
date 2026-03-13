@@ -13,12 +13,15 @@ emptyQueryState =
     , timeFromStr = ""
     , dateToStr = ""
     , timeToStr = ""
+    , aorsSelected = []
     , groupsSelected = []
     , sendersSelected = []
     , freqsSelected = []
     , callsignsSelected = []
     , unitsSelected = []
     , locationsSelected = []
+    , postsSelected = []
+    , networksSelected = []
     , includePelengLocations = True
     , orWithExtendedForm = False
     , orBookmarked = False
@@ -81,12 +84,15 @@ modelQueryState model =
         , timeFromStr = model.from.timeStr
         , dateToStr = model.to.dateStr
         , timeToStr = model.to.timeStr
+        , aorsSelected = model.aorsSelected
         , groupsSelected = model.groupsSelected
         , sendersSelected = model.sendersSelected
         , freqsSelected = model.freqsSelected
         , callsignsSelected = model.callsignsSelected
         , unitsSelected = model.unitsSelected
         , locationsSelected = model.locationsSelected
+        , postsSelected = model.postsSelected
+        , networksSelected = model.networksSelected
         , includePelengLocations = model.includePelengLocations
         , orWithExtendedForm = model.orWithExtendedForm
         , orBookmarked = model.orBookmarked
@@ -115,16 +121,21 @@ updModelFromQueryState model ms =
     { model
         | from = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateFromStr, timeStr = queryState.timeFromStr }
         , to = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateToStr, timeStr = queryState.timeToStr }
+        , aorsSelected = queryState.aorsSelected
         , groupsSelected = queryState.groupsSelected
         , sendersSelected = queryState.sendersSelected
         , freqsSelected = queryState.freqsSelected
         , callsignsSelected = queryState.callsignsSelected
         , unitsSelected = queryState.unitsSelected
         , locationsSelected = queryState.locationsSelected
+        , postsSelected = queryState.postsSelected
+        , networksSelected = queryState.networksSelected
         , includePelengLocations = queryState.includePelengLocations
         , tagsSelected = queryState.tags
         , orWithExtendedForm = queryState.orWithExtendedForm
         , orBookmarked = queryState.orBookmarked
+        , orImportant = queryState.orImportant
+        , orWithCoords = queryState.orWithCoords
         , searchInput = queryState.search
         , metadataCc = queryState.metadataCc
         , metadataSender = queryState.metadataSender
@@ -223,15 +234,23 @@ updModelFromRerAnalysisStatsReq model req =
             normalizeAnalysisStatsReqMetadata req
     in
     { model
-        | groupsSelected = normalizedReq.selectedGroups |> def []
+        | aorsSelected =
+            normalizedReq.selectedAors
+                |> def []
+                |> List.map String.fromInt
+        , groupsSelected = normalizedReq.selectedGroups |> def []
         , sendersSelected = normalizedReq.selectedSenders |> def []
         , freqsSelected = normalizedReq.selectedFreqs |> def []
         , callsignsSelected = normalizedReq.selectedCallsigns |> def []
         , unitsSelected = normalizedReq.selectedUnits |> def []
+        , tagsSelected = normalizedReq.selectedTags |> def []
         , orWithExtendedForm = normalizedReq.orWithExtendedForm |> def False
         , orBookmarked = normalizedReq.orBookmarked |> def False
+        , orImportant = normalizedReq.orImportant |> def False
+        , orWithCoords = normalizedReq.orWithCoords |> def False
         , withoutModelTags = normalizedReq.withoutModelTags |> def False
         , includePelengLocations = normalizedReq.includePelengLocations |> def True
+        , searchInput = normalizedReq.search |> def ""
         , metadataCc = normalizedReq.metadataCc |> def []
         , metadataSender = normalizedReq.metadataSender |> def []
         , metadataReceiver = normalizedReq.metadataReceiver |> def []
@@ -240,6 +259,11 @@ updModelFromRerAnalysisStatsReq model req =
         , withoutMetadata = normalizedReq.withoutMetadata |> def False
         , locationsSelected = normalizedReq.selectedLocations |> def []
         , postsSelected = normalizedReq.selectedPosts |> def []
+        , networksSelected =
+            normalizedReq.selectedNetworks
+                |> def []
+                |> List.map String.fromInt
+        , unitsExactMatchOnly = normalizedReq.unitsExactMatchOnly |> def True
         , reportTagsOnlyThisUnit = normalizedReq.reportTagsOnlyThisUnit |> def False
     }
 

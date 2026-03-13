@@ -26,8 +26,8 @@ import Pages_.RerAnalysis.MainBody
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query as Query exposing (emptyQueryState)
+import Pages_.RerAnalysis.Senders as RerAnalysisSenders
 import Pages_.RerAnalysis.Utils as RerAnalysisUtils
-import Pages_.RerDuty.Waterfall.Filters
 import Process
 import Route exposing (Route)
 import Route.Path
@@ -717,6 +717,22 @@ loadCoreStatsAndPushUrl model =
     ( m2, cmd3 )
 
 
+setFocusedFilterSnapshot : String -> List String -> Model -> Model
+setFocusedFilterSnapshot filterKey itemsBeforeChange model =
+    { model
+        | focusedFilterItemsBeforeChange =
+            Just
+                { filterKey = filterKey
+                , itemsBeforeChange = itemsBeforeChange
+                }
+    }
+
+
+clearFocusedFilterSnapshot : Model -> Model
+clearFocusedFilterSnapshot model =
+    { model | focusedFilterItemsBeforeChange = Nothing }
+
+
 menuItemWithCount : String -> Int -> Html msg
 menuItemWithCount itemName count =
     div
@@ -818,7 +834,7 @@ extractMetaInfo inboxRsp model =
 
         m3 =
             { m2
-                | sendersSelectedNames = Pages_.RerDuty.Waterfall.Filters.ensureAllSendersNamed m2.profiles m2.sendersSelected m2.sendersSelectedNames
+                | sendersSelectedNames = RerAnalysisSenders.selectedNames m2.profiles m2.sendersSelected
             }
     in
     { m3
@@ -945,7 +961,7 @@ update user shared route msg model =
                                     List.length model.freqsSelected > 0
 
                                 SendersFilter ->
-                                    List.length model.sendersSelectedNames > 0
+                                    List.length model.sendersSelected > 0
 
                                 GroupsFilter ->
                                     List.length model.groupsSelected > 0
@@ -966,7 +982,7 @@ update user shared route msg model =
                             (\endpoint_ ->
                                 case ( m2.from.datePosix, m2.to.datePosix ) of
                                     ( Just dtFromPosix, Just dtToPosix ) ->
-                                        endpoint_ (Query.analysisStatsParams dtFromPosix dtToPosix model)
+                                        endpoint_ (Query.analysisStatsParams dtFromPosix dtToPosix m2)
 
                                     _ ->
                                         E.none
@@ -1284,42 +1300,8 @@ update user shared route msg model =
             in
             ( { m1
                 | senders = Success rsp.senders
-                , selSenderMenu =
-                    rsp.senders
-                        |> List.map (\sender -> ( Shared.Components.RerMessage.getProfileName m1.profiles sender.uuid, sender.count ))
-                        |> List.foldl
-                            (\( name, count ) ( acc, seen ) ->
-                                if Set.member name seen then
-                                    let
-                                        updatedAcc =
-                                            acc
-                                                |> List.map
-                                                    (\( name_, count_ ) ->
-                                                        if name == name_ then
-                                                            ( name_, count_ + count )
-
-                                                        else
-                                                            ( name_, count_ )
-                                                    )
-                                    in
-                                    ( updatedAcc, seen )
-
-                                else
-                                    ( ( name, count ) :: acc, Set.insert name seen )
-                            )
-                            ( [], Set.empty )
-                        |> Tuple.first
-                        |> List.map
-                            (\( name, count ) ->
-                                Select.basicMenuItem
-                                    { item = name
-                                    , label =
-                                        name
-                                            ++ " ("
-                                            ++ fromInt count
-                                            ++ ")"
-                                    }
-                            )
+                , selSenderMenu = RerAnalysisSenders.menuItems m1.profiles rsp.senders
+                , sendersSelectedNames = RerAnalysisSenders.selectedNames m1.profiles m1.sendersSelected
               }
             , E.none
             )
@@ -2341,7 +2323,7 @@ update user shared route msg model =
                                 , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
                             }
                     in
-                    loadCoreStatsAndPushUrl m3
+                    loadCoreStatsAndPushUrl (invalidateOptionFilters m3)
 
                 _ ->
                     ( model, E.none )
@@ -2613,7 +2595,7 @@ update user shared route msg model =
                         m2 =
                             Query.updModelFromSavedFilter model savedFilter
                     in
-                    loadCoreStats m2
+                    loadCoreStatsAndPushUrl (invalidateOptionFilters m2)
 
         SearchInput str ->
             ( { model | searchInput = str }
@@ -2663,27 +2645,27 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataCc m2.metadataStats
+                            FiltersReloading.handleFilterState "metadata-cc" m2.focusedFilterItemsBeforeChange mAction m2.metadataCc m2.metadataStats
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataCc, metadataStats = Loading }
+                                    ( setFocusedFilterSnapshot "metadata-cc" model.metadataCc { m2 | metadataStats = Loading }
                                     , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataCc }, E.none )
+                                    ( setFocusedFilterSnapshot "metadata-cc" model.metadataCc m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
                                         ( m_, eff_ ) =
                                             loadCoreStatsAndPushUrl m2
                                     in
-                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -2715,27 +2697,27 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataSender m2.metadataStats
+                            FiltersReloading.handleFilterState "metadata-sender" m2.focusedFilterItemsBeforeChange mAction m2.metadataSender m2.metadataStats
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataSender, metadataStats = Loading }
+                                    ( setFocusedFilterSnapshot "metadata-sender" model.metadataSender { m2 | metadataStats = Loading }
                                     , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataSender }, E.none )
+                                    ( setFocusedFilterSnapshot "metadata-sender" model.metadataSender m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
                                         ( m_, eff_ ) =
                                             loadCoreStatsAndPushUrl m2
                                     in
-                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -2767,27 +2749,27 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataReceiver m2.metadataStats
+                            FiltersReloading.handleFilterState "metadata-receiver" m2.focusedFilterItemsBeforeChange mAction m2.metadataReceiver m2.metadataStats
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataReceiver, metadataStats = Loading }
+                                    ( setFocusedFilterSnapshot "metadata-receiver" model.metadataReceiver { m2 | metadataStats = Loading }
                                     , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataReceiver }, E.none )
+                                    ( setFocusedFilterSnapshot "metadata-receiver" model.metadataReceiver m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
                                         ( m_, eff_ ) =
                                             loadCoreStatsAndPushUrl m2
                                     in
-                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -2819,27 +2801,27 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataHash m2.metadataStats
+                            FiltersReloading.handleFilterState "metadata-hash" m2.focusedFilterItemsBeforeChange mAction m2.metadataHash m2.metadataStats
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataHash, metadataStats = Loading }
+                                    ( setFocusedFilterSnapshot "metadata-hash" model.metadataHash { m2 | metadataStats = Loading }
                                     , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataHash }, E.none )
+                                    ( setFocusedFilterSnapshot "metadata-hash" model.metadataHash m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
                                         ( m_, eff_ ) =
                                             loadCoreStatsAndPushUrl m2
                                     in
-                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -2893,17 +2875,17 @@ update user shared route msg model =
                             }
 
                         filterInteraction =
-                            FiltersReloading.handleFilterState model.focusedFilterItemsBeforeChange mAction updatedSelectedItems model.aors
+                            FiltersReloading.handleFilterState "aors" model.focusedFilterItemsBeforeChange mAction updatedSelectedItems model.aors
 
                         ( m3, eff3 ) =
                             case filterInteraction of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.aorsSelected, aors = Loading }
+                                    ( setFocusedFilterSnapshot "aors" model.aorsSelected { m2 | aors = Loading }
                                     , E.getAors GotStatsAors (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.aorsSelected }
+                                    ( setFocusedFilterSnapshot "aors" model.aorsSelected m2
                                     , E.none
                                     )
 
@@ -2915,10 +2897,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState AorsFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -2950,17 +2932,17 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.groupsSelected m2.groups
+                            FiltersReloading.handleFilterState "groups" m2.focusedFilterItemsBeforeChange mAction m2.groupsSelected m2.groups
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.groupsSelected, groups = Loading }
+                                    ( setFocusedFilterSnapshot "groups" model.groupsSelected { m2 | groups = Loading }
                                     , E.getGroups GotStatsGroups (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.groupsSelected }, E.none )
+                                    ( setFocusedFilterSnapshot "groups" model.groupsSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
@@ -2970,10 +2952,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState GroupsFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -2996,52 +2978,48 @@ update user shared route msg model =
                             Select.update imsg model.selSenderState
 
                         ( updatedSelectedItems, state ) =
-                            Utils.Select.multiUpdMenuOpen mAction model.sendersSelectedNames imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.sendersSelected imodel2
 
                         m2 =
                             { model
                                 | selSenderState = state
-                                , sendersSelectedNames = updatedSelectedItems
-                            }
-
-                        m3 =
-                            { m2
-                                | sendersSelected = Pages_.RerDuty.Waterfall.Filters.extractSendersIds model.sendersSelectedNames m2.sendersSelectedNames m2.profiles m2.sendersSelected
+                                , sendersSelected = updatedSelectedItems
+                                , sendersSelectedNames = RerAnalysisSenders.selectedNames model.profiles updatedSelectedItems
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m3.focusedFilterItemsBeforeChange mAction m3.sendersSelected m3.senders
+                            FiltersReloading.handleFilterState "senders" m2.focusedFilterItemsBeforeChange mAction m2.sendersSelected m2.senders
 
-                        ( m4, eff4 ) =
+                        ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m3 | focusedFilterItemsBeforeChange = Just model.sendersSelectedNames, senders = Loading }
-                                    , E.getSenders GotStatsSenders (Query.analysisStatsParams dtFromPosix dtToPosix m3)
+                                    ( setFocusedFilterSnapshot "senders" model.sendersSelected { m2 | senders = Loading }
+                                    , E.getSenders GotStatsSenders (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m3 | focusedFilterItemsBeforeChange = Just model.sendersSelectedNames }, E.none )
+                                    ( setFocusedFilterSnapshot "senders" model.sendersSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
                                         ( m_, eff_ ) =
-                                            loadCoreStatsAndPushUrl m3
+                                            loadCoreStatsAndPushUrl m2
 
                                         m1_ =
                                             invalidateFiltersState SendersFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m3 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
-                                    ( m3, E.none )
+                                    ( m2, E.none )
                     in
-                    ( m4
+                    ( m3
                     , E.batch <|
                         [ E.sendCmd <| Cmd.map SelSenderMsg icmd
-                        , eff4
+                        , eff3
                         ]
                     )
 
@@ -3065,17 +3043,17 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.freqsSelected m2.freqs
+                            FiltersReloading.handleFilterState "freqs" m2.focusedFilterItemsBeforeChange mAction m2.freqsSelected m2.freqs
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.freqsSelected, freqs = Loading }
+                                    ( setFocusedFilterSnapshot "freqs" model.freqsSelected { m2 | freqs = Loading }
                                     , E.getFreqs GotStatsFreqs (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.freqsSelected }, E.none )
+                                    ( setFocusedFilterSnapshot "freqs" model.freqsSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
@@ -3085,10 +3063,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState FreqsFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -3123,17 +3101,17 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.callsignsSelected m2.callsigns
+                            FiltersReloading.handleFilterState "callsigns" m2.focusedFilterItemsBeforeChange mAction m2.callsignsSelected m2.callsigns
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.callsignsSelected, callsigns = Loading }
+                                    ( setFocusedFilterSnapshot "callsigns" model.callsignsSelected { m2 | callsigns = Loading }
                                     , E.getCallsigns GotStatsCallsigns (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.callsignsSelected }, E.none )
+                                    ( setFocusedFilterSnapshot "callsigns" model.callsignsSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
@@ -3143,10 +3121,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState CallsignsFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -3178,17 +3156,17 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.locationsSelected m2.locations
+                            FiltersReloading.handleFilterState "locations" m2.focusedFilterItemsBeforeChange mAction m2.locationsSelected m2.locations
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.locationsSelected, locations = Loading }
+                                    ( setFocusedFilterSnapshot "locations" model.locationsSelected { m2 | locations = Loading }
                                     , E.getLocations GotStatsLocations (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.locationsSelected }, E.none )
+                                    ( setFocusedFilterSnapshot "locations" model.locationsSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
@@ -3198,10 +3176,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState LocationsFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -3233,17 +3211,17 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.postsSelected m2.posts
+                            FiltersReloading.handleFilterState "posts" m2.focusedFilterItemsBeforeChange mAction m2.postsSelected m2.posts
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.postsSelected, posts = Loading }
+                                    ( setFocusedFilterSnapshot "posts" model.postsSelected { m2 | posts = Loading }
                                     , E.getPosts GotStatsPosts (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.postsSelected }, E.none )
+                                    ( setFocusedFilterSnapshot "posts" model.postsSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
@@ -3253,10 +3231,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState PostsFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -3288,17 +3266,17 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.unitsSelected m2.units
+                            FiltersReloading.handleFilterState "units" m2.focusedFilterItemsBeforeChange mAction m2.unitsSelected m2.units
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.unitsSelected, units = Loading }
+                                    ( setFocusedFilterSnapshot "units" model.unitsSelected { m2 | units = Loading }
                                     , E.getUnits2 GotStatsUnits (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.unitsSelected }, E.none )
+                                    ( setFocusedFilterSnapshot "units" model.unitsSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
@@ -3308,10 +3286,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState UnitsFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )
@@ -3343,17 +3321,17 @@ update user shared route msg model =
                             }
 
                         result =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.networksSelected m2.networksStats
+                            FiltersReloading.handleFilterState "networks" m2.focusedFilterItemsBeforeChange mAction m2.networksSelected m2.networksStats
 
                         ( m3, eff3 ) =
                             case result of
                                 BeforeInteraction Outdated ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.networksSelected, networksStats = Loading }
+                                    ( setFocusedFilterSnapshot "networks" model.networksSelected { m2 | networksStats = Loading }
                                     , E.getNetworks GotStatsNetworks (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
 
                                 BeforeInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.networksSelected }, E.none )
+                                    ( setFocusedFilterSnapshot "networks" model.networksSelected m2, E.none )
 
                                 AfterInteraction Outdated ->
                                     let
@@ -3363,10 +3341,10 @@ update user shared route msg model =
                                         m1_ =
                                             invalidateFiltersState NetworksFilter m_
                                     in
-                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+                                    ( clearFocusedFilterSnapshot m1_, eff_ )
 
                                 AfterInteraction UpToDate ->
-                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+                                    ( clearFocusedFilterSnapshot m2, E.none )
 
                                 _ ->
                                     ( m2, E.none )

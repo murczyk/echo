@@ -2187,12 +2187,15 @@ type alias RerAnalysisQueryState =
     , timeFromStr : String
     , dateToStr : String
     , timeToStr : String
+    , aorsSelected : List String
     , groupsSelected : List String
     , sendersSelected : List String
     , freqsSelected : List String
     , callsignsSelected : List String
     , unitsSelected : List String
     , locationsSelected : List String
+    , postsSelected : List String
+    , networksSelected : List String
     , orWithExtendedForm : Bool
     , orBookmarked : Bool
     , orImportant : Bool
@@ -2219,12 +2222,15 @@ rerAnalysisQueryStateEncoder struct =
         , ( "time_from_str", Json.Encode.string struct.timeFromStr )
         , ( "date_to_str", Json.Encode.string struct.dateToStr )
         , ( "time_to_str", Json.Encode.string struct.timeToStr )
+        , ( "aors_selected", Json.Encode.list Json.Encode.string struct.aorsSelected )
         , ( "groups_selected", Json.Encode.list Json.Encode.string struct.groupsSelected )
         , ( "senders_selected", Json.Encode.list Json.Encode.string struct.sendersSelected )
         , ( "freqs_selected", Json.Encode.list Json.Encode.string struct.freqsSelected )
         , ( "callsigns_selected", Json.Encode.list Json.Encode.string struct.callsignsSelected )
         , ( "units_selected", Json.Encode.list Json.Encode.string struct.unitsSelected )
         , ( "locations_selected", Json.Encode.list Json.Encode.string struct.locationsSelected )
+        , ( "posts_selected", Json.Encode.list Json.Encode.string struct.postsSelected )
+        , ( "networks_selected", Json.Encode.list Json.Encode.string struct.networksSelected )
         , ( "or_with_extended_form", Json.Encode.bool struct.orWithExtendedForm )
         , ( "or_bookmarked", Json.Encode.bool struct.orBookmarked )
         , ( "or_important", Json.Encode.bool struct.orImportant )
@@ -8036,12 +8042,15 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time_from_str" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date_to_str" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time_to_str" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senders_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations_selected" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_selected" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_extended_form" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_bookmarked" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" Json.Decode.bool))

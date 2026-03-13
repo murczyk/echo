@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Model exposing (FilterName(..), GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..))
+module Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..))
 
 
 import Bindings as B
@@ -11,6 +11,12 @@ import Shared.Components.RerMessage
 import Shared.Components.Toast
 import Time
 import Utils.RemoteData exposing (RemoteData)
+
+
+type alias FocusedFilterSnapshot =
+    { filterKey : String
+    , itemsBeforeChange : List String
+    }
 
 
 type alias Model =
@@ -170,7 +176,7 @@ type alias Model =
     , metadataStats : RemoteData ApiError B.MetadataStatsRsp
     , networkNames : List B.NetworkEntry
     , networksSelected : List String
-    , focusedFilterItemsBeforeChange : Maybe (List String)
+    , focusedFilterItemsBeforeChange : Maybe FocusedFilterSnapshot
     , mapPoints : RemoteData ApiError (List B.FreqDetailedPoint)
     , mapNetworkUnits : List B.NetworkUnit
     , mapOpenMessages : RemoteData ApiError (List ( Int, B.InboxMessage ))
