@@ -369,29 +369,25 @@ async fn list_callsigns_impl(
     let callsigns = callsigns.limit(req.limit).all(dbx).await.c(h!())?;
     let mut res = vec![];
     for (callsign, unit) in callsigns {
-        let mut c = render_callsign(unit, callsign, vec![])?;
-        if let Some(changelog) = sigint_callsign_changelog::Entity::find()
-            .filter(
-                sigint_callsign_changelog::Column::SigintCallsignId.eq(c.id),
-            )
-            .order_by_desc(sigint_callsign_changelog::Column::Id)
-            .one(dbx)
-            .await
-            .c(h!())?
-        {
-            c.created_at = changelog.created_at.and_utc().timestamp_millis();
-        }
-
-        res.push(c);
+        res.push(render_callsign(unit, callsign, vec![])?);
     }
 
     let callsign_ids =
         res.iter().map(|callsign| callsign.id).collect::<Vec<_>>();
+    let mut effective_created_at_by_callsign =
+        list_callsign_effective_created_at_batch(dbx, &callsign_ids)
+            .await
+            .c(h!())?;
     let mut source_ids_by_callsign =
         list_callsign_additional_source_ids_batch(dbx, &callsign_ids)
             .await
             .c(h!())?;
     for callsign in &mut res {
+        if let Some(created_at) =
+            effective_created_at_by_callsign.remove(&callsign.id)
+        {
+            callsign.created_at = created_at.and_utc().timestamp_millis();
+        }
         callsign.callsign_additional_sources = source_ids_by_callsign
             .remove(&callsign.id)
             .unwrap_or_default();
@@ -411,6 +407,12 @@ struct CallsignSeekCursor {
     sort_radio_freq: String,
 }
 
+#[derive(FromQueryResult)]
+struct CallsignEffectiveCreatedAtRow {
+    sigint_callsign_id: i64,
+    created_at: chrono::NaiveDateTime,
+}
+
 fn effective_callsigns_sort(req: &ListCallsignsReq) -> ListCallsignsSortBy {
     req.sort_by
         .as_ref()
@@ -426,18 +428,16 @@ fn callsigns_sort_created_at_expr() -> SimpleExpr {
          WHERE sigint_callsign_changelog.sigint_callsign_id = sigint_callsign.id), \
          sigint_callsign.created_at)",
     )
-    .into()
 }
 
 fn callsigns_sort_source_name_expr() -> SimpleExpr {
     Expr::cust(
         "COALESCE((SELECT source.name FROM source WHERE source.id = sigint_callsign.source_id), '—')",
     )
-    .into()
 }
 
 fn callsigns_sort_radio_freq_expr() -> SimpleExpr {
-    Expr::cust("COALESCE(NULLIF(sigint_callsign.radio_freq, ''), '—')").into()
+    Expr::cust("COALESCE(NULLIF(BTRIM(sigint_callsign.radio_freq), ''), '—')")
 }
 
 fn callsigns_id_expr() -> SimpleExpr {
@@ -452,14 +452,6 @@ async fn load_callsign_seek_cursor(
     let unit = crate::sigint::unit::find_unit(dbx, callsign.unit_id)
         .await
         .c(h!())?;
-    let latest_changelog = sigint_callsign_changelog::Entity::find()
-        .filter(
-            sigint_callsign_changelog::Column::SigintCallsignId.eq(callsign_id),
-        )
-        .order_by_desc(sigint_callsign_changelog::Column::CreatedAt)
-        .one(dbx)
-        .await
-        .c(h!())?;
     let source_name = if let Some(source_id) = callsign.source_id {
         source::Entity::find_by_id(source_id as i64)
             .one(dbx)
@@ -470,22 +462,86 @@ async fn load_callsign_seek_cursor(
     } else {
         "—".to_string()
     };
+    let effective_created_at = load_callsign_effective_created_at(
+        dbx,
+        callsign_id,
+        callsign.created_at,
+    )
+    .await
+    .c(h!())?;
 
     Ok(CallsignSeekCursor {
-        sort_created_at: latest_changelog
-            .map(|changelog| changelog.created_at)
-            .unwrap_or(callsign.created_at),
+        sort_created_at: effective_created_at,
         sort_position: callsign.position.clone(),
         sort_comment: callsign.comment.clone(),
         sort_source_name: source_name,
-        sort_radio_freq: if callsign.radio_freq.trim().is_empty() {
-            "—".to_string()
-        } else {
-            callsign.radio_freq.clone()
-        },
+        sort_radio_freq: normalize_callsign_sort_radio_freq_value(
+            &callsign.radio_freq,
+        ),
         callsign,
         unit,
     })
+}
+
+async fn load_callsign_effective_created_at<C>(
+    dbx: &C,
+    callsign_id: i64,
+    fallback_created_at: chrono::NaiveDateTime,
+) -> Result<chrono::NaiveDateTime, AppError>
+where
+    C: ConnectionTrait,
+{
+    let created_at =
+        list_callsign_effective_created_at_batch(dbx, &[callsign_id])
+            .await
+            .c(h!())?
+            .remove(&callsign_id)
+            .unwrap_or(fallback_created_at);
+
+    Ok(created_at)
+}
+
+async fn list_callsign_effective_created_at_batch<C>(
+    dbx: &C,
+    callsign_ids: &[i64],
+) -> Result<HashMap<i64, chrono::NaiveDateTime>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if callsign_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sigint_callsign_changelog::Entity::find()
+        .filter(
+            sigint_callsign_changelog::Column::SigintCallsignId
+                .is_in(callsign_ids.to_vec()),
+        )
+        .select_only()
+        .column_as(
+            sigint_callsign_changelog::Column::SigintCallsignId,
+            "sigint_callsign_id",
+        )
+        .expr_as(Expr::cust("MAX(created_at)"), "created_at")
+        .group_by(sigint_callsign_changelog::Column::SigintCallsignId)
+        .into_model::<CallsignEffectiveCreatedAtRow>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.sigint_callsign_id, row.created_at))
+        .collect())
+}
+
+fn normalize_callsign_sort_radio_freq_value(radio_freq: &str) -> String {
+    let radio_freq = radio_freq.trim();
+    if radio_freq.is_empty() {
+        "—".to_string()
+    } else {
+        radio_freq.to_string()
+    }
 }
 
 fn apply_callsigns_after_cursor(
@@ -1085,4 +1141,211 @@ pub async fn load_whitelist_from_file(
         .into_iter()
         .collect();
     Ok(callsigns)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::*;
+    use chrono::{Duration, Utc};
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
+
+    async fn insert_test_unit(
+        dbx: &DatabaseConnection,
+        login: &str,
+        name: &str,
+    ) -> sigint_unit::Model {
+        sigint_unit::ActiveModel {
+            company: Set("C".to_string()),
+            regiment: Set("R".to_string()),
+            division: Set("D".to_string()),
+            army: Set("A".to_string()),
+            active: Set(true),
+            deleted: Set(false),
+            created_at: Set(Utc::now().naive_utc()),
+            created_by: Set(login.to_string()),
+            name: Set(name.to_string()),
+            comment: Set(String::new()),
+            battalion: Set("B".to_string()),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_test_callsign(
+        dbx: &DatabaseConnection,
+        unit_id: i64,
+        callsign: &str,
+        created_at: chrono::NaiveDateTime,
+        radio_freq: &str,
+    ) -> sigint_callsign::Model {
+        sigint_callsign::ActiveModel {
+            callsign: Set(callsign.to_string()),
+            position: Set("pos".to_string()),
+            comment: Set("comment".to_string()),
+            unit_id: Set(unit_id),
+            deleted: Set(false),
+            created_at: Set(created_at),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(radio_freq.to_string()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    fn list_req(
+        after_id: Option<i64>,
+        limit: Option<u64>,
+        sort_by: ListCallsignsSortBy,
+    ) -> ListCallsignsReq {
+        ListCallsignsReq {
+            after_id,
+            before_id: None,
+            filter_text: None,
+            filter_callsign: None,
+            filter_position: None,
+            filter_comment: None,
+            filter_unit: None,
+            filter_developing: None,
+            since_date_inclusive_ms: None,
+            till_date_inclusive_ms: None,
+            limit,
+            sort_by: Some(vec![sort_by]),
+        }
+    }
+
+    #[test]
+    fn normalize_callsign_sort_radio_freq_value_maps_blank_to_placeholder() {
+        assert_eq!(normalize_callsign_sort_radio_freq_value(""), "—");
+        assert_eq!(normalize_callsign_sort_radio_freq_value("   "), "—");
+    }
+
+    #[test]
+    fn normalize_callsign_sort_radio_freq_value_trims_non_blank_value() {
+        assert_eq!(
+            normalize_callsign_sort_radio_freq_value(" 149.200 "),
+            "149.200",
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_created_at_sort_matches_visible_created_at() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit =
+            insert_test_unit(&env.dbx, &login.login, "CallsignTestUnit").await;
+        let now = Utc::now().naive_utc();
+
+        let callsign_alpha =
+            insert_test_callsign(&env.dbx, unit.id, "alpha", now, "").await;
+        let _callsign_bravo = insert_test_callsign(
+            &env.dbx,
+            unit.id,
+            "bravo",
+            now + Duration::minutes(90),
+            "",
+        )
+        .await;
+
+        sigint_callsign_changelog::ActiveModel {
+            sigint_callsign_id: Set(callsign_alpha.id),
+            login: Set(login.login.clone()),
+            action: Set("update".to_string()),
+            created_at: Set(now + Duration::minutes(120)),
+            new_value: Set(None),
+            old_value: Set(None),
+            req: Set(None),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_callsign_changelog::ActiveModel {
+            sigint_callsign_id: Set(callsign_alpha.id),
+            login: Set(login.login.clone()),
+            action: Set("update".to_string()),
+            created_at: Set(now + Duration::minutes(60)),
+            new_value: Set(None),
+            old_value: Set(None),
+            req: Set(None),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let callsigns = list_callsigns_impl(
+            &env.dbx,
+            &list_req(None, None, ListCallsignsSortBy::CallsignCreatedAtDesc),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(callsigns[0].id, callsign_alpha.id);
+        assert_eq!(
+            callsigns[0].created_at,
+            (now + Duration::minutes(120)).and_utc().timestamp_millis(),
+        );
+        assert!(callsigns[0].created_at > callsigns[1].created_at);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_radio_freq_sort_pagination_matches_full_result(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit =
+            insert_test_unit(&env.dbx, &login.login, "CallsignTestUnit").await;
+        let now = Utc::now().naive_utc();
+
+        insert_test_callsign(&env.dbx, unit.id, "alpha", now, "   ").await;
+        insert_test_callsign(&env.dbx, unit.id, "bravo", now, "149.200").await;
+        insert_test_callsign(&env.dbx, unit.id, "charlie", now, "").await;
+
+        let full = list_callsigns_impl(
+            &env.dbx,
+            &list_req(None, None, ListCallsignsSortBy::CallsignRadioFreqAsc),
+        )
+        .await
+        .unwrap();
+        let full_ids =
+            full.iter().map(|callsign| callsign.id).collect::<Vec<_>>();
+
+        let mut paged_ids = vec![];
+        let mut after_id = None;
+        for _ in 0..10 {
+            let page = list_callsigns_impl(
+                &env.dbx,
+                &list_req(
+                    after_id,
+                    Some(1),
+                    ListCallsignsSortBy::CallsignRadioFreqAsc,
+                ),
+            )
+            .await
+            .unwrap();
+            if page.is_empty() {
+                break;
+            }
+            after_id = page.last().map(|callsign| callsign.id);
+            paged_ids.extend(page.into_iter().map(|callsign| callsign.id));
+        }
+
+        assert_eq!(paged_ids, full_ids);
+    }
 }
