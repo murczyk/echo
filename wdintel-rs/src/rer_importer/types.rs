@@ -81,11 +81,23 @@ pub struct InboxMessageTag {
 )]
 pub struct InboxMessageMetadata {
     pub color_code: Option<String>,
+    pub color_code_start_index: Option<i32>,
+    pub color_code_end_index: Option<i32>,
     pub call_group_id: Option<String>,
+    pub call_group_id_start_index: Option<i32>,
+    pub call_group_id_end_index: Option<i32>,
     pub call_group_name: Option<String>,
+    pub call_group_name_start_index: Option<i32>,
+    pub call_group_name_end_index: Option<i32>,
     pub sender_id: Option<String>,
+    pub sender_id_start_index: Option<i32>,
+    pub sender_id_end_index: Option<i32>,
     pub sender_name: Option<String>,
+    pub sender_name_start_index: Option<i32>,
+    pub sender_name_end_index: Option<i32>,
     pub hash_id: Option<String>,
+    pub hash_id_start_index: Option<i32>,
+    pub hash_id_end_index: Option<i32>,
 }
 
 #[derive(
