@@ -77,7 +77,7 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
   return {
     afterId: query.afterId,
     beforeId: null,
-    filterText: filters.filterText,
+    filterText: filters.filterText.trim() || null,
     filterCallsign: filters.filterCallsign.trim() || null,
     filterPosition: filters.filterPosition.trim() || null,
     filterComment: filters.filterComment.trim() || null,

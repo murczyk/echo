@@ -51,7 +51,7 @@ pub async fn list_callsigns(
         .c(h!())?;
 
     let limit = *req.limit.get_or_insert(1000);
-    req.limit = Some(limit + 1);
+    req.limit = Some(limit.saturating_add(1));
     let mut res = list_callsigns_impl(&env.dbx, &req.0).await.c(h!())?;
     let show_load_more = res.len() > limit as usize;
     if show_load_more {
