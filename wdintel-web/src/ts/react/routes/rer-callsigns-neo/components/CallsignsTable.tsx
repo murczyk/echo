@@ -438,6 +438,7 @@ export function CallsignsTable({
     },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
+      const isFullScreen = table.getState().isFullScreen;
       return {
         ...baseProps,
         sx: {
@@ -445,23 +446,32 @@ export function CallsignsTable({
           ...FULL_WIDTH_TABLE_PAPER_SX,
           height: isInitialLoading ? '100%' : 'auto',
           minHeight: isInitialLoading ? '100%' : undefined,
-          overflow: 'visible',
+          overflowX: isFullScreen ? 'auto' : 'visible',
+          overflowY: isFullScreen ? 'auto' : 'visible',
+          overflow: isFullScreen ? 'auto' : 'visible',
+        },
+        style: {
+          ...(baseProps as { style?: React.CSSProperties })?.style,
+          padding: 0,
         },
       };
     },
-    muiTableContainerProps: () => ({
-      sx: {
-        ...(CUSTOM_STYLES.muiTableContainerProps as { sx?: object })?.sx,
-        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
-        border: 0,
-        height: isInitialLoading ? '100%' : 'auto',
-        ...(isInitialLoading ? { minHeight: '100%' } : {}),
-        maxHeight: 'none',
-        overflowX: 'visible',
-        overflowY: 'visible',
-        overflow: 'visible',
-      },
-    }),
+    muiTableContainerProps: ({ table }) => {
+      const isFullScreen = table.getState().isFullScreen;
+      return {
+        sx: {
+          ...(CUSTOM_STYLES.muiTableContainerProps as { sx?: object })?.sx,
+          ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+          border: 0,
+          height: isInitialLoading ? '100%' : 'auto',
+          ...(isInitialLoading ? { minHeight: '100%' } : {}),
+          maxHeight: isFullScreen ? '100%' : 'none',
+          overflowX: isFullScreen ? 'auto' : 'visible',
+          overflowY: isFullScreen ? 'auto' : 'visible',
+          overflow: isFullScreen ? 'auto' : 'visible',
+        },
+      };
+    },
     muiTableBodyRowProps: ({ row }) => ({
       hover: true,
       sx: {
@@ -530,6 +540,9 @@ export function CallsignsTable({
         '& .MuiTableHead-root .MuiTableCell-head': {
           backgroundColor: 'inherit !important',
           borderBottom: '0 !important',
+        },
+        '& .MuiTable-root': {
+          width: '100%',
         },
         '& .MuiTableBody-root .MuiTableRow-root:last-of-type td': {
           borderBottom: showLoadMore ? '0 !important' : undefined,

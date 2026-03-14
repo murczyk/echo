@@ -1,4 +1,4 @@
-import { MRT_RowData, MRT_ToggleFullScreenButton } from 'material-react-table';
+import { MRT_RowData, MRT_TableInstance, MRT_ToggleFullScreenButton } from 'material-react-table';
 import React from 'react';
 
 import { ClearFiltersButton } from './components/clear-filters-button';
@@ -7,7 +7,7 @@ import { DensityToggleButton } from './components/density-toggle-button';
 import { useTableStateContext } from '../../../../table-state-provider';
 
 type IntrernalTableActionsProps<T extends MRT_RowData> = {
-  table?: any;
+  table?: MRT_TableInstance<T> | null;
   children?: React.ReactNode;
   densityDisabled?: boolean;
   densityHidden?: boolean;

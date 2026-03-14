@@ -64,10 +64,14 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
   }
 
   const allColumns = tableStateContext.tableInstance?.getAllColumns?.() || [];
+  const getColumnIdentifier = React.useCallback(
+    (column: { id: string; columnDef: { accessorKey?: string; id?: string } }) => column.id || column.columnDef.id || column.columnDef.accessorKey || '',
+    [],
+  );
   const sortedColumns = allColumns.sort((c1, c2) => {
     return (
-      tableStateContext.columnOrder.findIndex((c) => c === (c1.columnDef.accessorKey || '')) -
-      tableStateContext.columnOrder.findIndex((c) => c === (c2.columnDef.accessorKey || ''))
+      tableStateContext.columnOrder.findIndex((c) => c === getColumnIdentifier(c1)) -
+      tableStateContext.columnOrder.findIndex((c) => c === getColumnIdentifier(c2))
     );
   });
 
@@ -114,16 +118,14 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
             </div>
           </div>
           <Divider className="!mb-3" />
-          <div className="flex items-center gap-2 mb-1 h-10">
-            <p className="font-semibold mb-0.5">Показати</p>
-            {tableStateContext.columnVisibilityTouched && (
-              <Button onClick={onClickReset} size="small">
-                Скинути
-              </Button>
-            )}
+          <div className="mb-1 flex h-10 items-center gap-2">
+            <p className="mb-0 font-semibold leading-none">Показати</p>
+            <Button onClick={onClickReset} size="small" disabled={!tableStateContext.columnVisibilityTouched}>
+              Скинути
+            </Button>
           </div>
           {sortedColumns.map((column) => {
-            const columnIdentifier = column.columnDef.accessorKey || column.columnDef.id;
+            const columnIdentifier = getColumnIdentifier(column);
 
             if (columnsToExclude.includes(columnIdentifier)) {
               return null;

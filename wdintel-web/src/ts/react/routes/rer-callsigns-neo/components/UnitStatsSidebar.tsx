@@ -14,6 +14,7 @@ import type { UnitStatView } from '../types';
 type Props = {
   stats: UnitStatView[];
   open: boolean;
+  isDesktopLayout: boolean;
   loading: boolean;
   onPickUnitFilter: (unitName: string) => void;
   onToggleOpen?: () => void;
@@ -228,7 +229,15 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
   );
 }
 
-export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onToggleOpen, selectedUnitFilter }: Props) {
+export function UnitStatsSidebar({
+  stats,
+  open,
+  isDesktopLayout,
+  loading,
+  onPickUnitFilter,
+  onToggleOpen,
+  selectedUnitFilter,
+}: Props) {
   const [searchInput, setSearchInput] = React.useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
   const normalizedSearchQuery = React.useMemo(() => normalizeSearchQuery(debouncedSearchInput), [debouncedSearchInput]);
@@ -251,7 +260,6 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onTog
     const selectedUnit = selectedUnitFilter?.trim() ?? '';
 
     if (!selectedUnit) {
-      setExpandedIds(new Set());
       return;
     }
 
@@ -264,7 +272,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onTog
       <Paper
         variant="outlined"
         sx={{
-          display: { xs: 'flex', lg: 'none' },
+          display: isDesktopLayout ? 'none' : 'flex',
           width: '100%',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -303,10 +311,10 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onTog
     <Paper
       variant="outlined"
       sx={{
-        width: { xs: '100%', lg: 320 },
-        minWidth: { lg: 280 },
-        height: { xs: 'auto', lg: '100%' },
-        maxHeight: { xs: '36vh', lg: '100%' },
+        width: isDesktopLayout ? 320 : '100%',
+        minWidth: isDesktopLayout ? 280 : 0,
+        height: isDesktopLayout ? '100%' : 'auto',
+        maxHeight: isDesktopLayout ? '100%' : '36vh',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
@@ -323,7 +331,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onTog
               aria-label="Сховати панель підрозділів"
               title="Сховати панель підрозділів"
               sx={{
-                display: { xs: 'inline-flex', lg: 'none' },
+                display: isDesktopLayout ? 'none' : 'inline-flex',
                 color: 'text.primary',
               }}
             >

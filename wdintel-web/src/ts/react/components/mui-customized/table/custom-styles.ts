@@ -105,6 +105,10 @@ export const CUSTOM_STYLES = {
             width: '100%',
             textAlign: 'center',
           },
+          '&:last-child': {
+            borderRight: '1px solid',
+            borderColor: 'var(--bs-border-color)',
+          },
         },
       },
       muiTableBodyCellProps: {
@@ -113,6 +117,10 @@ export const CUSTOM_STYLES = {
           justifyContent: 'center',
           padding: '10px!important',
           backgroundColor: 'transparent',
+          '&:last-child': {
+            borderRight: '1px solid',
+            borderColor: 'var(--bs-border-color)',
+          },
         },
       },
       grow: false,

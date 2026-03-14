@@ -4,6 +4,7 @@ import {
   Button,
   CircularProgress,
   Stack,
+  useMediaQuery,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -14,7 +15,7 @@ import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { AddCallsignsDrawer } from './components/AddCallsignsDrawer';
-import { CallsignsFilters } from './components/CallsignsFilters';
+import { CallsignsDateInputs, CallsignsFiltersTopRow } from './components/CallsignsFilters';
 import {
   CallsignsTable,
   DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER,
@@ -23,11 +24,12 @@ import {
 import { DeleteCallsignDialog } from './components/DeleteCallsignDialog';
 import { EditCallsignDialog } from './components/EditCallsignDialog';
 import { UnitStatsSidebar } from './components/UnitStatsSidebar';
-import { getExportPermissionFromRoles } from './helpers';
+import { DESKTOP_LAYOUT_MIN_WIDTH_PX, getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
 
 function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerCallsignsNeoPage({ authUserRoles });
+  const isDesktopLayout = useMediaQuery(`(min-width:${DESKTOP_LAYOUT_MIN_WIDTH_PX}px)`);
   const shellPermissions = getExportPermissionFromRoles(authUserRoles);
   const controlsDisabled =
     page.loading || page.refreshing || page.loadingMore || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
@@ -51,7 +53,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
       title={page.sidebarOpen ? 'Сховати підрозділи' : 'Показати підрозділи'}
       sx={{
         whiteSpace: 'nowrap',
-        display: { xs: 'none', lg: 'inline-flex' },
+        display: isDesktopLayout ? 'inline-flex' : 'none',
       }}
     >
       {page.sidebarOpen ? 'Сховати підрозділи' : 'Показати підрозділи'}
@@ -68,12 +70,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         title={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
-          {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
-        </Box>
-        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
-          {page.downloadInProgress === 'csv' ? 'CSV…' : 'CSV'}
-        </Box>
+        {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
       </Button>
       <Button
         startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
@@ -84,12 +81,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         title={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
-          {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
-        </Box>
-        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
-          {page.downloadInProgress === 'xlsx' ? 'XLSX…' : 'XLSX'}
-        </Box>
+        {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
       </Button>
     </Stack>
   ) : null;
@@ -104,12 +96,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         title={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
-          {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
-        </Box>
-        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
-          {page.downloadInProgress === 'csv' ? 'CSV…' : 'CSV'}
-        </Box>
+        {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
       </Button>
       <Button
         startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
@@ -120,12 +107,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         title={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
-          {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
-        </Box>
-        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
-          {page.downloadInProgress === 'xlsx' ? 'XLSX…' : 'XLSX'}
-        </Box>
+        {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
       </Button>
     </Stack>
   ) : null;
@@ -140,11 +122,11 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
   );
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+    <Box className="w-full" sx={{ height: isDesktopLayout ? '100%' : 'auto', minHeight: 0, overflow: isDesktopLayout ? 'hidden' : 'visible' }}>
       <Stack
         spacing={3}
         useFlexGap
-        sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}
+        sx={{ height: isDesktopLayout ? '100%' : 'auto', minHeight: 0, overflow: isDesktopLayout ? 'hidden' : 'visible' }}
       >
         <TablePageToolbar
           title="Позивні"
@@ -175,37 +157,63 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         {page.status ? <Alert severity={page.status.kind}>{page.status.text}</Alert> : null}
 
         <Stack
-          direction={{ xs: 'column', lg: 'row' }}
+          direction={isDesktopLayout ? 'row' : 'column'}
           spacing={2}
           sx={{
             flex: 1,
-            minHeight: { xs: 'auto', lg: 0 },
+            minHeight: isDesktopLayout ? 0 : 'auto',
             alignItems: 'stretch',
           }}
         >
           <UnitStatsSidebar
             stats={page.unitStatsView}
             open={page.sidebarOpen}
+            isDesktopLayout={isDesktopLayout}
             loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
             onPickUnitFilter={page.onPickUnitFilter}
             onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
             selectedUnitFilter={page.selectedSidebarUnitName ?? undefined}
           />
 
-          <Stack spacing={2} useFlexGap sx={{ flex: 1, minWidth: 0, minHeight: { xs: 'auto', lg: 0 } }}>
+          <Stack spacing={2} useFlexGap sx={{ flex: 1, minWidth: 0, minHeight: isDesktopLayout ? 0 : 'auto' }}>
             <Stack
               spacing={2}
               useFlexGap
               sx={{
-                display: { xs: 'none', lg: 'flex' },
+                display: isDesktopLayout ? 'flex' : 'none',
               }}
             >
-              <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0 }}>
-                <CallsignsFilters
-                  filters={page.filters}
-                  filtersDisabled={controlsDisabled}
-                  onFiltersChange={page.onFiltersChange}
-                />
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  minWidth: 0,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    minWidth: 0,
+                    flex: '1 1 auto',
+                    flexWrap: 'nowrap',
+                  }}
+                >
+                  <CallsignsFiltersTopRow
+                    filters={page.filters}
+                    filtersDisabled={controlsDisabled}
+                    onFiltersChange={page.onFiltersChange}
+                  />
+                  <CallsignsDateInputs
+                    isDesktopLayout={isDesktopLayout}
+                    filters={page.filters}
+                    filtersDisabled={controlsDisabled}
+                    onFiltersChange={page.onFiltersChange}
+                  />
+                </Box>
                 <Box
                   sx={{
                     display: 'flex',
@@ -221,31 +229,45 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                   </Stack>
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>{whiteActions}</Box>
                 </Box>
-              </Stack>
+              </Box>
             </Stack>
             <Stack
               spacing={2}
               useFlexGap
               sx={{
-                display: { xs: 'flex', lg: 'none' },
+                display: isDesktopLayout ? 'none' : 'flex',
               }}
             >
-              <CallsignsFilters
-                filters={page.filters}
-                filtersDisabled={controlsDisabled}
-                onFiltersChange={page.onFiltersChange}
-              />
               <Box
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 1.5,
                   minWidth: 0,
-                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
                 }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                  {sidebarAction}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    minWidth: 0,
+                    flex: '1 1 auto',
+                    flexWrap: 'nowrap',
+                  }}
+                >
+                  <CallsignsFiltersTopRow
+                    filters={page.filters}
+                    filtersDisabled={controlsDisabled}
+                    onFiltersChange={page.onFiltersChange}
+                  />
+                  <CallsignsDateInputs
+                    isDesktopLayout={isDesktopLayout}
+                    filters={page.filters}
+                    filtersDisabled={controlsDisabled}
+                    onFiltersChange={page.onFiltersChange}
+                  />
                 </Box>
                 <Box
                   sx={{
@@ -254,14 +276,16 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                     gap: 1.5,
                     minWidth: 0,
                     ml: 'auto',
+                    flex: '0 0 auto',
                   }}
                 >
+                  {sidebarAction}
                   {exportActions}
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>{whiteActions}</Box>
                 </Box>
               </Box>
             </Stack>
-            <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 } }}>
+            <Box sx={{ flex: 1, minHeight: isDesktopLayout ? 0 : 'auto' }}>
               <CallsignsTable
                 canEdit={page.permissions.canEdit}
                 rows={page.rows}

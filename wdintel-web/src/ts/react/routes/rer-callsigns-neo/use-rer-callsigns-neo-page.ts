@@ -851,8 +851,14 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onPickUnitFilter(unitName: string) {
-    setSelectedSidebarUnitName(unitName);
-    setFilters((prev) => ({ ...prev, filterUnit: unitName }));
+    setSelectedSidebarUnitName((prevSelected) => {
+      const nextSelected = prevSelected === unitName ? null : unitName;
+      setFilters((prev) => ({
+        ...prev,
+        filterUnit: nextSelected ?? '',
+      }));
+      return nextSelected;
+    });
   }
 
   return {
