@@ -311,10 +311,20 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     activeListAbortRef.current = null;
   }
 
-  async function runListFetch({ append, afterId, announceLoading }: { append: boolean; afterId: number | null; announceLoading: boolean }) {
+  async function runListFetch({
+    append,
+    afterId,
+    announceLoading,
+    preserveLoadedCount = false,
+  }: {
+    append: boolean;
+    afterId: number | null;
+    announceLoading: boolean;
+    preserveLoadedCount?: boolean;
+  }) {
     const seq = ++listRequestSeqRef.current;
     if (!append) {
-      const limit = getReloadPageSize(callsigns.length);
+      const limit = preserveLoadedCount ? getReloadPageSize(callsigns.length) : getDefaultPageSize();
       setLoadingMore(false);
       clearListRequest();
       const controller = new AbortController();
@@ -481,7 +491,10 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   async function onRefresh() {
     setRefreshing(true);
     setStatus(null);
-    await Promise.all([refreshLookupsAndStats(), runListFetch({ append: false, afterId: null, announceLoading: false })]);
+    await Promise.all([
+      refreshLookupsAndStats(),
+      runListFetch({ append: false, afterId: null, announceLoading: false, preserveLoadedCount: true }),
+    ]);
   }
 
   function onClearFilters() {

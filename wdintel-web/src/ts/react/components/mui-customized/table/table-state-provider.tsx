@@ -20,6 +20,10 @@ type SearchParams = {
   [k: string]: string;
 };
 
+function getCurrentSearchParamsObject(): SearchParams {
+  return Object.fromEntries(Array.from(new URLSearchParams(window.location.search).entries()));
+}
+
 type TableStateContextValue = {
   globalFilter: string;
   onChangeGlobalFilter: (value: Updater<string>) => void;
@@ -275,7 +279,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
 
   function onChangeGlobalFilter(updaterOrValue: Updater<string>): SearchParams {
     const nextFilter = typeof updaterOrValue === 'function' ? updaterOrValue(globalFilter) : updaterOrValue;
-    const newSearchParams = Object.fromEntries(Array.from(searchParams.entries()));
+    const newSearchParams = getCurrentSearchParamsObject();
 
     if (nextFilter) {
       Object.assign(newSearchParams, { globalFilter: nextFilter });
@@ -289,7 +293,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
   }
 
   function onChangeDate(date: Dayjs | null): SearchParams {
-    const newSearchParams = Object.fromEntries(Array.from(searchParams.entries()));
+    const newSearchParams = getCurrentSearchParamsObject();
 
     if (date) {
       const isDateEqualToDefault = !!props.defaultDate
@@ -378,7 +382,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
       newFilters = updaterOrValue;
     }
 
-    const existingParams = Object.fromEntries(Array.from(searchParams.entries()));
+    const existingParams = getCurrentSearchParamsObject();
     const newSearchParams = updatedSearchParams || Object.assign({}, existingParams);
 
     if (newFilters.length > 0) {
@@ -406,7 +410,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
       newSorting = updaterOrValue;
     }
 
-    const newSearchParams = updatedSearchParams || Object.fromEntries(Array.from(searchParams.entries()));
+    const newSearchParams = updatedSearchParams || getCurrentSearchParamsObject();
 
     if (newSorting.length > 0) {
       const sorting = JSON.stringify(newSorting);
