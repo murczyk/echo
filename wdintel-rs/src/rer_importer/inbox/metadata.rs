@@ -705,9 +705,10 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
                 .unwrap();
     }
     lazy_static! {
-        static ref RE_RECEIVER_GROUP_X: Regex =
-            Regex::new(r#"(?i:[cс]g)\s*:(?i:[xх])\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
-                .unwrap();
+        static ref RE_RECEIVER_GROUP_X: Regex = Regex::new(
+            r#"(?i:[cс]g)\s*:(?i:[xх])\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#
+        )
+        .unwrap();
     }
 
     let mut parts = vec![];

@@ -20,6 +20,7 @@ import type {
   CallsignsSortState,
   ExportPermission,
   SortColumn,
+  SortDirection,
   SortDescriptor,
 } from './types';
 
@@ -129,7 +130,18 @@ export function toBackendSort(sort: CallsignsSortState): ListCallsignsSortBy[] {
   return [sort.direction === 'asc' ? 'CallsignUnitAsc' : 'CallsignUnitDesc'];
 }
 
-export function nextSortState(current: CallsignsSortState, column: SortColumn): CallsignsSortState {
+export function nextSortState(
+  current: CallsignsSortState,
+  column: SortColumn,
+  direction?: SortDirection,
+): CallsignsSortState {
+  if (direction) {
+    return {
+      column,
+      direction,
+    };
+  }
+
   if (current.column === column) {
     return {
       column,

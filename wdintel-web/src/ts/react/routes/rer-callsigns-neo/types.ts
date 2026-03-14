@@ -17,6 +17,8 @@ export type CallsignsSortState = {
   direction: SortDirection;
 };
 
+export type OnSort = (column: SortColumn, direction?: SortDirection) => void;
+
 export type CallsignsFilterState = {
   filterText: string;
   filterCallsign: string;

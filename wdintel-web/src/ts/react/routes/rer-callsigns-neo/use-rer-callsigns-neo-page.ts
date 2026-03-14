@@ -39,7 +39,15 @@ import {
   validateDraftRows,
   validateEditForm,
 } from './helpers';
-import type { CallsignDraftRow, CallsignEditForm, CallsignsFilterState, CallsignsSortState, DownloadKind, UiStatus } from './types';
+import type {
+  CallsignDraftRow,
+  CallsignEditForm,
+  CallsignsFilterState,
+  CallsignsSortState,
+  DownloadKind,
+  SortDirection,
+  UiStatus,
+} from './types';
 
 function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
   const url = new URL(window.location.href);
@@ -463,8 +471,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     });
   }
 
-  function onSort(column: 'callsign' | 'position' | 'comment' | 'createdAt' | 'unit' | 'sourceName' | 'radioFreq') {
-    setSort((prev) => nextSortState(prev, column));
+  function onSort(
+    column: 'callsign' | 'position' | 'comment' | 'createdAt' | 'unit' | 'sourceName' | 'radioFreq',
+    direction?: SortDirection,
+  ) {
+    setSort((prev) => nextSortState(prev, column, direction));
   }
 
   async function onRefresh() {

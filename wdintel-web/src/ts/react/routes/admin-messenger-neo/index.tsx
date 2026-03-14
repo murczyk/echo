@@ -1197,7 +1197,7 @@ function AdminMessengerNeoPageBody() {
       <TableContentState
         status={accountsStatus}
         errorMessage={accountsError || 'Помилка завантаження'}
-        fillAvailableHeight={accountsStatus !== 'success'}
+        fillAvailableHeight
         loadingContent={
           <div className="flex w-full min-w-0 flex-1 min-h-0">
             <MessengerAccountsTable

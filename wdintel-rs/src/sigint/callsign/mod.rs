@@ -1326,7 +1326,7 @@ mod tests {
 
         let mut paged_ids = vec![];
         let mut after_id = None;
-        for _ in 0..10 {
+        for _ in 0..=full_ids.len() {
             let page = list_callsigns_impl(
                 &env.dbx,
                 &list_req(

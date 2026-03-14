@@ -28,7 +28,7 @@ import {
   renderColumnActionsMenuItems,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
-import type { CallsignRowView, CallsignsSortState, SortColumn } from '../types';
+import type { CallsignRowView, CallsignsSortState, OnSort, SortColumn } from '../types';
 import { formatDateTime } from '../helpers';
 
 const defaultMRTOptions = getDefaultMRTOptions<CallsignRowView>();
@@ -71,7 +71,7 @@ type Props = {
   selectedCallsignIds: number[];
   sort: CallsignsSortState;
   statusFilter: DevelopingFilter;
-  onSort: (column: SortColumn) => void;
+  onSort: OnSort;
   onStatusFilterChange: (value: DevelopingFilter) => void;
   onTextColumnFiltersChange: (next: {
     filterCallsign: string;
@@ -365,7 +365,7 @@ export function CallsignsTable({
           : sort.column;
       const nextDirection = next.desc ? 'desc' : 'asc';
       if (nextColumn === sort.column && nextDirection === sort.direction) return;
-      onSort(nextColumn);
+      onSort(nextColumn, nextDirection);
     },
     onColumnFiltersChange: (updater) => {
       const nextFilters = resolveUpdater(updater, columnFilters);
