@@ -98,15 +98,48 @@ body.analysis-map-fullscreen-open {
 	right: 3px !important;
 }
 
+#analysis-map .peleng-cluster-popup {
+	min-width: 140px;
+}
+#analysis-map .peleng-cluster-popup-title {
+	font-weight: 600;
+	font-size: 13px;
+	margin-bottom: 8px;
+	color: var(--bs-body-color);
+}
+#analysis-map .peleng-cluster-popup ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+#analysis-map .peleng-cluster-popup-item {
+	padding: 6px 10px;
+	cursor: pointer;
+	border-radius: 4px;
+	font-size: 13px;
+}
+#analysis-map .peleng-cluster-popup-item:hover {
+	background-color: var(--bs-secondary-bg);
+}
+
+#analysis-map .messages-popup {
+	background: var(--bs-body-bg);
+	color: var(--bs-body-color);
+	border-radius: 8px;
+	min-width: 280px;
+	max-width: 380px;
+}
+
 #analysis-map .messages-popup p {
 	margin: 0 !important;
 }
 
 #analysis-map .messages-popup ul {
-	margin-bottom: 0px;
+	list-style: none;
+	margin: 0;
+	padding: 6px 18px 12px;
 	overflow-y: auto;
 	max-height: 350px;
-	padding: 6px 20px 12px 18px;
 }
 
 #analysis-map .messages-popup .divider {
@@ -120,6 +153,7 @@ body.analysis-map-fullscreen-open {
 	padding: 8px 18px;
 	font-weight: 700;
 	border-bottom: 1px solid var(--bs-border-color);
+	color: var(--bs-body-color);
 }
 
 .leaflet-tooltip {
@@ -248,18 +282,33 @@ div [id='map-container-analysis'] {
 	right: 0;
 	width: 100%;
 	display: flex;
-	justify-content: center;
-	align-items: flex-end;
+	flex-direction: column-reverse;
+	align-items: flex-start;
+	justify-content: flex-end;
+	padding-left: 10px;
+	padding-bottom: 10px;
 	pointer-events: none;
+	gap: 8px;
+}
+
+#analysis-map .leaflet-bottom.leaflet-left .leaflet-control:has(.layer-switch-control) {
+	order: 1;
+	pointer-events: auto;
+	z-index: 1001;
+}
+
+#analysis-map .leaflet-bottom.leaflet-left .leaflet-control:has(.palitras-control-host) {
+	order: 3;
+	pointer-events: auto;
+}
+
+#analysis-map .leaflet-bottom.leaflet-left .leaflet-control:has(.map-settings-control) {
+	order: 2;
+	pointer-events: auto;
 }
 
 #analysis-map .leaflet-bottom.leaflet-left .layer-switch-control {
-	position: absolute;
-	left: 10px;
-	bottom: 10px;
 	margin: 0;
-	pointer-events: auto;
-	z-index: 1001;
 }
 
 #analysis-map .leaflet-control-attribution {
@@ -806,7 +855,7 @@ html[data-bs-theme='dark'] #analysis-map .analysis-map-window-button:hover,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-toggle-button:hover,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-icon:hover,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-item:hover {
-  background-color: #343a40 !important;
+	background-color: #343a40 !important;
 }
 
 html[data-bs-theme='dark'] .palitra-color {
