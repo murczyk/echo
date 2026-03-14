@@ -1,5 +1,4 @@
 use crate::rer_importer::types::SenderFrequencyBreakdown;
-use crate::sigint::sender::preferred_sender_expr;
 use crate::types::ShortContext;
 use actix_identity::Identity;
 use actix_web::web::Json;
@@ -8,7 +7,7 @@ use echo_migration::{Expr, JoinType};
 use log::{debug, warn};
 use sea_orm::FromQueryResult;
 use sea_orm::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::error::Error as StdError;
 
 use crate::entities::sigint_inbox_item::Entity;
@@ -203,14 +202,15 @@ fn build_groups_query(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(accessible_groups.clone()),
         )
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .group_by(Expr::col((
             signal_message_group::Entity,
             signal_message_group::Column::GroupMasterKey,
         )));
-    let groups_res = filter_selected_senders(groups_res, &req.selected_senders)
-        .context(h!())?;
+    let groups_res =
+        apply_group_row_sender_filter(groups_res, &req.selected_senders);
     let groups_res =
         filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
     let groups_res =
@@ -251,6 +251,22 @@ fn build_groups_query(
     let groups_res =
         filter_selected_aors(groups_res, &req.selected_aors).context(h!())?;
     Ok(groups_res)
+}
+
+fn apply_group_row_sender_filter(
+    query: Select<sigint_inbox_item::Entity>,
+    selected_senders: &Option<Vec<String>>,
+) -> Select<sigint_inbox_item::Entity> {
+    match selected_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty())
+    {
+        Some(selected_senders) => query.filter(
+            signal_message_group::Column::Sender
+                .eq_any(selected_senders.clone()),
+        ),
+        None => query,
+    }
 }
 
 pub async fn fetch_senders(
@@ -312,18 +328,23 @@ pub async fn fetch_senders(
         .await
         .context(h!())?;
 
-    let freq_query = build_join_for_sigint_inbox_item()
+    let sender_stats_groups = sender_stats_groups(req, &master_keys);
+
+    let freq_query = build_join_for_sender_stats(&sender_stats_groups)
         .select_only()
-        .column_as(preferred_sender_expr(None), "uuid")
+        .column_as(signal_message_group::Column::Sender, "uuid")
         .column(sigint_inbox_item::Column::Freq)
         .column(sigint_inbox_item::Column::PostId)
-        .column_as(Expr::cust("COUNT(*)"), "count")
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .column_as(
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+            "count",
+        )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .group_by(preferred_sender_expr(None))
+        .group_by(signal_message_group::Column::Sender)
         .group_by(sigint_inbox_item::Column::Freq)
         .group_by(sigint_inbox_item::Column::PostId);
+    let freq_query = apply_sender_dimension_filters(freq_query, req);
     let freq_query =
         apply_sender_filters(freq_query, req, user, master_keys.clone())?;
     let freq_rows: Vec<SenderFreqRes> = freq_query
@@ -336,16 +357,19 @@ pub async fn fetch_senders(
         "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
         [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
     );
-    let per_day_query = build_join_for_sigint_inbox_item()
+    let per_day_query = build_join_for_sender_stats(&sender_stats_groups)
         .select_only()
-        .column_as(preferred_sender_expr(None), "uuid")
+        .column_as(signal_message_group::Column::Sender, "uuid")
         .column_as(per_day_expr.clone(), "date")
-        .column_as(Expr::cust("COUNT(*)"), "count")
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .column_as(
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+            "count",
+        )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .group_by(preferred_sender_expr(None))
+        .group_by(signal_message_group::Column::Sender)
         .group_by(per_day_expr);
+    let per_day_query = apply_sender_dimension_filters(per_day_query, req);
     let per_day_query =
         apply_sender_filters(per_day_query, req, user, master_keys)?;
     let per_day_rows: Vec<SenderPerDayRes> = per_day_query
@@ -442,21 +466,20 @@ fn build_senders_query(
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let senders_res = build_join_for_sigint_inbox_item()
+    let sender_stats_groups = sender_stats_groups(req, &master_keys);
+    let senders_res = build_join_for_sender_stats(&sender_stats_groups)
         .select_only()
-        .column_as(preferred_sender_expr(None), "uuid")
-        // .column_as(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()), "uuid")
+        .column_as(signal_message_group::Column::Sender, "uuid")
         .column_as(
             Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
-        .filter(message_in_groups_exists(master_keys.clone()))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(preferred_sender_expr(None));
-    // .group_by(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()));
+        .group_by(signal_message_group::Column::Sender);
+    let senders_res = apply_sender_dimension_filters(senders_res, req);
     let senders_res = filter_selected_groups_and_senders_with_access(
         senders_res,
         &req.selected_groups,
@@ -504,6 +527,63 @@ fn build_senders_query(
     let senders_res =
         filter_selected_aors(senders_res, &req.selected_aors).context(h!())?;
     Ok(senders_res)
+}
+
+fn sender_stats_groups(
+    req: &Json<AnalysisStatsReq>,
+    master_keys: &[String],
+) -> Vec<String> {
+    let allowed = master_keys.iter().collect::<HashSet<_>>();
+
+    match req
+        .selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+    {
+        Some(groups) => groups
+            .iter()
+            .filter(|group| allowed.contains(group))
+            .cloned()
+            .collect(),
+        None => master_keys.to_vec(),
+    }
+}
+
+fn build_join_for_sender_stats(
+    sender_stats_groups: &[String],
+) -> Select<Entity> {
+    let sender_stats_groups = sender_stats_groups.to_vec();
+
+    let query = build_join_for_sigint_inbox_item().join(
+        JoinType::InnerJoin,
+        signal_message::Relation::SignalMessageGroup.def(),
+    );
+
+    if sender_stats_groups.is_empty() {
+        query.filter(Expr::cust("FALSE"))
+    } else {
+        query.filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(sender_stats_groups),
+        )
+    }
+}
+
+fn apply_sender_dimension_filters(
+    query: Select<Entity>,
+    req: &Json<AnalysisStatsReq>,
+) -> Select<Entity> {
+    match req
+        .selected_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty())
+    {
+        Some(selected_senders) => query.filter(
+            signal_message_group::Column::Sender
+                .eq_any(selected_senders.clone()),
+        ),
+        None => query,
+    }
 }
 
 pub async fn fetch_posts(
@@ -597,6 +677,7 @@ fn build_posts_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -795,6 +876,7 @@ fn build_freqs_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1107,6 +1189,7 @@ fn build_callsigns_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1245,6 +1328,7 @@ fn build_tags_query(
         .column(sigint_inbox_item_tag::Column::TagId)
         .column_as(Expr::count(Expr::val(1)), "count")
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1379,6 +1463,7 @@ fn build_units_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1524,6 +1609,7 @@ fn build_locations_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1687,6 +1773,7 @@ fn build_aors_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(area_of_responsibility::Column::Deleted.eq(false))
@@ -2307,4 +2394,5 @@ fn build_join_for_sigint_inbox_item() -> Select<Entity> {
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .filter(signal_message::Column::Deleted.eq(false))
 }

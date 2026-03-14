@@ -4,7 +4,7 @@ import Api
 import Bindings as B
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
-import Pages_.RerAnalysis.Model exposing (FilterName(..), Model)
+import Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, Model)
 import Pages_.RerAnalysis.Msg exposing (Msg(..))
 import Select
 import Utils.RemoteData as RD exposing (RemoteData(..))
@@ -152,6 +152,20 @@ invalidateFiltersState filterTriggeredChange model =
             }
 
 
+focusedItemsForKey : String -> Maybe FocusedFilterSnapshot -> Maybe (List String)
+focusedItemsForKey filterKey focusedFilterItemsBeforeChange =
+    case focusedFilterItemsBeforeChange of
+        Just snapshot ->
+            if snapshot.filterKey == filterKey then
+                Just snapshot.itemsBeforeChange
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
+
+
 focusAndReloadOptionsIfNeeded : RemoteData ApiError a -> Maybe (List String) -> FilterDataState
 focusAndReloadOptionsIfNeeded items focusedFilterItemsBeforeChange =
     if focusedFilterItemsBeforeChange == Nothing then
@@ -183,34 +197,38 @@ reloadStatsIfSelectedChanged selectedItems focusedFilterItemsBeforeChange =
             Outdated
 
 
-handleFilterState : Maybe (List String) -> Maybe (Select.Action String) -> List String -> RemoteData ApiError a -> FilterInteraction
-handleFilterState focusedFilterItemsBeforeChange mAction newSelectedValues items =
-    case ( mAction, focusedFilterItemsBeforeChange ) of
+handleFilterState : String -> Maybe FocusedFilterSnapshot -> Maybe (Select.Action String) -> List String -> RemoteData ApiError a -> FilterInteraction
+handleFilterState filterKey focusedFilterItemsBeforeChange mAction newSelectedValues items =
+    let
+        currentFocusedItems =
+            focusedItemsForKey filterKey focusedFilterItemsBeforeChange
+    in
+    case ( mAction, currentFocusedItems ) of
         ( Just Select.Focus, Nothing ) ->
             let
                 optionsOutdated =
-                    focusAndReloadOptionsIfNeeded items focusedFilterItemsBeforeChange
+                    focusAndReloadOptionsIfNeeded items currentFocusedItems
             in
             BeforeInteraction optionsOutdated
 
         ( Just (Select.Deselect _), Nothing ) ->
             let
                 optionsOutdated =
-                    focusAndReloadOptionsIfNeeded items focusedFilterItemsBeforeChange
+                    focusAndReloadOptionsIfNeeded items currentFocusedItems
             in
             BeforeInteraction optionsOutdated
 
         ( Just Select.Blur, Just _ ) ->
             let
                 needsReload =
-                    reloadStatsIfSelectedChanged newSelectedValues focusedFilterItemsBeforeChange
+                    reloadStatsIfSelectedChanged newSelectedValues currentFocusedItems
             in
             AfterInteraction needsReload
 
         ( Just (Select.MenuToggle Select.MenuClose), Just _ ) ->
             let
                 needsReload =
-                    reloadStatsIfSelectedChanged newSelectedValues focusedFilterItemsBeforeChange
+                    reloadStatsIfSelectedChanged newSelectedValues currentFocusedItems
             in
             AfterInteraction needsReload
 
@@ -232,4 +250,5 @@ endpoints =
     , ( GroupsFilter
       , E.getGroups GotStatsGroups
       )
+    , ( NetworksFilter, E.getNetworks GotStatsNetworks )
     ]

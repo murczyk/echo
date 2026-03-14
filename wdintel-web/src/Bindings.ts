@@ -826,12 +826,15 @@ export type RerAnalysisQueryState = {
   timeFromStr: string;
   dateToStr: string;
   timeToStr: string;
+  aorsSelected: Array<string>;
   groupsSelected: Array<string>;
   sendersSelected: Array<string>;
   freqsSelected: Array<string>;
   callsignsSelected: Array<string>;
   unitsSelected: Array<string>;
   locationsSelected: Array<string>;
+  postsSelected: Array<string>;
+  networksSelected: Array<string>;
   orWithExtendedForm: boolean;
   orBookmarked: boolean;
   orImportant: boolean;
