@@ -216,6 +216,7 @@ mod m20260305_115200_add_callsign_additional_source;
 mod m20260306_101500_palitra_v2_indexes;
 mod m20260310_091035_add_sigint_inbox_item_metadata;
 mod m20260311_120331_add_sigint_inbox_item_metadata_indices;
+mod m20260313_120000_add_sigint_inbox_item_metadata_spans;
 
 pub struct Migrator;
 
@@ -439,6 +440,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260306_101500_palitra_v2_indexes::Migration),
             Box::new(m20260310_091035_add_sigint_inbox_item_metadata::Migration),
             Box::new(m20260311_120331_add_sigint_inbox_item_metadata_indices::Migration),
+            Box::new(m20260313_120000_add_sigint_inbox_item_metadata_spans::Migration),
         ]
     }
 }

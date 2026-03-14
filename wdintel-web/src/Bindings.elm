@@ -1016,11 +1016,23 @@ inboxMessageEncoder struct =
 
 type alias InboxMessageMetadata =
     { colorCode : Maybe String
+    , colorCodeStartIndex : Maybe Int
+    , colorCodeEndIndex : Maybe Int
     , callGroupId : Maybe String
+    , callGroupIdStartIndex : Maybe Int
+    , callGroupIdEndIndex : Maybe Int
     , callGroupName : Maybe String
+    , callGroupNameStartIndex : Maybe Int
+    , callGroupNameEndIndex : Maybe Int
     , senderId : Maybe String
+    , senderIdStartIndex : Maybe Int
+    , senderIdEndIndex : Maybe Int
     , senderName : Maybe String
+    , senderNameStartIndex : Maybe Int
+    , senderNameEndIndex : Maybe Int
     , hashId : Maybe String
+    , hashIdStartIndex : Maybe Int
+    , hashIdEndIndex : Maybe Int
     }
 
 
@@ -1028,11 +1040,23 @@ inboxMessageMetadataEncoder : InboxMessageMetadata -> Json.Encode.Value
 inboxMessageMetadataEncoder struct =
     Json.Encode.object
         [ ( "color_code", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.colorCode )
+        , ( "color_code_start_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.colorCodeStartIndex )
+        , ( "color_code_end_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.colorCodeEndIndex )
         , ( "call_group_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.callGroupId )
+        , ( "call_group_id_start_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.callGroupIdStartIndex )
+        , ( "call_group_id_end_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.callGroupIdEndIndex )
         , ( "call_group_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.callGroupName )
+        , ( "call_group_name_start_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.callGroupNameStartIndex )
+        , ( "call_group_name_end_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.callGroupNameEndIndex )
         , ( "sender_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.senderId )
+        , ( "sender_id_start_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.senderIdStartIndex )
+        , ( "sender_id_end_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.senderIdEndIndex )
         , ( "sender_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.senderName )
+        , ( "sender_name_start_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.senderNameStartIndex )
+        , ( "sender_name_end_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.senderNameEndIndex )
         , ( "hash_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.hashId )
+        , ( "hash_id_start_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.hashIdStartIndex )
+        , ( "hash_id_end_index", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.hashIdEndIndex )
         ]
 
 
@@ -7504,11 +7528,23 @@ inboxMessageMetadataDecoder : Json.Decode.Decoder InboxMessageMetadata
 inboxMessageMetadataDecoder =
     Json.Decode.succeed InboxMessageMetadata
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_code" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_code_start_index" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_code_end_index" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_id" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_id_start_index" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_id_end_index" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_name_start_index" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_name_end_index" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_id" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_id_start_index" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_id_end_index" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_name_start_index" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_name_end_index" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hash_id" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hash_id_start_index" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hash_id_end_index" (Json.Decode.nullable Json.Decode.int)))
 
 
 inboxMessageTagDecoder : Json.Decode.Decoder InboxMessageTag

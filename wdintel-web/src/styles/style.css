@@ -517,6 +517,11 @@
     transition: border-bottom-color 1s ease;
 }
 
+.text-marked .content-token--metadata {
+    border-bottom: 3px solid #1b8057;
+    transition: border-bottom-color 1s ease;
+}
+
 
 .text-marked .content-token--PROPN {
     border-bottom: 3px solid #a2b870;

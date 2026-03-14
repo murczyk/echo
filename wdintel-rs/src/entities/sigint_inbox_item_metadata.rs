@@ -24,6 +24,18 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub hash_id: Option<String>,
     pub created_at: DateTime,
+    pub color_code_start_index: Option<i32>,
+    pub color_code_end_index: Option<i32>,
+    pub call_group_id_start_index: Option<i32>,
+    pub call_group_id_end_index: Option<i32>,
+    pub call_group_name_start_index: Option<i32>,
+    pub call_group_name_end_index: Option<i32>,
+    pub sender_id_start_index: Option<i32>,
+    pub sender_id_end_index: Option<i32>,
+    pub sender_name_start_index: Option<i32>,
+    pub sender_name_end_index: Option<i32>,
+    pub hash_id_start_index: Option<i32>,
+    pub hash_id_end_index: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

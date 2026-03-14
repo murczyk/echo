@@ -1368,13 +1368,9 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     , style "font-size" "1rem"
                     ]
                   <|
-                    case message.textMarked of
-                        Just textMarked ->
-                            Shared.MarkedText.new textMarked
-                                |> Shared.MarkedText.viewWithHintResults Dict.empty Nothing (Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message)
-
-                        Nothing ->
-                            msgToHtml message.text
+                    (markedTextModel
+                        |> Shared.MarkedText.viewWithHintResults Dict.empty Nothing (Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message) metadataLinks
+                    )
                 ]
             ]
 
@@ -1388,6 +1384,14 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 , i [ class "bi bi-plus text-sm opacity-60" ] []
                 , text "|"
                 ]
+
+        metadataLinks =
+            Pages_.RerAnalysis.Utils.buildMetadataLinks vps.zone message
+
+        markedTextModel =
+            message.textMarked
+                |> Maybe.map Shared.MarkedText.new
+                |> Maybe.withDefault (Shared.MarkedText.fromPlainText message.text)
 
         callsignsProposed : List String
         callsignsProposed =

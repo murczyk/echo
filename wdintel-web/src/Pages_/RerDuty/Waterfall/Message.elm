@@ -18,6 +18,7 @@ import Json.Encode as Encode
 import List.Extra as ListX
 import Maybe exposing (withDefault)
 import Maybe.Extra as MaybeX
+import Pages_.RerAnalysis.Utils
 import Shared.Components.Popup as Popup
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
@@ -962,6 +963,9 @@ rightColumn ( messageId, message ) ps model =
     let
         uniqueMessageNetworkIds =
             ListX.unique ps.messageNetworkIds
+
+        metadataLinks =
+            Pages_.RerAnalysis.Utils.buildMetadataLinks ps.zone message
     in
     div
         [ class "mb-2 rounded-3 px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative"
@@ -1247,10 +1251,11 @@ rightColumn ( messageId, message ) ps model =
                                                     Dict.empty
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch (getPointEtalonsFromMessage message)))
+                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch (getPointEtalonsFromMessage message))) metadataLinks
 
                                 Nothing ->
-                                    msgToHtml message.text
+                                    Shared.MarkedText.fromPlainText message.text
+                                        |> Shared.MarkedText.viewWithHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch (getPointEtalonsFromMessage message))) metadataLinks
                            )
                         ++ [ div
                                 [ class "flex flex-col items-start gap-2 mt-2"
