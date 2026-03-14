@@ -1,17 +1,17 @@
 import { createRoot, Root } from 'react-dom/client';
 
-import { AdminNeoPage } from './routes/admin-neo';
+import { AdminDirectionsNeoPage } from './routes/admin-directions-neo';
 import { NeoMuiThemeProvider } from './mui-theme';
 
-function AdminNeoRoot() {
+function AdminDirectionsNeoRoot() {
   return (
     <NeoMuiThemeProvider>
-      <AdminNeoPage />
+      <AdminDirectionsNeoPage />
     </NeoMuiThemeProvider>
   );
 }
 
-class AdminNeoElement extends HTMLElement {
+class AdminDirectionsNeoElement extends HTMLElement {
   private root: Root | null = null;
 
   connectedCallback() {
@@ -20,7 +20,7 @@ class AdminNeoElement extends HTMLElement {
       this.root = createRoot(this);
     }
 
-    this.root.render(<AdminNeoRoot />);
+    this.root.render(<AdminDirectionsNeoRoot />);
   }
 
   disconnectedCallback() {
@@ -29,6 +29,6 @@ class AdminNeoElement extends HTMLElement {
   }
 }
 
-if (!customElements.get('admin-neo')) {
-  customElements.define('admin-neo', AdminNeoElement);
+if (!customElements.get('admin-directions-neo')) {
+  customElements.define('admin-directions-neo', AdminDirectionsNeoElement);
 }

@@ -1025,7 +1025,7 @@ type DirectionsTab =
       content: React.ReactNode;
     };
 
-function AdminNeoPageBody() {
+function AdminDirectionsNeoPageBody() {
   const [status, setStatus] = React.useState<LoadingStatus>('idle');
   const [error, setError] = React.useState<string | null>(null);
   const [datasources, setDatasources] = React.useState<DatasourceEntry[]>([]);
@@ -1923,6 +1923,6 @@ function AdminNeoPageBody() {
   );
 }
 
-export function AdminNeoPage() {
-  return <AdminNeoPageBody />;
+export function AdminDirectionsNeoPage() {
+  return <AdminDirectionsNeoPageBody />;
 }
