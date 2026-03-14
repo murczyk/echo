@@ -278,7 +278,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onTog
             onClick={onToggleOpen}
             aria-label="Показати панель підрозділів"
             title="Показати панель підрозділів"
-            sx={{ color: 'common.white' }}
+            sx={{ color: 'text.primary' }}
           >
             <KeyboardArrowDownIcon />
           </IconButton>
@@ -324,7 +324,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onTog
               title="Сховати панель підрозділів"
               sx={{
                 display: { xs: 'inline-flex', lg: 'none' },
-                color: 'common.white',
+                color: 'text.primary',
               }}
             >
               <KeyboardArrowUpIcon />
