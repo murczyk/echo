@@ -363,6 +363,28 @@ export type InboxMessage = {
   tags: Array<number> | null;
   networkIds: Array<number> | null;
   inboxTags: Array<InboxMessageTag> | null;
+  metadata: Array<InboxMessageMetadata>;
+};
+
+export type InboxMessageMetadata = {
+  colorCode: string | null;
+  colorCodeStartIndex: number | null;
+  colorCodeEndIndex: number | null;
+  callGroupId: string | null;
+  callGroupIdStartIndex: number | null;
+  callGroupIdEndIndex: number | null;
+  callGroupName: string | null;
+  callGroupNameStartIndex: number | null;
+  callGroupNameEndIndex: number | null;
+  senderId: string | null;
+  senderIdStartIndex: number | null;
+  senderIdEndIndex: number | null;
+  senderName: string | null;
+  senderNameStartIndex: number | null;
+  senderNameEndIndex: number | null;
+  hashId: string | null;
+  hashIdStartIndex: number | null;
+  hashIdEndIndex: number | null;
 };
 
 export type InboxMessageTag = {
@@ -418,6 +440,12 @@ export type InboxMessagesReq = {
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
+  metadataCc: Array<string> | null;
+  metadataSender: Array<string> | null;
+  metadataReceiver: Array<string> | null;
+  metadataHash: Array<string> | null;
+  onlyWithMetadata: boolean | null;
+  withoutMetadata: boolean | null;
   sortBy: InboxMessagesSortBy | null;
   reportTagsOnlyThisUnit: boolean | null;
   ignoreImportedCoords: boolean | null;
@@ -605,6 +633,12 @@ export type AnalysisStatsReq = {
   search: string | null;
   selectedTags: Array<number> | null;
   selectedNetworks: Array<number> | null;
+  metadataCc: Array<string> | null;
+  metadataSender: Array<string> | null;
+  metadataReceiver: Array<string> | null;
+  metadataHash: Array<string> | null;
+  onlyWithMetadata: boolean | null;
+  withoutMetadata: boolean | null;
   includePelengLocations: boolean | null;
   unitsExactMatchOnly: boolean | null;
   filterTagsOption: TagFilterOption | null;
@@ -734,6 +768,12 @@ export type CallsignsGraphReq = {
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
+  metadataCc: Array<string> | null;
+  metadataSender: Array<string> | null;
+  metadataReceiver: Array<string> | null;
+  metadataHash: Array<string> | null;
+  onlyWithMetadata: boolean | null;
+  withoutMetadata: boolean | null;
   includePelengLocations: boolean | null;
   unitsExactMatchOnly: boolean | null;
   filterTagsOption: TagFilterOption | null;
@@ -798,17 +838,26 @@ export type RerAnalysisQueryState = {
   timeFromStr: string;
   dateToStr: string;
   timeToStr: string;
+  aorsSelected: Array<string>;
   groupsSelected: Array<string>;
   sendersSelected: Array<string>;
   freqsSelected: Array<string>;
   callsignsSelected: Array<string>;
   unitsSelected: Array<string>;
   locationsSelected: Array<string>;
+  postsSelected: Array<string>;
+  networksSelected: Array<string>;
   orWithExtendedForm: boolean;
   orBookmarked: boolean;
   orImportant: boolean;
   orWithCoords: boolean;
   search: string;
+  metadataCc: Array<string>;
+  metadataSender: Array<string>;
+  metadataReceiver: Array<string>;
+  metadataHash: Array<string>;
+  onlyWithMetadata: boolean;
+  withoutMetadata: boolean;
   tags: Array<number>;
   includePelengLocations: boolean;
   unitsExactMatchOnly: boolean;
@@ -2376,6 +2425,18 @@ export type FreqStatsRsp = {
 
 export type CallsignStatsRsp = {
   callsigns: Array<AnalysisStatsCallsign>;
+};
+
+export type AnalysisStatsMetadataValue = {
+  value: string;
+  count: number;
+};
+
+export type MetadataStatsRsp = {
+  ccs: Array<AnalysisStatsMetadataValue>;
+  senders: Array<AnalysisStatsMetadataValue>;
+  receivers: Array<AnalysisStatsMetadataValue>;
+  hashes: Array<AnalysisStatsMetadataValue>;
 };
 
 export type TagStatsRsp = {

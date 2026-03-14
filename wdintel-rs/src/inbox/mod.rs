@@ -231,6 +231,14 @@ where
     .await
     .c(h!())?;
 
+    crate::rer_importer::inbox::metadata::refresh_metadata_for_body(
+        result.id,
+        &message.body.clone().unwrap_or_default(),
+        txn,
+    )
+    .await
+    .c(h!())?;
+
     let ts = datetime
         .unwrap_or_else(|| result.datetime.unwrap_or(message.created_at));
     crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
