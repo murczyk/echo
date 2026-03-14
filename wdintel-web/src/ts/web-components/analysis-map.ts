@@ -7,7 +7,7 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/utils/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl, PalitrasLoadState } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl, createMapSettingsControl, MapSettingsControl, PalitrasLoadState } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -79,7 +79,8 @@ const liTemplate = (message_: Message, networkUnitName_: string | undefined, sel
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${message_[1].freq}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${message_[1].coords}</p>` : ''}
             ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
-            ${message_[1].text.replace('\n', '<br>')}
+            ${(message_[1].date && message_[1].time) ? `${message_[1].date} ${message_[1].time}<br>` : ''}
+            ${message_[1].text.replace(/\n/g, '<br>')}
             ${unitBlock}
             <div class="divider"></div>
           </li>
@@ -136,6 +137,8 @@ class AnalysisMap extends HTMLElement {
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
+  private _mapSettingsControl: MapSettingsControl | null = null;
+  private _pelengLabelsPermanent = true;
   private _searchControl: SearchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
   private _coordinateSearchMarker: L.CircleMarker | null = null;
@@ -223,10 +226,9 @@ class AnalysisMap extends HTMLElement {
     if (name === 'visibility') {
       if (!this._initialized && newValue === 'true') {
         // We have to make sure that map container has completely re-rendered before initializing the map.
-        setTimeout(() => {
+        setTimeout(async () => {
           this.render();
-          this._initializeMap();
-          //this._replacePointsOnMap();
+          await this._initializeMap();
           this._initialized = true;
         }, 0)
       }
@@ -278,8 +280,9 @@ class AnalysisMap extends HTMLElement {
 
         const popupContent = getPointPopupTemplate(sortedMessages, this._networkUnits, this._selectedUnits)
         const clickedMessageId = sortedMessages[0]?.[0];
+        const isCluster = sortedMessages.length > 1;
         const restoredPoint =
-          clickedMessageId !== undefined ? this._findPointMarkerByMessageId(clickedMessageId) : null;
+          !isCluster && clickedMessageId !== undefined ? this._findPointMarkerByMessageId(clickedMessageId) : null;
 
         const canOpenOnRestoredPoint = restoredPoint ? restoredPoint.getElement() !== null : false;
         if (restoredPoint && canOpenOnRestoredPoint) {
@@ -409,11 +412,6 @@ class AnalysisMap extends HTMLElement {
       this._map = result.map;
       this._switchTimeControl = result.switchTimeControl;
 
-      // TODO: Remove
-      if (!window.location.hostname.includes('echo-soledarnist')) {
-        await this._loadKmzLayer();
-      }
-
      // Initialize palitra manager
      this._palitraManager = new PalitraManager(
        this._map,
@@ -467,15 +465,18 @@ class AnalysisMap extends HTMLElement {
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
-     this._map.on('zoomend', () => this._replacePointsOnMap(this._points));
+     this._replacePointsOnMap(this._points);
+     // Get-inbox-map points are always visible; no need to re-apply on zoom.
 
     // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
     this._applySearchQueryFromUrl();
     if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
       this._runSearchQueryIfSet();
     }
-    }
+
+    void this._loadKmzLayer();
   }
+}
 
   private _parsePalitrasLoadState(value: string | null): PalitrasLoadState {
     if (value === 'loading' || value === 'success' || value === 'error') {
@@ -525,6 +526,23 @@ class AnalysisMap extends HTMLElement {
     const layerSwitchControl = createLayerSwitchControl(tileLayers, this._getFeatureToggleState(), featureToggleCallback);
     this._layerSwitchControl = layerSwitchControl;
     map.addControl(layerSwitchControl);
+    try {
+      const saved = localStorage.getItem('analysis-map-peleng-labels');
+      if (saved !== null) this._pelengLabelsPermanent = saved !== 'false';
+    } catch {
+      this._pelengLabelsPermanent = true;
+    }
+    const mapSettingsControl = createMapSettingsControl(this._pelengLabelsPermanent, (show: boolean) => {
+      this._pelengLabelsPermanent = show;
+      try {
+        localStorage.setItem('analysis-map-peleng-labels', String(show));
+      } catch {
+        // ignore
+      }
+      this._updatePelengLabelsPermanent();
+    });
+    map.addControl(mapSettingsControl);
+    this._mapSettingsControl = mapSettingsControl;
     map.addControl(createMapZoomControl());
     map.addControl(createAttributionControl());
 
@@ -637,15 +655,19 @@ class AnalysisMap extends HTMLElement {
   private _replacePointsOnMap(points: MapPointDetailed[]) {
     if (this._markersGroup) {
       this._markersGroup.off();
-      this._markersGroup.eachLayer(l => l.off())
+      this._markersGroup.eachLayer((l) => {
+        l.off();
+        const layer = l as L.Layer & { unbindTooltip?: () => void };
+        if (typeof layer.unbindTooltip === 'function') {
+          layer.unbindTooltip();
+        }
+      });
+      this._markersGroup.clearLayers();
       this._pelengsLayerGroup?.removeLayer(this._markersGroup);
-      this._map?.removeLayer(this._markersGroup)
+      this._map?.removeLayer(this._markersGroup);
     }
-    if (!this._shouldRenderPointsAtCurrentZoom()) {
-      this._fitBoundsOnInitialLowZoom(points);
-      this._markersGroup = null;
-      return;
-    }
+    // Get-inbox-map points are always visible (no zoom restriction).
+    this._fitBoundsOnInitialLowZoom(points);
     const { bounds, markersGroup } = this._addPointsMarkersGroup(points);
     this._markersGroup = markersGroup;
 
@@ -653,14 +675,11 @@ class AnalysisMap extends HTMLElement {
     this._applyPelengVisibility();
 
     if (bounds.isValid() && !this._boundedAlready && this._map) {
-      // Only auto-fit on initial coarse zoom to avoid jump when user zooms in
-      // and points become visible on penultimate/max zoom levels.
       if (this._map.getZoom() <= 10) {
         this._map.fitBounds(bounds);
       }
       this._boundedAlready = true;
     }
-
   }
 
   private _fitBoundsOnInitialLowZoom(points: MapPointDetailed[]): void {
@@ -675,15 +694,6 @@ class AnalysisMap extends HTMLElement {
 
     this._map.fitBounds(bounds);
     this._boundedAlready = true;
-  }
-
-  private _shouldRenderPointsAtCurrentZoom(): boolean {
-    if (!this._map) {
-      return false;
-    }
-    const maxZoom = this._map.getMaxZoom();
-    const minVisibleZoom = Number.isFinite(maxZoom) ? maxZoom - 1 : 16;
-    return this._map.getZoom() >= minVisibleZoom;
   }
 
   private _addPointsMarkersGroup(points: MapPointDetailed[]) {
@@ -712,7 +722,18 @@ class AnalysisMap extends HTMLElement {
         fillOpacity: 1,
         radius: 4,
         weight: 1
-      })
+      });
+
+      const freqLabel = (point as MapPointDetailed & { freq?: string | null }).freq ?? '';
+      if (freqLabel) {
+        (circle as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel = freqLabel;
+        circle.bindTooltip(freqLabel, {
+          permanent: this._pelengLabelsPermanent,
+          direction: 'top',
+          offset: [0, -8],
+          className: 'peleng-point-label'
+        });
+      }
 
       circle.on('click', () => {
         this._clickedLatLng = circle.getLatLng();
@@ -730,22 +751,44 @@ class AnalysisMap extends HTMLElement {
     });
 
     markers.on('clusterclick', (leafletEvent) => {
-      const allChildMarkers = leafletEvent.layer.getAllChildMarkers();
-      const messageIds = allChildMarkers.map(dataCircle => dataCircle.data.messageId)
-      console.log(leafletEvent, 'leafletEvent')
-      this._clickedPoint = null
-      const clusterLatLng =
+      const cluster = leafletEvent.layer as unknown as { getAllChildMarkers: () => L.Layer[] };
+      const childMarkers = cluster.getAllChildMarkers() as unknown as DataCircleMarker[];
+      this._clickedPoint = null;
+      const latlng =
         (leafletEvent as L.LeafletMouseEvent).latlng ??
-        (typeof (leafletEvent.layer as { getLatLng?: () => L.LatLng }).getLatLng === 'function'
-          ? (leafletEvent.layer as { getLatLng: () => L.LatLng }).getLatLng()
+        (typeof (cluster as unknown as { getLatLng?: () => L.LatLng }).getLatLng === 'function'
+          ? (cluster as unknown as { getLatLng: () => L.LatLng }).getLatLng()
           : null);
-      this._clickedLatLng = clusterLatLng;
-      this._emitLoadMessagesDescriptions(messageIds)
+      this._clickedLatLng = latlng;
+      const allIds = childMarkers.map((m) => m.data.messageId);
+      this._emitLoadMessagesDescriptions(allIds);
     });
     return {
       bounds,
       markersGroup: markers
     };
+  }
+
+  private _updatePelengLabelsPermanent() {
+    if (!this._markersGroup) return;
+    const permanent = this._pelengLabelsPermanent;
+    const opts = { permanent, direction: 'top' as const, offset: [0, -8] as [number, number], className: 'peleng-point-label' };
+    this._markersGroup.eachLayer((layer: L.Layer) => {
+      const getChildren = (l: L.Layer): L.Layer[] => {
+        const withGetChildren = l as unknown as { getAllChildMarkers?: () => L.Layer[] };
+        return typeof withGetChildren.getAllChildMarkers === 'function'
+          ? withGetChildren.getAllChildMarkers()
+          : [l];
+      };
+      getChildren(layer).forEach((m) => {
+        if (m instanceof DataCircleMarker) {
+          const label = (m as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel;
+          if (!label) return;
+          m.unbindTooltip();
+          m.bindTooltip(label, opts);
+        }
+      });
+    });
   }
 
   private _emitLoadMessagesDescriptions(messageIds: number[]) {
