@@ -1,0 +1,13 @@
+pg_host = "127.0.0.1"
+pg_port = 5432
+pg_user = "goi"
+pg_password = "change-me"
+pg_dbname = "goi"
+
+api_login = "change-me"
+api_password = "change-me"
+
+# associations_xlsx_path = "/etc/goi/data/xlsx/associations.xlsx"
+# listen_host = "0.0.0.0"
+# listen_port = 8088
+# poll_sleep_ms = 1000

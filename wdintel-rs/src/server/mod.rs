@@ -224,6 +224,7 @@ fn spawn_background_workers(
     let dbx10 = env.dbx.clone();
     let dbx11 = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
+    let env_goi = env.clone();
 
     if let Some(secret_config) = config.vault_config.clone() {
         spawn_named_worker("secret_worker", bg_set, async move {
@@ -232,6 +233,10 @@ fn spawn_background_workers(
     }
     spawn_named_worker("healthcheck_worker", bg_set, async move {
         healthcheck::healthcheck_worker(&dbx9, config1).await;
+    });
+    spawn_named_worker("goi_association_worker", bg_set, async move {
+        crate::organism::goi::worker::goi_association_worker_nofail(env_goi)
+            .await;
     });
     if let Some(greptimedb) = env.greptime() {
         let redis = env.redis.clone();
@@ -593,6 +598,7 @@ pub async fn main_server(
             .service(crate::organism::goi::organism_goi_settings)
             .service(crate::organism::goi::update_organism_goi_settings)
             .service(crate::organism::goi::check_organism_goi_connection)
+            .service(crate::organism::goi::setup_organism_goi_worker)
             .service(crate::organism::my_scope)
             .service(crate::datasource::list_datasources)
             .service(crate::datasource::datasource_group_list)

@@ -201,6 +201,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        goi_association::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         organism_aor::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -857,6 +861,19 @@ pub mod tests {
         if out.goi_path == NotSet {
             out.goi_path =
                 Set(crate::config::ORGANISM_GOI_PATH_DEFAULT.to_string());
+        }
+        if out.goi_api_host == NotSet {
+            out.goi_api_host = Set(None);
+        }
+        if out.goi_api_port == NotSet {
+            out.goi_api_port =
+                Set(crate::config::ORGANISM_GOI_API_PORT_DEFAULT);
+        }
+        if out.goi_api_login == NotSet {
+            out.goi_api_login = Set(None);
+        }
+        if out.goi_api_password == NotSet {
+            out.goi_api_password = Set(None);
         }
         out
     }

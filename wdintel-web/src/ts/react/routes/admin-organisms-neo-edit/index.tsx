@@ -31,6 +31,7 @@ import {
   listOrganisms,
   listSignalGroups,
   removeGroupFromOrganism,
+  setupOrganismGoiWorker,
   type UpdateOrganismGoiSettingsReq,
   updateOrganismGoiSettings,
   updateOrganism,
@@ -52,9 +53,14 @@ type OrganismFormState = {
   goiSshUser: string;
   goiSshPort: number;
   goiPath: string;
+  goiApiHost: string;
+  goiApiPort: number;
+  goiApiLogin: string;
+  goiApiPassword: string;
 };
 
 const GOI_SSH_PORT_DEFAULT = 22;
+const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
 
 const ROLE_OPTIONS = ['Admin', 'Rer', 'Bpla', 'Full', 'Basic', 'UnitsEditor', 'CallsignsEditor'];
@@ -71,6 +77,10 @@ const emptyFormState: OrganismFormState = {
   goiSshUser: '',
   goiSshPort: GOI_SSH_PORT_DEFAULT,
   goiPath: GOI_PATH_DEFAULT,
+  goiApiHost: '',
+  goiApiPort: GOI_API_PORT_DEFAULT,
+  goiApiLogin: '',
+  goiApiPassword: '',
 };
 
 function formatErrorMessage(error: unknown): string {
@@ -157,6 +167,13 @@ function getBackToPath(): string {
   }
 }
 
+function hasAnyGoiApiSettings(form: OrganismFormState): boolean {
+  const sshHost = form.goiSshHost.trim();
+  const apiHost = form.goiApiHost.trim();
+  if (form.goiApiLogin.trim() || form.goiApiPassword.trim()) return true;
+  return apiHost.length > 0 && apiHost !== sshHost;
+}
+
 type AdminOrganismsNeoEditPageProps = {
   organismId: string | null;
 };
@@ -166,6 +183,7 @@ type OrganismFormFieldsProps = {
   formErrors: Record<string, string>;
   isSubmitting: boolean;
   isCheckingGoiConnection: boolean;
+  isSettingUpGoiWorker: boolean;
   isNew: boolean;
   organisms: Organism[];
   groups: SignalGroupFull[];
@@ -177,6 +195,7 @@ type OrganismFormFieldsProps = {
   isComputing: boolean;
   groupsValidation: string[];
   onCheckGoiConnection: () => void;
+  onSetupGoiWorker: () => void;
   onChange: (patch: Partial<OrganismFormState>) => void;
 };
 
@@ -193,6 +212,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
   ));
 
   const parentValue = props.organisms.find((organism) => organism.id === props.form.parentId) ?? null;
+  const isGoiBusy = props.isSubmitting || props.isCheckingGoiConnection || props.isSettingUpGoiWorker;
 
   return (
     <div className="space-y-5">
@@ -375,8 +395,8 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
         <Alert severity="info" className="!mb-4">
           Для організму можна запустити контейнер з ПЗ ГОІ, після чого налаштувати їхню інтеграцію. ГОІ має слабкий
           захист та не підтримує повноцінну авторизацію, але має дуже потужну роботу з палітрами. Для налаштування
-          необхідно буде вказати деталі SSH-доступу. При завантаженні палітри в організм ЕХО -- вона з&apos;являтиметься
-          в ГОІ.
+          необхідно буде вказати SSH-доступ і параметри API worker&apos;а. При завантаженні палітри в організм ЕХО --
+          вона з&apos;являтиметься в ГОІ.
         </Alert>
 
         <TextField
@@ -385,7 +405,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           onChange={(event) => props.onChange({ goiSshHost: event.target.value })}
           fullWidth
           helperText=" "
-          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+          disabled={isGoiBusy}
         />
 
         <TextField
@@ -394,7 +414,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           onChange={(event) => props.onChange({ goiSshUser: event.target.value })}
           fullWidth
           helperText=" "
-          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+          disabled={isGoiBusy}
         />
 
         <TextField
@@ -412,7 +432,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           inputProps={{ min: 1, max: 65535 }}
           error={Boolean(props.formErrors.goiSshPort)}
           helperText={props.formErrors.goiSshPort || ' '}
-          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+          disabled={isGoiBusy}
         />
 
         <TextField
@@ -420,18 +440,85 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           value={props.form.goiPath}
           onChange={(event) => props.onChange({ goiPath: event.target.value })}
           fullWidth
-          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+          helperText="Шлях до каталогу палітр у контейнері ГОІ"
+          disabled={isGoiBusy}
+        />
+
+        <Alert severity="info">
+          На інстансі ГОІ worker читає логін і пароль з <code>/etc/goi-echo-worker/config.toml</code>. За замовчуванням
+          API хост пропонується таким самим, як SSH хост, а порт worker&apos;а має бути <code>8088</code>.
+        </Alert>
+
+        <TextField
+          label="API хост / домен"
+          value={props.form.goiApiHost}
+          onChange={(event) => props.onChange({ goiApiHost: event.target.value })}
+          fullWidth
+          error={Boolean(props.formErrors.goiApiHost)}
+          helperText={
+            props.formErrors.goiApiHost ||
+            'Якщо не змінювати, за замовчуванням використовується те саме значення, що і для SSH хоста'
+          }
+          disabled={isGoiBusy}
+        />
+
+        <TextField
+          label="API порт"
+          type="number"
+          value={props.form.goiApiPort}
+          onChange={(event) =>
+            props.onChange({
+              goiApiPort: Number.isFinite(Number(event.target.value))
+                ? Number(event.target.value)
+                : GOI_API_PORT_DEFAULT,
+            })
+          }
+          fullWidth
+          inputProps={{ min: 1, max: 65535 }}
+          error={Boolean(props.formErrors.goiApiPort)}
+          helperText={props.formErrors.goiApiPort || ' '}
+          disabled={isGoiBusy}
+        />
+
+        <TextField
+          label="API логін"
+          value={props.form.goiApiLogin}
+          onChange={(event) => props.onChange({ goiApiLogin: event.target.value })}
+          fullWidth
+          error={Boolean(props.formErrors.goiApiLogin)}
+          helperText={props.formErrors.goiApiLogin || 'Обовʼязковий, якщо налаштована інтеграція ГОІ'}
+          disabled={isGoiBusy}
+        />
+
+        <TextField
+          label="API пароль"
+          type="password"
+          value={props.form.goiApiPassword}
+          onChange={(event) => props.onChange({ goiApiPassword: event.target.value })}
+          fullWidth
+          error={Boolean(props.formErrors.goiApiPassword)}
+          helperText={props.formErrors.goiApiPassword || 'Обовʼязковий, якщо налаштована інтеграція ГОІ'}
+          disabled={isGoiBusy}
         />
 
         <div className="mt-3 flex items-center gap-3">
           <Button
             variant="outlined"
             onClick={props.onCheckGoiConnection}
-            disabled={props.isSubmitting || props.isCheckingGoiConnection}
+            disabled={isGoiBusy}
           >
             {props.isCheckingGoiConnection ? 'Перевірка...' : "Перевірити з'єднання"}
           </Button>
-          {props.isCheckingGoiConnection ? <CircularProgress size={20} /> : null}
+          {!props.isNew ? (
+            <Button
+              variant="contained"
+              onClick={props.onSetupGoiWorker}
+              disabled={isGoiBusy}
+            >
+              {props.isSettingUpGoiWorker ? 'Налаштування...' : 'Налаштувати воркер'}
+            </Button>
+          ) : null}
+          {props.isCheckingGoiConnection || props.isSettingUpGoiWorker ? <CircularProgress size={20} /> : null}
         </div>
 
         {props.goiConnectionStatus ? (
@@ -462,6 +549,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   const [isComputing, setIsComputing] = React.useState(false);
   const [goiConnectionStatus, setGoiConnectionStatus] = React.useState<StatusMessage>(null);
   const [isCheckingGoiConnection, setIsCheckingGoiConnection] = React.useState(false);
+  const [isSettingUpGoiWorker, setIsSettingUpGoiWorker] = React.useState(false);
 
   const backToPath = React.useMemo(getBackToPath, []);
 
@@ -534,6 +622,10 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           goiSshUser: goiSettings.sshUser,
           goiSshPort: goiSettings.sshPort,
           goiPath: goiSettings.path,
+          goiApiHost: goiSettings.apiHost,
+          goiApiPort: goiSettings.apiPort,
+          goiApiLogin: goiSettings.apiLogin,
+          goiApiPassword: goiSettings.apiPassword,
         });
         setGoiConnectionStatus(null);
         setLoadStatus('success');
@@ -617,11 +709,25 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
       patch.goiSshHost !== undefined ||
       patch.goiSshUser !== undefined ||
       patch.goiSshPort !== undefined ||
-      patch.goiPath !== undefined
+      patch.goiPath !== undefined ||
+      patch.goiApiHost !== undefined ||
+      patch.goiApiPort !== undefined ||
+      patch.goiApiLogin !== undefined ||
+      patch.goiApiPassword !== undefined
     ) {
       setGoiConnectionStatus(null);
     }
-    setForm((prev) => ({ ...prev, ...patch }));
+    setForm((prev) => {
+      const next = { ...prev, ...patch };
+      if (
+        patch.goiSshHost !== undefined &&
+        prev.goiApiHost.trim().length === 0 &&
+        (patch.goiApiHost === undefined || patch.goiApiHost.trim().length === 0)
+      ) {
+        next.goiApiHost = patch.goiSshHost;
+      }
+      return next;
+    });
   }
 
   function navigateBack() {
@@ -636,17 +742,36 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     if (!Number.isInteger(form.goiSshPort) || form.goiSshPort < 1 || form.goiSshPort > 65535) {
       errors.goiSshPort = 'Вкажіть коректний SSH порт (1-65535)';
     }
+    if (!Number.isInteger(form.goiApiPort) || form.goiApiPort < 1 || form.goiApiPort > 65535) {
+      errors.goiApiPort = 'Вкажіть коректний API порт (1-65535)';
+    }
+    if (hasAnyGoiApiSettings(form)) {
+      if (!form.goiApiHost.trim() && !form.goiSshHost.trim()) {
+        errors.goiApiHost = 'Вкажіть API хост або SSH хост';
+      }
+      if (!form.goiApiLogin.trim()) {
+        errors.goiApiLogin = 'Вкажіть логін для GOI API worker';
+      }
+      if (!form.goiApiPassword.trim()) {
+        errors.goiApiPassword = 'Вкажіть пароль для GOI API worker';
+      }
+    }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   }
 
   function buildGoiSettingsReq(organismId: number, nextForm: OrganismFormState): UpdateOrganismGoiSettingsReq {
+    const hasGoiApiSettings = hasAnyGoiApiSettings(nextForm);
     return {
       organismId,
       sshHost: nextForm.goiSshHost.trim(),
       sshUser: nextForm.goiSshUser.trim(),
       sshPort: nextForm.goiSshPort,
       path: nextForm.goiPath.trim() || GOI_PATH_DEFAULT,
+      apiHost: hasGoiApiSettings ? (nextForm.goiApiHost.trim() || nextForm.goiSshHost.trim()) : '',
+      apiPort: nextForm.goiApiPort,
+      apiLogin: hasGoiApiSettings ? nextForm.goiApiLogin.trim() : '',
+      apiPassword: hasGoiApiSettings ? nextForm.goiApiPassword.trim() : '',
     };
   }
 
@@ -683,6 +808,57 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
       });
     } finally {
       setIsCheckingGoiConnection(false);
+    }
+  }
+
+  async function handleSetupGoiWorker() {
+    if (isNew) return;
+
+    const parsedId = Number(props.organismId);
+    if (!Number.isFinite(parsedId)) {
+      setGoiConnectionStatus({
+        kind: 'error',
+        message: 'Помилка налаштування воркера: Некоректний id',
+      });
+      return;
+    }
+
+    setIsSettingUpGoiWorker(true);
+    setGoiConnectionStatus(null);
+
+    try {
+      const settings = await setupOrganismGoiWorker({
+        organismId: parsedId,
+        sshHost: form.goiSshHost.trim(),
+        sshUser: form.goiSshUser.trim(),
+        sshPort: form.goiSshPort,
+        path: form.goiPath.trim() || GOI_PATH_DEFAULT,
+        apiHost: form.goiApiHost.trim() || form.goiSshHost.trim(),
+        apiPort: form.goiApiPort,
+      });
+      setForm((prev) => ({
+        ...prev,
+        goiSshHost: settings.sshHost,
+        goiSshUser: settings.sshUser,
+        goiSshPort: settings.sshPort,
+        goiPath: settings.path,
+        goiApiHost: settings.apiHost,
+        goiApiPort: settings.apiPort,
+        goiApiLogin: settings.apiLogin,
+        goiApiPassword: settings.apiPassword,
+      }));
+      setGoiConnectionStatus({
+        kind: 'success',
+        message:
+          "Воркер налаштовано. API логін 'goi' і згенерований пароль записані в /etc/goi-echo-worker/config.toml та підставлені у форму.",
+      });
+    } catch (error) {
+      setGoiConnectionStatus({
+        kind: 'error',
+        message: `Помилка налаштування воркера: ${formatErrorMessage(error)}`,
+      });
+    } finally {
+      setIsSettingUpGoiWorker(false);
     }
   }
 
@@ -804,6 +980,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           formErrors={formErrors}
           isSubmitting={isSubmitting}
           isCheckingGoiConnection={isCheckingGoiConnection}
+          isSettingUpGoiWorker={isSettingUpGoiWorker}
           isNew={isNew}
           organisms={organisms}
           groups={groups}
@@ -815,14 +992,23 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           isComputing={isComputing}
           groupsValidation={groupsValidation}
           onCheckGoiConnection={handleCheckGoiConnection}
+          onSetupGoiWorker={handleSetupGoiWorker}
           onChange={handleChange}
         />
 
         <div className="flex justify-end gap-3">
-          <Button variant="outlined" onClick={navigateBack} disabled={isSubmitting || isCheckingGoiConnection}>
+          <Button
+            variant="outlined"
+            onClick={navigateBack}
+            disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
+          >
             Скасувати
           </Button>
-          <Button variant="contained" onClick={handleSubmit} disabled={isSubmitting || isCheckingGoiConnection}>
+          <Button
+            variant="contained"
+            onClick={handleSubmit}
+            disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
+          >
             {isNew ? 'Створити' : 'Зберегти'}
           </Button>
         </div>
