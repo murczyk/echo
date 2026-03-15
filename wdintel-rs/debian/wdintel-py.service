@@ -2,7 +2,7 @@
 Description=wdintel-py
 
 [Service]
-ExecStart=/usr/local/bin/gunicorn -w 2 --bind 127.0.0.1:5000 service:app
+ExecStart=/usr/local/bin/gunicorn -w 2 --bind 127.0.0.1:5000 service:app --preload
 Restart=always
 User=root
 Group=root
