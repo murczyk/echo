@@ -91,6 +91,7 @@ fn parse_association_row(
     row_idx: usize,
     row: &[Data],
 ) -> AssociationRow {
+    let column_offset = detect_association_column_offset(row);
     let cells = row.iter().map(AssociationCell::from).collect::<Vec<_>>();
     let base = AssociationRow {
         sheet_name: sheet_name.to_string(),
@@ -98,43 +99,45 @@ fn parse_association_row(
         cells,
         association_type: normalize_text(cell_string(row.first())),
         frequency: normalize_text(cell_string(row.get(1))),
-        coordinates: normalize_text(cell_string(row.get(2))),
-        note: normalize_text(cell_string(row.get(3))),
-        category: normalize_text(cell_string(row.get(4))),
-        call_signs: split_list(cell_string(row.get(5))),
-        formation: normalize_text(cell_string(row.get(6))),
-        association_count: cell_i32(row.get(7)),
+        coordinates: normalize_text(cell_string(row.get(2 + column_offset))),
+        note: normalize_text(cell_string(row.get(3 + column_offset))),
+        category: normalize_text(cell_string(row.get(4 + column_offset))),
+        call_signs: split_list(cell_string(row.get(5 + column_offset))),
+        formation: normalize_text(cell_string(row.get(6 + column_offset))),
+        association_count: cell_i32(row.get(7 + column_offset)),
         sidc: None,
         author: None,
         source_date_raw: None,
         palettes: None,
     };
 
-    parse_tail_columns(base, row)
+    parse_tail_columns(base, row, 8 + column_offset)
 }
 
 fn parse_tail_columns(
     mut row_out: AssociationRow,
     row: &[Data],
+    base_len: usize,
 ) -> AssociationRow {
-    let tail_len = row.len().saturating_sub(8);
+    let tail_len = row.len().saturating_sub(base_len);
     if tail_len == 0 {
         return row_out;
     }
     if tail_len == 1 {
-        row_out.author = normalize_text(cell_string(row.get(8)));
+        row_out.author = normalize_text(cell_string(row.get(base_len)));
         return row_out;
     }
     if tail_len == 2 {
-        row_out.author = normalize_text(cell_string(row.get(8)));
-        row_out.source_date_raw = normalize_text(cell_string(row.get(9)));
+        row_out.author = normalize_text(cell_string(row.get(base_len)));
+        row_out.source_date_raw =
+            normalize_text(cell_string(row.get(base_len + 1)));
         return row_out;
     }
 
-    let col8 = normalize_text(cell_string(row.get(8)));
-    let col9 = normalize_text(cell_string(row.get(9)));
-    let col10 = normalize_text(cell_string(row.get(10)));
-    let col11 = row.get(11).and_then(cell_jsonish);
+    let col8 = normalize_text(cell_string(row.get(base_len)));
+    let col9 = normalize_text(cell_string(row.get(base_len + 1)));
+    let col10 = normalize_text(cell_string(row.get(base_len + 2)));
+    let col11 = row.get(base_len + 3).and_then(cell_jsonish);
 
     if looks_like_date(col9.as_deref()) {
         row_out.author = col8;
@@ -151,11 +154,34 @@ fn parse_tail_columns(
     row_out
 }
 
+fn detect_association_column_offset(row: &[Data]) -> usize {
+    let third_col = normalize_text(cell_string(row.get(2)));
+    let fourth_col = normalize_text(cell_string(row.get(3)));
+    if third_col.is_none() && looks_like_coordinates(fourth_col.as_deref()) {
+        1
+    } else {
+        0
+    }
+}
+
 fn looks_like_date(value: Option<&str>) -> bool {
     let Some(value) = value else {
         return false;
     };
     parse_goi_datetime(value).is_some()
+}
+
+fn looks_like_coordinates(value: Option<&str>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let has_digit = trimmed.chars().any(|char| char.is_ascii_digit());
+    let has_letter = trimmed.chars().any(|char| char.is_ascii_alphabetic());
+    has_digit && has_letter
 }
 
 fn parse_jsonish_or_list(value: &str) -> Option<Value> {
@@ -284,5 +310,40 @@ impl From<&Data> for AssociationCell {
                 value: Value::Null,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calamine::Data;
+
+    #[test]
+    fn parses_shifted_association_columns() {
+        let row = vec![
+            Data::String("TEMPORARY".to_string()),
+            Data::String("148.8000".to_string()),
+            Data::Empty,
+            Data::String("37UDR1590842364".to_string()),
+            Data::String("note".to_string()),
+            Data::String("LOGISTICS_MANUAL".to_string()),
+            Data::String("CALL1, CALL2".to_string()),
+            Data::String("111 мсп".to_string()),
+            Data::Int(2),
+            Data::String("10061000001211000000".to_string()),
+            Data::String("Зігі".to_string()),
+            Data::String("15.03.2026 14:50:39".to_string()),
+        ];
+        let row = parse_association_row("Sheet1", 0, &row);
+
+        assert_eq!(row.coordinates.as_deref(), Some("37UDR1590842364"));
+        assert_eq!(row.note.as_deref(), Some("note"));
+        assert_eq!(row.category.as_deref(), Some("LOGISTICS_MANUAL"));
+        assert_eq!(row.call_signs, vec!["CALL1", "CALL2"]);
+        assert_eq!(row.formation.as_deref(), Some("111 мсп"));
+        assert_eq!(row.association_count, Some(2));
+        assert_eq!(row.sidc.as_deref(), Some("10061000001211000000"));
+        assert_eq!(row.author.as_deref(), Some("Зігі"));
+        assert_eq!(row.source_date_raw.as_deref(), Some("15.03.2026 14:50:39"));
     }
 }

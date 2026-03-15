@@ -3,7 +3,7 @@ use crate::entities::association;
 use anyhow::{Context, Result};
 use goi_echo_worker::row::{read_association_rows, AssociationRow};
 use sea_orm::sea_query::OnConflict;
-use sea_orm::{DatabaseConnection, EntityTrait, NotSet, Set};
+use sea_orm::{DatabaseConnection, EntityTrait, NotSet, Set, TryInsertResult};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -53,6 +53,11 @@ async fn associations_worker_step(
     })
     .await
     .context("joining XLSX reader task")??;
+    log::info!(
+        "GOI associations worker read {} rows from {}",
+        rows.len(),
+        path.display()
+    );
 
     insert_rows(db, rows).await?;
     state.last_fingerprint = Some(fingerprint);
@@ -115,14 +120,35 @@ async fn insert_rows(
         return Ok(());
     }
 
-    association::Entity::insert_many(models)
+    let result = association::Entity::insert_many(models)
         .on_conflict(
             OnConflict::column(association::Column::DedupeKey)
                 .do_nothing()
                 .to_owned(),
         )
+        .do_nothing()
         .exec(db)
         .await
         .context("inserting association rows")?;
+    log_insert_result(result);
     Ok(())
+}
+
+fn log_insert_result(
+    result: TryInsertResult<sea_orm::InsertResult<association::ActiveModel>>,
+) {
+    match result {
+        TryInsertResult::Empty => {}
+        TryInsertResult::Conflicted => {
+            log::info!(
+                "GOI associations worker detected no new rows to insert"
+            );
+        }
+        TryInsertResult::Inserted(insert_result) => {
+            log::info!(
+                "GOI associations worker stored new rows; last_insert_id={}",
+                insert_result.last_insert_id
+            );
+        }
+    }
 }
