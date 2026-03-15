@@ -229,11 +229,9 @@ deploy-swapp server:
       --delete-after \
       --force \
       --exclude '.git/' \
-      --exclude '/node_modules/' \
       --exclude '.runtime/' \
       --exclude '.bootstrap/' \
       --exclude '.output/' \
-      --exclude 'dist/' \
       --filter 'P swapp-npm-start.sh' \
       --exclude '*.log' \
       --exclude 'npm-debug.log*' \
@@ -246,6 +244,34 @@ deploy-swapp server:
     scp "{{ swapp_dir }}/deploy/swapp-npm-start.sh" "${SERVER}:${APP_DIR}/swapp-npm-start.sh"
     scp "{{ swapp_dir }}/deploy/swapp.service" "${SERVER}:/var/tmp/swapp.service"
     ssh ${SERVER} 'sudo mv /var/tmp/swapp.service /etc/systemd/system/swapp.service'
+    ssh ${SERVER} 'sudo apt-get update && sudo apt-get install -y \
+                     libnspr4 \
+                     libnss3 \
+                     libatk1.0-0 \
+                     libatk-bridge2.0-0 \
+                     libcups2 \
+                     libdrm2 \
+                     libxkbcommon0 \
+                     libxcomposite1 \
+                     libxdamage1 \
+                     libxfixes3 \
+                     libxrandr2 \
+                     libgbm1 \
+                     libasound2 \
+                     libpangocairo-1.0-0 \
+                     libpango-1.0-0 \
+                     libcairo2 \
+                     libatspi2.0-0 \
+                     libx11-6 \
+                     libx11-xcb1 \
+                     libxcb1 \
+                     libxext6 \
+                     libxrender1 \
+                     libxi6 \
+                     libxss1 \
+                     libxtst6 \
+                     ca-certificates \
+                     fonts-liberation'
 
     ssh "$SERVER" "set -euo pipefail
       sudo chown echo:echo '${APP_DIR}/swapp-npm-start.sh'
