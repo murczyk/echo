@@ -7,7 +7,7 @@ import mlflow
 from mlflow.data.pandas_dataset import PandasDataset, from_pandas
 from mlflow.entities.logged_model_input import LoggedModelInput
 
-from echo_ai import arrow, quack
+from echo_ai import arrow
 from echo_ai.evaluate import (
     evaluate_model,
     evaluate_trained_model,
@@ -114,7 +114,7 @@ def create_dataset(
 
     print(f"{split} samples for {label_name}: ", flush=True)
     print(stats_dict, flush=True)
-    df_split = quack.to_df_arrow(rel_split.limit(1000))
+    df_split = arrow.to_df_arrow(rel_split.limit(1000))
     (len_split,) = rel_split.count("*").fetchone()  # pyright: ignore
     print(f"{len_split} rows for {label_name} {split} dataset", flush=True)
     pd_split = from_pandas(

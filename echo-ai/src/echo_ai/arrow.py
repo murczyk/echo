@@ -6,7 +6,13 @@ import pandas as pd
 import pandas.util
 import pyarrow as pa
 from datasets import Dataset
+from duckdb import DuckDBPyRelation
 from mlflow.data.digest_utils import compute_pandas_digest
+
+
+def to_df_arrow(rel: DuckDBPyRelation):
+    table = rel.to_arrow_table()
+    return arrow.to_pandas_df(table)
 
 
 def to_pandas_df(dataset: Dataset | pa.Table) -> pd.DataFrame:
