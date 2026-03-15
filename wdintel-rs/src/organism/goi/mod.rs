@@ -1,9 +1,16 @@
 use crate::config::{
-    ORGANISM_GOI_API_PORT_DEFAULT, ORGANISM_GOI_PATH_DEFAULT,
+    ORGANISM_GOI_API_PORT_DEFAULT,
+    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_DEFAULT,
+    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_SSH_PORT_DEFAULT, ORGANISM_GOI_SSH_SETUP_TIMEOUT_MS,
 };
-use crate::entities::organism;
+use crate::entities::{goi_association, login, organism};
 use crate::error::AppError;
+use crate::organism::goi::shared::organism_has_goi_api_config;
+use crate::organism::goi::types::{
+    GoiAssociation, ListGoiAssociationsReq, ListGoiAssociationsRsp,
+    ListGoiAssociationsSortBy,
+};
 use crate::organism::types::{
     CheckOrganismGoiConnectionReq, CheckOrganismGoiConnectionRsp,
     OrganismGoiSettings, SetupOrganismGoiWorkerReq,
@@ -16,8 +23,11 @@ use crate::utils::string::{
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
+use sea_query::{extension::postgres::PgExpr, Expr};
 
 mod goi_ssh;
+pub mod shared;
+pub mod types;
 pub mod worker;
 
 struct GoiSettingsInput {
@@ -151,6 +161,48 @@ pub async fn check_organism_goi_connection(
     }))
 }
 
+#[post("/api/organism/goi-associations")]
+pub async fn list_current_user_goi_associations(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListGoiAssociationsReq>,
+) -> Result<Json<ListGoiAssociationsRsp>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let login = goi_associations_current_login(&env.dbx, &user_id)
+        .await
+        .c(h!())?;
+    let organism_id = login.organism_id.ok_or_else(|| AppError::BL {
+        msg: "Для користувача не налаштовано організм".to_string(),
+    })?;
+    let organism = goi_find_organism(&env.dbx, organism_id).await.c(h!())?;
+    if !organism_has_goi_api_config(&organism) {
+        return Err(AppError::BL {
+            msg: "Для вашого організму інтеграцію ГОІ ще не налаштовано"
+                .to_string(),
+        });
+    }
+
+    let req = req.into_inner();
+    let page_limit = goi_associations_page_limit(req.limit);
+    let page_offset = req.offset.unwrap_or(0);
+    let associations = goi_associations_query(organism_id, &req)
+        .limit(page_limit + 1)
+        .offset(page_offset)
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let has_more = associations.len() as u64 > page_limit;
+    let items = associations
+        .into_iter()
+        .take(page_limit as usize)
+        .map(goi_association_from_model)
+        .collect();
+
+    Ok(Json(ListGoiAssociationsRsp { items, has_more }))
+}
+
 pub async fn goi_upload_file(
     req: CheckOrganismGoiConnectionReq,
     remote_file_path: String,
@@ -215,6 +267,207 @@ async fn goi_find_organism(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
+}
+
+async fn goi_associations_current_login(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+) -> Result<login::Model, AppError> {
+    login::Entity::find()
+        .filter(login::Column::Login.eq(user_id))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::Unauthenticated)
+}
+
+fn goi_associations_page_limit(limit: Option<u64>) -> u64 {
+    limit
+        .unwrap_or(ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_DEFAULT)
+        .clamp(1, ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX)
+}
+
+fn goi_associations_query(
+    organism_id: i64,
+    req: &ListGoiAssociationsReq,
+) -> Select<goi_association::Entity> {
+    let mut query = goi_association::Entity::find()
+        .filter(goi_association::Column::OrganismId.eq(organism_id));
+
+    if let Some(filter_deleted) = req.filter_deleted {
+        query =
+            query.filter(goi_association::Column::Deleted.eq(filter_deleted));
+    }
+
+    if let Some(pattern) =
+        goi_associations_filter_pattern(req.filter_text.clone())
+    {
+        query = query.filter(
+            Condition::any()
+                .add(
+                    Expr::col(goi_association::Column::Frequency)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_association::Column::Coordinates)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_association::Column::Note)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_association::Column::Category)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_association::Column::Formation)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_association::Column::Sidc)
+                        .ilike(pattern.clone()),
+                )
+                .add(Expr::col(goi_association::Column::Author).ilike(pattern)),
+        );
+    }
+
+    query = goi_associations_filter_optional_text(
+        query,
+        goi_association::Column::Frequency,
+        req.filter_frequency.clone(),
+    );
+    query = goi_associations_filter_optional_text(
+        query,
+        goi_association::Column::Coordinates,
+        req.filter_coordinates.clone(),
+    );
+    query = goi_associations_filter_optional_text(
+        query,
+        goi_association::Column::Note,
+        req.filter_note.clone(),
+    );
+    query = goi_associations_filter_optional_text(
+        query,
+        goi_association::Column::Category,
+        req.filter_category.clone(),
+    );
+    query = goi_associations_filter_optional_text(
+        query,
+        goi_association::Column::Author,
+        req.filter_author.clone(),
+    );
+
+    goi_associations_apply_sort(query, req.sort_by.clone())
+}
+
+fn goi_associations_filter_pattern(raw: Option<String>) -> Option<String> {
+    normalize_optional_trimmed(raw).map(|value| format!("%{value}%"))
+}
+
+fn goi_associations_filter_optional_text(
+    query: Select<goi_association::Entity>,
+    column: goi_association::Column,
+    value: Option<String>,
+) -> Select<goi_association::Entity> {
+    if let Some(pattern) = goi_associations_filter_pattern(value) {
+        query.filter(Expr::col(column).ilike(pattern))
+    } else {
+        query
+    }
+}
+
+fn goi_associations_apply_sort(
+    query: Select<goi_association::Entity>,
+    sort_by: Option<ListGoiAssociationsSortBy>,
+) -> Select<goi_association::Entity> {
+    match sort_by.unwrap_or(
+        ListGoiAssociationsSortBy::GoiAssociationSourceAssociationIdDesc,
+    ) {
+        ListGoiAssociationsSortBy::GoiAssociationSourceAssociationIdDesc => {
+            query
+                .order_by_desc(goi_association::Column::SourceAssociationId)
+                .order_by_desc(goi_association::Column::Id)
+        }
+        ListGoiAssociationsSortBy::GoiAssociationSourceAssociationIdAsc => {
+            query
+                .order_by_asc(goi_association::Column::SourceAssociationId)
+                .order_by_asc(goi_association::Column::Id)
+        }
+        ListGoiAssociationsSortBy::GoiAssociationSourceCreatedAtDesc => query
+            .order_by_desc(goi_association::Column::SourceCreatedAt)
+            .order_by_desc(goi_association::Column::Id),
+        ListGoiAssociationsSortBy::GoiAssociationSourceCreatedAtAsc => query
+            .order_by_asc(goi_association::Column::SourceCreatedAt)
+            .order_by_asc(goi_association::Column::Id),
+        ListGoiAssociationsSortBy::GoiAssociationFrequencyAsc => query
+            .order_by_asc(goi_association::Column::Frequency)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationFrequencyDesc => query
+            .order_by_desc(goi_association::Column::Frequency)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationCoordinatesAsc => query
+            .order_by_asc(goi_association::Column::Coordinates)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationCoordinatesDesc => query
+            .order_by_desc(goi_association::Column::Coordinates)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationCategoryAsc => query
+            .order_by_asc(goi_association::Column::Category)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationCategoryDesc => query
+            .order_by_desc(goi_association::Column::Category)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationAuthorAsc => query
+            .order_by_asc(goi_association::Column::Author)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationAuthorDesc => query
+            .order_by_desc(goi_association::Column::Author)
+            .order_by_desc(goi_association::Column::SourceAssociationId),
+        ListGoiAssociationsSortBy::GoiAssociationCreatedAtDesc => query
+            .order_by_desc(goi_association::Column::CreatedAt)
+            .order_by_desc(goi_association::Column::Id),
+        ListGoiAssociationsSortBy::GoiAssociationCreatedAtAsc => query
+            .order_by_asc(goi_association::Column::CreatedAt)
+            .order_by_asc(goi_association::Column::Id),
+    }
+}
+
+fn goi_association_from_model(
+    association: goi_association::Model,
+) -> GoiAssociation {
+    GoiAssociation {
+        id: association.id,
+        source_association_id: association.source_association_id,
+        source_created_at_ms: association.source_created_at.timestamp_millis(),
+        created_at_ms: association.created_at.timestamp_millis(),
+        deleted: association.deleted,
+        association_type: association.association_type,
+        frequency: association.frequency,
+        coordinates: association.coordinates,
+        note: association.note,
+        category: association.category,
+        call_signs: goi_association_call_signs(association.call_signs),
+        formation: association.formation,
+        association_count: association.association_count,
+        sidc: association.sidc,
+        author: association.author,
+        source_date_raw: association.source_date_raw,
+        source_date_ms: association
+            .source_date
+            .map(|value| value.timestamp_millis()),
+    }
+}
+
+fn goi_association_call_signs(value: serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::Array(items) => items
+            .into_iter()
+            .filter_map(|item| item.as_str().map(ToOwned::to_owned))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 async fn goi_run_setup_worker(

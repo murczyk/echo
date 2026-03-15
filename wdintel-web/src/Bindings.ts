@@ -1215,6 +1215,8 @@ export type User = {
   sigintZoneId: number | null;
   organismId: number | null;
   deltaLogin: string | null;
+  goiConfiguredForOrganism: boolean;
+  goiHost: string | null;
 };
 
 export type SettingsSaveReq = {
@@ -1359,6 +1361,61 @@ export type SignalGroupFull = {
 export type OrganismGroup = {
   masterKey: string;
   organismId: number;
+};
+
+export type ListGoiAssociationsSortBy =
+  | 'GoiAssociationSourceAssociationIdDesc'
+  | 'GoiAssociationSourceAssociationIdAsc'
+  | 'GoiAssociationSourceCreatedAtDesc'
+  | 'GoiAssociationSourceCreatedAtAsc'
+  | 'GoiAssociationFrequencyAsc'
+  | 'GoiAssociationFrequencyDesc'
+  | 'GoiAssociationCoordinatesAsc'
+  | 'GoiAssociationCoordinatesDesc'
+  | 'GoiAssociationCategoryAsc'
+  | 'GoiAssociationCategoryDesc'
+  | 'GoiAssociationAuthorAsc'
+  | 'GoiAssociationAuthorDesc'
+  | 'GoiAssociationCreatedAtDesc'
+  | 'GoiAssociationCreatedAtAsc'
+;
+
+export type ListGoiAssociationsReq = {
+  limit: number | null;
+  offset: number | null;
+  sortBy: ListGoiAssociationsSortBy | null;
+  filterText: string | null;
+  filterFrequency: string | null;
+  filterCoordinates: string | null;
+  filterNote: string | null;
+  filterCategory: string | null;
+  filterAuthor: string | null;
+  filterDeleted: boolean | null;
+};
+
+export type GoiAssociation = {
+  id: number;
+  sourceAssociationId: number;
+  sourceCreatedAtMs: number;
+  createdAtMs: number;
+  deleted: boolean;
+  associationType: string | null;
+  frequency: string | null;
+  coordinates: string | null;
+  note: string | null;
+  category: string | null;
+  callSigns: Array<string>;
+  formation: string | null;
+  associationCount: number | null;
+  sidc: string | null;
+  author: string | null;
+  sourceDateRaw: string | null;
+  sourceDateMs: number | null;
+};
+
+export type ListGoiAssociationsRsp = {
+  items: Array<GoiAssociation>;
+  hasMore: boolean;
 };
 
 export type Datasource = {

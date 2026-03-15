@@ -71,6 +71,8 @@ init flagsResult _ =
                 , sigintZoneId = Nothing
                 , organismId = Nothing
                 , deltaLogin = Nothing
+                , goiConfiguredForOrganism = False
+                , goiHost = Nothing
                 }
       , themeMode =
             if flags.isDark then
