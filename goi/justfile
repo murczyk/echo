@@ -263,6 +263,7 @@ deploy-swapp server:
       cd \"${APP_DIR}\"
       if [[ ! -d .next ]]; then
         echo \"missing .next in ${APP_DIR}; this deploy expects prebuilt Next.js artifacts\" >&2
+        exit 1
       fi
       if [[ -f package-lock.json ]]; then
         npm ci --no-audit --no-fund
