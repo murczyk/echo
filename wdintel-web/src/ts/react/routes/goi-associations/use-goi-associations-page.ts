@@ -122,6 +122,24 @@ export function useGoiAssociationsPage() {
   const [refreshing, setRefreshing] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
+  const queryKey = React.useMemo(
+    () =>
+      JSON.stringify({
+        globalFilter: tableStateContext.globalFilter,
+        columnFilters: tableStateContext.columnFilters,
+        sorting: tableStateContext.sorting,
+      }),
+    [
+      tableStateContext.globalFilter,
+      tableStateContext.columnFilters,
+      tableStateContext.sorting,
+    ],
+  );
+  const latestQueryKeyRef = React.useRef(queryKey);
+  const loadMoreAbortControllerRef =
+    React.useRef<AbortController | null>(null);
+
+  latestQueryKeyRef.current = queryKey;
 
   const buildReq = (offset: number): ListGoiAssociationsReq => ({
     limit: 50,
@@ -148,8 +166,14 @@ export function useGoiAssociationsPage() {
     filterAuthor:
       getStringColumnFilterValue(tableStateContext.columnFilters, 'author') ||
       null,
-    filterDeleted: null,
+    filterDeleted: false,
   });
+
+  React.useEffect(() => {
+    loadMoreAbortControllerRef.current?.abort();
+    loadMoreAbortControllerRef.current = null;
+    setLoadingMore(false);
+  }, [queryKey]);
 
   React.useEffect(() => {
     const abortController = new AbortController();
@@ -197,27 +221,48 @@ export function useGoiAssociationsPage() {
       window.clearTimeout(timeout);
       abortController.abort();
     };
-  }, [
-    tableStateContext.globalFilter,
-    JSON.stringify(tableStateContext.columnFilters),
-    JSON.stringify(tableStateContext.sorting),
-  ]);
+  }, [queryKey]);
 
   async function onLoadMore() {
+    if (loadMoreAbortControllerRef.current) return;
+
+    const abortController = new AbortController();
+    const requestQueryKey = latestQueryKeyRef.current;
+
+    loadMoreAbortControllerRef.current = abortController;
     setLoadingMore(true);
+
     try {
-      const rsp = await listCurrentUserGoiAssociations(buildReq(rows.length));
+      const rsp = await listCurrentUserGoiAssociations(
+        buildReq(rows.length),
+        abortController.signal,
+      );
+      if (
+        abortController.signal.aborted ||
+        latestQueryKeyRef.current !== requestQueryKey
+      ) {
+        return;
+      }
       setRows((prev) => [...prev, ...rsp.items.map(toRowView)]);
       setHasMore(rsp.hasMore);
       setNotice(null);
     } catch (error) {
+      if (abortController.signal.aborted || isAbortError(error)) return;
       if (isUnauthorizedError(error)) {
         redirectToLogin();
         return;
       }
       setNotice({ kind: 'error', text: formatErrorMessage(error) });
     } finally {
-      setLoadingMore(false);
+      if (loadMoreAbortControllerRef.current === abortController) {
+        loadMoreAbortControllerRef.current = null;
+      }
+      if (
+        !abortController.signal.aborted &&
+        latestQueryKeyRef.current === requestQueryKey
+      ) {
+        setLoadingMore(false);
+      }
     }
   }
 
