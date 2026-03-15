@@ -11,25 +11,35 @@ use std::time::Duration;
 pub fn goi_check_connection_sync(
     req: CheckOrganismGoiConnectionReq,
 ) -> anyhow::Result<Vec<String>> {
+    let command = format!("ls -1 {}", goi_shell_quote_single(req.path.trim()));
+    goi_exec_command_sync(req, command, ORGANISM_GOI_SSH_TIMEOUT_MS)
+}
+
+pub fn goi_exec_command_sync(
+    req: CheckOrganismGoiConnectionReq,
+    command: String,
+    timeout_ms: u32,
+) -> anyhow::Result<Vec<String>> {
     let addr = format!("{}:{}", req.ssh_host.trim(), req.ssh_port);
     let socket_addrs = goi_resolve_socket_addrs_ipv4_first(&addr)?;
-    let timeout = Duration::from_millis(ORGANISM_GOI_SSH_TIMEOUT_MS.into());
+    let timeout = Duration::from_millis(timeout_ms.into());
 
     let mut errors = Vec::with_capacity(socket_addrs.len());
     for socket_addr in socket_addrs {
-        match goi_try_check_connection_for_socket(
+        match goi_try_exec_command_for_socket(
             socket_addr,
             timeout,
+            timeout_ms,
             req.ssh_user.trim(),
-            req.path.trim(),
+            &command,
         ) {
-            Ok(listed_entries) => return Ok(listed_entries),
+            Ok(output_lines) => return Ok(output_lines),
             Err(err) => errors.push(format!("{socket_addr}: {err:#}")),
         }
     }
 
     Err(anyhow::anyhow!(
-        "GOI SSH check failed for all resolved addresses for {addr}: {}",
+        "GOI SSH command failed for all resolved addresses for {addr}: {}",
         errors.join("; ")
     )
     .context(h!()))
@@ -49,6 +59,7 @@ pub fn goi_upload_file_sync(
         match goi_try_upload_file_for_socket(
             socket_addr,
             timeout,
+            ORGANISM_GOI_SSH_TIMEOUT_MS,
             req.ssh_user.trim(),
             &remote_file_path,
             &file_data,
@@ -80,6 +91,7 @@ pub fn goi_delete_file_sync(
         match goi_try_exec_command_for_socket(
             socket_addr,
             timeout,
+            ORGANISM_GOI_SSH_TIMEOUT_MS,
             req.ssh_user.trim(),
             &command,
         ) {
@@ -116,26 +128,16 @@ fn goi_resolve_socket_addrs_ipv4_first(
     Ok(ipv4)
 }
 
-fn goi_try_check_connection_for_socket(
-    socket_addr: SocketAddr,
-    timeout: Duration,
-    ssh_user: &str,
-    path: &str,
-) -> anyhow::Result<Vec<String>> {
-    let session = goi_connect_for_socket(socket_addr, timeout, ssh_user)?;
-
-    let command = format!("ls -1 {}", goi_shell_quote_single(path));
-    goi_exec_command_for_session(session, &command)
-}
-
 fn goi_try_upload_file_for_socket(
     socket_addr: SocketAddr,
     timeout: Duration,
+    timeout_ms: u32,
     ssh_user: &str,
     remote_file_path: &str,
     file_data: &[u8],
 ) -> anyhow::Result<()> {
-    let session = goi_connect_for_socket(socket_addr, timeout, ssh_user)?;
+    let session =
+        goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
     let mut remote_file = session
         .scp_send(
             Path::new(remote_file_path),
@@ -154,11 +156,13 @@ fn goi_try_upload_file_for_socket(
 fn goi_try_exec_command_for_socket(
     socket_addr: SocketAddr,
     timeout: Duration,
+    timeout_ms: u32,
     ssh_user: &str,
     command: &str,
-) -> anyhow::Result<()> {
-    let session = goi_connect_for_socket(socket_addr, timeout, ssh_user)?;
-    goi_exec_command_for_session(session, command).map(|_| ())
+) -> anyhow::Result<Vec<String>> {
+    let session =
+        goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
+    goi_exec_command_for_session(session, command)
 }
 
 fn goi_exec_command_for_session(
@@ -200,6 +204,7 @@ fn goi_exec_command_for_session(
 fn goi_connect_for_socket(
     socket_addr: SocketAddr,
     timeout: Duration,
+    timeout_ms: u32,
     ssh_user: &str,
 ) -> anyhow::Result<ssh2::Session> {
     let tcp = TcpStream::connect_timeout(&socket_addr, timeout).c(h!())?;
@@ -208,7 +213,7 @@ fn goi_connect_for_socket(
 
     let mut session = ssh2::Session::new().c(h!())?;
     session.set_tcp_stream(tcp);
-    session.set_timeout(ORGANISM_GOI_SSH_TIMEOUT_MS);
+    session.set_timeout(timeout_ms);
     session.handshake().c(h!())?;
     // We intentionally skip SSH host-key verification in this probe.
     // GOI hosts are accessed through private Tailscale networking, which we

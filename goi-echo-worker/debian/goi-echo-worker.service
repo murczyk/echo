@@ -1,0 +1,16 @@
+[Unit]
+Description=goi-echo-worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/goi-echo-worker
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+WorkingDirectory=/etc/goi
+Environment=RUST_LOG=info,goi_echo_worker=debug
+
+[Install]
+WantedBy=multi-user.target

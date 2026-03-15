@@ -12,6 +12,7 @@ import {
 import { postJson, postVoid } from './client';
 
 const GOI_SSH_PORT_DEFAULT = 22;
+const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
 
 type OrganismLike = {
@@ -54,6 +55,14 @@ type OrganismGoiSettingsLike = {
   sshPort?: number | string;
   ssh_port?: number | string;
   path?: string;
+  apiHost?: string | null;
+  api_host?: string | null;
+  apiPort?: number | string;
+  api_port?: number | string;
+  apiLogin?: string | null;
+  api_login?: string | null;
+  apiPassword?: string | null;
+  api_password?: string | null;
 };
 
 type ListOrganismsReqBody = {
@@ -92,6 +101,20 @@ type UpdateOrganismGoiSettingsReqBody = {
   ssh_user: string | null;
   ssh_port: number;
   path: string;
+  api_host: string | null;
+  api_port: number;
+  api_login: string | null;
+  api_password: string | null;
+};
+
+type SetupOrganismGoiWorkerReqBody = {
+  organism_id: number;
+  ssh_host: string;
+  ssh_user: string;
+  ssh_port: number;
+  path: string;
+  api_host: string | null;
+  api_port: number;
 };
 
 type CheckOrganismGoiConnectionReqBody = {
@@ -114,9 +137,23 @@ export type OrganismGoiSettings = {
   sshUser: string;
   sshPort: number;
   path: string;
+  apiHost: string;
+  apiPort: number;
+  apiLogin: string;
+  apiPassword: string;
 };
 
 export type UpdateOrganismGoiSettingsReq = OrganismGoiSettings;
+
+export type SetupOrganismGoiWorkerReq = {
+  organismId: number;
+  sshHost: string;
+  sshUser: string;
+  sshPort: number;
+  path: string;
+  apiHost: string;
+  apiPort: number;
+};
 
 export type CheckOrganismGoiConnectionReq = {
   sshHost: string;
@@ -176,6 +213,22 @@ function toUpdateOrganismGoiSettingsReqBody(req: UpdateOrganismGoiSettingsReq): 
     ssh_user: req.sshUser.trim() ? req.sshUser.trim() : null,
     ssh_port: req.sshPort,
     path: req.path,
+    api_host: req.apiHost.trim() ? req.apiHost.trim() : null,
+    api_port: req.apiPort,
+    api_login: req.apiLogin.trim() ? req.apiLogin.trim() : null,
+    api_password: req.apiPassword.trim() ? req.apiPassword.trim() : null,
+  };
+}
+
+function toSetupOrganismGoiWorkerReqBody(req: SetupOrganismGoiWorkerReq): SetupOrganismGoiWorkerReqBody {
+  return {
+    organism_id: req.organismId,
+    ssh_host: req.sshHost.trim(),
+    ssh_user: req.sshUser.trim(),
+    ssh_port: req.sshPort,
+    path: req.path,
+    api_host: req.apiHost.trim() ? req.apiHost.trim() : null,
+    api_port: req.apiPort,
   };
 }
 
@@ -243,12 +296,17 @@ function normalizeOrganismGroup(raw: OrganismGroupLike): OrganismGroup {
 }
 
 function normalizeOrganismGoiSettings(raw: OrganismGoiSettingsLike): OrganismGoiSettings {
+  const sshHost = (raw.sshHost ?? raw.ssh_host ?? '').trim();
   return {
     organismId: normalizeNumber(raw.organismId ?? raw.organism_id),
-    sshHost: (raw.sshHost ?? raw.ssh_host ?? '').trim(),
+    sshHost,
     sshUser: (raw.sshUser ?? raw.ssh_user ?? '').trim(),
     sshPort: normalizeOptionalNumber(raw.sshPort ?? raw.ssh_port) ?? GOI_SSH_PORT_DEFAULT,
     path: (raw.path ?? GOI_PATH_DEFAULT).trim() || GOI_PATH_DEFAULT,
+    apiHost: (raw.apiHost ?? raw.api_host ?? sshHost).trim(),
+    apiPort: normalizeOptionalNumber(raw.apiPort ?? raw.api_port) ?? GOI_API_PORT_DEFAULT,
+    apiLogin: (raw.apiLogin ?? raw.api_login ?? '').trim(),
+    apiPassword: (raw.apiPassword ?? raw.api_password ?? '').trim(),
   };
 }
 
@@ -333,6 +391,14 @@ export async function updateOrganismGoiSettings(req: UpdateOrganismGoiSettingsRe
   const data = await postJson<OrganismGoiSettingsLike>(
     '/api/organism/goi-settings/update',
     toUpdateOrganismGoiSettingsReqBody(req),
+  );
+  return normalizeOrganismGoiSettings(data || {});
+}
+
+export async function setupOrganismGoiWorker(req: SetupOrganismGoiWorkerReq): Promise<OrganismGoiSettings> {
+  const data = await postJson<OrganismGoiSettingsLike>(
+    '/api/organism/goi-settings/setup-worker',
+    toSetupOrganismGoiWorkerReqBody(req),
   );
   return normalizeOrganismGoiSettings(data || {});
 }

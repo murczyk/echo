@@ -982,6 +982,7 @@ checksum = "b1a9acfeb1555aa8def91fe8ff208aadaea850c109968ec35ac965edbe7d210b"
 dependencies = [
  "atoi_simd",
  "byteorder",
+ "chrono",
  "codepage",
  "encoding_rs",
  "fast-float2",
@@ -2716,6 +2717,26 @@ dependencies = [
  "futures-core",
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "goi-echo-worker"
+version = "0.1.1-rc.202603150843"
+dependencies = [
+ "actix-web",
+ "anyhow",
+ "base64 0.22.1",
+ "calamine",
+ "chrono",
+ "chrono-tz",
+ "env_logger 0.11.8",
+ "log",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
 ]
 
 [[package]]
@@ -7117,6 +7138,7 @@ dependencies = [
  "futures-util",
  "fxhash",
  "geoconvert",
+ "goi-echo-worker",
  "indicatif 0.18.3",
  "infer",
  "itertools 0.14.0",
