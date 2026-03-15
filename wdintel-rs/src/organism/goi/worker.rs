@@ -40,8 +40,23 @@ async fn goi_association_worker_step(env: &Env) -> Result<(), AppError> {
 async fn load_goi_api_organisms(
     db: &DatabaseConnection,
 ) -> Result<Vec<organism::Model>, AppError> {
+    let has_api_host = Condition::all()
+        .add(organism::Column::GoiApiHost.is_not_null())
+        .add(organism::Column::GoiApiHost.ne(""));
+    let has_ssh_host = Condition::all()
+        .add(organism::Column::GoiSshHost.is_not_null())
+        .add(organism::Column::GoiSshHost.ne(""));
+    let has_api_login = Condition::all()
+        .add(organism::Column::GoiApiLogin.is_not_null())
+        .add(organism::Column::GoiApiLogin.ne(""));
+    let has_api_password = Condition::all()
+        .add(organism::Column::GoiApiPassword.is_not_null())
+        .add(organism::Column::GoiApiPassword.ne(""));
     let organisms = organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(Condition::any().add(has_api_host).add(has_ssh_host))
+        .filter(has_api_login)
+        .filter(has_api_password)
         .all(db)
         .await
         .c(h!())?;

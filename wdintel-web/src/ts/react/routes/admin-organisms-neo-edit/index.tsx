@@ -167,14 +167,11 @@ function getBackToPath(): string {
   }
 }
 
-function hasAnyGoiSettings(form: OrganismFormState): boolean {
-  return [
-    form.goiSshHost,
-    form.goiSshUser,
-    form.goiApiHost,
-    form.goiApiLogin,
-    form.goiApiPassword,
-  ].some((value) => value.trim().length > 0);
+function hasAnyGoiApiSettings(form: OrganismFormState): boolean {
+  const sshHost = form.goiSshHost.trim();
+  const apiHost = form.goiApiHost.trim();
+  if (form.goiApiLogin.trim() || form.goiApiPassword.trim()) return true;
+  return apiHost.length > 0 && apiHost !== sshHost;
 }
 
 type AdminOrganismsNeoEditPageProps = {
@@ -748,7 +745,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     if (!Number.isInteger(form.goiApiPort) || form.goiApiPort < 1 || form.goiApiPort > 65535) {
       errors.goiApiPort = 'Вкажіть коректний API порт (1-65535)';
     }
-    if (hasAnyGoiSettings(form)) {
+    if (hasAnyGoiApiSettings(form)) {
       if (!form.goiApiHost.trim() && !form.goiSshHost.trim()) {
         errors.goiApiHost = 'Вкажіть API хост або SSH хост';
       }
@@ -764,16 +761,17 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   }
 
   function buildGoiSettingsReq(organismId: number, nextForm: OrganismFormState): UpdateOrganismGoiSettingsReq {
+    const hasGoiApiSettings = hasAnyGoiApiSettings(nextForm);
     return {
       organismId,
       sshHost: nextForm.goiSshHost.trim(),
       sshUser: nextForm.goiSshUser.trim(),
       sshPort: nextForm.goiSshPort,
       path: nextForm.goiPath.trim() || GOI_PATH_DEFAULT,
-      apiHost: nextForm.goiApiHost.trim() || nextForm.goiSshHost.trim(),
+      apiHost: hasGoiApiSettings ? (nextForm.goiApiHost.trim() || nextForm.goiSshHost.trim()) : '',
       apiPort: nextForm.goiApiPort,
-      apiLogin: nextForm.goiApiLogin.trim(),
-      apiPassword: nextForm.goiApiPassword.trim(),
+      apiLogin: hasGoiApiSettings ? nextForm.goiApiLogin.trim() : '',
+      apiPassword: hasGoiApiSettings ? nextForm.goiApiPassword.trim() : '',
     };
   }
 
