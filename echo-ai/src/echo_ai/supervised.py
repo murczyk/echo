@@ -234,7 +234,7 @@ def compare_models(
     trained_ap = float(trained_metrics["ap"])
     registered_ap = float(registered_metrics["ap"])
     trained_precision_at_recall = float(trained_metrics["precision_at_recall"])
-    registered_precision_at_recall = float(trained_metrics["precision_at_recall"])
+    registered_precision_at_recall = float(registered_metrics["precision_at_recall"])
 
     ap_improvement = (
         (trained_ap - registered_ap) / registered_ap if registered_ap > 0 else 1
