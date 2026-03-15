@@ -1,10 +1,10 @@
-use crate::config::{
-    ORGANISM_GOI_API_PORT_DEFAULT, ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
-};
+use crate::config::ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS;
 use crate::entities::{goi_association, organism};
 use crate::error::AppError;
+use crate::organism::goi::shared::{
+    goi_api_host, goi_api_port, organism_has_goi_api_config,
+};
 use crate::types::*;
-use crate::utils::string::normalize_optional_trimmed;
 use goi_echo_worker::api::{AssociationApiItem, ListAssociationsReq};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
@@ -66,13 +66,6 @@ async fn load_goi_api_organisms(
         .collect())
 }
 
-fn organism_has_goi_api_config(organism: &organism::Model) -> bool {
-    goi_api_host(organism).is_some()
-        && normalize_optional_trimmed(organism.goi_api_login.clone()).is_some()
-        && normalize_optional_trimmed(organism.goi_api_password.clone())
-            .is_some()
-}
-
 async fn sync_goi_associations(
     env: &Env,
     organism: &organism::Model,
@@ -111,21 +104,21 @@ async fn fetch_goi_associations(
     since_id: Option<i64>,
 ) -> Result<Vec<AssociationApiItem>, AppError> {
     let url = goi_associations_url(organism)?;
-    let login = normalize_optional_trimmed(organism.goi_api_login.clone())
-        .ok_or_else(|| AppError::BL {
-            msg: format!(
-                "GOI API login is missing for organism {}",
-                organism.id
-            ),
-        })?;
-    let password =
-        normalize_optional_trimmed(organism.goi_api_password.clone())
-            .ok_or_else(|| AppError::BL {
-                msg: format!(
-                    "GOI API password is missing for organism {}",
-                    organism.id
-                ),
-            })?;
+    let login = crate::utils::string::normalize_optional_trimmed(
+        organism.goi_api_login.clone(),
+    )
+    .ok_or_else(|| AppError::BL {
+        msg: format!("GOI API login is missing for organism {}", organism.id),
+    })?;
+    let password = crate::utils::string::normalize_optional_trimmed(
+        organism.goi_api_password.clone(),
+    )
+    .ok_or_else(|| AppError::BL {
+        msg: format!(
+            "GOI API password is missing for organism {}",
+            organism.id
+        ),
+    })?;
 
     let response = env
         .rq
@@ -163,19 +156,6 @@ fn goi_associations_url(
     url.set_path("/api/associations");
     url.set_query(None);
     Ok(url.to_string())
-}
-
-fn goi_api_host(organism: &organism::Model) -> Option<String> {
-    normalize_optional_trimmed(organism.goi_api_host.clone())
-        .or_else(|| normalize_optional_trimmed(organism.goi_ssh_host.clone()))
-}
-
-fn goi_api_port(organism: &organism::Model) -> i32 {
-    if organism.goi_api_port > 0 {
-        organism.goi_api_port
-    } else {
-        ORGANISM_GOI_API_PORT_DEFAULT
-    }
 }
 
 async fn insert_goi_associations(

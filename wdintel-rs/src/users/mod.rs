@@ -520,12 +520,17 @@ async fn api_user(
             .c(h!())?
             .map(|x| x.login),
     };
+    let goi = user_goi_state(&env.dbx, login_obj.organism_id)
+        .await
+        .c(h!())?;
     Ok(Json(User {
         delta_login,
         name: username.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
+        goi_configured_for_organism: goi.configured,
+        goi_host: goi.host,
     }))
 }
 
@@ -558,13 +563,54 @@ async fn api_user_info(
             .c(h!())?
             .map(|x| x.login),
     };
+    let goi = user_goi_state(&env.dbx, login_obj.organism_id)
+        .await
+        .c(h!())?;
     Ok(Json(User {
         delta_login,
         name: username.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
+        goi_configured_for_organism: goi.configured,
+        goi_host: goi.host,
     }))
+}
+
+struct UserGoiState {
+    configured: bool,
+    host: Option<String>,
+}
+
+async fn user_goi_state(
+    dbx: &DatabaseConnection,
+    organism_id: Option<i64>,
+) -> Result<UserGoiState, AppError> {
+    let Some(organism_id) = organism_id else {
+        return Ok(UserGoiState {
+            configured: false,
+            host: None,
+        });
+    };
+
+    let organism = organism::Entity::find_by_id(organism_id)
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let Some(organism) = organism else {
+        return Ok(UserGoiState {
+            configured: false,
+            host: None,
+        });
+    };
+
+    Ok(UserGoiState {
+        configured: crate::organism::goi::shared::organism_has_goi_api_config(
+            &organism,
+        ),
+        host: crate::organism::goi::shared::goi_web_host(&organism),
+    })
 }
 
 #[get("/api/user/logout")]

@@ -3216,6 +3216,8 @@ type alias User =
     , sigintZoneId : Maybe Int
     , organismId : Maybe Int
     , deltaLogin : Maybe String
+    , goiConfiguredForOrganism : Bool
+    , goiHost : Maybe String
     }
 
 
@@ -3227,6 +3229,8 @@ userEncoder struct =
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sigintZoneId )
         , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.organismId )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.deltaLogin )
+        , ( "goi_configured_for_organism", Json.Encode.bool struct.goiConfiguredForOrganism )
+        , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.goiHost )
         ]
 
 
@@ -3614,6 +3618,157 @@ organismGroupEncoder struct =
     Json.Encode.object
         [ ( "master_key", Json.Encode.string struct.masterKey )
         , ( "organism_id", Json.Encode.int struct.organismId )
+        ]
+
+
+type ListGoiAssociationsSortBy
+    = GoiAssociationSourceAssociationIdDesc
+    | GoiAssociationSourceAssociationIdAsc
+    | GoiAssociationSourceCreatedAtDesc
+    | GoiAssociationSourceCreatedAtAsc
+    | GoiAssociationFrequencyAsc
+    | GoiAssociationFrequencyDesc
+    | GoiAssociationCoordinatesAsc
+    | GoiAssociationCoordinatesDesc
+    | GoiAssociationCategoryAsc
+    | GoiAssociationCategoryDesc
+    | GoiAssociationAuthorAsc
+    | GoiAssociationAuthorDesc
+    | GoiAssociationCreatedAtDesc
+    | GoiAssociationCreatedAtAsc
+
+
+listGoiAssociationsSortByEncoder : ListGoiAssociationsSortBy -> Json.Encode.Value
+listGoiAssociationsSortByEncoder enum =
+    case enum of
+        GoiAssociationSourceAssociationIdDesc ->
+            Json.Encode.string "GoiAssociationSourceAssociationIdDesc"
+
+        GoiAssociationSourceAssociationIdAsc ->
+            Json.Encode.string "GoiAssociationSourceAssociationIdAsc"
+
+        GoiAssociationSourceCreatedAtDesc ->
+            Json.Encode.string "GoiAssociationSourceCreatedAtDesc"
+
+        GoiAssociationSourceCreatedAtAsc ->
+            Json.Encode.string "GoiAssociationSourceCreatedAtAsc"
+
+        GoiAssociationFrequencyAsc ->
+            Json.Encode.string "GoiAssociationFrequencyAsc"
+
+        GoiAssociationFrequencyDesc ->
+            Json.Encode.string "GoiAssociationFrequencyDesc"
+
+        GoiAssociationCoordinatesAsc ->
+            Json.Encode.string "GoiAssociationCoordinatesAsc"
+
+        GoiAssociationCoordinatesDesc ->
+            Json.Encode.string "GoiAssociationCoordinatesDesc"
+
+        GoiAssociationCategoryAsc ->
+            Json.Encode.string "GoiAssociationCategoryAsc"
+
+        GoiAssociationCategoryDesc ->
+            Json.Encode.string "GoiAssociationCategoryDesc"
+
+        GoiAssociationAuthorAsc ->
+            Json.Encode.string "GoiAssociationAuthorAsc"
+
+        GoiAssociationAuthorDesc ->
+            Json.Encode.string "GoiAssociationAuthorDesc"
+
+        GoiAssociationCreatedAtDesc ->
+            Json.Encode.string "GoiAssociationCreatedAtDesc"
+
+        GoiAssociationCreatedAtAsc ->
+            Json.Encode.string "GoiAssociationCreatedAtAsc"
+
+
+type alias ListGoiAssociationsReq =
+    { limit : Maybe Int
+    , offset : Maybe Int
+    , sortBy : Maybe ListGoiAssociationsSortBy
+    , filterText : Maybe String
+    , filterFrequency : Maybe String
+    , filterCoordinates : Maybe String
+    , filterNote : Maybe String
+    , filterCategory : Maybe String
+    , filterAuthor : Maybe String
+    , filterDeleted : Maybe Bool
+    }
+
+
+listGoiAssociationsReqEncoder : ListGoiAssociationsReq -> Json.Encode.Value
+listGoiAssociationsReqEncoder struct =
+    Json.Encode.object
+        [ ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.limit )
+        , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.offset )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listGoiAssociationsSortByEncoder) struct.sortBy )
+        , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
+        , ( "filter_frequency", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFrequency )
+        , ( "filter_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterCoordinates )
+        , ( "filter_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterNote )
+        , ( "filter_category", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterCategory )
+        , ( "filter_author", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterAuthor )
+        , ( "filter_deleted", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterDeleted )
+        ]
+
+
+type alias GoiAssociation =
+    { id : Int
+    , sourceAssociationId : Int
+    , sourceCreatedAtMs : Int
+    , createdAtMs : Int
+    , deleted : Bool
+    , associationType : Maybe String
+    , frequency : Maybe String
+    , coordinates : Maybe String
+    , note : Maybe String
+    , category : Maybe String
+    , callSigns : List String
+    , formation : Maybe String
+    , associationCount : Maybe Int
+    , sidc : Maybe String
+    , author : Maybe String
+    , sourceDateRaw : Maybe String
+    , sourceDateMs : Maybe Int
+    }
+
+
+goiAssociationEncoder : GoiAssociation -> Json.Encode.Value
+goiAssociationEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "source_association_id", Json.Encode.int struct.sourceAssociationId )
+        , ( "source_created_at_ms", Json.Encode.int struct.sourceCreatedAtMs )
+        , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
+        , ( "deleted", Json.Encode.bool struct.deleted )
+        , ( "association_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.associationType )
+        , ( "frequency", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.frequency )
+        , ( "coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.coordinates )
+        , ( "note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.note )
+        , ( "category", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.category )
+        , ( "call_signs", Json.Encode.list Json.Encode.string struct.callSigns )
+        , ( "formation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.formation )
+        , ( "association_count", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.associationCount )
+        , ( "sidc", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sidc )
+        , ( "author", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.author )
+        , ( "source_date_raw", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceDateRaw )
+        , ( "source_date_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceDateMs )
+        ]
+
+
+type alias ListGoiAssociationsRsp =
+    { items : List GoiAssociation
+    , hasMore : Bool
+    }
+
+
+listGoiAssociationsRspEncoder : ListGoiAssociationsRsp -> Json.Encode.Value
+listGoiAssociationsRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", Json.Encode.list goiAssociationEncoder struct.items )
+        , ( "has_more", Json.Encode.bool struct.hasMore )
         ]
 
 
@@ -8676,6 +8831,8 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_configured_for_organism" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable Json.Decode.string)))
 
 
 settingsSaveReqDecoder : Json.Decode.Decoder SettingsSaveReq
@@ -8941,6 +9098,196 @@ organismGroupDecoder =
     Json.Decode.succeed OrganismGroup
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" Json.Decode.int))
+
+
+listGoiAssociationsSortByDecoder : Json.Decode.Decoder ListGoiAssociationsSortBy
+listGoiAssociationsSortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationSourceAssociationIdDesc" ->
+                            Json.Decode.succeed GoiAssociationSourceAssociationIdDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationSourceAssociationIdAsc" ->
+                            Json.Decode.succeed GoiAssociationSourceAssociationIdAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationSourceCreatedAtDesc" ->
+                            Json.Decode.succeed GoiAssociationSourceCreatedAtDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationSourceCreatedAtAsc" ->
+                            Json.Decode.succeed GoiAssociationSourceCreatedAtAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationFrequencyAsc" ->
+                            Json.Decode.succeed GoiAssociationFrequencyAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationFrequencyDesc" ->
+                            Json.Decode.succeed GoiAssociationFrequencyDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationCoordinatesAsc" ->
+                            Json.Decode.succeed GoiAssociationCoordinatesAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationCoordinatesDesc" ->
+                            Json.Decode.succeed GoiAssociationCoordinatesDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationCategoryAsc" ->
+                            Json.Decode.succeed GoiAssociationCategoryAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationCategoryDesc" ->
+                            Json.Decode.succeed GoiAssociationCategoryDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationAuthorAsc" ->
+                            Json.Decode.succeed GoiAssociationAuthorAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationAuthorDesc" ->
+                            Json.Decode.succeed GoiAssociationAuthorDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationCreatedAtDesc" ->
+                            Json.Decode.succeed GoiAssociationCreatedAtDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiAssociationCreatedAtAsc" ->
+                            Json.Decode.succeed GoiAssociationCreatedAtAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
+listGoiAssociationsReqDecoder : Json.Decode.Decoder ListGoiAssociationsReq
+listGoiAssociationsReqDecoder =
+    Json.Decode.succeed ListGoiAssociationsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listGoiAssociationsSortByDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_frequency" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_coordinates" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_category" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_author" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_deleted" (Json.Decode.nullable Json.Decode.bool)))
+
+
+goiAssociationDecoder : Json.Decode.Decoder GoiAssociation
+goiAssociationDecoder =
+    Json.Decode.succeed GoiAssociation
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_association_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_created_at_ms" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "association_type" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "frequency" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "category" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_signs" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "formation" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "association_count" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sidc" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_date_raw" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_date_ms" (Json.Decode.nullable Json.Decode.int)))
+
+
+listGoiAssociationsRspDecoder : Json.Decode.Decoder ListGoiAssociationsRsp
+listGoiAssociationsRspDecoder =
+    Json.Decode.succeed ListGoiAssociationsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list goiAssociationDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more" Json.Decode.bool))
 
 
 datasourceDecoder : Json.Decode.Decoder Datasource
