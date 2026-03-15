@@ -145,11 +145,6 @@ def train_supervised(
     results_per_split = []
     for label_index, label_name in label_dict.items():
         label_column_name = f"label_{label_index}"
-        external_model = mlflow.create_external_model(
-            name=f"regex-{label_name}",
-            model_type="regex",
-        )
-        mlflow.set_active_model(model_id=external_model.model_id)
 
         pd_train, train_path, len_train = create_dataset(
             lake, label_column_name, label_name, "train", shuffle_seed
@@ -160,9 +155,17 @@ def train_supervised(
         pd_test, test_path, len_test = create_dataset(
             lake, label_column_name, label_name, "test", shuffle_seed
         )
-        evaluate_regex_model(
-            external_model.model_id, label_index, label_name, "test", lake
-        )
+
+        tags = {"label": label_name, "task": "regex"}
+        with mlflow.start_run(nested=True, tags=tags) as run:
+            external_model = mlflow.create_external_model(
+                name=f"regex-{label_name}",
+                model_type="regex",
+            )
+            mlflow.set_active_model(model_id=external_model.model_id)
+            evaluate_regex_model(
+                external_model.model_id, label_index, label_name, "test", lake
+            )
 
         tags = {"label": label_name, "task": "supervised"}
         with mlflow.start_run(nested=True, tags=tags) as run:
