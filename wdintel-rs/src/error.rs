@@ -125,9 +125,9 @@ impl actix_web::error::ResponseError for AppError {
             AppError::BL { msg } => {
                 warn!(target: "business_error", "Business logic error: {msg}");
                 actix_web::HttpResponseBuilder::new(
-                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    actix_web::http::StatusCode::BAD_REQUEST,
                 )
-                .body("Internal server error")
+                .body(msg.clone())
             }
             _ => {
                 error!("Internal server error: {self:?}");

@@ -403,13 +403,19 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 sudo -n true
-sudo apt-get update >/dev/null
-sudo apt-get install -y ca-certificates curl iputils-ping >/dev/null
 
-if ! sudo ping -c1 -W2 echo-ci.eagle-atria.ts.net >/dev/null 2>&1; then
-  echo "echo-ci.eagle-atria.ts.net is unreachable from the GOI instance" >&2
+if ! getent ahostsv4 echo-ci.eagle-atria.ts.net >/dev/null 2>&1; then
+  echo "Cannot resolve echo-ci.eagle-atria.ts.net from the GOI instance. Most likely the Tailscale invite has not been accepted yet inside the GOI container. Accept the invite and retry setup." >&2
   exit 1
 fi
+
+if ! sudo ping -c1 -W2 echo-ci.eagle-atria.ts.net >/dev/null 2>&1; then
+  echo "Cannot reach echo-ci.eagle-atria.ts.net from the GOI instance. Most likely the Tailscale invite has not been accepted yet or Tailscale networking is not ready inside the GOI container. Accept the invite and retry setup." >&2
+  exit 1
+fi
+
+sudo apt-get update >/dev/null
+sudo apt-get install -y ca-certificates curl iputils-ping >/dev/null
 
 sudo curl -fsSL https://echo-ci.eagle-atria.ts.net/keys/echo-ci-archive-keyring.gpg \
   -o /usr/share/keyrings/echo-ci-archive-keyring.gpg
