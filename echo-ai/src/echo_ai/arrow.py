@@ -10,11 +10,6 @@ from duckdb import DuckDBPyRelation
 from mlflow.data.digest_utils import compute_pandas_digest
 
 
-def to_df_arrow(rel: DuckDBPyRelation):
-    table = rel.to_arrow_table()
-    return arrow.to_pandas_df(table)
-
-
 def to_pandas_df(dataset: Dataset | pa.Table) -> pd.DataFrame:
     if isinstance(dataset, Dataset):
         arrow_table = cast(pa.Table, dataset.with_format("arrow")[:])  # pyright: ignore
@@ -22,6 +17,11 @@ def to_pandas_df(dataset: Dataset | pa.Table) -> pd.DataFrame:
         arrow_table = cast(pa.Table, dataset)
 
     return arrow_table.to_pandas(types_mapper=pd.ArrowDtype)
+
+
+def to_df_arrow(rel: DuckDBPyRelation):
+    table = rel.to_arrow_table()
+    return to_pandas_df(table)
 
 
 def digest(df: pd.DataFrame, hash_key: str) -> str:
