@@ -1,16 +1,22 @@
 use crate::config::Config;
 use crate::entities::association;
-use actix_web::error::{ErrorInternalServerError, ErrorUnauthorized};
+use actix_web::error::{
+    ErrorBadRequest, ErrorInternalServerError, ErrorUnauthorized,
+};
 use actix_web::http::header;
 use actix_web::{post, web, Error, HttpRequest, HttpResponse};
 use anyhow::Context;
 use base64::engine::general_purpose::STANDARD as Base64;
 use base64::Engine;
-use goi_echo_worker::api::{AssociationApiItem, ListAssociationsReq};
+use goi_echo_worker::api::{
+    AssociationApiItem, ImportSignedFrequenciesRsp, ListAssociationsReq,
+};
 use goi_echo_worker::row::AssociationRow;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -42,6 +48,27 @@ pub async fn list_associations(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(HttpResponse::Ok().json(items))
+}
+
+#[post("/api/frequencies/signed/import")]
+pub async fn import_signed_frequencies(
+    http_req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Bytes,
+) -> Result<HttpResponse, Error> {
+    require_basic_auth(&http_req, &state.config)?;
+    validate_xlsx_body(body.as_ref())?;
+
+    let path = PathBuf::from(state.config.frequencies_xlsx_path());
+    replace_xlsx_file(&path, body.as_ref())
+        .await
+        .with_context(|| format!("replacing {}", path.display()))
+        .map_err(ErrorInternalServerError)?;
+
+    Ok(HttpResponse::Ok().json(ImportSignedFrequenciesRsp {
+        path: path.display().to_string(),
+        bytes_written: body.len(),
+    }))
 }
 
 fn to_api_item(
@@ -85,4 +112,48 @@ fn require_basic_auth(
     } else {
         Err(ErrorUnauthorized("invalid credentials"))
     }
+}
+
+fn validate_xlsx_body(body: &[u8]) -> Result<(), Error> {
+    if body.is_empty() {
+        return Err(ErrorBadRequest("request body is empty"));
+    }
+    if body.len() < 4 || &body[..4] != b"PK\x03\x04" {
+        return Err(ErrorBadRequest(
+            "request body is not an XLSX file (ZIP header missing)",
+        ));
+    }
+    Ok(())
+}
+
+async fn replace_xlsx_file(path: &Path, body: &[u8]) -> anyhow::Result<()> {
+    let parent = path.parent().context("XLSX path has no parent directory")?;
+    tokio::fs::create_dir_all(parent).await?;
+
+    let tmp_path = temp_xlsx_path(path);
+    tokio::fs::write(&tmp_path, body).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        tokio::fs::set_permissions(
+            &tmp_path,
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .await?;
+    }
+    tokio::fs::rename(&tmp_path, path).await?;
+    Ok(())
+}
+
+fn temp_xlsx_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("upload.xlsx");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    path.with_file_name(format!(".{file_name}.tmp-{suffix}"))
 }

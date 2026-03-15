@@ -14,3 +14,9 @@ pub struct AssociationApiItem {
     pub created_at: DateTime<Utc>,
     pub deleted: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImportSignedFrequenciesRsp {
+    pub path: String,
+    pub bytes_written: usize,
+}
