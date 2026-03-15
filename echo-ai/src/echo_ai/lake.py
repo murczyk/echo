@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 from duckdb import DuckDBPyRelation
 from mlflow.data.dataset import Dataset
 
@@ -180,6 +181,39 @@ class Lake:
         """)
 
         return self.conn.table("tmp_messages_labeled_onehot")
+
+    def evaluate_regex(self, label_index: int, split: str) -> pd.DataFrame:
+        label_column_name = f"label_{label_index}"
+        self.split_for_label(label_column_name, split, shuffle_seed=None)
+
+        q = self.conn.query(rf"""
+            WITH neg_forms AS (
+                SELECT k.source, is_regex, unnest(keyword_negative_forms) keyword
+                FROM tag_keyword k
+                JOIN tag t on k.source = t.source and t.id = k.tag_id
+                JOIN label l on l.label_text = t.label
+                WHERE l.label_id = {label_index}
+            ), pos_forms AS (
+                SELECT k.source, is_regex, unnest(keyword_forms) keyword
+                FROM tag_keyword k
+                JOIN tag t on k.source = t.source and t.id = k.tag_id
+                JOIN label l on l.label_text = t.label
+                WHERE l.label_id = {label_index}
+            )
+            SELECT {label_column_name}::int AS y_true,
+                   (NOT EXISTS(
+                        SELECT 1 FROM neg_forms nf
+                        WHERE nf.source = s.source
+                          AND CASE WHEN nf.is_regex THEN regexp_matches(s.text, nf.keyword) ELSE contains(s.text, nf.keyword) END
+                   ) AND EXISTS(
+                        SELECT 1 FROM pos_forms pf
+                        WHERE pf.source = s.source
+                          AND CASE WHEN pf.is_regex THEN regexp_matches(s.text, pf.keyword) ELSE contains(s.text, pf.keyword) END
+                   ))::int AS y_pred
+            FROM tmp_{label_column_name}_splits s
+        """)
+
+        return q.df()
 
     def split_for_label(
         self, label_column_name: str, split: str, shuffle_seed: int | None

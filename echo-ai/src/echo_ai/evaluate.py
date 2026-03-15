@@ -13,6 +13,8 @@ from mlflow.entities.logged_model_input import LoggedModelInput
 from mlflow.pyfunc import PyFuncModel
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
+from echo_ai.lake import Lake
+
 POSITIVE_LABEL_NAME = "__label__1"
 TARGET_RECALL = 0.8
 
@@ -122,6 +124,31 @@ def evaluate_trained_model(label_name: str, model_uri: str, split_csv: dict[str,
         "validation": validation_results,
         "test": test_results,
     }
+
+
+def evaluate_regex_model(
+    model_id, label_index: int, label_name: str, split: str, lake: Lake
+):
+
+    df = lake.evaluate_regex(label_index, split)
+    dataset = from_pandas(
+        df,
+        name=f"{label_name}.{split}.regex",
+        targets="y_true",
+        predictions="y_pred",
+    )
+    logged_model = LoggedModelInput(model_id=str(model_id))
+    mlflow.log_input(dataset, context="testing", model=logged_model)
+    mlflow.models.evaluate(
+        data=dataset,
+        model_id=model_id,
+        model_type="classifier",
+        evaluators="default",
+        evaluator_config={
+            "label_list": [0, 1],
+            "pos_label": 1,
+        },
+    )
 
 
 def evaluate_model(model_id: str, split: str, dataset_path: str):
