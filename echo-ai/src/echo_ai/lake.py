@@ -211,6 +211,7 @@ class Lake:
                           AND CASE WHEN pf.is_regex THEN regexp_matches(s.text, pf.keyword) ELSE contains(s.text, pf.keyword) END
                    ))::int AS y_pred
             FROM tmp_{label_column_name}_splits s
+            WHERE split_name = '{split}'
         """)
 
         return q.df()
