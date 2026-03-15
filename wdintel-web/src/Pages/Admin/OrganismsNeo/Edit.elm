@@ -81,7 +81,7 @@ view route _ =
     in
     { title = "Адмін: організми (neo)"
     , body =
-        [ div [ class "mt-3 w-full px-3" ]
+        [ div [ class "pt-4 pb-6 w-full px-3" ]
             [ node "organisms-neo-edit" organismIdAttrs [] ]
         ]
     }

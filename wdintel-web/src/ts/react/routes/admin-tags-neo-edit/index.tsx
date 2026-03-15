@@ -1,4 +1,3 @@
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
   CircularProgress,
   Dialog,
@@ -15,7 +14,12 @@ import {
 import React from 'react';
 
 import { TagAdmin, TagKeyword, TagUpsertReq } from '../../../../Bindings';
+import { FormPageHeader } from '../../components/FormPageHeader';
+import { FormPageLayout } from '../../components/FormPageLayout';
 import { Info } from '../../components/info';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { Button } from '../../components/mui-customized/button';
 import { createTag, deleteTagKeyword, getTagModelErrors, listTags, updateTag } from '../../services/api/tags';
 import type { TagModelErrorFE } from '../../services/api/tags';
@@ -245,7 +249,7 @@ function KeywordsTable(props: {
   onDelete: (keywordId: number) => void;
 }) {
   if (props.keywords.length === 0) {
-    return <div className="text-muted-foreground text-sm">Немає ключових слів</div>;
+    return <SectionEmptyState message="Немає ключових слів" />;
   }
 
   return (
@@ -475,40 +479,21 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
   }
 
   if (status === 'loading') {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <CircularProgress size={28} />
-      </div>
-    );
+    return <PageLoadingState />;
   }
 
   if (status === 'error') {
-    return (
-      <div className="space-y-4">
-        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={navigateBack}>
-          Назад
-        </Button>
-        <div className="text-red-600">{loadError || 'Помилка завантаження'}</div>
-      </div>
-    );
+    return <PageErrorState message={loadError || 'Помилка завантаження'} actionLabel="Назад" onAction={navigateBack} />;
   }
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full md:max-w-screen-lg space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <Typography variant="h5" className="!font-semibold">
-              {isNew ? 'Створити тег' : 'Редагувати тег'}
-            </Typography>
-            <Typography variant="body2" className="text-muted-foreground">
-              {isNew ? 'Додайте новий тег' : 'Оновіть параметри тегу'}
-            </Typography>
-          </div>
-          <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={navigateBack}>
-            Назад
-          </Button>
-        </div>
+    <FormPageLayout>
+      <div className="w-full space-y-6">
+        <FormPageHeader
+          title={isNew ? 'Створити тег' : 'Редагувати тег'}
+          subtitle={isNew ? 'Додайте новий тег' : 'Оновіть параметри тегу'}
+          onBack={navigateBack}
+        />
 
         <TagForm form={form} errors={formErrors} disabled={saving} onChange={setForm} />
 
@@ -577,21 +562,21 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
                   </div>
                 ))
               ) : (
-                <p className="text-muted-foreground text-sm">Немає відміток помилок</p>
+                <SectionEmptyState message="Немає відміток помилок" />
               ))}
           </div>
         </div>
 
         {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" /> : null}
       </div>
-
+ 
       <KeywordDeleteDialog
         open={deleteKeywordId !== null}
         onClose={() => setDeleteKeywordId(null)}
         onConfirm={handleDeleteKeyword}
         disabled={deleteKeywordId !== null && deletingIds.has(deleteKeywordId)}
       />
-    </div>
+    </FormPageLayout>
   );
 }
 

@@ -20,11 +20,13 @@ import type {
   CallsignsSortState,
   ExportPermission,
   SortColumn,
+  SortDirection,
   SortDescriptor,
 } from './types';
 
 const DEFAULT_LIMIT = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
+export const DESKTOP_LAYOUT_MIN_WIDTH_PX = 1440;
 
 export const DEFAULT_SORT: CallsignsSortState = {
   column: 'unit',
@@ -42,6 +44,7 @@ export function createDefaultFilters(now = new Date()): CallsignsFilterState {
   const from = new Date(now.getTime() - 7 * DAY_MS);
 
   return {
+    filterText: '',
     filterCallsign: '',
     filterPosition: '',
     filterComment: '',
@@ -75,10 +78,11 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
   return {
     afterId: query.afterId,
     beforeId: null,
-    filterCallsign: filters.filterCallsign,
-    filterPosition: filters.filterPosition,
-    filterComment: filters.filterComment,
-    filterUnit: filters.filterUnit,
+    filterText: filters.filterText.trim() || null,
+    filterCallsign: filters.filterCallsign.trim() || null,
+    filterPosition: filters.filterPosition.trim() || null,
+    filterComment: filters.filterComment.trim() || null,
+    filterUnit: filters.filterUnit.trim() || null,
     filterDeveloping: filters.filterDeveloping,
     sinceDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.fromDateTimeLocal),
     tillDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.toDateTimeLocal),
@@ -104,6 +108,22 @@ export function toBackendSort(sort: CallsignsSortState): ListCallsignsSortBy[] {
     return [sort.direction === 'asc' ? 'CallsignAsc' : 'CallsignDesc'];
   }
 
+  if (sort.column === 'position') {
+    return [sort.direction === 'asc' ? 'CallsignPositionAsc' : 'CallsignPositionDesc'];
+  }
+
+  if (sort.column === 'comment') {
+    return [sort.direction === 'asc' ? 'CallsignCommentAsc' : 'CallsignCommentDesc'];
+  }
+
+  if (sort.column === 'sourceName') {
+    return [sort.direction === 'asc' ? 'CallsignSourceAsc' : 'CallsignSourceDesc'];
+  }
+
+  if (sort.column === 'radioFreq') {
+    return [sort.direction === 'asc' ? 'CallsignRadioFreqAsc' : 'CallsignRadioFreqDesc'];
+  }
+
   if (sort.column === 'createdAt') {
     return [sort.direction === 'asc' ? 'CallsignCreatedAtAsc' : 'CallsignCreatedAtDesc'];
   }
@@ -111,11 +131,18 @@ export function toBackendSort(sort: CallsignsSortState): ListCallsignsSortBy[] {
   return [sort.direction === 'asc' ? 'CallsignUnitAsc' : 'CallsignUnitDesc'];
 }
 
-export function isCursorPaginationSortCompatible(sort: CallsignsSortState): boolean {
-  return sort.column === 'unit' && sort.direction === 'asc';
-}
+export function nextSortState(
+  current: CallsignsSortState,
+  column: SortColumn,
+  direction?: SortDirection,
+): CallsignsSortState {
+  if (direction) {
+    return {
+      column,
+      direction,
+    };
+  }
 
-export function nextSortState(current: CallsignsSortState, column: SortColumn): CallsignsSortState {
   if (current.column === column) {
     return {
       column,
@@ -360,20 +387,61 @@ export function makeCreatePayload(
   };
 }
 
-export function sortRowsClientSide(callsigns: Callsign[], sort: CallsignsSortState, unitsById: Map<number, Unit>): Callsign[] {
+function compareStrings(left: string, right: string) {
+  return left.localeCompare(right, 'uk', { sensitivity: 'base' });
+}
+
+function normalizeRadioFreq(value: string | null | undefined) {
+  const normalized = value?.trim() ?? '';
+  return normalized === '' ? '—' : normalized;
+}
+
+function compareUnitNames(left: Callsign, right: Callsign, unitsById: Map<number, Unit>) {
+  const leftUnit = unitsById.get(left.unitId);
+  const rightUnit = unitsById.get(right.unitId);
+  const unitParts = ['army', 'division', 'regiment', 'battalion', 'company'] as const;
+
+  for (const part of unitParts) {
+    const leftValue = String(leftUnit?.[part] ?? '');
+    const rightValue = String(rightUnit?.[part] ?? '');
+    const result = compareStrings(leftValue, rightValue);
+    if (result !== 0) return result;
+  }
+
+  return compareStrings(left.callsign, right.callsign);
+}
+
+export function sortRowsClientSide(
+  callsigns: Callsign[],
+  sort: CallsignsSortState,
+  unitsById: Map<number, Unit>,
+  sourcesById: Map<number, Source>,
+): Callsign[] {
   const sorted = [...callsigns];
   sorted.sort((left, right) => {
     let result = 0;
 
     if (sort.column === 'callsign') {
-      result = left.callsign.localeCompare(right.callsign, 'uk', { sensitivity: 'base' });
+      result = compareStrings(left.callsign, right.callsign);
+    } else if (sort.column === 'position') {
+      result = compareStrings(left.position, right.position);
+    } else if (sort.column === 'comment') {
+      result = compareStrings(left.comment, right.comment);
+    } else if (sort.column === 'sourceName') {
+      result = compareStrings(
+        left.sourceId == null ? '—' : (sourcesById.get(left.sourceId)?.name ?? `#${left.sourceId}`),
+        right.sourceId == null ? '—' : (sourcesById.get(right.sourceId)?.name ?? `#${right.sourceId}`),
+      );
+    } else if (sort.column === 'radioFreq') {
+      result = compareStrings(normalizeRadioFreq(left.radioFreq), normalizeRadioFreq(right.radioFreq));
     } else if (sort.column === 'createdAt') {
       result = left.createdAt - right.createdAt;
     } else {
-      const leftName = unitsById.get(left.unitId)?.name ?? '';
-      const rightName = unitsById.get(right.unitId)?.name ?? '';
-      result = leftName.localeCompare(rightName, 'uk', { sensitivity: 'base' });
-      if (result === 0) result = left.callsign.localeCompare(right.callsign, 'uk', { sensitivity: 'base' });
+      result = compareUnitNames(left, right, unitsById);
+    }
+
+    if (result === 0) {
+      result = left.id - right.id;
     }
 
     return sort.direction === 'asc' ? result : -result;

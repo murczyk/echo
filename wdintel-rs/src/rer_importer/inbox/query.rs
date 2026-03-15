@@ -103,6 +103,7 @@ pub(crate) async fn build_inbox_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    q = filter_selected_metadata_for_inbox_messages(q, req)?;
 
     if req.since_id_noninclusive.is_none()
         && req.since_date_inclusive_ms.is_none()
@@ -198,6 +199,7 @@ pub(crate) async fn build_inbox_query(
         )
         .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
         .into_query();
+    let query_metadata = build_inbox_metadata_lateral_query();
 
     let mut query = q.into_query();
     if req.nolimit != Some(true) {
@@ -205,10 +207,18 @@ pub(crate) async fn build_inbox_query(
     }
 
     let q_tags = "q_tags";
+    let q_metadata = "q_metadata";
     let sql = query
         .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
+        .join_lateral(
+            JoinType::LeftJoin,
+            query_metadata,
+            q_metadata,
+            Expr::value(true),
+        )
         .column((q_tags, "tags"))
         .column((q_tags, "inbox_tags"))
+        .column((q_metadata, "metadata"))
         .to_string(PostgresQueryBuilder);
 
     // println!("> Inbox items query: {sql}");
@@ -638,4 +648,121 @@ where
         .column_as(sigint_inbox_item::Column::PostId, "post_id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")
+}
+
+pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
+    sigint_inbox_item_metadata::Entity::find()
+        .select_only()
+        .expr_as(
+            Expr::cust_with_exprs(
+                "jsonb_agg(jsonb_build_object('color_code', $1, 'color_code_start_index', $2, 'color_code_end_index', $3, 'call_group_id', $4, 'call_group_id_start_index', $5, 'call_group_id_end_index', $6, 'call_group_name', $7, 'call_group_name_start_index', $8, 'call_group_name_end_index', $9, 'sender_id', $10, 'sender_id_start_index', $11, 'sender_id_end_index', $12, 'sender_name', $13, 'sender_name_start_index', $14, 'sender_name_end_index', $15, 'hash_id', $16, 'hash_id_start_index', $17, 'hash_id_end_index', $18) ORDER BY $19)",
+                [
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::ColorCode,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::ColorCodeStartIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::ColorCodeEndIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupIdStartIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupIdEndIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupName,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupNameStartIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupNameEndIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderIdStartIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderIdEndIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderName,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderNameStartIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderNameEndIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::HashId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::HashIdStartIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::HashIdEndIndex,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::Id,
+                    ))
+                    .into_simple_expr(),
+                ],
+            ),
+            "metadata",
+        )
+        .filter(
+            Expr::col((
+                sigint_inbox_item_metadata::Entity,
+                sigint_inbox_item_metadata::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .group_by(sigint_inbox_item_metadata::Column::SigintInboxItemId)
+        .into_query()
 }

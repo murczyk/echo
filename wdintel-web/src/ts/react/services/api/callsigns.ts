@@ -48,6 +48,7 @@ type CallsignUnitStatsRspLike = {
 type ListCallsignsReqBody = {
   after_id: ListCallsignsReq['afterId'];
   before_id: ListCallsignsReq['beforeId'];
+  filter_text: ListCallsignsReq['filterText'];
   filter_callsign: ListCallsignsReq['filterCallsign'];
   filter_position: ListCallsignsReq['filterPosition'];
   filter_comment: ListCallsignsReq['filterComment'];
@@ -188,6 +189,7 @@ function toListCallsignsReqBody(req: ListCallsignsReq): ListCallsignsReqBody {
   return {
     after_id: req.afterId,
     before_id: req.beforeId,
+    filter_text: req.filterText,
     filter_callsign: req.filterCallsign,
     filter_position: req.filterPosition,
     filter_comment: req.filterComment,

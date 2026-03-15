@@ -59,9 +59,11 @@ subscriptions _ =
 
 view : Shared.Model -> Model -> View Msg
 view _ _ =
-    { title = "Адмін: месенджери (neo)"
+    { title = "Адмін: месенджери"
     , body =
-        [ div [ class "mt-4 w-full px-4" ]
-            [ node "messenger-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "messenger-neo" [ class "react-fill-host block w-full h-full" ] [] ]
+            ]
         ]
     }

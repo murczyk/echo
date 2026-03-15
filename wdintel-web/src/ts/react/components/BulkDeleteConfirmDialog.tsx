@@ -12,6 +12,8 @@ import {
 } from '@mui/material';
 import type { ReactNode } from 'react';
 
+import { STANDARD_DIALOG_ACTIONS_SX } from './ConfirmDangerDialog';
+
 export type BulkDeleteDialogItem = {
   id: string | number;
   primary: ReactNode;
@@ -61,7 +63,7 @@ export function BulkDeleteConfirmDialog({
           ))}
         </List>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 3, pt: 3 }}>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose} disabled={blocked}>
           Скасувати
         </Button>

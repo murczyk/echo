@@ -83,7 +83,7 @@ export function TableTopToolbar(props: TableTopToolbarProps) {
 
   const internalTableActions =
     props.internalTableActionsPlaceholder ||
-    (tableStateContext.tableInstance ? (
+    (
       <InternalTableActions
         table={tableStateContext.tableInstance}
         densityDisabled={props.densityDisabled}
@@ -97,7 +97,7 @@ export function TableTopToolbar(props: TableTopToolbarProps) {
       >
         {props.additionalInternalActions}
       </InternalTableActions>
-    ) : null);
+    );
 
   return (
     <>

@@ -26,7 +26,7 @@ import './ts/web-components/bar-chart-2.ts'
 import './ts/web-components/small-map.ts'
 import './ts/web-components/floating-popup.ts'
 import './ts/react/aor-neo-element'
-import './ts/react/admin-neo-element'
+import './ts/react/admin-directions-neo-element'
 import './ts/react/aor-neo-form-element'
 import './ts/react/control-panel-neo-element'
 import './ts/react/keys-neo-element'
@@ -156,9 +156,11 @@ function applyResolvedTheme(theme: AppliedTheme) {
     const htmlElement = document.documentElement;
     if (theme === 'dark') {
         htmlElement.setAttribute("data-bs-theme", "dark");
+        window.dispatchEvent(new CustomEvent('echo-theme-applied', { detail: { theme } }));
         return;
     }
     htmlElement.removeAttribute("data-bs-theme");
+    window.dispatchEvent(new CustomEvent('echo-theme-applied', { detail: { theme } }));
 }
 
 function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
@@ -210,31 +212,26 @@ function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
 
     document.documentElement.classList.add('theme-switching');
 
+    applyResolvedTheme(nextTheme);
+
     requestAnimationFrame(() => {
         if (themeApplyRequestToken !== requestToken) {
             finish();
             return;
         }
-        applyResolvedTheme(nextTheme);
-        requestAnimationFrame(() => {
-            if (themeApplyRequestToken !== requestToken) {
-                finish();
-                return;
-            }
 
-            if (!overlayVisible) {
-                finish();
-                return;
-            }
+        if (!overlayVisible) {
+            finish();
+            return;
+        }
 
-            const elapsed = performance.now() - overlayShownAt;
-            if (elapsed >= minVisibleMs) {
-                finish();
-                return;
-            }
+        const elapsed = performance.now() - overlayShownAt;
+        if (elapsed >= minVisibleMs) {
+            finish();
+            return;
+        }
 
-            hideTimer = window.setTimeout(finish, minVisibleMs - elapsed);
-        });
+        hideTimer = window.setTimeout(finish, minVisibleMs - elapsed);
     });
 }
 
@@ -304,6 +301,7 @@ function createNavbarHeightSync() {
     window.addEventListener('resize', scheduleSync, { passive: true });
     window.addEventListener('orientationchange', scheduleSync, { passive: true });
 
+    syncNavbar();
     requestAnimationFrame(() => {
         scheduleSync();
         setTimeout(scheduleSync, 350);
@@ -388,7 +386,6 @@ export const flags = ({ env }) => {
 // to your Elm application, or subscribe to incoming
 // messages from Elm
 export const onReady = ({ app, env }) => {
-
     // Apply initial theme based on localStorage or system preference
     applyCurrentTheme();
     const syncNavbarHeight = createNavbarHeightSync();

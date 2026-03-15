@@ -1,13 +1,21 @@
 import EditIcon from '@mui/icons-material/Edit';
-import { CircularProgress, Tooltip, Typography } from '@mui/material';
+import { Box, CircularProgress, Stack } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { TagAdmin } from '../../../../Bindings';
+import { PageErrorState } from '../../components/PageErrorState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
+import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
-import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -58,6 +66,18 @@ function buildCreateHref(): string {
   return withBackTo('/admin/tags-neo/edit');
 }
 
+function buildTagLoadingRows(): TagAdmin[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    tagId: -index - 1,
+    label: '',
+    extra: null,
+    ord: null,
+    enabled: false,
+    keywords: [],
+    isPalitra: false,
+  }));
+}
+
 function useTagColumns(): MRT_ColumnDef<TagAdmin>[] {
   return React.useMemo(
     () => [
@@ -78,7 +98,7 @@ function useTagColumns(): MRT_ColumnDef<TagAdmin>[] {
         size: 120,
       },
       {
-        header: 'Ord',
+        header: 'Порядок',
         accessorFn: (row) => (row.ord === null ? '—' : row.ord),
         id: 'ord',
         size: 100,
@@ -91,7 +111,7 @@ function useTagColumns(): MRT_ColumnDef<TagAdmin>[] {
       },
       {
         header: 'Ключові слова',
-        accessorFn: (row) => row.keywords.length,
+        accessorFn: (row) => row.keywords?.length ?? 0,
         id: 'keywordsCount',
         size: 140,
       },
@@ -102,20 +122,24 @@ function useTagColumns(): MRT_ColumnDef<TagAdmin>[] {
 
 function RowActions(props: { tag: TagAdmin }) {
   return (
-    <Tooltip title="Редагувати">
-      <IconButton size="small" onClick={() => navigateWithinSpa(buildEditHref(props.tag.tagId))}>
-        <EditIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
+    <MrtRowActionButton
+      label="Редагувати"
+      onClick={() => navigateWithinSpa(buildEditHref(props.tag.tagId))}
+      icon={<EditIcon fontSize="small" />}
+    />
   );
 }
 
-function TagsTable(props: { data: TagAdmin[] }) {
+function TagsTable(props: { data: TagAdmin[]; loading: boolean }) {
   const tableStateContext = useTableStateContext();
   const columns = useTagColumns();
+  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -127,7 +151,7 @@ function TagsTable(props: { data: TagAdmin[] }) {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildTagLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -146,7 +170,7 @@ function TagsTable(props: { data: TagAdmin[] }) {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => <RowActions tag={row.original} />,
     defaultColumn: {
@@ -157,7 +181,7 @@ function TagsTable(props: { data: TagAdmin[] }) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 80,
+        size: mrtRowActionsColumnSize(1),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -167,6 +191,22 @@ function TagsTable(props: { data: TagAdmin[] }) {
             ...CUSTOM_CELL_STYLES,
           },
         }),
+      },
+    },
+    muiTablePaperProps: ({ table }) => {
+      const baseProps = resolvedPaperProps({ table });
+      return {
+        ...baseProps,
+        sx: {
+          ...(baseProps as any)?.sx,
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: {
+        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -202,50 +242,43 @@ function AdminTagsNeoPageBody() {
   }, []);
 
   const renderTable = () => {
-    if (status === 'loading') {
-      return (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
+    return (
+      <TableContentState
+        status={status}
+        errorMessage={error || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <TagsTable data={tags} loading />
+          </div>
+        }
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <TagsTable data={tags} loading={false} />
         </div>
-      );
-    }
-    if (status === 'error') {
-      return <div className="text-center py-8 text-red-600">{error || 'Помилка завантаження'}</div>;
-    }
-    if (status === 'success') {
-      return (
-        <div className="table-responsive-modern">
-          <TagsTable data={tags} />
-        </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Теги
-          </Typography>
-        }
-        withDatePicker={false}
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <TablePageToolbar
+        title="Теги"
         withGlobalTextFilter
-        additionalActions={
-          <div className="flex gap-2">
-            <Button variant="outlined" onClick={loadTags}>
-              Оновити
-            </Button>
+        hideGlobalTextFilter={status !== 'success'}
+        internalActionsDisabled={status !== 'success'}
+        actions={
+          <div className="flex gap-3">
             <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-              Створити
+              Створити тег
             </Button>
           </div>
         }
       />
 
-      {renderTable()}
-    </div>
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
+      </Stack>
+    </Box>
   );
 }
 

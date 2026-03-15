@@ -69,10 +69,12 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: організми (neo)"
+    { title = "Адмін: організми"
     , body =
-        [ div [ class "mt-4 px-4 w-full app-shell-fill-height overflow-hidden" ]
-            [ node "organisms-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "organisms-neo" [ class "react-fill-host block w-full h-full" ] [] ]
+            ]
         ]
     }
 

@@ -180,10 +180,10 @@ export async function setupMap(data: { points: MapPointShort[], containerId: str
 			map.addControl(new (createExitControl(exitCallback))({ position: 'topright' }));
 			map.addControl(fullScreenControl);
 
-			if (!window.location.hostname.includes('echo-soledarnist') && kmzData) {
+			if (kmzData) {
 
 				const kmz = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false })
-				kmz.addTo(map);
+				kmz.addTo(map);	
 				kmz.parse(kmzData, {})
 
 				fullScreenControl.on("fullscreen-toggled", (e) => {

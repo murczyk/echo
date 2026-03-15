@@ -1,12 +1,14 @@
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
   Alert,
   Autocomplete,
+  Box,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Stack,
   TextField,
   Tooltip,
   Typography,
@@ -15,10 +17,19 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { ListOrganismsReq, Organism } from '../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
-import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -31,7 +42,6 @@ import {
   listKeySharePolicies,
   SigintKeySharePolicy,
 } from '../../services/api/keys';
-
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -53,7 +63,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   createdAt: true,
 };
 
-const DEFAULT_COLUMN_ORDER = ['mrt-row-actions', 'grantFrom', 'grantTo', 'author', 'createdAt'];
+const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'mrt-row-actions', 'grantFrom', 'grantTo', 'author', 'createdAt'];
 
 const defaultMRTOptions = getDefaultMRTOptions<SigintKeySharePolicy>();
 
@@ -78,6 +88,16 @@ function formatDate(value: number | null | undefined): string {
 
 function getOrganismLabel(organismId: number, organismNames: Map<number, string>) {
   return organismNames.get(organismId) || `#${organismId}`;
+}
+
+function buildKeyPolicyLoadingRows(): SigintKeySharePolicy[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    grantFrom: 0,
+    grantTo: 0,
+    author: '',
+    createdAt: 0,
+  }));
 }
 
 function usePolicyColumns(organismNames: Map<number, string>): MRT_ColumnDef<SigintKeySharePolicy>[] {
@@ -130,6 +150,7 @@ function usePolicyColumns(organismNames: Map<number, string>): MRT_ColumnDef<Sig
 
 function KeyPoliciesTable(props: {
   data: SigintKeySharePolicy[];
+  loading: boolean;
   organismNames: Map<number, string>;
   onDelete: (policy: SigintKeySharePolicy) => void;
 }) {
@@ -141,6 +162,8 @@ function KeyPoliciesTable(props: {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -152,11 +175,11 @@ function KeyPoliciesTable(props: {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildKeyPolicyLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
-    enableRowNumbers: false,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -172,14 +195,15 @@ function KeyPoliciesTable(props: {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
-      <Tooltip title="Видалити">
-        <IconButton size="small" onClick={() => props.onDelete(row.original)}>
-          <DeleteOutlineIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <MrtRowActionButton
+        label="Видалити"
+        onClick={() => props.onDelete(row.original)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+      />
     ),
     defaultColumn: {
       size: 200,
@@ -187,6 +211,10 @@ function KeyPoliciesTable(props: {
     },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(1),
+      },
     },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
@@ -194,21 +222,14 @@ function KeyPoliciesTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: 'none',
-        overflowX: 'auto',
-        overflowY: 'visible',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -332,71 +353,72 @@ function AdminKeysNeoPageBody() {
   }
 
   const renderTable = () => {
-    if (status === 'loading') {
-      return (
-        <div className="flex h-full items-center justify-center">
-          <CircularProgress size={28} />
-        </div>
-      );
-    }
-    if (status === 'error') {
-      return <div className="text-center py-8 text-red-600">{error || 'Помилка завантаження'}</div>;
-    }
     return (
-      <div className="table-responsive-modern w-full min-w-0">
-        <KeyPoliciesTable
-          data={policies}
-          organismNames={organismNames}
-          onDelete={(policy) => setDeleteState({ policy, isDeleting: false, error: null })}
-        />
-      </div>
+      <TableContentState
+        status={status}
+        errorMessage={error || 'Помилка завантаження'}
+        fillAvailableHeight={status !== 'success'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <KeyPoliciesTable
+              data={policies}
+              loading
+              organismNames={organismNames}
+              onDelete={(policy) => setDeleteState({ policy, isDeleting: false, error: null })}
+            />
+          </div>
+        }
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <KeyPoliciesTable
+            data={policies}
+            loading={false}
+            organismNames={organismNames}
+            onDelete={(policy) => setDeleteState({ policy, isDeleting: false, error: null })}
+          />
+        </div>
+      </TableContentState>
     );
   };
 
   return (
-    <div className="mt-2 w-full space-y-4 min-w-0">
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       {organismsStatus === 'error' ? (
         <Alert severity="error" onClose={() => setOrganismsError(null)}>
           {organismsError || 'Помилка завантаження організацій'}
         </Alert>
       ) : null}
 
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Політики доступу до ключів
-          </Typography>
+      <TablePageToolbar
+        title="Політики доступу до ключів"
+        titleInfo={
+          <Box sx={{ maxWidth: 360 }}>
+            Додайте нову політику, щоби користувачі організму-отримувача бачили всі ключі шифрування, створені
+            користувачами організму-власника.
+            <br />
+            <br />
+            Політика надає односторонній доступ лише до ключів, якими володіє організм. Для доступу до ключів,
+            переданих власнику іншими організмами, створіть окремі політики.
+          </Box>
         }
-        withDatePicker={false}
-        withGlobalTextFilter={false}
-        additionalActions={
-          <div className="flex gap-2">
-            <Button variant="outlined" onClick={loadPolicies}>
-              Оновити
-            </Button>
+        withGlobalTextFilter
+        hideGlobalTextFilter={status !== 'success'}
+        internalActionsDisabled={status !== 'success'}
+        actions={
+          <div className="flex gap-3">
             <Button variant="contained" onClick={openCreateDialog}>
-              Додати
+              Додати політику
             </Button>
           </div>
         }
       />
 
-      <div className="rounded-lg border bg-[var(--bs-tertiary-bg)] p-4 text-sm text-muted-foreground space-y-2">
-        <p>
-          Додайте нову політику щоби користувачі з організму що є отримувачем прав на перегляд мали можливість бачити
-          усі ключі шифрування які створили користувачі з організму - Власника ключів.
-        </p>
-        <p>
-          Ця політика надає доступ до ключів в односторонньому порядку, і лише до тих ключів якими володіє організм;
-          для надання прав до ключів якимим поділилися із Власником інші організми створіть окремі політики.
-        </p>
-      </div>
-
-      {renderTable()}
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
 
       <Dialog open={createOpen} onClose={closeCreateDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Додати політику доступу</DialogTitle>
-        <DialogContent className="space-y-4">
+        <DialogContent className="space-y-3">
           {createError ? <Alert severity="error">{createError}</Alert> : null}
           <Autocomplete
             options={organismOptions}
@@ -435,8 +457,13 @@ function AdminKeysNeoPageBody() {
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
         </DialogContent>
-        <DialogActions>
-          <Button variant="outlined" onClick={closeCreateDialog} disabled={createSaving}>
+        <DialogActions
+          sx={{
+            ...STANDARD_DIALOG_ACTIONS_SX,
+            pt: 2,
+          }}
+        >
+          <Button onClick={closeCreateDialog} disabled={createSaving}>
             Скасувати
           </Button>
           <Button variant="contained" onClick={handleCreate} disabled={createSaving}>
@@ -445,26 +472,22 @@ function AdminKeysNeoPageBody() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(deleteState)} onClose={() => setDeleteState(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Підтвердження видалення</DialogTitle>
-        <DialogContent className="space-y-3">
+      <ConfirmDangerDialog
+        open={Boolean(deleteState)}
+        onClose={() => setDeleteState(null)}
+        onConfirm={handleDelete}
+        submitting={Boolean(deleteState?.isDeleting)}
+        disabled={!deleteState}
+      >
           {deleteState?.error ? <Alert severity="error">{deleteState.error}</Alert> : null}
           <Typography variant="body2" className="text-muted-foreground">
             {deleteState
               ? `Видалити політику для ${getOrganismLabel(deleteState.policy.grantFrom, organismNames)} → ${getOrganismLabel(deleteState.policy.grantTo, organismNames)}?`
               : ''}
           </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button variant="outlined" onClick={() => setDeleteState(null)} disabled={deleteState?.isDeleting}>
-            Скасувати
-          </Button>
-          <Button variant="contained" onClick={handleDelete} disabled={deleteState?.isDeleting}>
-            Видалити
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </div>
+      </ConfirmDangerDialog>
+      </Stack>
+    </Box>
   );
 }
 

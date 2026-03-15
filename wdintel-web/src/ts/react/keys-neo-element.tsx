@@ -1,16 +1,13 @@
-import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
 import { AdminKeysNeoPage } from './routes/admin-keys-neo';
-import { useNeoMuiTheme } from './mui-theme';
+import { NeoMuiThemeProvider } from './mui-theme';
 
 function KeysNeoRoot() {
-  const theme = useNeoMuiTheme();
-
   return (
-    <ThemeProvider theme={theme}>
+    <NeoMuiThemeProvider>
       <AdminKeysNeoPage />
-    </ThemeProvider>
+    </NeoMuiThemeProvider>
   );
 }
 
