@@ -1,19 +1,23 @@
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
-import { Backdrop, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
+import { CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import React from 'react';
 
-import { loadingOverlayBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerChip } from '../../../components/PowerChip';
+import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import type { UnitStatView } from '../types';
 
 type Props = {
   stats: UnitStatView[];
   open: boolean;
+  isDesktopLayout: boolean;
   loading: boolean;
   onPickUnitFilter: (unitName: string) => void;
+  onToggleOpen?: () => void;
   selectedUnitFilter?: string;
 };
 
@@ -225,7 +229,15 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
   );
 }
 
-export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selectedUnitFilter }: Props) {
+export function UnitStatsSidebar({
+  stats,
+  open,
+  isDesktopLayout,
+  loading,
+  onPickUnitFilter,
+  onToggleOpen,
+  selectedUnitFilter,
+}: Props) {
   const [searchInput, setSearchInput] = React.useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
   const normalizedSearchQuery = React.useMemo(() => normalizeSearchQuery(debouncedSearchInput), [debouncedSearchInput]);
@@ -248,7 +260,6 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
     const selectedUnit = selectedUnitFilter?.trim() ?? '';
 
     if (!selectedUnit) {
-      setExpandedIds(new Set());
       return;
     }
 
@@ -256,7 +267,33 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
     setExpandedIds(new Set(path));
   }, [open, tree, selectedUnitFilter, normalizedSearchQuery]);
 
-  if (!open) return null;
+  if (!open) {
+    return (
+      <Paper
+        variant="outlined"
+        sx={{
+          display: isDesktopLayout ? 'none' : 'flex',
+          width: '100%',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          p: 2,
+          borderRadius: 0,
+        }}
+      >
+        <Typography variant="h6">Підрозділи</Typography>
+        {onToggleOpen ? (
+          <IconButton
+            onClick={onToggleOpen}
+            aria-label="Показати панель підрозділів"
+            title="Показати панель підрозділів"
+            sx={{ color: 'text.primary' }}
+          >
+            <KeyboardArrowDownIcon />
+          </IconButton>
+        ) : null}
+      </Paper>
+    );
+  }
 
   function onToggle(nodeId: string) {
     setExpandedIds((prev) => {
@@ -274,25 +311,40 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
     <Paper
       variant="outlined"
       sx={{
-        width: { xs: '100%', lg: 320 },
-        minWidth: { lg: 280 },
-        height: { xs: 'auto', lg: '100%' },
-        maxHeight: { xs: '36vh', lg: '100%' },
+        width: isDesktopLayout ? 320 : '100%',
+        minWidth: isDesktopLayout ? 280 : 0,
+        height: isDesktopLayout ? '100%' : 'auto',
+        maxHeight: isDesktopLayout ? '100%' : '36vh',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        borderRadius: 0,
       }}
       aria-busy={loading}
     >
       <Stack spacing={1.5} sx={{ p: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="h6">Підрозділи</Typography>
+          {onToggleOpen ? (
+            <IconButton
+              onClick={onToggleOpen}
+              aria-label="Сховати панель підрозділів"
+              title="Сховати панель підрозділів"
+              sx={{
+                display: isDesktopLayout ? 'none' : 'inline-flex',
+                color: 'text.primary',
+              }}
+            >
+              <KeyboardArrowUpIcon />
+            </IconButton>
+          ) : null}
         </Stack>
         <TextField
           size="small"
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Пошук"
+          disabled={loading}
           inputProps={{ 'aria-label': 'Пошук підрозділу у дереві статистики' }}
           InputProps={{
             startAdornment: (
@@ -308,6 +360,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
                     onClick={() => setSearchInput('')}
                     aria-label="Очистити пошук підрозділу"
                     edge="end"
+                    disabled={loading}
                   >
                     <ClearIcon fontSize="small" />
                   </IconButton>
@@ -346,12 +399,10 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
         </Stack>
       ) : (
         <Stack sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          <Backdrop
+          <SectionLoadingOverlay
             open={loading && stats.length > 0}
-            sx={loadingOverlayBackdropSx}
-          >
-            <CircularProgress size={22} color="primary" role="status" aria-live="polite" aria-label="Оновлення статистики" />
-          </Backdrop>
+            ariaLabel="Оновлення статистики"
+          />
 
           <List
             dense

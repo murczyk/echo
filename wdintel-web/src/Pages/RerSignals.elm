@@ -633,7 +633,7 @@ filteredSignals model =
 
 
 signalsTableConfig : Shared.Model -> Model -> B.User -> Maybe Int -> Table.Config B.Signal Msg
-signalsTableConfig shared _ user editingSignalId =
+signalsTableConfig shared model user editingSignalId =
     let
         hasEditorRole =
             Core.Auth.hasRole "UnitsEditor" user
@@ -664,31 +664,47 @@ signalsTableConfig shared _ user editingSignalId =
         customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
         customTheadHelp ( name, status, click ) =
             let
+                ( activeSortName, activeSortReversed ) =
+                    Table.getSortState model.tableState
+
                 sortIcon =
-                    case status of
-                        TableConfig.Unsortable ->
-                            text ""
+                    if name == "Дата внесення" && activeSortName == name then
+                        span
+                            [ style "color" "var(--ochre-normal)" ]
+                            [ text
+                                (if activeSortReversed then
+                                    " ↑"
 
-                        TableConfig.Sortable selected ->
-                            span
-                                [ style "color"
-                                    (if selected then
-                                        "var(--ochre-normal)"
+                                 else
+                                    " ↓"
+                                )
+                            ]
 
-                                     else
-                                        "var(--color-text-muted)"
-                                    )
-                                ]
-                                [ text " ↓" ]
+                    else
+                        case status of
+                            TableConfig.Unsortable ->
+                                text ""
 
-                        TableConfig.Reversible Nothing ->
-                            span [ style "color" "var(--color-text-muted)" ] [ text " ↓" ]
+                            TableConfig.Sortable selected ->
+                                span
+                                    [ style "color"
+                                        (if selected then
+                                            "var(--ochre-normal)"
 
-                        TableConfig.Reversible (Just True) ->
-                            span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+                                         else
+                                            "var(--color-text-muted)"
+                                        )
+                                    ]
+                                    [ text " ↓" ]
 
-                        TableConfig.Reversible (Just False) ->
-                            span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+                            TableConfig.Reversible Nothing ->
+                                span [ style "color" "var(--color-text-muted)" ] [ text " ↓" ]
+
+                            TableConfig.Reversible (Just True) ->
+                                span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
+                            TableConfig.Reversible (Just False) ->
+                                span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
 
                 headerContent =
                     span [] [ text name, sortIcon ]
@@ -731,10 +747,16 @@ signalsTableConfig shared _ user editingSignalId =
                 |> Table.withColumnWidth "20%"
             , Table.stringColumn "Координати" (\signal -> Maybe.withDefault "" signal.coordinates)
                 |> Table.withColumnWidth "15%"
-            , Table.stringColumn "Дата внесення"
-                (\signal ->
-                    Utils.Time.renderDateTimeF1 shared.timeZone (Time.millisToPosix signal.createdAt)
-                )
+            , Table.veryCustomColumn
+                { name = "Дата внесення"
+                , viewData =
+                    \signal ->
+                        TableColumn.HtmlDetails []
+                            [ text <|
+                                Utils.Time.renderDateTimeF1 shared.timeZone (Time.millisToPosix signal.createdAt)
+                            ]
+                , sorter = Table.decreasingOrIncreasingBy .createdAt
+                }
                 |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
                 { name = "Дії"

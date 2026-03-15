@@ -14,13 +14,13 @@ import View exposing (View)
 
 
 type alias Model =
-    { showBetaBanner : Bool
+    { showBetaBanner : Maybe Bool
     }
 
 
 init : () -> ( Model, Effect Msg )
 init _ =
-    ( { showBetaBanner = True }
+    ( { showBetaBanner = Nothing }
     , E.sendCmd <| Ports.rer_callsigns_neo_loadBetaBannerDismissed ()
     )
 
@@ -57,12 +57,12 @@ update msg model =
             ( model, E.none )
 
         CloseBetaBanner ->
-            ( { model | showBetaBanner = False }
+            ( { model | showBetaBanner = Just False }
             , E.sendCmd <| Ports.rer_callsigns_neo_saveBetaBannerDismissed True
             )
 
         BetaBannerDismissedLoaded isDismissed ->
-            ( { model | showBetaBanner = not isDismissed }
+            ( { model | showBetaBanner = Just (not isDismissed) }
             , E.none
             )
 
@@ -78,7 +78,7 @@ view user model =
         betaBannerNode =
             div
                 [ class <|
-                    if model.showBetaBanner then
+                    if model.showBetaBanner == Just True then
                         "shrink-0"
 
                     else
@@ -111,9 +111,9 @@ view user model =
                     ]
                 ]
     in
-    { title = "позивні"
+    { title = "Позивні"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden" ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-full flex flex-col gap-6 overflow-visible lg:overflow-hidden" ]
             [ betaBannerNode
             , div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-callsigns-neo"

@@ -1,4 +1,3 @@
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
   Alert,
   Autocomplete,
@@ -13,6 +12,12 @@ import {
 import React from 'react';
 
 import { AreaOfResponsibility, CreateOrganismReq, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
+import { FormPageHeader } from '../../components/FormPageHeader';
+import { FormPageLayout } from '../../components/FormPageLayout';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { SectionEmptyState } from '../../components/SectionEmptyState';
+import { SectionErrorState } from '../../components/SectionErrorState';
 import { Button } from '../../components/mui-customized/button';
 import { listAors } from '../../services/api/aor';
 import {
@@ -227,6 +232,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           renderValue: (selected) => (selected as string[]).join(', ') || '—',
         }}
         disabled={props.isSubmitting}
+        helperText=" "
       >
         {ROLE_OPTIONS.map((role) => (
           <MenuItem key={role} value={role}>
@@ -252,15 +258,16 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           },
         }}
         disabled={props.isSubmitting}
+        helperText=" "
       >
         {aorOptions}
       </TextField>
 
-      <Box className="space-y-2">
+      <Box className="space-y-3 pt-2 pb-3">
         <Typography variant="subtitle2" className="text-muted-foreground">
           Доступні групи для організму
         </Typography>
-        <Box className="p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <Box className="mt-2 p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           {props.isComputing ? (
             <div className="flex items-center gap-2">
               <CircularProgress size={18} />
@@ -269,14 +276,10 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
               </Typography>
             </div>
           ) : props.computeError ? (
-            <Typography variant="body2" className="text-red-600">
-              {props.computeError}
-            </Typography>
+            <SectionErrorState message={props.computeError} />
           ) : props.computedGroups ? (
             props.computedGroups.length === 0 ? (
-              <Typography variant="body2" className="text-muted-foreground italic">
-                Немає доступних груп
-              </Typography>
+              <SectionEmptyState message="Немає доступних груп" />
             ) : (
               <div className="flex flex-wrap gap-1">
                 {props.computedGroups.map((group) => (
@@ -366,10 +369,10 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
       ) : null}
 
       <Box className="space-y-4 border-t border-gray-200 dark:border-gray-700 pt-6">
-        <Typography variant="h6" className="!font-semibold">
+        <Typography variant="h6" className="!font-semibold pb-3">
           ГОІ
         </Typography>
-        <Alert severity="info">
+        <Alert severity="info" className="!mb-4">
           Для організму можна запустити контейнер з ПЗ ГОІ, після чого налаштувати їхню інтеграцію. ГОІ має слабкий
           захист та не підтримує повноцінну авторизацію, але має дуже потужну роботу з палітрами. Для налаштування
           необхідно буде вказати деталі SSH-доступу. При завантаженні палітри в організм ЕХО -- вона з&apos;являтиметься
@@ -381,6 +384,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           value={props.form.goiSshHost}
           onChange={(event) => props.onChange({ goiSshHost: event.target.value })}
           fullWidth
+          helperText=" "
           disabled={props.isSubmitting || props.isCheckingGoiConnection}
         />
 
@@ -389,6 +393,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           value={props.form.goiSshUser}
           onChange={(event) => props.onChange({ goiSshUser: event.target.value })}
           fullWidth
+          helperText=" "
           disabled={props.isSubmitting || props.isCheckingGoiConnection}
         />
 
@@ -418,7 +423,7 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           disabled={props.isSubmitting || props.isCheckingGoiConnection}
         />
 
-        <div className="flex items-center gap-3">
+        <div className="mt-3 flex items-center gap-3">
           <Button
             variant="outlined"
             onClick={props.onCheckGoiConnection}
@@ -766,42 +771,27 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   }
 
   if (loadStatus === 'loading') {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <CircularProgress size={28} />
-      </div>
-    );
+    return <PageLoadingState />;
   }
 
   if (loadStatus === 'error') {
-    return (
-      <div className="space-y-4 py-10">
-        <Alert severity="error">{loadError || 'Помилка завантаження'}</Alert>
-        <Button variant="outlined" onClick={navigateBack}>
-          Назад
-        </Button>
-      </div>
-    );
+    return <PageErrorState message={loadError || 'Помилка завантаження'} actionLabel="Назад" onAction={navigateBack} />;
   }
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full md:max-w-screen-lg space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <Typography variant="h5" className="!font-semibold">
-              {isNew ? 'Створити організм' : 'Редагувати організм'}
-            </Typography>
-            {!isNew && props.organismId ? (
-              <Typography variant="body2" className="text-muted-foreground">
-                ID: {props.organismId}
-              </Typography>
-            ) : null}
-          </div>
-          <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={navigateBack}>
-            Назад
-          </Button>
-        </div>
+    <FormPageLayout>
+      <div className="w-full space-y-6">
+        <FormPageHeader
+          title={isNew ? 'Створити організм' : 'Редагувати організм'}
+          subtitle={
+            isNew
+              ? 'Додайте новий організм'
+              : props.organismId
+                ? `ID: ${props.organismId}`
+                : undefined
+          }
+          onBack={navigateBack}
+        />
 
         {status ? (
           <Alert severity={status.kind} onClose={() => setStatus(null)}>
@@ -837,7 +827,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           </Button>
         </div>
       </div>
-    </div>
+    </FormPageLayout>
   );
 }
 

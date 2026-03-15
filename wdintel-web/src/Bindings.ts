@@ -1716,6 +1716,14 @@ export type CallsignActivityRecord = {
 export type ListCallsignsSortBy =
   | 'CallsignAsc'
   | 'CallsignDesc'
+  | 'CallsignPositionAsc'
+  | 'CallsignPositionDesc'
+  | 'CallsignCommentAsc'
+  | 'CallsignCommentDesc'
+  | 'CallsignSourceAsc'
+  | 'CallsignSourceDesc'
+  | 'CallsignRadioFreqAsc'
+  | 'CallsignRadioFreqDesc'
   | 'CallsignCreatedAtAsc'
   | 'CallsignCreatedAtDesc'
   | 'CallsignUnitAsc'
@@ -1731,6 +1739,7 @@ export type DevelopingFilter =
 export type ListCallsignsReq = {
   afterId: number | null;
   beforeId: number | null;
+  filterText: string | null;
   filterCallsign: string | null;
   filterPosition: string | null;
   filterComment: string | null;

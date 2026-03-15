@@ -1,4 +1,4 @@
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import LinkIcon from '@mui/icons-material/Link';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
@@ -15,6 +15,7 @@ import {
   DialogTitle,
   Drawer,
   MenuItem,
+  Stack,
   TextField,
   Tooltip,
   Typography,
@@ -34,19 +35,25 @@ import {
   LinkEchoOperatorReq,
   Login,
 } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
+import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { Info } from '../../components/info';
-import { PageHeader } from '../../components/PageHeader';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -316,6 +323,31 @@ function getStatusColorClass(account: EchoAccountF1): string {
   return 'text-orange-600';
 }
 
+function buildMessengerLoadingRows(): EchoAccountF1[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    areaOfResponsibility: null,
+    status: '',
+    createdAt: 0,
+    clientId: null,
+    displayName: '',
+    systemServiceName: null,
+    description: null,
+    messenger: 'signal',
+    phoneNumber: '',
+    apiLogin: null,
+    apiEndpoint: null,
+    isLinked: false,
+    isImported: false,
+    signalPort: null,
+    processName: null,
+    attachmentsPath: null,
+    echoClientId: null,
+    echoAccountId: null,
+    echoClientLockId: null,
+  }));
+}
+
 function buildDebugDetails(account: EchoAccountF1) {
   return [
     { label: 'echo_client_config.process_name', value: account.processName },
@@ -387,7 +419,7 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
         accessorKey: 'systemServiceName',
         Cell: ({ cell }) => (
           <span className="text-sm">
-            {(cell.getValue<string>() || '').trim() || '—'}
+            {formatMrtCellTextValue(cell.getValue<string>())}
           </span>
         ),
         size: 160,
@@ -477,9 +509,9 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
       {
         header: 'Смуга відповідальності',
         accessorKey: 'aor',
-        accessorFn: (row) => row.areaOfResponsibility?.name || '—',
+        accessorFn: (row) => formatMrtCellTextValue(row.areaOfResponsibility?.name),
         Cell: ({ row }) => (
-          <span>{row.original.areaOfResponsibility?.name || '—'}</span>
+          <span>{formatMrtCellTextValue(row.original.areaOfResponsibility?.name)}</span>
         ),
         size: 160,
       },
@@ -513,82 +545,48 @@ function TableRowActions(props: TableActionsProps) {
   const { account } = props;
 
   return (
-    <div className="grid grid-cols-2 gap-1">
-      <Tooltip title="Перезапустити">
-        <span>
-          <IconButton
-            size="small"
-            disabled={props.disabled}
-            onClick={() => props.onRestart(account.id)}
-            className="table-action-btn"
-          >
-            <RestartAltIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Редагувати">
-        <span>
-          <IconButton
-            size="small"
-            disabled={props.disabled}
-            onClick={() => props.onEdit(account.id)}
-            className="table-action-btn"
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
+    <MrtRowActions layout="grid">
+      <MrtRowActionButton
+        label="Перезапустити"
+        disabled={props.disabled}
+        onClick={() => props.onRestart(account.id)}
+        icon={<RestartAltIcon fontSize="small" />}
+      />
+      <MrtRowActionButton
+        label="Редагувати"
+        disabled={props.disabled}
+        onClick={() => props.onEdit(account.id)}
+        icon={<EditIcon fontSize="small" />}
+      />
       {account.isLinked ? (
-        <Tooltip
-          title={account.status === 'active' ? 'Відвʼязати' : 'Активувати'}
-        >
-          <span>
-            <IconButton
-              size="small"
-              disabled={props.disabled}
-              onClick={() => props.onToggleStatus(account.id)}
-              className="table-action-btn"
-            >
-              {account.status === 'active' ? (
-                <PauseCircleOutlineIcon />
-              ) : (
-                <PlayCircleOutlineIcon />
-              )}
-            </IconButton>
-          </span>
-        </Tooltip>
+        <MrtRowActionButton
+          label={account.status === 'active' ? 'Відвʼязати' : 'Активувати'}
+          disabled={props.disabled}
+          onClick={() => props.onToggleStatus(account.id)}
+          icon={account.status === 'active' ? <PauseCircleOutlineIcon /> : <PlayCircleOutlineIcon />}
+        />
       ) : (
-        <Tooltip title="Підключити">
-          <span>
-            <IconButton
-              size="small"
-              disabled={props.disabled}
-              onClick={() => props.onConnect(account.id)}
-              className="table-action-btn"
-            >
-              <LinkIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <MrtRowActionButton
+          label="Підключити"
+          disabled={props.disabled}
+          onClick={() => props.onConnect(account.id)}
+          icon={<LinkIcon fontSize="small" />}
+        />
       )}
-      <Tooltip title="Видалити">
-        <span>
-          <IconButton
-            size="small"
-            disabled={props.disabled}
-            onClick={() => props.onDelete(account.id)}
-            className="icon-btn icon-btn-danger"
-          >
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-    </div>
+      <MrtRowActionButton
+        label="Видалити"
+        disabled={props.disabled}
+        onClick={() => props.onDelete(account.id)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+      />
+    </MrtRowActions>
   );
 }
 
 type MessengerAccountsTableProps = {
   data: EchoAccountF1[];
+  loading: boolean;
   actionsDisabled: boolean;
   onRestart: (accountId: number) => void;
   onEdit: (accountId: number) => void;
@@ -602,9 +600,13 @@ const defaultMRTOptions = getDefaultMRTOptions<EchoAccountF1>();
 function MessengerAccountsTable(props: MessengerAccountsTableProps) {
   const columns = useMessengerColumns();
   const tableStateContext = useTableStateContext();
+  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -616,7 +618,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildMessengerLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -634,7 +636,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     renderRowActions: ({ row }) => (
       <TableRowActions
         account={row.original}
@@ -654,7 +656,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 90,
+        size: mrtRowActionsColumnSize(4, 'grid'),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -664,6 +666,43 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
             ...CUSTOM_CELL_STYLES,
           },
         }),
+      },
+    },
+    muiTablePaperProps: ({ table }) => {
+      const baseProps = resolvedPaperProps({ table });
+      return {
+        ...baseProps,
+        sx: {
+          ...(baseProps as any)?.sx,
+          ...(props.loading
+            ? FULL_WIDTH_TABLE_PAPER_SX
+            : {
+                minWidth: 0,
+                maxWidth: '100%',
+                width: '100%',
+                height: 'auto',
+                minHeight: 0,
+                overflow: 'hidden',
+              }),
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: {
+        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
+        ...(props.loading
+          ? PAGE_SCROLL_TABLE_CONTAINER_SX
+          : {
+              minHeight: 0,
+              minWidth: 0,
+              maxWidth: '100%',
+              width: '100%',
+              maxHeight: '100%',
+              height: 'auto',
+              overflowX: 'auto',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+            }),
       },
     },
     state,
@@ -1154,25 +1193,30 @@ function AdminMessengerNeoPageBody() {
   ));
 
   const renderAccountsTable = () => {
-    if (accountsStatus === 'loading') {
-      return (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
-        </div>
-      );
-    }
-    if (accountsStatus === 'error') {
-      return (
-        <div className="text-center py-8 text-red-600">
-          {accountsError || 'Помилка завантаження'}
-        </div>
-      );
-    }
-    if (accountsStatus === 'success') {
-      return (
-        <div className="table-responsive-modern">
+    return (
+      <TableContentState
+        status={accountsStatus}
+        errorMessage={accountsError || 'Помилка завантаження'}
+        fillAvailableHeight
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <MessengerAccountsTable
+              data={accounts}
+              loading
+              actionsDisabled={isMutating}
+              onRestart={handleRestartDatasource}
+              onEdit={openEditSidebar}
+              onDelete={setDeleteAccountId}
+              onToggleStatus={handleToggleStatus}
+              onConnect={handleConnectExisting}
+            />
+          </div>
+        }
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
           <MessengerAccountsTable
             data={accounts}
+            loading={false}
             actionsDisabled={isMutating}
             onRestart={handleRestartDatasource}
             onEdit={openEditSidebar}
@@ -1181,36 +1225,19 @@ function AdminMessengerNeoPageBody() {
             onConnect={handleConnectExisting}
           />
         </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   const renderDeleteDialog = () => (
-    <Dialog
+    <ConfirmDangerDialog
       open={deleteAccountId !== null}
       onClose={() => setDeleteAccountId(null)}
-    >
-      <DialogTitle>Підтвердження видалення</DialogTitle>
-      <DialogContent>
-        <Typography className="text-sm text-muted-foreground">
-          Ви впевнені, що хочете видалити цей акаунт месенджера?
-        </Typography>
-      </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" onClick={() => setDeleteAccountId(null)}>
-          Скасувати
-        </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={handleDeleteConfirm}
-          disabled={isMutating}
-        >
-          Видалити
-        </Button>
-      </DialogActions>
-    </Dialog>
+      onConfirm={handleDeleteConfirm}
+      description="Ви впевнені, що хочете видалити цей акаунт месенджера?"
+      submitting={isMutating}
+      disabled={deleteAccountId === null}
+    />
   );
 
   const renderLinkSidebar = () => (
@@ -1231,169 +1258,179 @@ function AdminMessengerNeoPageBody() {
         </Box>
 
         {linkStep === 'form' ? (
-          <Box className="flex-1 overflow-y-auto p-6 space-y-5">
-            <Box className="flex gap-2">
-              <Button
-                variant={linkMode === 'phone' ? 'contained' : 'outlined'}
-                onClick={() => switchLinkMode('phone')}
-              >
-                Телефон
-              </Button>
-              <Button
-                variant={linkMode === 'api' ? 'contained' : 'outlined'}
-                onClick={() => switchLinkMode('api')}
-              >
-                API
-              </Button>
-            </Box>
+          <Box className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="space-y-6">
+              <Box className="flex gap-3">
+                <Button
+                  variant={linkMode === 'phone' ? 'contained' : 'outlined'}
+                  onClick={() => switchLinkMode('phone')}
+                >
+                  Телефон
+                </Button>
+                <Button
+                  variant={linkMode === 'api' ? 'contained' : 'outlined'}
+                  onClick={() => switchLinkMode('api')}
+                >
+                  API
+                </Button>
+              </Box>
 
-            {linkMode === 'phone' ? (
-              <div className="space-y-4">
-                <TextField
-                  select
-                  label="Тип месенджера"
-                  value={phoneForm.messengerType}
-                  onChange={(event) =>
+              <div>
+                {linkMode === 'phone' ? (
+                  <>
+                    <TextField
+                      select
+                      label="Тип месенджера"
+                      value={phoneForm.messengerType}
+                      onChange={(event) =>
+                        setPhoneForm((prev) => ({
+                          ...prev,
+                          messengerType: event.target.value,
+                        }))
+                      }
+                      fullWidth
+                    >
+                      <MenuItem value="signal">Signal</MenuItem>
+                      <MenuItem value="whatsapp">WhatsApp</MenuItem>
+                      <MenuItem value="echo_operator">ЕХО Оператор</MenuItem>
+                    </TextField>
+                    <div className="pt-6">
+                      <TextField
+                        label="Номер телефону"
+                        value={phoneForm.phoneNumber}
+                        onChange={(event) =>
+                          setPhoneForm((prev) => ({
+                            ...prev,
+                            phoneNumber: event.target.value,
+                          }))
+                        }
+                        placeholder="+380XXXXXXXXX"
+                        fullWidth
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <TextField
+                      label="API посилання"
+                      value={apiForm.apiEndpoint}
+                      onChange={(event) => {
+                        setApiForm((prev) => ({
+                          ...prev,
+                          apiEndpoint: event.target.value,
+                        }));
+                        setFormErrors((prev) => ({ ...prev, apiEndpoint: '' }));
+                      }}
+                      placeholder="https://api.example.com/webhook"
+                      error={Boolean(formErrors.apiEndpoint)}
+                      helperText={formErrors.apiEndpoint}
+                      fullWidth
+                    />
+                    <div className="pt-6">
+                      <TextField
+                        select
+                        label="API Користувач"
+                        value={apiForm.apiLogin || ''}
+                        onChange={(event) => {
+                          setApiForm((prev) => ({
+                            ...prev,
+                            apiLogin: event.target.value || null,
+                          }));
+                          setFormErrors((prev) => ({ ...prev, apiUser: '' }));
+                        }}
+                        fullWidth
+                        disabled={apiUsersStatus === 'loading'}
+                        error={Boolean(formErrors.apiUser)}
+                        helperText={formErrors.apiUser}
+                      >
+                        {apiUsersStatus === 'loading' ? (
+                          <MenuItem value="">Завантаження...</MenuItem>
+                        ) : (
+                          apiUserOptions
+                        )}
+                      </TextField>
+                    </div>
+                  </>
+                )}
+
+                <div className="pt-6">
+                  <TextField
+                    label="Назва акаунту"
+                    value={linkMode === 'phone' ? phoneForm.name : apiForm.name}
+                    onChange={(event) => {
+                      if (linkMode === 'phone') {
+                        setPhoneForm((prev) => ({
+                          ...prev,
+                          name: event.target.value,
+                        }));
+                      } else {
+                        setApiForm((prev) => ({ ...prev, name: event.target.value }));
+                      }
+                      setFormErrors((prev) => ({ ...prev, displayName: '' }));
+                    }}
+                    error={Boolean(formErrors.displayName)}
+                    helperText={formErrors.displayName}
+                    fullWidth
+                  />
+                </div>
+              </div>
+
+              <TextField
+                select
+                label="Смуга відповідальності"
+                value={
+                  linkMode === 'phone'
+                    ? phoneForm.aorId ?? ''
+                    : apiForm.aorId ?? ''
+                }
+                onChange={(event) => {
+                  const value = event.target.value
+                    ? Number(event.target.value)
+                    : null;
+                  if (linkMode === 'phone') {
+                    setPhoneForm((prev) => ({ ...prev, aorId: value }));
+                  } else {
+                    setApiForm((prev) => ({ ...prev, aorId: value }));
+                  }
+                  setFormErrors((prev) => ({ ...prev, aorId: '' }));
+                }}
+                fullWidth
+                error={Boolean(formErrors.aorId)}
+                helperText={formErrors.aorId || ' '}
+                disabled={aorsStatus === 'loading'}
+              >
+                {aorsStatus === 'loading' ? (
+                  <MenuItem value="">Завантаження...</MenuItem>
+                ) : (
+                  aorOptions
+                )}
+              </TextField>
+
+              <TextField
+                label="Опис (необов'язково)"
+                value={
+                  linkMode === 'phone'
+                    ? phoneForm.description
+                    : apiForm.description
+                }
+                onChange={(event) => {
+                  if (linkMode === 'phone') {
                     setPhoneForm((prev) => ({
                       ...prev,
-                      messengerType: event.target.value,
-                    }))
-                  }
-                  fullWidth
-                >
-                  <MenuItem value="signal">Signal</MenuItem>
-                  <MenuItem value="whatsapp">WhatsApp</MenuItem>
-                  <MenuItem value="echo_operator">ЕХО Оператор</MenuItem>
-                </TextField>
-                <TextField
-                  label="Номер телефону"
-                  value={phoneForm.phoneNumber}
-                  onChange={(event) =>
-                    setPhoneForm((prev) => ({
-                      ...prev,
-                      phoneNumber: event.target.value,
-                    }))
-                  }
-                  placeholder="+380XXXXXXXXX"
-                  fullWidth
-                />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <TextField
-                  label="API посилання"
-                  value={apiForm.apiEndpoint}
-                  onChange={(event) => {
+                      description: event.target.value,
+                    }));
+                  } else {
                     setApiForm((prev) => ({
                       ...prev,
-                      apiEndpoint: event.target.value,
+                      description: event.target.value,
                     }));
-                    setFormErrors((prev) => ({ ...prev, apiEndpoint: '' }));
-                  }}
-                  placeholder="https://api.example.com/webhook"
-                  error={Boolean(formErrors.apiEndpoint)}
-                  helperText={formErrors.apiEndpoint}
-                  fullWidth
-                />
-                <TextField
-                  select
-                  label="API Користувач"
-                  value={apiForm.apiLogin || ''}
-                  onChange={(event) => {
-                    setApiForm((prev) => ({
-                      ...prev,
-                      apiLogin: event.target.value || null,
-                    }));
-                    setFormErrors((prev) => ({ ...prev, apiUser: '' }));
-                  }}
-                  fullWidth
-                  disabled={apiUsersStatus === 'loading'}
-                  error={Boolean(formErrors.apiUser)}
-                  helperText={formErrors.apiUser}
-                >
-                  {apiUsersStatus === 'loading' ? (
-                    <MenuItem value="">Завантаження...</MenuItem>
-                  ) : (
-                    apiUserOptions
-                  )}
-                </TextField>
-              </div>
-            )}
-
-            <TextField
-              label="Назва акаунту"
-              value={linkMode === 'phone' ? phoneForm.name : apiForm.name}
-              onChange={(event) => {
-                if (linkMode === 'phone') {
-                  setPhoneForm((prev) => ({
-                    ...prev,
-                    name: event.target.value,
-                  }));
-                } else {
-                  setApiForm((prev) => ({ ...prev, name: event.target.value }));
-                }
-                setFormErrors((prev) => ({ ...prev, displayName: '' }));
-              }}
-              error={Boolean(formErrors.displayName)}
-              helperText={formErrors.displayName}
-              fullWidth
-            />
-
-            <TextField
-              select
-              label="Смуга відповідальності"
-              value={
-                linkMode === 'phone'
-                  ? phoneForm.aorId ?? ''
-                  : apiForm.aorId ?? ''
-              }
-              onChange={(event) => {
-                const value = event.target.value
-                  ? Number(event.target.value)
-                  : null;
-                if (linkMode === 'phone') {
-                  setPhoneForm((prev) => ({ ...prev, aorId: value }));
-                } else {
-                  setApiForm((prev) => ({ ...prev, aorId: value }));
-                }
-                setFormErrors((prev) => ({ ...prev, aorId: '' }));
-              }}
-              fullWidth
-              error={Boolean(formErrors.aorId)}
-              helperText={formErrors.aorId}
-              disabled={aorsStatus === 'loading'}
-            >
-              {aorsStatus === 'loading' ? (
-                <MenuItem value="">Завантаження...</MenuItem>
-              ) : (
-                aorOptions
-              )}
-            </TextField>
-
-            <TextField
-              label="Опис (необов'язково)"
-              value={
-                linkMode === 'phone'
-                  ? phoneForm.description
-                  : apiForm.description
-              }
-              onChange={(event) => {
-                if (linkMode === 'phone') {
-                  setPhoneForm((prev) => ({
-                    ...prev,
-                    description: event.target.value,
-                  }));
-                } else {
-                  setApiForm((prev) => ({
-                    ...prev,
-                    description: event.target.value,
-                  }));
-                }
-              }}
-              multiline
-              rows={3}
-              fullWidth
-            />
+                  }
+                }}
+                multiline
+                rows={3}
+                fullWidth
+              />
+            </div>
 
             {linkStatus?.kind === 'error' ? (
               <Info text={linkStatus.message} color="error" />
@@ -1457,8 +1494,17 @@ function AdminMessengerNeoPageBody() {
         ) : null}
 
         {linkStep === 'form' ? (
-          <Box className="p-6 border-t border-border flex gap-3">
-            <Button variant="outlined" onClick={closeLinkSidebar}>
+          <Box
+            sx={{
+              p: 2.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 2,
+            }}
+          >
+            <Button onClick={closeLinkSidebar}>
               Скасувати
             </Button>
             <Button
@@ -1560,8 +1606,20 @@ function AdminMessengerNeoPageBody() {
   );
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <PageHeader title="Месенджери" />
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <TablePageToolbar
+        title="Месенджери"
+        titleInfo="Управління прив'язаними акаунтами месенджерів"
+        withGlobalTextFilter
+        hideGlobalTextFilter={accountsStatus !== 'success'}
+        internalActionsDisabled={accountsStatus !== 'success'}
+        actions={
+          <Button variant="contained" onClick={openLinkSidebar}>
+            Прив'язати новий
+          </Button>
+        }
+      />
 
       {actionStatus?.kind === 'error' ? (
         <Info text={actionStatus.message} color="error" />
@@ -1571,30 +1629,12 @@ function AdminMessengerNeoPageBody() {
           {actionStatus.message}
         </Alert>
       ) : null}
-
-      <div className="border border-border rounded-lg mb-4 p-4 bg-[var(--bs-tertiary-bg)] flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Управління прив'язаними акаунтами месенджерів
-        </div>
-        <Button variant="contained" onClick={openLinkSidebar}>
-          Прив'язати новий
-        </Button>
-      </div>
-
-      <TableTopToolbar
-        withDatePicker={false}
-        withGlobalTextFilter
-        header={
-          <span className="text-sm text-muted-foreground">
-            Усього: {accounts.length}
-          </span>
-        }
-      />
-      {renderAccountsTable()}
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderAccountsTable()}</Box>
       {renderDeleteDialog()}
       {renderLinkSidebar()}
       {renderEditSidebar()}
-    </div>
+      </Stack>
+    </Box>
   );
 }
 

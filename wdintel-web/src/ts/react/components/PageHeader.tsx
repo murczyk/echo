@@ -1,16 +1,18 @@
-import { Stack } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { Stack, Tooltip, Typography } from '@mui/material';
 import React from 'react';
+
+import { IconButton } from './mui-customized/icon-button';
 
 type Props = {
   title: React.ReactNode;
+  titleInfo?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
   titleClassName?: string;
 };
 
-const defaultTitleClassName = 'm-0 text-[var(--text-color)]';
-
-export function PageHeader({ title, actions, className, titleClassName }: Props) {
+export function PageHeader({ title, titleInfo, actions, className, titleClassName }: Props) {
   return (
     <Stack
       direction="row"
@@ -20,9 +22,27 @@ export function PageHeader({ title, actions, className, titleClassName }: Props)
       gap={2}
       className={className}
     >
-      <h1 className={titleClassName ? `${defaultTitleClassName} ${titleClassName}` : defaultTitleClassName}>
-        {title}
-      </h1>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ minHeight: 40 }}>
+        <Typography
+          component="h1"
+          variant="h5"
+          sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
+          className={titleClassName}
+        >
+          {title}
+        </Typography>
+        {titleInfo ? (
+          <Tooltip title={titleInfo} arrow placement="right-start">
+            <IconButton
+              size="small"
+              aria-label="Інформація про сторінку"
+              sx={{ p: 0.25, alignSelf: 'center', display: 'inline-flex' }}
+            >
+              <InfoOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
+      </Stack>
       {actions ?? null}
     </Stack>
   );

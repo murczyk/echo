@@ -1,16 +1,26 @@
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import { Alert, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { PageErrorState } from '../../components/PageErrorState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
+import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
-import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -59,6 +69,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
 };
 
 const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-numbers',
   'mrt-row-actions',
   'id',
   'name',
@@ -108,6 +119,19 @@ function formatGroupLabel(group: SignalGroupFull | undefined, fallbackKey: strin
 function formatAorLabel(aor: AreaOfResponsibility | undefined, fallbackId: number): string {
   if (!aor) return String(fallbackId);
   return aor.name || String(fallbackId);
+}
+
+function buildOrganismLoadingRows(): Organism[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    name: '',
+    parentId: null,
+    roles: [],
+    enabled: false,
+    aorIds: [],
+    loginsCount: 0,
+    createdAt: 0,
+  }));
 }
 
 type GroupLabel = { key: string; label: string };
@@ -161,17 +185,17 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         {
           header: 'Батьківський',
           id: 'parent',
-          accessorFn: (row) => (row.parentId ? lookup.parentById.get(row.parentId) ?? '—' : '—'),
+          accessorFn: (row) => formatMrtCellTextValue(row.parentId ? lookup.parentById.get(row.parentId) : null),
           Cell: ({ row }) => {
             const parentName = row.original.parentId ? lookup.parentById.get(row.original.parentId) : null;
-            return <span>{parentName || '—'}</span>;
+            return <span>{formatMrtCellTextValue(parentName)}</span>;
           },
           size: 200,
         },
         {
           header: 'Смуги',
           id: 'aors',
-          accessorFn: (row) => row.aorIds.map((id) => formatAorLabel(lookup.aorById.get(id), id)),
+          accessorFn: (row) => (row.aorIds ?? []).map((id) => formatAorLabel(lookup.aorById.get(id), id)),
           Cell: ({ row }) => {
             if (row.original.aorIds.length === 0) return <span>—</span>;
             const labels = row.original.aorIds
@@ -222,7 +246,7 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         {
           header: 'Ролі',
           id: 'roles',
-          accessorFn: (row) => row.roles,
+          accessorFn: (row) => row.roles ?? [],
           Cell: ({ row }) => <span>{row.original.roles.length > 0 ? row.original.roles.join(', ') : '—'}</span>,
           filterVariant: 'multi-select',
           filterSelectOptions: ROLE_OPTIONS,
@@ -297,23 +321,25 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
 
 function RowActions(props: { organism: Organism; onEdit: (organism: Organism) => void; onDelete: (organism: Organism) => void }) {
   return (
-    <div className="flex items-center gap-1">
-      <Tooltip title="Редагувати">
-        <IconButton size="small" onClick={() => props.onEdit(props.organism)}>
-          <EditIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-      <Tooltip title="Видалити">
-        <IconButton size="small" onClick={() => props.onDelete(props.organism)}>
-          <DeleteOutlineIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-    </div>
+    <MrtRowActions>
+      <MrtRowActionButton
+        label="Редагувати"
+        onClick={() => props.onEdit(props.organism)}
+        icon={<EditIcon fontSize="small" />}
+      />
+      <MrtRowActionButton
+        label="Видалити"
+        onClick={() => props.onDelete(props.organism)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+      />
+    </MrtRowActions>
   );
 }
 
 function OrganismsTable(props: {
   data: Organism[];
+  loading: boolean;
   lookup: OrganismLookup;
   computedGroupsStatus: LoadingStatus;
   onEdit: (organism: Organism) => void;
@@ -327,6 +353,8 @@ function OrganismsTable(props: {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -338,10 +366,11 @@ function OrganismsTable(props: {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildOrganismLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -357,7 +386,7 @@ function OrganismsTable(props: {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
       <RowActions organism={row.original} onEdit={props.onEdit} onDelete={props.onDelete} />
@@ -370,7 +399,7 @@ function OrganismsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 90,
+        size: mrtRowActionsColumnSize(2),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -388,22 +417,14 @@ function OrganismsTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          height: '100%',
-          minHeight: 0,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        overflowX: 'auto',
-        overflowY: 'auto',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -528,8 +549,8 @@ function DeleteOrganismDialog(props: {
           </Alert>
         ) : null}
       </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" onClick={props.onClose} disabled={isSubmitting}>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <Button onClick={props.onClose} disabled={isSubmitting}>
           Скасувати
         </Button>
         <Button variant="outlined" color="error" onClick={handleSoftDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
@@ -647,65 +668,61 @@ function AdminOrganismsNeoPageBody() {
   }
 
   const renderTable = () => {
-    if (organismsStatus === 'loading') {
-      return (
-        <div className="flex h-full items-center justify-center">
-          <CircularProgress size={28} />
-        </div>
-      );
-    }
-    if (organismsStatus === 'error') {
-      return (
-        <div className="flex h-full items-center justify-center text-center text-red-600">
-          {organismsError || 'Помилка завантаження'}
-        </div>
-      );
-    }
-    if (organismsStatus === 'success') {
-      return (
-        <div className="table-responsive-modern h-full min-h-0 w-full min-w-0">
+    return (
+      <TableContentState
+        status={organismsStatus}
+        errorMessage={organismsError || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <OrganismsTable
+              data={organisms}
+              loading
+              lookup={lookup}
+              computedGroupsStatus={computedGroupsStatus}
+              onEdit={openEdit}
+              onDelete={openDelete}
+            />
+          </div>
+        }
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
           <OrganismsTable
             data={organisms}
+            loading={false}
             lookup={lookup}
             computedGroupsStatus={computedGroupsStatus}
             onEdit={openEdit}
             onDelete={openDelete}
           />
         </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   return (
-    <div className="w-full flex app-shell-fill-height flex-col gap-4 pt-2 min-w-0">
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       {referenceStatus === 'error' ? (
         <Alert severity="error" onClose={() => setReferenceError(null)}>
           {referenceError || 'Помилка завантаження довідників'}
         </Alert>
       ) : null}
 
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Організми
-          </Typography>
-        }
-        withDatePicker={false}
+      <TablePageToolbar
+        title="Організми"
         withGlobalTextFilter
-        additionalActions={
-          <div className="flex gap-2">
-            <Button variant="outlined" onClick={reloadAll}>
-              Оновити
-            </Button>
+        hideGlobalTextFilter={organismsStatus !== 'success'}
+        internalActionsDisabled={organismsStatus !== 'success'}
+        actions={
+          <div className="flex gap-3">
             <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-              Створити
+              Створити організм
             </Button>
           </div>
         }
       />
 
-      <div className="flex-1 min-h-0 min-w-0">{renderTable()}</div>
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
 
       <DeleteOrganismDialog
         organism={deleteTarget}
@@ -713,7 +730,8 @@ function AdminOrganismsNeoPageBody() {
         onClose={() => setDeleteTarget(null)}
         onReload={reloadAll}
       />
-    </div>
+      </Stack>
+    </Box>
   );
 }
 

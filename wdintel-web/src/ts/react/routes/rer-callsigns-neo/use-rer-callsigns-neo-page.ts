@@ -28,7 +28,6 @@ import {
   getExportPermission,
   getExportPermissionFromRoles,
   hasAnyDraftValue,
-  isCursorPaginationSortCompatible,
   isAbortError,
   makeCreatePayload,
   makeUpdatePayload,
@@ -40,8 +39,15 @@ import {
   validateDraftRows,
   validateEditForm,
 } from './helpers';
-import { readDenseTableFromUrl, setDenseTableQueryParam } from '../../utils/denseTableQuery';
-import type { CallsignDraftRow, CallsignEditForm, CallsignsFilterState, CallsignsSortState, DownloadKind, UiStatus } from './types';
+import type {
+  CallsignDraftRow,
+  CallsignEditForm,
+  CallsignsFilterState,
+  CallsignsSortState,
+  DownloadKind,
+  SortDirection,
+  UiStatus,
+} from './types';
 
 function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
   const url = new URL(window.location.href);
@@ -60,7 +66,8 @@ function readInitialCallsignsFiltersFromUrl(): CallsignsFilterState {
 
   return {
     ...defaults,
-    filterCallsign: toUpperCaseCallsign(params.get('callsign') ?? defaults.filterCallsign),
+    filterText: params.get('filter') ?? defaults.filterText,
+    filterCallsign: params.get('callsign') ?? defaults.filterCallsign,
     filterPosition: params.get('position') ?? defaults.filterPosition,
     filterComment: params.get('comment') ?? defaults.filterComment,
     filterUnit: params.get('unit') ?? defaults.filterUnit,
@@ -79,7 +86,16 @@ function readInitialCallsignsSortFromUrl(): CallsignsSortState {
   const column = params.get('sort_col');
   const direction = params.get('sort_dir');
 
-  const validColumn = column === 'callsign' || column === 'createdAt' || column === 'unit' ? column : DEFAULT_SORT.column;
+  const validColumn =
+    column === 'callsign' ||
+    column === 'position' ||
+    column === 'comment' ||
+    column === 'createdAt' ||
+    column === 'unit' ||
+    column === 'sourceName' ||
+    column === 'radioFreq'
+      ? column
+      : DEFAULT_SORT.column;
   const validDirection = direction === 'asc' || direction === 'desc' ? direction : DEFAULT_SORT.direction;
 
   return {
@@ -96,7 +112,17 @@ function readInitialSidebarOpenFromUrl(): boolean {
   return true;
 }
 
-function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsSortState, sidebarOpen: boolean, denseTable: boolean) {
+function readInitialSidebarSelectedUnitFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const unit = params.get('unit')?.trim() ?? '';
+  return unit || null;
+}
+
+function syncCallsignsStateToUrl(
+  filters: CallsignsFilterState,
+  sort: CallsignsSortState,
+  sidebarOpen: boolean,
+) {
   updateUrlSearchParams((params) => {
     const setOrDelete = (key: string, value: string | null | undefined) => {
       if (value == null || value === '') {
@@ -106,6 +132,7 @@ function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsS
       params.set(key, value);
     };
 
+    setOrDelete('filter', filters.filterText.trim() || null);
     setOrDelete('callsign', filters.filterCallsign.trim() || null);
     setOrDelete('position', filters.filterPosition.trim() || null);
     setOrDelete('comment', filters.filterComment.trim() || null);
@@ -143,8 +170,6 @@ function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsS
     } else {
       params.set('units_sidebar', '0');
     }
-
-    setDenseTableQueryParam(params, denseTable);
   });
 }
 
@@ -174,6 +199,10 @@ function hasAnyCallsignInput(rows: CallsignDraftRow[]): boolean {
   return rows.some((row) => row.callsign.trim() !== '');
 }
 
+function getReloadPageSize(callsignsCount: number) {
+  return Math.max(getDefaultPageSize(), callsignsCount);
+}
+
 export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const [user, setUser] = React.useState<User | null>(null);
   const [units, setUnits] = React.useState<Unit[]>([]);
@@ -190,7 +219,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [filters, setFilters] = React.useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
   const [sort, setSort] = React.useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
   const [sidebarOpen, setSidebarOpen] = React.useState<boolean>(() => readInitialSidebarOpenFromUrl());
-  const [denseTable, setDenseTable] = React.useState<boolean>(() => readDenseTableFromUrl());
+  const [selectedSidebarUnitName, setSelectedSidebarUnitName] = React.useState<string | null>(() =>
+    readInitialSidebarSelectedUnitFromUrl(),
+  );
 
   const [addUnitId, setAddUnitId] = React.useState<number | null>(null);
   const [addSourceId, setAddSourceId] = React.useState<number | null>(null);
@@ -231,13 +262,15 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     };
   }, [user, authUserRoles]);
 
-  const sortedCallsigns = React.useMemo(() => sortRowsClientSide(callsigns, sort, unitsById), [callsigns, sort, unitsById]);
+  const sortedCallsigns = React.useMemo(
+    () => sortRowsClientSide(callsigns, sort, unitsById, sourcesById),
+    [callsigns, sort, unitsById, sourcesById],
+  );
   const rows = React.useMemo(
     () => buildRowViews(sortedCallsigns, unitsById, sourcesById).rows,
     [sortedCallsigns, unitsById, sourcesById],
   );
   const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
-  const canUseCursorPagination = React.useMemo(() => isCursorPaginationSortCompatible(sort), [sort]);
   const addPotentialDuplicates = React.useMemo(() => {
     if (!addDuplicateHintsEnabled || addSubmitting) return [];
 
@@ -278,9 +311,20 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     activeListAbortRef.current = null;
   }
 
-  async function runListFetch({ append, afterId, announceLoading }: { append: boolean; afterId: number | null; announceLoading: boolean }) {
+  async function runListFetch({
+    append,
+    afterId,
+    announceLoading,
+    preserveLoadedCount = false,
+  }: {
+    append: boolean;
+    afterId: number | null;
+    announceLoading: boolean;
+    preserveLoadedCount?: boolean;
+  }) {
     const seq = ++listRequestSeqRef.current;
     if (!append) {
+      const limit = preserveLoadedCount ? getReloadPageSize(callsigns.length) : getDefaultPageSize();
       setLoadingMore(false);
       clearListRequest();
       const controller = new AbortController();
@@ -289,7 +333,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
       try {
         const rsp = await listCallsigns(
-          buildListCallsignsReq({ filters, sort, query: { afterId, limit: getDefaultPageSize() } }),
+          buildListCallsignsReq({ filters, sort, query: { afterId, limit } }),
           controller.signal,
         );
         if (listRequestSeqRef.current !== seq) return;
@@ -312,14 +356,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     }
 
     if (announceLoading) setLoadingMore(true);
-
-    if (!canUseCursorPagination) {
-      setShowLoadMore(false);
-      if (listRequestSeqRef.current === seq) {
-        setLoadingMore(false);
-      }
-      return;
-    }
 
     try {
       const rsp = await listCallsigns(buildListCallsignsReq({ filters, sort, query: { afterId, limit: getDefaultPageSize() } }));
@@ -428,28 +464,41 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }, [filters, sort]);
 
   React.useEffect(() => {
-    syncCallsignsStateToUrl(filters, sort, sidebarOpen, denseTable);
-  }, [filters, sort, sidebarOpen, denseTable]);
+    syncCallsignsStateToUrl(filters, sort, sidebarOpen);
+  }, [filters, sort, sidebarOpen]);
 
   React.useEffect(() => {
     setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
   }, [callsigns]);
 
   function onFiltersChange(updater: (prev: CallsignsFilterState) => CallsignsFilterState) {
-    setFilters((prev) => updater(prev));
+    setFilters((prev) => {
+      const next = updater(prev);
+      if (selectedSidebarUnitName && next.filterUnit.trim() !== selectedSidebarUnitName) {
+        setSelectedSidebarUnitName(null);
+      }
+      return next;
+    });
   }
 
-  function onSort(column: 'callsign' | 'createdAt' | 'unit') {
-    setSort((prev) => nextSortState(prev, column));
+  function onSort(
+    column: 'callsign' | 'position' | 'comment' | 'createdAt' | 'unit' | 'sourceName' | 'radioFreq',
+    direction?: SortDirection,
+  ) {
+    setSort((prev) => nextSortState(prev, column, direction));
   }
 
   async function onRefresh() {
     setRefreshing(true);
     setStatus(null);
-    await Promise.all([refreshLookupsAndStats(), runListFetch({ append: false, afterId: null, announceLoading: false })]);
+    await Promise.all([
+      refreshLookupsAndStats(),
+      runListFetch({ append: false, afterId: null, announceLoading: false, preserveLoadedCount: true }),
+    ]);
   }
 
   function onClearFilters() {
+    setSelectedSidebarUnitName(null);
     setFilters(createDefaultFilters());
   }
 
@@ -795,14 +844,21 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   async function onLoadMore() {
-    if (!canUseCursorPagination || loadingMore || !showLoadMore || callsigns.length === 0) return;
+    if (loadingMore || !showLoadMore || callsigns.length === 0) return;
     const last = callsigns[callsigns.length - 1];
     if (!last) return;
     await runListFetch({ append: true, afterId: last.id, announceLoading: true });
   }
 
   function onPickUnitFilter(unitName: string) {
-    setFilters((prev) => ({ ...prev, filterUnit: unitName }));
+    setSelectedSidebarUnitName((prevSelected) => {
+      const nextSelected = prevSelected === unitName ? null : unitName;
+      setFilters((prev) => ({
+        ...prev,
+        filterUnit: nextSelected ?? '',
+      }));
+      return nextSelected;
+    });
   }
 
   return {
@@ -816,18 +872,18 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     loading,
     loadingMore,
     refreshing,
-    showLoadMore: showLoadMore && canUseCursorPagination,
+    showLoadMore,
     status,
     filters,
-    denseTable,
     sidebarOpen,
-    setDenseTable,
     setSidebarOpen,
+    selectedSidebarUnitName,
     onFiltersChange,
     onSort,
     onRefresh,
     onClearFilters,
     selectedCallsignIds,
+    setSelectedCallsignIds,
     bulkDeleteDialogCallsigns,
     bulkDeleteDialogOpen,
     bulkDeleteInFlight,

@@ -1,7 +1,6 @@
-import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
-import { useNeoMuiTheme } from './mui-theme';
+import { NeoMuiThemeProvider } from './mui-theme';
 import { RerCallsignsNeoPage } from './routes/rer-callsigns-neo';
 
 function getAuthUserRolesFromShell(el: Element): string[] {
@@ -22,17 +21,25 @@ function getAuthUserRolesFromShell(el: Element): string[] {
 }
 
 function RerCallsignsNeoRoot({ authUserRoles }: { authUserRoles: string[] }) {
-  const theme = useNeoMuiTheme();
-
   return (
-    <ThemeProvider theme={theme}>
+    <NeoMuiThemeProvider>
       <RerCallsignsNeoPage authUserRoles={authUserRoles} />
-    </ThemeProvider>
+    </NeoMuiThemeProvider>
   );
 }
 
 class RerCallsignsNeoElement extends HTMLElement {
   private root: Root | null = null;
+
+  static get observedAttributes() {
+    return ['data-auth-user-roles'];
+  }
+
+  private renderRoot() {
+    if (!this.root) return;
+    const authUserRoles = getAuthUserRolesFromShell(this);
+    this.root.render(<RerCallsignsNeoRoot authUserRoles={authUserRoles} />);
+  }
 
   connectedCallback() {
     if (!this.root) {
@@ -42,8 +49,13 @@ class RerCallsignsNeoElement extends HTMLElement {
       this.root = createRoot(this);
     }
 
-    const authUserRoles = getAuthUserRolesFromShell(this);
-    this.root.render(<RerCallsignsNeoRoot authUserRoles={authUserRoles} />);
+    this.renderRoot();
+  }
+
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
+    if (name === 'data-auth-user-roles' && oldValue !== newValue) {
+      this.renderRoot();
+    }
   }
 
   disconnectedCallback() {

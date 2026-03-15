@@ -35,11 +35,13 @@ function getClearButton(el: HTMLElement): HTMLButtonElement | null {
   return el.querySelector('button[aria-label="Очистити"]');
 }
 
-function typeInput(input: HTMLInputElement, value: string): void {
-  input.focus();
-  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-  nativeInputValueSetter?.call(input, value);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
+async function typeInput(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    input.focus();
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    nativeInputValueSetter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 }
 
 describe('AnalysisMapSearchElement', () => {
@@ -51,7 +53,9 @@ describe('AnalysisMapSearchElement', () => {
   });
 
   afterEach(() => {
-    container.remove();
+    act(() => {
+      container.remove();
+    });
   });
 
   describe('search input handling', () => {
@@ -63,16 +67,22 @@ describe('AnalysisMapSearchElement', () => {
       el.addEventListener('search-points', (e: Event) => events.push((e as CustomEvent).detail));
       const input = getInput(el);
 
-      typeInput(input, 'a');
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      await typeInput(input, 'a');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      });
       expect(events).toEqual(['a']);
 
-      typeInput(input, 'ab');
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      await typeInput(input, 'ab');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      });
       expect(events).toEqual(['a', 'ab']);
 
-      typeInput(input, 'abc');
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      await typeInput(input, 'abc');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      });
       expect(events).toEqual(['a', 'ab', 'abc']);
 
       vi.useRealTimers();
@@ -86,14 +96,20 @@ describe('AnalysisMapSearchElement', () => {
       el.addEventListener('search-points', (e: Event) => events.push((e as CustomEvent).detail));
       const input = getInput(el);
 
-      typeInput(input, 'a');
-      await vi.advanceTimersByTimeAsync(50);
-      typeInput(input, 'ab');
-      await vi.advanceTimersByTimeAsync(50);
-      typeInput(input, 'abc');
+      await typeInput(input, 'a');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      await typeInput(input, 'ab');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      await typeInput(input, 'abc');
       expect(events).toEqual([]);
 
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      });
       expect(events).toEqual(['abc']);
 
       vi.useRealTimers();

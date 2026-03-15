@@ -1,5 +1,7 @@
 import {
   Alert,
+  Card,
+  CardContent,
   CircularProgress,
   FormControl,
   MenuItem,
@@ -14,8 +16,8 @@ import {
 } from '@mui/material';
 import React from 'react';
 
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { Button } from '../../components/mui-customized/button';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
 import {
   AorLocationConfigItem,
   listAorLocationConfigs,
@@ -136,100 +138,96 @@ export function AdminLocationConfigsNeoPage() {
   }
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
+    <Card variant="outlined">
+      <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
+        <div className="flex w-full min-w-0 flex-col gap-6">
+          <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
             Конфігурації локацій по смугах
           </Typography>
-        }
-        withDatePicker={false}
-        withGlobalTextFilter={false}
-      />
 
-      {loadStatus === 'loading' ? (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
-        </div>
-      ) : null}
+          {loadStatus === 'loading' ? (
+            <PageLoadingState />
+          ) : null}
 
-      {loadStatus === 'error' ? (
-        <Alert severity="error">{loadError || 'Помилка завантаження'}</Alert>
-      ) : null}
+          {loadStatus === 'error' ? (
+            <Alert severity="error">{loadError || 'Помилка завантаження'}</Alert>
+          ) : null}
 
-      {loadStatus === 'success' ? (
-        <Table
-          size="small"
-          sx={{
-            width: '100%',
-            tableLayout: 'fixed',
-          }}
-        >
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ width: '10%' }}>Смуга</TableCell>
-              <TableCell sx={{ width: '80%' }}>Конфігурація</TableCell>
-              <TableCell sx={{ width: '10%' }}>Дія</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => {
-              const isChanged = !areEqualStringArrays(
-                row.selectedConfigs || [],
-                row.editedConfigs || []
-              );
-              return (
-                <TableRow key={row.aorId}>
-                  <TableCell sx={{ width: '10%' }}>{row.aorName}</TableCell>
-                  <TableCell>
-                    <FormControl size="small" fullWidth>
-                      <Select
-                        multiple
-                        value={row.editedConfigs}
-                        onChange={(event) => onSelectChange(row.aorId, event)}
-                        renderValue={(selected) =>
-                          selected.length > 0
-                            ? selected.join(', ')
-                            : 'За замовчуванням (config.toml)'
-                        }
-                        sx={{
-                          '& .MuiSelect-select': {
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          },
-                        }}
-                      >
-                        {availableConfigs.map((config) => (
-                          <MenuItem value={config} key={config}>
-                            {config}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </TableCell>
-                  <TableCell sx={{ width: '10%' }}>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="contained"
-                        disabled={!isChanged || row.isSaving}
-                        onClick={() => onSave(row)}
-                      >
-                        {row.isSaving ? 'Збереження...' : 'Зберегти'}
-                      </Button>
-                      {row.saveError ? (
-                        <Typography color="error" variant="caption">
-                          {row.saveError}
-                        </Typography>
-                      ) : null}
-                    </div>
-                  </TableCell>
+          {loadStatus === 'success' ? (
+            <Table
+              size="small"
+              sx={{
+                width: '100%',
+                tableLayout: 'fixed',
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ width: '10%' }}>Смуга</TableCell>
+                  <TableCell sx={{ width: '80%' }}>Конфігурація</TableCell>
+                  <TableCell sx={{ width: '10%' }}>Дія</TableCell>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      ) : null}
-    </div>
+              </TableHead>
+              <TableBody>
+                {rows.map((row) => {
+                  const isChanged = !areEqualStringArrays(
+                    row.selectedConfigs || [],
+                    row.editedConfigs || []
+                  );
+                  return (
+                    <TableRow key={row.aorId}>
+                      <TableCell sx={{ width: '10%' }}>{row.aorName}</TableCell>
+                      <TableCell>
+                        <FormControl size="small" fullWidth>
+                          <Select
+                            multiple
+                            value={row.editedConfigs}
+                            onChange={(event) => onSelectChange(row.aorId, event)}
+                            renderValue={(selected) =>
+                              selected.length > 0
+                                ? selected.join(', ')
+                                : 'За замовчуванням (config.toml)'
+                            }
+                            sx={{
+                              '& .MuiSelect-select': {
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              },
+                            }}
+                          >
+                            {availableConfigs.map((config) => (
+                              <MenuItem value={config} key={config}>
+                                {config}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </TableCell>
+                      <TableCell sx={{ width: '10%' }}>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="contained"
+                            disabled={!isChanged || row.isSaving}
+                            onClick={() => onSave(row)}
+                          >
+                            {row.isSaving ? 'Збереження...' : 'Зберегти'}
+                          </Button>
+                          {row.saveError ? (
+                            <Typography color="error" variant="caption">
+                              {row.saveError}
+                            </Typography>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

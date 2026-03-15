@@ -1,22 +1,33 @@
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ClearIcon from '@mui/icons-material/Clear';
 import EditIcon from '@mui/icons-material/Edit';
-import { CircularProgress, Tooltip, Typography } from '@mui/material';
+import SettingsIcon from '@mui/icons-material/Settings';
+import { Alert, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputAdornment, MenuItem, OutlinedInput, Select, SelectChangeEvent, Stack, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { TableContentState } from '../../components/TableContentState';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
-import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
-import { AdminLocationConfigsNeoPage } from '../admin-location-configs-neo';
 import { listAors } from '../../services/api/aor';
+import { listAorLocationConfigs, saveAorLocationConfig } from '../../services/api/location-config';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -26,6 +37,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   description: true,
   leftBound: true,
   rightBound: true,
+  locationConfigs: true,
   coordinates: true,
   isTopLevel: true,
 };
@@ -37,11 +49,24 @@ const DEFAULT_COLUMN_ORDER = [
   'description',
   'leftBound',
   'rightBound',
+  'locationConfigs',
   'coordinates',
   'isTopLevel',
 ];
 
-const defaultMRTOptions = getDefaultMRTOptions<AreaOfResponsibility>();
+type AorRow = AreaOfResponsibility & {
+  locationConfigs: string[];
+};
+
+type LocationConfigDialogState = {
+  aorId: number;
+  aorName: string;
+  selectedConfigs: string[];
+  isSaving: boolean;
+  error: string | null;
+};
+
+const defaultMRTOptions = getDefaultMRTOptions<AorRow>();
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -62,33 +87,73 @@ function buildCreateHref(): string {
 }
 
 function formatCoords(coords: AorCoordinates | null): string {
-  if (!coords) return 'Не вказано';
+  if (!coords) return '—';
   return `${coords.latitude}, ${coords.longitude}`;
 }
 
-function useAorColumns(): MRT_ColumnDef<AreaOfResponsibility>[] {
+function formatLocationConfigs(configs: string[] | null | undefined): string {
+  if (!configs || configs.length === 0) return 'За замовчуванням (config.toml)';
+  return configs.join(', ');
+}
+
+function buildAorRows(aors: AreaOfResponsibility[], locationConfigsByAorId: Map<number, string[]>): AorRow[] {
+  return aors.map((aor) => ({
+    ...aor,
+    locationConfigs: locationConfigsByAorId.get(aor.id) ?? [],
+  }));
+}
+
+function buildLocationConfigsByAorId(items: Awaited<ReturnType<typeof listAorLocationConfigs>>['items']): Map<number, string[]> {
+  return new Map(items.map((item) => [item.aorId, item.selectedConfigs ?? []]));
+}
+
+function buildAorLoadingRows(): AorRow[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    name: '',
+    description: null,
+    leftBound: 0,
+    rightBound: 0,
+    leftCoordinates: null,
+    rightCoordinates: null,
+    isTopLevel: false,
+    createdAt: 0,
+    locationConfigs: [],
+  }));
+}
+
+function useAorColumns(): MRT_ColumnDef<AorRow>[] {
   return React.useMemo(
     () => [
       {
         header: 'Назва',
-        accessorKey: 'name',
+        accessorFn: (row) => formatMrtCellTextValue(row.name),
+        id: 'name',
         size: 220,
       },
       {
         header: 'Опис',
-        accessorFn: (row) => row.description ?? '',
+        accessorFn: (row) => formatMrtCellTextValue(row.description),
         id: 'description',
         size: 240,
       },
       {
         header: 'Ліва межа',
-        accessorKey: 'leftBound',
+        accessorFn: (row) => (row.leftBound == null ? '—' : String(row.leftBound)),
+        id: 'leftBound',
         size: 120,
       },
       {
         header: 'Права межа',
-        accessorKey: 'rightBound',
+        accessorFn: (row) => (row.rightBound == null ? '—' : String(row.rightBound)),
+        id: 'rightBound',
         size: 120,
+      },
+      {
+        header: 'Конфігурація локацій',
+        accessorFn: (row) => formatLocationConfigs(row.locationConfigs),
+        id: 'locationConfigs',
+        size: 260,
       },
       {
         header: 'Координати',
@@ -130,29 +195,43 @@ function useAorColumns(): MRT_ColumnDef<AreaOfResponsibility>[] {
 }
 
 type RowActionsProps = {
-  aor: AreaOfResponsibility;
+  aor: AorRow;
+  onConfigure: (aor: AorRow) => void;
 };
 
 function RowActions(props: RowActionsProps) {
   return (
-    <Tooltip title="Редагувати">
-      <IconButton size="small" onClick={() => navigateWithinSpa(buildEditHref(props.aor.id))}>
-        <EditIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
+    <MrtRowActions>
+      <MrtRowActionButton
+        label="Редагувати"
+        onClick={() => navigateWithinSpa(buildEditHref(props.aor.id))}
+        icon={<EditIcon fontSize="small" />}
+      />
+      <MrtRowActionButton
+        label="Налаштувати конфігурацію локацій"
+        onClick={() => props.onConfigure(props.aor)}
+        icon={<SettingsIcon fontSize="small" />}
+      />
+    </MrtRowActions>
   );
 }
 
 type AorTableProps = {
-  data: AreaOfResponsibility[];
+  data: AorRow[];
+  loading: boolean;
+  onConfigure: (aor: AorRow) => void;
 };
 
 function AorTable(props: AorTableProps) {
   const columns = useAorColumns();
   const tableStateContext = useTableStateContext();
+  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -162,9 +241,9 @@ function AorTable(props: AorTableProps) {
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable({
+  const table = useMaterialReactTable<AorRow>({
     columns,
-    data: props.data,
+    data: props.loading ? buildAorLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -183,9 +262,9 @@ function AorTable(props: AorTableProps) {
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
-    renderRowActions: ({ row }) => <RowActions aor={row.original} />,
+    renderRowActions: ({ row }) => <RowActions aor={row.original} onConfigure={props.onConfigure} />,
     defaultColumn: {
       size: 200,
       renderColumnActionsMenuItems,
@@ -194,7 +273,7 @@ function AorTable(props: AorTableProps) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 80,
+        size: mrtRowActionsColumnSize(2),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -204,6 +283,22 @@ function AorTable(props: AorTableProps) {
             ...CUSTOM_CELL_STYLES,
           },
         }),
+      },
+    },
+    muiTablePaperProps: ({ table }) => {
+      const baseProps = resolvedPaperProps({ table });
+      return {
+        ...baseProps,
+        sx: {
+          ...(baseProps as any)?.sx,
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: {
+        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -217,16 +312,22 @@ function AorTable(props: AorTableProps) {
 }
 
 function AdminAorNeoPageBody() {
-  const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
+  const [aors, setAors] = React.useState<AorRow[]>([]);
   const [loadStatus, setLoadStatus] = React.useState<LoadingStatus>('idle');
   const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [availableLocationConfigs, setAvailableLocationConfigs] = React.useState<string[]>([]);
+  const [locationConfigDialog, setLocationConfigDialog] = React.useState<LocationConfigDialogState | null>(null);
 
-  async function loadAorList() {
+  async function loadAorPage() {
     setLoadStatus('loading');
     setLoadError(null);
     try {
-      const list = await listAors({ sortBy: null });
-      setAors(list);
+      const [aorList, locationConfigsRsp] = await Promise.all([
+        listAors({ sortBy: null }),
+        listAorLocationConfigs(),
+      ]);
+      setAvailableLocationConfigs(locationConfigsRsp.availableConfigs);
+      setAors(buildAorRows(aorList, buildLocationConfigsByAorId(locationConfigsRsp.items)));
       setLoadStatus('success');
     } catch (error) {
       setLoadStatus('error');
@@ -235,50 +336,203 @@ function AdminAorNeoPageBody() {
   }
 
   React.useEffect(() => {
-    loadAorList();
+    void loadAorPage();
   }, []);
 
+  function openLocationConfigDialog(aor: AorRow) {
+    setLocationConfigDialog({
+      aorId: aor.id,
+      aorName: aor.name,
+      selectedConfigs: aor.locationConfigs,
+      isSaving: false,
+      error: null,
+    });
+  }
+
+  function closeLocationConfigDialog() {
+    setLocationConfigDialog((current) => (current?.isSaving ? current : null));
+  }
+
+  function onLocationConfigChange(event: SelectChangeEvent<string[]>) {
+    const value = event.target.value;
+    const selectedConfigs = typeof value === 'string' ? value.split(',') : value;
+    setLocationConfigDialog((current) =>
+      current
+        ? {
+            ...current,
+            selectedConfigs,
+            error: null,
+          }
+        : current
+    );
+  }
+
+  function clearLocationConfigSelection() {
+    setLocationConfigDialog((current) =>
+      current
+        ? {
+            ...current,
+            selectedConfigs: [],
+            error: null,
+          }
+        : current
+    );
+  }
+
+  async function saveLocationConfig() {
+    if (!locationConfigDialog) return;
+    setLocationConfigDialog((current) =>
+      current
+        ? {
+            ...current,
+            isSaving: true,
+            error: null,
+          }
+        : current
+    );
+
+    try {
+      const saved = await saveAorLocationConfig(locationConfigDialog.aorId, locationConfigDialog.selectedConfigs);
+      setAors((prev) =>
+        prev.map((aor) =>
+          aor.id === saved.aorId
+            ? {
+                ...aor,
+                locationConfigs: saved.selectedConfigs,
+              }
+            : aor
+        )
+      );
+      setLocationConfigDialog(null);
+    } catch (error) {
+      const errorMessage = formatErrorMessage(error);
+      setLocationConfigDialog((current) =>
+        current
+          ? {
+              ...current,
+              isSaving: false,
+              error: errorMessage,
+            }
+          : current
+      );
+    }
+  }
+
   const renderTable = () => {
-    if (loadStatus === 'loading') {
-      return (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
+    return (
+      <TableContentState
+        status={loadStatus}
+        errorMessage={loadError || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <AorTable data={aors} loading onConfigure={openLocationConfigDialog} />
+          </div>
+        }
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <AorTable data={aors} loading={false} onConfigure={openLocationConfigDialog} />
         </div>
-      );
-    }
-    if (loadStatus === 'error') {
-      return <div className="text-center py-8 text-red-600">{loadError || 'Помилка завантаження'}</div>;
-    }
-    if (loadStatus === 'success') {
-      return (
-        <div className="table-responsive-modern">
-          <AorTable data={aors} />
-        </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Смуги відповідальності
-          </Typography>
-        }
-        withDatePicker={false}
-        withGlobalTextFilter
-        additionalActions={
-          <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-            Додати смугу
-          </Button>
-        }
-      />
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+        <TablePageToolbar
+          title="Смуги відповідальності"
+          withGlobalTextFilter
+          hideGlobalTextFilter={loadStatus !== 'success'}
+          internalActionsDisabled={loadStatus !== 'success'}
+          actions={
+            <div className="flex gap-3">
+              <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
+                Додати смугу
+              </Button>
+            </div>
+          }
+        />
 
-      {renderTable()}
-      <AdminLocationConfigsNeoPage />
-    </div>
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
+
+        <Dialog open={Boolean(locationConfigDialog)} onClose={closeLocationConfigDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>Конфігурація локацій</DialogTitle>
+          <DialogContent>
+            {locationConfigDialog ? (
+              <Stack spacing={2} sx={{ pt: 1 }}>
+                <Typography>Смуга: {formatMrtCellTextValue(locationConfigDialog.aorName)}</Typography>
+                {locationConfigDialog.error ? <Alert severity="error">{locationConfigDialog.error}</Alert> : null}
+                <FormControl size="small" fullWidth>
+                  <Select
+                    multiple
+                    value={locationConfigDialog.selectedConfigs}
+                    onChange={onLocationConfigChange}
+                    renderValue={(selected) =>
+                      selected.length > 0 ? selected.join(', ') : 'За замовчуванням (config.toml)'
+                    }
+                    disabled={locationConfigDialog.isSaving}
+                    displayEmpty
+                    input={
+                      <OutlinedInput
+                        endAdornment={
+                          locationConfigDialog.selectedConfigs.length > 0 ? (
+                            <InputAdornment position="end" sx={{ mr: 3 }}>
+                              <IconButton
+                                edge="end"
+                                size="small"
+                                aria-label="Очистити конфігурацію локацій"
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                }}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  clearLocationConfigSelection();
+                                }}
+                                disabled={locationConfigDialog.isSaving}
+                              >
+                                <ClearIcon fontSize="small" />
+                              </IconButton>
+                            </InputAdornment>
+                          ) : undefined
+                        }
+                      />
+                    }
+                    sx={{
+                      '& .MuiSelect-select': {
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      },
+                    }}
+                  >
+                    {availableLocationConfigs.map((config) => (
+                      <MenuItem value={config} key={config}>
+                        {config}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            ) : null}
+          </DialogContent>
+          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+            <Button onClick={closeLocationConfigDialog} disabled={locationConfigDialog?.isSaving}>
+              Скасувати
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => void saveLocationConfig()}
+              disabled={locationConfigDialog?.isSaving}
+              startIcon={locationConfigDialog?.isSaving ? <CircularProgress color="inherit" size={16} /> : null}
+            >
+              Зберегти
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Stack>
+    </Box>
   );
 }
 

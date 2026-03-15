@@ -26,6 +26,14 @@ pub struct Callsign {
 pub enum ListCallsignsSortBy {
     CallsignAsc,
     CallsignDesc,
+    CallsignPositionAsc,
+    CallsignPositionDesc,
+    CallsignCommentAsc,
+    CallsignCommentDesc,
+    CallsignSourceAsc,
+    CallsignSourceDesc,
+    CallsignRadioFreqAsc,
+    CallsignRadioFreqDesc,
     CallsignCreatedAtAsc,
     CallsignCreatedAtDesc,
     CallsignUnitAsc,
@@ -47,6 +55,7 @@ pub enum DevelopingFilter {
 pub struct ListCallsignsReq {
     pub after_id: Option<i64>,
     pub before_id: Option<i64>,
+    pub filter_text: Option<String>,
     pub filter_callsign: Option<String>,
     pub filter_position: Option<String>,
     pub filter_comment: Option<String>,
