@@ -2,36 +2,21 @@ module Pages.Admin exposing (Model, Msg, page)
 
 import Auth
 import Effect as E exposing (Effect)
-import Html exposing (div, node)
-import Html.Attributes exposing (class)
-import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
+import Route.Path
 import Shared
 import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user _ _ =
+page _ _ _ =
     Page.new
         { init = init
         , update = update
         , subscriptions = subscriptions
         , view = view
         }
-        |> Page.withLayout (toLayout user)
-
-
-toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user _ =
-    Layouts.Navbar
-        { user = user
-        , activeName = "zones"
-        }
-
-
-
--- INIT
 
 
 type alias Model =
@@ -41,12 +26,8 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init () =
     ( {}
-    , E.none
+    , E.replaceRoutePath Route.Path.Admin_DirectionsNeo
     )
-
-
-
--- UPDATE
 
 
 type Msg
@@ -62,24 +43,11 @@ update msg model =
             )
 
 
-
--- SUBSCRIPTIONS
-
-
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
 
-
--- VIEW
-
-
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: напрямки (neo)"
-    , body =
-        [ div [ class "mt-4 px-3 w-full" ]
-            [ node "admin-neo" [] [] ]
-        ]
-    }
+    View.none

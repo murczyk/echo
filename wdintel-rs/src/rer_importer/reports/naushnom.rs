@@ -338,6 +338,7 @@ pub async fn get_inbox_messages_report_network(
     )?;
     let q =
         filter_selected_networks(q, &req.selected_networks).context(h!())?;
+    let q = filter_selected_metadata_for_inbox_messages(q, req)?;
     let mut q = filter_selected_tags(
         q,
         &req.selected_tags,

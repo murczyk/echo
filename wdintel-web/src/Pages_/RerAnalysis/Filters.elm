@@ -13,6 +13,7 @@ import Maybe.Extra as MaybeX
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query
+import Pages_.RerAnalysis.Senders as RerAnalysisSenders
 import Select
 import Set
 import Shared.Components.Checkbox
@@ -88,6 +89,47 @@ filterMenuBlockCountOutOf config content =
             ]
         , HtmlX.viewIf config.unfold content
         ]
+
+
+filterMenuBlock : { unfold : Bool, toggleMsg : msg, label : String } -> Html msg -> Html msg
+filterMenuBlock config content =
+    div [ class "bg-[var(--color-card)] border border-[var(--color-border)] rounded mb-2 shadow-sm hover:shadow transition-shadow duration-150" ]
+        [ div
+            [ class "flex items-center px-3 py-2 cursor-pointer hover:bg-[var(--color-bg-muted)] transition-colors duration-150"
+            , onClick config.toggleMsg
+            ]
+            [ div [ class "flex items-center gap-2 flex-grow" ]
+                [ span [ classList [ ( "font-medium text-[var(--color-text)] text-sm", config.unfold ), ( "font-normal text-[var(--color-text)] text-sm", not config.unfold ) ] ] [ text config.label ]
+                ]
+            , i
+                [ class "bi text-xs transition-transform duration-150 ml-2 text-[var(--color-text)]"
+                , classList [ ( "bi-chevron-up", config.unfold ) ]
+                , classList [ ( "bi-chevron-down", not config.unfold ) ]
+                ]
+                []
+            ]
+        , HtmlX.viewIf config.unfold content
+        ]
+
+
+isRefreshing : RD.RemoteData err data -> Bool
+isRefreshing remoteData =
+    case remoteData of
+        RD.Loading ->
+            True
+
+        _ ->
+            False
+
+
+freshMenuItems : RD.RemoteData err data -> List menuItem -> List menuItem
+freshMenuItems remoteData menuItems =
+    case remoteData of
+        RD.Success _ ->
+            menuItems
+
+        _ ->
+            []
 
 
 view : Bool -> B.User -> Model -> Html Msg
@@ -270,6 +312,80 @@ view isDark user model =
 
                         _ ->
                             ""
+
+                metadataField labelText selectedItems state menuItems selectMsg =
+                    let
+                        isDisabled =
+                            model.withoutMetadata
+
+                        selectedMenuItems =
+                            List.map
+                                (\item ->
+                                    Select.basicMenuItem
+                                        { item = item
+                                        , label = item
+                                        }
+                                )
+                                selectedItems
+                    in
+                    div [ class "mb-3" ]
+                        [ div [ class "mb-1 text-xs font-medium text-[var(--color-text)] uppercase tracking-wide" ] [ text labelText ]
+                        , div [ class "flex-1" ]
+                            [ Html.map selectMsg
+                                (Html.Styled.toUnstyled <|
+                                    Utils.Select.renderSelectVirtual
+                                        selectedMenuItems
+                                        state
+                                        (freshMenuItems model.metadataStats menuItems)
+                                        "всі"
+                                        { loading = isRefreshing model.metadataStats
+                                        , disabled = isDisabled
+                                        , isDark = isDark
+                                        }
+                                )
+                            ]
+                        ]
+
+                tabFiltersMetadata =
+                    let
+                        metadataToggleCheckbox extraClasses labelText isChecked onToggle isDisabled =
+                            label
+                                [ class ("ml-2 flex items-center gap-2 text-sm text-[var(--color-text)] " ++ extraClasses)
+                                , classList
+                                    [ ( "opacity-50 cursor-not-allowed", isDisabled )
+                                    ]
+                                ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , checked isChecked
+                                    , onCheck onToggle
+                                    , disabled isDisabled
+                                    , class "accent-toggle-selected"
+                                    ]
+                                    []
+                                , text (" " ++ labelText)
+                                ]
+                    in
+                    div [ class "py-2 px-3" ]
+                        [ metadataField "cc" model.metadataCc model.selMetadataCcState model.selMetadataCcMenu SelMetadataCcMsg
+                        , metadataField "відправник" model.metadataSender model.selMetadataSenderState model.selMetadataSenderMenu SelMetadataSenderMsg
+                        , metadataField "отримувач" model.metadataReceiver model.selMetadataReceiverState model.selMetadataReceiverMenu SelMetadataReceiverMsg
+                        , metadataField "хеш" model.metadataHash model.selMetadataHashState model.selMetadataHashMenu SelMetadataHashMsg
+                        , div [ class "pt-1" ]
+                            [ metadataToggleCheckbox
+                                ""
+                                "тільки без метаданих"
+                                model.withoutMetadata
+                                WithoutMetadataChanged
+                                model.onlyWithMetadata
+                            , metadataToggleCheckbox
+                                "mt-2"
+                                "тільки з метаданими"
+                                model.onlyWithMetadata
+                                OnlyWithMetadataChanged
+                                model.withoutMetadata
+                            ]
+                        ]
             in
             filterMenuBlockCountOutOf
                 { unfold = model.unfoldAorsFilter
@@ -293,7 +409,7 @@ view isDark user model =
                         { unfold = model.unfoldSendersFilter
                         , toggleMsg = ToggleUnfoldSendersFilter
                         , label = "відправник"
-                        , mCountLabel = model.sendersSelectedNames |> List.length |> zeroToNothing |> mmap String.fromInt
+                        , mCountLabel = model.sendersSelected |> List.length |> zeroToNothing |> mmap String.fromInt
                         , overallLabel = getOverallOptionsCount (\r -> r.sendersCount) model.senders
                         , withGreenCircle = False
                         }
@@ -352,6 +468,12 @@ view isDark user model =
                         , withGreenCircle = False
                         }
                         tabFiltersNetworks
+                   , filterMenuBlock
+                        { unfold = model.unfoldMetadataFilter
+                        , toggleMsg = ToggleUnfoldMetadataFilter
+                        , label = "метадані"
+                        }
+                        tabFiltersMetadata
                    , filterMenuBlockCountOutOf
                         { unfold = model.unfoldTagsFilter
                         , toggleMsg = ToggleUnfoldTagsFilter
@@ -402,9 +524,9 @@ view isDark user model =
                         Utils.Select.renderSelectVirtual
                             items
                             model.selAorState
-                            model.selAorMenu
+                            (freshMenuItems model.aors model.selAorMenu)
                             "всі"
-                            { loading = RD.isLoading model.aors, disabled = False, isDark = isDark }
+                            { loading = isRefreshing model.aors, disabled = False, isDark = isDark }
                     )
                 ]
 
@@ -426,75 +548,16 @@ view isDark user model =
                         Utils.Select.renderSelectVirtual
                             items
                             model.selGroupState
-                            model.selGroupMenu
+                            (freshMenuItems model.groups model.selGroupMenu)
                             "всі"
-                            { loading = RD.isLoading model.groups, disabled = False, isDark = isDark }
+                            { loading = isRefreshing model.groups, disabled = False, isDark = isDark }
                     )
                 ]
 
         tabFiltersSenders =
             let
                 items =
-                    model.sendersSelectedNames
-                        |> List.concatMap
-                            (\name ->
-                                model.profiles
-                                    |> Dict.toList
-                                    |> List.filterMap
-                                        (\( k, v ) ->
-                                            case v of
-                                                Nothing ->
-                                                    Nothing
-
-                                                Just profile ->
-                                                    if name == Shared.Components.RerMessage.profileNameStr k profile then
-                                                        Just ( k, name )
-
-                                                    else
-                                                        Nothing
-                                        )
-                            )
-                        |> List.foldl
-                            (\( uuid, name ) ( acc, seen ) ->
-                                let
-                                    count =
-                                        model.senders
-                                            |> RD.withDefault []
-                                            |> ListX.find (\x -> x.uuid == uuid)
-                                            |> mmap .count
-                                            |> def 0
-                                in
-                                if Set.member name seen then
-                                    let
-                                        updatedAcc =
-                                            List.map
-                                                (\( c, n ) ->
-                                                    if n == name then
-                                                        ( c + count, name )
-
-                                                    else
-                                                        ( c, n )
-                                                )
-                                                acc
-                                    in
-                                    ( updatedAcc, seen )
-
-                                else
-                                    ( ( count, name ) :: acc, Set.insert name seen )
-                            )
-                            ( [], Set.empty )
-                        |> Tuple.first
-                        |> List.map
-                            (\( count, name ) ->
-                                Select.basicMenuItem
-                                    { item = name
-                                    , label =
-                                        name
-                                            ++ " ("
-                                            ++ fromInt count
-                                            ++ ")"
-                                    }
-                            )
+                    RerAnalysisSenders.selectedMenuItems model.profiles (RD.withDefault [] model.senders) model.sendersSelected
             in
             div [ class "py-1 px-2" ]
                 [ Html.map SelSenderMsg
@@ -502,9 +565,9 @@ view isDark user model =
                         Utils.Select.renderSelectVirtual
                             items
                             model.selSenderState
-                            model.selSenderMenu
+                            (freshMenuItems model.senders model.selSenderMenu)
                             "всі"
-                            { loading = RD.isLoading model.senders, disabled = False, isDark = isDark }
+                            { loading = isRefreshing model.senders, disabled = False, isDark = isDark }
                     )
                 ]
 
@@ -532,9 +595,9 @@ view isDark user model =
                             Utils.Select.renderSelectVirtual
                                 items
                                 model.selFreqState
-                                model.selFreqMenu
+                                (freshMenuItems model.freqs model.selFreqMenu)
                                 "всі"
-                                { loading = RD.isLoading model.freqs, disabled = model.includeOnlyNewFreqs, isDark = isDark }
+                                { loading = isRefreshing model.freqs, disabled = model.includeOnlyNewFreqs, isDark = isDark }
                         )
                     ]
                 , let
@@ -626,9 +689,9 @@ view isDark user model =
                         Utils.Select.renderSelectVirtual
                             items
                             model.selCallsignState
-                            model.selCallsignMenu
+                            (freshMenuItems model.callsigns model.selCallsignMenu)
                             "всі"
-                            { loading = RD.isLoading model.callsigns, disabled = False, isDark = isDark }
+                            { loading = isRefreshing model.callsigns, disabled = False, isDark = isDark }
                     )
                 ]
 
@@ -650,6 +713,9 @@ view isDark user model =
                                 }
                         )
                         model.unitsSelected
+
+                options =
+                    Utils.Select.defaultOptions isDark
             in
             div [ class "py-1 px-2" ]
                 [ Html.map SelUnitMsg
@@ -657,9 +723,9 @@ view isDark user model =
                         Utils.Select.renderSelect
                             items
                             model.selUnitState
-                            model.selUnitMenu
+                            (freshMenuItems model.units model.selUnitMenu)
                             "всі"
-                            (Utils.Select.defaultOptions isDark)
+                            { options | loading = isRefreshing model.units }
                     )
                 , div [ class "my-1" ]
                     [ Shared.Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
@@ -687,9 +753,9 @@ view isDark user model =
                         Utils.Select.renderSelectVirtual
                             items
                             model.selLocationState
-                            model.selLocationMenu
+                            (freshMenuItems model.locations model.selLocationMenu)
                             "всі"
-                            { loading = RD.isLoading model.locations, disabled = False, isDark = isDark }
+                            { loading = isRefreshing model.locations, disabled = False, isDark = isDark }
                     )
                 , div [ class "my-3" ]
                     [ Shared.Components.Checkbox.new { isChecked = not model.includePelengLocations, onToggle = SetIncludePelengLocations }
@@ -720,9 +786,9 @@ view isDark user model =
                         Utils.Select.renderSelectVirtual
                             items
                             model.selPostState
-                            model.selPostMenu
+                            (freshMenuItems model.posts model.selPostMenu)
                             "всі"
-                            { loading = RD.isLoading model.posts, disabled = False, isDark = isDark }
+                            { loading = isRefreshing model.posts, disabled = False, isDark = isDark }
                     )
                 ]
 
@@ -750,9 +816,9 @@ view isDark user model =
                         Utils.Select.renderSelect
                             selected
                             model.selNetworkState
-                            model.selNetworkMenu
+                            (freshMenuItems model.networksStats model.selNetworkMenu)
                             "всі"
-                            { loading = RD.isLoading model.networksStats
+                            { loading = isRefreshing model.networksStats
                             , clearable = True
                             , disabled = False
                             , isDark = isDark

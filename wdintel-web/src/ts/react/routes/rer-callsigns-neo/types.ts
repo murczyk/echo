@@ -9,7 +9,7 @@ import type {
   User,
 } from '../../../../Bindings';
 
-export type SortColumn = 'callsign' | 'createdAt' | 'unit';
+export type SortColumn = 'callsign' | 'position' | 'comment' | 'unit' | 'sourceName' | 'radioFreq' | 'createdAt';
 export type SortDirection = 'asc' | 'desc';
 
 export type CallsignsSortState = {
@@ -17,7 +17,10 @@ export type CallsignsSortState = {
   direction: SortDirection;
 };
 
+export type OnSort = (column: SortColumn, direction?: SortDirection) => void;
+
 export type CallsignsFilterState = {
+  filterText: string;
   filterCallsign: string;
   filterPosition: string;
   filterComment: string;

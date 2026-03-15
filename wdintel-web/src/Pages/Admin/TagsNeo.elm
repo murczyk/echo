@@ -77,9 +77,11 @@ subscriptions model =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: теги (neo)"
+    { title = "Адмін: теги"
     , body =
-        [ div [ class "mt-4 px-4 w-full" ]
-            [ node "tags-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "tags-neo" [ class "react-fill-host block w-full h-full" ] [] ]
+            ]
         ]
     }

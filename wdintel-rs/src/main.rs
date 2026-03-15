@@ -191,6 +191,16 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffReprocessInboxMetadataPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long)]
+    pub since_ts: Option<String>,
+    /// End datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long)]
+    pub till_ts: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessInboxPostsPs {
     /// Start day (inclusive). Format: `YYYY-MM-DD`.
     #[arg(long)]
@@ -640,6 +650,7 @@ enum Cmd {
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
     OneoffBackfillPalitraPointLexemes,
+    OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffRefreshAiModels,
@@ -1086,6 +1097,12 @@ async fn async_main(
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
+        }
+        Cmd::OneoffReprocessInboxMetadata(ps) => {
+            rer_importer::inbox::metadata::oneoff_reprocess_inbox_metadata(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffBackfillPalitraPointLexemes => {
             palitra::oneoff::oneoff_backfill_palitra_point_lexemes(mode)

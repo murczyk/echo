@@ -1,23 +1,30 @@
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import {
   Alert,
   Autocomplete,
+  Box,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  Tab,
   Switch,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
 import {
   MRT_ColumnDef,
+  MRT_RowData,
   MRT_SortingState,
+  MRT_ShowHideColumnsButton,
+  MRT_TableInstance,
+  MRT_ToggleDensePaddingButton,
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
@@ -33,11 +40,20 @@ import {
   ZoneDatasourceGroupAddReq,
   ZoneDatasourceGroupUpdateReq,
 } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
+import { SectionEmptyState } from '../../components/SectionEmptyState';
+import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import { PowerChip } from '../../components/PowerChip';
-import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -126,6 +142,7 @@ const DEFAULT_ORPHAN_COLUMNS_VISIBILITY = {
 };
 
 const DEFAULT_ORPHAN_COLUMN_ORDER = [
+  'mrt-row-numbers',
   'mrt-row-actions',
   'group',
   'datasource',
@@ -147,6 +164,7 @@ const DEFAULT_ZONE_COLUMNS_VISIBILITY = {
 };
 
 const DEFAULT_ZONE_COLUMN_ORDER = [
+  'mrt-row-numbers',
   'mrt-row-actions',
   'group',
   'datasource',
@@ -157,7 +175,6 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
   'notes',
 ];
 
-const ORPHAN_GROUPS_TABLE_MAX_HEIGHT = 500;
 const DEFAULT_ACTIVITY_DAY_SORTING: MRT_SortingState = [
   { id: 'activityDay', desc: true },
 ];
@@ -166,6 +183,21 @@ const EMPTY_AOR_FILTER_LABEL = '—';
 
 const orphanDefaultMRTOptions = getDefaultMRTOptions<OrphanSignalGroupEntry>();
 const zoneDefaultMRTOptions = getDefaultMRTOptions<ZoneGroupRow>();
+const ORPHAN_GLOBAL_FILTER_COLUMN_IDS = new Set([
+  'group',
+  'datasource',
+  'aors',
+  'notes',
+  'createdAt',
+]);
+const ZONE_GLOBAL_FILTER_COLUMN_IDS = new Set([
+  'group',
+  'datasource',
+  'access',
+  'aors',
+  'notes',
+]);
+const LOADING_SKELETON_ROW_COUNT = 16;
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -230,23 +262,98 @@ function buildAorFilterOptions(
   ];
 }
 
+function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
+  return Array.from({ length: LOADING_SKELETON_ROW_COUNT }, (_, index) => ({
+    masterKey: `loading-orphan-${index}`,
+    name: '',
+    datasourceId: null,
+    ignoreOperativny: false,
+    groupStats: {
+      activityLastDay: 0,
+      activityLastWeek: 0,
+    },
+    groupAdminData: null,
+    areasOfResponsibility: null,
+    createdAt: 0,
+  }));
+}
+
+function buildZoneLoadingRows(): ZoneGroupRow[] {
+  return Array.from({ length: LOADING_SKELETON_ROW_COUNT }, (_, index) => ({
+    id: `loading-zone-${index}`,
+    zoneId: 0,
+    datasourceId: 0,
+    group: {
+      sigintZoneDatasourceId: index,
+      sigintZoneId: 0,
+      datasourceId: 0,
+      groupMasterKey: '',
+      isGroupSecret: false,
+      allowedUsers: [],
+      areaOfResponsibilityId: null,
+      areasOfResponsibility: null,
+      shortNote: null,
+      longNote: null,
+    },
+  }));
+}
+
+function TableTabControls<TData extends MRT_RowData>(props: {
+  globalFilter: string;
+  onGlobalFilterChange: (value: string) => void;
+  table: MRT_TableInstance<TData>;
+  disabled?: boolean;
+}) {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 1,
+        pb: 2,
+        flexShrink: 0,
+      }}
+    >
+      <Box sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%' }}>
+        <GlobalFilterTextField
+          className="!min-w-0 !w-full"
+          globalFilter={props.globalFilter}
+          setGlobalFilter={props.onGlobalFilterChange}
+          disabled={props.disabled}
+        />
+      </Box>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+        <MRT_ShowHideColumnsButton table={props.table} disabled={props.disabled} />
+        <MRT_ToggleDensePaddingButton table={props.table} disabled={props.disabled} />
+      </Box>
+    </Box>
+  );
+}
+
 function OrphanGroupsTable(props: {
   data: OrphanSignalGroupEntry[];
+  loading?: boolean;
   datasourceById: Map<number, Datasource>;
   aorFilterOptions: { text: string; value: string }[];
   onAssign: (group: OrphanSignalGroupEntry) => void;
   onEdit: (group: OrphanSignalGroupEntry) => void;
 }) {
   const tableStateContext = useTableStateContext();
+  const isLoading = Boolean(props.loading);
 
   const columns = React.useMemo<MRT_ColumnDef<OrphanSignalGroupEntry>[]>(
     () => [
       {
         header: 'Група',
         id: 'group',
-        accessorFn: (row) =>
-          row.name && row.name.trim() ? row.name : row.masterKey.slice(-5),
+        accessorFn: (row) => {
+          if (!row?.masterKey) return '—';
+          return row.name && row.name.trim() ? row.name : row.masterKey.slice(-5);
+        },
         Cell: ({ row }) => {
+          if (isLoading || !row.original?.masterKey) return <span>—</span>;
           const name =
             row.original.name && row.original.name.trim()
               ? row.original.name
@@ -263,33 +370,33 @@ function OrphanGroupsTable(props: {
         header: 'Джерело',
         id: 'datasource',
         accessorFn: (row) =>
-          getDatasourceLabel(row.datasourceId, props.datasourceById),
+          getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
         size: 180,
       },
       {
         header: 'Активність (день)',
         id: 'activityDay',
-        accessorFn: (row) => row.groupStats.activityLastDay,
+        accessorFn: (row) => row?.groupStats?.activityLastDay ?? null,
         Cell: ({ row }) => (
-          <span>{row.original.groupStats.activityLastDay}</span>
+          <span>{row.original?.groupStats?.activityLastDay ?? '—'}</span>
         ),
         size: 140,
       },
       {
         header: 'Активність (тиждень)',
         id: 'activityWeek',
-        accessorFn: (row) => row.groupStats.activityLastWeek,
+        accessorFn: (row) => row?.groupStats?.activityLastWeek ?? null,
         Cell: ({ row }) => (
-          <span>{row.original.groupStats.activityLastWeek}</span>
+          <span>{row.original?.groupStats?.activityLastWeek ?? '—'}</span>
         ),
         size: 140,
       },
       {
         header: 'Смуги',
         id: 'aors',
-        accessorFn: (row) => buildAorNames(row.areasOfResponsibility),
+        accessorFn: (row) => buildAorNames(row?.areasOfResponsibility),
         Cell: ({ row }) => {
-          const label = buildAorLabels(row.original.areasOfResponsibility);
+          const label = buildAorLabels(row.original?.areasOfResponsibility);
           return (
             <Tooltip title={label}>
               <span>{label}</span>
@@ -305,18 +412,18 @@ function OrphanGroupsTable(props: {
         header: 'Нотатки',
         id: 'notes',
         accessorFn: (row) => {
-          const shortNote = row.groupAdminData?.shortNote ?? '';
-          const longNote = row.groupAdminData?.longNote ?? '';
+          const shortNote = row?.groupAdminData?.shortNote ?? '';
+          const longNote = row?.groupAdminData?.longNote ?? '';
           return (
             `${shortNote}${longNote ? ` / ${longNote}` : ''}`.trim() || '—'
           );
         },
         Cell: ({ row }) => {
           const shortNote = formatOptionalText(
-            row.original.groupAdminData?.shortNote ?? null
+            row.original?.groupAdminData?.shortNote ?? null
           );
           const longNote = formatOptionalText(
-            row.original.groupAdminData?.longNote ?? null
+            row.original?.groupAdminData?.longNote ?? null
           );
           if (shortNote === '—' && longNote === '—') return <span>—</span>;
           return (
@@ -335,12 +442,12 @@ function OrphanGroupsTable(props: {
       {
         header: 'Створено',
         id: 'createdAt',
-        accessorFn: (row) => row.createdAt,
-        Cell: ({ row }) => <span>{formatDate(row.original.createdAt)}</span>,
+        accessorFn: (row) => row?.createdAt ?? null,
+        Cell: ({ row }) => <span>{row.original?.createdAt ? formatDate(row.original.createdAt) : '—'}</span>,
         size: 140,
       },
     ],
-    [props.datasourceById, props.aorFilterOptions]
+    [isLoading, props.datasourceById, props.aorFilterOptions]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -351,6 +458,8 @@ function OrphanGroupsTable(props: {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: Boolean(props.loading),
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -362,11 +471,13 @@ function OrphanGroupsTable(props: {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: isLoading ? buildOrphanLoadingRows() : props.data,
     ...orphanDefaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
-    enableRowNumbers: false,
+    enableGlobalFilter: true,
+    enableHiding: true,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -381,29 +492,36 @@ function OrphanGroupsTable(props: {
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    onDensityChange: tableStateContext.setDensity,
+    getColumnCanGlobalFilter: (column) =>
+      ORPHAN_GLOBAL_FILTER_COLUMN_IDS.has(column.id),
     enableRowActions: true,
     positionActionsColumn: 'first',
-    renderRowActions: ({ row }) => (
-      <div className="flex items-center gap-1">
-        <Tooltip title="Додати до напрямку">
-          <IconButton size="small" onClick={() => props.onAssign(row.original)}>
-            <AddCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Редагувати">
-          <IconButton size="small" onClick={() => props.onEdit(row.original)}>
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </div>
-    ),
+    renderRowActions: ({ row }) =>
+      isLoading || !row.original?.masterKey ? null : (
+        <MrtRowActions>
+          <MrtRowActionButton
+            label="Додати до напрямку"
+            onClick={() => props.onAssign(row.original)}
+            icon={<AddCircleOutlineIcon fontSize="small" />}
+          />
+          <MrtRowActionButton
+            label="Редагувати"
+            onClick={() => props.onEdit(row.original)}
+            icon={<EditIcon fontSize="small" />}
+          />
+        </MrtRowActions>
+      ),
     defaultColumn: {
       size: 200,
       renderColumnActionsMenuItems,
     },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(2),
+      },
     },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
@@ -411,21 +529,20 @@ function OrphanGroupsTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+          height: isLoading ? '100%' : 'auto',
+          minHeight: isLoading ? '100%' : undefined,
+          maxHeight: '100%',
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: ORPHAN_GROUPS_TABLE_MAX_HEIGHT,
-        overflowX: 'auto',
-        overflowY: 'auto',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+        height: isLoading ? '100%' : 'auto',
+        minHeight: isLoading ? '100%' : undefined,
+        maxHeight: '100%',
       },
     },
     state,
@@ -435,11 +552,55 @@ function OrphanGroupsTable(props: {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
-  return <MaterialReactTable table={table} />;
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        width: '100%',
+        flex: isLoading ? 1 : undefined,
+        minHeight: 0,
+        minWidth: 0,
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
+      <TableTabControls
+        globalFilter={tableStateContext.globalFilter}
+        onGlobalFilterChange={(value) =>
+          tableStateContext.onChangeGlobalFilter(value)
+        }
+        table={table}
+        disabled={isLoading}
+      />
+      <Box
+        sx={{
+          width: '100%',
+          minHeight: 0,
+          minWidth: 0,
+          overflow: 'hidden',
+          maxHeight: '100%',
+          flex: isLoading ? 1 : undefined,
+          position: 'relative',
+          cursor: isLoading ? 'progress' : undefined,
+        }}
+      >
+        {isLoading ? (
+          <SectionLoadingOverlay
+            open
+            ariaLabel="Завантаження таблиці напрямків"
+            spinnerMode="center"
+            sx={{ zIndex: 12 }}
+          />
+        ) : null}
+        <MaterialReactTable table={table} />
+      </Box>
+    </Box>
+  );
 }
 
 function ZoneGroupsTable(props: {
   rows: ZoneGroupRow[];
+  loading?: boolean;
   datasourceById: Map<number, Datasource>;
   groupInfos: Map<string, SignalGroupEntry>;
   aorFilterOptions: { text: string; value: string }[];
@@ -455,6 +616,7 @@ function ZoneGroupsTable(props: {
   ) => void;
 }) {
   const tableStateContext = useTableStateContext();
+  const isLoading = Boolean(props.loading);
 
   const columns = React.useMemo<MRT_ColumnDef<ZoneGroupRow>[]>(
     () => [
@@ -462,8 +624,11 @@ function ZoneGroupsTable(props: {
         header: 'Група',
         id: 'group',
         accessorFn: (row) =>
-          getGroupName(row.group.groupMasterKey, null, props.groupInfos),
+          row?.group?.groupMasterKey
+            ? getGroupName(row.group.groupMasterKey, null, props.groupInfos)
+            : '—',
         Cell: ({ row }) => {
+          if (isLoading || !row.original?.group?.groupMasterKey) return <span>—</span>;
           const groupName = getGroupName(
             row.original.group.groupMasterKey,
             null,
@@ -496,22 +661,22 @@ function ZoneGroupsTable(props: {
         header: 'Джерело',
         id: 'datasource',
         accessorFn: (row) =>
-          getDatasourceLabel(row.datasourceId, props.datasourceById),
+          getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
         size: 200,
       },
       {
         header: 'Активність (день)',
         id: 'activityDay',
         accessorFn: (row) => {
-          const stats = props.groupInfos.get(
-            row.group.groupMasterKey
-          )?.groupStats;
+          const stats = row?.group?.groupMasterKey
+            ? props.groupInfos.get(row.group.groupMasterKey)?.groupStats
+            : null;
           return stats ? stats.activityLastDay : null;
         },
         Cell: ({ row }) => {
-          const stats = props.groupInfos.get(
-            row.original.group.groupMasterKey
-          )?.groupStats;
+          const stats = row.original?.group?.groupMasterKey
+            ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
+            : null;
           if (!stats) return <span>—</span>;
           return <span>{stats.activityLastDay}</span>;
         },
@@ -521,15 +686,15 @@ function ZoneGroupsTable(props: {
         header: 'Активність (тиждень)',
         id: 'activityWeek',
         accessorFn: (row) => {
-          const stats = props.groupInfos.get(
-            row.group.groupMasterKey
-          )?.groupStats;
+          const stats = row?.group?.groupMasterKey
+            ? props.groupInfos.get(row.group.groupMasterKey)?.groupStats
+            : null;
           return stats ? stats.activityLastWeek : null;
         },
         Cell: ({ row }) => {
-          const stats = props.groupInfos.get(
-            row.original.group.groupMasterKey
-          )?.groupStats;
+          const stats = row.original?.group?.groupMasterKey
+            ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
+            : null;
           if (!stats) return <span>—</span>;
           return <span>{stats.activityLastWeek}</span>;
         },
@@ -539,12 +704,12 @@ function ZoneGroupsTable(props: {
         header: 'Доступ',
         id: 'access',
         accessorFn: (row) =>
-          row.group.allowedUsers.length > 0
+          row?.group?.allowedUsers?.length > 0
             ? row.group.allowedUsers.join(', ')
             : 'без обмежень',
         Cell: ({ row }) => {
           const label =
-            row.original.group.allowedUsers.length > 0
+            row.original?.group?.allowedUsers?.length > 0
               ? row.original.group.allowedUsers.join(', ')
               : 'без обмежень';
           return (
@@ -558,10 +723,10 @@ function ZoneGroupsTable(props: {
       {
         header: 'Смуги',
         id: 'aors',
-        accessorFn: (row) => buildAorNames(row.group.areasOfResponsibility),
+        accessorFn: (row) => buildAorNames(row?.group?.areasOfResponsibility),
         Cell: ({ row }) => {
           const label = buildAorLabels(
-            row.original.group.areasOfResponsibility
+            row.original?.group?.areasOfResponsibility
           );
           return (
             <Tooltip title={label}>
@@ -578,8 +743,8 @@ function ZoneGroupsTable(props: {
         header: 'Нотатки',
         id: 'notes',
         accessorFn: (row) => {
-          const shortNote = formatOptionalText(row.group.shortNote ?? null);
-          const longNote = formatOptionalText(row.group.longNote ?? null);
+          const shortNote = formatOptionalText(row?.group?.shortNote ?? null);
+          const longNote = formatOptionalText(row?.group?.longNote ?? null);
           if (shortNote === '—' && longNote === '—') return '—';
           if (shortNote === '—') return longNote;
           if (longNote === '—') return shortNote;
@@ -587,10 +752,10 @@ function ZoneGroupsTable(props: {
         },
         Cell: ({ row }) => {
           const shortNote = formatOptionalText(
-            row.original.group.shortNote ?? null
+            row.original?.group?.shortNote ?? null
           );
           const longNote = formatOptionalText(
-            row.original.group.longNote ?? null
+            row.original?.group?.longNote ?? null
           );
           if (shortNote === '—' && longNote === '—') return <span>—</span>;
           const tooltipLabel =
@@ -615,7 +780,7 @@ function ZoneGroupsTable(props: {
         size: 260,
       },
     ],
-    [props.datasourceById, props.groupInfos, props.aorFilterOptions]
+    [isLoading, props.datasourceById, props.groupInfos, props.aorFilterOptions]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -626,6 +791,8 @@ function ZoneGroupsTable(props: {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: Boolean(props.loading),
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -637,11 +804,13 @@ function ZoneGroupsTable(props: {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.rows,
+    data: isLoading ? buildZoneLoadingRows() : props.rows,
     ...zoneDefaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
-    enableRowNumbers: false,
+    enableGlobalFilter: true,
+    enableHiding: true,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -656,14 +825,16 @@ function ZoneGroupsTable(props: {
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    onDensityChange: tableStateContext.setDensity,
+    getColumnCanGlobalFilter: (column) =>
+      ZONE_GLOBAL_FILTER_COLUMN_IDS.has(column.id),
     enableRowActions: true,
     positionActionsColumn: 'first',
-    renderRowActions: ({ row }) => (
-      <div className="flex items-center gap-1">
-        <Tooltip title="Редагувати">
-          <IconButton
-            size="small"
+    renderRowActions: ({ row }) =>
+      isLoading || !row.original?.group ? null : (
+        <MrtRowActions>
+          <MrtRowActionButton
+            label="Редагувати"
             onClick={() =>
               props.onEdit(
                 row.original.zoneId,
@@ -671,13 +842,10 @@ function ZoneGroupsTable(props: {
                 row.original.group
               )
             }
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Видалити">
-          <IconButton
-            size="small"
+            icon={<EditIcon fontSize="small" />}
+          />
+          <MrtRowActionButton
+            label="Видалити"
             onClick={() =>
               props.onDelete(
                 row.original.zoneId,
@@ -685,18 +853,21 @@ function ZoneGroupsTable(props: {
                 row.original.group
               )
             }
-          >
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </div>
-    ),
+            icon={<DeleteIcon fontSize="small" />}
+            tone="danger"
+          />
+        </MrtRowActions>
+      ),
     defaultColumn: {
       size: 200,
       renderColumnActionsMenuItems,
     },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(2),
+      },
     },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
@@ -704,21 +875,20 @@ function ZoneGroupsTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+          height: isLoading ? '100%' : 'auto',
+          minHeight: isLoading ? '100%' : undefined,
+          maxHeight: '100%',
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: 'none',
-        overflowX: 'auto',
-        overflowY: 'visible',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+        height: isLoading ? '100%' : 'auto',
+        minHeight: isLoading ? '100%' : undefined,
+        maxHeight: '100%',
       },
     },
     state,
@@ -728,11 +898,55 @@ function ZoneGroupsTable(props: {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
-  return <MaterialReactTable table={table} />;
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        width: '100%',
+        flex: isLoading ? 1 : undefined,
+        minHeight: 0,
+        minWidth: 0,
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
+      <TableTabControls
+        globalFilter={tableStateContext.globalFilter}
+        onGlobalFilterChange={(value) =>
+          tableStateContext.onChangeGlobalFilter(value)
+        }
+        table={table}
+        disabled={isLoading}
+      />
+      <Box
+        sx={{
+          width: '100%',
+          minHeight: 0,
+          minWidth: 0,
+          overflow: 'hidden',
+          maxHeight: '100%',
+          flex: isLoading ? 1 : undefined,
+          position: 'relative',
+          cursor: isLoading ? 'progress' : undefined,
+        }}
+      >
+        {isLoading ? (
+          <SectionLoadingOverlay
+            open
+            ariaLabel="Завантаження таблиці напрямків"
+            spinnerMode="center"
+            sx={{ zIndex: 12 }}
+          />
+        ) : null}
+        <MaterialReactTable table={table} />
+      </Box>
+    </Box>
+  );
 }
 
 function OrphanGroupsSection(props: {
   data: OrphanSignalGroupEntry[];
+  loading?: boolean;
   datasourceById: Map<number, Datasource>;
   aorFilterOptions: { text: string; value: string }[];
   onAssign: (group: OrphanSignalGroupEntry) => void;
@@ -745,9 +959,10 @@ function OrphanGroupsSection(props: {
       defaultColumnVisibility={DEFAULT_ORPHAN_COLUMNS_VISIBILITY}
       defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
     >
-      <div className="table-responsive-modern w-full min-w-0">
+      <div className="flex min-h-0 w-full min-w-0 max-h-full overflow-hidden">
         <OrphanGroupsTable
           data={props.data}
+          loading={props.loading}
           datasourceById={props.datasourceById}
           aorFilterOptions={props.aorFilterOptions}
           onAssign={props.onAssign}
@@ -761,6 +976,7 @@ function OrphanGroupsSection(props: {
 function ZoneGroupsSection(props: {
   zoneId: number;
   rows: ZoneGroupRow[];
+  loading?: boolean;
   datasourceById: Map<number, Datasource>;
   groupInfos: Map<string, SignalGroupEntry>;
   aorFilterOptions: { text: string; value: string }[];
@@ -782,9 +998,10 @@ function ZoneGroupsSection(props: {
       defaultColumnVisibility={DEFAULT_ZONE_COLUMNS_VISIBILITY}
       defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
     >
-      <div className="table-responsive-modern w-full min-w-0">
+      <div className="flex min-h-0 w-full min-w-0 max-h-full overflow-hidden">
         <ZoneGroupsTable
           rows={props.rows}
+          loading={props.loading}
           datasourceById={props.datasourceById}
           groupInfos={props.groupInfos}
           aorFilterOptions={props.aorFilterOptions}
@@ -796,7 +1013,19 @@ function ZoneGroupsSection(props: {
   );
 }
 
-function AdminNeoPageBody() {
+type DirectionsTab =
+  | {
+      key: 'orphans';
+      label: string;
+      content: React.ReactNode;
+    }
+  | {
+      key: `zone-${number}`;
+      label: string;
+      content: React.ReactNode;
+    };
+
+function AdminDirectionsNeoPageBody() {
   const [status, setStatus] = React.useState<LoadingStatus>('idle');
   const [error, setError] = React.useState<string | null>(null);
   const [datasources, setDatasources] = React.useState<DatasourceEntry[]>([]);
@@ -825,6 +1054,7 @@ function AdminNeoPageBody() {
   const [deleteDialog, setDeleteDialog] = React.useState<DeleteState | null>(
     null
   );
+  const [activeTab, setActiveTab] = React.useState(0);
 
   const [logins, setLogins] = React.useState<string[]>([]);
   const [loginsStatus, setLoginsStatus] = React.useState<LoadingStatus>('idle');
@@ -838,6 +1068,106 @@ function AdminNeoPageBody() {
     () => buildAorFilterOptions(aors),
     [aors]
   );
+  const directionTabs = React.useMemo<DirectionsTab[]>(() => {
+    if (status === 'loading' || status === 'idle') {
+      return [
+        {
+          key: 'orphans',
+          label: 'Орфан групи',
+          content: (
+            <OrphanGroupsSection
+              data={[]}
+              loading
+              datasourceById={datasourceById}
+              aorFilterOptions={aorFilterOptions}
+              onAssign={openAssignDialog}
+              onEdit={openOrphanEditDialog}
+            />
+          ),
+        },
+      ];
+    }
+
+    const tabs: DirectionsTab[] = [
+      {
+        key: 'orphans',
+        label: 'Орфан групи',
+        content:
+          orphanGroups.length === 0 ? (
+            <SectionEmptyState message="Орфан групи відсутні" />
+          ) : (
+            <OrphanGroupsSection
+              data={orphanGroups}
+              datasourceById={datasourceById}
+              aorFilterOptions={aorFilterOptions}
+              onAssign={openAssignDialog}
+              onEdit={openOrphanEditDialog}
+            />
+          ),
+      },
+    ];
+
+    zones.forEach((zoneEntry) => {
+      const [zoneId, zone] = zoneEntry;
+      const datasourceIds = zoneDatasourceIds.get(zoneId) ?? [];
+
+      const zoneRows = datasourceIds.flatMap((datasourceId) => {
+        const key = buildGroupKey(zoneId, datasourceId);
+        const groups = zoneGroups.get(key) ?? [];
+        return groups.map((group) => ({
+          id: `${zoneId}-${datasourceId}-${group.sigintZoneDatasourceId}`,
+          zoneId,
+          datasourceId,
+          group,
+        }));
+      });
+
+      const filteredRows = zoneRows.sort((a, b) => {
+        const nameA = getGroupName(a.group.groupMasterKey, null, groupInfos);
+        const nameB = getGroupName(b.group.groupMasterKey, null, groupInfos);
+        if (nameA !== nameB) return nameA.localeCompare(nameB, 'uk-UA');
+        const datasourceA = getDatasourceLabel(a.datasourceId, datasourceById);
+        const datasourceB = getDatasourceLabel(b.datasourceId, datasourceById);
+        return datasourceA.localeCompare(datasourceB, 'uk-UA');
+      });
+
+      tabs.push({
+        key: `zone-${zoneId}`,
+        label: `Напрямок: ${zone.name}`,
+        content:
+          datasourceIds.length === 0 ? (
+            <SectionEmptyState message="Немає джерел даних" />
+          ) : filteredRows.length === 0 ? (
+            <SectionEmptyState message="Немає груп для цього напрямку" />
+          ) : (
+            <ZoneGroupsSection
+              zoneId={zoneId}
+              rows={filteredRows}
+              datasourceById={datasourceById}
+              groupInfos={groupInfos}
+              aorFilterOptions={aorFilterOptions}
+              onEdit={openEditDialog}
+              onDelete={openDeleteDialog}
+            />
+          ),
+      });
+    });
+
+    return tabs;
+  }, [
+    status,
+    aorFilterOptions,
+    datasourceById,
+    groupInfos,
+    orphanGroups,
+    zoneDatasourceIds,
+    zoneGroups,
+    zones,
+  ]);
+
+  React.useEffect(() => {
+    setActiveTab((current) => Math.min(current, Math.max(directionTabs.length - 1, 0)));
+  }, [directionTabs.length]);
 
   async function ensureLoginsLoaded() {
     if (loginsStatus === 'loading' || loginsStatus === 'success') return;
@@ -1215,135 +1545,105 @@ function AdminNeoPageBody() {
     }
   }
 
-  const renderOrphanGroups = () => {
-    if (orphanGroups.length === 0) {
-      return (
-        <div className="text-sm text-muted-foreground">
-          Орфан групи відсутні
-        </div>
-      );
+  const renderContent = () => {
+    if (status === 'error') {
+      return <PageErrorState message={error || 'Помилка завантаження'} />;
     }
-    return (
-      <OrphanGroupsSection
-        data={orphanGroups}
-        datasourceById={datasourceById}
-        aorFilterOptions={aorFilterOptions}
-        onAssign={openAssignDialog}
-        onEdit={openOrphanEditDialog}
-      />
-    );
-  };
-
-  const renderZoneSection = (zoneEntry: ZoneEntry) => {
-    const [zoneId, zone] = zoneEntry;
-    const datasourceIds = zoneDatasourceIds.get(zoneId) ?? [];
-
-    const zoneRows = datasourceIds.flatMap((datasourceId) => {
-      const key = buildGroupKey(zoneId, datasourceId);
-      const groups = zoneGroups.get(key) ?? [];
-      return groups.map((group) => ({
-        id: `${zoneId}-${datasourceId}-${group.sigintZoneDatasourceId}`,
-        zoneId,
-        datasourceId,
-        group,
-      }));
-    });
-
-    const filteredRows = zoneRows.sort((a, b) => {
-      const nameA = getGroupName(a.group.groupMasterKey, null, groupInfos);
-      const nameB = getGroupName(b.group.groupMasterKey, null, groupInfos);
-      if (nameA !== nameB) return nameA.localeCompare(nameB, 'uk-UA');
-      const datasourceA = getDatasourceLabel(a.datasourceId, datasourceById);
-      const datasourceB = getDatasourceLabel(b.datasourceId, datasourceById);
-      return datasourceA.localeCompare(datasourceB, 'uk-UA');
-    });
 
     return (
-      <div
-        key={zoneId}
-        className="bg-[var(--bs-body-bg)] rounded-lg border p-4"
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Typography variant="h6" className="!font-semibold">
-            Напрямок: {zone.name}
-          </Typography>
-          <span className="text-sm text-muted-foreground">
-            {filteredRows.length} груп
-          </span>
-        </div>
-        {datasourceIds.length === 0 ? (
-          <div className="mt-3 text-sm text-muted-foreground">
-            Немає джерел даних
-          </div>
-        ) : filteredRows.length === 0 ? (
-          <div className="mt-3 text-sm text-muted-foreground">
-            Немає груп для цього напрямку
-          </div>
-        ) : (
-          <div className="mt-4">
-            <ZoneGroupsSection
-              zoneId={zoneId}
-              rows={filteredRows}
-              datasourceById={datasourceById}
-              groupInfos={groupInfos}
-              aorFilterOptions={aorFilterOptions}
-              onEdit={openEditDialog}
-              onDelete={openDeleteDialog}
+        <Tabs
+          value={activeTab}
+          onChange={(_, value: number) => setActiveTab(value)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            minHeight: 48,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            flexShrink: 0,
+          }}
+        >
+          {directionTabs.map((tab) => (
+            <Tab
+              key={tab.key}
+              label={tab.label}
+              sx={{
+                alignItems: 'flex-start',
+                textAlign: 'left',
+                minHeight: 48,
+              }}
             />
-          </div>
-        )}
-      </div>
+          ))}
+        </Tabs>
+
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            display: 'flex',
+            overflow: 'hidden',
+            pt: 2,
+          }}
+        >
+          {directionTabs.map((tab, index) => (
+            <Box
+              key={tab.key}
+              role="tabpanel"
+              hidden={activeTab !== index}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                minWidth: 0,
+                display: activeTab === index ? 'flex' : 'none',
+                overflow: 'hidden',
+              }}
+            >
+              <Box
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  minWidth: 0,
+                  display: 'flex',
+                  overflow: 'hidden',
+                }}
+              >
+                {tab.content}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      </Box>
     );
   };
-
-  if (status === 'loading') {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <CircularProgress size={28} />
-      </div>
-    );
-  }
-
-  if (status === 'error') {
-    return (
-      <div className="text-center py-8 text-red-600">
-        {error || 'Помилка завантаження'}
-      </div>
-    );
-  }
 
   return (
-    <div className="mt-2 w-full space-y-4 min-w-0">
+    <div className="flex h-full w-full min-w-0 flex-col gap-6 overflow-hidden">
       {error ? (
         <Alert severity="error" onClose={() => setError(null)}>
           {error}
         </Alert>
       ) : null}
 
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Напрямки
-          </Typography>
-        }
-        withDatePicker={false}
+      <TablePageToolbar
+        title="Напрямки"
         withGlobalTextFilter={false}
-        additionalNoTableActions={
-          <Button variant="outlined" onClick={loadData}>
-            Оновити
-          </Button>
-        }
+        internalActionsHidden
+        internalActionsDisabled={status === 'loading'}
       />
 
-      <div className="space-y-6">
-        <div className="bg-[var(--bs-body-bg)] rounded-lg border p-4">
-          <Typography variant="h6" className="!font-semibold mb-3">
-            Орфан групи
-          </Typography>
-          {renderOrphanGroups()}
-        </div>
-
-        {zones.map((zoneEntry) => renderZoneSection(zoneEntry))}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {renderContent()}
       </div>
 
       <Dialog
@@ -1605,43 +1905,24 @@ function AdminNeoPageBody() {
         </DialogActions>
       </Dialog>
 
-      <Dialog
+      <ConfirmDangerDialog
         open={Boolean(deleteDialog)}
         onClose={() => setDeleteDialog(null)}
-        maxWidth="sm"
-        fullWidth
+        onConfirm={handleDeleteGroup}
+        submitting={Boolean(deleteDialog?.isDeleting)}
+        disabled={!deleteDialog}
       >
-        <DialogTitle>Підтвердження видалення</DialogTitle>
-        <DialogContent className="space-y-3">
           {deleteDialog?.error ? (
             <Alert severity="error">{deleteDialog.error}</Alert>
           ) : null}
           <Typography variant="body2" className="text-muted-foreground">
             Ви впевнені, що хочете видалити групу {deleteDialog?.groupName}?
           </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            variant="outlined"
-            onClick={() => setDeleteDialog(null)}
-            disabled={deleteDialog?.isDeleting}
-          >
-            Скасувати
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={handleDeleteGroup}
-            disabled={deleteDialog?.isDeleting}
-          >
-            Видалити
-          </Button>
-        </DialogActions>
-      </Dialog>
+      </ConfirmDangerDialog>
     </div>
   );
 }
 
-export function AdminNeoPage() {
-  return <AdminNeoPageBody />;
+export function AdminDirectionsNeoPage() {
+  return <AdminDirectionsNeoPageBody />;
 }

@@ -8,7 +8,20 @@ type Props = {
 
 export function TableEmptyState({ message, actionLabel, onAction }: Props) {
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, py: 3 }}>
+    <Box
+      sx={{
+        width: '100%',
+        minHeight: 220,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1,
+        px: 3,
+        py: 4,
+        textAlign: 'center',
+      }}
+    >
       <Typography variant="body2" color="text.secondary" align="center">
         {message}
       </Typography>

@@ -20,6 +20,10 @@ type SearchParams = {
   [k: string]: string;
 };
 
+function getCurrentSearchParamsObject(): SearchParams {
+  return Object.fromEntries(Array.from(new URLSearchParams(window.location.search).entries()));
+}
+
 type TableStateContextValue = {
   globalFilter: string;
   onChangeGlobalFilter: (value: Updater<string>) => void;
@@ -139,10 +143,34 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
     return props.defaultDate || dayjs().startOf('D');
   });
 
-  const [columnFilters, setColumnFilters] = React.useState<MRT_ColumnFiltersState>([]);
-  const [sorting, setSorting] = React.useState<MRT_SortingState>(() => props.defaultSorting ?? []);
+  const [columnFilters, setColumnFilters] = React.useState<MRT_ColumnFiltersState>(() => {
+    const columnFiltersFromParams = searchParams.get('columnFilters');
+    if (!columnFiltersFromParams) return [];
+
+    try {
+      return JSON.parse(columnFiltersFromParams).map(({ id, value }: { id: string; value: any }) => ({
+        id,
+        value,
+      }));
+    } catch (error) {
+      return [];
+    }
+  });
+  const [sorting, setSorting] = React.useState<MRT_SortingState>(() => {
+    const sortByFromParams = searchParams.get('sorting');
+    if (!sortByFromParams) return props.defaultSorting ?? [];
+
+    try {
+      return JSON.parse(sortByFromParams).map(({ id, desc }: { id: string; desc: any }) => ({
+        id,
+        desc,
+      }));
+    } catch (error) {
+      return props.defaultSorting ?? [];
+    }
+  });
   const [density, setDensity] = React.useState<MRT_DensityState>('compact');
-  const [globalFilter, setGlobalFilter] = React.useState('');
+  const [globalFilter, setGlobalFilter] = React.useState(() => searchParams.get('globalFilter') || '');
   const [columnSizing, setColumnSizing] = React.useState<MRT_ColumnSizingState>(() => getInitialColumnSizing());
   const [enableColumnOrdering, setEnableColumnOrdering] = React.useState<boolean>(() => getInitialEnableColumnOrdering());
   const [enableColumnResizing, setEnableColumnResizing] = React.useState<boolean>(() => getInitialEnableColumnResizing());
@@ -162,39 +190,6 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
   const columnSizeTouched = Object.keys(columnSizing).length > 0;
 
   const columnVisibilityTouched = !objectsEqual(columnVisibility, defaultColumnVisibility);
-
-  function initialGlobalFilter() {
-    setGlobalFilter(searchParams.get('globalFilter') || '');
-  }
-
-  function initialColumnFilters() {
-    const columnFiltersFromParams = searchParams.get('columnFilters');
-    try {
-      setColumnFilters(
-        columnFiltersFromParams
-          ? JSON.parse(columnFiltersFromParams).map(({ id, value }: { id: string; value: any }) => ({
-              id,
-              value,
-            }))
-          : [],
-      );
-    } catch (error) {}
-  }
-
-  function initialSorting() {
-    const sortByFromParams = searchParams.get('sorting');
-
-    if (sortByFromParams) {
-      try {
-        setSorting(
-          JSON.parse(sortByFromParams).map(({ id, desc }: { id: string; desc: any }) => ({
-            id,
-            desc: desc,
-          })),
-        );
-      } catch (error) {}
-    }
-  }
 
   function getInitialColumnOrder() {
     const columnOrderFromStorage = localStorage.getItem(`columnOrder-${props.tableId}`);
@@ -282,18 +277,9 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
     return colVis;
   }
 
-  React.useEffect(() => {
-    initialGlobalFilter();
-    initialColumnFilters();
-    initialSorting();
-
-    setColumnVisibility(getInitialColumnsVisibility());
-    setColumnOrder(getInitialColumnOrder());
-  }, []);
-
   function onChangeGlobalFilter(updaterOrValue: Updater<string>): SearchParams {
     const nextFilter = typeof updaterOrValue === 'function' ? updaterOrValue(globalFilter) : updaterOrValue;
-    const newSearchParams = Object.fromEntries(Array.from(searchParams.entries()));
+    const newSearchParams = getCurrentSearchParamsObject();
 
     if (nextFilter) {
       Object.assign(newSearchParams, { globalFilter: nextFilter });
@@ -307,7 +293,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
   }
 
   function onChangeDate(date: Dayjs | null): SearchParams {
-    const newSearchParams = Object.fromEntries(Array.from(searchParams.entries()));
+    const newSearchParams = getCurrentSearchParamsObject();
 
     if (date) {
       const isDateEqualToDefault = !!props.defaultDate
@@ -396,7 +382,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
       newFilters = updaterOrValue;
     }
 
-    const existingParams = Object.fromEntries(Array.from(searchParams.entries()));
+    const existingParams = getCurrentSearchParamsObject();
     const newSearchParams = updatedSearchParams || Object.assign({}, existingParams);
 
     if (newFilters.length > 0) {
@@ -424,7 +410,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
       newSorting = updaterOrValue;
     }
 
-    const newSearchParams = updatedSearchParams || Object.fromEntries(Array.from(searchParams.entries()));
+    const newSearchParams = updatedSearchParams || getCurrentSearchParamsObject();
 
     if (newSorting.length > 0) {
       const sorting = JSON.stringify(newSorting);

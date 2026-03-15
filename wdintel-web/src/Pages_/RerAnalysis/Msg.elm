@@ -54,6 +54,7 @@ type Msg
     | ToggleUnfoldLocationsFilter
     | ToggleUnfoldTagsFilter
     | ToggleUnfoldNetworksFilter
+    | ToggleUnfoldMetadataFilter
     | ToggleUnfoldPostsFilter
     | ToggleUnfoldSumTable
     | ToggleUnfoldGraphs
@@ -94,6 +95,12 @@ type Msg
     | SavedFilterDeleteDone (Result ApiError ())
     | SavedFilterSelect Int
     | SearchInput String
+    | SelMetadataCcMsg (Select.Msg String)
+    | SelMetadataSenderMsg (Select.Msg String)
+    | SelMetadataReceiverMsg (Select.Msg String)
+    | SelMetadataHashMsg (Select.Msg String)
+    | OnlyWithMetadataChanged Bool
+    | WithoutMetadataChanged Bool
     | SearchDo
     | SearchInputKeyDown Int
     | SearchReset
@@ -138,6 +145,7 @@ type Msg
     | GotStatsUnits (Result ApiError B.UnitStatsRsp)
     | GotStatsSenders (Result ApiError B.SenderStatsRsp)
     | GotStatsNetworks (Result ApiError B.NetworkStatsRsp)
+    | GotStatsMetadata (Result ApiError B.MetadataStatsRsp)
     | GotGdocCallsignsForSumTable (Result ApiError (List B.CallsignInfoRes))
     | GotStatsGroups (Result ApiError B.GroupStatsRsp)
     | GotMapPoints (Result ApiError B.MapPointsRsp)

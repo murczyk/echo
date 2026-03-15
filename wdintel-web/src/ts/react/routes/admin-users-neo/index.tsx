@@ -2,6 +2,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import {
   Alert,
   Autocomplete,
+  Box,
   Checkbox,
   CircularProgress,
   Dialog,
@@ -10,19 +11,28 @@ import {
   DialogTitle,
   FormControlLabel,
   MenuItem,
+  Stack,
   TextField,
   Tooltip,
-  Typography,
 } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import { PowerChip } from '../../components/PowerChip';
-import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -135,6 +145,23 @@ const EMPTY_ADD_FORM: AddUserForm = {
   organismId: null,
   useDelta: true,
 };
+
+function buildUserLoadingRows(): Login[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    login: `loading-${index}`,
+    roles: [],
+    deleted: false,
+    deactivationReason: null,
+    organismEnabled: true,
+    sigintZoneId: null,
+    organismName: null,
+    organismId: null,
+    sigintZoneName: null,
+    deltaLogin: null,
+    createdAt: 0,
+    lastActiveAt: null,
+  }));
+}
 
 const DEBUG_USERS_NEO =
   typeof window !== 'undefined' && window.localStorage.getItem('debugUsersNeo') === '1';
@@ -488,7 +515,7 @@ function AddUserDialog(props: {
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
       <DialogTitle>Додати користувача</DialogTitle>
-      <DialogContent className="space-y-4">
+      <DialogContent className="space-y-5">
         <FormControlLabel
           control={
             <Checkbox
@@ -511,7 +538,7 @@ function AddUserDialog(props: {
         ) : null}
         {submitError ? <Alert severity="error">{submitError}</Alert> : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-4 md:grid-cols-2">
           <TextField
             label="Логін"
             value={form.login}
@@ -523,7 +550,6 @@ function AddUserDialog(props: {
             helperText={errors.login || ' '}
             fullWidth
             disabled={isSubmitting}
-            className="xl:col-span-2"
           />
 
           <TextField
@@ -537,7 +563,6 @@ function AddUserDialog(props: {
             helperText={errors.password || ' '}
             fullWidth
             disabled={isSubmitting || form.useDelta}
-            className="xl:col-span-2"
           />
 
           <TextField
@@ -556,7 +581,6 @@ function AddUserDialog(props: {
             error={Boolean(errors.roles)}
             helperText={errors.roles || ' '}
             disabled={isSubmitting}
-            className="xl:col-span-2"
           >
             {ROLE_OPTIONS.map((role) => (
               <MenuItem key={role} value={role}>
@@ -578,7 +602,6 @@ function AddUserDialog(props: {
             disabled={isSubmitting}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
-            className="xl:col-span-2"
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -601,7 +624,7 @@ function AddUserDialog(props: {
             disabled={isSubmitting}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
-            className="xl:col-span-2"
+            className="md:col-span-2"
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -611,8 +634,8 @@ function AddUserDialog(props: {
           />
         </div>
       </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" onClick={handleClose} disabled={isSubmitting}>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <Button onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </Button>
         <Button variant="contained" onClick={handleCreateUser} disabled={!canSubmit}>
@@ -868,15 +891,15 @@ function EditUserDialog(props: {
 
 function RowActions(props: { login: Login; onEdit: (login: Login) => void }) {
   return (
-    <Tooltip title="Редагувати">
-      <IconButton size="small" onClick={() => props.onEdit(props.login)}>
-        <EditIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
+    <MrtRowActionButton
+      label="Редагувати"
+      onClick={() => props.onEdit(props.login)}
+      icon={<EditIcon fontSize="small" />}
+    />
   );
 }
 
-function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
+function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Login) => void }) {
   const tableStateContext = useTableStateContext();
   const columns = useUsersColumns();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -884,6 +907,8 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -895,7 +920,7 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
 
   const table = useMaterialReactTable({
     columns,
-    data: props.data,
+    data: props.loading ? buildUserLoadingRows() : props.data,
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
@@ -904,7 +929,7 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
     enableColumnFilterModes: true,
     enableFacetedValues: true,
     enableRowVirtualization: false,
-    enableRowActions: true,
+    enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => <RowActions login={row.original} onEdit={props.onEdit} />,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
@@ -926,7 +951,7 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 60,
+        size: mrtRowActionsColumnSize(1),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -944,21 +969,14 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: 'none',
-        overflowX: 'auto',
-        overflowY: 'visible',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -1048,49 +1066,49 @@ function AdminUsersNeoPageBody() {
   };
 
   const renderTable = () => {
-    if (status === 'loading') {
-      return (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
+    return (
+      <TableContentState
+        status={status}
+        errorMessage={error || 'Помилка завантаження'}
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <UsersTable
+              data={logins}
+              loading
+              onEdit={(login) => setEditingLogin(login)}
+            />
+          </div>
+        }
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <UsersTable
+            data={logins}
+            loading={false}
+            onEdit={(login) => setEditingLogin(login)}
+          />
         </div>
-      );
-    }
-    if (status === 'error') {
-      return <div className="text-center py-8 text-red-600">{error || 'Помилка завантаження'}</div>;
-    }
-    if (status === 'success') {
-      return (
-        <div className="table-responsive-modern w-full min-w-0">
-          <UsersTable data={logins} onEdit={(login) => setEditingLogin(login)} />
-        </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Користувачі
-          </Typography>
-        }
-        withDatePicker={false}
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <TablePageToolbar
+        title="Користувачі"
         withGlobalTextFilter
-        additionalActions={
-          <div className="flex gap-2">
-            <Button variant="outlined" onClick={loadLogins}>
-              Оновити
-            </Button>
+        hideGlobalTextFilter={status !== 'success'}
+        internalActionsDisabled={status !== 'success'}
+        actions={
+          <div className="flex gap-3">
             <Button variant="contained" onClick={() => setCreateOpen(true)}>
-              Додати
+              Додати користувача
             </Button>
           </div>
         }
       />
 
-      {renderTable()}
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
 
       <AddUserDialog
         open={createOpen}
@@ -1107,7 +1125,8 @@ function AdminUsersNeoPageBody() {
         }
         lookups={lookups}
       />
-    </div>
+      </Stack>
+    </Box>
   );
 }
 

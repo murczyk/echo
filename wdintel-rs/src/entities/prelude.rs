@@ -71,6 +71,7 @@ pub use super::sigint_callsign_changelog::Entity as SigintCallsignChangelog;
 pub use super::sigint_comment::Entity as SigintComment;
 pub use super::sigint_important::Entity as SigintImportant;
 pub use super::sigint_inbox_item::Entity as SigintInboxItem;
+pub use super::sigint_inbox_item_metadata::Entity as SigintInboxItemMetadata;
 pub use super::sigint_inbox_item_network::Entity as SigintInboxItemNetwork;
 pub use super::sigint_inbox_item_point_token::Entity as SigintInboxItemPointToken;
 pub use super::sigint_inbox_item_tag::Entity as SigintInboxItemTag;

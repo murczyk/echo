@@ -222,7 +222,7 @@ view user activeName shared route { toContentMsg, model, content } =
             ]
             |> Html.map toContentMsg
         , div
-            ([ class "transition-all duration-300 ease-in-out app-shell"
+            ([ class "app-shell"
              , class
                 (if model.isNavbarVisible then
                     "app-shell--navbar-visible"
@@ -239,10 +239,9 @@ view user activeName shared route { toContentMsg, model, content } =
                 )
              , onClick (toContentMsg (SetOpenDropdown Nothing))
             ]
+                ++ [ attribute "data-auth-user-name" user.name ]
                 ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" then
-                        [ attribute "data-auth-user-name" user.name
-                        , attribute "data-auth-user-roles" (String.join "," user.roles)
-                        ]
+                        [ attribute "data-auth-user-roles" (String.join "," user.roles) ]
 
                     else
                         []

@@ -533,6 +533,7 @@ pub async fn main_server(
             .service(crate::rer_importer::analysis::unit_stats)
             .service(crate::rer_importer::analysis::tag_stats)
             .service(crate::rer_importer::analysis::callsign_stats)
+            .service(crate::rer_importer::analysis::metadata_stats)
             .service(crate::rer_importer::analysis::freq_stats)
             .service(crate::rer_importer::analysis::post_stats)
             .service(crate::rer_importer::analysis::sender_stats)

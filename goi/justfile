@@ -2,6 +2,8 @@ set positional-arguments := false
 
 goi_dir := justfile_directory()
 goi_app_dir := "/etc/goi"
+swapp_dir := justfile_directory()
+swapp_app_dir := "/etc/swapp"
 
 default:
     @just --list
@@ -200,4 +202,79 @@ deploy server:
       sudo systemctl daemon-reload
       sudo systemctl restart goi.service
       sudo systemctl status goi.service --no-pager
+    "
+
+[arg('server', long='server')]
+deploy-swapp server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    APP_DIR="{{ swapp_app_dir }}"
+    SRC_DIR="{{ goi_dir }}/swapp/"
+
+    echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo mkdir -p '${APP_DIR}'
+      sudo chown -R echo:echo '${APP_DIR}'
+    "
+
+    echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo rm -rf '${APP_DIR}/.next/node_modules'
+    "
+
+    echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
+    rsync -az --delete \
+      --delete-after \
+      --force \
+      --exclude '.git/' \
+      --exclude '/node_modules/' \
+      --exclude '.runtime/' \
+      --exclude '.bootstrap/' \
+      --exclude '.output/' \
+      --exclude 'dist/' \
+      --filter 'P swapp-npm-start.sh' \
+      --exclude '*.log' \
+      --exclude 'npm-debug.log*' \
+      --exclude 'yarn-debug.log*' \
+      --exclude 'yarn-error.log*' \
+      --exclude 'pnpm-debug.log*' \
+      "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
+
+    echo "Syncing swapp service files..."
+    scp "{{ swapp_dir }}/deploy/swapp-npm-start.sh" "${SERVER}:${APP_DIR}/swapp-npm-start.sh"
+    scp "{{ swapp_dir }}/deploy/swapp.service" "${SERVER}:/var/tmp/swapp.service"
+    ssh ${SERVER} 'sudo mv /var/tmp/swapp.service /etc/systemd/system/swapp.service'
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo chown echo:echo '${APP_DIR}/swapp-npm-start.sh'
+      sudo chmod 0755 '${APP_DIR}/swapp-npm-start.sh'
+      sudo chown root:root /etc/systemd/system/swapp.service
+      sudo chmod 0644 /etc/systemd/system/swapp.service
+    "
+
+    echo "Installing npm dependencies on ${SERVER}..."
+    ssh "$SERVER" "sudo -u echo bash -lc '
+      set -euo pipefail
+      export NVM_DIR=\"\$HOME/.nvm\"
+      . \"\$NVM_DIR/nvm.sh\"
+      nvm use --silent default >/dev/null
+      cd \"${APP_DIR}\"
+      if [[ ! -d .next ]]; then
+        echo \"missing .next in ${APP_DIR}; this deploy expects prebuilt Next.js artifacts\" >&2
+        exit 1
+      fi
+      if [[ -f package-lock.json ]]; then
+        npm ci --no-audit --no-fund
+      else
+        npm install --no-audit --no-fund
+      fi
+    '"
+
+    echo "Restarting swapp.service on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo systemctl daemon-reload
+      sudo systemctl restart swapp.service
+      sudo systemctl status swapp.service --no-pager
     "

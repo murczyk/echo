@@ -360,6 +360,7 @@ buildListCallsignsReq : Model -> { afterId : Maybe Int, limit : Maybe Int } -> B
 buildListCallsignsReq model params =
     { afterId = params.afterId
     , beforeId = Nothing
+    , filterText = Nothing
     , filterCallsign = Just model.filterCallsign
     , filterPosition = Just model.filterPosition
     , filterComment = Just model.filterComment
