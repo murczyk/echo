@@ -42,6 +42,25 @@ export function emptyFilter(): RerDutyFeedFilterState {
   };
 }
 
+function arrEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
+  const x = a ?? [];
+  const y = b ?? [];
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+/** True when both filters are equivalent for request purposes (no need to refetch). */
+export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterState): boolean {
+  return (
+    arrEqual(a.groupsSelected ?? null, b.groupsSelected ?? null) &&
+    arrEqual(a.sendersSelected ?? null, b.sendersSelected ?? null) &&
+    arrEqual(a.deniedSenders ?? null, b.deniedSenders ?? null) &&
+    arrEqual(a.freqsSelected ?? null, b.freqsSelected ?? null) &&
+    arrEqual(a.freqsDenied ?? null, b.freqsDenied ?? null) &&
+    arrEqual(a.postsSelected ?? null, b.postsSelected ?? null) &&
+    arrEqual(a.postsDenied ?? null, b.postsDenied ?? null)
+  );
+}
+
 /** Options for "автоматично додавати частоти в діапазоні" (MHz). */
 export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
 

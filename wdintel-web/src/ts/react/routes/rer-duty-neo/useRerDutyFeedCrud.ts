@@ -1,7 +1,14 @@
 import React from 'react';
 
 import type { RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
-import { emptyFilter, generateMessageFeedId, pushStateToUrl, toQueryState, VIRTUOSO_FIRST_ITEM_INDEX_INITIAL } from './utils';
+import {
+  emptyFilter,
+  filtersEqual,
+  generateMessageFeedId,
+  pushStateToUrl,
+  toQueryState,
+  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+} from './utils';
 import type { MessageFeedState } from './utils';
 
 const MAX_MESSAGE_FEEDS = 4;
@@ -12,6 +19,8 @@ export function useRerDutyFeedCrud(
 ) {
   const applyFilter = React.useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
+      const w = prev.find((w) => w.id === feedId);
+      if (!w || filtersEqual(w.filter, f)) return prev;
       const next = prev.map((w) =>
         w.id === feedId
           ? {

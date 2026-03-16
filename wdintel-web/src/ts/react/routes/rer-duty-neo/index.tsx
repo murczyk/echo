@@ -70,7 +70,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   } = useRerDutyFeeds(authUserName);
 
   return (
-    <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 80px)', minHeight: 0, overflow: 'hidden' }}>
+    <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 54px)', minHeight: 0, overflow: 'hidden' }}>
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
       {error && (

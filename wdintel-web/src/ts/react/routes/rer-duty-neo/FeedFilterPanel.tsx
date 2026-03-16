@@ -142,7 +142,14 @@ export function FeedFilterPanel({
   const postValue = postMode === 'include' ? postsSelected : postsDenied;
   const postEmptyLabel = postMode === 'include' ? 'всі' : 'ніяка';
 
-  const [localSenderValue, setLocalSenderValue] = React.useState<{ id: string; label: string }[]>([]);
+  const [localSenderValue, setLocalSenderValue] = React.useState<{ id: string; label: string }[]>(() => {
+    const ids =
+      filterStable.deniedSenders?.length > 0 ? filterStable.deniedSenders : (filterStable.sendersSelected ?? []);
+    return ids.map((id) => {
+      const o = senderOptions.find((opt) => opt.id === id);
+      return o ?? { id, label: id };
+    });
+  });
   const senderEmptyLabel = senderMode === 'include' ? 'всі' : 'ніхто';
 
   const freqValue = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
@@ -166,7 +173,7 @@ export function FeedFilterPanel({
   }, [localPostValue]);
 
   return (
-    <Paper variant="outlined" className="p-3">
+    <Paper variant="outlined" className="p-3 z-2">
       <Box className="flex flex-col gap-3">
         <Box>
           <Typography variant="subtitle2" className="mb-2 font-semibold">
