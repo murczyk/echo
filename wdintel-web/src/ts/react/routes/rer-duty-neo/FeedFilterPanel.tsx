@@ -1,4 +1,5 @@
 import {
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -20,7 +21,6 @@ import React from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
 import { PowerChip } from '../../components/PowerChip';
-import { profileLabel } from './utils';
 
 export type FeedFilterPanelProps = {
   feedId: string;
@@ -140,16 +140,30 @@ export function FeedFilterPanel({
   }, [postsSelected.length, postsDenied.length]);
 
   const postValue = postMode === 'include' ? postsSelected : postsDenied;
-  const setPostValue = postMode === 'include' ? (onPostsChange ?? (() => {})) : (onPostsDeniedChange ?? (() => {}));
   const postEmptyLabel = postMode === 'include' ? 'всі' : 'ніяка';
 
-  const senderValue = senderMode === 'include' ? filterStable.sendersSelected : filterStable.deniedSenders;
-  const setSenderValue = senderMode === 'include' ? onSendersChange : onDeniedSendersChange;
+  const [localSenderValue, setLocalSenderValue] = React.useState<{ id: string; label: string }[]>([]);
   const senderEmptyLabel = senderMode === 'include' ? 'всі' : 'ніхто';
 
   const freqValue = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
-  const setFreqValue = freqMode === 'include' ? onFreqsChange : onFreqsDeniedChange;
   const freqEmptyLabel = freqMode === 'include' ? 'всі' : 'ніяка';
+  const [localFreqValue, setLocalFreqValue] = React.useState<string[]>(() => freqValue);
+  const [localPostValue, setLocalPostValue] = React.useState<string[]>(() => postValue);
+
+  React.useEffect(() => {
+    if (senderMode === 'include') onSendersChange(localSenderValue.map((o) => o.id));
+    else onDeniedSendersChange(localSenderValue.map((o) => o.id));
+  }, [localSenderValue]);
+
+  React.useEffect(() => {
+    if (freqMode === 'include') onFreqsChange(localFreqValue);
+    else onFreqsDeniedChange(localFreqValue);
+  }, [localFreqValue]);
+
+  React.useEffect(() => {
+    if (postMode === 'include') onPostsChange?.(localPostValue);
+    else onPostsDeniedChange?.(localPostValue);
+  }, [localPostValue]);
 
   return (
     <Paper variant="outlined" className="p-3">
@@ -186,6 +200,7 @@ export function FeedFilterPanel({
               onChange={(_, v) => {
                 if (v == null) return;
                 setSenderMode(v);
+                setLocalSenderValue([]);
                 if (v === 'include') onDeniedSendersChange([]);
                 else onSendersChange([]);
               }}
@@ -199,25 +214,22 @@ export function FeedFilterPanel({
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
             </ToggleButtonGroup>
-            <FormControl size="small" className="min-w-[180px] flex-1">
-              <Select
-                multiple
-                displayEmpty
-                value={senderValue}
-                onChange={(e) => setSenderValue((e.target.value as string[]) || [])}
-                renderValue={(sel) =>
-                  (sel as string[]).length === 0
-                    ? senderEmptyLabel
-                    : (sel as string[]).map((id) => profileLabel(id, profiles[id] ?? null)).join(', ')
-                }
-              >
-                {senderOptions.map((opt) => (
-                  <MenuItem key={opt.id} value={opt.id}>
-                    {opt.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+
+            <Autocomplete
+              multiple
+              size="small"
+              options={senderOptions}
+              getOptionLabel={(option) => option.label}
+              value={localSenderValue}
+              onChange={(_, value) => setLocalSenderValue(value)}
+              isOptionEqualToValue={(option, val) => option.id === val.id}
+              filterSelectedOptions
+              clearOnEscape
+              renderInput={(params) => (
+                <TextField {...params} placeholder={localSenderValue.length === 0 ? senderEmptyLabel : undefined} />
+              )}
+              className="min-w-[180px] flex-1"
+            />
           </Box>
         </Box>
 
@@ -251,6 +263,7 @@ export function FeedFilterPanel({
               onChange={(_, v) => {
                 if (v == null) return;
                 setFreqMode(v);
+                setLocalFreqValue([]);
                 if (v === 'include') onFreqsDeniedChange([]);
                 else onFreqsChange([]);
               }}
@@ -264,21 +277,20 @@ export function FeedFilterPanel({
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
             </ToggleButtonGroup>
-            <FormControl size="small" className="min-w-[160px] flex-1">
-              <Select
-                multiple
-                displayEmpty
-                value={freqValue}
-                onChange={(e) => setFreqValue((e.target.value as string[]) || [])}
-                renderValue={(sel) => ((sel as string[]).length === 0 ? freqEmptyLabel : (sel as string[]).join(', '))}
-              >
-                {freqs.map((f) => (
-                  <MenuItem key={f} value={f}>
-                    {f}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Autocomplete
+              multiple
+              size="small"
+              options={freqs}
+              getOptionLabel={(option) => option}
+              value={localFreqValue}
+              onChange={(_, value) => setLocalFreqValue(value)}
+              filterSelectedOptions
+              clearOnEscape
+              renderInput={(params) => (
+                <TextField {...params} placeholder={localFreqValue.length === 0 ? freqEmptyLabel : undefined} />
+              )}
+              className="min-w-[160px] flex-1"
+            />
           </Box>
           <Box className="flex flex-wrap gap-2 justify-end mt-1">
             <Tooltip title="Частоти в діапазоні від обраних будуть автоматично додаватись до фільтра.">
@@ -317,6 +329,7 @@ export function FeedFilterPanel({
               onChange={(_, v) => {
                 if (v == null) return;
                 setPostMode(v);
+                setLocalPostValue([]);
                 if (v === 'include') onPostsDeniedChange?.([]);
                 else onPostsChange?.([]);
               }}
@@ -330,21 +343,20 @@ export function FeedFilterPanel({
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
             </ToggleButtonGroup>
-            <FormControl size="small" className="min-w-[160px] flex-1">
-              <Select
-                multiple
-                displayEmpty
-                value={postValue}
-                onChange={(e) => setPostValue((e.target.value as string[]) || [])}
-                renderValue={(sel) => ((sel as string[]).length === 0 ? postEmptyLabel : (sel as string[]).join(', '))}
-              >
-                {(postsList ?? []).map((p) => (
-                  <MenuItem key={p} value={p}>
-                    {p}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Autocomplete
+              multiple
+              size="small"
+              options={postsList ?? []}
+              getOptionLabel={(option) => option}
+              value={localPostValue}
+              onChange={(_, value) => setLocalPostValue(value)}
+              filterSelectedOptions
+              clearOnEscape
+              renderInput={(params) => (
+                <TextField {...params} placeholder={localPostValue.length === 0 ? postEmptyLabel : undefined} />
+              )}
+              className="min-w-[160px] flex-1"
+            />
           </Box>
         </Box>
 
