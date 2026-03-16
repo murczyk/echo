@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2062](https://github.com/echoua/echo/issues/2062) ✅ Аналіз/Карта: UX/UI покращення панелі палітр.
 - [#2024](https://github.com/echoua/echo/issues/2024) ✅ GOI Додано синхронізацію частот
 - [#2060](https://github.com/echoua/echo/issues/2060) ✅ GOI Додано посилання на сервер та сторінку з висновками
 - [#2061](https://github.com/echoua/echo/issues/2061) ✅ GOI Додано імпорт розвіддонесень в ЕХО
