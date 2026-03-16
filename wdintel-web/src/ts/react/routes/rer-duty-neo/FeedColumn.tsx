@@ -58,6 +58,8 @@ export type FeedColumnProps = {
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
+  messageCardLayout: 'dividers' | 'fluid';
+  onMessageCardLayoutChange?: (v: 'dividers' | 'fluid') => void;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
   saveFilterName: string;
@@ -129,6 +131,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     adjacentFreqsRange,
     highlightSignalsEnabled,
     onlyMyUnitTagsEnabled,
+    messageCardLayout,
+    onMessageCardLayoutChange,
     savedFilters,
     selectedSavedId,
     saveFilterName,
@@ -325,6 +329,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
           adjacentFreqsRange={adjacentFreqsRange}
           highlightSignalsEnabled={highlightSignalsEnabled}
           onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
+          messageCardLayout={messageCardLayout}
+          onMessageCardLayoutChange={onMessageCardLayoutChange}
           savedFilters={savedFilters}
           selectedSavedId={selectedSavedId}
           saveFilterName={saveFilterName}
@@ -423,6 +429,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   msg={msg}
                   feedId={feedId}
                   feedCount={feedCount}
+                  layoutVariant={messageCardLayout}
                   referenceTimeMs={feed.referenceTimeMs}
                   authUserName={authUserName}
                   groupName={groupName}

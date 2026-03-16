@@ -3,6 +3,7 @@ import React from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
+import { getStoredMessageCardLayout, setStoredMessageCardLayout } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
 
 export type RerDutyNeoPageProps = {
@@ -12,6 +13,11 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
+  const [messageCardLayout, setMessageCardLayout] = React.useState(getStoredMessageCardLayout);
+  const handleMessageCardLayoutChange = React.useCallback((v: 'dividers' | 'fluid') => {
+    setStoredMessageCardLayout(v);
+    setMessageCardLayout(v);
+  }, []);
   const {
     messageFeeds,
     error,
@@ -113,6 +119,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               adjacentFreqsRange={w.adjacentFreqsRange}
               highlightSignalsEnabled={w.highlightSignalsEnabled}
               onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
+              messageCardLayout={messageCardLayout}
+              onMessageCardLayoutChange={handleMessageCardLayoutChange}
               savedFilters={savedFilters}
               selectedSavedId={selectedSavedId}
               saveFilterName={saveFilterName}
