@@ -22,6 +22,7 @@ import {
   savedFilterDelete,
   savedFilterUpsert,
 } from '../../services/api/inbox';
+import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { FeedColumnHandle } from './FeedColumn';
 import { normalizeFeed, profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
@@ -179,7 +180,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   );
 
   const handleMessageCopy = React.useCallback((text: string, feedbackId: string) => {
-    navigator.clipboard?.writeText(text).catch((err) => {
+    void copyTextToClipboard(text).catch((err) => {
       console.error('Failed to copy text to clipboard', err);
     });
     if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);

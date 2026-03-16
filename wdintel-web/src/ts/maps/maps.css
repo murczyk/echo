@@ -156,6 +156,71 @@ body.analysis-map-fullscreen-open {
 	color: var(--bs-body-color);
 }
 
+#analysis-map .analysis-map-coord-menu-overlay {
+	position: absolute;
+	z-index: 10000;
+	overflow: visible;
+	pointer-events: auto;
+}
+
+#analysis-map .analysis-map-coord-menu {
+	position: relative;
+	overflow: visible;
+}
+
+#analysis-map .analysis-map-coord-menu::before,
+#analysis-map .analysis-map-coord-menu::after {
+	content: '';
+	position: absolute;
+	left: var(--analysis-map-coord-menu-arrow-left, 50%);
+	transform: translateX(-50%);
+	width: 0;
+	height: 0;
+	pointer-events: none;
+}
+
+#analysis-map .analysis-map-coord-menu::before {
+	bottom: -15px;
+	border-left: 14px solid transparent;
+	border-right: 14px solid transparent;
+	border-top: 15px solid var(--analysis-map-coord-menu-border, var(--bs-border-color));
+}
+
+#analysis-map .analysis-map-coord-menu::after {
+	bottom: -13px;
+	border-left: 12px solid transparent;
+	border-right: 12px solid transparent;
+	border-top: 13px solid var(--analysis-map-coord-menu-bg, var(--bs-body-bg));
+}
+
+#analysis-map .analysis-map-coord-menu-host {
+	display: block;
+	overflow: visible;
+}
+
+#analysis-map .analysis-map-coord-menu__close-button,
+#analysis-map .analysis-map-coord-menu__copy-button,
+#analysis-map .analysis-map-coord-menu__format-select {
+	background: var(--bs-body-bg);
+	color: var(--bs-body-color);
+}
+
+#analysis-map .analysis-map-coord-menu__copy-button:focus-visible,
+#analysis-map .analysis-map-coord-menu__format-select:focus-visible,
+#analysis-map .analysis-map-coord-menu__close-button:focus-visible {
+	outline: none;
+	box-shadow: inset 0 0 0 2px var(--bs-primary);
+}
+
+#analysis-map .analysis-map-coord-menu__value {
+	font-size: 16px;
+	font-weight: 500;
+	line-height: 1.35;
+	letter-spacing: 0.04em;
+	word-break: break-word;
+	text-align: center;
+}
+
 .leaflet-tooltip {
 	background-color: transparent;
 	font-size: 10px;

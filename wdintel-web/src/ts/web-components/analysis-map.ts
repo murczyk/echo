@@ -28,6 +28,12 @@ type Message = [
   }
 ]
 
+type CoordinateMenuTarget = {
+  lat: number;
+  lng: number;
+  mgrsCoords?: string | null;
+};
+
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -142,6 +148,9 @@ class AnalysisMap extends HTMLElement {
   private _searchControl: SearchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
   private _coordinateSearchMarker: L.CircleMarker | null = null;
+  private _pointContextMenuMarker: L.CircleMarker | null = null;
+  private _pointContextMenuOverlay: HTMLElement | null = null;
+  private _pointContextMenuLatLng: L.LatLng | null = null;
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
   private _isBackgroundPointsLoading = false;
@@ -192,6 +201,7 @@ class AnalysisMap extends HTMLElement {
   disconnectedCallback() {
     this.removeEventListener('search-points', this._searchPointsHandler);
     window.removeEventListener('keydown', this._escapeHandler);
+    this._closePointContextMenu();
     this._setFullscreen(false);
   }
 
@@ -220,6 +230,97 @@ class AnalysisMap extends HTMLElement {
     );
     marker.addTo(this._map);
     this._coordinateSearchMarker = marker;
+  }
+
+  private _closePointContextMenu(): void {
+    this._pointContextMenuOverlay?.remove();
+    this._pointContextMenuOverlay = null;
+    this._pointContextMenuLatLng = null;
+    if (this._pointContextMenuMarker && this._map) {
+      this._map.removeLayer(this._pointContextMenuMarker);
+      this._pointContextMenuMarker = null;
+    }
+  }
+
+  private _positionPointContextMenuOverlay(): void {
+    if (!this._map || !this._pointContextMenuOverlay || !this._pointContextMenuLatLng) {
+      return;
+    }
+
+    const container = this._map.getContainer();
+    const point = this._map.latLngToContainerPoint(this._pointContextMenuLatLng);
+    const rect = this._pointContextMenuOverlay.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const margin = 12;
+    const arrowHeight = 13;
+    const markerGap = 12;
+
+    const maxLeft = Math.max(margin, container.clientWidth - width - margin);
+    const unclampedLeft = point.x - width / 2;
+    const left = Math.min(Math.max(margin, unclampedLeft), maxLeft);
+    const top = Math.max(margin, point.y - height - arrowHeight - markerGap);
+    const arrowLeft = Math.min(Math.max(point.x - left - 1, 20), Math.max(20, width - 20));
+
+    this._pointContextMenuOverlay.style.left = `${left}px`;
+    this._pointContextMenuOverlay.style.top = `${top}px`;
+    this._pointContextMenuOverlay.style.setProperty('--analysis-map-coord-menu-arrow-left', `${arrowLeft}px`);
+  }
+
+  private _openPointContextMenu(target: CoordinateMenuTarget, latlng: L.LatLng): void {
+    if (!this._map) {
+      return;
+    }
+
+    this._closePointContextMenu();
+
+    const marker = L.circleMarker(latlng, {
+      color: '#fff',
+      fillColor: '#6c757d',
+      fillOpacity: 1,
+      radius: 6,
+      weight: 2,
+    });
+    marker.addTo(this._map);
+    this._pointContextMenuMarker = marker;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'analysis-map-coord-menu-overlay';
+    const stopPropagation = (event: Event) => {
+      event.stopPropagation();
+    };
+    overlay.addEventListener('pointerdown', stopPropagation);
+    overlay.addEventListener('mousedown', stopPropagation);
+    overlay.addEventListener('mouseup', stopPropagation);
+    overlay.addEventListener('click', stopPropagation);
+    overlay.addEventListener('dblclick', stopPropagation);
+    overlay.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    overlay.appendChild(this._buildPointContextMenuContent(target));
+    this._map.getContainer().appendChild(overlay);
+    this._pointContextMenuOverlay = overlay;
+    this._pointContextMenuLatLng = latlng;
+    requestAnimationFrame(() => this._positionPointContextMenuOverlay());
+    setTimeout(() => this._positionPointContextMenuOverlay(), 0);
+  }
+
+  private _buildPointContextMenuContent(target: CoordinateMenuTarget): HTMLElement {
+    const element = document.createElement('analysis-map-coord-menu');
+    element.className = 'analysis-map-coord-menu-host';
+    element.setAttribute('lat', String(target.lat));
+    element.setAttribute('lng', String(target.lng));
+    if (target.mgrsCoords) {
+      element.setAttribute('mgrs-coords', target.mgrsCoords);
+    }
+    element.addEventListener('coord-menu-rendered', () => {
+      requestAnimationFrame(() => this._positionPointContextMenuOverlay());
+    });
+    element.addEventListener('coord-menu-close', () => {
+      this._closePointContextMenu();
+    });
+    return element;
   }
 
   attributeChangedCallback(name: string, oldValue: any, newValue: string) {
@@ -407,6 +508,17 @@ class AnalysisMap extends HTMLElement {
       // Keep Leaflet's click-to-focus behavior, but prevent nested scroll containers
       // from jumping when the map receives focus on mousedown.
       this._patchMouseDownMapFocus(map);
+      this._suppressNativeContextMenu(map);
+      map.on('click', () => this._closePointContextMenu());
+      map.on('movestart zoomstart resize', () => this._closePointContextMenu());
+      map.on('contextmenu', (event: L.LeafletMouseEvent) => {
+        this._clickedPoint = null;
+        this._clickedLatLng = null;
+        this._openPointContextMenu(
+          { lat: event.latlng.lat, lng: event.latlng.lng },
+          event.latlng,
+        );
+      });
 
       const result = this._initializeControls(map, tileLayers)
       this._map = result.map;
@@ -607,6 +719,13 @@ class AnalysisMap extends HTMLElement {
     L.DomEvent.on(mapContainer, 'mousedown', patchedOnMouseDown, keyboardHandler);
   }
 
+  private _suppressNativeContextMenu(map: L.Map): void {
+    const mapContainer = map.getContainer();
+    mapContainer.addEventListener('contextmenu', (event: Event) => {
+      event.preventDefault();
+    }, true);
+  }
+
   private _updateSearchControlState() {
     if (!this._searchControl) {
       return;
@@ -653,6 +772,7 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {
+    this._closePointContextMenu();
     if (this._markersGroup) {
       this._markersGroup.off();
       this._markersGroup.eachLayer((l) => {
@@ -739,7 +859,23 @@ class AnalysisMap extends HTMLElement {
         this._clickedLatLng = circle.getLatLng();
         this._emitLoadMessagesDescriptions([point.message_id])
         this._clickedPoint = circle;
-      })
+      });
+      const openPointContextMenu = (latlng: L.LatLng, originalEvent?: MouseEvent | PointerEvent | Event) => {
+        originalEvent?.preventDefault();
+        originalEvent?.stopPropagation();
+        this._clickedPoint = null;
+        this._clickedLatLng = null;
+        this._openPointContextMenu(
+          { lat: point.lat, lng: point.lng, mgrsCoords: point.mgrs_coords },
+          latlng,
+        );
+      };
+      circle.on('mousedown', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+        if (event.originalEvent?.button !== 2) {
+          return;
+        }
+        openPointContextMenu(circle.getLatLng(), event.originalEvent);
+      });
       circle.on('popupopen', () => {
         circle.setStyle({ fillColor: '#fff', color: "#000" })
       })

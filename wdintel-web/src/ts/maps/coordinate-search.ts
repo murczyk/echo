@@ -2,19 +2,20 @@ import { toPoint } from 'mgrs';
 
 export type Wgs84Coords = { lat: number; lng: number };
 
-const LAT_LNG_MIN = 20;
-const LAT_LNG_MAX = 60;
+const LAT_MIN = -90;
+const LAT_MAX = 90;
+const LNG_MIN = -180;
+const LNG_MAX = 180;
 
-
-/** Match two decimal numbers in 20–60 with required decimal point and at least 4 digits after it */
-const WGS84_NUMBERS = /^\s*((?:2[0-9]|[3-5]\d|60)\.\d{4,})\s*[,;\s]\s*((?:2[0-9]|[3-5]\d|60)\.\d{4,})\s*$/;
+/** Match two signed decimal numbers separated by comma, semicolon, or whitespace. */
+const WGS84_NUMBERS = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
 
 function isValidLat(n: number): boolean {
-  return Number.isFinite(n) && n >= LAT_LNG_MIN && n <= LAT_LNG_MAX;
+  return Number.isFinite(n) && n >= LAT_MIN && n <= LAT_MAX;
 }
 
 function isValidLng(n: number): boolean {
-  return Number.isFinite(n) && n >= LAT_LNG_MIN && n <= LAT_LNG_MAX;
+  return Number.isFinite(n) && n >= LNG_MIN && n <= LNG_MAX;
 }
 
 /**

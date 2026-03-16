@@ -9,6 +9,7 @@ import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
 import "bootstrap/dist/js/bootstrap.bundle.min.js"
 import "bootstrap/dist/css/bootstrap.css"
 import { inverse, forward } from "mgrs"
+import { copyTextToClipboard } from "./ts/copy-to-clipboard"
 import { td_usk2000_to_wgs84, td_wgs84_to_usk2000 } from "./ts/utils"
 import "./ts/web-components/bar-chart"
 import "./ts/web-components/freq-activity-chart"
@@ -20,6 +21,7 @@ import { MapPoint, MapPointDetailed, MapPointShort } from './ts/maps/types'
 import './ts/web-components/analysis-map'
 import './ts/react/analysis-map-search-element'
 import './ts/react/analysis-map-palitras-element'
+import './ts/react/analysis-map-coord-menu-element'
 import './ts/react/analysis-count-chip-element'
 import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/bar-chart-2.ts'
@@ -542,33 +544,6 @@ export const onReady = ({ app, env }) => {
         app.ports.waterfall_copyTextToClipboard.subscribe(({ text }) => {
             copyTextToClipboard(text);
         });
-    }
-
-    function copyTextToClipboard(text: string) {
-        if (navigator.clipboard?.writeText) {
-            navigator.clipboard.writeText(text).catch(() => fallbackCopyTextToClipboard(text));
-            return;
-        }
-        fallbackCopyTextToClipboard(text);
-    }
-
-    // When copy runs, the user's click has often already finished (Elm sent to port). Browser then
-    // throws "Document is not focused" error. This workaround is a fallback for that.
-    function fallbackCopyTextToClipboard(text: string) {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.setAttribute('readonly', '');
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        ta.style.top = '0';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        try {
-            document.execCommand('copy');
-        } finally {
-            document.body.removeChild(ta);
-        }
     }
 
     if (app.ports && app.ports.waterfall_getVisibleMsgIds && app.ports.waterfall_getVisibleMsgIdsRes) {
