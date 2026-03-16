@@ -260,6 +260,13 @@ export class PalitraPointsController {
     });
 
     if (pointsByApiId.size === 0) {
+      const palitraIds = this.stateAccessor
+        .getPalitras()
+        .map((palitraDetails) => this.apiAccessor.apiPalitraId(palitraDetails.palitra));
+      const hasPendingCoverage = this.cacheManager.hasPendingCoverage(palitraIds, bounds, this.map.getZoom());
+      if (hasPendingCoverage) {
+        return;
+      }
       this.pointClustersRenderer.replace([], []);
       return;
     }

@@ -368,6 +368,33 @@ export class PalitraCacheManager {
     return points;
   }
 
+  hasPendingCoverage(palitraIds: number[], bounds: L.LatLngBounds, zoom: number): boolean {
+    const tileKey = this.buildTileKey(bounds, zoom);
+    if (palitraIds.some((palitraId) => this.hasPendingRequest(palitraId, tileKey))) {
+      return true;
+    }
+
+    for (const palitraId of palitraIds) {
+      const tiles = this.tiles.get(palitraId);
+      if (!tiles) {
+        continue;
+      }
+
+      for (const existingTileKey of tiles.keys()) {
+        if (!this.hasPendingRequest(palitraId, existingTileKey)) {
+          continue;
+        }
+
+        const tileBounds = this.parseTileKeyBounds(existingTileKey);
+        if (tileBounds && bounds.intersects(tileBounds)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   buildTileKey(bounds: L.LatLngBounds, zoom: number): string {
     const precision = this.getPrecision(zoom);
     const zoomBucket = this.getZoomBucket(zoom);
