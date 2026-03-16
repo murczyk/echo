@@ -30,7 +30,9 @@ class TrainingResults:
             filter_string=get_filter_string(run_id),
             output_format="list",
         )
-        self.models = [TrainedModel(run=run) for run in runs]
+        self.models = [
+            TrainedModel(run=run) for run in runs if run.outputs.model_outputs
+        ]
 
 
 def get_current_model_id(s3, bucket, key) -> str:
