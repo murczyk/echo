@@ -8,6 +8,7 @@ api_login = "change-me"
 api_password = "change-me"
 
 # associations_xlsx_path = "/etc/goi/data/xlsx/associations.xlsx"
+# frequencies_xlsx_path = "/etc/goi/data/xlsx/frequencies.xlsx"
 # listen_host = "0.0.0.0"
 # listen_port = 8088
 # poll_sleep_ms = 1000

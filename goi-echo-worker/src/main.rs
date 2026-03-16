@@ -7,7 +7,7 @@ mod worker;
 
 use actix_web::{web, App, HttpServer};
 use anyhow::Result;
-use http_api::{list_associations, AppState};
+use http_api::{import_signed_frequencies, list_associations, AppState};
 
 #[actix_web::main]
 async fn main() -> Result<()> {
@@ -36,6 +36,7 @@ async fn main() -> Result<()> {
         App::new()
             .app_data(web::Data::new(state.clone()))
             .service(list_associations)
+            .service(import_signed_frequencies)
     })
     .bind((config.listen_host(), config.listen_port()))?
     .run()

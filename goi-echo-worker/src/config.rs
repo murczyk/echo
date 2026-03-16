@@ -9,6 +9,8 @@ pub const DEFAULT_PG_USER: &str = "goi";
 pub const DEFAULT_PG_DBNAME: &str = "goi";
 pub const DEFAULT_ASSOCIATIONS_XLSX_PATH: &str =
     "/etc/goi/data/xlsx/associations.xlsx";
+pub const DEFAULT_FREQUENCIES_XLSX_PATH: &str =
+    "/etc/goi/data/xlsx/frequencies.xlsx";
 pub const DEFAULT_LISTEN_HOST: &str = "0.0.0.0";
 pub const DEFAULT_LISTEN_PORT: u16 = 8088;
 pub const DEFAULT_POLL_SLEEP_MS: u64 = 1_000;
@@ -23,6 +25,7 @@ pub struct Config {
     pub api_login: String,
     pub api_password: String,
     pub associations_xlsx_path: Option<String>,
+    pub frequencies_xlsx_path: Option<String>,
     pub listen_host: Option<String>,
     pub listen_port: Option<u16>,
     pub poll_sleep_ms: Option<u64>,
@@ -53,6 +56,12 @@ impl Config {
         self.associations_xlsx_path
             .as_deref()
             .unwrap_or(DEFAULT_ASSOCIATIONS_XLSX_PATH)
+    }
+
+    pub fn frequencies_xlsx_path(&self) -> &str {
+        self.frequencies_xlsx_path
+            .as_deref()
+            .unwrap_or(DEFAULT_FREQUENCIES_XLSX_PATH)
     }
 
     pub fn listen_host(&self) -> &str {
