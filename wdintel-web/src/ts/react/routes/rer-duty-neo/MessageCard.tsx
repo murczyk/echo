@@ -357,7 +357,7 @@ export function MessageCard({
           </div>
           {/* Row 2 — Unit + location (separate row like in dividers) */}
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="inline-flex items-center gap-1 font-semibold shrink-0">
+            <span className={`inline-flex font-semibold shrink-0 flex-col items-start gap-0.5`}>
               <i className="bi bi-people text-icons shrink-0" title="Еталонна прив'язка" />
               {networkIds.length > 0 ? (
                 networkIds.map((networkId) => (
@@ -557,8 +557,8 @@ export function MessageCard({
               {messageRenderDistance(msg.timestamp, referenceTimeMs)}
             </div>
           )}
-          <div className="font-semibold inline-flex gap-1">
-            <i className="bi bi-people text-icons" title="Еталонна прив'язка" />
+          <div className={`font-semibold inline-flex flex-col items-start gap-0.5}`}>
+            <i className="bi bi-people text-icons shrink-0" title="Еталонна прив'язка" />
             {networkIds.length > 0 ? (
               networkIds.map((networkId) => (
                 <a
