@@ -787,10 +787,11 @@ fn format_encryption_key_display(
     }
 }
 
-pub async fn find_all_known_callsigns(
+async fn find_known_callsigns(
     db: &DatabaseConnection,
+    callsigns: Option<&[String]>,
 ) -> Result<BTreeMap<String, Vec<KnownCallsignRes>>, AppError> {
-    let q = sigint_callsign::Entity::find()
+    let mut q = sigint_callsign::Entity::find()
         .join_as(
             JoinType::InnerJoin,
             sigint_callsign::Relation::SigintUnit.def(),
@@ -815,8 +816,14 @@ pub async fn find_all_known_callsigns(
         .column(sigint_callsign::Column::CreatedAt)
         .filter(sigint_callsign::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Deleted.eq(false))
-        .filter(sigint_callsign::Column::Callsign.ne(""))
-        .order_by_asc(sigint_callsign::Column::Callsign);
+        .filter(sigint_callsign::Column::Callsign.ne(""));
+
+    if let Some(callsigns) = callsigns.filter(|callsigns| !callsigns.is_empty())
+    {
+        q = q.filter(sigint_callsign::Column::Callsign.is_in(callsigns));
+    }
+
+    q = q.order_by_asc(sigint_callsign::Column::Callsign);
 
     // debug!(
     //     "> known callsings sql: {}",
@@ -843,6 +850,12 @@ pub async fn find_all_known_callsigns(
     Ok(grouped_results)
 }
 
+pub async fn find_all_known_callsigns(
+    db: &DatabaseConnection,
+) -> Result<BTreeMap<String, Vec<KnownCallsignRes>>, AppError> {
+    find_known_callsigns(db, None).await
+}
+
 #[derive(Debug, Clone)]
 pub struct CallsignCommunicationInfo {
     pub message_count: i64,
@@ -855,7 +868,7 @@ pub async fn load_callsigns(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-    known_callsigns: &BTreeMap<String, Vec<KnownCallsignRes>>,
+    known_callsigns: Option<&BTreeMap<String, Vec<KnownCallsignRes>>>,
     filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
@@ -875,6 +888,20 @@ pub async fn load_callsigns(
     )
     .await
     .context(h!())?;
+
+    let callsigns = active_callsigns
+        .iter()
+        .map(|row| row.callsign.clone())
+        .collect::<Vec<_>>();
+    let known_callsigns_buf;
+    let known_callsigns = if let Some(known_callsigns) = known_callsigns {
+        known_callsigns
+    } else {
+        known_callsigns_buf = find_known_callsigns(db, Some(&callsigns))
+            .await
+            .context(h!())?;
+        &known_callsigns_buf
+    };
 
     let mut res: Vec<CallsignRes> = active_callsigns
         .iter()
@@ -904,14 +931,13 @@ pub async fn load_callsigns(
     res = filter_callsigns(res);
 
     // Step 2. Get communication info for callsigns with known_callsigns
-    let res_known_callsigns: Vec<String> =
-        res.iter().map(|c| c.callsign.clone()).collect();
+    let callsigns = res.iter().map(|c| c.callsign.clone()).collect::<Vec<_>>();
 
     let known_callsigns_comm_info = get_communication_info_for_callsigns(
         db,
         base_with.clone(),
         callsigns_select.clone(),
-        &res_known_callsigns,
+        &callsigns,
     )
     .await
     .context(h!())?;
