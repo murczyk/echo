@@ -1024,16 +1024,33 @@ fn network_filter_expr(
 
 fn network_exists_subquery() -> SelectStatement {
     let network_alias = Alias::new("network_filter");
+    let network_table_alias = Alias::new("network_filter_table");
     let mut subquery = Query::select();
     subquery
         .expr(Expr::value(1))
         .from_as(sigint_inbox_item_network::Entity, network_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network::Entity,
+            network_table_alias.clone(),
+            Condition::all().add(
+                Expr::col((network_table_alias.clone(), sigint_network::Column::Id))
+                    .equals((
+                        network_alias.clone(),
+                        sigint_inbox_item_network::Column::SigintNetworkId,
+                    )),
+            ),
+        )
         .and_where(
             Expr::col((
                 network_alias,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(
+            Expr::col((network_table_alias, sigint_network::Column::Deleted))
+                .eq(false),
         );
     subquery.to_owned()
 }
