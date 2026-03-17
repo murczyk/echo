@@ -930,51 +930,12 @@ pub async fn load_callsigns(
         .collect();
 
     res = filter_callsigns(res);
+    sort_callsigns(&mut res);
 
     if !include_activity_info {
-        let callsigns = res
-            .iter()
-            .filter(|callsign| {
-                callsign
-                    .known_callsigns
-                    .as_ref()
-                    .map(|known_callsigns| !known_callsigns.is_empty())
-                    .unwrap_or(false)
-            })
-            .map(|callsign| callsign.callsign.clone())
-            .collect::<Vec<_>>();
-
-        if callsigns.is_empty() {
-            let duration = start.elapsed();
-            trace!(
-                "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, without activity info)"
-            );
-            return Ok(res);
-        }
-
-        let known_callsigns_activity_info = get_activity_info_for_callsigns(
-            db,
-            base_with.clone(),
-            callsigns_select.clone(),
-            &callsigns,
-        )
-        .await
-        .context(h!())?;
-
-        for c in &mut res {
-            if let Some(activity_info) =
-                known_callsigns_activity_info.get(&c.callsign)
-            {
-                c.message_count = activity_info.message_count;
-                c.last_datetime = activity_info.last_datetime;
-                c.freqs = activity_info.freqs.clone();
-                c.network_names = activity_info.network_names.clone();
-            }
-        }
-
         let duration = start.elapsed();
         trace!(
-            "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, known-only activity info)"
+            "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, without activity info)"
         );
         return Ok(res);
     }
@@ -991,23 +952,7 @@ pub async fn load_callsigns(
     .await
     .context(h!())?;
 
-    // Step 3. Update res vector with activity info for callsigns with known_callsigns
-    for c in &mut res {
-        if let Some(activity_info) =
-            known_callsigns_activity_info.get(&c.callsign)
-        {
-            c.message_count = activity_info.message_count;
-            c.last_datetime = activity_info.last_datetime;
-            c.freqs = activity_info.freqs.clone();
-            c.network_names = activity_info.network_names.clone();
-        }
-    }
-
-    res.sort_by(|a, b| match (&a.known_callsigns, &b.known_callsigns) {
-        (Some(_), None) => Ordering::Less,
-        (None, Some(_)) => Ordering::Greater,
-        _ => a.callsign.cmp(&b.callsign),
-    });
+    apply_activity_info(&mut res, &known_callsigns_activity_info);
 
     let duration = start.elapsed();
     trace!(
@@ -1015,6 +960,30 @@ pub async fn load_callsigns(
     );
 
     Ok(res)
+}
+
+fn sort_callsigns(callsigns: &mut [CallsignRes]) {
+    callsigns.sort_by(|a, b| match (&a.known_callsigns, &b.known_callsigns) {
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        _ => a.callsign.cmp(&b.callsign),
+    });
+}
+
+fn apply_activity_info(
+    callsigns: &mut [CallsignRes],
+    activity_info_by_callsign: &HashMap<String, CallsignActivityInfo>,
+) {
+    for callsign in callsigns {
+        if let Some(activity_info) =
+            activity_info_by_callsign.get(&callsign.callsign)
+        {
+            callsign.message_count = activity_info.message_count;
+            callsign.last_datetime = activity_info.last_datetime;
+            callsign.freqs = activity_info.freqs.clone();
+            callsign.network_names = activity_info.network_names.clone();
+        }
+    }
 }
 
 pub fn build_callsigns_queries(

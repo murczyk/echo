@@ -87,6 +87,23 @@ loadCallsignsActivity networkId callsigns =
             }
 
 
+knownCallsignActivityCallsigns callsigns =
+    callsigns
+        |> List.filterMap
+            (\callsign ->
+                case callsign.knownCallsigns of
+                    Just knownCallsigns ->
+                        if List.isEmpty knownCallsigns then
+                            Nothing
+
+                        else
+                            Just callsign.callsign
+
+                    Nothing ->
+                        Nothing
+            )
+
+
 unknownCallsignActivityCallsigns callsigns =
     callsigns
         |> List.filterMap
@@ -117,6 +134,15 @@ loadUnknownCallsignsActivityForCallsigns model callsigns =
     case model.networkCreated of
         Just network ->
             loadCallsignsActivity network.id (unknownCallsignActivityCallsigns callsigns)
+
+        Nothing ->
+            E.none
+
+
+loadKnownCallsignsActivityForCallsigns model callsigns =
+    case model.networkCreated of
+        Just network ->
+            loadCallsignsActivity network.id (knownCallsignActivityCallsigns callsigns)
 
         Nothing ->
             E.none
@@ -187,11 +213,14 @@ update shared msg model =
                 | callsigns = Success res.callsigns
                 , callsignsPager = updatedPager
               }
-            , if model.unknownCallsignsShowMessages then
-                loadUnknownCallsignsActivityForCallsigns model res.callsigns
+            , E.batch
+                [ loadKnownCallsignsActivityForCallsigns model res.callsigns
+                , if model.unknownCallsignsShowMessages then
+                    loadUnknownCallsignsActivityForCallsigns model res.callsigns
 
-              else
-                E.none
+                  else
+                    E.none
+                ]
             )
 
         CallsignsActivityReturnedByApi (Err e) ->
