@@ -70,6 +70,108 @@ initLoad =
     E.sendCmd (Api.sigint_list_sources GotSources ())
 
 
+loadCallsignsActivity networkId callsigns =
+    let
+        selectedCallsigns =
+            callsigns
+                |> List.filter (\callsign -> String.trim callsign /= "")
+                |> ListX.unique
+    in
+    if List.isEmpty selectedCallsigns then
+        E.none
+
+    else
+        E.getNetworkCallsignsActivity CallsignsActivityReturnedByApi
+            { networkId = networkId
+            , callsigns = selectedCallsigns
+            }
+
+
+knownCallsignActivityCallsigns callsigns =
+    callsigns
+        |> List.filterMap
+            (\callsign ->
+                case callsign.knownCallsigns of
+                    Just knownCallsigns ->
+                        if List.isEmpty knownCallsigns then
+                            Nothing
+
+                        else
+                            Just callsign.callsign
+
+                    Nothing ->
+                        Nothing
+            )
+
+
+unknownCallsignActivityCallsigns callsigns =
+    callsigns
+        |> List.filterMap
+            (\callsign ->
+                case callsign.knownCallsigns of
+                    Just knownCallsigns ->
+                        if List.isEmpty knownCallsigns then
+                            Just callsign.callsign
+
+                        else
+                            Nothing
+
+                    Nothing ->
+                        Just callsign.callsign
+            )
+
+
+loadKnownCallsignsActivity model callsigns =
+    case model.networkCreated of
+        Just network ->
+            loadCallsignsActivity network.id (knownCallsignActivityCallsigns callsigns)
+
+        Nothing ->
+            E.none
+
+
+loadUnknownCallsignsActivity model =
+    case ( model.networkCreated, model.callsigns ) of
+        ( Just network, Success callsigns ) ->
+            loadCallsignsActivity network.id (unknownCallsignActivityCallsigns callsigns)
+
+        _ ->
+            E.none
+
+
+loadUnknownCallsignsActivityForCallsigns model callsigns =
+    case model.networkCreated of
+        Just network ->
+            loadCallsignsActivity network.id (unknownCallsignActivityCallsigns callsigns)
+
+        Nothing ->
+            E.none
+
+
+applyCallsignsActivity rsp callsigns =
+    let
+        activityByCallsign =
+            rsp.callsignsActivity
+                |> List.foldl
+                    (\row dict -> Dict.insert row.callsign row.activity dict)
+                    Dict.empty
+    in
+    List.map
+        (\callsign ->
+            case Dict.get callsign.callsign activityByCallsign of
+                Just activity ->
+                    { callsign
+                        | messageCount = activity.messageCount
+                        , lastDatetime = activity.lastDatetime
+                        , freqs = activity.freqs
+                    }
+
+                Nothing ->
+                    callsign
+        )
+        callsigns
+
+
 loadCatalogAndNetworkCallsigns networkId =
     [ loadCatalogCallsigns networkId
     , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing }
@@ -77,7 +179,7 @@ loadCatalogAndNetworkCallsigns networkId =
 
 
 loadCatalogCallsigns networkId =
-    E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId }
+    E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeCommunicationInfo = Just False }
 
 
 update : Shared.Model -> CallsignsMsg -> Model -> ( Model, Effect CallsignsMsg )
@@ -110,6 +212,34 @@ update shared msg model =
             ( { model
                 | callsigns = Success res.callsigns
                 , callsignsPager = updatedPager
+              }
+            , E.batch
+                [ loadKnownCallsignsActivity model res.callsigns
+                , if model.unknownCallsignsShowMessages then
+                    loadUnknownCallsignsActivityForCallsigns model res.callsigns
+
+                  else
+                    E.none
+                ]
+            )
+
+        CallsignsActivityReturnedByApi (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності позивних" e
+            )
+
+        CallsignsActivityReturnedByApi (Ok rsp) ->
+            ( { model
+                | callsigns =
+                    case model.callsigns of
+                        Success callsigns ->
+                            Success (applyCallsignsActivity rsp callsigns)
+
+                        NeedsReload callsigns ->
+                            NeedsReload (applyCallsignsActivity rsp callsigns)
+
+                        _ ->
+                            model.callsigns
               }
             , E.none
             )
@@ -427,7 +557,7 @@ update shared msg model =
                 reloadEffect =
                     case model.networkCreated of
                         Just network ->
-                            E.getNetworkCallsigns CallsignsReturnedByApi { networkId = network.id }
+                            loadCatalogCallsigns network.id
 
                         _ ->
                             E.none
@@ -506,8 +636,12 @@ update shared msg model =
             ( { model | unknownCallsignDropdown = Nothing }, E.none )
 
         ToggleUnknownCallsignsMessages ->
+            let
+                showMessages =
+                    not model.unknownCallsignsShowMessages
+            in
             ( { model
-                | unknownCallsignsShowMessages = not model.unknownCallsignsShowMessages
+                | unknownCallsignsShowMessages = showMessages
                 , unknownCallsignsSortByMessages =
                     if model.unknownCallsignsShowMessages then
                         model.unknownCallsignsSortByMessages
@@ -515,7 +649,11 @@ update shared msg model =
                     else
                         False
               }
-            , E.none
+            , if showMessages then
+                loadUnknownCallsignsActivity model
+
+              else
+                E.none
             )
 
         ToggleUnknownCallsignsSortByMessages ->
@@ -557,7 +695,7 @@ update shared msg model =
                 reloadEffect =
                     case model.networkCreated of
                         Just network ->
-                            E.getNetworkCallsigns CallsignsReturnedByApi { networkId = network.id }
+                            loadCatalogCallsigns network.id
 
                         _ ->
                             E.none
