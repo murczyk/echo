@@ -429,7 +429,7 @@ class Lake:
 
     def get_label_dict(self, label_list: list[str]) -> dict[int, str]:
         unique_labels = self.conn.query(
-            "SELECT DISTINCT ON (label_id) * FROM label ORDER BY label_id"
+            "SELECT DISTINCT ON (label_id) * FROM label ORDER BY label_id, label_text"
         ).fetchall()
         all_labels = {label_id: label_text for label_id, label_text in unique_labels}
 
