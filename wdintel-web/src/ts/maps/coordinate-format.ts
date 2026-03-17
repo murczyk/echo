@@ -12,7 +12,15 @@ export function getCoordinateText(format: CoordFormat, coords: Wgs84Coords, mgrs
     return formatWgs84(coords);
   }
 
-  return formatMgrs(mgrsCoords ?? forward([coords.lng, coords.lat]));
+  if (mgrsCoords) {
+    return formatMgrs(mgrsCoords);
+  }
+
+  try {
+    return formatMgrs(forward([coords.lng, coords.lat]));
+  } catch (_error) {
+    return formatWgs84(coords);
+  }
 }
 
 function formatWgs84(coords: Wgs84Coords): string {
