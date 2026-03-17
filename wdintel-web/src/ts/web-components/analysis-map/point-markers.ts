@@ -96,6 +96,10 @@ export function createPointsMarkersGroup({
         event.originalEvent,
       );
     });
+    circle.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+      event.originalEvent?.preventDefault();
+      event.originalEvent?.stopPropagation();
+    });
     circle.on('popupopen', () => {
       circle.setStyle({ fillColor: '#fff', color: '#000' });
     });
