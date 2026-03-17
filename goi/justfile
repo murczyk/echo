@@ -169,8 +169,9 @@ deploy server:
       "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
 
     echo "Syncing goi service files..."
-    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${APP_DIR}/goi-npm-start.sh"
-    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/etc/systemd/system/goi.service"
+    scp "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${APP_DIR}/goi-npm-start.sh"
+    scp "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/var/tmp/goi.service"
+    ssh ${SERVER} 'sudo mv /var/tmp/goi.service /etc/systemd/system/goi.service'
 
     ssh "$SERVER" "set -euo pipefail
       sudo chown echo:echo '${APP_DIR}/goi-npm-start.sh'
@@ -224,7 +225,7 @@ deploy-swapp server:
       sudo rm -rf '${APP_DIR}/.next/node_modules'
     "
 
-    echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
+    echo "Syncing swapp source into ${SERVER}:${APP_DIR}..."
     rsync -az --delete \
       --delete-after \
       --force \
