@@ -66,6 +66,7 @@ pub async fn bl_babak_report(
         search: inbox_req.search,
         selected_tags: inbox_req.selected_tags,
         selected_networks: inbox_req.selected_networks,
+        without_network: inbox_req.without_network,
         metadata_cc: inbox_req.metadata_cc,
         metadata_sender: inbox_req.metadata_sender,
         metadata_receiver: inbox_req.metadata_receiver,
@@ -778,8 +779,12 @@ pub async fn get_inbox_messages_report_unit(
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q =
-        filter_selected_networks(q, &req.selected_networks).context(h!())?;
+    let q = filter_selected_networks(
+        q,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let q = filter_selected_metadata_for_inbox_messages(q, req)?;
     let q = filter_search(q, &req.search)?;
     let q = filter_selected_units(

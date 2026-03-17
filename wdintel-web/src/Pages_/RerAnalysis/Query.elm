@@ -22,6 +22,7 @@ emptyQueryState =
     , locationsSelected = []
     , postsSelected = []
     , networksSelected = []
+    , withoutNetwork = False
     , includePelengLocations = True
     , orWithExtendedForm = False
     , orBookmarked = False
@@ -59,6 +60,15 @@ normalizeQueryStateMetadata queryState =
         queryState
 
 
+normalizeQueryStateNetworks : B.RerAnalysisQueryState -> B.RerAnalysisQueryState
+normalizeQueryStateNetworks queryState =
+    if queryState.withoutNetwork then
+        { queryState | networksSelected = [] }
+
+    else
+        queryState
+
+
 normalizeAnalysisStatsReqMetadata : B.AnalysisStatsReq -> B.AnalysisStatsReq
 normalizeAnalysisStatsReqMetadata req =
     if req.withoutMetadata == Just True then
@@ -79,44 +89,48 @@ normalizeAnalysisStatsReqMetadata req =
 
 modelQueryState : Model -> B.RerAnalysisQueryState
 modelQueryState model =
-    normalizeQueryStateMetadata
-        { dateFromStr = model.from.dateStr
-        , timeFromStr = model.from.timeStr
-        , dateToStr = model.to.dateStr
-        , timeToStr = model.to.timeStr
-        , aorsSelected = model.aorsSelected
-        , groupsSelected = model.groupsSelected
-        , sendersSelected = model.sendersSelected
-        , freqsSelected = model.freqsSelected
-        , callsignsSelected = model.callsignsSelected
-        , unitsSelected = model.unitsSelected
-        , locationsSelected = model.locationsSelected
-        , postsSelected = model.postsSelected
-        , networksSelected = model.networksSelected
-        , includePelengLocations = model.includePelengLocations
-        , orWithExtendedForm = model.orWithExtendedForm
-        , orBookmarked = model.orBookmarked
-        , orImportant = model.orImportant
-        , orWithCoords = model.orWithCoords
-        , search = model.searchInput
-        , metadataCc = model.metadataCc
-        , metadataSender = model.metadataSender
-        , metadataReceiver = model.metadataReceiver
-        , metadataHash = model.metadataHash
-        , onlyWithMetadata = model.onlyWithMetadata
-        , withoutMetadata = model.withoutMetadata
-        , tags = model.tagsSelected
-        , unitsExactMatchOnly = model.unitsExactMatchOnly
-        , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
-        , withoutModelTags = model.withoutModelTags
-        }
+    normalizeQueryStateNetworks <|
+        normalizeQueryStateMetadata
+            { dateFromStr = model.from.dateStr
+            , timeFromStr = model.from.timeStr
+            , dateToStr = model.to.dateStr
+            , timeToStr = model.to.timeStr
+            , aorsSelected = model.aorsSelected
+            , groupsSelected = model.groupsSelected
+            , sendersSelected = model.sendersSelected
+            , freqsSelected = model.freqsSelected
+            , callsignsSelected = model.callsignsSelected
+            , unitsSelected = model.unitsSelected
+            , locationsSelected = model.locationsSelected
+            , postsSelected = model.postsSelected
+            , networksSelected = model.networksSelected
+            , withoutNetwork = model.withoutNetwork
+            , includePelengLocations = model.includePelengLocations
+            , orWithExtendedForm = model.orWithExtendedForm
+            , orBookmarked = model.orBookmarked
+            , orImportant = model.orImportant
+            , orWithCoords = model.orWithCoords
+            , search = model.searchInput
+            , metadataCc = model.metadataCc
+            , metadataSender = model.metadataSender
+            , metadataReceiver = model.metadataReceiver
+            , metadataHash = model.metadataHash
+            , onlyWithMetadata = model.onlyWithMetadata
+            , withoutMetadata = model.withoutMetadata
+            , tags = model.tagsSelected
+            , unitsExactMatchOnly = model.unitsExactMatchOnly
+            , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
+            , withoutModelTags = model.withoutModelTags
+            }
 
 
 updModelFromQueryState : Model -> B.RerAnalysisQueryState -> Model
 updModelFromQueryState model ms =
     let
         queryState =
-            normalizeQueryStateMetadata ms
+            ms
+                |> normalizeQueryStateMetadata
+                |> normalizeQueryStateNetworks
     in
     { model
         | from = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateFromStr, timeStr = queryState.timeFromStr }
@@ -130,6 +144,7 @@ updModelFromQueryState model ms =
         , locationsSelected = queryState.locationsSelected
         , postsSelected = queryState.postsSelected
         , networksSelected = queryState.networksSelected
+        , withoutNetwork = queryState.withoutNetwork
         , includePelengLocations = queryState.includePelengLocations
         , tagsSelected = queryState.tags
         , orWithExtendedForm = queryState.orWithExtendedForm
@@ -187,6 +202,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
             model.networksSelected
                 |> List.filterMap String.toInt
                 |> emptyToNothing
+        , withoutNetwork = Just model.withoutNetwork
         , filterTagsOption = Nothing
         , unitsExactMatchOnly = Just model.unitsExactMatchOnly
         , withoutModelTags = Just model.withoutModelTags
@@ -220,6 +236,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , withoutMetadata = Nothing
     , selectedTags = Nothing
     , selectedNetworks = Nothing
+    , withoutNetwork = Nothing
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Nothing
     , withoutModelTags = Nothing
@@ -263,6 +280,7 @@ updModelFromRerAnalysisStatsReq model req =
             normalizedReq.selectedNetworks
                 |> def []
                 |> List.map String.fromInt
+        , withoutNetwork = normalizedReq.withoutNetwork |> def False
         , unitsExactMatchOnly = normalizedReq.unitsExactMatchOnly |> def True
         , reportTagsOnlyThisUnit = normalizedReq.reportTagsOnlyThisUnit |> def False
     }

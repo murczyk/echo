@@ -885,6 +885,7 @@ leftColumn ( messageId, message ) ps model =
                                         , locationsSelected = []
                                         , postsSelected = []
                                         , networksSelected = []
+                                        , withoutNetwork = False
                                         , includePelengLocations = False
                                         , orWithExtendedForm = False
                                         , orBookmarked = False

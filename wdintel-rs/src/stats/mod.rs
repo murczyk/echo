@@ -3115,6 +3115,7 @@ mod tests {
             search: None,
             selected_tags: None,
             selected_networks: None,
+            without_network: None,
             metadata_cc: None,
             metadata_sender: None,
             metadata_receiver: None,
