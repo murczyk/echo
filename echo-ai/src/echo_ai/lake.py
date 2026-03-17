@@ -304,7 +304,9 @@ class Lake:
         if shuffle_seed is not None:
             order_clause = f"ORDER BY hash(source, id, {shuffle_seed})"
 
-        split_clause = f"WHERE split_name = '{split}'" if split else ""
+        split_clause = (
+            f"WHERE split_name = '{split}'" if split and split != "all" else ""
+        )
 
         return self.conn.query(f"""
         SELECT

@@ -14,14 +14,18 @@ class TrainedModel:
     model_artifacts: Path
     version: ModelVersion | None
 
-    def __init__(self, run: Run, version: ModelVersion | None = None):
+    def __init__(
+        self,
+        run: Run,
+        model_id: str,
+        version: ModelVersion | None = None,
+    ):
         self.run = run
         run_artifacts = mlflow.artifacts.download_artifacts(run_id=run.info.run_id)
         self.run_artifacts = Path(run_artifacts)
-        model_output = run.outputs.model_outputs[0]
-        self.model = mlflow.get_logged_model(model_id=model_output.model_id)
+        self.model = mlflow.get_logged_model(model_id=model_id)
         model_artifacts = mlflow.artifacts.download_artifacts(
-            artifact_uri=f"models:/{model_output.model_id}"
+            artifact_uri=f"models:/{model_id}"
         )
         self.model_artifacts = Path(model_artifacts)
         self.version = version
@@ -50,8 +54,15 @@ class TrainedModel:
                 [latest_version] = latest_versions
                 run_id = str(latest_version.run_id)
                 run = mlflow.get_run(run_id)
+
                 version = cast(ModelVersion, latest_version)
-                return TrainedModel(run, version)
+                model_id = version.model_id
+                if not model_id and version.source:
+                    model_id = version.source.removeprefix("models:/")
+
+                if model_id:
+                    return TrainedModel(run, model_id, version)
+
         return None
 
     def register(self) -> ModelVersion:
@@ -64,6 +75,7 @@ class TrainedModel:
             f"successfully registered model '{self.model.name}' version {model_version.version} from run '{run_id}'",
             flush=True,
         )
+        self.version = model_version
         return model_version
 
     @property

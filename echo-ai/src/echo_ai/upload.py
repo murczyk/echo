@@ -10,6 +10,7 @@ import mlflow
 import mlflow.artifacts
 import pandas as pd
 from discord_webhook import DiscordWebhook
+from mlflow.entities import LoggedModelOutput, Run
 
 from echo_ai.registry import TrainedModel
 
@@ -30,9 +31,15 @@ class TrainingResults:
             filter_string=get_filter_string(run_id),
             output_format="list",
         )
-        self.models = [
-            TrainedModel(run=run) for run in runs if run.outputs.model_outputs
-        ]
+        self.models = []
+        for run in runs:
+            if run.outputs.model_outputs:
+                last_model = max(
+                    run.outputs.model_outputs, key=lambda output: output.step
+                )
+                if last_model:
+                    trained_model = TrainedModel(run=run, model_id=last_model.model_id)
+                    self.models.append(trained_model)
 
 
 def get_current_model_id(s3, bucket, key) -> str:

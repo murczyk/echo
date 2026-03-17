@@ -86,11 +86,10 @@ def train_model(return_dict: dict, job: dict):
     model_params["label_name"] = label_name
     mlflow.log_params(model_params)
 
+    step = job.pop("step", None)
     name = f"supervised-{label_name}"
     model_info = log_model(
-        fasttext_model,
-        name=name,
-        model_type="classifier",
+        fasttext_model, name=name, model_type="classifier", step=step
     )
     del fasttext_model
     return_dict["model_id"] = model_info.model_id
@@ -209,7 +208,15 @@ def train_supervised(
             }
             eval_results = evaluate_trained_model(label_name, model_uri, split_csv)
             results_per_split.append(eval_results)
-            process_eval_results(run.info.run_id, eval_results, split_csv)
+            process_eval_results(
+                run.info.run_id,
+                model_id,
+                eval_results,
+                split_csv,
+                label_column_name,
+                shuffle_seed,
+                lake,
+            )
 
     results_test = [item["test"] for item in results_per_split]
     results_train = [item["train"] for item in results_per_split]
@@ -220,18 +227,27 @@ def train_supervised(
     plot_threshold_recall(labels, "train", results_train)
 
 
-def process_eval_results(run_id: str, eval_results: dict, split_csv):
-    stored_run = mlflow.get_run(run_id=run_id)
-    trained_model = TrainedModel(run=stored_run)
+def process_eval_results(
+    run_id: str,
+    model_id: str,
+    eval_results: dict,
+    split_csv: dict,
+    label_column_name: str,
+    shuffle_seed: int | None,
+    lake: Lake,
+):
+    run = mlflow.get_run(run_id=run_id)
+
+    trained_model = TrainedModel(run, model_id)
     registered_model = trained_model.find_registered_model()
     if registered_model:
         trained_results = eval_results["test"]
         trained_metrics = trained_results["metrics"]
 
         if compare_models(trained_metrics, registered_model, split_csv):
-            promote(trained_model)
+            promote(trained_model, label_column_name, shuffle_seed, lake)
     else:
-        promote(trained_model)
+        promote(trained_model, label_column_name, shuffle_seed, lake)
 
 
 def compare_models(
@@ -274,6 +290,72 @@ def compare_models(
     )
 
 
-def promote(trained_model: TrainedModel):
-    # TODO: retrain
-    trained_model.register()
+def promote(
+    trained_model: TrainedModel,
+    label_column_name: str,
+    shuffle_seed: int | None,
+    lake: Lake,
+):
+    print(f"starting re-training for {trained_model.label_name}", flush=True)
+
+    pd_all, all_path, len_all = create_dataset(
+        lake, label_column_name, trained_model.label_name, "all", shuffle_seed
+    )
+
+    fasttext_kwargs = {
+        "lr": float(trained_model.params["lr"]),
+        "dim": int(trained_model.params["dim"]),
+        "ws": int(trained_model.params["ws"]),
+        "epoch": int(trained_model.params["epoch"]),
+        "minCount": int(trained_model.params["minCount"]),
+        "minCountLabel": int(trained_model.params["minCountLabel"]),
+        "minn": int(trained_model.params["minn"]),
+        "maxn": int(trained_model.params["maxn"]),
+        "neg": int(trained_model.params["neg"]),
+        "wordNgrams": int(trained_model.params["wordNgrams"]),
+        "loss": str(trained_model.params["loss"]),
+        "bucket": int(trained_model.params["bucket"]),
+        "thread": int(trained_model.params["thread"]),
+        "lrUpdateRate": int(trained_model.params["lrUpdateRate"]),
+        "t": float(trained_model.params["t"]),
+        "label": str(trained_model.params["label"]),
+        "verbose": int(trained_model.params["verbose"]),
+        "pretrainedVectors": str(trained_model.params["pretrainedVectors"]),
+        "seed": int(trained_model.params["seed"]),
+        "autotuneModelSize": str(trained_model.params["autotuneModelSize"]),
+    }
+
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    p = multiprocessing.Process(
+        target=train_model,
+        args=[
+            return_dict,
+            {
+                "run_id": trained_model.run.info.run_id,
+                "experiment_id": trained_model.run.info.experiment_id,
+                "label_name": trained_model.label_name,
+                "fasttext_kwargs": fasttext_kwargs,
+                "train_path": all_path,
+                "len_tune": 0,
+                "tune_path": "",
+                "step": 1,
+            },
+        ],
+    )
+    p.start()
+    p.join()
+    if p.exitcode != 0:
+        raise RuntimeError(
+            f"re-training process for {trained_model.label_name} failed with exit code {p.exitcode}"
+        )
+
+    model_id = return_dict["model_id"]
+    mlflow.set_active_model(model_id=model_id)
+    mlflow.log_metrics(trained_model.get_metrics())
+    logged_model = LoggedModelInput(model_id=model_id)
+
+    mlflow.log_input(pd_all, context="training", model=logged_model)
+    run = mlflow.get_run(run_id=trained_model.run.info.run_id)
+    new_model = TrainedModel(run, model_id)
+    new_model.register()
