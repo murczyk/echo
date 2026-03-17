@@ -355,7 +355,7 @@ export function MessageCard({
               />
             </span>
           </div>
-          {/* Row 2 — Unit + location (separate row like in dividers) */}
+          {/* Row 3 — Unit + location (separate row like in dividers) */}
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className={`inline-flex font-semibold shrink-0 flex-col items-start gap-0.5`}>
               <i className="bi bi-people text-icons shrink-0" title="Еталонна прив'язка" />

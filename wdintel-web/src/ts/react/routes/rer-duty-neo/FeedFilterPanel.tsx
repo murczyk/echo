@@ -162,6 +162,25 @@ export function FeedFilterPanel({
   const [localFreqValue, setLocalFreqValue] = React.useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = React.useState<string[]>(() => postValue);
 
+  // Resync local filter selections when feed filter changes
+  React.useEffect(() => {
+    const ids = senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
+    setLocalSenderValue(
+      ids.map((id) => {
+        const o = senderOptions.find((opt) => opt.id === id);
+        return o ?? { id, label: id };
+      }),
+    );
+  }, [filterStable.sendersSelected, filterStable.deniedSenders, senderMode, senderOptions]);
+  React.useEffect(() => {
+    const value = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
+    setLocalFreqValue(value ?? []);
+  }, [filterStable.freqsSelected, filterStable.freqsDenied, freqMode]);
+  React.useEffect(() => {
+    const value = postMode === 'include' ? (filterStable.postsSelected ?? []) : (filterStable.postsDenied ?? []);
+    setLocalPostValue(value);
+  }, [filterStable.postsSelected, filterStable.postsDenied, postMode]);
+
   React.useEffect(() => {
     if (senderMode === 'include') onSendersChange(localSenderValue.map((o) => o.id));
     else onDeniedSendersChange(localSenderValue.map((o) => o.id));
