@@ -171,6 +171,16 @@ updModelFromQueryState model ms =
 
 analysisStatsParams : Posix -> Posix -> Model -> B.AnalysisStatsReq
 analysisStatsParams dtFromPosix dtToPosix model =
+    let
+        selectedNetworks =
+            if model.withoutNetwork then
+                Nothing
+
+            else
+                model.networksSelected
+                    |> List.filterMap String.toInt
+                    |> emptyToNothing
+    in
     normalizeAnalysisStatsReqMetadata
         { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
         , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
@@ -198,10 +208,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , onlyWithMetadata = Just model.onlyWithMetadata
         , withoutMetadata = Just model.withoutMetadata
         , selectedTags = emptyToNothing model.tagsSelected
-        , selectedNetworks =
-            model.networksSelected
-                |> List.filterMap String.toInt
-                |> emptyToNothing
+        , selectedNetworks = selectedNetworks
         , withoutNetwork = Just model.withoutNetwork
         , filterTagsOption = Nothing
         , unitsExactMatchOnly = Just model.unitsExactMatchOnly
