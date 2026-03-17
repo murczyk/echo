@@ -256,6 +256,7 @@ pub struct DeleteNetworkFreqReq {
 )]
 pub struct SingleNetworkCallsignsReq {
     pub network_id: i64,
+    pub include_communication_info: Option<bool>,
 }
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,

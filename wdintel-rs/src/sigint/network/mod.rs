@@ -2284,10 +2284,18 @@ pub async fn network_callsigns_list(
     .await
     .context(h!())?;
 
-    let callsigns_raw =
-        load_callsigns(&env.dbx, &groups, req.network_id, None, None)
-            .await
-            .context(h!())?;
+    let include_communication_info =
+        req.include_communication_info.unwrap_or(true);
+    let callsigns_raw = load_callsigns(
+        &env.dbx,
+        &groups,
+        req.network_id,
+        None,
+        include_communication_info,
+        None,
+    )
+    .await
+    .context(h!())?;
 
     let callsigns = callsigns_raw
         .into_iter()

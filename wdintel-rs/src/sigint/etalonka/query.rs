@@ -869,6 +869,7 @@ pub async fn load_callsigns(
     groups: &Vec<String>,
     network_id: i64,
     known_callsigns: Option<&BTreeMap<String, Vec<KnownCallsignRes>>>,
+    include_communication_info: bool,
     filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
@@ -929,6 +930,14 @@ pub async fn load_callsigns(
         .collect();
 
     res = filter_callsigns(res);
+
+    if !include_communication_info {
+        let duration = start.elapsed();
+        trace!(
+            "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, without communication info)"
+        );
+        return Ok(res);
+    }
 
     // Step 2. Get communication info for callsigns with known_callsigns
     let callsigns = res.iter().map(|c| c.callsign.clone()).collect::<Vec<_>>();
