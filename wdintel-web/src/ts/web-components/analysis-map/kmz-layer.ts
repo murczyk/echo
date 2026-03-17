@@ -5,14 +5,14 @@ import { KMZLayer, kmzLayerFactory } from '../../maps/leaflet-kmz';
 
 export async function loadKmzLayer(params: {
   map: L.Map | null;
-  kmzEnabled: boolean;
+  isKmzEnabled: () => boolean;
   kmzLayer: KMZLayer | null;
   kmzLoading: Promise<void> | null;
   setKmzLayer: (kmzLayer: KMZLayer | null) => void;
   setKmzLoading: (kmzLoading: Promise<void> | null) => void;
 }): Promise<void> {
-  const { map, kmzEnabled, kmzLayer, kmzLoading, setKmzLayer, setKmzLoading } = params;
-  if (!map || !kmzEnabled) {
+  const { map, isKmzEnabled, kmzLayer, kmzLoading, setKmzLayer, setKmzLoading } = params;
+  if (!map || !isKmzEnabled()) {
     return;
   }
 
@@ -40,7 +40,7 @@ export async function loadKmzLayer(params: {
       });
       setKmzLayer(nextKmzLayer);
 
-      if (map && kmzEnabled) {
+      if (map && isKmzEnabled()) {
         nextKmzLayer.addTo(map);
         nextKmzLayer.parse(kmzData, {});
       }
@@ -57,16 +57,16 @@ export async function loadKmzLayer(params: {
 
 export function applyKmzVisibility(params: {
   map: L.Map | null;
-  kmzEnabled: boolean;
+  isKmzEnabled: () => boolean;
   kmzLayer: KMZLayer | null;
   loadKmzLayer: () => Promise<void>;
 }): void {
-  const { map, kmzEnabled, kmzLayer, loadKmzLayer } = params;
+  const { map, isKmzEnabled, kmzLayer, loadKmzLayer } = params;
   if (!map) {
     return;
   }
 
-  if (!kmzEnabled) {
+  if (!isKmzEnabled()) {
     if (kmzLayer) {
       map.removeLayer(kmzLayer);
     }

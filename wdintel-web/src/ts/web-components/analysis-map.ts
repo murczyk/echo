@@ -623,7 +623,7 @@ class AnalysisMap extends HTMLElement {
   private async _loadKmzLayer() {
     await loadKmzLayer({
       map: this._map,
-      kmzEnabled: this._kmzEnabled,
+      isKmzEnabled: () => this._kmzEnabled,
       kmzLayer: this._kmzLayer,
       kmzLoading: this._kmzLoading,
       setKmzLayer: (kmzLayer) => {
@@ -638,7 +638,7 @@ class AnalysisMap extends HTMLElement {
   private _applyKmzVisibility() {
     applyKmzVisibility({
       map: this._map,
-      kmzEnabled: this._kmzEnabled,
+      isKmzEnabled: () => this._kmzEnabled,
       kmzLayer: this._kmzLayer,
       loadKmzLayer: () => this._loadKmzLayer(),
     });
