@@ -218,6 +218,7 @@ mod m20260310_091035_add_sigint_inbox_item_metadata;
 mod m20260311_120331_add_sigint_inbox_item_metadata_indices;
 mod m20260313_120000_add_sigint_inbox_item_metadata_spans;
 mod m20260315_190000_add_goi_api_and_association;
+mod m20260317_120000_sigint_network_list_perf_indexes;
 
 pub struct Migrator;
 
@@ -443,6 +444,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260311_120331_add_sigint_inbox_item_metadata_indices::Migration),
             Box::new(m20260313_120000_add_sigint_inbox_item_metadata_spans::Migration),
             Box::new(m20260315_190000_add_goi_api_and_association::Migration),
+            Box::new(m20260317_120000_sigint_network_list_perf_indexes::Migration),
         ]
     }
 }
