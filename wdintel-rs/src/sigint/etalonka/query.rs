@@ -89,6 +89,7 @@ pub enum SigintNetworkFreq {
     NetworkId,
     Freq,
     CreatedAt,
+    LastSeenDt,
     ActiveFrom,
     ActiveTo,
     ModulationId,
@@ -181,6 +182,17 @@ async fn load_freqs_impl(
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     trace!("> load freqs for network: {network_id:?}");
 
+    if freq_counts.is_some() && !include_callsigns {
+        return load_freqs_with_cached_activity(
+            db,
+            network_id,
+            filter,
+            user_login,
+            freq_counts.c(h!())?,
+        )
+        .await;
+    }
+
     let nf = Alias::new("network_freqs");
     let join_condition = build_network_freq_join_condition(filter).c(h!())?;
     let callsigns_expr: SimpleExpr = if include_callsigns {
@@ -266,7 +278,6 @@ async fn load_freqs_impl(
     q_agg
         .expr_as(Expr::cust("network_freq_id"), Alias::new("network_freq_id"))
         .expr_as(message_count_expr, Alias::new("message_count"))
-        .expr_as(Expr::cust("MAX(datetime)"), Alias::new("last_datetime"))
         .expr_as(callsigns_expr, Alias::new("callsigns"))
         .from(Alias::new("network_messages"))
         .add_group_by([Expr::col((
@@ -316,6 +327,13 @@ async fn load_freqs_impl(
             Alias::new("modulation_name"),
         )
         .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::LastSeenDt,
+            )),
+            Alias::new("last_datetime"),
+        )
+        .expr_as(
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Kind))
                 .cast_as(Alias::new("text")),
             Alias::new("kind"),
@@ -323,10 +341,6 @@ async fn load_freqs_impl(
         .expr_as(
             Expr::col((Alias::new("agg"), Alias::new("message_count"))),
             Alias::new("message_count"),
-        )
-        .expr_as(
-            Expr::col((Alias::new("agg"), Alias::new("last_datetime"))),
-            Alias::new("last_datetime"),
         )
         .expr_as(
             Expr::col((Alias::new("agg"), Alias::new("callsigns"))),
@@ -389,14 +403,139 @@ async fn load_freqs_impl(
     //     combined_query.to_string(PostgresQueryBuilder)
     // );
 
-    let mut freq_ids = vec![];
-    let network_active_freqs: Result<Vec<NetworkFreqsRes>, AppError> = db
+    let rows = db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query.to_string(PostgresQueryBuilder),
         ))
         .await
-        .context(h!())?
+        .context(h!())?;
+
+    load_network_freq_rows(db, rows, user_login, freq_counts).await
+}
+
+async fn load_freqs_with_cached_activity(
+    db: &DatabaseConnection,
+    network_id: i64,
+    filter: Option<&NetworkFreqFilter>,
+    user_login: &str,
+    freq_counts: HashMap<i64, i64>,
+) -> Result<Vec<NetworkFreqsRes>, AppError> {
+    let main_query = build_network_freqs_base_query(network_id, filter)
+        .expr_as(Expr::cust("NULL"), Alias::new("callsigns"))
+        .to_owned();
+
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            main_query.to_string(PostgresQueryBuilder),
+        ))
+        .await
+        .context(h!())?;
+
+    load_network_freq_rows(db, rows, user_login, Some(freq_counts)).await
+}
+
+fn build_network_freqs_base_query(
+    network_id: i64,
+    filter: Option<&NetworkFreqFilter>,
+) -> SelectStatement {
+    SelectStatement::new()
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
+            Alias::new("network_freq_id"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq)),
+            Alias::new("freq"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::CreatedAt)),
+            Alias::new("created_at"),
+        )
+        .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ActiveFrom,
+            )),
+            Alias::new("active_from"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
+            Alias::new("active_to"),
+        )
+        .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ModulationId,
+            )),
+            Alias::new("modulation_id"),
+        )
+        .expr_as(
+            Expr::col((Modulation::Table, Modulation::Name)),
+            Alias::new("modulation_name"),
+        )
+        .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::LastSeenDt,
+            )),
+            Alias::new("last_datetime"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Kind))
+                .cast_as(Alias::new("text")),
+            Alias::new("kind"),
+        )
+        .expr_as(Expr::cust("0"), Alias::new("message_count"))
+        .from(SigintNetwork::Table)
+        .join(
+            JoinType::InnerJoin,
+            SigintNetworkFreq::Table,
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId))
+                .equals((SigintNetwork::Table, SigintNetwork::Id)),
+        )
+        .join(
+            JoinType::LeftJoin,
+            Modulation::Table,
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ModulationId,
+            ))
+            .equals((Modulation::Table, Modulation::Id)),
+        )
+        .and_where(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(network_id),
+        )
+        .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
+            |_| {
+                Expr::col((
+                    SigintNetworkFreq::Table,
+                    SigintNetworkFreq::ActiveTo,
+                ))
+                .is_null()
+            },
+        ))
+        .order_by_expr(Expr::cust("freq"), Order::Asc)
+        .to_owned()
+}
+
+async fn load_network_freq_rows(
+    db: &DatabaseConnection,
+    rows: Vec<QueryResult>,
+    user_login: &str,
+    freq_counts: Option<HashMap<i64, i64>>,
+) -> Result<Vec<NetworkFreqsRes>, AppError> {
+    let mut freq_ids = vec![];
+    let network_active_freqs: Result<Vec<NetworkFreqsRes>, AppError> = rows
         .iter()
         .map(|row| -> Result<NetworkFreqsRes, AppError> {
             let row_callsigns: Option<serde_json::Value> =
