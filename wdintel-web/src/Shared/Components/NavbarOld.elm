@@ -326,22 +326,8 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                        )
                     ++ (if sub.activeName == "callsigns-neo" || sub.activeName == "rer-duty-neo" then
                             [ span
-                                [ class
-                                    (if sub.activeName == "callsigns-neo" then
-                                        "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700"
-
-                                     else
-                                        "rounded-full border border-rose-500/40 bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-rose-700"
-                                    )
-                                ]
-                                [ text
-                                    (if sub.activeName == "callsigns-neo" then
-                                        "Beta"
-
-                                     else
-                                        "Alpha"
-                                    )
-                                ]
+                                [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
+                                [ text "Beta" ]
                             ]
 
                         else
