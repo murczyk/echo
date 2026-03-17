@@ -87,23 +87,6 @@ loadCallsignsActivity networkId callsigns =
             }
 
 
-knownCallsignActivityCallsigns callsigns =
-    callsigns
-        |> List.filterMap
-            (\callsign ->
-                case callsign.knownCallsigns of
-                    Just knownCallsigns ->
-                        if List.isEmpty knownCallsigns then
-                            Nothing
-
-                        else
-                            Just callsign.callsign
-
-                    Nothing ->
-                        Nothing
-            )
-
-
 unknownCallsignActivityCallsigns callsigns =
     callsigns
         |> List.filterMap
@@ -119,15 +102,6 @@ unknownCallsignActivityCallsigns callsigns =
                     Nothing ->
                         Just callsign.callsign
             )
-
-
-loadKnownCallsignsActivity model callsigns =
-    case model.network of
-        Success network ->
-            loadCallsignsActivity network.id (knownCallsignActivityCallsigns callsigns)
-
-        _ ->
-            E.none
 
 
 loadUnknownCallsignsActivity model =
@@ -173,13 +147,13 @@ applyCallsignsActivity rsp callsigns =
 
 
 loadCatalogAndNetworkCallsigns networkId =
-    [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeCommunicationInfo = Just False }
+    [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeActivityInfo = Just False }
     , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing }
     ]
 
 
 loadCatalogCallsigns networkId =
-    E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeCommunicationInfo = Just False }
+    E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeActivityInfo = Just False }
 
 
 update : Shared.Model -> CallsignsMsg -> Model -> ( Model, Effect CallsignsMsg )
@@ -213,14 +187,11 @@ update shared msg model =
                 | callsigns = Success res.callsigns
                 , callsignsPager = updatedPager
               }
-            , E.batch
-                [ loadKnownCallsignsActivity model res.callsigns
-                , if model.unknownCallsignsShowMessages then
-                    loadUnknownCallsignsActivityForCallsigns model res.callsigns
+            , if model.unknownCallsignsShowMessages then
+                loadUnknownCallsignsActivityForCallsigns model res.callsigns
 
-                  else
-                    E.none
-                ]
+              else
+                E.none
             )
 
         CallsignsActivityReturnedByApi (Err e) ->

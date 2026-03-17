@@ -857,7 +857,7 @@ pub async fn find_all_known_callsigns(
 }
 
 #[derive(Debug, Clone)]
-pub struct CallsignCommunicationInfo {
+pub struct CallsignActivityInfo {
     pub message_count: i64,
     pub last_datetime: Option<i64>,
     pub freqs: Option<Vec<String>>,
@@ -869,7 +869,7 @@ pub async fn load_callsigns(
     groups: &Vec<String>,
     network_id: i64,
     known_callsigns: Option<&BTreeMap<String, Vec<KnownCallsignRes>>>,
-    include_communication_info: bool,
+    include_activity_info: bool,
     filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
@@ -931,18 +931,58 @@ pub async fn load_callsigns(
 
     res = filter_callsigns(res);
 
-    if !include_communication_info {
+    if !include_activity_info {
+        let callsigns = res
+            .iter()
+            .filter(|callsign| {
+                callsign
+                    .known_callsigns
+                    .as_ref()
+                    .map(|known_callsigns| !known_callsigns.is_empty())
+                    .unwrap_or(false)
+            })
+            .map(|callsign| callsign.callsign.clone())
+            .collect::<Vec<_>>();
+
+        if callsigns.is_empty() {
+            let duration = start.elapsed();
+            trace!(
+                "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, without activity info)"
+            );
+            return Ok(res);
+        }
+
+        let known_callsigns_activity_info = get_activity_info_for_callsigns(
+            db,
+            base_with.clone(),
+            callsigns_select.clone(),
+            &callsigns,
+        )
+        .await
+        .context(h!())?;
+
+        for c in &mut res {
+            if let Some(activity_info) =
+                known_callsigns_activity_info.get(&c.callsign)
+            {
+                c.message_count = activity_info.message_count;
+                c.last_datetime = activity_info.last_datetime;
+                c.freqs = activity_info.freqs.clone();
+                c.network_names = activity_info.network_names.clone();
+            }
+        }
+
         let duration = start.elapsed();
         trace!(
-            "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, without communication info)"
+            "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, known-only activity info)"
         );
         return Ok(res);
     }
 
-    // Step 2. Get communication info for callsigns with known_callsigns
+    // Step 2. Get activity info for callsigns with known_callsigns
     let callsigns = res.iter().map(|c| c.callsign.clone()).collect::<Vec<_>>();
 
-    let known_callsigns_comm_info = get_communication_info_for_callsigns(
+    let known_callsigns_activity_info = get_activity_info_for_callsigns(
         db,
         base_with.clone(),
         callsigns_select.clone(),
@@ -951,13 +991,15 @@ pub async fn load_callsigns(
     .await
     .context(h!())?;
 
-    // Step 3. Update res vector with communication info for callsigns with known_callsigns
+    // Step 3. Update res vector with activity info for callsigns with known_callsigns
     for c in &mut res {
-        if let Some(comm_info) = known_callsigns_comm_info.get(&c.callsign) {
-            c.message_count = comm_info.message_count;
-            c.last_datetime = comm_info.last_datetime;
-            c.freqs = comm_info.freqs.clone();
-            c.network_names = comm_info.network_names.clone();
+        if let Some(activity_info) =
+            known_callsigns_activity_info.get(&c.callsign)
+        {
+            c.message_count = activity_info.message_count;
+            c.last_datetime = activity_info.last_datetime;
+            c.freqs = activity_info.freqs.clone();
+            c.network_names = activity_info.network_names.clone();
         }
     }
 
@@ -1379,12 +1421,12 @@ pub async fn get_active_callsigns(
     Ok(records)
 }
 
-pub async fn get_communication_info_for_callsigns<'a, 'async_trait, C>(
+pub async fn get_activity_info_for_callsigns<'a, 'async_trait, C>(
     txn: &'a C,
     base_with: WithClause,
     callsigns_select: SelectStatement,
     callsigns: &[String],
-) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError>
+) -> Result<HashMap<String, CallsignActivityInfo>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -1421,7 +1463,7 @@ where
     let combined_query = base_with.clone().cte(callsigns_cte).clone().query(q);
 
     // debug!(
-    //     "> communication info query: {}",
+    //     "> activity info query: {}",
     //     combined_query.to_string(PostgresQueryBuilder)
     // );
 
@@ -1446,7 +1488,7 @@ where
             row.try_get("", "network_names").ok();
         res.insert(
             callsign.clone(),
-            CallsignCommunicationInfo {
+            CallsignActivityInfo {
                 message_count,
                 last_datetime,
                 freqs: freqs

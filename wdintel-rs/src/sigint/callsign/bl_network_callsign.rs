@@ -566,7 +566,7 @@ pub async fn bl_get_network_callsigns_list(
         .await
         .context(h!())?;
 
-    let comm_info = get_callsigns_communication_info(
+    let activity_info = get_callsigns_activity_info(
         dbx,
         user_id,
         req.network_id,
@@ -584,10 +584,9 @@ pub async fn bl_get_network_callsigns_list(
 
     let mut res = vec![];
     for network_callsign in network_callsigns {
-        let callsing_comm_info =
-            comm_info.get(&network_callsign.sigint_callsign);
-        let nc =
-            render_network_callsign(&network_callsign, callsing_comm_info)?;
+        let callsign_activity =
+            activity_info.get(&network_callsign.sigint_callsign);
+        let nc = render_network_callsign(&network_callsign, callsign_activity)?;
         res.push(nc);
     }
 
@@ -746,7 +745,7 @@ where
             .await
             .context(h!())?;
 
-    let comm_info = get_callsigns_communication_info(
+    let activity_info = get_callsigns_activity_info(
         txn,
         user_id,
         network_id,
@@ -764,21 +763,20 @@ where
 
     let mut res = vec![];
     for network_callsign in network_callsigns {
-        let callsing_comm_info =
-            comm_info.get(&network_callsign.sigint_callsign);
-        let nc =
-            render_network_callsign(&network_callsign, callsing_comm_info)?;
+        let callsign_activity =
+            activity_info.get(&network_callsign.sigint_callsign);
+        let nc = render_network_callsign(&network_callsign, callsign_activity)?;
         res.push(nc);
     }
     Ok(res)
 }
 
-pub async fn get_callsigns_communication_info<'a, 'async_trait, C>(
+pub async fn get_callsigns_activity_info<'a, 'async_trait, C>(
     txn: &'a C,
     login: &str,
     network_id: i64,
     callsigns: &[String],
-) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError>
+) -> Result<HashMap<String, CallsignActivityInfo>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -795,7 +793,7 @@ where
     )
     .context(h!())?;
 
-    let callsigns_comm_info = get_communication_info_for_callsigns(
+    let callsigns_activity_info = get_activity_info_for_callsigns(
         txn,
         base_with.clone(),
         callsigns_select.clone(),
@@ -804,12 +802,12 @@ where
     .await
     .context(h!())?;
 
-    Ok(callsigns_comm_info)
+    Ok(callsigns_activity_info)
 }
 
 pub fn render_network_callsign(
     network_callsign: &NetworkCallsignResult,
-    comm_info: Option<&CallsignCommunicationInfo>,
+    activity_info: Option<&CallsignActivityInfo>,
 ) -> Result<NetworkCallsign, AppError> {
     Ok(NetworkCallsign {
         id: network_callsign.id,
@@ -843,9 +841,9 @@ pub fn render_network_callsign(
         main_radio_station: network_callsign.main_radio_station,
         created_at: network_callsign.created_at.and_utc().timestamp_millis(),
         active: !network_callsign.deleted,
-        message_count: comm_info.map_or(0, |c| c.message_count),
-        last_datetime: comm_info.and_then(|c| c.last_datetime),
-        freqs: comm_info.and_then(|c| c.freqs.clone()),
+        message_count: activity_info.map_or(0, |c| c.message_count),
+        last_datetime: activity_info.and_then(|c| c.last_datetime),
+        freqs: activity_info.and_then(|c| c.freqs.clone()),
     })
 }
 
@@ -889,13 +887,13 @@ async fn create_network_callsign_changelog(
     Ok(())
 }
 
-/// Get communication activity for a list of callsigns within a network
+/// Get activity for a list of callsigns within a network
 pub async fn bl_get_network_callsigns_activity(
     req: &NetworkCallsignsActivityReq,
     user_id: &str,
     dbx: &DatabaseConnection,
 ) -> Result<Vec<CallsignActivityRecord>, AppError> {
-    let res = get_callsigns_communication_info(
+    let res = get_callsigns_activity_info(
         dbx,
         user_id,
         req.network_id,

@@ -6159,7 +6159,7 @@ singleNetworkFreqsListRspEncoder struct =
 
 type alias SingleNetworkCallsignsReq =
     { networkId : Int
-    , includeCommunicationInfo : Maybe Bool
+    , includeActivityInfo : Maybe Bool
     }
 
 
@@ -6167,7 +6167,7 @@ singleNetworkCallsignsReqEncoder : SingleNetworkCallsignsReq -> Json.Encode.Valu
 singleNetworkCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
-        , ( "include_communication_info", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includeCommunicationInfo )
+        , ( "include_activity_info", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includeActivityInfo )
         ]
 
 
@@ -10787,7 +10787,7 @@ singleNetworkCallsignsReqDecoder : Json.Decode.Decoder SingleNetworkCallsignsReq
 singleNetworkCallsignsReqDecoder =
     Json.Decode.succeed SingleNetworkCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_communication_info" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_activity_info" (Json.Decode.nullable Json.Decode.bool)))
 
 
 singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsignsListRsp

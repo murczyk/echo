@@ -2284,14 +2284,13 @@ pub async fn network_callsigns_list(
     .await
     .context(h!())?;
 
-    let include_communication_info =
-        req.include_communication_info.unwrap_or(true);
+    let include_activity_info = req.include_activity_info.unwrap_or(true);
     let callsigns_raw = load_callsigns(
         &env.dbx,
         &groups,
         req.network_id,
         None,
-        include_communication_info,
+        include_activity_info,
         None,
     )
     .await

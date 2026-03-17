@@ -2323,7 +2323,7 @@ export type SingleNetworkFreqsListRsp = {
 
 export type SingleNetworkCallsignsReq = {
   networkId: number;
-  includeCommunicationInfo: boolean | null;
+  includeActivityInfo: boolean | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {
