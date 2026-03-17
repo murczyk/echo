@@ -268,10 +268,17 @@ def compare_models(
     trained_precision_at_recall = float(trained_metrics["precision_at_recall"])
     registered_precision_at_recall = float(registered_metrics["precision_at_recall"])
 
-    ap_improvement = (trained_ap - registered_ap) / registered_ap
-    pr_improvement = (
-        trained_precision_at_recall - registered_precision_at_recall
-    ) / registered_precision_at_recall
+    if registered_ap > 0:
+        ap_improvement = (trained_ap - registered_ap) / registered_ap
+    else:
+        ap_improvement = 1
+
+    if registered_precision_at_recall > 0:
+        pr_improvement = (
+            trained_precision_at_recall - registered_precision_at_recall
+        ) / registered_precision_at_recall
+    else:
+        pr_improvement = 1
 
     stats = {
         "ap_improvement": ap_improvement,

@@ -3,7 +3,7 @@ import mlflow
 from mlflow.data.pandas_dataset import from_pandas
 from mlflow.entities.logged_model_input import LoggedModelInput
 
-from echo_ai import arrow, quack
+from echo_ai import arrow
 from echo_ai.lake import Lake
 
 from .fasttext_model import (
@@ -18,7 +18,7 @@ def train_unsupervised(lake: Lake, **kwargs):
     seed = kwargs.get("seed", 4507)
     shuffle = kwargs.get("shuffle", True)
     rel = lake.messages_including_unlabeled(shuffle=shuffle, seed=seed)
-    df = quack.to_df_arrow(rel.select("text").limit(1000))
+    df = arrow.to_df_arrow(rel.select("text").limit(1000))
     print(df.head(), flush=True)
     dataset = from_pandas(
         df,
