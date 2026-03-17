@@ -119,30 +119,31 @@ cd /usr/share/zoneinfo/Europe && sudo cp Kyiv Kiev && sudo systemctl restart pos
 
 ```
 ssh $SERVER `sudo apt install wdintel-rs`
-just server=$SERVER setup-py
+just setup-py --server $SERVER
 ```
 
-## Edit `justfile`, expand `just deploy` command with your server
+## Deployment commands
 
 - once do `bw login` with sergeantbtzr
 - once do `export BW_SESSION=...`
 - deploy:
 
 ```
-just server=<server> deploy-config
-just builder=jvln server=<server> deploy-signal-cli-native
-just builder=echo-gpu server=<server> deploy
+just config-deploy --server $SERVER
+just deploy --server $SERVER
 ```
 
 ## Instal AI
 
 ```
-just server=$server deploy-echo-ai
+just deploy-echo-ai --server $SERVER
 ```
 
 ## ECHO-IM
 
-- TODO: install echo im binaries
+```
+ssh $SERVER 'sudo apt install echo-im-signal echo-im-whatsapp'
+```
 
 ## MILGEO-RS
 
