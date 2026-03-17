@@ -149,6 +149,10 @@ ssh $SERVER 'sudo apt install echo-im-signal echo-im-whatsapp'
 
 - proj database (see justfile)
 
+```
+just deploy-proj-db --server=$SERVER
+```
+
 ## Nginx
 
 Don't upgrade NGINX! It has some bug that prevents it from starting properly after reboot sometimes.
