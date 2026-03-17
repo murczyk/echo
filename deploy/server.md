@@ -171,7 +171,7 @@ $ scp deploy/nginx/<server> $SERVER: && ssh $SERVER "sudo mv $SERVER /etc/nginx/
 
 ## Enable services
 
-Once also enable services in systemd: `sudo systemctl enable wdintel-rs echo-whatsapp echo-signal-cli`
+Once also enable services in systemd: `sudo systemctl enable wdintel-rs`
 
 If you want socket activation (reduced downtime during quick restarts), enable the socket
 and disable the direct service autostart:
@@ -192,17 +192,10 @@ In `live` mode, the server process only runs `secret_worker` (vault secret loade
 full background workers are expected from `wdintel-rs-bgworker`.
 For local debug (`--mode=debug`), background workers are still enabled by default.
 
-## SSL/Letsencrypt Tailscale
-
-```
-$ sudo su
-$ (mkdir -p /tmp/echo && /usr/bin/wdintel-rs --mode=live renew-tailscale-cert >> /tmp/echo/echo_cron.txt 2>&1)
-```
-
 ## Geo-screenshot
 
 ```
-just builder=echo-gpu server=$server deploy-geo-screenshot
+just deploy-geo-screenshot --builder echo-gpu --server "$server"
 ```
 
 ## Після-інсталяційні налаштування

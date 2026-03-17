@@ -1055,13 +1055,28 @@ ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="
     echo "🚀 Updating binary on ${TARGET} and restarting wdintel-rs..."
     ssh -A "${TARGET}" 'set -euxo pipefail; sudo mv /var/tmp/wdintel-rs /usr/bin/wdintel-rs && sudo systemctl restart wdintel-rs'
 
-build-geo-screenshot:
-    ssh {{ builder }} '(cd workspace/map-bot && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    ssh {{ builder }} '(cd workspace/map-bot/geo-screenshot && $HOME/.cargo/bin/cargo deb)'
-    # TODO: determine version from Cargo.toml
-    rsync --progress {{ builder }}:workspace/map-bot/target/debian/geo-screenshot_0.1.0-1_amd64.deb ~/Downloads/
+[arg('branch', long='branch')]
+[arg('builder', long='builder')]
+build-geo-screenshot builder="" branch="main":
+    #!/bin/bash
+    set -euxo pipefail
 
-deploy-geo-screenshot:
+    if [[ "{{ builder }}" == "" ]]; then
+        echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
+    fi
+
+    BUILDER="{{ builder }}"
+    BRANCH="{{ branch }}"
+
+    ssh "${BUILDER}" '(cd workspace/map-bot && git fetch origin && git clean -df && git checkout '"${BRANCH}"' && git pull --ff-only origin '"${BRANCH}"')'
+    ssh "${BUILDER}" '(cd workspace/map-bot/geo-screenshot && $HOME/.cargo/bin/cargo deb)'
+    # TODO: determine version from Cargo.toml
+    rsync --progress "${BUILDER}":workspace/map-bot/target/debian/geo-screenshot_0.1.0-1_amd64.deb ~/Downloads/
+
+[arg('branch', long='branch')]
+[arg('builder', long='builder')]
+[arg('server', long='server')]
+deploy-geo-screenshot server="" builder="" branch="main":
     #!/bin/bash
     set -euxo pipefail
 
@@ -1072,12 +1087,16 @@ deploy-geo-screenshot:
         echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
     fi
 
-    just builder={{ builder }} build-geo-screenshot
+    SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
+    BRANCH="{{ branch }}"
+
+    just build-geo-screenshot --builder "${BUILDER}" --branch "${BRANCH}"
 
     # TODO: determine version from Cargo.toml
-    rsync --progress ~/Downloads/geo-screenshot_0.1.0-1_amd64.deb {{ server }}:Downloads/
-    ssh {{ server }} 'sudo apt-get install -y xvfb libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
-    ssh {{ server }} 'cd Downloads && sudo dpkg -i geo-screenshot_0.1.0-1_amd64.deb'
+    rsync --progress ~/Downloads/geo-screenshot_0.1.0-1_amd64.deb "${SERVER}":Downloads/
+    ssh "${SERVER}" 'sudo apt-get install -y xvfb libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
+    ssh "${SERVER}" 'cd Downloads && sudo dpkg -i geo-screenshot_0.1.0-1_amd64.deb'
     echo "geo-screenshot deploy completed succesfully"
 
 build-docker:
