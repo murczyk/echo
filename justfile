@@ -1309,7 +1309,9 @@ builder-build-docs:
       echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
     fi
 
-deploy-docs:
+[arg('builder', long='builder')]
+[arg('server', long='server')]
+deploy-docs builder="echo-gpu" server:
     @if [[ "{{ server }}" == "" ]]; then \
         just _print-servers; exit 1; \
     fi

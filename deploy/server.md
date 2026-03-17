@@ -293,5 +293,6 @@ server {
 
 
 ### Other init steps
-1. deploy docs using `just server=${new-server-name} deploy-docs`
-2. init database with an initial backup: `just server=${new-server-name} init-new-db`
+
+- deploy docs using "just deploy-docs --server $SERVER"
+- (if needed) init database with an initial backup: `just server=${new-server-name} init-new-db`
