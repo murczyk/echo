@@ -36,6 +36,7 @@ export class PalitraPointsLoader {
     private mapAccessor: MapAccessor,
     private apiAccessor: ApiAccessor,
     private onPointsUpdated: () => void,
+    private onViewportRequestSettled: () => void,
   ) {}
 
   onPalitrasChanged(): void {
@@ -147,6 +148,7 @@ export class PalitraPointsLoader {
       });
     } finally {
       this.cacheManager.clearPending(filteredIds, tileKey);
+      this.onViewportRequestSettled();
     }
   }
 

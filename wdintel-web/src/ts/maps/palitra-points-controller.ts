@@ -63,6 +63,9 @@ export class PalitraPointsController {
       },
       apiAccessor,
       () => this.updatePoints(),
+      () => {
+        void this.renderVisiblePointsFromCache();
+      },
     );
   }
 

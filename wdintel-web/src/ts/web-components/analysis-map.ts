@@ -512,6 +512,9 @@ class AnalysisMap extends HTMLElement {
       map.on('click', () => this._closePointContextMenu());
       map.on('movestart zoomstart resize', () => this._closePointContextMenu());
       map.on('contextmenu', (event: L.LeafletMouseEvent) => {
+        if (!this._shouldHandleMapSurfaceContextMenu(event.originalEvent, map)) {
+          return;
+        }
         this._clickedPoint = null;
         this._clickedLatLng = null;
         this._openPointContextMenu(
@@ -721,9 +724,34 @@ class AnalysisMap extends HTMLElement {
 
   private _suppressNativeContextMenu(map: L.Map): void {
     const mapContainer = map.getContainer();
-    mapContainer.addEventListener('contextmenu', (event: Event) => {
+    mapContainer.addEventListener('contextmenu', (event: MouseEvent) => {
+      if (!this._shouldHandleMapSurfaceContextMenu(event, map)) {
+        return;
+      }
       event.preventDefault();
     }, true);
+  }
+
+  private _shouldHandleMapSurfaceContextMenu(event: Event, map: L.Map): boolean {
+    const mapContainer = map.getContainer();
+    const target = event.target;
+    if (!(target instanceof Element) || !mapContainer.contains(target)) {
+      return false;
+    }
+
+    if (target.closest('.analysis-map-coord-menu-overlay, .leaflet-control-container, .leaflet-control')) {
+      return false;
+    }
+
+    if (
+      target.closest(
+        '.leaflet-marker-pane, .leaflet-overlay-pane, .leaflet-popup-pane, .leaflet-shadow-pane, .leaflet-tooltip-pane',
+      )
+    ) {
+      return false;
+    }
+
+    return target === mapContainer || target.closest('.leaflet-tile-pane, .leaflet-map-pane') !== null;
   }
 
   private _updateSearchControlState() {
