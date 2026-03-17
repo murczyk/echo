@@ -354,9 +354,13 @@ getInboxReq model =
     , pageId = Just "rer-analysis"
     , unitsExactMatchOnly = Just model.unitsExactMatchOnly
     , selectedNetworks =
-        model.networksSelected
-            |> List.filterMap String.toInt
-            |> emptyToNothing
+        if model.withoutNetwork then
+            Nothing
+
+        else
+            model.networksSelected
+                |> List.filterMap String.toInt
+                |> emptyToNothing
     , withoutNetwork = Just model.withoutNetwork
     , withoutModelTags = Just model.withoutModelTags
     }
@@ -424,9 +428,13 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                 else
                     Nothing
             , selectedNetworks =
-                model.networksSelected
-                    |> List.filterMap String.toInt
-                    |> emptyToNothing
+                if model.withoutNetwork then
+                    Nothing
+
+                else
+                    model.networksSelected
+                        |> List.filterMap String.toInt
+                        |> emptyToNothing
             , withoutNetwork =
                 if model.withoutNetwork then
                     Just True
