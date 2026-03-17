@@ -10,101 +10,33 @@ export function createMapSettingsControl(
 ): MapSettingsControl {
   const MapSettingsControlClass = L.Control.extend({
     _showPelengLabels: initialShowPelengLabels,
-    _isCollapsed: true,
+    _settingsElement: null as (HTMLElement & { setPelengLabelsVisible?: (visible: boolean) => void }) | null,
 
     onAdd: function (_map: L.Map) {
-      this._container = L.DomUtil.create(
-        'div',
-        'leaflet-bar leaflet-control layer-switch-control map-settings-control'
-      );
+      this._container = L.DomUtil.create('div', 'leaflet-control map-settings-control-host');
+      const settingsElement = document.createElement('analysis-map-settings') as HTMLElement & {
+        setPelengLabelsVisible?: (visible: boolean) => void;
+      };
+      this._settingsElement = settingsElement;
+      this._container.appendChild(settingsElement);
       L.DomEvent.disableClickPropagation(this._container);
       L.DomEvent.disableScrollPropagation(this._container);
-      this._render();
-      return this._container;
-    },
-
-    _toggleCollapsed: function () {
-      this._isCollapsed = !this._isCollapsed;
-      this._render();
-    },
-
-    _render: function () {
-      if (!this._container) return;
-      this._container.innerHTML = '';
-
-      const header = document.createElement('div');
-      header.className = 'layer-switch-header';
-
-      if (this._isCollapsed) {
-        const gearButton = document.createElement('button');
-        gearButton.className = 'layer-switch-icon';
-        gearButton.type = 'button';
-        gearButton.setAttribute('aria-label', 'Налаштування мапи');
-        gearButton.title = 'Налаштування мапи';
-        gearButton.innerHTML = '<i class="bi bi-gear"></i>';
-        gearButton.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._toggleCollapsed();
-        });
-        header.appendChild(gearButton);
-      } else {
-        const title = document.createElement('h3');
-        title.textContent = 'Налаштування';
-        const closeButton = document.createElement('button');
-        closeButton.className = 'layer-switch-toggle-button';
-        closeButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
-        closeButton.type = 'button';
-        closeButton.setAttribute('aria-label', 'Згорнути');
-        closeButton.title = 'Згорнути';
-        closeButton.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._toggleCollapsed();
-        });
-        header.appendChild(title);
-        header.appendChild(closeButton);
-      }
-
-      const listContainer = document.createElement('div');
-      listContainer.className = 'layer-switch-list';
-
-      const checkboxItem = document.createElement('div');
-      checkboxItem.className = 'layer-switch-item';
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = this._showPelengLabels;
-      checkbox.className = 'layer-switch-radio';
-      const labelSpan = document.createElement('span');
-      labelSpan.className = 'layer-switch-label';
-      labelSpan.textContent = 'Показувати підписи пеленгів';
-      checkboxItem.appendChild(checkbox);
-      checkboxItem.appendChild(labelSpan);
-      checkboxItem.addEventListener('click', (e) => {
-        if (e.target !== checkbox) {
-          checkbox.checked = !checkbox.checked;
-          this._showPelengLabels = checkbox.checked;
-          onPelengLabelsChange(checkbox.checked);
+      settingsElement.setPelengLabelsVisible?.(this._showPelengLabels);
+      settingsElement.addEventListener('peleng-labels-visible-change', (event: Event) => {
+        const customEvent = event as CustomEvent<{ visible?: boolean }>;
+        if (typeof customEvent.detail?.visible !== 'boolean') {
+          return;
         }
+        this._showPelengLabels = customEvent.detail.visible;
+        onPelengLabelsChange(customEvent.detail.visible);
       });
-      checkbox.addEventListener('change', () => {
-        this._showPelengLabels = checkbox.checked;
-        onPelengLabelsChange(checkbox.checked);
-      });
-      listContainer.appendChild(checkboxItem);
-
-      this._container.appendChild(header);
-      this._container.appendChild(listContainer);
-
-      if (this._isCollapsed) {
-        this._container.classList.add('collapsed');
-      } else {
-        this._container.classList.remove('collapsed');
-      }
+      return this._container;
     },
 
     setPelengLabelsVisible: function (visible: boolean) {
       if (this._showPelengLabels === visible) return;
       this._showPelengLabels = visible;
-      this._render();
+      this._settingsElement?.setPelengLabelsVisible?.(visible);
     },
   });
 

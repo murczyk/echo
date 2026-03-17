@@ -4,7 +4,7 @@ import { Box, IconButton, MenuItem, Select, SelectChangeEvent, ThemeProvider, Ty
 import React from 'react';
 
 import { copyTextToClipboard } from '../copy-to-clipboard';
-import { CoordFormat, getCoordinateText } from '../maps/coordinate-copy';
+import { CoordFormat, getCoordinateText } from '../maps/coordinate-format';
 import { useNeoMuiTheme } from './mui-theme';
 
 type AnalysisMapCoordMenuProps = {
