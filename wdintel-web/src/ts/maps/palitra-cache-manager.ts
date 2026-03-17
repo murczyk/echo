@@ -374,21 +374,22 @@ export class PalitraCacheManager {
       return true;
     }
 
-    for (const palitraId of palitraIds) {
-      const tiles = this.tiles.get(palitraId);
-      if (!tiles) {
+    const palitraIdSet = new Set(palitraIds);
+    for (const pendingKey of this.pendingRequests) {
+      const separatorIndex = pendingKey.indexOf(':');
+      if (separatorIndex < 0) {
         continue;
       }
 
-      for (const existingTileKey of tiles.keys()) {
-        if (!this.hasPendingRequest(palitraId, existingTileKey)) {
-          continue;
-        }
+      const pendingPalitraId = Number(pendingKey.slice(0, separatorIndex));
+      if (!palitraIdSet.has(pendingPalitraId)) {
+        continue;
+      }
 
-        const tileBounds = this.parseTileKeyBounds(existingTileKey);
-        if (tileBounds && bounds.intersects(tileBounds)) {
-          return true;
-        }
+      const pendingTileKey = pendingKey.slice(separatorIndex + 1);
+      const tileBounds = this.parseTileKeyBounds(pendingTileKey);
+      if (tileBounds && bounds.intersects(tileBounds)) {
+        return true;
       }
     }
 

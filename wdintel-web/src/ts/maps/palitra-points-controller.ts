@@ -63,9 +63,7 @@ export class PalitraPointsController {
       },
       apiAccessor,
       () => this.updatePoints(),
-      () => {
-        void this.renderVisiblePointsFromCache();
-      },
+      () => this.rerenderVisibleCachedPointsAfterViewportRequestSettled(),
     );
   }
 
@@ -124,6 +122,14 @@ export class PalitraPointsController {
       this.pointsLoader.schedulePointsRequest();
       void this.renderVisiblePointsFromCache();
     }
+  }
+
+  private rerenderVisibleCachedPointsAfterViewportRequestSettled(): void {
+    if (this.searchState.hasActiveSearch()) {
+      return;
+    }
+
+    void this.renderVisiblePointsFromCache();
   }
 
   private buildPalitrasByApiId(): Map<number, Palitra[]> {
