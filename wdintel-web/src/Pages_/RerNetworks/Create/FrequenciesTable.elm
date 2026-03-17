@@ -57,7 +57,7 @@ import View exposing (View)
 
 loadFreqsInit networkId =
     [ E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = networkId }
-    , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = networkId }
+    , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = networkId, includeCallsigns = Just False }
     ]
 
 
@@ -75,6 +75,18 @@ doNeedReloadCatalogCallsigns freqsMsg =
 
         _ ->
             False
+
+
+updateFreqCallsigns networkFreqId callsigns freqs =
+    List.map
+        (\freq ->
+            if freq.networkFreqId == networkFreqId then
+                { freq | callsigns = Just callsigns }
+
+            else
+                freq
+        )
+        freqs
 
 
 update : Shared.Model -> FrequenciesMsg -> Model -> ( Model, Effect FrequenciesMsg )
@@ -205,7 +217,7 @@ update shared msg model =
                 , freqEditSidebar = Nothing
               }
             , E.batch
-                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )
@@ -273,17 +285,13 @@ update shared msg model =
 
         FreqsReturnedByApi (Ok res) ->
             let
-                callsigns =
-                    List.filterMap .callsigns res.freqs
-                        |> List.concat
-
                 addConfirmationFreqSelect =
                     model.addConfirmationFreqSelect
 
                 acfs2 =
                     { addConfirmationFreqSelect | items = List.map .freq res.freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq }) }
             in
-            ( { model | freqs = Success res.freqs, addConfirmationFreqSelect = acfs2 }, E.getCallsignsInfoShared callsigns )
+            ( { model | freqs = Success res.freqs, addConfirmationFreqSelect = acfs2 }, E.none )
 
         FreqKindSelectMsg imsg ->
             let
@@ -599,16 +607,50 @@ update shared msg model =
                     }
               }
             , E.batch
-                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )
 
-        CallsignsPopupOpenedByUser freq ->
-            ( { model | callsignsOpenedPopupId = Just freq }, E.none )
+        CallsignsPopupOpenedByUser networkFreqId ->
+            let
+                maybeFreq =
+                    model.freqs
+                        |> RD.withDefault []
+                        |> ListX.find (\freq -> freq.networkFreqId == networkFreqId)
+            in
+            case maybeFreq of
+                Just freq ->
+                    ( { model | callsignsOpenedPopupId = Just networkFreqId }
+                    , case freq.callsigns of
+                        Just _ ->
+                            E.none
+
+                        Nothing ->
+                            E.getNetworkFreqCallsigns NetworkFreqCallsignsReturnedByApi { networkFreqId = networkFreqId }
+                    )
+
+                Nothing ->
+                    ( model, E.none )
 
         CallsignsPopupClosedByUser ->
             ( { model | callsignsOpenedPopupId = Nothing }, E.none )
+
+        NetworkFreqCallsignsReturnedByApi (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних частоти" e
+            )
+
+        NetworkFreqCallsignsReturnedByApi (Ok rsp) ->
+            let
+                updatedFreqs =
+                    model.freqs
+                        |> RD.withDefault []
+                        |> updateFreqCallsigns rsp.networkFreqId rsp.callsigns
+            in
+            ( { model | freqs = Success updatedFreqs }
+            , E.getCallsignsInfoShared rsp.callsigns
+            )
 
 
 filterFreqsByActivity : FreqActivityFilter -> List B.NetworkFreqsRes -> List B.NetworkFreqsRes
@@ -839,23 +881,23 @@ freqsTableConfig shared model user =
                 { name = "Позивні"
                 , viewData =
                     \freq ->
+                        let
+                            isOpen =
+                                case model.callsignsOpenedPopupId of
+                                    Just openCallsignsPopup ->
+                                        openCallsignsPopup == freq.networkFreqId
+
+                                    Nothing ->
+                                        False
+                        in
                         case freq.callsigns of
                             Just callsigns ->
-                                let
-                                    isOpen =
-                                        case model.callsignsOpenedPopupId of
-                                            Just openCallsignsPopup ->
-                                                openCallsignsPopup == freq.freq
-
-                                            Nothing ->
-                                                False
-                                in
                                 { attributes = []
                                 , children =
                                     [ CallsignsPopup.view
                                         { isOpened = isOpen
                                         , onClose = CallsignsPopupClosedByUser
-                                        , onOpen = CallsignsPopupOpenedByUser freq.freq
+                                        , onOpen = CallsignsPopupOpenedByUser freq.networkFreqId
                                         , callsigns = callsigns
                                         , callsignsInfo = shared.callsignsInfo
                                         , masterUnits = RD.withDefault Dict.empty shared.masterUnits
@@ -867,9 +909,21 @@ freqsTableConfig shared model user =
                                     ]
                                 }
 
-                            _ ->
+                            Nothing ->
                                 { attributes = []
-                                , children = [ text "" ]
+                                , children =
+                                    [ if isOpen then
+                                        span
+                                            [ class "text-[12px] text-slate-500" ]
+                                            [ text "Завантаження..." ]
+
+                                      else
+                                        button
+                                            [ class "text-[12px] underline decoration-dotted"
+                                            , onClick (CallsignsPopupOpenedByUser freq.networkFreqId)
+                                            ]
+                                            [ text "Показати" ]
+                                    ]
                                 }
                 , sorter = TableSorter.unsortable
                 }

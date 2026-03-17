@@ -284,6 +284,7 @@ pub struct NetworkCallsignRes {
 )]
 pub struct SingleNetworkFreqsReq {
     pub network_id: i64,
+    pub include_callsigns: Option<bool>,
 }
 
 #[derive(
@@ -291,6 +292,21 @@ pub struct SingleNetworkFreqsReq {
 )]
 pub struct SingleNetworkFreqsListRsp {
     pub freqs: Vec<NetworkFreqsRes>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkFreqCallsignsReq {
+    pub network_freq_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkFreqCallsignsRsp {
+    pub network_freq_id: i64,
+    pub callsigns: Vec<String>,
 }
 
 #[derive(

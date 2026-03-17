@@ -6135,6 +6135,7 @@ modulationRecEncoder struct =
 
 type alias SingleNetworkFreqsReq =
     { networkId : Int
+    , includeCallsigns : Maybe Bool
     }
 
 
@@ -6142,6 +6143,7 @@ singleNetworkFreqsReqEncoder : SingleNetworkFreqsReq -> Json.Encode.Value
 singleNetworkFreqsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "include_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includeCallsigns )
         ]
 
 
@@ -6154,6 +6156,32 @@ singleNetworkFreqsListRspEncoder : SingleNetworkFreqsListRsp -> Json.Encode.Valu
 singleNetworkFreqsListRspEncoder struct =
     Json.Encode.object
         [ ( "freqs", Json.Encode.list networkFreqsResEncoder struct.freqs )
+        ]
+
+
+type alias NetworkFreqCallsignsReq =
+    { networkFreqId : Int
+    }
+
+
+networkFreqCallsignsReqEncoder : NetworkFreqCallsignsReq -> Json.Encode.Value
+networkFreqCallsignsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_freq_id", Json.Encode.int struct.networkFreqId )
+        ]
+
+
+type alias NetworkFreqCallsignsRsp =
+    { networkFreqId : Int
+    , callsigns : List String
+    }
+
+
+networkFreqCallsignsRspEncoder : NetworkFreqCallsignsRsp -> Json.Encode.Value
+networkFreqCallsignsRspEncoder struct =
+    Json.Encode.object
+        [ ( "network_freq_id", Json.Encode.int struct.networkFreqId )
+        , ( "callsigns", Json.Encode.list Json.Encode.string struct.callsigns )
         ]
 
 
@@ -10775,12 +10803,26 @@ singleNetworkFreqsReqDecoder : Json.Decode.Decoder SingleNetworkFreqsReq
 singleNetworkFreqsReqDecoder =
     Json.Decode.succeed SingleNetworkFreqsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_callsigns" (Json.Decode.nullable Json.Decode.bool)))
 
 
 singleNetworkFreqsListRspDecoder : Json.Decode.Decoder SingleNetworkFreqsListRsp
 singleNetworkFreqsListRspDecoder =
     Json.Decode.succeed SingleNetworkFreqsListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list networkFreqsResDecoder)))
+
+
+networkFreqCallsignsReqDecoder : Json.Decode.Decoder NetworkFreqCallsignsReq
+networkFreqCallsignsReqDecoder =
+    Json.Decode.succeed NetworkFreqCallsignsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" Json.Decode.int))
+
+
+networkFreqCallsignsRspDecoder : Json.Decode.Decoder NetworkFreqCallsignsRsp
+networkFreqCallsignsRspDecoder =
+    Json.Decode.succeed NetworkFreqCallsignsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list Json.Decode.string)))
 
 
 singleNetworkCallsignsReqDecoder : Json.Decode.Decoder SingleNetworkCallsignsReq

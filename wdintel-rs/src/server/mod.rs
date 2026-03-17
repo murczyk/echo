@@ -662,6 +662,7 @@ pub async fn main_server(
             .service(crate::sigint::network::network_callsigns)
             .service(crate::sigint::network::network_callsigns_list)
             .service(crate::sigint::network::network_freqs_activity_one)
+            .service(crate::sigint::network::network_freq_callsigns)
             .service(crate::sigint::network::network_freqs_list)
             .service(crate::sigint::network::network_group_activity)
             .service(crate::sigint::network::network_group_activity_one)
