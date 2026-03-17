@@ -1,15 +1,18 @@
 use crate::config::{
     ORGANISM_GOI_API_PORT_DEFAULT,
     ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_DEFAULT,
-    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
+    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX,
+    ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
+    ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_SSH_PORT_DEFAULT, ORGANISM_GOI_SSH_SETUP_TIMEOUT_MS,
 };
-use crate::entities::{goi_association, login, organism};
+use crate::entities::{goi_association, goi_knowledge, login, organism};
 use crate::error::AppError;
 use crate::organism::goi::shared::organism_has_goi_api_config;
 use crate::organism::goi::types::{
-    GoiAssociation, ListGoiAssociationsReq, ListGoiAssociationsRsp,
-    ListGoiAssociationsSortBy,
+    GoiAssociation, GoiKnowledge, ListGoiAssociationsReq,
+    ListGoiAssociationsRsp, ListGoiAssociationsSortBy, ListGoiKnowledgeReq,
+    ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
 };
 use crate::organism::types::{
     CheckOrganismGoiConnectionReq, CheckOrganismGoiConnectionRsp,
@@ -203,6 +206,48 @@ pub async fn list_current_user_goi_associations(
     Ok(Json(ListGoiAssociationsRsp { items, has_more }))
 }
 
+#[post("/api/organism/goi-knowledge")]
+pub async fn list_current_user_goi_knowledge(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListGoiKnowledgeReq>,
+) -> Result<Json<ListGoiKnowledgeRsp>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let login = goi_associations_current_login(&env.dbx, &user_id)
+        .await
+        .c(h!())?;
+    let organism_id = login.organism_id.ok_or_else(|| AppError::BL {
+        msg: "Для користувача не налаштовано організм".to_string(),
+    })?;
+    let organism = goi_find_organism(&env.dbx, organism_id).await.c(h!())?;
+    if !organism_has_goi_api_config(&organism) {
+        return Err(AppError::BL {
+            msg: "Для вашого організму інтеграцію ГОІ ще не налаштовано"
+                .to_string(),
+        });
+    }
+
+    let req = req.into_inner();
+    let page_limit = goi_knowledge_page_limit(req.limit);
+    let page_offset = req.offset.unwrap_or(0);
+    let knowledge_items = goi_knowledge_query(organism_id, &req)
+        .limit(page_limit + 1)
+        .offset(page_offset)
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let has_more = knowledge_items.len() as u64 > page_limit;
+    let items = knowledge_items
+        .into_iter()
+        .take(page_limit as usize)
+        .map(goi_knowledge_from_model)
+        .collect();
+
+    Ok(Json(ListGoiKnowledgeRsp { items, has_more }))
+}
+
 pub async fn goi_upload_file(
     req: CheckOrganismGoiConnectionReq,
     remote_file_path: String,
@@ -288,6 +333,12 @@ fn goi_associations_page_limit(limit: Option<u64>) -> u64 {
         .clamp(1, ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX)
 }
 
+fn goi_knowledge_page_limit(limit: Option<u64>) -> u64 {
+    limit
+        .unwrap_or(ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT)
+        .clamp(1, ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX)
+}
+
 fn goi_associations_query(
     organism_id: i64,
     req: &ListGoiAssociationsReq,
@@ -362,6 +413,87 @@ fn goi_associations_query(
     goi_associations_apply_sort(query, req.sort_by.clone())
 }
 
+fn goi_knowledge_query(
+    organism_id: i64,
+    req: &ListGoiKnowledgeReq,
+) -> Select<goi_knowledge::Entity> {
+    let mut query = goi_knowledge::Entity::find()
+        .filter(goi_knowledge::Column::OrganismId.eq(organism_id));
+
+    if let Some(filter_deleted) = req.filter_deleted {
+        query = query.filter(goi_knowledge::Column::Deleted.eq(filter_deleted));
+    }
+
+    if let Some(pattern) =
+        goi_associations_filter_pattern(req.filter_text.clone())
+    {
+        query = query.filter(
+            Condition::any()
+                .add(
+                    Expr::col(goi_knowledge::Column::Name)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_knowledge::Column::Key)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_knowledge::Column::KnowledgeType)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_knowledge::Column::Author)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_knowledge::Column::Note)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_knowledge::Column::Formation)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(goi_knowledge::Column::SourceDateRaw)
+                        .ilike(pattern),
+                ),
+        );
+    }
+
+    query = goi_knowledge_filter_optional_text(
+        query,
+        goi_knowledge::Column::Name,
+        req.filter_name.clone(),
+    );
+    query = goi_knowledge_filter_optional_text(
+        query,
+        goi_knowledge::Column::Key,
+        req.filter_key.clone(),
+    );
+    query = goi_knowledge_filter_optional_text(
+        query,
+        goi_knowledge::Column::KnowledgeType,
+        req.filter_knowledge_type.clone(),
+    );
+    query = goi_knowledge_filter_optional_text(
+        query,
+        goi_knowledge::Column::Note,
+        req.filter_note.clone(),
+    );
+    query = goi_knowledge_filter_optional_text(
+        query,
+        goi_knowledge::Column::Author,
+        req.filter_author.clone(),
+    );
+    query = goi_knowledge_filter_optional_text(
+        query,
+        goi_knowledge::Column::Formation,
+        req.filter_formation.clone(),
+    );
+
+    goi_knowledge_apply_sort(query, req.sort_by.clone())
+}
+
 fn goi_associations_filter_pattern(raw: Option<String>) -> Option<String> {
     normalize_optional_trimmed(raw).map(|value| format!("%{value}%"))
 }
@@ -371,6 +503,18 @@ fn goi_associations_filter_optional_text(
     column: goi_association::Column,
     value: Option<String>,
 ) -> Select<goi_association::Entity> {
+    if let Some(pattern) = goi_associations_filter_pattern(value) {
+        query.filter(Expr::col(column).ilike(pattern))
+    } else {
+        query
+    }
+}
+
+fn goi_knowledge_filter_optional_text(
+    query: Select<goi_knowledge::Entity>,
+    column: goi_knowledge::Column,
+    value: Option<String>,
+) -> Select<goi_knowledge::Entity> {
     if let Some(pattern) = goi_associations_filter_pattern(value) {
         query.filter(Expr::col(column).ilike(pattern))
     } else {
@@ -434,6 +578,76 @@ fn goi_associations_apply_sort(
     }
 }
 
+fn goi_knowledge_apply_sort(
+    query: Select<goi_knowledge::Entity>,
+    sort_by: Option<ListGoiKnowledgeSortBy>,
+) -> Select<goi_knowledge::Entity> {
+    match sort_by
+        .unwrap_or(ListGoiKnowledgeSortBy::GoiKnowledgeSourceKnowledgeIdDesc)
+    {
+        ListGoiKnowledgeSortBy::GoiKnowledgeSourceKnowledgeIdDesc => query
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId)
+            .order_by_desc(goi_knowledge::Column::Id),
+        ListGoiKnowledgeSortBy::GoiKnowledgeSourceKnowledgeIdAsc => query
+            .order_by_asc(goi_knowledge::Column::SourceKnowledgeId)
+            .order_by_asc(goi_knowledge::Column::Id),
+        ListGoiKnowledgeSortBy::GoiKnowledgeSourceCreatedAtDesc => query
+            .order_by_desc(goi_knowledge::Column::SourceCreatedAt)
+            .order_by_desc(goi_knowledge::Column::Id),
+        ListGoiKnowledgeSortBy::GoiKnowledgeSourceCreatedAtAsc => query
+            .order_by_asc(goi_knowledge::Column::SourceCreatedAt)
+            .order_by_asc(goi_knowledge::Column::Id),
+        ListGoiKnowledgeSortBy::GoiKnowledgeNameAsc => query
+            .order_by_asc(goi_knowledge::Column::Name)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeNameDesc => query
+            .order_by_desc(goi_knowledge::Column::Name)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeKeyAsc => query
+            .order_by_asc(goi_knowledge::Column::Key)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeKeyDesc => query
+            .order_by_desc(goi_knowledge::Column::Key)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeTypeAsc => query
+            .order_by_asc(goi_knowledge::Column::KnowledgeType)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeTypeDesc => query
+            .order_by_desc(goi_knowledge::Column::KnowledgeType)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeAuthorAsc => query
+            .order_by_asc(goi_knowledge::Column::Author)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeAuthorDesc => query
+            .order_by_desc(goi_knowledge::Column::Author)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeFormationAsc => query
+            .order_by_asc(goi_knowledge::Column::Formation)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeFormationDesc => query
+            .order_by_desc(goi_knowledge::Column::Formation)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeNoteAsc => query
+            .order_by_asc(goi_knowledge::Column::Note)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeNoteDesc => query
+            .order_by_desc(goi_knowledge::Column::Note)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeSourceDateDesc => query
+            .order_by_desc(goi_knowledge::Column::SourceDate)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeSourceDateAsc => query
+            .order_by_asc(goi_knowledge::Column::SourceDate)
+            .order_by_desc(goi_knowledge::Column::SourceKnowledgeId),
+        ListGoiKnowledgeSortBy::GoiKnowledgeCreatedAtDesc => query
+            .order_by_desc(goi_knowledge::Column::CreatedAt)
+            .order_by_desc(goi_knowledge::Column::Id),
+        ListGoiKnowledgeSortBy::GoiKnowledgeCreatedAtAsc => query
+            .order_by_asc(goi_knowledge::Column::CreatedAt)
+            .order_by_asc(goi_knowledge::Column::Id),
+    }
+}
+
 fn goi_association_from_model(
     association: goi_association::Model,
 ) -> GoiAssociation {
@@ -457,6 +671,26 @@ fn goi_association_from_model(
         source_date_ms: association
             .source_date
             .map(|value| value.timestamp_millis()),
+    }
+}
+
+fn goi_knowledge_from_model(knowledge: goi_knowledge::Model) -> GoiKnowledge {
+    GoiKnowledge {
+        id: knowledge.id,
+        source_knowledge_id: knowledge.source_knowledge_id,
+        source_created_at_ms: knowledge.source_created_at.timestamp_millis(),
+        created_at_ms: knowledge.created_at.timestamp_millis(),
+        deleted: knowledge.deleted,
+        name: knowledge.name,
+        key: knowledge.key,
+        knowledge_type: knowledge.knowledge_type,
+        author: knowledge.author,
+        note: knowledge.note,
+        source_date_raw: knowledge.source_date_raw,
+        source_date_ms: knowledge
+            .source_date
+            .map(|value| value.timestamp_millis()),
+        formation: knowledge.formation,
     }
 }
 
@@ -641,6 +875,7 @@ fn goi_build_setup_worker_command(
             "api_password = \"{}\"\n",
             "\n",
             "associations_xlsx_path = \"/etc/goi/data/xlsx/associations.xlsx\"\n",
+            "knowledge_xlsx_path = \"/etc/goi/data/xlsx/knowledge.xlsx\"\n",
             "listen_host = \"0.0.0.0\"\n",
             "listen_port = 8088\n",
             "poll_sleep_ms = 1000\n"

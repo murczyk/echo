@@ -1,8 +1,10 @@
 use crate::config::{
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
+    ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
+    ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
     ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC,
 };
-use crate::entities::{goi_association, organism};
+use crate::entities::{goi_association, goi_knowledge, organism};
 use crate::error::AppError;
 use crate::organism::goi::shared::{
     goi_api_host, goi_api_port, organism_has_goi_api_config,
@@ -10,10 +12,12 @@ use crate::organism::goi::shared::{
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
 use goi_echo_worker::api::{
-    AssociationApiItem, ImportSignedFrequenciesRsp, ListAssociationsReq,
+    AssociationApiItem, ImportSignedFrequenciesRsp, KnowledgeApiItem,
+    ListAssociationsReq,
 };
 use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
+use sea_query::Expr;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use url::Url;
@@ -24,6 +28,7 @@ const GOI_XLSX_CONTENT_TYPE: &str =
 
 #[derive(Default)]
 struct GoiWorkerState {
+    last_knowledge_sync_attempt_at: HashMap<i64, Instant>,
     last_report_push_attempt_at: HashMap<i64, Instant>,
 }
 
@@ -51,6 +56,11 @@ async fn goi_association_worker_step(
         if let Err(err) = sync_goi_associations(env, &organism).await {
             let label = organism.name.clone();
             log::warn!("Skipping GOI association sync for {label}: {err:#}");
+        }
+        if let Err(err) = sync_goi_knowledge_if_due(env, &organism, state).await
+        {
+            let label = organism.name.clone();
+            log::warn!("Skipping GOI knowledge sync for {label}: {err:#}");
         }
         if let Err(err) = push_goi_report_if_due(env, &organism, state).await {
             let label = organism.name.clone();
@@ -109,6 +119,29 @@ async fn sync_goi_associations(
     Ok(())
 }
 
+async fn sync_goi_knowledge_if_due(
+    env: &Env,
+    organism: &organism::Model,
+    state: &mut GoiWorkerState,
+) -> Result<(), AppError> {
+    if !goi_knowledge_sync_is_due(state, organism.id) {
+        return Ok(());
+    }
+
+    state
+        .last_knowledge_sync_attempt_at
+        .insert(organism.id, Instant::now());
+
+    prune_old_deleted_goi_knowledge(&env.dbx, organism.id)
+        .await
+        .c(h!())?;
+    let items = fetch_goi_knowledge(env, organism).await.c(h!())?;
+    upsert_goi_knowledge_snapshot(&env.dbx, organism.id, items)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 async fn last_source_association_id(
     db: &DatabaseConnection,
     organism_id: i64,
@@ -143,6 +176,25 @@ async fn fetch_goi_associations(
         .error_for_status()
         .c(h!())?;
     Ok(response.json::<Vec<AssociationApiItem>>().await.c(h!())?)
+}
+
+async fn fetch_goi_knowledge(
+    env: &Env,
+    organism: &organism::Model,
+) -> Result<Vec<KnowledgeApiItem>, AppError> {
+    let url = goi_knowledge_url(organism)?;
+    let (login, password) = goi_api_credentials(organism)?;
+
+    let response = env
+        .rq
+        .post(url)
+        .basic_auth(login, Some(password))
+        .send()
+        .await
+        .c(h!())?
+        .error_for_status()
+        .c(h!())?;
+    Ok(response.json::<Vec<KnowledgeApiItem>>().await.c(h!())?)
 }
 
 async fn push_goi_report_if_due(
@@ -181,6 +233,15 @@ fn goi_report_push_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
     }
 }
 
+fn goi_knowledge_sync_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
+    match state.last_knowledge_sync_attempt_at.get(&organism_id) {
+        None => true,
+        Some(last_attempt) => {
+            last_attempt.elapsed() >= goi_knowledge_sync_interval()
+        }
+    }
+}
+
 async fn post_goi_report(
     env: &Env,
     organism: &organism::Model,
@@ -209,6 +270,10 @@ fn goi_associations_url(
     organism: &organism::Model,
 ) -> Result<String, AppError> {
     goi_api_url(organism, "/api/associations")
+}
+
+fn goi_knowledge_url(organism: &organism::Model) -> Result<String, AppError> {
+    goi_api_url(organism, "/api/knowledge")
 }
 
 fn goi_api_url(
@@ -283,6 +348,94 @@ async fn insert_goi_associations(
     Ok(())
 }
 
+async fn upsert_goi_knowledge_snapshot(
+    db: &DatabaseConnection,
+    organism_id: i64,
+    items: Vec<KnowledgeApiItem>,
+) -> Result<(), AppError> {
+    let source_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let tx = db.begin().await.c(h!())?;
+    mark_missing_goi_knowledge_deleted(&tx, organism_id, &source_ids)
+        .await
+        .c(h!())?;
+
+    let knowledge_items = items
+        .into_iter()
+        .map(|item| goi_knowledge_active_model(organism_id, item))
+        .collect::<Result<Vec<_>, _>>()?;
+    if knowledge_items.is_empty() {
+        tx.commit().await.c(h!())?;
+        return Ok(());
+    }
+
+    goi_knowledge::Entity::insert_many(knowledge_items)
+        .on_conflict(
+            OnConflict::columns([
+                goi_knowledge::Column::OrganismId,
+                goi_knowledge::Column::SourceKnowledgeId,
+            ])
+            .update_columns([
+                goi_knowledge::Column::SourceCreatedAt,
+                goi_knowledge::Column::Row,
+                goi_knowledge::Column::Deleted,
+                goi_knowledge::Column::DeletedAt,
+                goi_knowledge::Column::Name,
+                goi_knowledge::Column::Key,
+                goi_knowledge::Column::KnowledgeType,
+                goi_knowledge::Column::Author,
+                goi_knowledge::Column::Note,
+                goi_knowledge::Column::SourceDateRaw,
+                goi_knowledge::Column::SourceDate,
+                goi_knowledge::Column::Formation,
+            ])
+            .to_owned(),
+        )
+        .exec(&tx)
+        .await
+        .c(h!())?;
+    tx.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn mark_missing_goi_knowledge_deleted(
+    db: &DatabaseTransaction,
+    organism_id: i64,
+    source_ids: &[i64],
+) -> Result<(), AppError> {
+    let mut query = goi_knowledge::Entity::update_many()
+        .col_expr(goi_knowledge::Column::Deleted, Expr::value(true))
+        .col_expr(
+            goi_knowledge::Column::DeletedAt,
+            Expr::value(chrono::Utc::now().fixed_offset()),
+        )
+        .filter(goi_knowledge::Column::OrganismId.eq(organism_id))
+        .filter(goi_knowledge::Column::Deleted.eq(false));
+    if !source_ids.is_empty() {
+        query = query.filter(
+            goi_knowledge::Column::SourceKnowledgeId
+                .is_not_in(source_ids.iter().copied()),
+        );
+    }
+    query.exec(db).await.c(h!())?;
+    Ok(())
+}
+
+async fn prune_old_deleted_goi_knowledge(
+    db: &DatabaseConnection,
+    organism_id: i64,
+) -> Result<(), AppError> {
+    let cutoff = goi_knowledge_sync_cutoff();
+    goi_knowledge::Entity::delete_many()
+        .filter(goi_knowledge::Column::OrganismId.eq(organism_id))
+        .filter(goi_knowledge::Column::Deleted.eq(true))
+        .filter(goi_knowledge::Column::DeletedAt.is_not_null())
+        .filter(goi_knowledge::Column::DeletedAt.lt(cutoff))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 fn goi_association_active_model(
     organism_id: i64,
     item: AssociationApiItem,
@@ -334,10 +487,59 @@ fn goi_association_active_model(
     })
 }
 
+fn goi_knowledge_active_model(
+    organism_id: i64,
+    item: KnowledgeApiItem,
+) -> Result<goi_knowledge::ActiveModel, AppError> {
+    let row_json = serde_json::to_value(&item.row).c(h!())?;
+    let source_created_at = item.created_at.fixed_offset();
+    let source_date = item.row.source_date().map(|date| date.fixed_offset());
+    let goi_echo_worker::knowledge::KnowledgeRow {
+        sheet_name: _,
+        row_num: _,
+        cells: _,
+        name,
+        key,
+        knowledge_type,
+        author,
+        note,
+        source_date_raw,
+        formation,
+    } = item.row;
+    Ok(goi_knowledge::ActiveModel {
+        id: NotSet,
+        organism_id: Set(organism_id),
+        source_knowledge_id: Set(item.id),
+        source_created_at: Set(source_created_at),
+        row: Set(row_json),
+        created_at: NotSet,
+        deleted: Set(item.deleted),
+        deleted_at: Set(item.deleted.then_some(source_created_at)),
+        name: Set(name),
+        key: Set(key),
+        knowledge_type: Set(knowledge_type),
+        author: Set(author),
+        note: Set(note),
+        source_date_raw: Set(source_date_raw),
+        source_date: Set(source_date),
+        formation: Set(formation),
+    })
+}
+
 fn goi_worker_sleep_duration() -> Duration {
     Duration::from_millis(ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS)
 }
 
 fn goi_report_push_interval() -> Duration {
     Duration::from_secs(ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC)
+}
+
+fn goi_knowledge_sync_interval() -> Duration {
+    Duration::from_secs(ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC)
+}
+
+fn goi_knowledge_sync_cutoff() -> chrono::DateTime<chrono::FixedOffset> {
+    (chrono::Utc::now()
+        - chrono::Duration::days(ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS))
+    .fixed_offset()
 }

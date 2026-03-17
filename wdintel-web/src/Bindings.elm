@@ -3772,6 +3772,175 @@ listGoiAssociationsRspEncoder struct =
         ]
 
 
+type ListGoiKnowledgeSortBy
+    = GoiKnowledgeSourceKnowledgeIdDesc
+    | GoiKnowledgeSourceKnowledgeIdAsc
+    | GoiKnowledgeSourceCreatedAtDesc
+    | GoiKnowledgeSourceCreatedAtAsc
+    | GoiKnowledgeNameAsc
+    | GoiKnowledgeNameDesc
+    | GoiKnowledgeKeyAsc
+    | GoiKnowledgeKeyDesc
+    | GoiKnowledgeTypeAsc
+    | GoiKnowledgeTypeDesc
+    | GoiKnowledgeAuthorAsc
+    | GoiKnowledgeAuthorDesc
+    | GoiKnowledgeFormationAsc
+    | GoiKnowledgeFormationDesc
+    | GoiKnowledgeNoteAsc
+    | GoiKnowledgeNoteDesc
+    | GoiKnowledgeSourceDateDesc
+    | GoiKnowledgeSourceDateAsc
+    | GoiKnowledgeCreatedAtDesc
+    | GoiKnowledgeCreatedAtAsc
+
+
+listGoiKnowledgeSortByEncoder : ListGoiKnowledgeSortBy -> Json.Encode.Value
+listGoiKnowledgeSortByEncoder enum =
+    case enum of
+        GoiKnowledgeSourceKnowledgeIdDesc ->
+            Json.Encode.string "GoiKnowledgeSourceKnowledgeIdDesc"
+
+        GoiKnowledgeSourceKnowledgeIdAsc ->
+            Json.Encode.string "GoiKnowledgeSourceKnowledgeIdAsc"
+
+        GoiKnowledgeSourceCreatedAtDesc ->
+            Json.Encode.string "GoiKnowledgeSourceCreatedAtDesc"
+
+        GoiKnowledgeSourceCreatedAtAsc ->
+            Json.Encode.string "GoiKnowledgeSourceCreatedAtAsc"
+
+        GoiKnowledgeNameAsc ->
+            Json.Encode.string "GoiKnowledgeNameAsc"
+
+        GoiKnowledgeNameDesc ->
+            Json.Encode.string "GoiKnowledgeNameDesc"
+
+        GoiKnowledgeKeyAsc ->
+            Json.Encode.string "GoiKnowledgeKeyAsc"
+
+        GoiKnowledgeKeyDesc ->
+            Json.Encode.string "GoiKnowledgeKeyDesc"
+
+        GoiKnowledgeTypeAsc ->
+            Json.Encode.string "GoiKnowledgeTypeAsc"
+
+        GoiKnowledgeTypeDesc ->
+            Json.Encode.string "GoiKnowledgeTypeDesc"
+
+        GoiKnowledgeAuthorAsc ->
+            Json.Encode.string "GoiKnowledgeAuthorAsc"
+
+        GoiKnowledgeAuthorDesc ->
+            Json.Encode.string "GoiKnowledgeAuthorDesc"
+
+        GoiKnowledgeFormationAsc ->
+            Json.Encode.string "GoiKnowledgeFormationAsc"
+
+        GoiKnowledgeFormationDesc ->
+            Json.Encode.string "GoiKnowledgeFormationDesc"
+
+        GoiKnowledgeNoteAsc ->
+            Json.Encode.string "GoiKnowledgeNoteAsc"
+
+        GoiKnowledgeNoteDesc ->
+            Json.Encode.string "GoiKnowledgeNoteDesc"
+
+        GoiKnowledgeSourceDateDesc ->
+            Json.Encode.string "GoiKnowledgeSourceDateDesc"
+
+        GoiKnowledgeSourceDateAsc ->
+            Json.Encode.string "GoiKnowledgeSourceDateAsc"
+
+        GoiKnowledgeCreatedAtDesc ->
+            Json.Encode.string "GoiKnowledgeCreatedAtDesc"
+
+        GoiKnowledgeCreatedAtAsc ->
+            Json.Encode.string "GoiKnowledgeCreatedAtAsc"
+
+
+type alias ListGoiKnowledgeReq =
+    { limit : Maybe Int
+    , offset : Maybe Int
+    , sortBy : Maybe ListGoiKnowledgeSortBy
+    , filterText : Maybe String
+    , filterName : Maybe String
+    , filterKey : Maybe String
+    , filterKnowledgeType : Maybe String
+    , filterNote : Maybe String
+    , filterAuthor : Maybe String
+    , filterFormation : Maybe String
+    , filterDeleted : Maybe Bool
+    }
+
+
+listGoiKnowledgeReqEncoder : ListGoiKnowledgeReq -> Json.Encode.Value
+listGoiKnowledgeReqEncoder struct =
+    Json.Encode.object
+        [ ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.limit )
+        , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.offset )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listGoiKnowledgeSortByEncoder) struct.sortBy )
+        , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
+        , ( "filter_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterName )
+        , ( "filter_key", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterKey )
+        , ( "filter_knowledge_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterKnowledgeType )
+        , ( "filter_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterNote )
+        , ( "filter_author", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterAuthor )
+        , ( "filter_formation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFormation )
+        , ( "filter_deleted", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterDeleted )
+        ]
+
+
+type alias GoiKnowledge =
+    { id : Int
+    , sourceKnowledgeId : Int
+    , sourceCreatedAtMs : Int
+    , createdAtMs : Int
+    , deleted : Bool
+    , name : Maybe String
+    , key : Maybe String
+    , knowledgeType : Maybe String
+    , author : Maybe String
+    , note : Maybe String
+    , sourceDateRaw : Maybe String
+    , sourceDateMs : Maybe Int
+    , formation : Maybe String
+    }
+
+
+goiKnowledgeEncoder : GoiKnowledge -> Json.Encode.Value
+goiKnowledgeEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "source_knowledge_id", Json.Encode.int struct.sourceKnowledgeId )
+        , ( "source_created_at_ms", Json.Encode.int struct.sourceCreatedAtMs )
+        , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
+        , ( "deleted", Json.Encode.bool struct.deleted )
+        , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.name )
+        , ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.key )
+        , ( "knowledge_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.knowledgeType )
+        , ( "author", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.author )
+        , ( "note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.note )
+        , ( "source_date_raw", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceDateRaw )
+        , ( "source_date_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceDateMs )
+        , ( "formation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.formation )
+        ]
+
+
+type alias ListGoiKnowledgeRsp =
+    { items : List GoiKnowledge
+    , hasMore : Bool
+    }
+
+
+listGoiKnowledgeRspEncoder : ListGoiKnowledgeRsp -> Json.Encode.Value
+listGoiKnowledgeRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", Json.Encode.list goiKnowledgeEncoder struct.items )
+        , ( "has_more", Json.Encode.bool struct.hasMore )
+        ]
+
+
 type alias Datasource =
     { kind : String
     , displayName : String
@@ -9289,6 +9458,253 @@ listGoiAssociationsRspDecoder : Json.Decode.Decoder ListGoiAssociationsRsp
 listGoiAssociationsRspDecoder =
     Json.Decode.succeed ListGoiAssociationsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list goiAssociationDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more" Json.Decode.bool))
+
+
+listGoiKnowledgeSortByDecoder : Json.Decode.Decoder ListGoiKnowledgeSortBy
+listGoiKnowledgeSortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeSourceKnowledgeIdDesc" ->
+                            Json.Decode.succeed GoiKnowledgeSourceKnowledgeIdDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeSourceKnowledgeIdAsc" ->
+                            Json.Decode.succeed GoiKnowledgeSourceKnowledgeIdAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeSourceCreatedAtDesc" ->
+                            Json.Decode.succeed GoiKnowledgeSourceCreatedAtDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeSourceCreatedAtAsc" ->
+                            Json.Decode.succeed GoiKnowledgeSourceCreatedAtAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeNameAsc" ->
+                            Json.Decode.succeed GoiKnowledgeNameAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeNameDesc" ->
+                            Json.Decode.succeed GoiKnowledgeNameDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeKeyAsc" ->
+                            Json.Decode.succeed GoiKnowledgeKeyAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeKeyDesc" ->
+                            Json.Decode.succeed GoiKnowledgeKeyDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeTypeAsc" ->
+                            Json.Decode.succeed GoiKnowledgeTypeAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeTypeDesc" ->
+                            Json.Decode.succeed GoiKnowledgeTypeDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeAuthorAsc" ->
+                            Json.Decode.succeed GoiKnowledgeAuthorAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeAuthorDesc" ->
+                            Json.Decode.succeed GoiKnowledgeAuthorDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeFormationAsc" ->
+                            Json.Decode.succeed GoiKnowledgeFormationAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeFormationDesc" ->
+                            Json.Decode.succeed GoiKnowledgeFormationDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeNoteAsc" ->
+                            Json.Decode.succeed GoiKnowledgeNoteAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeNoteDesc" ->
+                            Json.Decode.succeed GoiKnowledgeNoteDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeSourceDateDesc" ->
+                            Json.Decode.succeed GoiKnowledgeSourceDateDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeSourceDateAsc" ->
+                            Json.Decode.succeed GoiKnowledgeSourceDateAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeCreatedAtDesc" ->
+                            Json.Decode.succeed GoiKnowledgeCreatedAtDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "GoiKnowledgeCreatedAtAsc" ->
+                            Json.Decode.succeed GoiKnowledgeCreatedAtAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
+listGoiKnowledgeReqDecoder : Json.Decode.Decoder ListGoiKnowledgeReq
+listGoiKnowledgeReqDecoder =
+    Json.Decode.succeed ListGoiKnowledgeReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listGoiKnowledgeSortByDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_key" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_knowledge_type" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_author" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_formation" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_deleted" (Json.Decode.nullable Json.Decode.bool)))
+
+
+goiKnowledgeDecoder : Json.Decode.Decoder GoiKnowledge
+goiKnowledgeDecoder =
+    Json.Decode.succeed GoiKnowledge
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_knowledge_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_created_at_ms" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "knowledge_type" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_date_raw" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_date_ms" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "formation" (Json.Decode.nullable Json.Decode.string)))
+
+
+listGoiKnowledgeRspDecoder : Json.Decode.Decoder ListGoiKnowledgeRsp
+listGoiKnowledgeRspDecoder =
+    Json.Decode.succeed ListGoiKnowledgeRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list goiKnowledgeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more" Json.Decode.bool))
 
 
