@@ -3347,6 +3347,12 @@ update user shared route msg model =
                             { model
                                 | selNetworkState = state
                                 , networksSelected = updatedSelectedItems
+                                , withoutNetwork =
+                                    if List.isEmpty updatedSelectedItems then
+                                        model.withoutNetwork
+
+                                    else
+                                        False
                             }
 
                         result =
