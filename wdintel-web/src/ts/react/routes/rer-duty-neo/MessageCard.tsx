@@ -355,39 +355,42 @@ export function MessageCard({
               />
             </span>
           </div>
-          {/* Row 3 — Unit + location (separate row like in dividers) */}
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className={`inline-flex font-semibold shrink-0 flex-col items-start gap-0.5`}>
-              <i className="bi bi-people text-icons shrink-0" title="Еталонна прив'язка" />
-              {networkIds.length > 0 ? (
-                networkIds.map((networkId) => (
-                  <a
-                    href={`/rer-networks/${networkId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center gap-1 font-medium group"
-                    title="Відкрити мережу в новій вкладці"
-                    key={networkId}
-                  >
-                    {networkDisplayMap[networkId] ?? `Мережа ${networkId}`}
-                    <i className="bi bi-box-arrow-up-right text-sm" />
-                  </a>
-                ))
-              ) : (
-                <span>Не встановлена</span>
-              )}
-            </span>
+          {/* Row 3 — Networks + location*/}
+          <div className="inline-flex">
+            <div className="flex flex-col items-baseline gap-x-2 gap-y-1">
+              <span className={`inline-flex font-semibold shrink-0 items-start gap-0.5`}>
+                <i className="bi bi-people text-icons shrink-0" title="Еталонна прив'язка" />
+                {networkIds.length > 0 ? (
+                  networkIds.map((networkId) => (
+                    <a
+                      href={`/rer-networks/${networkId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center gap-1 font-medium group"
+                      title="Відкрити мережу в новій вкладці"
+                      key={networkId}
+                    >
+                      {networkDisplayMap[networkId] ?? `Мережа ${networkId}`}
+                      <i className="bi bi-box-arrow-up-right text-sm" />
+                    </a>
+                  ))
+                ) : (
+                  <span className="inline-flex">Не встановлена</span>
+                )}
+              </span>
+            </div>
+
             <span className="inline-flex items-center gap-1 font-medium shrink-0">
               <i className="bi bi-geo text-icons shrink-0" title="Локація" />
               {msg.location ?? 'Не встановлена'}
             </span>
             {msg.timestamp != null && referenceTimeMs != null && (
-              <span className="shrink-0" style={{ color: 'var(--bs-secondary-color)' }}>
+              <div className="shrink-0 mr-0 ml-auto" style={{ color: 'var(--bs-secondary-color)' }}>
                 {messageRenderDistance(msg.timestamp, referenceTimeMs)}
-              </span>
+              </div>
             )}
           </div>
-          {/* Row 3 — Body: text, comment, tags (one line with wrap) */}
+          {/* Row 4 — Body: text, comment, tags (one line with wrap) */}
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
             <span className="whitespace-pre-wrap break-words text-marked min-w-0">
               {msg.textMarked && msg.textMarked.length > 0
@@ -409,7 +412,7 @@ export function MessageCard({
     );
   }
 
-  // Dividers layout: 3-column header, then comment block, then body (network, location, text, tags)
+  // Header dividers layout: 3-column header, then comment block, then body (network, location, text, tags)
   const narrowColumns = feedCount >= 3;
   const colLeft = narrowColumns
     ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-3 border-r border-border min-w-[105px]'

@@ -162,38 +162,61 @@ export function FeedFilterPanel({
   const [localFreqValue, setLocalFreqValue] = React.useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = React.useState<string[]>(() => postValue);
 
-  // Resync local filter selections when feed filter changes
+  // Resync local filter selections when feed filter changes. Guard: only setState when next value
+  // differs (parent passes fresh [] on each render when filter is null, so ref change would cause
+  // unnecessary resets and Autocomplete flicker with polling).
   React.useEffect(() => {
     const ids = senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
+    const currentIds = localSenderValue.map((o) => o.id);
+    if (ids.length === currentIds.length && ids.every((id, i) => id === currentIds[i])) return;
     setLocalSenderValue(
       ids.map((id) => {
         const o = senderOptions.find((opt) => opt.id === id);
         return o ?? { id, label: id };
       }),
     );
-  }, [filterStable.sendersSelected, filterStable.deniedSenders, senderMode, senderOptions]);
+  }, [filterStable.sendersSelected, filterStable.deniedSenders, senderMode, senderOptions, localSenderValue]);
   React.useEffect(() => {
     const value = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
-    setLocalFreqValue(value ?? []);
-  }, [filterStable.freqsSelected, filterStable.freqsDenied, freqMode]);
+    const next = value ?? [];
+    if (next.length === localFreqValue.length && next.every((v, i) => v === localFreqValue[i])) return;
+    setLocalFreqValue(next);
+  }, [filterStable.freqsSelected, filterStable.freqsDenied, freqMode, localFreqValue]);
   React.useEffect(() => {
     const value = postMode === 'include' ? (filterStable.postsSelected ?? []) : (filterStable.postsDenied ?? []);
+    if (value.length === localPostValue.length && value.every((v, i) => v === localPostValue[i])) return;
     setLocalPostValue(value);
-  }, [filterStable.postsSelected, filterStable.postsDenied, postMode]);
+  }, [filterStable.postsSelected, filterStable.postsDenied, postMode, localPostValue]);
 
+  // Push local selections to parent only when they differ from filterStable; avoid rewriting on mount
   React.useEffect(() => {
-    if (senderMode === 'include') onSendersChange(localSenderValue.map((o) => o.id));
-    else onDeniedSendersChange(localSenderValue.map((o) => o.id));
+    const ids = localSenderValue.map((o) => o.id);
+    const current = senderMode === 'include' ? filterStable.sendersSelected : filterStable.deniedSenders;
+    if (current == null && ids.length === 0) return;
+    if (current != null && current.length === ids.length && current.every((id, i) => id === ids[i])) return;
+    if (senderMode === 'include') onSendersChange(ids);
+    else onDeniedSendersChange(ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localSenderValue so writeback runs after resync
   }, [localSenderValue]);
 
   React.useEffect(() => {
+    const current = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
+    if (current == null && localFreqValue.length === 0) return;
+    if (current != null && current.length === localFreqValue.length && current.every((v, i) => v === localFreqValue[i]))
+      return;
     if (freqMode === 'include') onFreqsChange(localFreqValue);
     else onFreqsDeniedChange(localFreqValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localFreqValue so writeback runs after resync
   }, [localFreqValue]);
 
   React.useEffect(() => {
+    const current = postMode === 'include' ? filterStable.postsSelected : filterStable.postsDenied;
+    if (current == null && localPostValue.length === 0) return;
+    if (current != null && current.length === localPostValue.length && current.every((v, i) => v === localPostValue[i]))
+      return;
     if (postMode === 'include') onPostsChange?.(localPostValue);
     else onPostsDeniedChange?.(localPostValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localPostValue so writeback runs after resync
   }, [localPostValue]);
 
   return (

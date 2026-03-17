@@ -57,22 +57,24 @@ export function emptyFilter(): RerDutyFeedFilterState {
   };
 }
 
-function arrEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
-  const x = a ?? [];
-  const y = b ?? [];
-  return x.length === y.length && x.every((v, i) => v === y[i]);
+/** Distinguishes null/undefined from []. Backend treats None (no filter) vs Some([]) (empty filter → no rows) differently. */
+function optArrEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /** True when both filters are equivalent for request purposes (no need to refetch). */
 export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterState): boolean {
   return (
-    arrEqual(a.groupsSelected ?? null, b.groupsSelected ?? null) &&
-    arrEqual(a.sendersSelected ?? null, b.sendersSelected ?? null) &&
-    arrEqual(a.deniedSenders ?? null, b.deniedSenders ?? null) &&
-    arrEqual(a.freqsSelected ?? null, b.freqsSelected ?? null) &&
-    arrEqual(a.freqsDenied ?? null, b.freqsDenied ?? null) &&
-    arrEqual(a.postsSelected ?? null, b.postsSelected ?? null) &&
-    arrEqual(a.postsDenied ?? null, b.postsDenied ?? null)
+    optArrEqual(a.groupsSelected, b.groupsSelected) &&
+    optArrEqual(a.sendersSelected, b.sendersSelected) &&
+    optArrEqual(a.deniedSenders, b.deniedSenders) &&
+    optArrEqual(a.freqsSelected, b.freqsSelected) &&
+    optArrEqual(a.freqsDenied, b.freqsDenied) &&
+    optArrEqual(a.postsSelected, b.postsSelected) &&
+    optArrEqual(a.postsDenied, b.postsDenied)
   );
 }
 
