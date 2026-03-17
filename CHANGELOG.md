@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2026](https://github.com/echoua/echo/issues/2026) ✅ Аналіз: фільтр по повідомленням без мереж
 - [#2024](https://github.com/echoua/echo/issues/2024) ✅ GOI Додано синхронізацію частот
 - [#2060](https://github.com/echoua/echo/issues/2060) ✅ GOI Додано посилання на сервер та сторінку з висновками
 - [#2061](https://github.com/echoua/echo/issues/2061) ✅ GOI Додано імпорт розвіддонесень в ЕХО

@@ -942,11 +942,13 @@ where
 pub fn filter_selected_networks<Q>(
     mut q: Q,
     selected_networks: &Option<Vec<i64>>,
+    without_network: &Option<bool>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QueryTrait,
 {
-    if let Some(expr) = network_filter_expr(selected_networks) {
+    if let Some(expr) = network_filter_expr(selected_networks, without_network)
+    {
         q = q.filter(expr);
     }
     Ok(q)
@@ -955,8 +957,10 @@ where
 pub fn filter_selected_networks_stmt(
     mut q: SelectStatement,
     selected_networks: &Option<Vec<i64>>,
+    without_network: &Option<bool>,
 ) -> Result<SelectStatement, AppError> {
-    if let Some(expr) = network_filter_expr(selected_networks) {
+    if let Some(expr) = network_filter_expr(selected_networks, without_network)
+    {
         q.and_where(expr);
     }
     Ok(q)
@@ -964,8 +968,21 @@ pub fn filter_selected_networks_stmt(
 
 fn network_filter_expr(
     selected_networks: &Option<Vec<i64>>,
+    without_network: &Option<bool>,
 ) -> Option<SimpleExpr> {
-    if let Some(ids) = selected_networks.as_ref().filter(|v| !v.is_empty()) {
+    let without_network = without_network.unwrap_or(false);
+    let selected_networks =
+        selected_networks.as_ref().filter(|v| !v.is_empty());
+
+    if without_network && selected_networks.is_some() {
+        return Some(Expr::cust("FALSE"));
+    }
+
+    if without_network {
+        return Some(Expr::exists(network_exists_subquery()).not());
+    }
+
+    selected_networks.map(|ids| {
         let iin = Alias::new("iin_network_filter");
         let n = Alias::new("n_network_filter");
         let sub = Query::select()
@@ -1001,10 +1018,24 @@ fn network_filter_expr(
             )
             .to_owned();
 
-        Some(Expr::exists(sub))
-    } else {
-        None
-    }
+        Expr::exists(sub)
+    })
+}
+
+fn network_exists_subquery() -> SelectStatement {
+    let network_alias = Alias::new("network_filter");
+    let mut subquery = Query::select();
+    subquery
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_network::Entity, network_alias.clone())
+        .and_where(
+            Expr::col((
+                network_alias,
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        );
+    subquery.to_owned()
 }
 
 fn metadata_text_match_expr<C>(
@@ -1484,9 +1515,12 @@ pub async fn summary_table_freq_1(
     let dedup_subquery =
         filter_selected_aors(dedup_subquery, &req.selected_aors)
             .context(h!())?;
-    let dedup_subquery =
-        filter_selected_networks(dedup_subquery, &req.selected_networks)
-            .context(h!())?;
+    let dedup_subquery = filter_selected_networks(
+        dedup_subquery,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let dedup_subquery =
         filter_selected_metadata_for_analysis_stats(dedup_subquery, req)?;
     let dedup_subquery = filter_search(dedup_subquery, &req.search)?;
@@ -2081,8 +2115,12 @@ pub async fn edit_freq_unit_name(
         &user.id().c(h!())?,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
-    let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
-        .context(h!())?;
+    let rows_res = filter_selected_networks(
+        rows_res,
+        &reqan.selected_networks,
+        &reqan.without_network,
+    )
+    .context(h!())?;
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
     let rows_res = filter_search(rows_res, &req.search)?;
@@ -2453,8 +2491,12 @@ pub async fn bi_new_callsigns(
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
-    let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
-        .context(h!())?;
+    let rows_res = filter_selected_networks(
+        rows_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let rows_res = filter_selected_metadata_for_analysis_stats(rows_res, req)?;
     let mut rows_res = rows_res
         .into_model::<Row>()
@@ -2531,8 +2573,12 @@ pub async fn bi_new_callsigns(
         user_id,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
-    let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
-        .context(h!())?;
+    let rows_res = filter_selected_networks(
+        rows_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let rows_res = filter_selected_metadata_for_analysis_stats(rows_res, req)?;
     let mut rows_res = rows_res
         .into_model::<Row>()

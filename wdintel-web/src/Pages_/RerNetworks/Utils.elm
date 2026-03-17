@@ -114,6 +114,7 @@ createAnalysisQueryState shared network callsign =
     , locationsSelected = []
     , postsSelected = []
     , networksSelected = []
+    , withoutNetwork = False
     , includePelengLocations = True
     , orWithExtendedForm = False
     , orBookmarked = False

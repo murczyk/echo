@@ -206,6 +206,7 @@ metadataHref dateFromStr dateToStr metadataFilter =
             , locationsSelected = []
             , postsSelected = []
             , networksSelected = []
+            , withoutNetwork = False
             , includePelengLocations = True
             , orWithExtendedForm = False
             , orBookmarked = False

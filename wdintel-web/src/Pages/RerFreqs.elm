@@ -1609,6 +1609,7 @@ freqsTableConfig shared model user =
                                     , locationsSelected = []
                                     , postsSelected = []
                                     , networksSelected = []
+                                    , withoutNetwork = False
                                     , includePelengLocations = False
                                     , orWithExtendedForm = False
                                     , orBookmarked = False

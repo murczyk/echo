@@ -117,6 +117,7 @@ export function buildInboxReq(opts: {
     selectedTags: null,
     selectedAors: null,
     selectedNetworks: null,
+    withoutNetwork: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,

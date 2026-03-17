@@ -234,7 +234,8 @@ async fn load_freqs_impl(
     .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
         |_| Expr::col((nf.clone(), SigintNetworkFreq::ActiveTo)).is_null(),
     ));
-    q = filter_selected_networks_stmt(q, &Some(vec![network_id])).c(h!())?;
+    q = filter_selected_networks_stmt(q, &Some(vec![network_id]), &None)
+        .c(h!())?;
 
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
@@ -1126,6 +1127,7 @@ pub fn build_callsigns_queries(
     network_messages_select = filter_selected_networks_stmt(
         network_messages_select,
         &Some(vec![network_id]),
+        &None,
     )
     .c(h!())?;
 
@@ -1678,7 +1680,7 @@ pub async fn bl_get_network_points(
                 .is_null(),
         );
     }
-    q = filter_selected_networks(q, &Some(vec![network_id])).c(h!())?;
+    q = filter_selected_networks(q, &Some(vec![network_id]), &None).c(h!())?;
 
     // debug!(
     //     "> pelengs per unir sql: {}\n",

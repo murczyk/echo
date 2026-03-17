@@ -121,8 +121,12 @@ where
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let query = filter_selected_networks(query, &req.selected_networks)
-        .context(h!())?;
+    let query = filter_selected_networks(
+        query,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let query = apply_metadata_filters(query, &req.0)?;
     let query = filter_search(query, &req.search).context(h!())?;
     let query =
@@ -230,9 +234,12 @@ fn build_groups_query(
     let groups_res =
         filter_selected_callsigns(groups_res, &req.selected_callsigns)
             .context(h!())?;
-    let groups_res =
-        filter_selected_networks(groups_res, &req.selected_networks)
-            .context(h!())?;
+    let groups_res = filter_selected_networks(
+        groups_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let groups_res = apply_metadata_filters(groups_res, &req.0)?;
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
     let groups_res = filter_selected_tags(
@@ -519,9 +526,12 @@ fn build_senders_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let senders_res =
-        filter_selected_networks(senders_res, &req.selected_networks)
-            .context(h!())?;
+    let senders_res = filter_selected_networks(
+        senders_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
     let senders_res =
@@ -721,8 +731,12 @@ fn build_posts_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let post_res = filter_selected_networks(post_res, &req.selected_networks)
-        .context(h!())?;
+    let post_res = filter_selected_networks(
+        post_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
     let post_res =
@@ -918,8 +932,12 @@ fn build_freqs_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let freqs_res = filter_selected_networks(freqs_res, &req.selected_networks)
-        .context(h!())?;
+    let freqs_res = filter_selected_networks(
+        freqs_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let freqs_res = apply_metadata_filters(freqs_res, &req.0)?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
     let freqs_res =
@@ -1215,9 +1233,12 @@ fn build_callsigns_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
-    let callsigns_res =
-        filter_selected_networks(callsigns_res, &req.selected_networks)
-            .context(h!())?;
+    let callsigns_res = filter_selected_networks(
+        callsigns_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, &req.0)?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
     let callsigns_res = filter_selected_aors(callsigns_res, &req.selected_aors)
@@ -1356,8 +1377,12 @@ fn build_tags_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
-    let tags_res = filter_selected_networks(tags_res, &req.selected_networks)
-        .context(h!())?;
+    let tags_res = filter_selected_networks(
+        tags_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let tags_res = apply_metadata_filters(tags_res, &req.0)?;
     let tags_res = filter_search(tags_res, &req.search)?;
     let tags_res =
@@ -1502,8 +1527,12 @@ fn build_units_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let units_res = filter_selected_networks(units_res, &req.selected_networks)
-        .context(h!())?;
+    let units_res = filter_selected_networks(
+        units_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let units_res = apply_metadata_filters(units_res, &req.0)?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
     let units_res =
@@ -1650,9 +1679,12 @@ fn build_locations_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let locations_res =
-        filter_selected_networks(locations_res, &req.selected_networks)
-            .context(h!())?;
+    let locations_res = filter_selected_networks(
+        locations_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let locations_res = apply_metadata_filters(locations_res, &req.0)?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
@@ -2040,9 +2072,12 @@ fn build_networks_query_for_login(
     let messages_q =
         filter_selected_callsigns(messages_q, &req.selected_callsigns)
             .context(h!())?;
-    let messages_q =
-        filter_selected_networks(messages_q, &req.selected_networks)
-            .context(h!())?;
+    let messages_q = filter_selected_networks(
+        messages_q,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let messages_q = apply_metadata_filters(messages_q, req)?;
     let messages_q = filter_search(messages_q, &req.search).context(h!())?;
     let messages_q = filter_selected_tags(
@@ -2284,9 +2319,12 @@ async fn fetch_counts_for_login_with_conn(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let selected_count_res =
-        filter_selected_networks(selected_count_res, &req.selected_networks)
-            .context(h!())?;
+    let selected_count_res = filter_selected_networks(
+        selected_count_res,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let selected_count_res =
         apply_metadata_filters(selected_count_res, &req.0)?;
     let selected_count_res =
