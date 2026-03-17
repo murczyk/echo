@@ -144,6 +144,8 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
           wordBreak: 'break-word',
           px: 0.5,
           py: 0.25,
+          cursor: 'default',
+          userSelect: 'text',
         }}
       >
         {value}

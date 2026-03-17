@@ -904,6 +904,9 @@ class AnalysisMap extends HTMLElement {
         }
         openPointContextMenu(circle.getLatLng(), event.originalEvent);
       });
+      circle.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+        openPointContextMenu(circle.getLatLng(), event.originalEvent);
+      });
       circle.on('popupopen', () => {
         circle.setStyle({ fillColor: '#fff', color: "#000" })
       })
