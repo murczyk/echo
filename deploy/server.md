@@ -164,8 +164,8 @@ Create `deploy/nginx/<server>`. Then do:
 <server>$ sudo usermod -a -G <mygroup> www-data
 
 <server>$ sudo rm /etc/nginx/sites-enabled/default
-$ scp deploy/nginx/<server> <server>: && ssh <server> 'sudo mv <server> /etc/nginx/sites-enabled/'
-<server>$ sudo systemctl restart nginx
+$ scp deploy/nginx/<server> $SERVER: && ssh $SERVER "sudo mv $SERVER /etc/nginx/sites-enabled/"
+<SERVER>$ sudo systemctl restart nginx
 ```
 </details>
 
