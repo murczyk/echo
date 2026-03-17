@@ -137,7 +137,7 @@ deploy server:
 
     SERVER="{{ server }}"
     APP_DIR="{{ goi_app_dir }}"
-    SRC_DIR="{{ goi_dir }}/goi/goi-1.0.11/"
+    SRC_DIR="{{ goi_dir }}/goi/goi-1.1.5/"
 
     echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
