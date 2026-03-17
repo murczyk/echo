@@ -83,10 +83,13 @@ class TrainedModel:
         return self.model_artifacts / "model.bin"
 
     def get_metrics(self, split: str | None = "test") -> dict[str, Any]:
-        metrics_list = self.model.metrics or []
+        model = mlflow.get_logged_model(model_id=self.model_id)
+        metrics_list = model.metrics or []
         metrics_dict = {
             metric.key: metric.value
             for metric in metrics_list
-            if not split or (metric.dataset_name and split in metric.dataset_name)
+            if (not metric.dataset_name)
+            or (not split)
+            or (split in metric.dataset_name)
         }
         return metrics_dict
