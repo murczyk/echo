@@ -118,6 +118,7 @@ cd /usr/share/zoneinfo/Europe && sudo cp Kyiv Kiev && sudo systemctl restart pos
 ## Install python worker with NLP
 
 ```
+ssh $SERVER `sudo apt install wdintel-rs`
 just server=$SERVER setup-py
 ```
 
