@@ -81,12 +81,15 @@ def train_model(return_dict: dict, job: dict):
         print("finished quantize", flush=True)
 
     label_name = job["label_name"]
-    model_params = get_model_params(fasttext_model)
-    print(f"params: {model_params}", flush=True)
-    model_params["label_name"] = label_name
-    mlflow.log_params(model_params)
-
     step = job.pop("step", None)
+
+    # model params are the same when re-training
+    if not step:
+        model_params = get_model_params(fasttext_model)
+        print(f"params: {model_params}", flush=True)
+        model_params["label_name"] = label_name
+        mlflow.log_params(model_params)
+
     name = f"supervised-{label_name}"
     model_info = log_model(
         fasttext_model, name=name, model_type="classifier", step=step
@@ -265,15 +268,10 @@ def compare_models(
     trained_precision_at_recall = float(trained_metrics["precision_at_recall"])
     registered_precision_at_recall = float(registered_metrics["precision_at_recall"])
 
-    ap_improvement = (
-        (trained_ap - registered_ap) / registered_ap if registered_ap > 0 else 1
-    )
+    ap_improvement = (trained_ap - registered_ap) / registered_ap
     pr_improvement = (
-        (trained_precision_at_recall - registered_precision_at_recall)
-        / registered_precision_at_recall
-        if registered_precision_at_recall > 0
-        else 1
-    )
+        trained_precision_at_recall - registered_precision_at_recall
+    ) / registered_precision_at_recall
 
     stats = {
         "ap_improvement": ap_improvement,
