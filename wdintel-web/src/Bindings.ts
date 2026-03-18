@@ -1418,6 +1418,64 @@ export type ListGoiAssociationsRsp = {
   hasMore: boolean;
 };
 
+export type ListGoiKnowledgeSortBy =
+  | 'GoiKnowledgeSourceKnowledgeIdDesc'
+  | 'GoiKnowledgeSourceKnowledgeIdAsc'
+  | 'GoiKnowledgeSourceCreatedAtDesc'
+  | 'GoiKnowledgeSourceCreatedAtAsc'
+  | 'GoiKnowledgeNameAsc'
+  | 'GoiKnowledgeNameDesc'
+  | 'GoiKnowledgeKeyAsc'
+  | 'GoiKnowledgeKeyDesc'
+  | 'GoiKnowledgeTypeAsc'
+  | 'GoiKnowledgeTypeDesc'
+  | 'GoiKnowledgeAuthorAsc'
+  | 'GoiKnowledgeAuthorDesc'
+  | 'GoiKnowledgeFormationAsc'
+  | 'GoiKnowledgeFormationDesc'
+  | 'GoiKnowledgeNoteAsc'
+  | 'GoiKnowledgeNoteDesc'
+  | 'GoiKnowledgeSourceDateDesc'
+  | 'GoiKnowledgeSourceDateAsc'
+  | 'GoiKnowledgeCreatedAtDesc'
+  | 'GoiKnowledgeCreatedAtAsc'
+;
+
+export type ListGoiKnowledgeReq = {
+  limit: number | null;
+  offset: number | null;
+  sortBy: ListGoiKnowledgeSortBy | null;
+  filterText: string | null;
+  filterName: string | null;
+  filterKey: string | null;
+  filterKnowledgeType: string | null;
+  filterNote: string | null;
+  filterAuthor: string | null;
+  filterFormation: string | null;
+  filterDeleted: boolean | null;
+};
+
+export type GoiKnowledge = {
+  id: number;
+  sourceKnowledgeId: number;
+  sourceCreatedAtMs: number;
+  createdAtMs: number;
+  deleted: boolean;
+  name: string | null;
+  key: string | null;
+  knowledgeType: string | null;
+  author: string | null;
+  note: string | null;
+  sourceDateRaw: string | null;
+  sourceDateMs: number | null;
+  formation: string | null;
+};
+
+export type ListGoiKnowledgeRsp = {
+  items: Array<GoiKnowledge>;
+  hasMore: boolean;
+};
+
 export type Datasource = {
   kind: string;
   displayName: string;

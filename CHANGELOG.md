@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2087](https://github.com/echoua/echo/issues/2087) ✅ ГОІ синхронізувати обізнаність
 - [#2079](https://github.com/echoua/echo/issues/2079) ✅🐞 Аналіз/Карта: додано можливість копіювання координат. Виправлено помилку зі зникненням точок при переміщенні мапи.
 - [#2062](https://github.com/echoua/echo/issues/2062) ✅ Аналіз/Карта: UX/UI покращення панелі палітр.
 - [#2024](https://github.com/echoua/echo/issues/2024) ✅ GOI Додано синхронізацію частот

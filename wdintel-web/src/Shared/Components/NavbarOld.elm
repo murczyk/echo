@@ -115,6 +115,7 @@ navBar user shared activeName props =
                 |> Maybe.withDefault []
             )
                 ++ [ Menu (Internal Route.Path.GoiAssociations) "goi-associations" "висновки"
+                   , Menu (Internal Route.Path.GoiKnowledge) "goi-knowledge" "інформованість"
                    ]
 
         importSubs =

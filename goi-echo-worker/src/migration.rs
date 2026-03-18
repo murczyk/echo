@@ -6,7 +6,10 @@ pub struct Migrator;
 
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![Box::new(m20260315_200000_create_association::Migration)]
+        vec![
+            Box::new(m20260315_200000_create_association::Migration),
+            Box::new(m20260317_214944_create_knowledge::Migration),
+        ]
     }
 }
 
@@ -51,6 +54,51 @@ mod m20260315_200000_create_association {
                     r#"
                         drop index if exists idx_association_dedupe_key;
                         drop table if exists association;
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260317_214944_create_knowledge {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                        create table if not exists knowledge (
+                            id bigserial primary key,
+                            row jsonb not null,
+                            created_at timestamptz not null default now(),
+                            updated_at timestamptz not null default now(),
+                            deleted bool not null default false,
+                            dedupe_key text not null
+                        );
+
+                        create unique index if not exists idx_knowledge_dedupe_key
+                            on knowledge (dedupe_key);
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                        drop index if exists idx_knowledge_dedupe_key;
+                        drop table if exists knowledge;
                     "#,
                 )
                 .await?;
