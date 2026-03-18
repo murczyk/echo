@@ -600,6 +600,7 @@ pub async fn main_server(
             .service(crate::organism::goi::check_organism_goi_connection)
             .service(crate::organism::goi::setup_organism_goi_worker)
             .service(crate::organism::goi::list_current_user_goi_associations)
+            .service(crate::organism::goi::list_current_user_goi_knowledge)
             .service(crate::organism::my_scope)
             .service(crate::datasource::list_datasources)
             .service(crate::datasource::datasource_group_list)

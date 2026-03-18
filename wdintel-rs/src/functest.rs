@@ -205,6 +205,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        goi_knowledge::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         organism_aor::Entity::delete_many()
             .exec(&env.dbx)
             .await
