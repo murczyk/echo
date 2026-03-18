@@ -151,6 +151,10 @@ def evaluate_regex_model(
     )
 
 
+def is_split(dataset_name: str | None, split: str):
+    return (not dataset_name) or (not split) or (split in dataset_name)
+
+
 def evaluate_model(model_id: str, split: str, dataset_path: str):
     logged_model = mlflow.get_logged_model(model_id=model_id)
     model = mlflow.pyfunc.load_model(logged_model.model_uri)
@@ -158,11 +162,7 @@ def evaluate_model(model_id: str, split: str, dataset_path: str):
     metrics = logged_model.metrics or []
     pred_threshold = None
     for metric in metrics:
-        if (
-            metric.key == "threshold_at_recall"
-            and metric.dataset_name
-            and split in metric.dataset_name
-        ):
+        if metric.key == "threshold_at_recall" and is_split(metric.dataset_name, split):
             pred_threshold = float(metric.value)
             break
 

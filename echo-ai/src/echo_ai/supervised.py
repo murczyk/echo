@@ -281,6 +281,8 @@ def compare_models(
         pr_improvement = 1
 
     stats = {
+        "registered_ap": registered_ap,
+        "registered_precision_at_recall": registered_precision_at_recall,
         "ap_improvement": ap_improvement,
         "pr_improvement": pr_improvement,
     }
