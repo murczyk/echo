@@ -29,6 +29,7 @@ const defaultGroupStats: SignalGroupStats = {
   activityLastWeek: 0,
 };
 import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
+import { emptyArrToNull } from '../../utils/misc';
 import { postJson, postVoid } from './client';
 
 /** Raw API response (snake_case) */
@@ -148,16 +149,16 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     till_date_inclusive_ms: req.tillDateInclusiveMs,
     only_show_unprocessed: req.onlyShowUnprocessed,
     checked_only: req.checkedOnly,
-    selected_groups: req.selectedGroups,
-    selected_senders: req.selectedSenders,
-    denied_senders: req.deniedSenders,
-    selected_freqs: req.selectedFreqs,
-    selected_posts: req.selectedPosts,
-    denied_posts: req.deniedPosts,
-    denied_freqs: req.deniedFreqs,
-    selected_callsigns: req.selectedCallsigns,
-    selected_units: req.selectedUnits,
-    selected_locations: req.selectedLocations,
+    selected_groups: emptyArrToNull(req.selectedGroups),
+    selected_senders: emptyArrToNull(req.selectedSenders),
+    denied_senders: emptyArrToNull(req.deniedSenders),
+    selected_freqs: emptyArrToNull(req.selectedFreqs),
+    selected_posts: emptyArrToNull(req.selectedPosts),
+    denied_posts: emptyArrToNull(req.deniedPosts),
+    denied_freqs: emptyArrToNull(req.deniedFreqs),
+    selected_callsigns: emptyArrToNull(req.selectedCallsigns),
+    selected_units: emptyArrToNull(req.selectedUnits),
+    selected_locations: emptyArrToNull(req.selectedLocations),
     nolimit: req.nolimit,
     or_with_extended_form: req.orWithExtendedForm,
     load_latest: req.loadLatest,
@@ -172,9 +173,9 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     highlight_searchres: req.highlightSearchres,
     highlight_signals: req.highlightSignals,
     highlight_points: req.highlightPoints,
-    selected_tags: req.selectedTags,
-    selected_aors: req.selectedAors,
-    selected_networks: req.selectedNetworks,
+    selected_tags: emptyArrToNull(req.selectedTags),
+    selected_aors: emptyArrToNull(req.selectedAors),
+    selected_networks: emptyArrToNull(req.selectedNetworks),
     metadata_cc: req.metadataCc,
     metadata_sender: req.metadataSender,
     metadata_receiver: req.metadataReceiver,
