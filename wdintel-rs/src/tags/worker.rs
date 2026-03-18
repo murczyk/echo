@@ -410,7 +410,9 @@ pub async fn oneoff_refresh_models(mode: Mode) -> Result<(), AppError> {
     let model_dir = models_config
         .directory
         .or_else(|| std::env::var("WD_FASTTEXT_MODELS").ok())
-        .unwrap_or_else(|| "/usr/share/wdintel-py/fasttext-models".to_string());
+        .unwrap_or_else(|| {
+            "/usr/share/wdintel-py/fasttext-models-v2".to_string()
+        });
 
     let changed = do_refresh_models(&s3_config, &model_dir).await?;
     if changed {
