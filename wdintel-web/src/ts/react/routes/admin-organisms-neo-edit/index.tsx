@@ -180,6 +180,10 @@ function hasAnyGoiApiSettings(form: OrganismFormState): boolean {
   return apiHost.length > 0 && apiHost !== sshHost;
 }
 
+function getSimpleGoiUrl(apiHost: string, sshHost: string): string {
+  return apiHost || sshHost;
+}
+
 function isFullGoiIntegration(form: OrganismFormState): boolean {
   return form.goiIntegrationType === GOI_INTEGRATION_TYPE_FULL;
 }
@@ -552,8 +556,8 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
 
             <TextField
               label="GOI URL / домен"
-              value={props.form.goiSshHost}
-              onChange={(event) => props.onChange({ goiSshHost: event.target.value })}
+              value={getSimpleGoiUrl(props.form.goiApiHost, props.form.goiSshHost)}
+              onChange={(event) => props.onChange({ goiApiHost: event.target.value })}
               fullWidth
               helperText="Можна вказати повний URL або домен ГОІ"
               disabled={isGoiBusy}
@@ -648,6 +652,10 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         if (isCancelled) return;
 
         setOriginalGroupKeys(groupKeys);
+        const simpleGoiUrl =
+          goiSettings.integrationType === GOI_INTEGRATION_TYPE_SIMPLE
+            ? getSimpleGoiUrl(goiSettings.apiHost, goiSettings.sshHost)
+            : goiSettings.apiHost;
         setForm({
           name: target.name,
           parentId: target.parentId,
@@ -657,11 +665,11 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           limitGroups: groupKeys.length > 0,
           groupIds: groupKeys,
           goiIntegrationType: goiSettings.integrationType,
-          goiSshHost: goiSettings.sshHost,
+          goiSshHost: goiSettings.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? '' : goiSettings.sshHost,
           goiSshUser: goiSettings.sshUser,
           goiSshPort: goiSettings.sshPort,
           goiPath: goiSettings.path,
-          goiApiHost: goiSettings.apiHost,
+          goiApiHost: simpleGoiUrl,
           goiApiPort: goiSettings.apiPort,
           goiApiLogin: goiSettings.apiLogin,
           goiApiPassword: goiSettings.apiPassword,
@@ -806,14 +814,15 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   function buildGoiSettingsReq(organismId: number, nextForm: OrganismFormState): UpdateOrganismGoiSettingsReq {
     const hasGoiApiSettings = hasAnyGoiApiSettings(nextForm);
     if (nextForm.goiIntegrationType === GOI_INTEGRATION_TYPE_SIMPLE) {
+      const simpleGoiUrl = getSimpleGoiUrl(nextForm.goiApiHost, nextForm.goiSshHost).trim();
       return {
         organismId,
         integrationType: GOI_INTEGRATION_TYPE_SIMPLE,
-        sshHost: nextForm.goiSshHost.trim(),
+        sshHost: '',
         sshUser: '',
         sshPort: GOI_SSH_PORT_DEFAULT,
         path: GOI_PATH_DEFAULT,
-        apiHost: '',
+        apiHost: simpleGoiUrl,
         apiPort: GOI_API_PORT_DEFAULT,
         apiLogin: '',
         apiPassword: '',

@@ -3,6 +3,13 @@ use crate::importer::*;
 use crate::kml::types::*;
 use crate::types::*;
 
+const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" Json.Decode.bool))"#;
+const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" Json.Decode.bool, Json.Decode.succeed False ]))"#;
+const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW: &str =
+    r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.bool)))"#;
+const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW: &str =
+    r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
+
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
     elm_rs::export!("Bindings", &mut target, {
@@ -746,8 +753,17 @@ pub fn main_gen_elm() -> Result<(), AppError> {
     .unwrap();
     let output = String::from_utf8(target).context(h!())?;
     println!("> patching...");
-    // patching
-    let output = output
+    let output = patch_generated_elm(output);
+    std::fs::write("../wdintel-web/src/Bindings.elm", output)?;
+    Ok(())
+}
+
+fn patch_generated_elm(output: String) -> String {
+    patch_backward_compatible_decoders(patch_generated_elm_names(output))
+}
+
+fn patch_generated_elm_names(output: String) -> String {
+    output
         .replace("import Http", "import Http\nimport Maybe.Extra")
         .replace("= Folder (Folder)", "= NFolder Folder")
         .replace("| Document (Document)", "| NDocument Document")
@@ -787,7 +803,16 @@ pub fn main_gen_elm() -> Result<(), AppError> {
         .replace(
             r#"( "@type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.type )"#,
             r#"( "@type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.type_ )"#,
-        );
-    std::fs::write("../wdintel-web/src/Bindings.elm", output)?;
-    Ok(())
+        )
+}
+
+fn patch_backward_compatible_decoders(output: String) -> String {
+    output.replace(
+        RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW,
+        RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW,
+    )
+    .replace(
+        RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER,
+        RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER,
+    )
 }
