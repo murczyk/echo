@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use tempfile::Builder;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
-
+use crate::rer_importer::analysis::{filter_selected_networks, filter_selected_networks_stmt};
 use crate::sigint::etalonka::types::*;
 
 const SCREENSHOT_DELAY_MILLIS: u64 = 2500;
