@@ -1587,21 +1587,6 @@ pub async fn recalculate_network_stats(
         .c(h!())?;
     }
 
-    let mut network_freq_last_seen_reset =
-        sigint_network_freq::Entity::update_many()
-            .col_expr(
-                sigint_network_freq::Column::LastSeenDt,
-                Expr::value(None::<NaiveDateTime>),
-            )
-            .filter(sigint_network_freq::Column::Deleted.eq(false));
-    if let Some(network_ids) = network_ids {
-        network_freq_last_seen_reset = network_freq_last_seen_reset.filter(
-            sigint_network_freq::Column::NetworkId
-                .eq_any(network_ids.iter().copied().collect_vec()),
-        );
-    }
-    network_freq_last_seen_reset.exec(&txn).await.c(h!())?;
-
     for (network_freq_id, last_seen_dt) in network_freq_last_seen {
         sigint_network_freq::Entity::update_many()
             .col_expr(
@@ -1609,6 +1594,12 @@ pub async fn recalculate_network_stats(
                 Expr::value(Some(last_seen_dt)),
             )
             .filter(sigint_network_freq::Column::Id.eq(network_freq_id))
+            .filter(
+                sigint_network_freq::Column::LastSeenDt
+                    .is_null()
+                    .or(sigint_network_freq::Column::LastSeenDt
+                        .lt(last_seen_dt)),
+            )
             .exec(&txn)
             .await
             .c(h!())?;
@@ -1666,6 +1657,93 @@ fn is_network_freq_active_at(
     ts: NaiveDateTime,
 ) -> bool {
     freq.active_from <= ts && freq.active_to.map(|dt| dt >= ts).unwrap_or(true)
+}
+
+pub async fn recalculate_last_seen_for_active_network_freqs_on_startup(
+    dbx: &DatabaseConnection,
+) -> Result<(), AppError> {
+    let network_ids = sigint_network::Entity::find()
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if network_ids.is_empty() {
+        return Ok(());
+    }
+
+    let network_ids = network_ids.into_iter().collect::<HashSet<_>>();
+    recalculate_last_seen_for_networks_exact(dbx, &network_ids, true).await
+}
+
+pub async fn recalculate_last_seen_for_networks_exact(
+    dbx: &DatabaseConnection,
+    network_ids: &HashSet<i64>,
+    active_freqs_only: bool,
+) -> Result<(), AppError> {
+    if network_ids.is_empty() {
+        return Ok(());
+    }
+
+    let network_ids_sql = network_ids.iter().copied().sorted().join(",");
+    let active_freq_filter = if active_freqs_only {
+        " and nf.active_to is null"
+    } else {
+        ""
+    };
+    let active_freq_filter_inner = if active_freqs_only {
+        " and nf_inner.active_to is null"
+    } else {
+        ""
+    };
+
+    let reset_sql = format!(
+        "update sigint_network_freq as nf
+         set last_seen_dt = null
+         where nf.deleted = false
+           and nf.network_id in ({network_ids_sql}){active_freq_filter}"
+    );
+
+    dbx.execute(Statement::from_string(DatabaseBackend::Postgres, reset_sql))
+        .await
+        .c(h!())?;
+
+    let update_sql = format!(
+        "update sigint_network_freq as nf
+         set last_seen_dt = sub.last_seen_dt
+         from (
+             select
+                 nf_inner.id as network_freq_id,
+                 max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as last_seen_dt
+             from sigint_network_freq as nf_inner
+             join sigint_inbox_item_network as siin
+                 on siin.sigint_network_id = nf_inner.network_id
+             join sigint_inbox_item as sii
+                 on sii.id = siin.sigint_inbox_item_id
+             join signal_message as sm
+                 on sm.id = sii.id
+             where nf_inner.deleted = false
+               and nf_inner.network_id in ({network_ids_sql}){active_freq_filter_inner}
+               and sm.deleted = false
+               and sii.freq = nf_inner.freq
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= nf_inner.active_from
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) <= coalesce(nf_inner.active_to, current_timestamp at time zone 'utc')
+             group by nf_inner.id
+         ) as sub
+         where nf.id = sub.network_freq_id"
+    );
+
+    dbx.execute(Statement::from_string(
+        DatabaseBackend::Postgres,
+        update_sql,
+    ))
+    .await
+    .c(h!())?;
+
+    Ok(())
 }
 
 async fn load_generic_stats(

@@ -806,6 +806,12 @@ pub async fn main_bgworker(
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
     let env = init_runtime_env(mode).await.c(h!())?;
+    info!("recalculating network freq last_seen_dt for active networks on bgworker startup");
+    crate::stats::recalculate_last_seen_for_active_network_freqs_on_startup(
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
     let mut background_tasks: JoinSet<()> = JoinSet::new();
     spawn_background_workers(
         mode,

@@ -29,7 +29,7 @@ use sea_orm::{
 };
 use sea_query::{Alias, Expr, Query};
 use sqlx::FromRow;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
@@ -227,6 +227,9 @@ pub async fn restore_network(
     )
     .await
     .c(h!())?;
+    refresh_network_last_seen_after_state_change(&env.dbx, [network_id])
+        .await
+        .c(h!())?;
     Ok(Json(res))
 }
 
@@ -609,6 +612,11 @@ pub async fn update_network(
     )
     .await
     .c(h!())?;
+    if is_restore_network {
+        refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
+            .await
+            .c(h!())?;
+    }
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -692,6 +700,9 @@ pub async fn delete_network(
     )
     .await
     .c(h!())?;
+    refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
+        .await
+        .c(h!())?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -1429,6 +1440,11 @@ pub async fn update_freq_networks(
 
     txn.commit().await.context(h!())?;
 
+    let mut last_seen_refresh_network_ids: HashSet<i64> =
+        req_network_ids.into_iter().collect();
+    last_seen_refresh_network_ids
+        .extend(networks.iter().map(|network| network.id));
+
     for network in networks {
         let network_id = network.id;
         sigint::network::etalon_calc::invalidate_network_inbox(
@@ -1440,11 +1456,35 @@ pub async fn update_freq_networks(
         .await
         .c(h!())?;
     }
+    refresh_network_last_seen_after_state_change(
+        &env.dbx,
+        last_seen_refresh_network_ids,
+    )
+    .await
+    .c(h!())?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(result_json)
+}
+
+async fn refresh_network_last_seen_after_state_change<I>(
+    dbx: &DatabaseConnection,
+    network_ids: I,
+) -> Result<(), AppError>
+where
+    I: IntoIterator<Item = i64>,
+{
+    let network_ids = network_ids.into_iter().collect::<HashSet<_>>();
+    crate::stats::recalculate_last_seen_for_networks_exact(
+        dbx,
+        &network_ids,
+        false,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 #[post("/api/sigint/network/add-freq")]
