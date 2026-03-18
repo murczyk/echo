@@ -37,40 +37,28 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
     <Box
       className="analysis-map-coord-menu"
       sx={{
-        '--analysis-map-coord-menu-bg': (theme) => theme.palette.background.paper,
-        '--analysis-map-coord-menu-border': (theme) => theme.palette.divider,
+        '--analysis-map-coord-menu-bg': 'rgba(31, 36, 42, 0.96)',
+        '--analysis-map-coord-menu-border': 'rgba(255, 255, 255, 0.12)',
+        '--analysis-map-coord-menu-accent': 'rgba(255, 255, 255, 0.18)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 1.5,
-        minWidth: 220,
-        px: 1.5,
-        pt: 1.5,
-        pb: 1.5,
-        borderRadius: 2,
-        bgcolor: 'background.paper',
-        color: 'text.primary',
+        gap: 1.25,
+        minWidth: 196,
+        width: 'max-content',
+        maxWidth: 'min(calc(100vw - 24px), 560px)',
+        px: 1.25,
+        pt: 1.25,
+        pb: 1.125,
+        borderRadius: 2.5,
+        bgcolor: 'var(--analysis-map-coord-menu-bg)',
+        color: '#fff',
         border: 1,
-        borderColor: 'divider',
-        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.24)',
+        borderColor: 'var(--analysis-map-coord-menu-border)',
+        boxShadow: '0 14px 32px rgba(0, 0, 0, 0.36)',
+        backdropFilter: 'blur(8px)',
       }}
     >
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', alignItems: 'center', gap: 1.5 }}>
-        <IconButton
-          aria-label="Скопіювати координати"
-          title="Скопіювати координати"
-          onClick={handleCopy}
-          size="small"
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: 1.25,
-            border: 1,
-            borderColor: 'divider',
-          }}
-        >
-          <ContentCopyIcon fontSize="small" />
-        </IconButton>
-
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 28px', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
         <Select<CoordFormat>
           value={format}
           onChange={handleFormatChange}
@@ -97,14 +85,32 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
             },
           }}
           sx={{
-            minHeight: 40,
-            fontSize: 14,
+            minHeight: 36,
+            width: 'fit-content',
+            minWidth: 110,
+            borderRadius: 1.5,
+            fontSize: 13,
             fontWeight: 600,
+            color: '#fff',
+            bgcolor: 'rgba(255, 255, 255, 0.04)',
+            '& .MuiOutlinedInput-notchedOutline': {
+              borderColor: 'var(--analysis-map-coord-menu-accent)',
+            },
+            '&:hover .MuiOutlinedInput-notchedOutline': {
+              borderColor: 'rgba(255, 255, 255, 0.24)',
+            },
+            '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+              borderColor: 'rgba(255, 255, 255, 0.32)',
+            },
+            '& .MuiSvgIcon-root': {
+              color: '#fff',
+            },
             '& .MuiSelect-select': {
               display: 'flex',
               alignItems: 'center',
-              minHeight: '40px !important',
+              minHeight: '36px !important',
               py: 0,
+              px: 1.25,
             },
           }}
         >
@@ -117,12 +123,13 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
           onClick={onClose}
           size="small"
           sx={{
-            width: 34,
-            height: 34,
-            borderRadius: 1,
-            color: 'text.primary',
+            justifySelf: 'end',
+            width: 28,
+            height: 28,
+            borderRadius: 1.25,
+            color: 'rgba(255, 255, 255, 0.92)',
             '&:hover': {
-              bgcolor: 'action.hover',
+              bgcolor: 'rgba(255, 255, 255, 0.08)',
             },
             '&.Mui-focusVisible': {
               outline: 'none',
@@ -134,22 +141,48 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
         </IconButton>
       </Box>
 
-      <Typography
-        sx={{
-          fontSize: 16,
-          fontWeight: 500,
-          lineHeight: 1.2,
-          letterSpacing: '0.04em',
-          textAlign: 'center',
-          wordBreak: 'break-word',
-          px: 0.5,
-          py: 0.25,
-          cursor: 'default',
-          userSelect: 'text',
-        }}
-      >
-        {value}
-      </Typography>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 28px', alignItems: 'center', gap: 1.25 }}>
+        <Typography
+          sx={{
+            fontSize: 15,
+            fontWeight: 500,
+            lineHeight: 1.3,
+            letterSpacing: '0.03em',
+            textAlign: 'left',
+            whiteSpace: 'nowrap',
+            color: 'rgba(255, 255, 255, 0.96)',
+            px: 0.25,
+            py: 0,
+            cursor: 'default',
+            userSelect: 'text',
+          }}
+        >
+          {value}
+        </Typography>
+
+        <IconButton
+          aria-label="Скопіювати координати"
+          title="Скопіювати координати"
+          onClick={handleCopy}
+          size="small"
+          sx={{
+            justifySelf: 'end',
+            width: 28,
+            height: 28,
+            borderRadius: 1.25,
+            color: 'rgba(255, 255, 255, 0.92)',
+            '&:hover': {
+              bgcolor: 'rgba(255, 255, 255, 0.08)',
+            },
+            '&.Mui-focusVisible': {
+              outline: 'none',
+              boxShadow: 'none',
+            },
+          }}
+        >
+          <ContentCopyIcon fontSize="small" />
+        </IconButton>
+      </Box>
     </Box>
   );
 }

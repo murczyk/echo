@@ -150,10 +150,6 @@
 	overflow: hidden;
 }
 
-.palitra-title-button:hover {
-	background-color: var(--bs-secondary-bg);
-}
-
 .palitra-content {
 	flex: 1;
 	min-width: 0;

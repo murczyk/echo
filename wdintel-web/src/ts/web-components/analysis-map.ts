@@ -357,7 +357,12 @@ class AnalysisMap extends HTMLElement {
          onBackgroundPointsLoadingChanged: (isLoading) => {
            this._isBackgroundPointsLoading = isLoading;
            this._syncAsyncInteractionState();
-         }
+         },
+         onOverlayContextMenu: (target, latlng) => {
+           this._clickedPoint = null;
+           this._clickedLatLng = null;
+           this._openPointContextMenu(target, L.latLng(latlng.lat, latlng.lng));
+         },
        }
      );
      

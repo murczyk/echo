@@ -28,11 +28,11 @@ export class PalitraManager {
   constructor(
     private map: L.Map,
     options: PalitraManagerOptions,
-    callbacks: PalitraManagerCallbacks,
+    private callbacks: PalitraManagerCallbacks,
   ) {
     this.cacheManager = new PalitraCacheManager(options.cacheTtlMs, options.maxCachedTiles);
     this.layerGroup = L.layerGroup().addTo(map);
-    this.pointClustersRenderer = new PalitraPointClusterRenderer(map);
+    this.pointClustersRenderer = new PalitraPointClusterRenderer(map, callbacks.onOverlayContextMenu);
     this.pointsController = new PalitraPointsController(
       map,
       options,
@@ -149,6 +149,21 @@ export class PalitraManager {
         console.log('❌ Polygon creation failed');
         return;
       }
+      polygon.on('mousedown', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+        if (event.originalEvent?.button !== 2) {
+          return;
+        }
+        event.originalEvent.preventDefault();
+        event.originalEvent.stopPropagation();
+        this.callbacks.onOverlayContextMenu?.(
+          { lat: event.latlng.lat, lng: event.latlng.lng },
+          { lat: event.latlng.lat, lng: event.latlng.lng },
+        );
+      });
+      polygon.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+        event.originalEvent?.preventDefault();
+        event.originalEvent?.stopPropagation();
+      });
       this.layerGroup.addLayer(polygon);
       polygons.push(polygon);
     });
