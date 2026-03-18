@@ -96,7 +96,7 @@ type alias Model =
     , networkKeys : RemoteData ApiError (List B.EncryptionKeyData)
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
-    , callsignsOpenedPopupId : Maybe String
+    , callsignsOpenedPopupId : Maybe Int
     , mode : Mode B.UpdateNetworkReq
     , editLoading : Bool
     , editKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind

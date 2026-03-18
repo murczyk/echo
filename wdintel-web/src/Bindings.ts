@@ -2373,10 +2373,20 @@ export type ModulationRec = {
 
 export type SingleNetworkFreqsReq = {
   networkId: number;
+  includeCallsigns: boolean | null;
 };
 
 export type SingleNetworkFreqsListRsp = {
   freqs: Array<NetworkFreqsRes>;
+};
+
+export type NetworkFreqCallsignsReq = {
+  networkFreqId: number;
+};
+
+export type NetworkFreqCallsignsRsp = {
+  networkFreqId: number;
+  callsigns: Array<string>;
 };
 
 export type SingleNetworkCallsignsReq = {

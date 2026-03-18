@@ -221,8 +221,9 @@ type FrequenciesMsg
     | FreqEditNewKeyCreated (Result ApiError B.EncryptionKeyData)
     | FreqsActivityFilterChangedByUser FreqActivityFilter
     | SetFreqsTableState Table.State
-    | CallsignsPopupOpenedByUser String
+    | CallsignsPopupOpenedByUser Int
     | CallsignsPopupClosedByUser
+    | NetworkFreqCallsignsReturnedByApi (Result ApiError B.NetworkFreqCallsignsRsp)
     | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
 
 

@@ -412,6 +412,7 @@ pub async fn create_network(
                 network_id: Set(network.id),
                 freq: Set(frequency.freq.trim().to_string()),
                 created_at: NotSet,
+                last_seen_dt: NotSet,
                 active_from: Set(active_from),
                 active_to: Set(active_to),
                 kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
@@ -1503,6 +1504,7 @@ pub async fn add_network_freq(
             network_id: Set(req.network_id),
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
+            last_seen_dt: NotSet,
             kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
             modulation_id: Set(req.freq_rec.modulation_id),
             active_from: Set(active_from),
@@ -2335,6 +2337,7 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
+    let include_callsigns = req.include_callsigns.unwrap_or(true);
     let freqs = if env
         .config
         .feature_group_stats_aggregated
@@ -2354,18 +2357,58 @@ pub async fn network_freqs_list(
             None,
             &user_id,
             counts,
+            include_callsigns,
         )
         .await
         .context(h!())?
     } else {
-        load_freqs(&env.dbx, &groups, req.network_id, None, &user_id)
-            .await
-            .context(h!())?
+        load_freqs(
+            &env.dbx,
+            &groups,
+            req.network_id,
+            None,
+            &user_id,
+            include_callsigns,
+        )
+        .await
+        .context(h!())?
     };
 
     let res = SingleNetworkFreqsListRsp { freqs };
 
     Ok(Json(res))
+}
+
+#[post("/api/sigint/network-freq-callsigns")]
+pub async fn network_freq_callsigns(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkFreqCallsignsReq>,
+) -> Result<Json<NetworkFreqCallsignsRsp>, AppError> {
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await?;
+
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+
+    let callsigns =
+        get_callsigns_for_network_freq(&env.dbx, &groups, req.network_freq_id)
+            .await
+            .context(h!())?;
+
+    Ok(Json(NetworkFreqCallsignsRsp {
+        network_freq_id: req.network_freq_id,
+        callsigns,
+    }))
 }
 
 #[post("/api/sigint/modulations-list")]

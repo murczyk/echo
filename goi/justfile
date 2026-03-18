@@ -137,11 +137,12 @@ deploy server:
 
     SERVER="{{ server }}"
     APP_DIR="{{ goi_app_dir }}"
-    SRC_DIR="{{ goi_dir }}/goi/goi-1.1.5/"
+    SRC_DIR="{{ goi_dir }}/goi/goi-1.1.6/"
 
     echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
       sudo mkdir -p '${APP_DIR}'
+      sudo mkdir -p '${APP_DIR}/data'
       sudo chown -R echo:echo '${APP_DIR}'
     "
 
@@ -155,6 +156,7 @@ deploy server:
       --delete-after \
       --force \
       --exclude '.git/' \
+      --exclude '/data/' \
       --exclude '/node_modules/' \
       --exclude '.runtime/' \
       --exclude '.bootstrap/' \
@@ -169,11 +171,13 @@ deploy server:
       "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
 
     echo "Syncing goi service files..."
+    scp "${SRC_DIR}/data/categories.json" "${SERVER}:${APP_DIR}/data/categories.json"
     scp "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${APP_DIR}/goi-npm-start.sh"
     scp "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/var/tmp/goi.service"
     ssh ${SERVER} 'sudo mv /var/tmp/goi.service /etc/systemd/system/goi.service'
 
     ssh "$SERVER" "set -euo pipefail
+      sudo chown echo:echo '${APP_DIR}/data/categories.json'
       sudo chown echo:echo '${APP_DIR}/goi-npm-start.sh'
       sudo chmod 0755 '${APP_DIR}/goi-npm-start.sh'
       sudo chown root:root /etc/systemd/system/goi.service

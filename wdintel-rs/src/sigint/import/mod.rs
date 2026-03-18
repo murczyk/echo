@@ -1456,6 +1456,7 @@ where
             network_id: Set(sigint_network_id),
             freq: Set(rec.freq),
             created_at: Set(rec.created_at),
+            last_seen_dt: Set(rec.last_seen_dt),
             kind: Set(rec.kind),
             active_from: Set(rec.active_from),
             active_to: Set(rec.active_to),
