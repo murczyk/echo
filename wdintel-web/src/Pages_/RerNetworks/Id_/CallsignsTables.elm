@@ -87,6 +87,23 @@ loadCallsignsActivity networkId callsigns =
             }
 
 
+knownCallsignActivityCallsigns callsigns =
+    callsigns
+        |> List.filterMap
+            (\callsign ->
+                case callsign.knownCallsigns of
+                    Just knownCallsigns ->
+                        if List.isEmpty knownCallsigns then
+                            Nothing
+
+                        else
+                            Just callsign.callsign
+
+                    Nothing ->
+                        Nothing
+            )
+
+
 unknownCallsignActivityCallsigns callsigns =
     callsigns
         |> List.filterMap
@@ -182,16 +199,27 @@ update shared msg model =
 
                 updatedPager =
                     Pager.updateForNewTotalItems totalCallsigns model.callsignsPager
+
+                knownActivityEffect =
+                    case model.network of
+                        Success network ->
+                            loadCallsignsActivity network.id (knownCallsignActivityCallsigns res.callsigns)
+
+                        _ ->
+                            E.none
             in
             ( { model
                 | callsigns = Success res.callsigns
                 , callsignsPager = updatedPager
               }
-            , if model.unknownCallsignsShowMessages then
-                loadUnknownCallsignsActivityForCallsigns model res.callsigns
+            , E.batch
+                [ knownActivityEffect
+                , if model.unknownCallsignsShowMessages then
+                    loadUnknownCallsignsActivityForCallsigns model res.callsigns
 
-              else
-                E.none
+                  else
+                    E.none
+                ]
             )
 
         CallsignsActivityReturnedByApi (Err e) ->

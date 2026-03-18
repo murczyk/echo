@@ -1034,11 +1034,14 @@ fn network_exists_subquery() -> SelectStatement {
             sigint_network::Entity,
             network_table_alias.clone(),
             Condition::all().add(
-                Expr::col((network_table_alias.clone(), sigint_network::Column::Id))
-                    .equals((
-                        network_alias.clone(),
-                        sigint_inbox_item_network::Column::SigintNetworkId,
-                    )),
+                Expr::col((
+                    network_table_alias.clone(),
+                    sigint_network::Column::Id,
+                ))
+                .equals((
+                    network_alias.clone(),
+                    sigint_inbox_item_network::Column::SigintNetworkId,
+                )),
             ),
         )
         .and_where(

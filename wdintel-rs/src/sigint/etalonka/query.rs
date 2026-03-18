@@ -1,6 +1,10 @@
 use crate::config::ENCRYPTION_KEY_PLACEHOLDER;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::analysis::{
+    filter_selected_networks, filter_selected_networks_stmt,
+};
+use crate::sigint::etalonka::types::*;
 use crate::sigint::network::types::ListNetworksSortBy;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
@@ -18,8 +22,6 @@ use std::collections::HashSet;
 use tempfile::Builder;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
-use crate::rer_importer::analysis::{filter_selected_networks, filter_selected_networks_stmt};
-use crate::sigint::etalonka::types::*;
 
 const SCREENSHOT_DELAY_MILLIS: u64 = 2500;
 const DEFAULT_EMPTY_UNIT_NAME: &str = "в дорозвідці";
