@@ -1,4 +1,5 @@
 import {
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -20,7 +21,6 @@ import React from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
 import { PowerChip } from '../../components/PowerChip';
-import { profileLabel } from './utils';
 
 export type FeedFilterPanelProps = {
   feedId: string;
@@ -42,6 +42,9 @@ export type FeedFilterPanelProps = {
   adjacentFreqsRange?: number;
   highlightSignalsEnabled?: boolean;
   onlyMyUnitTagsEnabled?: boolean;
+  /** 'dividers' = з роздільниками, 'fluid' = плавна без роздільників (для A/B тестування). */
+  messageCardLayout?: 'dividers' | 'fluid';
+  onMessageCardLayoutChange?: (v: 'dividers' | 'fluid') => void;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
   saveFilterName: string;
@@ -77,6 +80,8 @@ export function FeedFilterPanel({
   adjacentFreqsRange,
   highlightSignalsEnabled,
   onlyMyUnitTagsEnabled,
+  messageCardLayout = 'dividers',
+  onMessageCardLayoutChange,
   savedFilters,
   selectedSavedId,
   saveFilterName,
@@ -140,19 +145,82 @@ export function FeedFilterPanel({
   }, [postsSelected.length, postsDenied.length]);
 
   const postValue = postMode === 'include' ? postsSelected : postsDenied;
-  const setPostValue = postMode === 'include' ? (onPostsChange ?? (() => {})) : (onPostsDeniedChange ?? (() => {}));
   const postEmptyLabel = postMode === 'include' ? 'всі' : 'ніяка';
 
-  const senderValue = senderMode === 'include' ? filterStable.sendersSelected : filterStable.deniedSenders;
-  const setSenderValue = senderMode === 'include' ? onSendersChange : onDeniedSendersChange;
+  const [localSenderValue, setLocalSenderValue] = React.useState<{ id: string; label: string }[]>(() => {
+    const ids =
+      filterStable.deniedSenders?.length > 0 ? filterStable.deniedSenders : (filterStable.sendersSelected ?? []);
+    return ids.map((id) => {
+      const o = senderOptions.find((opt) => opt.id === id);
+      return o ?? { id, label: id };
+    });
+  });
   const senderEmptyLabel = senderMode === 'include' ? 'всі' : 'ніхто';
 
   const freqValue = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
-  const setFreqValue = freqMode === 'include' ? onFreqsChange : onFreqsDeniedChange;
   const freqEmptyLabel = freqMode === 'include' ? 'всі' : 'ніяка';
+  const [localFreqValue, setLocalFreqValue] = React.useState<string[]>(() => freqValue);
+  const [localPostValue, setLocalPostValue] = React.useState<string[]>(() => postValue);
+
+  // Resync local filter selections when feed filter changes. Guard: only setState when next value
+  // differs (parent passes fresh [] on each render when filter is null, so ref change would cause
+  // unnecessary resets and Autocomplete flicker with polling).
+  React.useEffect(() => {
+    const ids = senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
+    const currentIds = localSenderValue.map((o) => o.id);
+    if (ids.length === currentIds.length && ids.every((id, i) => id === currentIds[i])) return;
+    setLocalSenderValue(
+      ids.map((id) => {
+        const o = senderOptions.find((opt) => opt.id === id);
+        return o ?? { id, label: id };
+      }),
+    );
+  }, [filterStable.sendersSelected, filterStable.deniedSenders, senderMode, senderOptions, localSenderValue]);
+  React.useEffect(() => {
+    const value = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
+    const next = value ?? [];
+    if (next.length === localFreqValue.length && next.every((v, i) => v === localFreqValue[i])) return;
+    setLocalFreqValue(next);
+  }, [filterStable.freqsSelected, filterStable.freqsDenied, freqMode, localFreqValue]);
+  React.useEffect(() => {
+    const value = postMode === 'include' ? (filterStable.postsSelected ?? []) : (filterStable.postsDenied ?? []);
+    if (value.length === localPostValue.length && value.every((v, i) => v === localPostValue[i])) return;
+    setLocalPostValue(value);
+  }, [filterStable.postsSelected, filterStable.postsDenied, postMode, localPostValue]);
+
+  // Push local selections to parent only when they differ from filterStable; avoid rewriting on mount
+  React.useEffect(() => {
+    const ids = localSenderValue.map((o) => o.id);
+    const current = senderMode === 'include' ? filterStable.sendersSelected : filterStable.deniedSenders;
+    if (current == null && ids.length === 0) return;
+    if (current != null && current.length === ids.length && current.every((id, i) => id === ids[i])) return;
+    if (senderMode === 'include') onSendersChange(ids);
+    else onDeniedSendersChange(ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localSenderValue so writeback runs after resync
+  }, [localSenderValue]);
+
+  React.useEffect(() => {
+    const current = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
+    if (current == null && localFreqValue.length === 0) return;
+    if (current != null && current.length === localFreqValue.length && current.every((v, i) => v === localFreqValue[i]))
+      return;
+    if (freqMode === 'include') onFreqsChange(localFreqValue);
+    else onFreqsDeniedChange(localFreqValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localFreqValue so writeback runs after resync
+  }, [localFreqValue]);
+
+  React.useEffect(() => {
+    const current = postMode === 'include' ? filterStable.postsSelected : filterStable.postsDenied;
+    if (current == null && localPostValue.length === 0) return;
+    if (current != null && current.length === localPostValue.length && current.every((v, i) => v === localPostValue[i]))
+      return;
+    if (postMode === 'include') onPostsChange?.(localPostValue);
+    else onPostsDeniedChange?.(localPostValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localPostValue so writeback runs after resync
+  }, [localPostValue]);
 
   return (
-    <Paper variant="outlined" className="p-3">
+    <Paper variant="outlined" className="p-3 z-2">
       <Box className="flex flex-col gap-3">
         <Box>
           <Typography variant="subtitle2" className="mb-2 font-semibold">
@@ -186,6 +254,7 @@ export function FeedFilterPanel({
               onChange={(_, v) => {
                 if (v == null) return;
                 setSenderMode(v);
+                setLocalSenderValue([]);
                 if (v === 'include') onDeniedSendersChange([]);
                 else onSendersChange([]);
               }}
@@ -199,25 +268,22 @@ export function FeedFilterPanel({
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
             </ToggleButtonGroup>
-            <FormControl size="small" className="min-w-[180px] flex-1">
-              <Select
-                multiple
-                displayEmpty
-                value={senderValue}
-                onChange={(e) => setSenderValue((e.target.value as string[]) || [])}
-                renderValue={(sel) =>
-                  (sel as string[]).length === 0
-                    ? senderEmptyLabel
-                    : (sel as string[]).map((id) => profileLabel(id, profiles[id] ?? null)).join(', ')
-                }
-              >
-                {senderOptions.map((opt) => (
-                  <MenuItem key={opt.id} value={opt.id}>
-                    {opt.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+
+            <Autocomplete
+              multiple
+              size="small"
+              options={senderOptions}
+              getOptionLabel={(option) => option.label}
+              value={localSenderValue}
+              onChange={(_, value) => setLocalSenderValue(value)}
+              isOptionEqualToValue={(option, val) => option.id === val.id}
+              filterSelectedOptions
+              clearOnEscape
+              renderInput={(params) => (
+                <TextField {...params} placeholder={localSenderValue.length === 0 ? senderEmptyLabel : undefined} />
+              )}
+              className="min-w-[180px] flex-1"
+            />
           </Box>
         </Box>
 
@@ -251,6 +317,7 @@ export function FeedFilterPanel({
               onChange={(_, v) => {
                 if (v == null) return;
                 setFreqMode(v);
+                setLocalFreqValue([]);
                 if (v === 'include') onFreqsDeniedChange([]);
                 else onFreqsChange([]);
               }}
@@ -264,21 +331,20 @@ export function FeedFilterPanel({
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
             </ToggleButtonGroup>
-            <FormControl size="small" className="min-w-[160px] flex-1">
-              <Select
-                multiple
-                displayEmpty
-                value={freqValue}
-                onChange={(e) => setFreqValue((e.target.value as string[]) || [])}
-                renderValue={(sel) => ((sel as string[]).length === 0 ? freqEmptyLabel : (sel as string[]).join(', '))}
-              >
-                {freqs.map((f) => (
-                  <MenuItem key={f} value={f}>
-                    {f}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Autocomplete
+              multiple
+              size="small"
+              options={freqs}
+              getOptionLabel={(option) => option}
+              value={localFreqValue}
+              onChange={(_, value) => setLocalFreqValue(value)}
+              filterSelectedOptions
+              clearOnEscape
+              renderInput={(params) => (
+                <TextField {...params} placeholder={localFreqValue.length === 0 ? freqEmptyLabel : undefined} />
+              )}
+              className="min-w-[160px] flex-1"
+            />
           </Box>
           <Box className="flex flex-wrap gap-2 justify-end mt-1">
             <Tooltip title="Частоти в діапазоні від обраних будуть автоматично додаватись до фільтра.">
@@ -317,6 +383,7 @@ export function FeedFilterPanel({
               onChange={(_, v) => {
                 if (v == null) return;
                 setPostMode(v);
+                setLocalPostValue([]);
                 if (v === 'include') onPostsDeniedChange?.([]);
                 else onPostsChange?.([]);
               }}
@@ -330,21 +397,20 @@ export function FeedFilterPanel({
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
             </ToggleButtonGroup>
-            <FormControl size="small" className="min-w-[160px] flex-1">
-              <Select
-                multiple
-                displayEmpty
-                value={postValue}
-                onChange={(e) => setPostValue((e.target.value as string[]) || [])}
-                renderValue={(sel) => ((sel as string[]).length === 0 ? postEmptyLabel : (sel as string[]).join(', '))}
-              >
-                {(postsList ?? []).map((p) => (
-                  <MenuItem key={p} value={p}>
-                    {p}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Autocomplete
+              multiple
+              size="small"
+              options={postsList ?? []}
+              getOptionLabel={(option) => option}
+              value={localPostValue}
+              onChange={(_, value) => setLocalPostValue(value)}
+              filterSelectedOptions
+              clearOnEscape
+              renderInput={(params) => (
+                <TextField {...params} placeholder={localPostValue.length === 0 ? postEmptyLabel : undefined} />
+              )}
+              className="min-w-[160px] flex-1"
+            />
           </Box>
         </Box>
 
@@ -373,6 +439,29 @@ export function FeedFilterPanel({
               }
               label="лише теги мого підрозділу"
             />
+            {onMessageCardLayoutChange != null && (
+              <Box className="flex items-center gap-2 mt-1">
+                <Typography variant="caption" sx={{ fontSize: 12 }}>
+                  картка повідомлення:
+                </Typography>
+                <ToggleButtonGroup
+                  value={messageCardLayout}
+                  exclusive
+                  onChange={(_, v: 'dividers' | 'fluid' | null) => {
+                    if (v != null) onMessageCardLayoutChange(v);
+                  }}
+                  size="small"
+                  sx={{
+                    flexShrink: 0,
+                    borderRadius: 2,
+                    '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
+                  }}
+                >
+                  <ToggleButton value="dividers">з роздільниками</ToggleButton>
+                  <ToggleButton value="fluid">без роздільників</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+            )}
           </Box>
         </Box>
 

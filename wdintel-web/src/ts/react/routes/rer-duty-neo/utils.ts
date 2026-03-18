@@ -26,8 +26,23 @@ export function createMasterUnitText(network: Network, unitsMap: Record<number, 
 }
 
 export const PAGE_ID = 'rer-duty-neo';
+/** LocalStorage key for message card layout preference (dividers | fluid). */
+export const MESSAGE_CARD_LAYOUT_STORAGE_KEY = 'rer-duty-neo-message-card-layout';
 /** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
 export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
+
+export type MessageCardLayoutVariant = 'dividers' | 'fluid';
+
+export function getStoredMessageCardLayout(): MessageCardLayoutVariant {
+  if (typeof window === 'undefined') return 'dividers';
+  const raw = window.localStorage.getItem(MESSAGE_CARD_LAYOUT_STORAGE_KEY);
+  return raw === 'fluid' ? 'fluid' : 'dividers';
+}
+
+export function setStoredMessageCardLayout(v: MessageCardLayoutVariant): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(MESSAGE_CARD_LAYOUT_STORAGE_KEY, v);
+}
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
@@ -40,6 +55,27 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     lastViewedMessageId: null,
   };
+}
+
+/** Distinguishes null/undefined from []. Backend treats None (no filter) vs Some([]) (empty filter → no rows) differently. */
+function optArrEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** True when both filters are equivalent for request purposes (no need to refetch). */
+export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterState): boolean {
+  return (
+    optArrEqual(a.groupsSelected, b.groupsSelected) &&
+    optArrEqual(a.sendersSelected, b.sendersSelected) &&
+    optArrEqual(a.deniedSenders, b.deniedSenders) &&
+    optArrEqual(a.freqsSelected, b.freqsSelected) &&
+    optArrEqual(a.freqsDenied, b.freqsDenied) &&
+    optArrEqual(a.postsSelected, b.postsSelected) &&
+    optArrEqual(a.postsDenied, b.postsDenied)
+  );
 }
 
 /** Options for "автоматично додавати частоти в діапазоні" (MHz). */
@@ -331,8 +367,6 @@ export type MessageFeedState = {
   /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
   readIds: Set<number>;
   unreadCount: number;
-  /** When true, the left column (freq, date/time, buttons) is hidden for all messages in this feed. */
-  leftSideCollapsed: boolean;
   /** Auto-add freqs in range (MHz); 0 = off. */
   adjacentFreqsRange: number;
   /** Підсвічувати сигнали (додатково). */

@@ -38,6 +38,8 @@ const FeedScroller = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'
 
 export type FeedColumnProps = {
   feed: MessageFeedState;
+  /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */
+  feedCount?: number;
   filterStable: {
     groupsSelected: string[];
     sendersSelected: string[];
@@ -56,6 +58,8 @@ export type FeedColumnProps = {
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
+  messageCardLayout: 'dividers' | 'fluid';
+  onMessageCardLayoutChange?: (v: 'dividers' | 'fluid') => void;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
   saveFilterName: string;
@@ -109,8 +113,6 @@ export type FeedColumnProps = {
   /** Unread count (items not in readIds); shown as badge when > 0. */
   unreadCount?: number;
   /** When true, message cards hide the left column (freq, date/time, buttons). Toggle is per feed. */
-  leftSideCollapsed?: boolean;
-  onToggleLeftSide?: () => void;
 };
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
@@ -118,6 +120,7 @@ export type FeedColumnHandle = { scrollToEnd: () => void };
 export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   {
     feed,
+    feedCount,
     filterStable,
     groupsList,
     groupInfos,
@@ -128,6 +131,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     adjacentFreqsRange,
     highlightSignalsEnabled,
     onlyMyUnitTagsEnabled,
+    messageCardLayout,
+    onMessageCardLayoutChange,
     savedFilters,
     selectedSavedId,
     saveFilterName,
@@ -174,8 +179,6 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     onArrowClick,
     onVisibleMessageIds,
     unreadCount = 0,
-    leftSideCollapsed = true,
-    onToggleLeftSide,
   },
   ref,
 ) {
@@ -295,19 +298,6 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
           >
             Фільтри
           </Button>
-          {onToggleLeftSide != null && (
-            <Button
-              size="medium"
-              variant="text"
-              className="self-stretch"
-              aria-label={leftSideCollapsed ? 'Розгорнути ліву колонку' : 'Згорнути ліву колонку'}
-              title={leftSideCollapsed ? 'Розгорнути ліву колонку' : 'Згорнути ліву колонку'}
-              onClick={onToggleLeftSide}
-              sx={{ minWidth: 40 }}
-            >
-              <i className={leftSideCollapsed ? 'bi bi-layout-sidebar-inset-reverse' : 'bi bi-layout-sidebar-inset'} />
-            </Button>
-          )}
         </div>
         {canRemove && !showFilters && (
           <Button
@@ -339,6 +329,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
           adjacentFreqsRange={adjacentFreqsRange}
           highlightSignalsEnabled={highlightSignalsEnabled}
           onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
+          messageCardLayout={messageCardLayout}
+          onMessageCardLayoutChange={onMessageCardLayoutChange}
           savedFilters={savedFilters}
           selectedSavedId={selectedSavedId}
           saveFilterName={saveFilterName}
@@ -436,6 +428,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   id={id}
                   msg={msg}
                   feedId={feedId}
+                  feedCount={feedCount}
+                  layoutVariant={messageCardLayout}
                   referenceTimeMs={feed.referenceTimeMs}
                   authUserName={authUserName}
                   groupName={groupName}
@@ -443,7 +437,6 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   copiedFeedbackId={copiedFeedbackId}
                   networkDisplayMap={networkDisplayMap}
                   tagsMap={tagsMap}
-                  leftSideCollapsed={leftSideCollapsed}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
                   onImportant={() => onMessageImportant(id, msg.important)}
                   onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}

@@ -242,11 +242,20 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   }, [commentMessageId, commentFeedId, commentText, setMessageFeeds, setError]);
 
   const senderOptions = React.useMemo(() => {
-    return Object.entries(profiles).map(([uuid, entry]) => ({
+    const next = Object.entries(profiles).map(([uuid, entry]) => ({
       id: uuid,
       label: profileLabel(uuid, entry),
     }));
+    next.sort((a, b) => a.id.localeCompare(b.id));
+    return next;
   }, [profiles]);
+
+  const senderOptionsStableRef = React.useRef(senderOptions);
+  const senderOptionsStable =
+    senderOptionsStableRef.current.length === senderOptions.length &&
+    senderOptionsStableRef.current.every((o, i) => o.id === senderOptions[i].id && o.label === senderOptions[i].label)
+      ? senderOptionsStableRef.current
+      : ((senderOptionsStableRef.current = senderOptions), senderOptions);
 
   const tagIdsList = React.useMemo(
     () =>
@@ -374,12 +383,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [setMessageFeeds],
   );
 
-  const handleToggleLeftSide = React.useCallback((feedId: string) => {
-    setMessageFeeds((prev) =>
-      prev.map((f) => (f.id === feedId ? { ...f, leftSideCollapsed: !f.leftSideCollapsed } : f)),
-    );
-  }, [setMessageFeeds]);
-
   return {
     handleSaveFilter,
     handleApplySavedFilter,
@@ -395,7 +398,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     handleToggleTag,
     handleArrowClick,
     handleVisibleMessageIds,
-    handleToggleLeftSide,
     commentMessageId,
     commentText,
     setCommentText,
@@ -403,7 +405,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     setCommentFeedId,
     deleteConfirmId,
     deleteConfirmFeedId,
-    senderOptions,
+    senderOptions: senderOptionsStable,
     tagIdsList,
     copiedFeedbackId,
   };

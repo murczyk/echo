@@ -46,7 +46,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       referenceTimeMs: null,
       readIds: new Set<number>(),
       unreadCount: 0,
-      leftSideCollapsed: true,
       adjacentFreqsRange: 0,
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,

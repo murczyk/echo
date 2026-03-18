@@ -3,6 +3,7 @@ import React from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
+import { getStoredMessageCardLayout, setStoredMessageCardLayout } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
 
 export type RerDutyNeoPageProps = {
@@ -12,6 +13,11 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
+  const [messageCardLayout, setMessageCardLayout] = React.useState(getStoredMessageCardLayout);
+  const handleMessageCardLayoutChange = React.useCallback((v: 'dividers' | 'fluid') => {
+    setStoredMessageCardLayout(v);
+    setMessageCardLayout(v);
+  }, []);
   const {
     messageFeeds,
     error,
@@ -38,7 +44,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     handleToggleTag,
     handleArrowClick,
     handleVisibleMessageIds,
-    handleToggleLeftSide,
     commentMessageId,
     commentText,
     setCommentText,
@@ -71,7 +76,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   } = useRerDutyFeeds(authUserName);
 
   return (
-    <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 80px)', minHeight: 0, overflow: 'hidden' }}>
+    <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 54px)', minHeight: 0, overflow: 'hidden' }}>
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
       {error && (
@@ -98,8 +103,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 columnRefsRef.current[w.id] = el;
               }}
               feed={w}
-              leftSideCollapsed={w.leftSideCollapsed}
-              onToggleLeftSide={() => handleToggleLeftSide(w.id)}
+              feedCount={messageFeeds.length}
               unreadCount={
                 w.items.length > 0
                   ? Math.max(w.unreadCount, w.items.filter(([id]) => !w.readIds.has(id)).length)
@@ -115,6 +119,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               adjacentFreqsRange={w.adjacentFreqsRange}
               highlightSignalsEnabled={w.highlightSignalsEnabled}
               onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
+              messageCardLayout={messageCardLayout}
+              onMessageCardLayoutChange={handleMessageCardLayoutChange}
               savedFilters={savedFilters}
               selectedSavedId={selectedSavedId}
               saveFilterName={saveFilterName}
@@ -124,9 +130,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 messageFeeds.length >= 4
                   ? 'calc((100% - 2rem) / 4)'
                   : messageFeeds.length === 3
-                    ? 'calc((100% - 2rem - 48px) / 3)'
+                    ? 'calc((100% - 2rem) / 3)'
                     : messageFeeds.length === 2
-                      ? 'calc((90% - 2rem - 48px) / 2)'
+                      ? 'calc((90% - 2rem) / 2)'
                       : '45%'
               }
               authUserName={authUserName}
