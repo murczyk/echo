@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use tempfile::Builder;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
-
+use crate::rer_importer::analysis::{filter_selected_networks, filter_selected_networks_stmt};
 use crate::sigint::etalonka::types::*;
 
 const SCREENSHOT_DELAY_MILLIS: u64 = 2500;
@@ -258,6 +258,8 @@ async fn load_freqs_impl(
     .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
         |_| Expr::col((nf.clone(), SigintNetworkFreq::ActiveTo)).is_null(),
     ));
+    q = filter_selected_networks_stmt(q, &Some(vec![network_id]), &None)
+        .c(h!())?;
 
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
@@ -1289,6 +1291,13 @@ pub fn build_callsigns_queries(
         }
     }
 
+    network_messages_select = filter_selected_networks_stmt(
+        network_messages_select,
+        &Some(vec![network_id]),
+        &None,
+    )
+    .c(h!())?;
+
     let network_messages_cte = CommonTableExpression::new()
         .query(network_messages_select.to_owned())
         .table_name(Alias::new("network_messages"))
@@ -1920,6 +1929,8 @@ pub async fn bl_get_network_points(
                 .is_null(),
         );
     }
+    q = filter_selected_networks(q, &Some(vec![network_id]), &None).c(h!())?;
+
     // debug!(
     //     "> pelengs per unir sql: {}\n",
     //     q.build(DbBackend::Postgres).to_string()

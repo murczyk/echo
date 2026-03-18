@@ -98,8 +98,12 @@ pub async fn rer_analysis_download_geojson(
     )?;
     let items =
         filter_selected_aors(items, &req.selected_aors).context(h!())?;
-    let items = filter_selected_networks(items, &req.selected_networks)
-        .context(h!())?;
+    let items = filter_selected_networks(
+        items,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
     let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
     let items = filter_search(items, &req.search)?;
     let items = filter_selected_locations(

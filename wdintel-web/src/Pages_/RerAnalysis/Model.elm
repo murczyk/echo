@@ -95,6 +95,7 @@ type alias Model =
     , metadataHash : List String
     , onlyWithMetadata : Bool
     , withoutMetadata : Bool
+    , withoutNetwork : Bool
     , nolimitShown : Bool
     , menuTab : MenuTab
     , selAorState : Select.State

@@ -1146,6 +1146,7 @@ type alias InboxMessagesReq =
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
+    , withoutNetwork : Maybe Bool
     , metadataCc : Maybe (List String)
     , metadataSender : Maybe (List String)
     , metadataReceiver : Maybe (List String)
@@ -1201,6 +1202,7 @@ inboxMessagesReqEncoder struct =
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
+        , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutNetwork )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataCc )
         , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataSender )
         , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataReceiver )
@@ -1672,6 +1674,7 @@ type alias AnalysisStatsReq =
     , search : Maybe String
     , selectedTags : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
+    , withoutNetwork : Maybe Bool
     , metadataCc : Maybe (List String)
     , metadataSender : Maybe (List String)
     , metadataReceiver : Maybe (List String)
@@ -1706,6 +1709,7 @@ analysisStatsReqEncoder struct =
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
+        , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutNetwork )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataCc )
         , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataSender )
         , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataReceiver )
@@ -2013,6 +2017,7 @@ type alias CallsignsGraphReq =
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
+    , withoutNetwork : Maybe Bool
     , metadataCc : Maybe (List String)
     , metadataSender : Maybe (List String)
     , metadataReceiver : Maybe (List String)
@@ -2048,6 +2053,7 @@ callsignsGraphReqEncoder struct =
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
+        , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutNetwork )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataCc )
         , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataSender )
         , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataReceiver )
@@ -2220,6 +2226,7 @@ type alias RerAnalysisQueryState =
     , locationsSelected : List String
     , postsSelected : List String
     , networksSelected : List String
+    , withoutNetwork : Bool
     , orWithExtendedForm : Bool
     , orBookmarked : Bool
     , orImportant : Bool
@@ -2255,6 +2262,7 @@ rerAnalysisQueryStateEncoder struct =
         , ( "locations_selected", Json.Encode.list Json.Encode.string struct.locationsSelected )
         , ( "posts_selected", Json.Encode.list Json.Encode.string struct.postsSelected )
         , ( "networks_selected", Json.Encode.list Json.Encode.string struct.networksSelected )
+        , ( "without_network", Json.Encode.bool struct.withoutNetwork )
         , ( "or_with_extended_form", Json.Encode.bool struct.orWithExtendedForm )
         , ( "or_bookmarked", Json.Encode.bool struct.orBookmarked )
         , ( "or_important", Json.Encode.bool struct.orImportant )
@@ -8000,6 +8008,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
@@ -8184,6 +8193,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
@@ -8355,6 +8365,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
@@ -8475,6 +8486,15 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_selected" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen
+            (\x ->
+                Json.Decode.map x
+                    (Json.Decode.oneOf
+                        [ Json.Decode.field "without_network" Json.Decode.bool
+                        , Json.Decode.succeed False
+                        ]
+                    )
+            )
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_extended_form" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_bookmarked" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" Json.Decode.bool))

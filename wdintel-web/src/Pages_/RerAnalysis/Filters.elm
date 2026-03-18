@@ -825,6 +825,14 @@ view isDark user model =
                             , trunc = Utils.Select.Long
                             }
                     )
+                    , div [ class "my-3" ]
+                        [ Shared.Components.Checkbox.new { isChecked = model.withoutNetwork, onToggle = WithoutNetworkChanged }
+                            |> Shared.Components.Checkbox.withContent
+                                [ text "без мережі "
+                                , i [ class "bi-question-circle text-xs text-gray-500 dark:text-gray-400" ] []
+                                ]
+                            |> Shared.Components.Checkbox.view
+                        ]
                 ]
     in
     div

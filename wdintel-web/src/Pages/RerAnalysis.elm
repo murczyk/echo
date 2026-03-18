@@ -159,6 +159,7 @@ init route _ =
             , metadataHash = []
             , onlyWithMetadata = False
             , withoutMetadata = False
+            , withoutNetwork = False
             , nolimitShown = False
             , menuTab = TabFilters
             , selAorState = Select.initState (Select.selectIdentifier "selAorState")
@@ -353,9 +354,14 @@ getInboxReq model =
     , pageId = Just "rer-analysis"
     , unitsExactMatchOnly = Just model.unitsExactMatchOnly
     , selectedNetworks =
-        model.networksSelected
-            |> List.filterMap String.toInt
-            |> emptyToNothing
+        if model.withoutNetwork then
+            Nothing
+
+        else
+            model.networksSelected
+                |> List.filterMap String.toInt
+                |> emptyToNothing
+    , withoutNetwork = Just model.withoutNetwork
     , withoutModelTags = Just model.withoutModelTags
     }
 
@@ -422,9 +428,19 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                 else
                     Nothing
             , selectedNetworks =
-                model.networksSelected
-                    |> List.filterMap String.toInt
-                    |> emptyToNothing
+                if model.withoutNetwork then
+                    Nothing
+
+                else
+                    model.networksSelected
+                        |> List.filterMap String.toInt
+                        |> emptyToNothing
+            , withoutNetwork =
+                if model.withoutNetwork then
+                    Just True
+
+                else
+                    Nothing
             , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
             }
 
@@ -2628,6 +2644,19 @@ update user shared route msg model =
                                 model.onlyWithMetadata
                     }
 
+        WithoutNetworkChanged checked ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters
+                    { model
+                        | withoutNetwork = checked
+                        , networksSelected =
+                            if checked then
+                                []
+
+                            else
+                                model.networksSelected
+                    }
+
         SelMetadataCcMsg imsg ->
             case ( model.from.datePosix, model.to.datePosix ) of
                 ( Just dtFromPosix, Just dtToPosix ) ->
@@ -3318,6 +3347,12 @@ update user shared route msg model =
                             { model
                                 | selNetworkState = state
                                 , networksSelected = updatedSelectedItems
+                                , withoutNetwork =
+                                    if List.isEmpty updatedSelectedItems then
+                                        model.withoutNetwork
+
+                                    else
+                                        False
                             }
 
                         result =

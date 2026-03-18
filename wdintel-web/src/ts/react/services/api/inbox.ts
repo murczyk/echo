@@ -373,6 +373,7 @@ export async function getPostsList(): Promise<string[]> {
     search: null,
     selectedTags: null,
     selectedNetworks: null,
+    withoutNetwork: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,

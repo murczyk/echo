@@ -435,6 +435,7 @@ getBasicInboxParams model =
     , pageId = Just "rer-duty"
     , unitsExactMatchOnly = Nothing
     , selectedNetworks = Nothing
+    , withoutNetwork = Nothing
     , withoutModelTags = Nothing
     }
 

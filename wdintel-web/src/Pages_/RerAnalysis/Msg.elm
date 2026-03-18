@@ -101,6 +101,7 @@ type Msg
     | SelMetadataHashMsg (Select.Msg String)
     | OnlyWithMetadataChanged Bool
     | WithoutMetadataChanged Bool
+    | WithoutNetworkChanged Bool
     | SearchDo
     | SearchInputKeyDown Int
     | SearchReset

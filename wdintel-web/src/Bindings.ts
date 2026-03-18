@@ -440,6 +440,7 @@ export type InboxMessagesReq = {
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
+  withoutNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -633,6 +634,7 @@ export type AnalysisStatsReq = {
   search: string | null;
   selectedTags: Array<number> | null;
   selectedNetworks: Array<number> | null;
+  withoutNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -768,6 +770,7 @@ export type CallsignsGraphReq = {
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
+  withoutNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -847,6 +850,7 @@ export type RerAnalysisQueryState = {
   locationsSelected: Array<string>;
   postsSelected: Array<string>;
   networksSelected: Array<string>;
+  withoutNetwork: boolean;
   orWithExtendedForm: boolean;
   orBookmarked: boolean;
   orImportant: boolean;
