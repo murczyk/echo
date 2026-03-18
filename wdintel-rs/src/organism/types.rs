@@ -120,9 +120,18 @@ pub struct MyScope {
     pub aors: Vec<MyAor>,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GoiIntegrationType {
+    Simple,
+    #[default]
+    Full,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct OrganismGoiSettings {
     pub organism_id: i64,
+    pub integration_type: GoiIntegrationType,
     pub ssh_host: Option<String>,
     pub ssh_user: Option<String>,
     pub ssh_port: i32,
@@ -136,6 +145,7 @@ pub struct OrganismGoiSettings {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct UpdateOrganismGoiSettingsReq {
     pub organism_id: i64,
+    pub integration_type: GoiIntegrationType,
     pub ssh_host: Option<String>,
     pub ssh_user: Option<String>,
     pub ssh_port: i32,

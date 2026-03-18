@@ -8,7 +8,10 @@ use crate::config::{
 };
 use crate::entities::{goi_association, goi_knowledge, login, organism};
 use crate::error::AppError;
-use crate::organism::goi::shared::organism_has_goi_api_config;
+use crate::organism::goi::shared::{
+    goi_integration_type, goi_integration_type_db_value,
+    organism_has_goi_api_config,
+};
 use crate::organism::goi::types::{
     GoiAssociation, GoiKnowledge, ListGoiAssociationsReq,
     ListGoiAssociationsRsp, ListGoiAssociationsSortBy, ListGoiKnowledgeReq,
@@ -16,7 +19,7 @@ use crate::organism::goi::types::{
 };
 use crate::organism::types::{
     CheckOrganismGoiConnectionReq, CheckOrganismGoiConnectionRsp,
-    OrganismGoiSettings, SetupOrganismGoiWorkerReq,
+    GoiIntegrationType, OrganismGoiSettings, SetupOrganismGoiWorkerReq,
     UpdateOrganismGoiSettingsReq,
 };
 use crate::types::*;
@@ -34,6 +37,7 @@ pub mod types;
 pub mod worker;
 
 struct GoiSettingsInput {
+    integration_type: GoiIntegrationType,
     ssh_host: Option<String>,
     ssh_user: Option<String>,
     ssh_port: i32,
@@ -75,6 +79,7 @@ pub async fn update_organism_goi_settings(
 
     let organism = goi_find_organism(&env.dbx, req.organism_id).await?;
     let settings = GoiSettingsInput {
+        integration_type: req.integration_type,
         ssh_host: normalize_optional_trimmed(req.ssh_host),
         ssh_user: normalize_optional_trimmed(req.ssh_user),
         ssh_port: req.ssh_port,
@@ -115,6 +120,7 @@ pub async fn setup_organism_goi_worker(
     goi_run_setup_worker(ssh_req, setup_command).await?;
 
     let settings = GoiSettingsInput {
+        integration_type: GoiIntegrationType::Full,
         ssh_host: Some(req.ssh_host.trim().to_string()),
         ssh_user: Some(req.ssh_user.trim().to_string()),
         ssh_port: req.ssh_port,
@@ -733,6 +739,9 @@ async fn goi_store_settings(
     settings: GoiSettingsInput,
 ) -> Result<organism::Model, AppError> {
     let mut organism: organism::ActiveModel = organism.into();
+    organism.goi_integration_type =
+        Set(goi_integration_type_db_value(&settings.integration_type)
+            .to_string());
     organism.goi_ssh_host = Set(settings.ssh_host);
     organism.goi_ssh_user = Set(settings.ssh_user);
     organism.goi_ssh_port = Set(settings.ssh_port);
@@ -765,11 +774,13 @@ fn goi_validate_api_port(port: i32) -> Result<(), AppError> {
 fn goi_settings_from_organism(
     organism: organism::Model,
 ) -> OrganismGoiSettings {
-    let ssh_host = normalize_optional_trimmed(organism.goi_ssh_host);
+    let integration_type = goi_integration_type(&organism);
+    let ssh_host = normalize_optional_trimmed(organism.goi_ssh_host.clone());
     let api_host = normalize_optional_trimmed(organism.goi_api_host)
         .or_else(|| ssh_host.clone());
     OrganismGoiSettings {
         organism_id: organism.id,
+        integration_type,
         ssh_host,
         ssh_user: normalize_optional_trimmed(organism.goi_ssh_user),
         ssh_port: if organism.goi_ssh_port > 0 {
@@ -831,26 +842,28 @@ fn goi_validate_settings_req(
     goi_validate_ssh_port(req.ssh_port)?;
     goi_validate_api_port(req.api_port)?;
 
-    let api_host = normalize_optional_trimmed(req.api_host.clone());
-    let ssh_host = normalize_optional_trimmed(req.ssh_host.clone());
-    let api_login = normalize_optional_trimmed(req.api_login.clone());
-    let api_password = normalize_optional_trimmed(req.api_password.clone());
-    let needs_api_auth =
-        api_host.is_some() || api_login.is_some() || api_password.is_some();
-    if needs_api_auth && api_host.is_none() && ssh_host.is_none() {
-        return Err(AppError::BL {
-            msg: "GOI API host or SSH host is required".to_string(),
-        });
-    }
-    if needs_api_auth && api_login.is_none() {
-        return Err(AppError::BL {
-            msg: "GOI API login is required".to_string(),
-        });
-    }
-    if needs_api_auth && api_password.is_none() {
-        return Err(AppError::BL {
-            msg: "GOI API password is required".to_string(),
-        });
+    if req.integration_type == GoiIntegrationType::Full {
+        let api_host = normalize_optional_trimmed(req.api_host.clone());
+        let ssh_host = normalize_optional_trimmed(req.ssh_host.clone());
+        let api_login = normalize_optional_trimmed(req.api_login.clone());
+        let api_password = normalize_optional_trimmed(req.api_password.clone());
+        let needs_api_auth =
+            api_host.is_some() || api_login.is_some() || api_password.is_some();
+        if needs_api_auth && api_host.is_none() && ssh_host.is_none() {
+            return Err(AppError::BL {
+                msg: "GOI API host or SSH host is required".to_string(),
+            });
+        }
+        if needs_api_auth && api_login.is_none() {
+            return Err(AppError::BL {
+                msg: "GOI API login is required".to_string(),
+            });
+        }
+        if needs_api_auth && api_password.is_none() {
+            return Err(AppError::BL {
+                msg: "GOI API password is required".to_string(),
+            });
+        }
     }
     Ok(())
 }
