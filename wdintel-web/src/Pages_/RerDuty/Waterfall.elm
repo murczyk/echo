@@ -486,6 +486,7 @@ loadInitialStats model reload =
                 (GotInitialInbox False)
                 (getInboxParamsForMessages model
                     |> setLoadLatest (Just True)
+                    |> setBeforeIdNoninclusive (WUtils.lastViewedIdToMaybe model.lastViewedMessageId)
                 )
             )
 
