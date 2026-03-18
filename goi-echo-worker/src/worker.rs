@@ -158,10 +158,11 @@ async fn insert_association_rows(
 ) -> Result<()> {
     let models = rows
         .into_iter()
-        .filter_map(|association_row| {
-            let dedupe_key = association_row.dedupe_key()?;
-            let association_row = serde_json::to_value(association_row).ok()?;
-            Some(association::ActiveModel {
+        .map(|association_row| {
+            let dedupe_key = association_row.dedupe_key();
+            let association_row = serde_json::to_value(association_row)
+                .context("serializing association row")?;
+            Ok(association::ActiveModel {
                 id: NotSet,
                 row: Set(association_row),
                 created_at: NotSet,
@@ -169,7 +170,7 @@ async fn insert_association_rows(
                 dedupe_key: Set(dedupe_key),
             })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     if models.is_empty() {
         return Ok(());
     }
