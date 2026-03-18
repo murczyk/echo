@@ -153,7 +153,7 @@ deploy server:
     "
 
     echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
-    rsync -az --delete \
+    rsync -az \
       --delete-after \
       --force \
       --exclude '.git/' \
