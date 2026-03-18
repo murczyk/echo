@@ -1570,6 +1570,69 @@ pub async fn recalculate_network_stats(
     Ok(())
 }
 
+pub async fn refresh_network_freq_last_seen(
+    dbx: &DatabaseConnection,
+    network_ids: Option<&HashSet<i64>>,
+) -> Result<(), AppError> {
+    if matches!(network_ids, Some(ids) if ids.is_empty()) {
+        return Ok(());
+    }
+
+    let network_filter = network_ids
+        .map(|ids| {
+            format!(
+                " and {{alias}}.network_id in ({})",
+                ids.iter().copied().sorted().join(",")
+            )
+        })
+        .unwrap_or_default();
+
+    let reset_sql = format!(
+        "update sigint_network_freq as nf
+         set last_seen_dt = null
+         where nf.deleted = false{}",
+        network_filter.replace("{alias}", "nf"),
+    );
+
+    dbx.execute(Statement::from_string(DatabaseBackend::Postgres, reset_sql))
+        .await
+        .c(h!())?;
+
+    let update_sql = format!(
+        "update sigint_network_freq as nf
+         set last_seen_dt = sub.last_seen_dt
+         from (
+             select
+                 nf_inner.id as network_freq_id,
+                 max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as last_seen_dt
+             from sigint_network_freq as nf_inner
+             join sigint_inbox_item_network as siin
+                 on siin.sigint_network_id = nf_inner.network_id
+             join sigint_inbox_item as sii
+                 on sii.id = siin.sigint_inbox_item_id
+             join signal_message as sm
+                 on sm.id = sii.id
+             where nf_inner.deleted = false
+               and sm.deleted = false
+               and sii.freq = nf_inner.freq
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= nf_inner.active_from
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) <= coalesce(nf_inner.active_to, current_timestamp at time zone 'utc'){}
+             group by nf_inner.id
+         ) as sub
+         where nf.id = sub.network_freq_id",
+        network_filter.replace("{alias}", "nf_inner"),
+    );
+
+    dbx.execute(Statement::from_string(
+        DatabaseBackend::Postgres,
+        update_sql,
+    ))
+    .await
+    .c(h!())?;
+
+    Ok(())
+}
+
 async fn load_generic_stats(
     dbx: &DatabaseConnection,
     since_ts: NaiveDateTime,

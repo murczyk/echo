@@ -14,13 +14,13 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub color_code: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub sender_id: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub sender_name: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
     pub call_group_id: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub call_group_name: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub sender_id: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub sender_name: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub hash_id: Option<String>,
     pub created_at: DateTime,

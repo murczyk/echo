@@ -762,6 +762,9 @@ async fn run_network_invalidation_tasks(
         )
         .await
         .c(h!())?;
+        crate::stats::refresh_network_freq_last_seen(dbx, network_ids)
+            .await
+            .c(h!())?;
     }
 
     let completed_at = Some(Utc::now().naive_utc());
