@@ -29,6 +29,7 @@ const defaultGroupStats: SignalGroupStats = {
   activityLastWeek: 0,
 };
 import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
+import { emptyArrToNull } from '../../utils/misc';
 import { postJson, postVoid } from './client';
 
 /** Raw API response (snake_case) */
@@ -137,13 +138,6 @@ function mapRsp(raw: InboxMessagesRspRaw): InboxMessagesRsp {
     signalGroups,
     freqPelengsSummary: raw.freq_pelengs_summary,
   };
-}
-
-/** Backend treats null (no filter) vs [] (Some([]) → empty filter, zero rows) differently. Normalize for get-inbox. */
-function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
-  if (arr == null) return null;
-  if (Array.isArray(arr) && arr.length === 0) return null;
-  return arr;
 }
 
 /** Build request body with snake_case keys for /api/rer-importer/get-inbox */

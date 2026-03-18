@@ -6,6 +6,7 @@ import type {
   SignalProfileEntry,
 } from '../../../../Bindings';
 import type { Network, Unit } from '../../../../Bindings';
+import { emptyArrToNull } from '../../utils/misc';
 
 export type RerDutyState = {
   messageFeeds: [string, RerDutyFeedFilterState][];
@@ -55,13 +56,6 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     lastViewedMessageId: null,
   };
-}
-
-/** Backend treats null (no filter) vs [] (Some([]) → empty filter, zero rows) differently. Normalize empty arrays to null. */
-function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
-  if (arr == null) return null;
-  if (Array.isArray(arr) && arr.length === 0) return null;
-  return arr;
 }
 
 /** Distinguishes null/undefined from []. Backend treats None (no filter) vs Some([]) (empty filter → no rows) differently. */

@@ -1,3 +1,9 @@
+export function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
+  if (arr == null) return null;
+  if (Array.isArray(arr) && arr.length === 0) return null;
+  return arr;
+}
+
 export function strArraysEqual(arr1: string[], arr2: string[]) {
   if (arr1.length !== arr2.length) {
     return false;

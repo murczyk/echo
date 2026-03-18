@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2098](https://github.com/echoua/echo/issues/2098) 🐞 Оперативний: виправлено баг з відправкою фільтрів
 - [#2098](https://github.com/echoua/echo/issues/2098) ✅🐞 Оперативний: при відкритті сторінки грузити самі свіжі повідомлення
 - [#2097](https://github.com/echoua/echo/issues/2097) ✅ ГОІ: краще імпорт висновків
 - [#2095](https://github.com/echoua/echo/issues/2095) ✅ ГОІ: проста інтеграція з посиланням
