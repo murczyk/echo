@@ -118,9 +118,14 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
             </div>
           </div>
           <Divider className="!mb-3" />
-          <div className="mb-1 flex h-10 items-center gap-2">
-            <p className="mb-0 font-semibold leading-none">Показати</p>
-            <Button onClick={onClickReset} size="small" disabled={!tableStateContext.columnVisibilityTouched}>
+          <div className="mb-1 flex min-h-10 items-center justify-between gap-2">
+            <p className="mb-0 font-semibold leading-6">Показати</p>
+            <Button
+              onClick={onClickReset}
+              size="small"
+              disabled={!tableStateContext.columnVisibilityTouched}
+              style={{ alignSelf: 'center', minHeight: 'unset', paddingTop: 0, paddingBottom: 0 }}
+            >
               Скинути
             </Button>
           </div>

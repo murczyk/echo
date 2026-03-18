@@ -216,6 +216,9 @@ ci-setup-cache-sccache clean="false":
 ci-save-cache-sccache clean="false":
     bash deploy/save_ci_cache_sccache.sh {{ clean }}
 
+ci-test:
+    bash deploy/run_ci_tests.sh
+
 ci-test-be:
     bash deploy/run_backend_tests.sh
 
