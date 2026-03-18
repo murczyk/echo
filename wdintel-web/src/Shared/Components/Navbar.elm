@@ -110,9 +110,14 @@ navBar user shared activeName props =
                     )
                 |> Maybe.withDefault []
             )
-                ++ [ Menu (Internal Route.Path.GoiAssociations) "goi-associations" "висновки"
-                   , Menu (Internal Route.Path.GoiKnowledge) "goi-knowledge" "інформованість"
-                   ]
+                ++ (if user.goiFullAccessForOrganism then
+                        [ Menu (Internal Route.Path.GoiAssociations) "goi-associations" "висновки"
+                        , Menu (Internal Route.Path.GoiKnowledge) "goi-knowledge" "інформованість"
+                        ]
+
+                    else
+                        []
+                   )
 
         importSubs =
             [ Menu (Internal Route.Path.RerDeltaImport) "rer-delta-import" "імпорт delta"

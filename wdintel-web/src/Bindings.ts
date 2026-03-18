@@ -1220,6 +1220,7 @@ export type User = {
   organismId: number | null;
   deltaLogin: string | null;
   goiConfiguredForOrganism: boolean;
+  goiFullAccessForOrganism: boolean;
   goiHost: string | null;
 };
 

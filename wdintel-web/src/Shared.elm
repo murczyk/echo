@@ -72,6 +72,7 @@ init flagsResult _ =
                 , organismId = Nothing
                 , deltaLogin = Nothing
                 , goiConfiguredForOrganism = False
+                , goiFullAccessForOrganism = False
                 , goiHost = Nothing
                 }
       , themeMode =

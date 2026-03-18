@@ -14,6 +14,12 @@ import { postJson, postVoid } from './client';
 const GOI_SSH_PORT_DEFAULT = 22;
 const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
+export const GOI_INTEGRATION_TYPE_SIMPLE = 'simple';
+export const GOI_INTEGRATION_TYPE_FULL = 'full';
+
+export type GoiIntegrationType =
+  | typeof GOI_INTEGRATION_TYPE_SIMPLE
+  | typeof GOI_INTEGRATION_TYPE_FULL;
 
 type OrganismLike = {
   id?: number | string;
@@ -48,6 +54,8 @@ type OrganismGroupLike = {
 type OrganismGoiSettingsLike = {
   organismId?: number | string;
   organism_id?: number | string;
+  integrationType?: GoiIntegrationType | string | null;
+  integration_type?: GoiIntegrationType | string | null;
   sshHost?: string | null;
   ssh_host?: string | null;
   sshUser?: string | null;
@@ -97,6 +105,7 @@ type RemoveGroupFromOrganismReqBody = {
 
 type UpdateOrganismGoiSettingsReqBody = {
   organism_id: number;
+  integration_type: GoiIntegrationType;
   ssh_host: string | null;
   ssh_user: string | null;
   ssh_port: number;
@@ -133,6 +142,7 @@ type CheckOrganismGoiConnectionRspLike = {
 
 export type OrganismGoiSettings = {
   organismId: number;
+  integrationType: GoiIntegrationType;
   sshHost: string;
   sshUser: string;
   sshPort: number;
@@ -209,6 +219,7 @@ function toRemoveGroupReqBody(req: RemoveGroupFromOrganismReq): RemoveGroupFromO
 function toUpdateOrganismGoiSettingsReqBody(req: UpdateOrganismGoiSettingsReq): UpdateOrganismGoiSettingsReqBody {
   return {
     organism_id: req.organismId,
+    integration_type: req.integrationType,
     ssh_host: req.sshHost.trim() ? req.sshHost.trim() : null,
     ssh_user: req.sshUser.trim() ? req.sshUser.trim() : null,
     ssh_port: req.sshPort,
@@ -297,8 +308,10 @@ function normalizeOrganismGroup(raw: OrganismGroupLike): OrganismGroup {
 
 function normalizeOrganismGoiSettings(raw: OrganismGoiSettingsLike): OrganismGoiSettings {
   const sshHost = (raw.sshHost ?? raw.ssh_host ?? '').trim();
+  const integrationType = normalizeGoiIntegrationType(raw.integrationType ?? raw.integration_type);
   return {
     organismId: normalizeNumber(raw.organismId ?? raw.organism_id),
+    integrationType,
     sshHost,
     sshUser: (raw.sshUser ?? raw.ssh_user ?? '').trim(),
     sshPort: normalizeOptionalNumber(raw.sshPort ?? raw.ssh_port) ?? GOI_SSH_PORT_DEFAULT,
@@ -308,6 +321,12 @@ function normalizeOrganismGoiSettings(raw: OrganismGoiSettingsLike): OrganismGoi
     apiLogin: (raw.apiLogin ?? raw.api_login ?? '').trim(),
     apiPassword: (raw.apiPassword ?? raw.api_password ?? '').trim(),
   };
+}
+
+function normalizeGoiIntegrationType(value: GoiIntegrationType | string | null | undefined): GoiIntegrationType {
+  return value === GOI_INTEGRATION_TYPE_SIMPLE
+    ? GOI_INTEGRATION_TYPE_SIMPLE
+    : GOI_INTEGRATION_TYPE_FULL;
 }
 
 export async function listOrganisms(req: ListOrganismsReq): Promise<Organism[]> {

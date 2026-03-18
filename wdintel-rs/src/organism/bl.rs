@@ -239,6 +239,7 @@ pub async fn create_organism_in_txn(
         enabled: NotSet,
         parent_id: Set(parent_id),
         deleted_permanently: NotSet,
+        goi_integration_type: NotSet,
         goi_ssh_host: NotSet,
         goi_ssh_user: NotSet,
         goi_ssh_password: NotSet,
@@ -407,6 +408,8 @@ mod tests {
             roles: Default::default(),
             enabled: true,
             deleted_permanently: false,
+            goi_integration_type:
+                crate::config::ORGANISM_GOI_INTEGRATION_TYPE_DEFAULT.to_string(),
             goi_ssh_host: None,
             goi_ssh_user: None,
             goi_ssh_password: None,

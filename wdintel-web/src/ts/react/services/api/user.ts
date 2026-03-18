@@ -13,6 +13,8 @@ type UserLike = {
   delta_login?: string | null;
   goiConfiguredForOrganism?: boolean;
   goi_configured_for_organism?: boolean;
+  goiFullAccessForOrganism?: boolean;
+  goi_full_access_for_organism?: boolean;
   goiHost?: string | null;
   goi_host?: string | null;
 };
@@ -30,6 +32,8 @@ function normalizeUser(raw: UserLike | null | undefined): User {
     deltaLogin: raw?.deltaLogin ?? raw?.delta_login ?? null,
     goiConfiguredForOrganism:
       raw?.goiConfiguredForOrganism ?? raw?.goi_configured_for_organism ?? false,
+    goiFullAccessForOrganism:
+      raw?.goiFullAccessForOrganism ?? raw?.goi_full_access_for_organism ?? false,
     goiHost: raw?.goiHost ?? raw?.goi_host ?? null,
   };
 }
