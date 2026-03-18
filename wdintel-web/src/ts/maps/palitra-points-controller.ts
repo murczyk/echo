@@ -63,6 +63,7 @@ export class PalitraPointsController {
       },
       apiAccessor,
       () => this.updatePoints(),
+      () => this.rerenderVisibleCachedPointsAfterViewportRequestSettled(),
     );
   }
 
@@ -121,6 +122,14 @@ export class PalitraPointsController {
       this.pointsLoader.schedulePointsRequest();
       void this.renderVisiblePointsFromCache();
     }
+  }
+
+  private rerenderVisibleCachedPointsAfterViewportRequestSettled(): void {
+    if (this.searchState.hasActiveSearch()) {
+      return;
+    }
+
+    void this.renderVisiblePointsFromCache();
   }
 
   private buildPalitrasByApiId(): Map<number, Palitra[]> {
@@ -260,6 +269,13 @@ export class PalitraPointsController {
     });
 
     if (pointsByApiId.size === 0) {
+      const palitraIds = this.stateAccessor
+        .getPalitras()
+        .map((palitraDetails) => this.apiAccessor.apiPalitraId(palitraDetails.palitra));
+      const hasPendingCoverage = this.cacheManager.hasPendingCoverage(palitraIds, bounds, this.map.getZoom());
+      if (hasPendingCoverage) {
+        return;
+      }
       this.pointClustersRenderer.replace([], []);
       return;
     }

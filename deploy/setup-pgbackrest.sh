@@ -200,10 +200,87 @@ if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
     echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] postgres config unchanged, restart skipped"
   fi
 
-  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure stanza exists, then pgbackrest check"
-  ssh "${SERVER}" "set -euo pipefail; \
-    sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info stanza-create; \
-    sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info check"
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] decide pgBackRest next step from local/repo state"
+  PGBACKREST_STATE="$(
+    ssh "${SERVER}" "sudo bash -s" <<REMOTE
+set -euo pipefail
+
+local_system_id=""
+if [[ -x /usr/lib/postgresql/14/bin/pg_controldata ]]; then
+  local_system_id="\$(
+    /usr/lib/postgresql/14/bin/pg_controldata /var/lib/postgresql/14/main 2>/dev/null \
+      | sed -nE 's/^Database system identifier:[[:space:]]*([0-9]+).*$/\1/p' \
+      | head -n 1 || true
+  )"
+fi
+
+set +e
+repo_info_json="\$(
+  sudo -u postgres pgbackrest \
+    --config='/etc/pgbackrest/pgbackrest.conf' \
+    --config-include-path='/etc/pgbackrest/conf.d' \
+    --stanza='${STANZA}' \
+    --output=json \
+    info 2>/dev/null
+)"
+repo_info_rc="\$?"
+set -e
+
+if [[ "\${repo_info_rc}" -ne 0 ]]; then
+  echo "action=create"
+  exit 0
+fi
+
+repo_system_id="\$(
+  printf '%s\n' "\${repo_info_json}" \
+    | sed -nE 's/.*"system-id":([0-9]+).*/\1/p' \
+    | head -n 1 || true
+)"
+
+if [[ -n "\${local_system_id}" && -n "\${repo_system_id}" && "\${local_system_id}" != "\${repo_system_id}" ]]; then
+  echo "action=restore-needed"
+  echo "local_system_id=\${local_system_id}"
+  echo "repo_system_id=\${repo_system_id}"
+  exit 0
+fi
+
+echo "action=check"
+REMOTE
+  )"
+  PGBACKREST_ACTION="$(
+    printf '%s\n' "${PGBACKREST_STATE}" | sed -nE 's/^action=(.*)$/\1/p' | head -n 1
+  )"
+  LOCAL_SYSTEM_ID="$(
+    printf '%s\n' "${PGBACKREST_STATE}" | sed -nE 's/^local_system_id=(.*)$/\1/p' | head -n 1
+  )"
+  REPO_SYSTEM_ID="$(
+    printf '%s\n' "${PGBACKREST_STATE}" | sed -nE 's/^repo_system_id=(.*)$/\1/p' | head -n 1
+  )"
+
+  case "${PGBACKREST_ACTION}" in
+    create)
+      echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] repo is empty, creating stanza and running check"
+      ssh "${SERVER}" "set -euo pipefail; \
+        sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info stanza-create; \
+        sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info check"
+      ;;
+    check)
+      echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] repo matches local cluster, running pgbackrest check"
+      ssh "${SERVER}" "set -euo pipefail; \
+        sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info check"
+      ;;
+    restore-needed)
+      echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] existing repo belongs to another cluster"
+      echo "    local system id: ${LOCAL_SYSTEM_ID}"
+      echo "    repo system id:  ${REPO_SYSTEM_ID}"
+      echo "    next action: just restore-pgbackrest --server ${SERVER} --backup-name ${BACKUP_NAME}"
+      ;;
+    *)
+      echo "failed to decide pgBackRest next step on ${SERVER}" >&2
+      printf '%s\n' "${PGBACKREST_STATE}" >&2
+      exit 1
+      ;;
+  esac
 
   rm -f "${TMP_90}"
 

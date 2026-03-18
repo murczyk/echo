@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e
+
+mkdir -p /etc/goi-echo-worker
+if [ ! -f /etc/goi-echo-worker/config.toml ] && [ -f /etc/goi-echo-worker/config.toml.example ]; then
+  cp /etc/goi-echo-worker/config.toml.example /etc/goi-echo-worker/config.toml
+fi
+
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  #DEBHELPER#
+else
+  echo "systemctl not available; skipping systemd unit activation in package maintainer scripts."
+fi

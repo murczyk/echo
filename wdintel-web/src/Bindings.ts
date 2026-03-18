@@ -1215,6 +1215,8 @@ export type User = {
   sigintZoneId: number | null;
   organismId: number | null;
   deltaLogin: string | null;
+  goiConfiguredForOrganism: boolean;
+  goiHost: string | null;
 };
 
 export type SettingsSaveReq = {
@@ -1359,6 +1361,119 @@ export type SignalGroupFull = {
 export type OrganismGroup = {
   masterKey: string;
   organismId: number;
+};
+
+export type ListGoiAssociationsSortBy =
+  | 'GoiAssociationSourceAssociationIdDesc'
+  | 'GoiAssociationSourceAssociationIdAsc'
+  | 'GoiAssociationSourceCreatedAtDesc'
+  | 'GoiAssociationSourceCreatedAtAsc'
+  | 'GoiAssociationFrequencyAsc'
+  | 'GoiAssociationFrequencyDesc'
+  | 'GoiAssociationCoordinatesAsc'
+  | 'GoiAssociationCoordinatesDesc'
+  | 'GoiAssociationCategoryAsc'
+  | 'GoiAssociationCategoryDesc'
+  | 'GoiAssociationAuthorAsc'
+  | 'GoiAssociationAuthorDesc'
+  | 'GoiAssociationCreatedAtDesc'
+  | 'GoiAssociationCreatedAtAsc'
+;
+
+export type ListGoiAssociationsReq = {
+  limit: number | null;
+  offset: number | null;
+  sortBy: ListGoiAssociationsSortBy | null;
+  filterText: string | null;
+  filterFrequency: string | null;
+  filterCoordinates: string | null;
+  filterNote: string | null;
+  filterCategory: string | null;
+  filterAuthor: string | null;
+  filterDeleted: boolean | null;
+};
+
+export type GoiAssociation = {
+  id: number;
+  sourceAssociationId: number;
+  sourceCreatedAtMs: number;
+  createdAtMs: number;
+  deleted: boolean;
+  associationType: string | null;
+  frequency: string | null;
+  coordinates: string | null;
+  note: string | null;
+  category: string | null;
+  callSigns: Array<string>;
+  formation: string | null;
+  associationCount: number | null;
+  sidc: string | null;
+  author: string | null;
+  sourceDateRaw: string | null;
+  sourceDateMs: number | null;
+};
+
+export type ListGoiAssociationsRsp = {
+  items: Array<GoiAssociation>;
+  hasMore: boolean;
+};
+
+export type ListGoiKnowledgeSortBy =
+  | 'GoiKnowledgeSourceKnowledgeIdDesc'
+  | 'GoiKnowledgeSourceKnowledgeIdAsc'
+  | 'GoiKnowledgeSourceCreatedAtDesc'
+  | 'GoiKnowledgeSourceCreatedAtAsc'
+  | 'GoiKnowledgeNameAsc'
+  | 'GoiKnowledgeNameDesc'
+  | 'GoiKnowledgeKeyAsc'
+  | 'GoiKnowledgeKeyDesc'
+  | 'GoiKnowledgeTypeAsc'
+  | 'GoiKnowledgeTypeDesc'
+  | 'GoiKnowledgeAuthorAsc'
+  | 'GoiKnowledgeAuthorDesc'
+  | 'GoiKnowledgeFormationAsc'
+  | 'GoiKnowledgeFormationDesc'
+  | 'GoiKnowledgeNoteAsc'
+  | 'GoiKnowledgeNoteDesc'
+  | 'GoiKnowledgeSourceDateDesc'
+  | 'GoiKnowledgeSourceDateAsc'
+  | 'GoiKnowledgeCreatedAtDesc'
+  | 'GoiKnowledgeCreatedAtAsc'
+;
+
+export type ListGoiKnowledgeReq = {
+  limit: number | null;
+  offset: number | null;
+  sortBy: ListGoiKnowledgeSortBy | null;
+  filterText: string | null;
+  filterName: string | null;
+  filterKey: string | null;
+  filterKnowledgeType: string | null;
+  filterNote: string | null;
+  filterAuthor: string | null;
+  filterFormation: string | null;
+  filterDeleted: boolean | null;
+};
+
+export type GoiKnowledge = {
+  id: number;
+  sourceKnowledgeId: number;
+  sourceCreatedAtMs: number;
+  createdAtMs: number;
+  deleted: boolean;
+  name: string | null;
+  key: string | null;
+  knowledgeType: string | null;
+  author: string | null;
+  note: string | null;
+  sourceDateRaw: string | null;
+  sourceDateMs: number | null;
+  formation: string | null;
+};
+
+export type ListGoiKnowledgeRsp = {
+  items: Array<GoiKnowledge>;
+  hasMore: boolean;
 };
 
 export type Datasource = {
@@ -2258,14 +2373,25 @@ export type ModulationRec = {
 
 export type SingleNetworkFreqsReq = {
   networkId: number;
+  includeCallsigns: boolean | null;
 };
 
 export type SingleNetworkFreqsListRsp = {
   freqs: Array<NetworkFreqsRes>;
 };
 
+export type NetworkFreqCallsignsReq = {
+  networkFreqId: number;
+};
+
+export type NetworkFreqCallsignsRsp = {
+  networkFreqId: number;
+  callsigns: Array<string>;
+};
+
 export type SingleNetworkCallsignsReq = {
   networkId: number;
+  includeActivityInfo: boolean | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {

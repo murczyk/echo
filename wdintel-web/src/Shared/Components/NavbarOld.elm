@@ -42,6 +42,22 @@ type alias Props msg =
     }
 
 
+goiExternalUrl : String -> Maybe String
+goiExternalUrl rawHost =
+    let
+        host =
+            String.trim rawHost
+    in
+    if String.isEmpty host then
+        Nothing
+
+    else if String.startsWith "http://" host || String.startsWith "https://" host then
+        Just host
+
+    else
+        Just ("https://" ++ host)
+
+
 navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
 navBar user shared activeName props =
     let
@@ -88,6 +104,20 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerPalitra) "palitra" "палітри (стара)"
             ]
 
+        goiSubs =
+            (user.goiHost
+                |> Maybe.andThen goiExternalUrl
+                |> Maybe.map
+                    (\url ->
+                        [ Menu (External url) "goi-external" "відкрити ГОІ"
+                        ]
+                    )
+                |> Maybe.withDefault []
+            )
+                ++ [ Menu (Internal Route.Path.GoiAssociations) "goi-associations" "висновки"
+                   , Menu (Internal Route.Path.GoiKnowledge) "goi-knowledge" "інформованість"
+                   ]
+
         importSubs =
             [ Menu (Internal Route.Path.RerDeltaImport) "rer-delta-import" "імпорт delta"
             , Menu (Internal Route.Path.RerCsvImport) "rer-csv-import" "імпорт csv"
@@ -123,6 +153,8 @@ navBar user shared activeName props =
                     [ menu Route.Path.RerAnalysis "analysis" "аналіз" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "etalonka" "еталонка" etalonkaSubs ]
+                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
+                    [ menuWithSubs "goi" "гоі" goiSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "import" "імпорт" importSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
@@ -289,6 +321,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                             , attribute "role" "menuitem"
                             , href link
                             , target "_blank"
+                            , rel "noopener noreferrer"
                             , onClick (props.onDropdownToggle Nothing)
                             ]
                             [ menuItemLabel sub

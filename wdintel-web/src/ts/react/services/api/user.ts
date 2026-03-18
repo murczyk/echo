@@ -11,6 +11,10 @@ type UserLike = {
   organism_id?: number | null;
   deltaLogin?: string | null;
   delta_login?: string | null;
+  goiConfiguredForOrganism?: boolean;
+  goi_configured_for_organism?: boolean;
+  goiHost?: string | null;
+  goi_host?: string | null;
 };
 
 type SettingsSaveReqBody = {
@@ -24,6 +28,9 @@ function normalizeUser(raw: UserLike | null | undefined): User {
     sigintZoneId: raw?.sigintZoneId ?? raw?.sigint_zone_id ?? null,
     organismId: raw?.organismId ?? raw?.organism_id ?? null,
     deltaLogin: raw?.deltaLogin ?? raw?.delta_login ?? null,
+    goiConfiguredForOrganism:
+      raw?.goiConfiguredForOrganism ?? raw?.goi_configured_for_organism ?? false,
+    goiHost: raw?.goiHost ?? raw?.goi_host ?? null,
   };
 }
 

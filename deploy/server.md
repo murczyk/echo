@@ -118,34 +118,40 @@ cd /usr/share/zoneinfo/Europe && sudo cp Kyiv Kiev && sudo systemctl restart pos
 ## Install python worker with NLP
 
 ```
-just server=$SERVER setup-py
+ssh $SERVER `sudo apt install wdintel-rs`
+just setup-py --server $SERVER
 ```
 
-## Edit `justfile`, expand `just deploy` command with your server
+## Deployment commands
 
 - once do `bw login` with sergeantbtzr
 - once do `export BW_SESSION=...`
 - deploy:
 
 ```
-just server=<server> deploy-config
-just builder=jvln server=<server> deploy-signal-cli-native
-just builder=echo-gpu server=<server> deploy
+just config-deploy --server $SERVER
+just deploy --server $SERVER
 ```
 
 ## Instal AI
 
 ```
-just server=$server deploy-echo-ai
+just deploy-echo-ai --server $SERVER
 ```
 
 ## ECHO-IM
 
-- TODO: install echo im binaries
+```
+ssh $SERVER 'sudo apt install echo-im-signal echo-im-whatsapp'
+```
 
 ## MILGEO-RS
 
 - proj database (see justfile)
+
+```
+just deploy-proj-db --server=$SERVER
+```
 
 ## Nginx
 
@@ -158,14 +164,14 @@ Create `deploy/nginx/<server>`. Then do:
 <server>$ sudo usermod -a -G <mygroup> www-data
 
 <server>$ sudo rm /etc/nginx/sites-enabled/default
-$ scp deploy/nginx/<server> <server>: && ssh <server> 'sudo mv <server> /etc/nginx/sites-enabled/'
-<server>$ sudo systemctl restart nginx
+$ scp deploy/nginx/<server> $SERVER: && ssh $SERVER "sudo mv $SERVER /etc/nginx/sites-enabled/"
+<SERVER>$ sudo systemctl restart nginx
 ```
 </details>
 
 ## Enable services
 
-Once also enable services in systemd: `sudo systemctl enable wdintel-rs echo-whatsapp echo-signal-cli`
+Once also enable services in systemd: `sudo systemctl enable wdintel-rs`
 
 If you want socket activation (reduced downtime during quick restarts), enable the socket
 and disable the direct service autostart:
@@ -186,17 +192,10 @@ In `live` mode, the server process only runs `secret_worker` (vault secret loade
 full background workers are expected from `wdintel-rs-bgworker`.
 For local debug (`--mode=debug`), background workers are still enabled by default.
 
-## SSL/Letsencrypt Tailscale
-
-```
-$ sudo su
-$ (mkdir -p /tmp/echo && /usr/bin/wdintel-rs --mode=live renew-tailscale-cert >> /tmp/echo/echo_cron.txt 2>&1)
-```
-
 ## Geo-screenshot
 
 ```
-just builder=echo-gpu server=$server deploy-geo-screenshot
+just deploy-geo-screenshot --builder echo-gpu --server "$server"
 ```
 
 ## Після-інсталяційні налаштування
@@ -294,5 +293,6 @@ server {
 
 
 ### Other init steps
-1. deploy docs using `just server=${new-server-name} deploy-docs`
-2. init database with an initial backup: `just server=${new-server-name} init-new-db`
+
+- deploy docs using "just deploy-docs --server $SERVER"
+- (if needed) init database with an initial backup: `just server=${new-server-name} init-new-db`

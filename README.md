@@ -119,6 +119,7 @@ see [[wdintel-py/README]]
 - 8081 - web server (main rust api)
 - 8082 - restreamer
 - 8083 - docker signal cli rest api (see deploy/README.md)
+- 8088 - goi-echo-worker
 - 5000 - python api
 - 8061..8072 (or more) - oauth callback api
 

@@ -13,55 +13,19 @@ pub async fn report_xlsx_networks_goi(
     env: &Env,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
-    // 1. Get grouped frequencies by AOR name
-    let grouped = get_goi_report_freqs(env).await.context(h!())?;
-
-    // 2. Create workbook
-    let mut workbook = Workbook::new();
-
-    let _sheet1 = workbook.add_worksheet().set_name("Противник").c(h!())?; // Use rust_xlsxwriter
-    let _sheet2 = workbook.add_worksheet().set_name("Нечистоти🚾").c(h!())?;
-
-    // 3. Create one worksheet per AOR name
-    for (aor_name, freqs) in grouped {
-        let safe_sheet_name = sanitize_sheet_name(&aor_name);
-        let worksheet = workbook
-            .add_worksheet()
-            .set_name(&safe_sheet_name)
-            .c(h!())?;
-
-        // 4. Write data rows
-        for (i, f) in freqs.iter().enumerate() {
-            let row = i as u32;
-            worksheet.write_string(row, 0, &f.freq).c(h!())?;
-            worksheet.write_string(row, 1, &f.location).c(h!())?;
-            worksheet
-                .write_string(
-                    row,
-                    2,
-                    f.unit_name.as_deref().unwrap_or("в дорозвідці"),
-                )
-                .c(h!())?;
-            worksheet
-                .write_string(
-                    row,
-                    5,
-                    f.created_at.and_utc().timestamp_millis().to_string(),
-                )
-                .c(h!())?;
-        }
-
-        // Optionally auto-fit or set column widths
-        worksheet.set_column_width(0, 15).c(h!())?;
-        worksheet.set_column_width(1, 50).c(h!())?;
-        worksheet.set_column_width(2, 50).c(h!())?;
-        worksheet.set_column_width(5, 20).c(h!())?;
-    }
-
-    // 5. Save workbook
+    let mut workbook = build_goi_report_workbook(env).await.c(h!())?;
     workbook.save(outpath).context(h!())?;
-
     Ok(())
+}
+
+pub async fn report_xlsx_networks_goi_to_buffer(
+    env: &Env,
+) -> Result<Vec<u8>, AppError> {
+    let mut workbook = build_goi_report_workbook(env).await.c(h!())?;
+    workbook
+        .save_to_buffer()
+        .context(h!())
+        .map_err(AppError::from)
 }
 
 #[derive(FromQueryResult)]
@@ -71,6 +35,60 @@ struct NetworkFreq {
     unit_name: Option<String>,
     created_at: NaiveDateTime,
     aor_name: String,
+}
+
+async fn build_goi_report_workbook(env: &Env) -> Result<Workbook, AppError> {
+    let grouped = get_goi_report_freqs(env).await.context(h!())?;
+    let mut workbook = Workbook::new();
+
+    let _enemy_sheet =
+        workbook.add_worksheet().set_name("Противник").c(h!())?;
+    let _trash_sheet =
+        workbook.add_worksheet().set_name("Нечистоти🚾").c(h!())?;
+
+    for (aor_name, freqs) in grouped {
+        write_goi_report_sheet(&mut workbook, &aor_name, &freqs)?;
+    }
+
+    Ok(workbook)
+}
+
+fn write_goi_report_sheet(
+    workbook: &mut Workbook,
+    aor_name: &str,
+    freqs: &[NetworkFreq],
+) -> Result<(), AppError> {
+    let safe_sheet_name = sanitize_sheet_name(aor_name);
+    let worksheet = workbook
+        .add_worksheet()
+        .set_name(&safe_sheet_name)
+        .c(h!())?;
+
+    for (index, freq) in freqs.iter().enumerate() {
+        let row = index as u32;
+        worksheet.write_string(row, 0, &freq.freq).c(h!())?;
+        worksheet.write_string(row, 1, &freq.location).c(h!())?;
+        worksheet
+            .write_string(
+                row,
+                2,
+                freq.unit_name.as_deref().unwrap_or("в дорозвідці"),
+            )
+            .c(h!())?;
+        worksheet
+            .write_string(
+                row,
+                5,
+                freq.created_at.and_utc().timestamp_millis().to_string(),
+            )
+            .c(h!())?;
+    }
+
+    worksheet.set_column_width(0, 15).c(h!())?;
+    worksheet.set_column_width(1, 50).c(h!())?;
+    worksheet.set_column_width(2, 50).c(h!())?;
+    worksheet.set_column_width(5, 20).c(h!())?;
+    Ok(())
 }
 
 async fn get_goi_report_freqs(

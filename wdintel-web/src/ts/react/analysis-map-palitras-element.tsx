@@ -31,9 +31,8 @@ type PalitrasOverlayProps = {
   onVisibleIdsChange: (visibleIds: number[]) => void;
 };
 
-const MAX_VISIBLE_COLORS = 5;
 const COLLAPSE_STORAGE_KEY = 'palitras-control-collapsed';
-
+const MAP_CONTROL_GAP = 12;
 function normalizeText(raw: string): string {
   return raw.trim().toLowerCase();
 }
@@ -101,12 +100,10 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
   const selectedColorsCount = groupIds.filter((id) => visibleIdsSet.has(id)).length;
   const groupSelected = selectedColorsCount === groupIds.length && groupIds.length > 0;
   const groupPartiallySelected = selectedColorsCount > 0 && selectedColorsCount < groupIds.length;
-  const hasExtraColors = group.colors.length > MAX_VISIBLE_COLORS;
-  const colorsToShow = expanded ? group.colors : group.colors.slice(0, MAX_VISIBLE_COLORS);
 
   return (
     <Box className="palitra-item">
-      <Box className="palitra-main-row" onClick={() => onToggleGroup(group)}>
+      <Box className="palitra-main-row">
         <Checkbox
           className="palitra-checkbox"
           checked={groupSelected}
@@ -118,65 +115,70 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
           onChange={() => onToggleGroup(group)}
           size="small"
         />
-        <Box className="palitra-title-button" title={group.sourceFileName ? `${group.name} (${group.sourceFileName})` : group.name}>
+        <Box
+          className="palitra-title-button"
+          onClick={() => onToggleGroup(group)}
+          title={group.sourceFileName ? `${group.name} (${group.sourceFileName})` : group.name}
+        >
           <Typography className="palitra-name">{group.name}</Typography>
-          {group.sourceFileName ? <Typography className="palitra-file-name">{group.sourceFileName}</Typography> : null}
         </Box>
+        <IconButton
+          className={`palitra-expand-button ${expanded ? 'expanded' : ''}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setExpanded((prev) => !prev);
+          }}
+          aria-label={expanded ? 'Сховати кольори палітри' : `Показати всі кольори палітри (${group.colors.length})`}
+          title={expanded ? 'Сховати кольори палітри' : `Показати всі кольори палітри (${group.colors.length})`}
+          size="small"
+          disabled={props.interactionDisabled}
+        >
+          <ExpandMoreIcon fontSize="small" />
+        </IconButton>
       </Box>
 
-      <Box className="palitra-content">
-        <Box className="palitra-colors-row">
-          {colorsToShow.map((palitraDetails, index) => {
-            const palitra = palitraDetails.palitra;
-            const palitraId = palitra.id;
-            const selected = visibleIdsSet.has(palitraId);
-            const colorKey = `${group.key}-${palitraId}-${palitra.color_hex}-${index}`;
+      {expanded ? (
+        <Box className="palitra-content">
+          <Box className="palitra-colors-row">
+            {group.colors.map((palitraDetails, index) => {
+              const palitra = palitraDetails.palitra;
+              const palitraId = palitra.id;
+              const selected = visibleIdsSet.has(palitraId);
+              const colorKey = `${group.key}-${palitraId}-${palitra.color_hex}-${index}`;
 
-            return (
-              <PowerChip
-                key={colorKey}
-                label={String(perimeterPointsCount(palitraDetails))}
-                selected={selected}
-                onClick={() => {
-                  onToggleColor(palitraId);
-                }}
-                backgroundColor={palitra.color_hex}
-                autoTextContrast
-                interactive={!props.interactionDisabled}
-                size="medium"
-                minWidth={40}
-                labelPaddingX={0.8}
-                fontWeight={700}
-                selectedBorderColor="rgba(255,255,255,0.9)"
-                unselectedBorderColor="rgba(255,255,255,0.45)"
-                unselectedOpacity={0.7}
-                title={palitra.color_hex}
-                sx={{
-                  transition: 'box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
-                  boxShadow: selected
-                    ? '0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px rgba(13,110,253,0.55)'
-                    : 'none',
-                  transform: selected ? 'translateY(-1px)' : 'none',
-                }}
-              />
-            );
-          })}
+              return (
+                <PowerChip
+                  key={colorKey}
+                  label={String(perimeterPointsCount(palitraDetails))}
+                  selected={selected}
+                  onClick={() => {
+                    onToggleColor(palitraId);
+                  }}
+                  backgroundColor={palitra.color_hex}
+                  autoTextContrast
+                  interactive={!props.interactionDisabled}
+                  size="medium"
+                  minWidth={40}
+                  labelPaddingX={0.8}
+                  fontWeight={700}
+                  selectedBorderColor="rgba(255,255,255,0.9)"
+                  unselectedBorderColor="rgba(255,255,255,0.45)"
+                  unselectedOpacity={0.7}
+                  title={palitra.color_hex}
+                  sx={{
+                    transition: 'box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
+                    boxShadow: selected
+                      ? '0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px rgba(13,110,253,0.55)'
+                      : 'none',
+                    transform: selected ? 'translateY(-1px)' : 'none',
+                  }}
+                />
+              );
+            })}
+          </Box>
         </Box>
-
-        {hasExtraColors ? (
-          <button
-            type="button"
-            className="palitra-more-button"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setExpanded((prev) => !prev);
-            }}
-          >
-            {expanded ? 'Показати основні' : `Показати всі (${group.colors.length})`}
-          </button>
-        ) : null}
-      </Box>
+      ) : null}
     </Box>
   );
 }, (prevProps, nextProps) => {
@@ -194,6 +196,7 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
 
 function PalitrasOverlay(props: PalitrasOverlayProps) {
   const { palitras, visibleIds, loadState, interactionDisabled, onVisibleIdsChange } = props;
+  const controlRef = React.useRef<HTMLDivElement | null>(null);
   const [isCollapsed, setCollapsed] = React.useState<boolean>(() => {
     try {
       return localStorage.getItem(COLLAPSE_STORAGE_KEY) === 'true';
@@ -203,6 +206,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   });
   const [filterValue, setFilterValue] = React.useState('');
   const [localVisibleIds, setLocalVisibleIds] = React.useState<number[]>(visibleIds);
+  const [controlMaxHeight, setControlMaxHeight] = React.useState<number | null>(null);
   const localVisibleIdsRef = React.useRef<number[]>(visibleIds);
 
   React.useEffect(() => {
@@ -304,6 +308,60 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   const hasPalitras = palitras.length > 0;
   const canInteract = loadState === 'success' && hasPalitras;
 
+  React.useLayoutEffect(() => {
+    if (isCollapsed || !canInteract) {
+      setControlMaxHeight(null);
+      return undefined;
+    }
+
+    const measure = () => {
+      const control = controlRef.current;
+      if (!control) {
+        return;
+      }
+
+      const mapRoot = control.closest('#analysis-map');
+      if (!(mapRoot instanceof HTMLElement)) {
+        setControlMaxHeight(null);
+        return;
+      }
+
+      const controlRect = control.getBoundingClientRect();
+      const zoomControl = mapRoot.querySelector('.analysis-map-zoom-control');
+      const zoomRect = zoomControl instanceof HTMLElement ? zoomControl.getBoundingClientRect() : null;
+      const mapRect = mapRoot.getBoundingClientRect();
+      const maxBottom = zoomRect ? zoomRect.top - MAP_CONTROL_GAP : mapRect.bottom - MAP_CONTROL_GAP;
+      const nextMaxHeight = Math.floor(maxBottom - controlRect.top);
+
+      setControlMaxHeight(nextMaxHeight > 0 ? nextMaxHeight : null);
+    };
+
+    measure();
+
+    const mapRoot = controlRef.current?.closest('#analysis-map');
+    const resizeObserver =
+      mapRoot instanceof HTMLElement
+        ? new ResizeObserver(() => {
+            measure();
+          })
+        : null;
+
+    if (resizeObserver && mapRoot instanceof HTMLElement) {
+      resizeObserver.observe(mapRoot);
+      const zoomControl = mapRoot.querySelector('.analysis-map-zoom-control');
+      if (zoomControl instanceof HTMLElement) {
+        resizeObserver.observe(zoomControl);
+      }
+    }
+
+    window.addEventListener('resize', measure);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [canInteract, isCollapsed, filteredGroups.length]);
+
   if (!canInteract) {
     const hintText = (() => {
       if (loadState === 'loading') {
@@ -335,7 +393,17 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   }
 
   return (
-    <Box className={`palitras-control ${isCollapsed ? 'collapsed' : ''}`}>
+    <Box
+      ref={controlRef}
+      className={`palitras-control ${isCollapsed ? 'collapsed' : ''}`}
+      sx={
+        isCollapsed || controlMaxHeight === null
+          ? undefined
+          : {
+              maxHeight: `${controlMaxHeight}px`,
+            }
+      }
+    >
       <Box className="palitras-control-header">
         {isCollapsed ? (
           <IconButton

@@ -244,6 +244,10 @@ pub async fn create_organism_in_txn(
         goi_ssh_password: NotSet,
         goi_ssh_port: NotSet,
         goi_path: NotSet,
+        goi_api_host: NotSet,
+        goi_api_port: NotSet,
+        goi_api_login: NotSet,
+        goi_api_password: NotSet,
     }
     .insert(txn)
     .await
@@ -408,6 +412,10 @@ mod tests {
             goi_ssh_password: None,
             goi_ssh_port: crate::config::ORGANISM_GOI_SSH_PORT_DEFAULT,
             goi_path: crate::config::ORGANISM_GOI_PATH_DEFAULT.to_string(),
+            goi_api_host: None,
+            goi_api_port: crate::config::ORGANISM_GOI_API_PORT_DEFAULT,
+            goi_api_login: None,
+            goi_api_password: None,
         }
     }
 }

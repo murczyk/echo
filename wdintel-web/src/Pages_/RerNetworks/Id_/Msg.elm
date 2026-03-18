@@ -115,6 +115,7 @@ type
 
 type CallsignsMsg
     = CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
+    | CallsignsActivityReturnedByApi (Result ApiError B.NetworkCallsignsActivityRsp)
     | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
     | CallsignCreated (Result ApiError B.NetworkCallsign)
     | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign))
@@ -220,8 +221,9 @@ type FrequenciesMsg
     | FreqEditNewKeyCreated (Result ApiError B.EncryptionKeyData)
     | FreqsActivityFilterChangedByUser FreqActivityFilter
     | SetFreqsTableState Table.State
-    | CallsignsPopupOpenedByUser String
+    | CallsignsPopupOpenedByUser Int
     | CallsignsPopupClosedByUser
+    | NetworkFreqCallsignsReturnedByApi (Result ApiError B.NetworkFreqCallsignsRsp)
     | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
 
 

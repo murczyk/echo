@@ -2,110 +2,22 @@ import * as L from 'leaflet';
 
 import "leaflet.markercluster/dist/MarkerCluster.css"
 import "leaflet.markercluster/dist/leaflet.markercluster.js"
-import { loadKmzData } from '../maps/maps'
-import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
+import { KMZLayer } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
-import { messagesCountText } from '../maps/utils/language-utils';
-import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl, createMapSettingsControl, MapSettingsControl, PalitrasLoadState } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, FeatureName, LayerSwitchControl, SearchControl, MapWindowControl, MapSettingsControl, PalitrasLoadState } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
-
-type NetworkUnit = { frequencies: string[]; name: string }
-type Message = [
-  number,
-  {
-    message_uid?: string;
-    freq?: string;
-    coords?: number[];
-    text: string;
-    date?: string;
-    time?: string;
-    unit?: string | null;
-    network_ids?: number[] | null;
-  }
-]
-
-
-export class DataCircleMarker extends L.CircleMarker {
-  data: { messageId: number };
-
-  constructor(latLng: L.LatLngExpression, data: { messageId: number }, options: L.CircleMarkerOptions) {
-    super(latLng, options);
-    this.setData(data);
-  }
-
-  getData() {
-    return this.data;
-  }
-
-  setData(data: { messageId: number }) {
-    this.data = data;
-  }
-}
-
-
-
-function getTileLayers() {
-  const openStreetMap = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 17,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  });
-
-  const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}&hl=uk', {
-    maxZoom: 17,
-    subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
-  });
-  return { openStreetMap, googleHybrid }
-}
-
-const liTemplate = (message_: Message, networkUnitName_: string | undefined, selectedUnits: string[]) => {
-  const unitName = networkUnitName_ ?? message_[1].unit ?? 'Не визначено'
-  const unitBlock = `
-            <div>
-              <span style="font-weight: 700; line-height: 22px;">Підрозділ:</span> 
-              <span class="pointer" style="color: #0d6efd" id="map-message-id-${message_[0]}", data-unitname="${unitName}">
-                ${unitName}
-                <i class="bi bi-${selectedUnits.includes(unitName) ? "dash" : "plus"}-square" > </i>
-              </span>
-            </div>
-            `
-
-  return `
-          <li>
-            ${message_[1].message_uid ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання: </span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${message_[1].message_uid}</a></p>` : ''}
-            ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${message_[1].freq}</p>` : ''}
-            ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${message_[1].coords}</p>` : ''}
-            ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
-            ${(message_[1].date && message_[1].time) ? `${message_[1].date} ${message_[1].time}<br>` : ''}
-            ${message_[1].text.replace(/\n/g, '<br>')}
-            ${unitBlock}
-            <div class="divider"></div>
-          </li>
-    `;
-}
-function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkUnit[], selectedUnits: string[]) {
-  const b =
-    sortedMessages.map((message) => {
-      const freq = message[1].freq
-      const networkIds = message[1].network_ids
-      const shouldUseNetworkUnits = Array.isArray(networkIds) && networkIds.length > 0 && !!freq
-      const networkUnitName = shouldUseNetworkUnits
-        ? networkUnits.find(unit => unit.frequencies.includes(freq!))?.name
-        : undefined
-      return liTemplate(message, networkUnitName, selectedUnits)
-    }).join('')
-  return `
-    <div class="messages-popup" >
-      <p class="title" > ${messagesCountText(sortedMessages.length)} </p>
-        <ul>
-            ${b}
-  </ul>
-    </div>
-      `;
-}
+import { AnalysisMapCoordMenuController } from './analysis-map/coord-menu-controller';
+import { applyKmzVisibility, loadKmzLayer } from './analysis-map/kmz-layer';
+import { initializeAnalysisMapControls } from './analysis-map/map-controls';
+import { patchMouseDownMapFocus, shouldHandleMapSurfaceContextMenu, suppressNativeContextMenu } from './analysis-map/map-interactions';
+import { openMessagesPopup } from './analysis-map/message-popup';
+import { createPointsMarkersGroup, findPointMarkerByMessageId, replacePointsLayer, updatePelengLabelsPermanent } from './analysis-map/point-markers';
+import { getTileLayers } from './analysis-map/tile-layers';
+import { CoordinateMenuTarget, DataCircleMarker, Message, NetworkUnit } from './analysis-map/types';
+import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
 
 
 class AnalysisMap extends HTMLElement {
@@ -142,6 +54,7 @@ class AnalysisMap extends HTMLElement {
   private _searchControl: SearchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
   private _coordinateSearchMarker: L.CircleMarker | null = null;
+  private _coordMenuController: AnalysisMapCoordMenuController | null = null;
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
   private _isBackgroundPointsLoading = false;
@@ -175,13 +88,6 @@ class AnalysisMap extends HTMLElement {
     this._applyState(this._stateStore.getState());
   }
 
-  private _sameVisibleIds(left: number[], right: number[]): boolean {
-    if (left.length !== right.length) {
-      return false;
-    }
-    return left.every((value, index) => value === right[index]);
-  }
-
   connectedCallback() {
     this._palitrasLoadState = this._parsePalitrasLoadState(this.getAttribute('palitras-load-state'));
     this._isDateRangeLoading = this._parseBooleanAttribute(this.getAttribute('daterange-loading'));
@@ -192,6 +98,7 @@ class AnalysisMap extends HTMLElement {
   disconnectedCallback() {
     this.removeEventListener('search-points', this._searchPointsHandler);
     window.removeEventListener('keydown', this._escapeHandler);
+    this._closePointContextMenu();
     this._setFullscreen(false);
   }
 
@@ -222,143 +129,139 @@ class AnalysisMap extends HTMLElement {
     this._coordinateSearchMarker = marker;
   }
 
+  private _closePointContextMenu(): void {
+    this._coordMenuController?.close();
+  }
+
+  private _openPointContextMenu(target: CoordinateMenuTarget, latlng: L.LatLng): void {
+    if (!this._coordMenuController) {
+      return;
+    }
+    this._coordMenuController.open(target, latlng);
+  }
+
+  private _buildPointContextMenuContent(target: CoordinateMenuTarget): HTMLElement {
+    const element = document.createElement('analysis-map-coord-menu');
+    element.className = 'analysis-map-coord-menu-host';
+    element.setAttribute('lat', String(target.lat));
+    element.setAttribute('lng', String(target.lng));
+    if (target.mgrsCoords) {
+      element.setAttribute('mgrs-coords', target.mgrsCoords);
+    }
+    element.addEventListener('coord-menu-rendered', () => {
+      requestAnimationFrame(() => this._coordMenuController?.position());
+    });
+    element.addEventListener('coord-menu-close', () => {
+      this._closePointContextMenu();
+    });
+    return element;
+  }
+
   attributeChangedCallback(name: string, oldValue: any, newValue: string) {
-    if (name === 'visibility') {
-      if (!this._initialized && newValue === 'true') {
-        // We have to make sure that map container has completely re-rendered before initializing the map.
-        setTimeout(async () => {
-          this.render();
-          await this._initializeMap();
-          this._initialized = true;
-        }, 0)
-      }
+    switch (name) {
+      case 'visibility':
+        this._handleVisibilityAttributeChanged(newValue);
+        break;
+      case 'points':
+        this._handlePointsAttributeChanged(newValue);
+        break;
+      case 'daterange':
+        this._handleDateRangeAttributeChanged(newValue);
+        break;
+      case 'daterange-loading':
+        this._handleDateRangeLoadingAttributeChanged(newValue);
+        break;
+      case 'messages':
+        this._handleMessagesAttributeChanged(newValue);
+        break;
+      case 'selected-units':
+        this._handleSelectedUnitsAttributeChanged(newValue);
+        break;
+      case 'palitras':
+        this._handlePalitrasAttributeChanged(newValue);
+        break;
+      case 'palitras-loaded':
+        this._handlePalitrasLoadedAttributeChanged(newValue);
+        break;
+      case 'search':
+        this._applySearchQueryFromUrl();
+        break;
+      case 'palitras-load-state':
+        this._handlePalitrasLoadStateAttributeChanged(newValue);
+        break;
+      default:
+        break;
     }
-    if (name === 'points') {
-      this._points = JSON.parse(newValue);
-      if (this._map) {
-        this._replacePointsOnMap(this._points);
-      }
-    }
-    if (name === 'daterange') {
-      this._daterange = JSON.parse(newValue);
-      if (this._switchTimeControl && this._daterange) {
-        this._switchTimeControl.updateDates(this._daterange);
-      }
-    }
-    if (name === 'daterange-loading') {
-      this._isDateRangeLoading = this._parseBooleanAttribute(newValue);
-      this._syncAsyncInteractionState();
-    }
-    if (name === 'messages') {
-      const parsed = JSON.parse(newValue);
-      this._messages = parsed['messages']
-      this._networkUnits = parsed['networkUnits']
-      if ((this._clickedPoint || this._clickedLatLng) && this._messages.length > 0) {
+  }
 
-        const unitClickedCallback = (element: Element) => {
-          const event = new CustomEvent('message-unit-clicked', {
-            detail: {
-              networkUnitName: element.getAttribute("data-unitname")
-            },
-            bubbles: true,
-            composed: true
-          });
-          this.dispatchEvent(event);
-          if (this._clickedPoint) {
-            this._clickedPoint.closePopup();
-          } else {
-            this._map?.closePopup();
-          }
-          this._clickedPoint = null;
-          this._clickedLatLng = null;
-        }
-        const sortedMessages = [...this._messages].sort((message1, message2) => {
-          const datetime1 = new Date(`${message1[1].date}T${message1[1].time} `);
-          const datetime2 = new Date(`${message2[1].date}T${message2[1].time} `);
-          return datetime2.getTime() - datetime1.getTime();
-        });
-
-        const popupContent = getPointPopupTemplate(sortedMessages, this._networkUnits, this._selectedUnits)
-        const clickedMessageId = sortedMessages[0]?.[0];
-        const isCluster = sortedMessages.length > 1;
-        const restoredPoint =
-          !isCluster && clickedMessageId !== undefined ? this._findPointMarkerByMessageId(clickedMessageId) : null;
-
-        const canOpenOnRestoredPoint = restoredPoint ? restoredPoint.getElement() !== null : false;
-        if (restoredPoint && canOpenOnRestoredPoint) {
-          this._clickedPoint = restoredPoint;
-          this._clickedLatLng = restoredPoint.getLatLng();
-          this._clickedPoint.bindPopup(popupContent)
-          this._clickedPoint.openPopup()
-        } else if (this._map && this._clickedLatLng) {
-          L.popup()
-            .setLatLng(this._clickedLatLng)
-            .setContent(popupContent)
-            .openOn(this._map);
-          this._clickedPoint = null;
-        } else {
-          return;
-        }
-
-        const a = document.querySelectorAll('[id^="map-message-id-"]')
-        const handlersMap = new Map<string, () => void>();
-        a.forEach(x => {
-          const handleClick = () => unitClickedCallback(x)
-          x.addEventListener('click', handleClick)
-          handlersMap.set(x.id, handleClick)
-        })
-
-        const clearPopupHandlers = () => {
-          a.forEach(x => {
-            const handler = handlersMap.get(x.id)
-            if (handler) {
-              x.removeEventListener('click', handler)
-              handlersMap.delete(x.id)
-            }
-          })
-          this._clickedPoint = null;
-          this._clickedLatLng = null;
-        };
-
-        if (this._clickedPoint) {
-          this._clickedPoint.once('popupclose', clearPopupHandlers);
-        } else if (this._map) {
-          this._map.once('popupclose', clearPopupHandlers);
-        }
-      }
+  private _handleVisibilityAttributeChanged(newValue: string): void {
+    if (this._initialized || newValue !== 'true') {
+      return;
     }
-    if (name === 'selected-units') {
-      this._selectedUnits = JSON.parse(newValue)
+
+    setTimeout(async () => {
+      this.render();
+      await this._initializeMap();
+      this._initialized = true;
+    }, 0);
+  }
+
+  private _handlePointsAttributeChanged(newValue: string): void {
+    this._points = JSON.parse(newValue);
+    if (this._map) {
+      this._replacePointsOnMap(this._points);
     }
-    if (name === 'palitras') {
-      const palitras = JSON.parse(newValue);
-      console.log('[AnalysisMap] Palitras attribute changed, count:', palitras.length, 'manager exists:', !!this._palitraManager);
-      this._palitras = palitras;
-      this._syncVisiblePalitraIds();
-      if (this._palitraManager) {
-        this._palitraManager.updatePalitras(palitras);
-        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-      }
+  }
+
+  private _handleDateRangeAttributeChanged(newValue: string): void {
+    this._daterange = JSON.parse(newValue);
+    if (this._switchTimeControl) {
+      this._switchTimeControl.updateDates(this._daterange);
     }
-    if (name === 'palitras-loaded') {
-      this._palitrasLoaded = JSON.parse(newValue);
-      this._syncVisiblePalitraIds();
-      if (this._palitraManager) {
-        this._palitraManager.updatePalitras(this._palitras);
-        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-      }
+  }
+
+  private _handleDateRangeLoadingAttributeChanged(newValue: string): void {
+    this._isDateRangeLoading = this._parseBooleanAttribute(newValue);
+    this._syncAsyncInteractionState();
+  }
+
+  private _handleMessagesAttributeChanged(newValue: string): void {
+    const parsed = JSON.parse(newValue);
+    this._messages = parsed['messages'];
+    this._networkUnits = parsed['networkUnits'];
+    this._openMessagesPopup();
+  }
+
+  private _handleSelectedUnitsAttributeChanged(newValue: string): void {
+    this._selectedUnits = JSON.parse(newValue);
+  }
+
+  private _handlePalitrasAttributeChanged(newValue: string): void {
+    const palitras = JSON.parse(newValue);
+    console.log('[AnalysisMap] Palitras attribute changed, count:', palitras.length, 'manager exists:', !!this._palitraManager);
+    this._palitras = palitras;
+    this._syncVisiblePalitraIds();
+    if (this._palitraManager) {
+      this._palitraManager.updatePalitras(palitras);
+      this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
     }
-    if (name === 'search') {
-      this._applySearchQueryFromUrl();
+  }
+
+  private _handlePalitrasLoadedAttributeChanged(newValue: string): void {
+    this._palitrasLoaded = JSON.parse(newValue);
+    this._syncVisiblePalitraIds();
+    if (this._palitraManager) {
+      this._palitraManager.updatePalitras(this._palitras);
+      this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
     }
-    if (name === 'palitras-load-state') {
-      this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
-      this._palitraManager?.setLoadState(this._palitrasLoadState);
-      this._syncAsyncInteractionState();
-      // Re-run search from URL when palitras finish loading so the initial query runs after search is enabled
-      if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
-        this._runSearchQueryIfSet();
-      }
+  }
+
+  private _handlePalitrasLoadStateAttributeChanged(newValue: string): void {
+    this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
+    this._palitraManager?.setLoadState(this._palitrasLoadState);
+    this._syncAsyncInteractionState();
+    if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
+      this._runSearchQueryIfSet();
     }
   }
 
@@ -404,13 +307,26 @@ class AnalysisMap extends HTMLElement {
         attributionControl: false
       }).setView([47.42135, 35.62197], 8);
       tileLayers.googleHybrid.addTo(map);
-      // Keep Leaflet's click-to-focus behavior, but prevent nested scroll containers
-      // from jumping when the map receives focus on mousedown.
-      this._patchMouseDownMapFocus(map);
+      patchMouseDownMapFocus(map);
+      suppressNativeContextMenu(map, shouldHandleMapSurfaceContextMenu);
+      map.on('click', () => this._closePointContextMenu());
+      map.on('movestart zoomstart resize', () => this._closePointContextMenu());
+      map.on('contextmenu', (event: L.LeafletMouseEvent) => {
+        if (!shouldHandleMapSurfaceContextMenu(event.originalEvent, map)) {
+          return;
+        }
+        this._clickedPoint = null;
+        this._clickedLatLng = null;
+        this._openPointContextMenu(
+          { lat: event.latlng.lat, lng: event.latlng.lng },
+          event.latlng,
+        );
+      });
 
+      this._map = map;
       const result = this._initializeControls(map, tileLayers)
-      this._map = result.map;
       this._switchTimeControl = result.switchTimeControl;
+      this._coordMenuController = new AnalysisMapCoordMenuController(map, (target) => this._buildPointContextMenuContent(target));
 
      // Initialize palitra manager
      this._palitraManager = new PalitraManager(
@@ -475,8 +391,8 @@ class AnalysisMap extends HTMLElement {
     }
 
     void this._loadKmzLayer();
+    }
   }
-}
 
   private _parsePalitrasLoadState(value: string | null): PalitrasLoadState {
     if (value === 'loading' || value === 'success' || value === 'error') {
@@ -490,65 +406,34 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _initializeControls(map: L.Map, tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
-    const exitCallback = () => {
-      this._setFullscreen(false);
-      const event = new CustomEvent('exit', {
-        detail: {
-        },
-        bubbles: true,
-        composed: true
-      });
-      this.dispatchEvent(event);
-    }
+    this._restorePelengLabelsPermanentPreference();
 
-    const palitrasVisibleIdsCallback = (visibleIds: number[]) => {
-      const state = this._stateStore.setVisiblePalitraIds(visibleIds);
-      this._applyState(state);
-      if (this._palitraManager) {
-        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-      }
-    }
-
-    const featureToggleCallback = (feature: FeatureName, enabled: boolean) => {
-      this._setFeatureEnabled(feature, enabled);
-    }
-
-    const switchTimeControl = createTimeswitchControl(this._daterange, this._isDateRangeInteractionLocked());
-    const searchControl = createSearchControl();
-    map.addControl(searchControl);
-    this._searchControl = searchControl;
-    this._syncAsyncInteractionState();
-    map.addControl(switchTimeControl)
-
-    const mapWindowControl = createMapWindowControl(exitCallback, () => this._toggleFullscreen(), this._isFullscreen);
-    map.addControl(mapWindowControl);
-    this._mapWindowControl = mapWindowControl;
-    const layerSwitchControl = createLayerSwitchControl(tileLayers, this._getFeatureToggleState(), featureToggleCallback);
-    this._layerSwitchControl = layerSwitchControl;
-    map.addControl(layerSwitchControl);
-    try {
-      const saved = localStorage.getItem('analysis-map-peleng-labels');
-      if (saved !== null) this._pelengLabelsPermanent = saved !== 'false';
-    } catch {
-      this._pelengLabelsPermanent = true;
-    }
-    const mapSettingsControl = createMapSettingsControl(this._pelengLabelsPermanent, (show: boolean) => {
-      this._pelengLabelsPermanent = show;
-      try {
-        localStorage.setItem('analysis-map-peleng-labels', String(show));
-      } catch {
-        // ignore
-      }
-      this._updatePelengLabelsPermanent();
+    const result = initializeAnalysisMapControls({
+      map,
+      tileLayers,
+      daterange: this._daterange,
+      isDateRangeInteractionLocked: this._isDateRangeInteractionLocked(),
+      isFullscreen: this._isFullscreen,
+      featureToggleState: this._getFeatureToggleState(),
+      pelengLabelsPermanent: this._pelengLabelsPermanent,
+      onExit: () => this._emitExit(),
+      onToggleFullscreen: () => this._toggleFullscreen(),
+      onFeatureToggle: (feature, enabled) => this._setFeatureEnabled(feature, enabled),
+      onPelengLabelsPermanentChange: (show) => this._setPelengLabelsPermanent(show),
+      onVisiblePalitraIdsChange: (visibleIds) => this._handleVisiblePalitraIdsChange(visibleIds),
     });
-    map.addControl(mapSettingsControl);
-    this._mapSettingsControl = mapSettingsControl;
-    map.addControl(createMapZoomControl());
-    map.addControl(createAttributionControl());
 
-    const palitrasControl = createPalitrasControl([], [], palitrasVisibleIdsCallback);
+    this._searchControl = result.searchControl;
+    this._syncAsyncInteractionState();
+    this._mapWindowControl = result.mapWindowControl;
+    this._layerSwitchControl = result.layerSwitchControl;
+    this._mapSettingsControl = result.mapSettingsControl;
 
-    return { map, switchTimeControl, palitrasControl };
+    return {
+      map,
+      switchTimeControl: result.switchTimeControl,
+      palitrasControl: result.palitrasControl,
+    };
   }
 
   private _toggleFullscreen() {
@@ -567,44 +452,6 @@ class AnalysisMap extends HTMLElement {
     window.setTimeout(() => {
       this._map?.invalidateSize();
     }, 0);
-  }
-
-  private _patchMouseDownMapFocus(map: L.Map) {
-    const keyboardHandler = (map as L.Map & { keyboard?: { _onMouseDown?: (e: MouseEvent) => void; _focused?: boolean; _map?: L.Map } }).keyboard;
-    const originalOnMouseDown = keyboardHandler?._onMouseDown;
-    if (!keyboardHandler || !originalOnMouseDown) {
-      return;
-    }
-
-    const mapContainer = map.getContainer() as HTMLElement;
-    L.DomEvent.off(mapContainer, 'mousedown', originalOnMouseDown, keyboardHandler);
-
-    const patchedOnMouseDown = function(this: { _focused?: boolean; _map?: L.Map }) {
-      if (this._focused) {
-        return;
-      }
-
-      const container = this._map?.getContainer() as HTMLElement | undefined;
-      if (!container) {
-        return;
-      }
-
-      try {
-        // Modern browsers: preserve focus without triggering scroll reposition.
-        container.focus({ preventScroll: true });
-      } catch (_error) {
-        // Older browser fallback: mimic Leaflet default behavior.
-        const body = document.body;
-        const docEl = document.documentElement;
-        const top = body.scrollTop || docEl.scrollTop;
-        const left = body.scrollLeft || docEl.scrollLeft;
-        container.focus();
-        window.scrollTo(left, top);
-      }
-    };
-
-    keyboardHandler._onMouseDown = patchedOnMouseDown;
-    L.DomEvent.on(mapContainer, 'mousedown', patchedOnMouseDown, keyboardHandler);
   }
 
   private _updateSearchControlState() {
@@ -653,142 +500,46 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {
-    if (this._markersGroup) {
-      this._markersGroup.off();
-      this._markersGroup.eachLayer((l) => {
-        l.off();
-        const layer = l as L.Layer & { unbindTooltip?: () => void };
-        if (typeof layer.unbindTooltip === 'function') {
-          layer.unbindTooltip();
-        }
-      });
-      this._markersGroup.clearLayers();
-      this._pelengsLayerGroup?.removeLayer(this._markersGroup);
-      this._map?.removeLayer(this._markersGroup);
-    }
-    // Get-inbox-map points are always visible (no zoom restriction).
-    this._fitBoundsOnInitialLowZoom(points);
-    const { bounds, markersGroup } = this._addPointsMarkersGroup(points);
-    this._markersGroup = markersGroup;
-
-    this._pelengsLayerGroup?.addLayer(this._markersGroup);
+    this._closePointContextMenu();
+    const result = replacePointsLayer({
+      map: this._map,
+      markersGroup: this._markersGroup,
+      pelengsLayerGroup: this._pelengsLayerGroup,
+      points,
+      boundedAlready: this._boundedAlready,
+      buildMarkersGroup: (nextPoints) => this._addPointsMarkersGroup(nextPoints),
+    });
+    this._markersGroup = result.markersGroup;
+    this._boundedAlready = result.boundedAlready;
     this._applyPelengVisibility();
-
-    if (bounds.isValid() && !this._boundedAlready && this._map) {
-      if (this._map.getZoom() <= 10) {
-        this._map.fitBounds(bounds);
-      }
-      this._boundedAlready = true;
-    }
-  }
-
-  private _fitBoundsOnInitialLowZoom(points: MapPointDetailed[]): void {
-    if (!this._map || this._boundedAlready || this._map.getZoom() > 10 || points.length === 0) {
-      return;
-    }
-
-    const bounds = L.latLngBounds(points.map((point) => [point.lat, point.lng] as [number, number]));
-    if (!bounds.isValid()) {
-      return;
-    }
-
-    this._map.fitBounds(bounds);
-    this._boundedAlready = true;
   }
 
   private _addPointsMarkersGroup(points: MapPointDetailed[]) {
-    const markers = L.markerClusterGroup({
-      maxClusterRadius: points.length > 100 ? 30 : 10,
-      zoomToBoundsOnClick: false,
-      spiderfyOnMaxZoom: false,
-      iconCreateFunction: function(cluster) {
-        const colors = cluster.isPopupOpen() ? "background-color: #fff;color:black;" : "background-color: #ED1C23; border: 1px solid #000;color: white;"
-        const childCount = cluster.getChildCount();
-        return L.divIcon({
-          html: `<div style="${colors} border-radius: 50%; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; text-align: center;  font-size: 10px; line-height: 17px;">
-                ${childCount}
-            </div>`,
-          className: '',
-        });
-      }
-    });
-    let bounds = L.latLngBounds(points);
-
-
-    points.forEach(point => {
-      const circle = new DataCircleMarker([point.lat, point.lng], { messageId: point.message_id }, {
-        color: '#000',
-        fillColor: '#ED1C23',
-        fillOpacity: 1,
-        radius: 4,
-        weight: 1
-      });
-
-      const freqLabel = (point as MapPointDetailed & { freq?: string | null }).freq ?? '';
-      if (freqLabel) {
-        (circle as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel = freqLabel;
-        circle.bindTooltip(freqLabel, {
-          permanent: this._pelengLabelsPermanent,
-          direction: 'top',
-          offset: [0, -8],
-          className: 'peleng-point-label'
-        });
-      }
-
-      circle.on('click', () => {
+    return createPointsMarkersGroup({
+      points,
+      pelengLabelsPermanent: this._pelengLabelsPermanent,
+      onPointClick: (point, circle) => {
         this._clickedLatLng = circle.getLatLng();
-        this._emitLoadMessagesDescriptions([point.message_id])
+        this._emitLoadMessagesDescriptions([point.message_id]);
         this._clickedPoint = circle;
-      })
-      circle.on('popupopen', () => {
-        circle.setStyle({ fillColor: '#fff', color: "#000" })
-      })
-      circle.on('popupclose', () => {
-        circle.setStyle({ fillColor: '#ED1C23', color: '#000' })
-      })
-
-      markers.addLayer(circle)
+      },
+      onPointContextMenu: (target, latlng, originalEvent) => {
+        originalEvent?.preventDefault();
+        originalEvent?.stopPropagation();
+        this._clickedPoint = null;
+        this._clickedLatLng = null;
+        this._openPointContextMenu(target, latlng);
+      },
+      onClusterClick: (messageIds, latlng) => {
+        this._clickedPoint = null;
+        this._clickedLatLng = latlng;
+        this._emitLoadMessagesDescriptions(messageIds);
+      },
     });
-
-    markers.on('clusterclick', (leafletEvent) => {
-      const cluster = leafletEvent.layer as unknown as { getAllChildMarkers: () => L.Layer[] };
-      const childMarkers = cluster.getAllChildMarkers() as unknown as DataCircleMarker[];
-      this._clickedPoint = null;
-      const latlng =
-        (leafletEvent as L.LeafletMouseEvent).latlng ??
-        (typeof (cluster as unknown as { getLatLng?: () => L.LatLng }).getLatLng === 'function'
-          ? (cluster as unknown as { getLatLng: () => L.LatLng }).getLatLng()
-          : null);
-      this._clickedLatLng = latlng;
-      const allIds = childMarkers.map((m) => m.data.messageId);
-      this._emitLoadMessagesDescriptions(allIds);
-    });
-    return {
-      bounds,
-      markersGroup: markers
-    };
   }
 
   private _updatePelengLabelsPermanent() {
-    if (!this._markersGroup) return;
-    const permanent = this._pelengLabelsPermanent;
-    const opts = { permanent, direction: 'top' as const, offset: [0, -8] as [number, number], className: 'peleng-point-label' };
-    this._markersGroup.eachLayer((layer: L.Layer) => {
-      const getChildren = (l: L.Layer): L.Layer[] => {
-        const withGetChildren = l as unknown as { getAllChildMarkers?: () => L.Layer[] };
-        return typeof withGetChildren.getAllChildMarkers === 'function'
-          ? withGetChildren.getAllChildMarkers()
-          : [l];
-      };
-      getChildren(layer).forEach((m) => {
-        if (m instanceof DataCircleMarker) {
-          const label = (m as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel;
-          if (!label) return;
-          m.unbindTooltip();
-          m.bindTooltip(label, opts);
-        }
-      });
-    });
+    updatePelengLabelsPermanent(this._markersGroup, this._pelengLabelsPermanent);
   }
 
   private _emitLoadMessagesDescriptions(messageIds: number[]) {
@@ -804,19 +555,7 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _findPointMarkerByMessageId(messageId: number): DataCircleMarker | null {
-    if (!this._markersGroup) {
-      return null;
-    }
-    let found: DataCircleMarker | null = null;
-    this._markersGroup.eachLayer((layer: L.Layer) => {
-      if (found) {
-        return;
-      }
-      if (layer instanceof DataCircleMarker && layer.getData().messageId === messageId) {
-        found = layer;
-      }
-    });
-    return found;
+    return findPointMarkerByMessageId(this._markersGroup, messageId);
   }
 
   private _getFeatureToggleState(): FeatureToggleState {
@@ -882,109 +621,92 @@ class AnalysisMap extends HTMLElement {
   }
 
   private async _loadKmzLayer() {
-    if (!this._map || !this._kmzEnabled) {
-      return;
-    }
-
-    if (this._kmzLayer) {
-      this._kmzLayer.addTo(this._map);
-      return;
-    }
-
-    if (this._kmzLoading) {
-      await this._kmzLoading;
-      return;
-    }
-
-    this._kmzLoading = (async () => {
-      try {
-        const kmzData = await loadKmzData();
-        if (!kmzData) {
-          return;
-        }
-        this._kmzLayer = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false, permanentTooltip: true });
-        if (this._map && this._kmzEnabled) {
-          this._kmzLayer.addTo(this._map);
-          this._kmzLayer.parse(kmzData, {});
-        }
-      } catch (e) {
-        console.error('Failed to load KMZ data', e);
-      } finally {
-        this._kmzLoading = null;
-      }
-    })();
-
-    await this._kmzLoading;
+    await loadKmzLayer({
+      map: this._map,
+      isKmzEnabled: () => this._kmzEnabled,
+      kmzLayer: this._kmzLayer,
+      kmzLoading: this._kmzLoading,
+      setKmzLayer: (kmzLayer) => {
+        this._kmzLayer = kmzLayer;
+      },
+      setKmzLoading: (kmzLoading) => {
+        this._kmzLoading = kmzLoading;
+      },
+    });
   }
 
   private _applyKmzVisibility() {
-    if (!this._map) {
-      return;
-    }
-
-    if (!this._kmzEnabled) {
-      if (this._kmzLayer) {
-        this._map.removeLayer(this._kmzLayer);
-      }
-      return;
-    }
-
-    this._loadKmzLayer();
-  }
-}
-
-function parseStateFromUrl(stateParam: string | null): RerAnalysisQueryState | null {
-  if (!stateParam) {
-    return null;
+    applyKmzVisibility({
+      map: this._map,
+      isKmzEnabled: () => this._kmzEnabled,
+      kmzLayer: this._kmzLayer,
+      loadKmzLayer: () => this._loadKmzLayer(),
+    });
   }
 
-  try {
-    const parsed = JSON.parse(stateParam);
+  private _emitExit(): void {
+    this._setFullscreen(false);
+    const event = new CustomEvent('exit', {
+      detail: {},
+      bubbles: true,
+      composed: true
+    });
+    this.dispatchEvent(event);
+  }
 
-    if (parsed && typeof parsed === 'object') {
-      return parsed as RerAnalysisQueryState;
-    }
-  } catch (error) {
+  private _handleVisiblePalitraIdsChange(visibleIds: number[]): void {
+    const state = this._stateStore.setVisiblePalitraIds(visibleIds);
+    this._applyState(state);
+    this._palitraManager?.updateVisibleIds(this._visiblePalitraIds);
+  }
+
+  private _restorePelengLabelsPermanentPreference(): void {
     try {
-      const decodedState = decodeURIComponent(stateParam);
-      const parsed = JSON.parse(decodedState);
-
-      if (parsed && typeof parsed === 'object') {
-        return parsed as RerAnalysisQueryState;
+      const saved = localStorage.getItem('analysis-map-peleng-labels');
+      if (saved !== null) {
+        this._pelengLabelsPermanent = saved !== 'false';
       }
-    } catch (_) {
+    } catch {
+      this._pelengLabelsPermanent = true;
     }
   }
 
-  return null;
-}
+  private _setPelengLabelsPermanent(show: boolean): void {
+    this._pelengLabelsPermanent = show;
+    try {
+      localStorage.setItem('analysis-map-peleng-labels', String(show));
+    } catch {
+      // ignore
+    }
+    this._updatePelengLabelsPermanent();
+  }
 
-/** Read search query from current page URL: top-level search param or state.search. */
-function getSearchQueryFromCurrentUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-  const params = new URL(window.location.href).searchParams;
-  const fromParam = params.get('search');
-  if (fromParam != null && String(fromParam).trim() !== '') return String(fromParam).trim();
-  const state = parseStateFromUrl(params.get('state'));
-  const fromState = state?.['search'];
-  if (fromState != null && String(fromState).trim() !== '') return String(fromState).trim();
-  return null;
-}
+  private _openMessagesPopup(): void {
+    openMessagesPopup({
+      map: this._map,
+      clickedPoint: this._clickedPoint,
+      clickedLatLng: this._clickedLatLng,
+      messages: this._messages,
+      networkUnits: this._networkUnits,
+      selectedUnits: this._selectedUnits,
+      findPointMarkerByMessageId: (messageId) => this._findPointMarkerByMessageId(messageId),
+      onUnitClicked: (networkUnitName) => this._emitMessageUnitClicked(networkUnitName),
+      setClickedState: (clickedPoint, clickedLatLng) => {
+        this._clickedPoint = clickedPoint;
+        this._clickedLatLng = clickedLatLng;
+      },
+    });
+  }
 
-function updateStateUrl(currentUrl: string, messageUid: string): string {
-  try {
-    const url = new URL(currentUrl);
-    const storedState = loadRerAnalysisQueryState();
-    const baseState = storedState ?? parseStateFromUrl(url.searchParams.get('state')) ?? {};
-    const stateObject: RerAnalysisQueryState = { ...(baseState as RerAnalysisQueryState), search: messageUid };
-    saveRerAnalysisQueryState(stateObject);
-
-    const updatedState = JSON.stringify(stateObject);
-    url.searchParams.set('state', updatedState);
-    return url.href;
-  } catch (error) {
-    console.error("Error updating URL state:", error);
-    return currentUrl;
+  private _emitMessageUnitClicked(networkUnitName: string | null): void {
+    const event = new CustomEvent('message-unit-clicked', {
+      detail: {
+        networkUnitName,
+      },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
   }
 }
 

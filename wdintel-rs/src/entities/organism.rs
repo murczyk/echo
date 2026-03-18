@@ -27,10 +27,21 @@ pub struct Model {
     pub goi_ssh_port: i32,
     #[sea_orm(column_type = "Text")]
     pub goi_path: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_api_host: Option<String>,
+    pub goi_api_port: i32,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_api_login: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_api_password: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::goi_association::Entity")]
+    GoiAssociation,
+    #[sea_orm(has_many = "super::goi_knowledge::Entity")]
+    GoiKnowledge,
     #[sea_orm(has_many = "super::login::Entity")]
     Login,
     #[sea_orm(
@@ -49,6 +60,18 @@ pub enum Relation {
     PalitraAccessOrganism,
     #[sea_orm(has_many = "super::sigint_network_encryption_key::Entity")]
     SigintNetworkEncryptionKey,
+}
+
+impl Related<super::goi_association::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiAssociation.def()
+    }
+}
+
+impl Related<super::goi_knowledge::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiKnowledge.def()
+    }
 }
 
 impl Related<super::login::Entity> for Entity {

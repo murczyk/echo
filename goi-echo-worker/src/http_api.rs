@@ -1,0 +1,196 @@
+use crate::config::Config;
+use crate::entities::{association, knowledge};
+use actix_web::error::{
+    ErrorBadRequest, ErrorInternalServerError, ErrorUnauthorized,
+};
+use actix_web::http::header;
+use actix_web::{post, web, Error, HttpRequest, HttpResponse};
+use anyhow::Context;
+use base64::engine::general_purpose::STANDARD as Base64;
+use base64::Engine;
+use goi_echo_worker::api::{
+    AssociationApiItem, ImportSignedFrequenciesRsp, KnowledgeApiItem,
+    ListAssociationsReq,
+};
+use goi_echo_worker::knowledge::KnowledgeRow;
+use goi_echo_worker::row::AssociationRow;
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: DatabaseConnection,
+    pub config: Config,
+}
+
+#[post("/api/associations")]
+pub async fn list_associations(
+    http_req: HttpRequest,
+    state: web::Data<AppState>,
+    req: web::Json<ListAssociationsReq>,
+) -> Result<HttpResponse, Error> {
+    require_basic_auth(&http_req, &state.config)?;
+
+    let mut query =
+        association::Entity::find().order_by_asc(association::Column::Id);
+    if let Some(since_id) = req.since_id_nonincl {
+        query = query.filter(association::Column::Id.gt(since_id));
+    }
+
+    let items = query
+        .all(&state.db)
+        .await
+        .context("fetching associations")
+        .map_err(ErrorInternalServerError)?
+        .into_iter()
+        .map(to_api_item)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(HttpResponse::Ok().json(items))
+}
+
+#[post("/api/knowledge")]
+pub async fn list_knowledge(
+    http_req: HttpRequest,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, Error> {
+    require_basic_auth(&http_req, &state.config)?;
+
+    let items = knowledge::Entity::find()
+        .filter(knowledge::Column::Deleted.eq(false))
+        .order_by_asc(knowledge::Column::Id)
+        .all(&state.db)
+        .await
+        .context("fetching knowledge")
+        .map_err(ErrorInternalServerError)?
+        .into_iter()
+        .map(to_knowledge_api_item)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(HttpResponse::Ok().json(items))
+}
+
+#[post("/api/frequencies/signed/import")]
+pub async fn import_signed_frequencies(
+    http_req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Bytes,
+) -> Result<HttpResponse, Error> {
+    require_basic_auth(&http_req, &state.config)?;
+    validate_xlsx_body(body.as_ref())?;
+
+    let path = PathBuf::from(state.config.frequencies_xlsx_path());
+    replace_xlsx_file(&path, body.as_ref())
+        .await
+        .with_context(|| format!("replacing {}", path.display()))
+        .map_err(ErrorInternalServerError)?;
+
+    Ok(HttpResponse::Ok().json(ImportSignedFrequenciesRsp {
+        path: path.display().to_string(),
+        bytes_written: body.len(),
+    }))
+}
+
+fn to_api_item(
+    association: association::Model,
+) -> Result<AssociationApiItem, Error> {
+    let row: AssociationRow = serde_json::from_value(association.row)
+        .context("deserializing association row")
+        .map_err(ErrorInternalServerError)?;
+    Ok(AssociationApiItem {
+        id: association.id,
+        row,
+        created_at: association.created_at.with_timezone(&chrono::Utc),
+        deleted: association.deleted,
+    })
+}
+
+fn to_knowledge_api_item(
+    knowledge: knowledge::Model,
+) -> Result<KnowledgeApiItem, Error> {
+    let row: KnowledgeRow = serde_json::from_value(knowledge.row)
+        .context("deserializing knowledge row")
+        .map_err(ErrorInternalServerError)?;
+    Ok(KnowledgeApiItem {
+        id: knowledge.id,
+        row,
+        created_at: knowledge.created_at.with_timezone(&chrono::Utc),
+        deleted: knowledge.deleted,
+    })
+}
+
+fn require_basic_auth(
+    http_req: &HttpRequest,
+    config: &Config,
+) -> Result<(), Error> {
+    let auth_value = http_req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .ok_or_else(|| ErrorUnauthorized("missing authorization header"))?;
+    let auth_value = auth_value
+        .to_str()
+        .map_err(|_| ErrorUnauthorized("invalid authorization header"))?;
+    let encoded = auth_value
+        .strip_prefix("Basic ")
+        .ok_or_else(|| ErrorUnauthorized("unsupported authorization scheme"))?;
+    let decoded = Base64
+        .decode(encoded)
+        .map_err(|_| ErrorUnauthorized("invalid authorization value"))?;
+    let decoded = String::from_utf8(decoded)
+        .map_err(|_| ErrorUnauthorized("invalid credentials"))?;
+    let mut parts = decoded.splitn(2, ':');
+    let login = parts.next().unwrap_or_default();
+    let password = parts.next().unwrap_or_default();
+    if login == config.api_login && password == config.api_password {
+        Ok(())
+    } else {
+        Err(ErrorUnauthorized("invalid credentials"))
+    }
+}
+
+fn validate_xlsx_body(body: &[u8]) -> Result<(), Error> {
+    if body.is_empty() {
+        return Err(ErrorBadRequest("request body is empty"));
+    }
+    if body.len() < 4 || &body[..4] != b"PK\x03\x04" {
+        return Err(ErrorBadRequest(
+            "request body is not an XLSX file (ZIP header missing)",
+        ));
+    }
+    Ok(())
+}
+
+async fn replace_xlsx_file(path: &Path, body: &[u8]) -> anyhow::Result<()> {
+    let parent = path.parent().context("XLSX path has no parent directory")?;
+    tokio::fs::create_dir_all(parent).await?;
+
+    let tmp_path = temp_xlsx_path(path);
+    tokio::fs::write(&tmp_path, body).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        tokio::fs::set_permissions(
+            &tmp_path,
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .await?;
+    }
+    tokio::fs::rename(&tmp_path, path).await?;
+    Ok(())
+}
+
+fn temp_xlsx_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("upload.xlsx");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    path.with_file_name(format!(".{file_name}.tmp-{suffix}"))
+}

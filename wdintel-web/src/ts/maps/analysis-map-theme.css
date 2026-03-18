@@ -1,0 +1,97 @@
+/* Light theme (default) */
+.leaflet-custom-control,
+.palitras-control,
+.palitras-control-header,
+#analysis-map .analysis-map-zoom-control,
+#analysis-map .layer-switch-control,
+#analysis-map .layer-switch-header,
+#analysis-map .analysis-map-window-control {
+	background: #ffffff !important;
+	border-color: #dee2e6 !important;
+}
+
+.palitras-control-header h3,
+.palitras-toggle-button,
+.palitras-palette-icon,
+.palitra-name,
+#analysis-map .analysis-map-zoom-button,
+#analysis-map .analysis-map-window-button,
+#analysis-map .layer-switch-header h3,
+#analysis-map .layer-switch-toggle-button,
+#analysis-map .layer-switch-icon,
+#analysis-map .layer-switch-label {
+	color: #212529 !important;
+}
+
+.palitras-toggle-button:hover,
+.palitras-palette-icon:hover,
+.palitra-main-row:hover,
+#analysis-map .analysis-map-zoom-button:hover,
+#analysis-map .analysis-map-window-button:hover,
+#analysis-map .layer-switch-toggle-button:hover,
+#analysis-map .layer-switch-icon:hover,
+#analysis-map .layer-switch-item:hover {
+	background-color: #f8f9fa !important;
+}
+
+.palitra-color {
+	border-color: #dee2e6 !important;
+}
+
+.palitras-control-empty {
+	color: #6c757d !important;
+}
+
+/* Dark theme */
+html[data-bs-theme='dark'] .leaflet-custom-control,
+html[data-bs-theme='dark'] .palitras-control,
+html[data-bs-theme='dark'] .palitras-control-header,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-zoom-control,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-control,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-header,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-window-control {
+	background: #212529 !important;
+	border-color: #495057 !important;
+}
+
+html[data-bs-theme='dark'] .palitras-control-header h3,
+html[data-bs-theme='dark'] .palitras-toggle-button,
+html[data-bs-theme='dark'] .palitras-palette-icon,
+html[data-bs-theme='dark'] .palitra-name,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-zoom-button,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-window-button,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-header h3,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-toggle-button,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-icon,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-label {
+	color: #dee2e6 !important;
+}
+
+html[data-bs-theme='dark'] .palitras-toggle-button:hover,
+html[data-bs-theme='dark'] .palitras-palette-icon:hover,
+html[data-bs-theme='dark'] .palitra-main-row:hover,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-zoom-button:hover,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-window-button:hover,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-toggle-button:hover,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-icon:hover,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-item:hover {
+	background-color: #343a40 !important;
+}
+
+html[data-bs-theme='dark'] .palitra-color {
+	border-color: #495057 !important;
+}
+
+html[data-bs-theme='dark'] .palitras-control-empty {
+	color: #adb5bd !important;
+}
+
+/* Palitra points cluster styles */
+.palitra-point-cluster {
+	transition: transform 0.2s ease;
+}
+
+.palitra-point-cluster:hover {
+	transform: scale(1.1);
+	cursor: pointer;
+}

@@ -1442,6 +1442,10 @@ pub async fn recalculate_network_stats(
         HashMap::new();
     let mut network_callsign_day: HashMap<(NaiveDate, i64, i64, String), i32> =
         HashMap::new();
+    let network_freq_ranges =
+        load_network_freq_ranges(dbx, network_ids).await.c(h!())?;
+    let mut network_freq_last_seen: HashMap<i64, NaiveDateTime> =
+        HashMap::new();
     let mut processed_message_networks: HashSet<(i64, i64)> = HashSet::new();
 
     for row in stats {
@@ -1460,8 +1464,25 @@ pub async fn recalculate_network_stats(
             let freq = freq.trim().to_string();
             if !freq.is_empty() {
                 *network_freq_day
-                    .entry((day, batch_id, row.network_id, freq))
+                    .entry((day, batch_id, row.network_id, freq.clone()))
                     .or_insert(0) += 1;
+
+                if let Some(freq_ranges) =
+                    network_freq_ranges.get(&(row.network_id, freq.clone()))
+                {
+                    for freq_range in freq_ranges {
+                        if is_network_freq_active_at(freq_range, ts) {
+                            network_freq_last_seen
+                                .entry(freq_range.id)
+                                .and_modify(|current| {
+                                    if ts > *current {
+                                        *current = ts;
+                                    }
+                                })
+                                .or_insert(ts);
+                        }
+                    }
+                }
             }
         }
 
@@ -1566,8 +1587,85 @@ pub async fn recalculate_network_stats(
         .c(h!())?;
     }
 
+    let mut network_freq_last_seen_reset =
+        sigint_network_freq::Entity::update_many()
+            .col_expr(
+                sigint_network_freq::Column::LastSeenDt,
+                Expr::value(None::<NaiveDateTime>),
+            )
+            .filter(sigint_network_freq::Column::Deleted.eq(false));
+    if let Some(network_ids) = network_ids {
+        network_freq_last_seen_reset = network_freq_last_seen_reset.filter(
+            sigint_network_freq::Column::NetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        );
+    }
+    network_freq_last_seen_reset.exec(&txn).await.c(h!())?;
+
+    for (network_freq_id, last_seen_dt) in network_freq_last_seen {
+        sigint_network_freq::Entity::update_many()
+            .col_expr(
+                sigint_network_freq::Column::LastSeenDt,
+                Expr::value(Some(last_seen_dt)),
+            )
+            .filter(sigint_network_freq::Column::Id.eq(network_freq_id))
+            .exec(&txn)
+            .await
+            .c(h!())?;
+    }
+
     txn.commit().await.c(h!())?;
     Ok(())
+}
+
+#[derive(FromQueryResult, Clone)]
+struct NetworkFreqRangeRow {
+    id: i64,
+    network_id: i64,
+    freq: String,
+    active_from: NaiveDateTime,
+    active_to: Option<NaiveDateTime>,
+}
+
+async fn load_network_freq_ranges(
+    dbx: &DatabaseConnection,
+    network_ids: Option<&HashSet<i64>>,
+) -> Result<HashMap<(i64, String), Vec<NetworkFreqRangeRow>>, AppError> {
+    let mut query = sigint_network_freq::Entity::find()
+        .select_only()
+        .column(sigint_network_freq::Column::Id)
+        .column(sigint_network_freq::Column::NetworkId)
+        .column(sigint_network_freq::Column::Freq)
+        .column(sigint_network_freq::Column::ActiveFrom)
+        .column(sigint_network_freq::Column::ActiveTo)
+        .filter(sigint_network_freq::Column::Deleted.eq(false));
+    if let Some(network_ids) = network_ids {
+        query = query.filter(
+            sigint_network_freq::Column::NetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        );
+    }
+    let rows = query
+        .into_model::<NetworkFreqRangeRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut res: HashMap<(i64, String), Vec<NetworkFreqRangeRow>> =
+        HashMap::new();
+    for row in rows {
+        res.entry((row.network_id, row.freq.clone()))
+            .or_default()
+            .push(row);
+    }
+    Ok(res)
+}
+
+fn is_network_freq_active_at(
+    freq: &NetworkFreqRangeRow,
+    ts: NaiveDateTime,
+) -> bool {
+    freq.active_from <= ts && freq.active_to.map(|dt| dt >= ts).unwrap_or(true)
 }
 
 async fn load_generic_stats(

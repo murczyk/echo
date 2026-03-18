@@ -1,0 +1,36 @@
+[package]
+name = "goi-echo-worker"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "GOI associations worker for Echo"
+
+[lib]
+name = "goi_echo_worker"
+path = "src/lib.rs"
+
+[dependencies]
+actix-web = { workspace = true }
+anyhow = { workspace = true }
+base64 = "0.22.1"
+calamine = { version = "0.30.1", features = ["dates"] }
+chrono = { workspace = true, features = ["serde"] }
+chrono-tz = "0.10.4"
+env_logger = "0.11.8"
+log = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "signal", "time"] }
+toml = "0.9.5"
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = [{ unit-name = "goi-echo-worker" }]
+depends = ""
+assets = [
+    ["target/release/goi-echo-worker", "usr/bin/", "755"],
+    ["config.toml.example", "etc/goi-echo-worker/config.toml.example", "644"],
+]

@@ -2,12 +2,12 @@
 members = [
     "wdintel-rs",
     "echo-migration", "echo-install",
-    "docs/echo-docs", "echo-ai",
+    "docs/echo-docs", "echo-ai", "goi-echo-worker",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1-rc.202603150843"
+version = "0.1.1-rc.202603180738"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"

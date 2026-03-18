@@ -454,7 +454,8 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                     dbx,
                     &data.groups,
                     network.id,
-                    &all_known_callsigns,
+                    Some(&all_known_callsigns),
+                    true,
                     Some(&filter),
                 )
                 .await
@@ -471,6 +472,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                 network.id,
                 Some(&filter),
                 user_id,
+                true,
             )
             .await
             .context(h!())?;

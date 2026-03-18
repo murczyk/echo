@@ -20,6 +20,8 @@ pub struct User {
     pub sigint_zone_id: Option<i64>,
     pub organism_id: Option<i64>,
     pub delta_login: Option<String>,
+    pub goi_configured_for_organism: bool,
+    pub goi_host: Option<String>,
 }
 
 #[derive(

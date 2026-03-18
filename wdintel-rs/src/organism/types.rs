@@ -127,6 +127,10 @@ pub struct OrganismGoiSettings {
     pub ssh_user: Option<String>,
     pub ssh_port: i32,
     pub path: String,
+    pub api_host: Option<String>,
+    pub api_port: i32,
+    pub api_login: Option<String>,
+    pub api_password: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -136,6 +140,21 @@ pub struct UpdateOrganismGoiSettingsReq {
     pub ssh_user: Option<String>,
     pub ssh_port: i32,
     pub path: String,
+    pub api_host: Option<String>,
+    pub api_port: i32,
+    pub api_login: Option<String>,
+    pub api_password: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct SetupOrganismGoiWorkerReq {
+    pub organism_id: i64,
+    pub ssh_host: String,
+    pub ssh_user: String,
+    pub ssh_port: i32,
+    pub path: String,
+    pub api_host: Option<String>,
+    pub api_port: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

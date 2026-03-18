@@ -1,5 +1,5 @@
 server {
-    server_name echo-kupiansk.husky-insen.ts.net/ kupiansk.echoua.info;
+    server_name echo-kupiansk.husky-insen.ts.net kupiansk.echoua.info;
 
     root /usr/share/echo;
     index index.html;

@@ -12,6 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 quick-xml = { version = "0.38.1", features = ["serialize", "overlapped-lists"] }
 actix-web = { workspace = true }
+goi-echo-worker = { path = "../goi-echo-worker" }
 actix-files = "0.6.6"
 actix-multipart = "0.7.2"
 actix-identity = "0.8.0"

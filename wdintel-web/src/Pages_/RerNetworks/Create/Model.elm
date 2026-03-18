@@ -100,7 +100,7 @@ type alias Model =
     , freqEditSaving : Bool
     , deleteFreqConfirmation : Maybe ( Int, String )
     , deleteFreqLoading : Bool
-    , callsignsOpenedPopupId : Maybe String
+    , callsignsOpenedPopupId : Maybe Int
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     , freqEditKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
