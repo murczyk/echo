@@ -141,6 +141,7 @@ pub mod stats_group_tag_5min;
 pub mod stats_group_tag_day;
 pub mod stats_group_unit_5min;
 pub mod stats_group_unit_day;
+pub mod system_settings;
 pub mod tag;
 pub mod tag_keyword;
 pub mod tag_suggestion_worker_queue;

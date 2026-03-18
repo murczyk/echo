@@ -52,6 +52,7 @@ pub mod session;
 pub mod sigint;
 mod stats;
 pub mod storage;
+pub mod system_settings;
 pub mod tags;
 pub mod terminal;
 pub mod tests;

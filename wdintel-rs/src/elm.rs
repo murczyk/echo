@@ -5,10 +5,8 @@ use crate::types::*;
 
 const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" Json.Decode.bool))"#;
 const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" Json.Decode.bool, Json.Decode.succeed False ]))"#;
-const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW: &str =
-    r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.bool)))"#;
-const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW: &str =
-    r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
+const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.bool)))"#;
+const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
 
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
@@ -354,6 +352,11 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::UnitStatsRsp,
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
+            crate::system_settings::types::SystemSettingsCurrentRsp,
+            crate::system_settings::types::SystemSettingsItem,
+            crate::system_settings::types::SystemSettingsListRsp,
+            crate::system_settings::types::CreateSystemSettingsReq,
+            crate::system_settings::types::ActivateSystemSettingsReq,
             crate::delta::login::DeltaLoginUrl,
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
@@ -716,6 +719,11 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::UnitStatsRsp,
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
+            crate::system_settings::types::SystemSettingsCurrentRsp,
+            crate::system_settings::types::SystemSettingsItem,
+            crate::system_settings::types::SystemSettingsListRsp,
+            crate::system_settings::types::CreateSystemSettingsReq,
+            crate::system_settings::types::ActivateSystemSettingsReq,
             crate::rer_importer::types::InboxByGroupDigestRsp,
             crate::messenger::group::types::GroupAdminData,
             crate::sigint::aor::types::AreaOfResponsibility,
@@ -807,12 +815,13 @@ fn patch_generated_elm_names(output: String) -> String {
 }
 
 fn patch_backward_compatible_decoders(output: String) -> String {
-    output.replace(
-        RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW,
-        RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW,
-    )
-    .replace(
-        RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER,
-        RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER,
-    )
+    output
+        .replace(
+            RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW,
+            RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW,
+        )
+        .replace(
+            RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER,
+            RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER,
+        )
 }

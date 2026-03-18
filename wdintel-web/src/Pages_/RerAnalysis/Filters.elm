@@ -132,6 +132,20 @@ freshMenuItems remoteData menuItems =
             []
 
 
+unitsExactMatchCheckboxLabel : Model -> String
+unitsExactMatchCheckboxLabel model =
+    case model.counts of
+        RD.Success counts ->
+            if model.unitsExactMatchOnly then
+                "точний збіг за еталонкою (неточних збігів - " ++ fromInt counts.unitsNonExactMatchesCount ++ ")"
+
+            else
+                "точний збіг за еталонкою (точних збігів - " ++ fromInt counts.unitsExactMatchesCount ++ ")"
+
+        _ ->
+            "точний збіг за еталонкою"
+
+
 view : Bool -> B.User -> Model -> Html Msg
 view isDark user model =
     let
@@ -729,7 +743,7 @@ view isDark user model =
                     )
                 , div [ class "my-1" ]
                     [ Shared.Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
-                        |> Shared.Components.Checkbox.withContent [ text "точний збіг за еталонкою" ]
+                        |> Shared.Components.Checkbox.withContent [ text (unitsExactMatchCheckboxLabel model) ]
                         |> Shared.Components.Checkbox.view
                     ]
                 ]

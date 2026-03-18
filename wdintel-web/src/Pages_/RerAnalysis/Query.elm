@@ -36,7 +36,7 @@ emptyQueryState =
     , onlyWithMetadata = False
     , withoutMetadata = False
     , tags = []
-    , unitsExactMatchOnly = True
+    , unitsExactMatchOnly = Nothing
     , adjacentFreqsRange = 0
     , withoutModelTags = False
     }
@@ -118,7 +118,12 @@ modelQueryState model =
             , onlyWithMetadata = model.onlyWithMetadata
             , withoutMetadata = model.withoutMetadata
             , tags = model.tagsSelected
-            , unitsExactMatchOnly = model.unitsExactMatchOnly
+            , unitsExactMatchOnly =
+                if model.unitsExactMatchOnlyExplicit then
+                    Just model.unitsExactMatchOnly
+
+                else
+                    Nothing
             , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
             , withoutModelTags = model.withoutModelTags
             }
@@ -132,41 +137,56 @@ updModelFromQueryState model ms =
                 |> normalizeQueryStateMetadata
                 |> normalizeQueryStateNetworks
     in
-    { model
-        | from = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateFromStr, timeStr = queryState.timeFromStr }
-        , to = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateToStr, timeStr = queryState.timeToStr }
-        , aorsSelected = queryState.aorsSelected
-        , groupsSelected = queryState.groupsSelected
-        , sendersSelected = queryState.sendersSelected
-        , freqsSelected = queryState.freqsSelected
-        , callsignsSelected = queryState.callsignsSelected
-        , unitsSelected = queryState.unitsSelected
-        , locationsSelected = queryState.locationsSelected
-        , postsSelected = queryState.postsSelected
-        , networksSelected = queryState.networksSelected
-        , withoutNetwork = queryState.withoutNetwork
-        , includePelengLocations = queryState.includePelengLocations
-        , tagsSelected = queryState.tags
-        , orWithExtendedForm = queryState.orWithExtendedForm
-        , orBookmarked = queryState.orBookmarked
-        , orImportant = queryState.orImportant
-        , orWithCoords = queryState.orWithCoords
-        , searchInput = queryState.search
-        , metadataCc = queryState.metadataCc
-        , metadataSender = queryState.metadataSender
-        , metadataReceiver = queryState.metadataReceiver
-        , metadataHash = queryState.metadataHash
-        , onlyWithMetadata = queryState.onlyWithMetadata
-        , withoutMetadata = queryState.withoutMetadata
-        , unitsExactMatchOnly = queryState.unitsExactMatchOnly
-        , withoutModelTags = queryState.withoutModelTags
-        , adjacentFreqsRangeSelect =
-            let
-                current =
-                    model.adjacentFreqsRangeSelect
-            in
-            { current | selected = queryState.adjacentFreqsRange }
-    }
+    let
+        modelWithBaseState =
+            { model
+                | from = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateFromStr, timeStr = queryState.timeFromStr }
+                , to = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateToStr, timeStr = queryState.timeToStr }
+                , aorsSelected = queryState.aorsSelected
+                , groupsSelected = queryState.groupsSelected
+                , sendersSelected = queryState.sendersSelected
+                , freqsSelected = queryState.freqsSelected
+                , callsignsSelected = queryState.callsignsSelected
+                , unitsSelected = queryState.unitsSelected
+                , locationsSelected = queryState.locationsSelected
+                , postsSelected = queryState.postsSelected
+                , networksSelected = queryState.networksSelected
+                , withoutNetwork = queryState.withoutNetwork
+                , includePelengLocations = queryState.includePelengLocations
+                , tagsSelected = queryState.tags
+                , orWithExtendedForm = queryState.orWithExtendedForm
+                , orBookmarked = queryState.orBookmarked
+                , orImportant = queryState.orImportant
+                , orWithCoords = queryState.orWithCoords
+                , searchInput = queryState.search
+                , metadataCc = queryState.metadataCc
+                , metadataSender = queryState.metadataSender
+                , metadataReceiver = queryState.metadataReceiver
+                , metadataHash = queryState.metadataHash
+                , onlyWithMetadata = queryState.onlyWithMetadata
+                , withoutMetadata = queryState.withoutMetadata
+                , unitsExactMatchOnlyExplicit =
+                    case queryState.unitsExactMatchOnly of
+                        Just _ ->
+                            True
+
+                        Nothing ->
+                            False
+                , withoutModelTags = queryState.withoutModelTags
+                , adjacentFreqsRangeSelect =
+                    let
+                        current =
+                            model.adjacentFreqsRangeSelect
+                    in
+                    { current | selected = queryState.adjacentFreqsRange }
+            }
+    in
+    case queryState.unitsExactMatchOnly of
+        Just unitsExactMatchOnly ->
+            { modelWithBaseState | unitsExactMatchOnly = unitsExactMatchOnly }
+
+        Nothing ->
+            modelWithBaseState
 
 
 analysisStatsParams : Posix -> Posix -> Model -> B.AnalysisStatsReq
@@ -289,6 +309,13 @@ updModelFromRerAnalysisStatsReq model req =
                 |> List.map String.fromInt
         , withoutNetwork = normalizedReq.withoutNetwork |> def False
         , unitsExactMatchOnly = normalizedReq.unitsExactMatchOnly |> def True
+        , unitsExactMatchOnlyExplicit =
+            case normalizedReq.unitsExactMatchOnly of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
         , reportTagsOnlyThisUnit = normalizedReq.reportTagsOnlyThisUnit |> def False
     }
 

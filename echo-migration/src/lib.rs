@@ -223,6 +223,7 @@ mod m20260317_214944_add_goi_knowledge;
 mod m20260317_234004_add_goi_knowledge_deleted_at;
 mod m20260318_110000_add_sigint_network_freq_last_seen_dt;
 mod m20260318_131247_add_organism_goi_integration_type;
+mod m20260319_011722_add_system_settings;
 
 pub struct Migrator;
 
@@ -455,6 +456,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260318_131247_add_organism_goi_integration_type::Migration,
             ),
+            Box::new(m20260319_011722_add_system_settings::Migration),
         ]
     }
 }

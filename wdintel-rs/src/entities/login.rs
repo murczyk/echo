@@ -79,6 +79,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintZone,
+    #[sea_orm(has_many = "super::system_settings::Entity")]
+    SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
     TagsOrdering,
 }
@@ -182,6 +184,12 @@ impl Related<super::sigint_unit_changelog::Entity> for Entity {
 impl Related<super::sigint_zone::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintZone.def()
+    }
+}
+
+impl Related<super::system_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SystemSettings.def()
     }
 }
 
