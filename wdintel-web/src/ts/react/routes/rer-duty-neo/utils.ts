@@ -57,6 +57,13 @@ export function emptyFilter(): RerDutyFeedFilterState {
   };
 }
 
+/** Backend treats null (no filter) vs [] (Some([]) → empty filter, zero rows) differently. Normalize empty arrays to null. */
+function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
+  if (arr == null) return null;
+  if (Array.isArray(arr) && arr.length === 0) return null;
+  return arr;
+}
+
 /** Distinguishes null/undefined from []. Backend treats None (no filter) vs Some([]) (empty filter → no rows) differently. */
 function optArrEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
   if (a == null && b == null) return true;
@@ -116,8 +123,9 @@ export function buildInboxReq(opts: {
   reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
   const f = opts.filter;
-  const selectedFreqs = opts.expandedFreqsSelected ?? f.freqsSelected ?? null;
-  const deniedFreqs = opts.expandedFreqsDenied ?? f.freqsDenied ?? null;
+  // send empty arrays as null (backend treats null/undefined vs [] differently)
+  const selectedFreqs = emptyArrToNull(opts.expandedFreqsSelected ?? f.freqsSelected ?? null);
+  const deniedFreqs = emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null);
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
@@ -125,12 +133,12 @@ export function buildInboxReq(opts: {
     tillDateInclusiveMs: null,
     onlyShowUnprocessed: null,
     checkedOnly: null,
-    selectedGroups: f.groupsSelected ?? null,
-    selectedSenders: f.sendersSelected ?? null,
-    deniedSenders: f.deniedSenders ?? null,
+    selectedGroups: emptyArrToNull(f.groupsSelected),
+    selectedSenders: emptyArrToNull(f.sendersSelected),
+    deniedSenders: emptyArrToNull(f.deniedSenders),
     selectedFreqs,
-    selectedPosts: f.postsSelected ?? null,
-    deniedPosts: f.postsDenied ?? null,
+    selectedPosts: emptyArrToNull(f.postsSelected),
+    deniedPosts: emptyArrToNull(f.postsDenied),
     deniedFreqs,
     selectedCallsigns: null,
     selectedUnits: null,
@@ -175,13 +183,13 @@ export function buildInboxReq(opts: {
 
 export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterState {
   return {
-    groupsSelected: (raw.groupsSelected ?? raw.groups_selected ?? null) as string[] | null,
-    sendersSelected: (raw.sendersSelected ?? raw.senders_selected ?? null) as string[] | null,
-    deniedSenders: (raw.deniedSenders ?? raw.denied_senders ?? null) as string[] | null,
-    freqsSelected: (raw.freqsSelected ?? raw.freqs_selected ?? null) as string[] | null,
-    freqsDenied: (raw.freqsDenied ?? raw.freqs_denied ?? null) as string[] | null,
-    postsSelected: (raw.postsSelected ?? raw.posts_selected ?? null) as string[] | null,
-    postsDenied: (raw.postsDenied ?? raw.posts_denied ?? null) as string[] | null,
+    groupsSelected: emptyArrToNull((raw.groupsSelected ?? raw.groups_selected ?? null) as string[] | null),
+    sendersSelected: emptyArrToNull((raw.sendersSelected ?? raw.senders_selected ?? null) as string[] | null),
+    deniedSenders: emptyArrToNull((raw.deniedSenders ?? raw.denied_senders ?? null) as string[] | null),
+    freqsSelected: emptyArrToNull((raw.freqsSelected ?? raw.freqs_selected ?? null) as string[] | null),
+    freqsDenied: emptyArrToNull((raw.freqsDenied ?? raw.freqs_denied ?? null) as string[] | null),
+    postsSelected: emptyArrToNull((raw.postsSelected ?? raw.posts_selected ?? null) as string[] | null),
+    postsDenied: emptyArrToNull((raw.postsDenied ?? raw.posts_denied ?? null) as string[] | null),
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as number | null,
   };
 }
