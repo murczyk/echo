@@ -215,6 +215,12 @@ fn spawn_group_stats_worker(bg_set: &mut JoinSet<()>, mode: Mode) {
     });
 }
 
+fn spawn_goi_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
+    spawn_named_worker("goi_association_worker", bg_set, async move {
+        crate::organism::goi::worker::goi_association_worker_nofail(env).await;
+    });
+}
+
 fn spawn_group_stats_worker_after_startup_recalc(
     bg_set: &mut JoinSet<()>,
     dbx: DatabaseConnection,
@@ -260,7 +266,6 @@ fn spawn_background_workers(
     let dbx10 = env.dbx.clone();
     let dbx11 = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
-    let env_goi = env.clone();
 
     if let Some(secret_config) = config.vault_config.clone() {
         spawn_named_worker("secret_worker", bg_set, async move {
@@ -269,10 +274,6 @@ fn spawn_background_workers(
     }
     spawn_named_worker("healthcheck_worker", bg_set, async move {
         healthcheck::healthcheck_worker(&dbx9, config1).await;
-    });
-    spawn_named_worker("goi_association_worker", bg_set, async move {
-        crate::organism::goi::worker::goi_association_worker_nofail(env_goi)
-            .await;
     });
     if let Some(greptimedb) = env.greptime() {
         let redis = env.redis.clone();
@@ -406,6 +407,7 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
             crate::secret::secret_worker(secret_config).await
         });
     }
+    spawn_goi_worker(bg_set, env);
 }
 
 pub async fn main_server(
