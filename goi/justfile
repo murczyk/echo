@@ -2,6 +2,7 @@ set positional-arguments := false
 
 goi_dir := justfile_directory()
 goi_app_dir := "/etc/goi"
+goi_timezone := "Europe/Kyiv"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 goi_version := "1.1.7"
@@ -92,6 +93,19 @@ setup server:
       sudo apt-get update
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx rsync
     '
+
+    echo "Setting timezone to {{ goi_timezone }}..."
+    ssh "$SERVER" "set -euo pipefail
+      if ! command -v timedatectl >/dev/null 2>&1; then
+        echo 'timedatectl not found; skipping timezone setup' >&2
+        exit 0
+      fi
+      current_timezone=\$(timedatectl show --property=Timezone --value 2>/dev/null || true)
+      if [[ \"\$current_timezone\" != '{{ goi_timezone }}' ]]; then
+        sudo timedatectl set-timezone '{{ goi_timezone }}'
+      fi
+      timedatectl show --property=Timezone --value
+    "
 
     echo "Preparing ${APP_DIR}..."
     ssh "$SERVER" "set -euo pipefail

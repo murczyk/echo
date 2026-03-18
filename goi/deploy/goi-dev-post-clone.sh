@@ -41,6 +41,7 @@ TS_KEY=""
 MACHINE=""
 DOMAIN=""
 GOI_APP_DIR="${GOI_APP_DIR:-/etc/goi}"
+GOI_TIMEZONE="${GOI_TIMEZONE:-Europe/Kyiv}"
 SCRIPT_BUNDLE_DIR="${SCRIPT_BUNDLE_DIR:-/var/tmp/goi-dev-container}"
 
 while [[ $# -gt 0 ]]; do
@@ -138,6 +139,23 @@ install_service_bundle() {
   else
     warn "Skipping goi.service restart: ${GOI_APP_DIR}/package.json not found"
   fi
+}
+
+ensure_timezone() {
+  if ! command -v timedatectl >/dev/null 2>&1; then
+    warn "timedatectl not found; skipping timezone setup"
+    return 0
+  fi
+
+  local current_timezone
+  current_timezone="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
+  if [[ "$current_timezone" == "$GOI_TIMEZONE" ]]; then
+    log "Timezone already set to ${GOI_TIMEZONE}"
+    return 0
+  fi
+
+  run_root timedatectl set-timezone "$GOI_TIMEZONE"
+  log "Set timezone to ${GOI_TIMEZONE}"
 }
 
 update_nginx() {
@@ -242,6 +260,7 @@ main() {
   fi
 
   install_service_bundle "$app_user"
+  ensure_timezone
   update_nginx
   renew_cert
   print_ready_banner "$app_user"
