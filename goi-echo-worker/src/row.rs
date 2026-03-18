@@ -44,11 +44,36 @@ impl AssociationRow {
             || self.source_date_raw.is_some()
     }
 
-    pub fn dedupe_key(&self) -> Option<String> {
-        let frequency = normalize_text(self.frequency.clone())?;
-        let coordinates = normalize_text(self.coordinates.clone())?;
-        let note = normalize_text(self.note.clone())?;
-        Some(format!("{frequency}\n{coordinates}\n{note}"))
+    pub fn dedupe_key(&self) -> String {
+        let frequency = normalize_text(self.frequency.clone());
+        let coordinates = normalize_text(self.coordinates.clone());
+        let note = normalize_text(self.note.clone());
+        let source_date_raw = normalize_text(self.source_date_raw.clone());
+
+        if source_date_raw.is_none() {
+            if let (Some(frequency), Some(coordinates), Some(note)) =
+                (&frequency, &coordinates, &note)
+            {
+                return format!("{frequency}\n{coordinates}\n{note}");
+            }
+        }
+
+        json!({
+            "v": 2,
+            "source_date_raw": source_date_raw,
+            "association_type": normalize_text(self.association_type.clone()),
+            "frequency": frequency,
+            "coordinates": coordinates,
+            "note": note,
+            "category": normalize_text(self.category.clone()),
+            "call_signs": normalize_string_list(&self.call_signs),
+            "formation": normalize_text(self.formation.clone()),
+            "association_count": self.association_count,
+            "sidc": normalize_text(self.sidc.clone()),
+            "author": normalize_text(self.author.clone()),
+            "palettes": self.palettes.clone(),
+        })
+        .to_string()
     }
 
     pub fn source_date(&self) -> Option<DateTime<Utc>> {
@@ -226,6 +251,13 @@ fn normalize_text(value: Option<String>) -> Option<String> {
     }
 }
 
+fn normalize_string_list(values: &[String]) -> Vec<String> {
+    values
+        .iter()
+        .filter_map(|value| normalize_text(Some(value.clone())))
+        .collect()
+}
+
 fn cell_string(cell: Option<&Data>) -> Option<String> {
     let cell = cell?;
     match cell {
@@ -345,5 +377,83 @@ mod tests {
         assert_eq!(row.sidc.as_deref(), Some("10061000001211000000"));
         assert_eq!(row.author.as_deref(), Some("Зігі"));
         assert_eq!(row.source_date_raw.as_deref(), Some("15.03.2026 14:50:39"));
+    }
+
+    #[test]
+    fn keeps_legacy_dedupe_key_for_undated_complete_rows() {
+        let row = AssociationRow {
+            sheet_name: "Sheet1".to_string(),
+            row_num: 1,
+            cells: Vec::new(),
+            association_type: None,
+            frequency: Some("145.1000".to_string()),
+            coordinates: Some("37UDR0682401768".to_string()),
+            note: Some("note".to_string()),
+            category: None,
+            call_signs: Vec::new(),
+            formation: None,
+            association_count: None,
+            sidc: None,
+            author: None,
+            source_date_raw: None,
+            palettes: None,
+        };
+
+        assert_eq!(
+            row.dedupe_key(),
+            "145.1000\n37UDR0682401768\nnote".to_string()
+        );
+    }
+
+    #[test]
+    fn persists_partial_rows_via_fallback_dedupe_key() {
+        let row = AssociationRow {
+            sheet_name: "Sheet1".to_string(),
+            row_num: 4,
+            cells: Vec::new(),
+            association_type: None,
+            frequency: Some("162.6375".to_string()),
+            coordinates: None,
+            note: None,
+            category: None,
+            call_signs: Vec::new(),
+            formation: None,
+            association_count: None,
+            sidc: None,
+            author: None,
+            source_date_raw: None,
+            palettes: None,
+        };
+
+        let key = row.dedupe_key();
+
+        assert!(key.contains("\"v\":2"));
+        assert!(key.contains("\"frequency\":\"162.6375\""));
+    }
+
+    #[test]
+    fn includes_source_date_in_dedupe_key_when_present() {
+        let row = AssociationRow {
+            sheet_name: "Sheet1".to_string(),
+            row_num: 19,
+            cells: Vec::new(),
+            association_type: None,
+            frequency: Some("173.6750".to_string()),
+            coordinates: Some("37UBR9821185404".to_string()),
+            note: Some("note".to_string()),
+            category: None,
+            call_signs: Vec::new(),
+            formation: None,
+            association_count: None,
+            sidc: None,
+            author: None,
+            source_date_raw: Some("18.03.2026 14:55:21".to_string()),
+            palettes: None,
+        };
+
+        let key = row.dedupe_key();
+
+        assert!(key.contains("\"v\":2"));
+        assert!(key.contains("\"source_date_raw\":\"18.03.2026 14:55:21\""));
     }
 }

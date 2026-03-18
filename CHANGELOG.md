@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2097](https://github.com/echoua/echo/issues/2097) ✅ ГОІ: краще імпорт висновків
 - [#2095](https://github.com/echoua/echo/issues/2095) ✅ ГОІ: проста інтеграція з посиланням
 - [#2026](https://github.com/echoua/echo/issues/2026) ✅ Аналіз: фільтр по повідомленням без мереж
 - [#2087](https://github.com/echoua/echo/issues/2087) ✅ ГОІ синхронізувати обізнаність
