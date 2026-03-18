@@ -4,6 +4,7 @@ goi_dir := justfile_directory()
 goi_app_dir := "/etc/goi"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
+goi_version := "1.1.7"
 
 default:
     @just --list
@@ -137,7 +138,7 @@ deploy server:
 
     SERVER="{{ server }}"
     APP_DIR="{{ goi_app_dir }}"
-    SRC_DIR="{{ goi_dir }}/goi/goi-1.1.6/"
+    SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
 
     echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
@@ -171,13 +172,11 @@ deploy server:
       "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
 
     echo "Syncing goi service files..."
-    scp "${SRC_DIR}/data/categories.json" "${SERVER}:${APP_DIR}/data/categories.json"
     scp "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${APP_DIR}/goi-npm-start.sh"
     scp "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/var/tmp/goi.service"
     ssh ${SERVER} 'sudo mv /var/tmp/goi.service /etc/systemd/system/goi.service'
 
     ssh "$SERVER" "set -euo pipefail
-      sudo chown echo:echo '${APP_DIR}/data/categories.json'
       sudo chown echo:echo '${APP_DIR}/goi-npm-start.sh'
       sudo chmod 0755 '${APP_DIR}/goi-npm-start.sh'
       sudo chown root:root /etc/systemd/system/goi.service
