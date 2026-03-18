@@ -34,6 +34,8 @@ pub struct Model {
     pub goi_api_login: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub goi_api_password: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    pub goi_integration_type: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

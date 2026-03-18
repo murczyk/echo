@@ -3225,6 +3225,7 @@ type alias User =
     , organismId : Maybe Int
     , deltaLogin : Maybe String
     , goiConfiguredForOrganism : Bool
+    , goiFullAccessForOrganism : Bool
     , goiHost : Maybe String
     }
 
@@ -3238,6 +3239,7 @@ userEncoder struct =
         , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.organismId )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.deltaLogin )
         , ( "goi_configured_for_organism", Json.Encode.bool struct.goiConfiguredForOrganism )
+        , ( "goi_full_access_for_organism", Json.Encode.bool struct.goiFullAccessForOrganism )
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.goiHost )
         ]
 
@@ -8486,15 +8488,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_selected" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_selected" (Json.Decode.list Json.Decode.string)))
-        |> Json.Decode.andThen
-            (\x ->
-                Json.Decode.map x
-                    (Json.Decode.oneOf
-                        [ Json.Decode.field "without_network" Json.Decode.bool
-                        , Json.Decode.succeed False
-                        ]
-                    )
-            )
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_extended_form" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_bookmarked" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" Json.Decode.bool))
@@ -9051,6 +9045,7 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_configured_for_organism" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_full_access_for_organism" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable Json.Decode.string)))
 
 

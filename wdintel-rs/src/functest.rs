@@ -849,6 +849,11 @@ pub mod tests {
         if out.deleted_permanently == NotSet {
             out.deleted_permanently = Set(false);
         }
+        if out.goi_integration_type == NotSet {
+            out.goi_integration_type =
+                Set(crate::config::ORGANISM_GOI_INTEGRATION_TYPE_DEFAULT
+                    .to_string());
+        }
         if out.goi_ssh_host == NotSet {
             out.goi_ssh_host = Set(None);
         }

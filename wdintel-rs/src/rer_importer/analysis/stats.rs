@@ -150,6 +150,157 @@ where
     )
 }
 
+fn effective_groups_with_access(
+    selected_groups: &Option<Vec<String>>,
+    allowed_groups: &[String],
+) -> Vec<String> {
+    let allowed_groups_set = allowed_groups.iter().collect::<HashSet<_>>();
+
+    selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .map(|groups| {
+            groups
+                .iter()
+                .filter(|group| allowed_groups_set.contains(group))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| allowed_groups.to_vec())
+}
+
+fn apply_joined_group_rows_filter<Q>(
+    query: Q,
+    selected_groups: &Option<Vec<String>>,
+    selected_senders: &Option<Vec<String>>,
+    allowed_groups: &[String],
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let effective_groups =
+        effective_groups_with_access(selected_groups, allowed_groups);
+
+    let query = if effective_groups.is_empty() {
+        query.filter(Expr::cust("FALSE"))
+    } else {
+        query.filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(effective_groups),
+        )
+    };
+
+    match selected_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty())
+    {
+        Some(selected_senders) => query.filter(
+            signal_message_group::Column::Sender
+                .eq_any(selected_senders.clone()),
+        ),
+        None => query,
+    }
+}
+
+fn apply_joined_group_aor_scope<E>(
+    query: Select<E>,
+    selected_aors: &Option<Vec<i64>>,
+) -> Select<E>
+where
+    E: EntityTrait,
+{
+    if selected_aors
+        .as_ref()
+        .map(|aors| aors.is_empty())
+        .unwrap_or(true)
+    {
+        return query;
+    }
+
+    let query = query
+        .join(
+            JoinType::LeftJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        );
+
+    apply_joined_aor_overlap_filter(query, selected_aors)
+}
+
+fn apply_joined_aor_overlap_filter<Q>(
+    query: Q,
+    selected_aors: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(selected_aors) =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())
+    else {
+        return query;
+    };
+
+    let selected_aor_alias = Alias::new("selected_aor_filter");
+    let overlap_subquery = Query::select()
+        .expr(Expr::value(1))
+        .from_as(area_of_responsibility::Entity, selected_aor_alias.clone())
+        .cond_where(
+            Cond::all()
+                .add(
+                    Expr::col((
+                        selected_aor_alias.clone(),
+                        area_of_responsibility::Column::Id,
+                    ))
+                    .is_in(selected_aors.clone()),
+                )
+                .add(
+                    Cond::any()
+                        .add(
+                            Expr::col((
+                                area_of_responsibility::Entity,
+                                area_of_responsibility::Column::LeftBound,
+                            ))
+                            .between(
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::LeftBound,
+                                )),
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::RightBound,
+                                )),
+                            ),
+                        )
+                        .add(
+                            Expr::col((
+                                area_of_responsibility::Entity,
+                                area_of_responsibility::Column::RightBound,
+                            ))
+                            .between(
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::LeftBound,
+                                )),
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::RightBound,
+                                )),
+                            ),
+                        ),
+                ),
+        )
+        .to_owned();
+
+    query.filter(Expr::exists(overlap_subquery))
+}
+
 pub async fn count_groups(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -202,10 +353,6 @@ fn build_groups_query(
             ),
             "count",
         )
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(accessible_groups.clone()),
-        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -213,8 +360,14 @@ fn build_groups_query(
             signal_message_group::Entity,
             signal_message_group::Column::GroupMasterKey,
         )));
+    let groups_res = apply_joined_group_rows_filter(
+        groups_res,
+        &None,
+        &req.selected_senders,
+        &accessible_groups,
+    );
     let groups_res =
-        apply_group_row_sender_filter(groups_res, &req.selected_senders);
+        apply_joined_group_aor_scope(groups_res, &req.selected_aors);
     let groups_res =
         filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
     let groups_res =
@@ -255,25 +408,7 @@ fn build_groups_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let groups_res =
-        filter_selected_aors(groups_res, &req.selected_aors).context(h!())?;
     Ok(groups_res)
-}
-
-fn apply_group_row_sender_filter(
-    query: Select<sigint_inbox_item::Entity>,
-    selected_senders: &Option<Vec<String>>,
-) -> Select<sigint_inbox_item::Entity> {
-    match selected_senders
-        .as_ref()
-        .filter(|senders| !senders.is_empty())
-    {
-        Some(selected_senders) => query.filter(
-            signal_message_group::Column::Sender
-                .eq_any(selected_senders.clone()),
-        ),
-        None => query,
-    }
 }
 
 pub async fn fetch_senders(
@@ -337,20 +472,21 @@ pub async fn fetch_senders(
 
     let sender_stats_groups = sender_stats_groups(req, &master_keys);
 
-    let freq_query = build_join_for_sender_stats(&sender_stats_groups)
-        .select_only()
-        .column_as(signal_message_group::Column::Sender, "uuid")
-        .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::PostId)
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .group_by(signal_message_group::Column::Sender)
-        .group_by(sigint_inbox_item::Column::Freq)
-        .group_by(sigint_inbox_item::Column::PostId);
+    let freq_query =
+        build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
+            .select_only()
+            .column_as(signal_message_group::Column::Sender, "uuid")
+            .column(sigint_inbox_item::Column::Freq)
+            .column(sigint_inbox_item::Column::PostId)
+            .column_as(
+                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                "count",
+            )
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+            .group_by(signal_message_group::Column::Sender)
+            .group_by(sigint_inbox_item::Column::Freq)
+            .group_by(sigint_inbox_item::Column::PostId);
     let freq_query = apply_sender_dimension_filters(freq_query, req);
     let freq_query =
         apply_sender_filters(freq_query, req, user, master_keys.clone())?;
@@ -364,18 +500,19 @@ pub async fn fetch_senders(
         "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
         [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
     );
-    let per_day_query = build_join_for_sender_stats(&sender_stats_groups)
-        .select_only()
-        .column_as(signal_message_group::Column::Sender, "uuid")
-        .column_as(per_day_expr.clone(), "date")
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .group_by(signal_message_group::Column::Sender)
-        .group_by(per_day_expr);
+    let per_day_query =
+        build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
+            .select_only()
+            .column_as(signal_message_group::Column::Sender, "uuid")
+            .column_as(per_day_expr.clone(), "date")
+            .column_as(
+                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                "count",
+            )
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+            .group_by(signal_message_group::Column::Sender)
+            .group_by(per_day_expr);
     let per_day_query = apply_sender_dimension_filters(per_day_query, req);
     let per_day_query =
         apply_sender_filters(per_day_query, req, user, master_keys)?;
@@ -474,18 +611,19 @@ fn build_senders_query(
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let sender_stats_groups = sender_stats_groups(req, &master_keys);
-    let senders_res = build_join_for_sender_stats(&sender_stats_groups)
-        .select_only()
-        .column_as(signal_message_group::Column::Sender, "uuid")
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(signal_message_group::Column::Sender);
+    let senders_res =
+        build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
+            .select_only()
+            .column_as(signal_message_group::Column::Sender, "uuid")
+            .column_as(
+                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                "count",
+            )
+            // .filter(signal_message::Column::DuplicateOf.is_null())
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+            // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
+            .group_by(signal_message_group::Column::Sender);
     let senders_res = apply_sender_dimension_filters(senders_res, req);
     let senders_res = filter_selected_groups_and_senders_with_access(
         senders_res,
@@ -534,8 +672,6 @@ fn build_senders_query(
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
-    let senders_res =
-        filter_selected_aors(senders_res, &req.selected_aors).context(h!())?;
     Ok(senders_res)
 }
 
@@ -543,24 +679,12 @@ fn sender_stats_groups(
     req: &Json<AnalysisStatsReq>,
     master_keys: &[String],
 ) -> Vec<String> {
-    let allowed = master_keys.iter().collect::<HashSet<_>>();
-
-    match req
-        .selected_groups
-        .as_ref()
-        .filter(|groups| !groups.is_empty())
-    {
-        Some(groups) => groups
-            .iter()
-            .filter(|group| allowed.contains(group))
-            .cloned()
-            .collect(),
-        None => master_keys.to_vec(),
-    }
+    effective_groups_with_access(&req.selected_groups, master_keys)
 }
 
 fn build_join_for_sender_stats(
     sender_stats_groups: &[String],
+    selected_aors: &Option<Vec<i64>>,
 ) -> Select<Entity> {
     let sender_stats_groups = sender_stats_groups.to_vec();
 
@@ -572,10 +696,11 @@ fn build_join_for_sender_stats(
     if sender_stats_groups.is_empty() {
         query.filter(Expr::cust("FALSE"))
     } else {
-        query.filter(
+        let query = query.filter(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(sender_stats_groups),
-        )
+        );
+        apply_joined_group_aor_scope(query, selected_aors)
     }
 }
 
@@ -1811,13 +1936,12 @@ fn build_aors_query(
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
         .group_by(Expr::cust("1"));
-    let aors_res = filter_selected_groups_and_senders_with_access(
+    let aors_res = apply_joined_group_rows_filter(
         aors_res,
         &req.selected_groups,
         &req.selected_senders,
         &master_keys,
-    )
-    .context(h!())?;
+    );
     let aors_res =
         filter_selected_freqs(aors_res, &req.selected_freqs).context(h!())?;
     let aors_res =
@@ -1846,7 +1970,7 @@ fn build_aors_query(
     let aors_res = filter_search(aors_res, &req.search).context(h!())?;
     let aors_res = apply_metadata_filters(aors_res, &req.0)?;
     let aors_res =
-        filter_selected_aors(aors_res, &req.selected_aors).context(h!())?;
+        apply_joined_aor_overlap_filter(aors_res, &req.selected_aors);
     Ok(aors_res)
 }
 
@@ -2006,9 +2130,15 @@ fn build_networks_query_for_login(
             signal_message::Relation::SignalMessageGroup.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_in_groups_exists(master_keys))
+        .filter(message_in_groups_exists(master_keys.clone()))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let messages_q = apply_joined_group_rows_filter(
+        messages_q,
+        &req.selected_groups,
+        &req.selected_senders,
+        &master_keys,
+    );
 
     // 2) networks_cte
     let networks_q = sigint_network_freq::Entity::find()
@@ -2049,10 +2179,18 @@ fn build_networks_query_for_login(
             signal_group_aor::Relation::AreaOfResponsibility.def(),
         )
         .filter(signal_group::Column::Deleted.eq(false));
+    let effective_groups =
+        effective_groups_with_access(&req.selected_groups, &master_keys);
+    let groups_q = if effective_groups.is_empty() {
+        groups_q.filter(Expr::cust("FALSE"))
+    } else {
+        groups_q
+            .filter(signal_group::Column::MasterKey.eq_any(effective_groups))
+    };
+    let groups_q =
+        apply_joined_aor_overlap_filter(groups_q, &req.selected_aors);
 
     // add more custom filters to the messages CTE
-    let messages_q = filter_selected_senders(messages_q, &req.selected_senders)
-        .context(h!())?;
     let messages_q =
         filter_selected_freqs(messages_q, &req.selected_freqs).context(h!())?;
     let messages_q =

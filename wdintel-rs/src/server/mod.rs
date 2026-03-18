@@ -9,6 +9,7 @@ use actix_web::{web, App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
+use sea_orm::DatabaseConnection;
 use std::net::TcpListener;
 use std::os::unix::io::FromRawFd;
 use tokio::runtime::Handle;
@@ -207,11 +208,52 @@ fn should_start_bgworkers_in_server(_mode: Mode, no_bgworker: bool) -> bool {
     !no_bgworker
 }
 
+fn spawn_group_stats_worker(bg_set: &mut JoinSet<()>, mode: Mode) {
+    spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
+        crate::stats::worker::group_stats::worker_calculate_group_stats(mode)
+            .await;
+    });
+}
+
+fn spawn_goi_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
+    spawn_named_worker("goi_association_worker", bg_set, async move {
+        crate::organism::goi::worker::goi_association_worker_nofail(env).await;
+    });
+}
+
+fn spawn_group_stats_worker_after_startup_recalc(
+    bg_set: &mut JoinSet<()>,
+    dbx: DatabaseConnection,
+    mode: Mode,
+) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
+    let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
+    spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
+        info!(
+            "recalculating network freq last_seen_dt for active networks before starting worker_calculate_group_stats"
+        );
+        let startup_result =
+            crate::stats::recalculate_last_seen_for_active_network_freqs_on_startup(
+                &dbx,
+            )
+            .await
+            .map_err(|err| format!("{err:#?}"));
+        let startup_ok = startup_result.is_ok();
+        let _ = startup_tx.send(startup_result);
+        if !startup_ok {
+            return;
+        }
+        crate::stats::worker::group_stats::worker_calculate_group_stats(mode)
+            .await;
+    });
+    startup_rx
+}
+
 fn spawn_background_workers(
     mode: Mode,
     env: Arc<Env>,
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
+    should_spawn_group_stats_worker: bool,
     bg_set: &mut JoinSet<()>,
 ) {
     let config = env.config.clone();
@@ -224,7 +266,6 @@ fn spawn_background_workers(
     let dbx10 = env.dbx.clone();
     let dbx11 = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
-    let env_goi = env.clone();
 
     if let Some(secret_config) = config.vault_config.clone() {
         spawn_named_worker("secret_worker", bg_set, async move {
@@ -233,10 +274,6 @@ fn spawn_background_workers(
     }
     spawn_named_worker("healthcheck_worker", bg_set, async move {
         healthcheck::healthcheck_worker(&dbx9, config1).await;
-    });
-    spawn_named_worker("goi_association_worker", bg_set, async move {
-        crate::organism::goi::worker::goi_association_worker_nofail(env_goi)
-            .await;
     });
     if let Some(greptimedb) = env.greptime() {
         let redis = env.redis.clone();
@@ -305,10 +342,9 @@ fn spawn_background_workers(
             crate::sigint::network::etalon_calc::worker::run_inbox_network_daily_consistency_worker_nofail(mode).await;
         },
     );
-    spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
-        crate::stats::worker::group_stats::worker_calculate_group_stats(mode)
-            .await;
-    });
+    if should_spawn_group_stats_worker {
+        spawn_group_stats_worker(bg_set, mode);
+    }
     let rq2 = env.rq.clone();
     let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
     let token_3 = cancel_token.clone();
@@ -371,6 +407,7 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
             crate::secret::secret_worker(secret_config).await
         });
     }
+    spawn_goi_worker(bg_set, env);
 }
 
 pub async fn main_server(
@@ -414,6 +451,7 @@ pub async fn main_server(
                 env.clone(),
                 cancel_token.clone(),
                 shutdown_handle.clone(),
+                true,
                 &mut background_tasks,
             ),
         }
@@ -806,19 +844,20 @@ pub async fn main_bgworker(
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
     let env = init_runtime_env(mode).await.c(h!())?;
-    info!("recalculating network freq last_seen_dt for active networks on bgworker startup");
-    crate::stats::recalculate_last_seen_for_active_network_freqs_on_startup(
-        &env.dbx,
-    )
-    .await
-    .c(h!())?;
+    let group_stats_dbx = env.dbx.clone();
     let mut background_tasks: JoinSet<()> = JoinSet::new();
     spawn_background_workers(
         mode,
         env,
         cancel_token.clone(),
         shutdown_handle.clone(),
+        false,
         &mut background_tasks,
+    );
+    let group_stats_startup_rx = spawn_group_stats_worker_after_startup_recalc(
+        &mut background_tasks,
+        group_stats_dbx,
+        mode,
     );
 
     let task_completion_future = async move {
@@ -826,6 +865,21 @@ pub async fn main_bgworker(
             // do nothing
         }
         info!("[Background] All tasks in JoinSet completed on their own.");
+    };
+    let group_stats_startup_failure = async move {
+        match group_stats_startup_rx.await {
+            Ok(Ok(())) => std::future::pending::<()>().await,
+            Ok(Err(err)) => {
+                error!(
+                    "failed to recalculate network freq last_seen_dt for active networks on bgworker startup: {err}"
+                );
+            }
+            Err(err) => {
+                error!(
+                    "worker_calculate_group_stats startup task ended before signaling readiness: {err}"
+                );
+            }
+        }
     };
 
     let mut sigint = signal(SignalKind::interrupt())
@@ -848,6 +902,9 @@ pub async fn main_bgworker(
                     info!("\n[CTRL+C] detected. Starting graceful shutdown...");
                     cancel_token.cancel();
                 },
+                _ = group_stats_startup_failure => {
+                    cancel_token.cancel();
+                }
                 _ = task_completion_future => {
                     info!("[Bgworker] All background tasks finished.");
                 }

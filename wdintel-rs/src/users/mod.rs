@@ -530,6 +530,7 @@ async fn api_user(
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
         goi_configured_for_organism: goi.configured,
+        goi_full_access_for_organism: goi.full_access,
         goi_host: goi.host,
     }))
 }
@@ -573,12 +574,14 @@ async fn api_user_info(
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
         goi_configured_for_organism: goi.configured,
+        goi_full_access_for_organism: goi.full_access,
         goi_host: goi.host,
     }))
 }
 
 struct UserGoiState {
     configured: bool,
+    full_access: bool,
     host: Option<String>,
 }
 
@@ -589,6 +592,7 @@ async fn user_goi_state(
     let Some(organism_id) = organism_id else {
         return Ok(UserGoiState {
             configured: false,
+            full_access: false,
             host: None,
         });
     };
@@ -601,12 +605,16 @@ async fn user_goi_state(
     let Some(organism) = organism else {
         return Ok(UserGoiState {
             configured: false,
+            full_access: false,
             host: None,
         });
     };
 
     Ok(UserGoiState {
-        configured: crate::organism::goi::shared::organism_has_goi_api_config(
+        configured: crate::organism::goi::shared::organism_has_goi_config(
+            &organism,
+        ),
+        full_access: crate::organism::goi::shared::organism_has_goi_api_config(
             &organism,
         ),
         host: crate::organism::goi::shared::goi_web_host(&organism),
