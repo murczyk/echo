@@ -2,13 +2,14 @@
 Description=wdintel-py
 
 [Service]
-ExecStart=/usr/local/bin/gunicorn -w 2 --bind 127.0.0.1:5000 service:app
+ExecStart=/usr/local/bin/gunicorn -w 2 --bind 127.0.0.1:5000 service:app --preload
 Restart=always
 User=root
 Group=root
 RestartSec=5s
 # WorkingDirectory=/home/zptzr/workspace/wildducks-intel/wdintel-py
 WorkingDirectory=/usr/share/wdintel-py
+Environment=WD_FASTTEXT_MODELS=/usr/share/wdintel-py/fasttext-models-v2
 Environment=PYTHONPATH="/usr/share/wdintel-py:$PYTHONPATH"
 Environment="WD_CALLSIGNS_SPM=/home/zptzr/storage/wiki.model"
 Environment="WD_CALLSIGNS=/home/zptzr/storage/callsigns20230512.pt"

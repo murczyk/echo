@@ -1,0 +1,10 @@
+[Unit]
+Description=Restore latest pgBackRest backup
+Before=postgresql@14-main.service
+Conflicts=postgresql@14-main.service
+
+[Service]
+Type=oneshot
+User=postgres
+ExecStart=/usr/bin/pgbackrest --stanza=@STANZA@ --delta --log-level-console=info restore
+ExecStopPost=+/usr/bin/systemctl start --no-block postgresql@14-main.service

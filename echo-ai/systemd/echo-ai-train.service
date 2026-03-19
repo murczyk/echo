@@ -1,0 +1,17 @@
+[Unit]
+Description=echo-ai scheduled training job
+After=mlflow.service
+Requires=mlflow.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/echo-ai/.env
+EnvironmentFile=-/usr/local/echo-ai-train/.env.train
+ExecStart=/bin/bash -c 'PATH="%h/.local/bin:${PATH}" mlflow "$@"' -- run \
+    --env-manager uv \
+    --entry-point scheduled \
+    -P databases="${SCHEDULED_TRAIN_DATABASES}" \
+    $SCHEDULED_EXTRA_MLFLOW_RUN_PARAMS \
+    %h/echo-ai
+WorkingDirectory=%h/echo-ai
+KillMode=mixed

@@ -88,18 +88,25 @@ pub struct S3Config {
 
 impl From<&crate::config::S3Config> for S3Config {
     fn from(config: &crate::config::S3Config) -> Self {
+        Self::with_prefix(config, S3_MEDIA_ROOT_PREFIX.to_string())
+    }
+}
+
+impl S3Config {
+    pub fn with_prefix(
+        config: &crate::config::S3Config,
+        prefix: String,
+    ) -> Self {
         Self {
             bucket: config.s3_bucket.clone(),
             region: config.s3_region.clone(),
             endpoint: config.s3_endpoint.clone(),
             access_key_id: config.s3_access_key_id.clone(),
             secret_access_key: config.s3_secret_access_key.clone(),
-            prefix: S3_MEDIA_ROOT_PREFIX.to_string(),
+            prefix,
         }
     }
-}
 
-impl S3Config {
     /// Returns a key with the configured prefix applied.
     pub fn prefixed_key(&self, rel_path: &str) -> String {
         join_paths(&self.prefix, rel_path)

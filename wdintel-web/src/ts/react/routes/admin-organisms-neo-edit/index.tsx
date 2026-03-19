@@ -61,6 +61,8 @@ type OrganismFormState = {
   goiApiPort: number;
   goiApiLogin: string;
   goiApiPassword: string;
+  goiSimpleUrl: string;
+  goiSimpleUrlDirty: boolean;
 };
 
 const GOI_SSH_PORT_DEFAULT = 22;
@@ -86,6 +88,8 @@ const emptyFormState: OrganismFormState = {
   goiApiPort: GOI_API_PORT_DEFAULT,
   goiApiLogin: '',
   goiApiPassword: '',
+  goiSimpleUrl: '',
+  goiSimpleUrlDirty: false,
 };
 
 function formatErrorMessage(error: unknown): string {
@@ -178,6 +182,10 @@ function hasAnyGoiApiSettings(form: OrganismFormState): boolean {
   const apiHost = form.goiApiHost.trim();
   if (form.goiApiLogin.trim() || form.goiApiPassword.trim()) return true;
   return apiHost.length > 0 && apiHost !== sshHost;
+}
+
+function getSimpleGoiUrl(apiHost: string, sshHost: string): string {
+  return apiHost.trim() || sshHost.trim();
 }
 
 function isFullGoiIntegration(form: OrganismFormState): boolean {
@@ -552,8 +560,8 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
 
             <TextField
               label="GOI URL / домен"
-              value={props.form.goiSshHost}
-              onChange={(event) => props.onChange({ goiSshHost: event.target.value })}
+              value={props.form.goiSimpleUrl}
+              onChange={(event) => props.onChange({ goiSimpleUrl: event.target.value })}
               fullWidth
               helperText="Можна вказати повний URL або домен ГОІ"
               disabled={isGoiBusy}
@@ -648,6 +656,10 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         if (isCancelled) return;
 
         setOriginalGroupKeys(groupKeys);
+        const simpleGoiUrl =
+          goiSettings.integrationType === GOI_INTEGRATION_TYPE_SIMPLE
+            ? getSimpleGoiUrl(goiSettings.apiHost, goiSettings.sshHost)
+            : getSimpleGoiUrl(goiSettings.apiHost, goiSettings.sshHost);
         setForm({
           name: target.name,
           parentId: target.parentId,
@@ -657,14 +669,16 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           limitGroups: groupKeys.length > 0,
           groupIds: groupKeys,
           goiIntegrationType: goiSettings.integrationType,
-          goiSshHost: goiSettings.sshHost,
+          goiSshHost: goiSettings.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? '' : goiSettings.sshHost,
           goiSshUser: goiSettings.sshUser,
           goiSshPort: goiSettings.sshPort,
           goiPath: goiSettings.path,
-          goiApiHost: goiSettings.apiHost,
+          goiApiHost: goiSettings.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? '' : goiSettings.apiHost,
           goiApiPort: goiSettings.apiPort,
           goiApiLogin: goiSettings.apiLogin,
           goiApiPassword: goiSettings.apiPassword,
+          goiSimpleUrl: simpleGoiUrl,
+          goiSimpleUrlDirty: goiSettings.integrationType === GOI_INTEGRATION_TYPE_SIMPLE,
         });
         setGoiConnectionStatus(null);
         setLoadStatus('success');
@@ -753,7 +767,8 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
       patch.goiApiHost !== undefined ||
       patch.goiApiPort !== undefined ||
       patch.goiApiLogin !== undefined ||
-      patch.goiApiPassword !== undefined
+      patch.goiApiPassword !== undefined ||
+      patch.goiSimpleUrl !== undefined
     ) {
       setGoiConnectionStatus(null);
     }
@@ -766,6 +781,17 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         (patch.goiApiHost === undefined || patch.goiApiHost.trim().length === 0)
       ) {
         next.goiApiHost = patch.goiSshHost;
+      }
+      if (patch.goiIntegrationType === GOI_INTEGRATION_TYPE_SIMPLE && prev.goiIntegrationType !== GOI_INTEGRATION_TYPE_SIMPLE) {
+        if (!prev.goiSimpleUrlDirty) {
+          next.goiSimpleUrl = getSimpleGoiUrl(
+            patch.goiApiHost ?? prev.goiApiHost,
+            patch.goiSshHost ?? prev.goiSshHost,
+          );
+        }
+      }
+      if (patch.goiSimpleUrl !== undefined) {
+        next.goiSimpleUrlDirty = true;
       }
       return next;
     });
@@ -806,14 +832,15 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   function buildGoiSettingsReq(organismId: number, nextForm: OrganismFormState): UpdateOrganismGoiSettingsReq {
     const hasGoiApiSettings = hasAnyGoiApiSettings(nextForm);
     if (nextForm.goiIntegrationType === GOI_INTEGRATION_TYPE_SIMPLE) {
+      const simpleGoiUrl = nextForm.goiSimpleUrl.trim();
       return {
         organismId,
         integrationType: GOI_INTEGRATION_TYPE_SIMPLE,
-        sshHost: nextForm.goiSshHost.trim(),
+        sshHost: '',
         sshUser: '',
         sshPort: GOI_SSH_PORT_DEFAULT,
         path: GOI_PATH_DEFAULT,
-        apiHost: '',
+        apiHost: simpleGoiUrl,
         apiPort: GOI_API_PORT_DEFAULT,
         apiLogin: '',
         apiPassword: '',
@@ -905,6 +932,8 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         goiApiPort: settings.apiPort,
         goiApiLogin: settings.apiLogin,
         goiApiPassword: settings.apiPassword,
+        goiSimpleUrl: getSimpleGoiUrl(settings.apiHost, settings.sshHost),
+        goiSimpleUrlDirty: settings.integrationType === GOI_INTEGRATION_TYPE_SIMPLE,
       }));
       setGoiConnectionStatus({
         kind: 'success',

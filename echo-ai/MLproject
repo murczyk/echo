@@ -1,0 +1,38 @@
+# MLproject
+name: ECHO AI
+python_env: python_env.yaml
+
+entry_points:
+  upload:
+    parameters:
+      run_id: string
+      bucket: { type: string, default: "echouastorage" }
+      prefix: { type: string, default: "lfs/echo-ai/models-v2/" }
+    command: "python src/upload.py {run_id} {bucket} {prefix}"
+  scheduled:
+    parameters:
+      unsupervised: { type: string, default: "false" }
+      databases: { type: string }
+    command: "python src/scheduled.py --databases {databases} --unsupervised {unsupervised}"
+  supervised:
+    parameters:
+      dim: { type: int, default: 100 }
+      epoch: { type: int, default: 15 }
+      wordNgrams: { type: int, default: 3 }
+      autotuneModelSize: { type: string, default: "128M" }
+      pretrainedVectors: { type: string, default: "pretrained.vec" }
+      autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" }
+      autotunePredictions: { type: int, default: 2 }
+      autotuneDuration: { type: int, default: 300 }
+    command: >-
+      python src/supervised.py --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams}
+      --pretrainedVectors {pretrainedVectors}
+      --autotuneModelSize {autotuneModelSize}
+      --autotuneMetric {autotuneMetric} --autotunePredictions {autotunePredictions} --autotuneDuration {autotuneDuration}
+  unsupervised:
+    parameters:
+      dim: { type: int, default: 100 }
+      epoch: { type: int, default: 20 }
+      wordNgrams: { type: int, default: 3 }
+    command: >-
+      python src/unsupervised.py --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams}
