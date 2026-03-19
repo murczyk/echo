@@ -51,4 +51,10 @@ pub struct PredictTagsPyReq {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct PredictTagsPyRsp(pub HashMap<String, f64>);
+pub struct PredictTagsPyRsp(pub HashMap<String, PredictTagsPyTagRes>);
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct PredictTagsPyTagRes {
+    pub probability: f64,
+    pub model_version: String,
+}

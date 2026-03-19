@@ -30,7 +30,7 @@ message := ""
 unit := ""
 b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
-ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models"
+ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 
 default:
@@ -634,25 +634,6 @@ ai-sync-from-cloud:
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
 
-ai-sync-to-cloud:
-    #!/bin/bash
-    if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-        echo "❌ Please export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Backblaze S3 access"
-        exit 1
-    fi
-    if ! command -v s5cmd >/dev/null 2>&1; then
-        echo "❌ s5cmd is required to ai models (https://github.com/peak/s5cmd)"
-        exit 1
-    fi
-
-    BUCKET_PREFIX="{{ ai_bucket_prefix }}"
-    ENDPOINT_URL="{{ b2_endpoint_url }}"
-    WD_FASTTEXT_MODELS="{{ wd_fasttext_models }}"
-
-    local_directory="${WD_FASTTEXT_MODELS}/"
-    remote_directory="${BUCKET_PREFIX}/"
-    s5cmd --endpoint-url "$ENDPOINT_URL" sync "$local_directory" "$remote_directory"
-
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]
 copy-db-backup server:
@@ -1035,19 +1016,31 @@ setup-py:
     ssh {{ server }} 'sudo python3 -m pip install -U -r /usr/share/wdintel-py/requirements.txt'
     ssh {{ server }} 'if ! python3 -c "import spacy; spacy.load(\"ru_core_news_md\")" 2>/dev/null; then sudo python3 -m spacy download ru_core_news_md; else echo "Spacy model already downloaded, skipping"; fi'
 
-[arg('server', long='server')]
-deploy-echo-ai server:
+ai-mlflow-gc:
     #!/bin/bash
-    set -euxo pipefail
-    if [[ "{{ server }}" == "" ]]; then
-        just _print-servers; exit 1;
-    fi
-    . deploy/utils.sh
-    ensure_nonempty "server" "{{ server }}"
-    just ai-sync-from-cloud
-    [ -f target/debian/echo-ai_0.1.1-1_amd64.deb ] || cargo deb -p echo-ai --no-build
-    rsync -t --progress target/debian/echo-ai_0.1.1-1_amd64.deb {{ server }}:/var/tmp/
-    ssh {{ server }} 'sudo apt-get -y install /var/tmp/echo-ai_0.1.1-1_amd64.deb && sudo systemctl restart wdintel-py'
+    cd echo-ai
+    set -a && . .env && set +a
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run mlflow gc --backend-store-uri="$MLFLOW_BACKEND_STORE_URI" --artifacts-destination="$MLFLOW_DEFAULT_ARTIFACT_ROOT"
+
+ai-mlflow-server:
+    #!/bin/bash
+    cd echo-ai
+    set -a && . .env && set +a
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run mlflow server
+
+[arg("databases", long="databases")]
+[arg("unsupervised", long="unsupervised")]
+ai-mlflow-run databases='wd' unsupervised='false':
+    #!/bin/bash
+    cd echo-ai
+    set -a && . .env && set +a
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run src/scheduled.py --unsupervised "{{ unsupervised }}" --databases "{{ databases }}"
 
 # setup echo-ai-train environment on server, putting essential scripts that make the container ready to run nightly jobs
 [arg('server', long='server')]
@@ -1055,11 +1048,13 @@ setup-echo-ai-train server='echo-ai-train':
     #!/bin/bash
     set -euxo pipefail
     . deploy/utils.sh
-    ensure_nonempty "server" "{{ server }}"
-    ssh {{ server }} 'sudo mkdir -p /usr/local/echo-ai-train/'
-    echo-install-utils ssh-sync-file scripts/copy-db-backup.sh {{ server }}:/usr/local/echo-ai-train/
-    echo-install-utils ssh-sync-file scripts/train-download-backups.sh {{ server }}:/usr/local/echo-ai-train/
-    echo-install-utils bw-sync "{{ server }}" "echo-ai-train-{{ server }}-dotenv" "/usr/local/echo-ai-train/.env" --no-restart
+    SERVER="{{ server }}"
+    ensure_nonempty "server" "$SERVER"
+
+    rsync --delete -rlpt -i -c -h --info=progress2 --filter=':- echo-ai/.gitignore' echo-ai/ "$SERVER:echo-ai/"
+    ssh "$SERVER" 'sudo mkdir -p /usr/local/echo-ai-train/'
+    echo-install-utils bw-sync "$SERVER" "echo-ai-$SERVER-models-dotenv" "/usr/local/echo-ai-train/.env.train" --no-restart
+    ssh -t "$SERVER" echo-ai/deploy.sh
 
 # [positional-arguments]
 [arg('branch', long='branch')]

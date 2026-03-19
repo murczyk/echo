@@ -1,0 +1,9 @@
+[Unit]
+Description=MLflow garbage collection timer
+
+[Timer]
+OnCalendar=*-*-* 02:01:00 Europe/Kyiv
+Persistent=true
+
+[Install]
+WantedBy=default.target

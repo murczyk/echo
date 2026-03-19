@@ -35,8 +35,9 @@ pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
 try:
     with models_root.joinpath("thresholds.json").open() as file:
         thresholds = json.load(file)
-except FileNotFoundError:
-    thresholds = {key: 0.5 for key in models.keys()}
+except:
+    thresholds = {key: 0.5 for key in models}
+
 
 
 @app.route("/")
@@ -102,6 +103,16 @@ def process_predict(model, texts):
     return res
 
 
+def get_threshold(tag: str) -> tuple[float, str]:
+    th = thresholds[tag]
+    if type(th) is float:
+        return th, "1"
+
+    threshold = th["threshold"]
+    model_version = th["model_version"]
+    return threshold, model_version
+
+
 @app.post("/api/tags/predict")
 def predict_tags():
     req = request.get_json()
@@ -119,8 +130,9 @@ def predict_tags():
         row = {}
         for tag, probs in output.items():
             prob = probs[index]
-            if prob >= thresholds[tag]:
-                row[tag] = prob
+            threshold, model_version = get_threshold(tag)
+            if prob >= threshold:
+                row[tag] = {"probability": prob, "model_version": model_version}
         res.append(row)
 
     return jsonify(res)

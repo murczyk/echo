@@ -1,1 +1,11 @@
 fasttext-models
+mlruns/
+mlflow.db
+mlflow.db-journal
+corpus.*.txt
+*.vec
+*.train.*.txt
+*.test.*.txt
+__pycache__/
+.venv/
+datalake.ducklake*

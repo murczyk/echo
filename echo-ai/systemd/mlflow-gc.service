@@ -1,0 +1,10 @@
+[Unit]
+Description=MLflow garbage collection
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/echo-ai/.env
+ExecStart=/bin/bash -c 'PATH="%h/.local/bin:${PATH}" mlflow "$@"' -- gc \
+    --backend-store-uri=${MLFLOW_BACKEND_STORE_URI} \
+    --artifacts-destination=${MLFLOW_DEFAULT_ARTIFACT_ROOT}
+WorkingDirectory=%h/echo-ai

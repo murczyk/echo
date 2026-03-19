@@ -6,3 +6,5 @@ my-venv
 !requirements.txt
 *.log
 *.png
+*.pkl
+*.parquet

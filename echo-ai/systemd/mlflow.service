@@ -1,0 +1,14 @@
+[Unit]
+Description=MLflow tracking server
+
+[Service]
+ExecStart=/bin/bash -c 'PATH="%h/.local/bin:${PATH}" mlflow "$@"' -- server \
+    --host "" --port 5000 \
+    --allowed-hosts %H.*.ts.net:5000,localhost:5000 \
+    --cors-allowed-origins http://%H.*.ts.net:5000,http://localhost:5000
+WorkingDirectory=%h/echo-ai
+EnvironmentFile=%h/echo-ai/.env
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
