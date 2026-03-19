@@ -167,14 +167,7 @@ navBar user shared activeName props =
             ]
 
         otherSubs =
-            (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
-                [ internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "оперативний"
-                ]
-
-             else
-                []
-            )
-                ++ [ internalMenu Route.Path.Importer "importer" "імпортер"
+            [ internalMenu Route.Path.Importer "importer" "імпортер"
                    , internalMenu Route.Path.Delta "kmz2geojson" "kmz в geojson"
                    , internalMenu Route.Path.AlpinequestKmz "alpinequest-kmz" "alpinequest в kmz"
                    , internalMenu Route.Path.DeltaCsv2kmz "csv2kmz" "delta csv в kmz"
@@ -191,7 +184,9 @@ navBar user shared activeName props =
         menuItems =
             [ menu Route.Path.Home_ "home" "головна" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menu Route.Path.RerDuty "rer-duty" "оперативний" ]
+                    [ menu Route.Path.RerDuty "rer-duty" "оперативний"
+                    , menu Route.Path.RerDutyNeo "rer-duty-neo" "оперативний"
+                    ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menu Route.Path.RerAnalysis "analysis" "аналіз" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
@@ -301,6 +296,22 @@ navBar user shared activeName props =
 
 
 menuItem props activeName hrefLink activeNameExp nameText =
+    let
+        neoAlphaBadge =
+            span
+                [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
+                [ text "Alpha" ]
+
+        linkContents =
+            if activeNameExp == "rer-duty-neo" then
+                span [ class "inline-flex items-center gap-2" ]
+                    [ text nameText
+                    , neoAlphaBadge
+                    ]
+
+            else
+                text nameText
+    in
     li []
         [ a
             [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
@@ -308,7 +319,7 @@ menuItem props activeName hrefLink activeNameExp nameText =
             , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
             , onClick (props.onDropdownToggle Nothing)
             ]
-            [ text nameText ]
+            [ linkContents ]
         ]
 
 
@@ -418,10 +429,16 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                         else
                             []
                        )
-                    ++ (if item.activeName == "callsigns-neo" || item.activeName == "rer-duty-neo" then
+                    ++ (if item.activeName == "callsigns-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]
+                            ]
+
+                        else if item.activeName == "rer-duty-neo" then
+                            [ span
+                                [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
+                                [ text "Alpha" ]
                             ]
 
                         else

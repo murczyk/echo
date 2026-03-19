@@ -356,22 +356,22 @@ export function MessageCard({
             </span>
           </div>
           {/* Row 3 — Networks + location*/}
-          <div className="inline-flex">
-            <div className="flex flex-col items-baseline gap-x-2 gap-y-1">
-              <span className={`inline-flex font-semibold shrink-0 items-start gap-0.5`}>
-                <i className="bi bi-people text-icons shrink-0" title="Еталонна прив'язка" />
+          <div className="inline-flex gap-x-2">
+            <div className="flex flex-1 flex-col items-baseline gap-x-2 gap-y-1">
+              <span className={`inline-flex font-semibold shrink-1 items-start gap-1`}>
+                <i className="bi bi-people text-icons shrink-0 " title="Еталонна прив'язка" />
                 {networkIds.length > 0 ? (
                   networkIds.map((networkId) => (
                     <a
                       href={`/rer-networks/${networkId}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center gap-1 font-medium group"
+                      className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer gap-1 font-medium group"
                       title="Відкрити мережу в новій вкладці"
                       key={networkId}
                     >
                       {networkDisplayMap[networkId] ?? `Мережа ${networkId}`}
-                      <i className="bi bi-box-arrow-up-right text-sm" />
+                      <i className="bi bi-box-arrow-up-right text-sm ml-2" />
                     </a>
                   ))
                 ) : (
@@ -380,7 +380,7 @@ export function MessageCard({
               </span>
             </div>
 
-            <span className="inline-flex items-center gap-1 font-medium shrink-0">
+            <span className="inline-flex flex-1 items-baseline gap-1 font-medium shrink-2">
               <i className="bi bi-geo text-icons shrink-0" title="Локація" />
               {msg.location ?? 'Не встановлена'}
             </span>
