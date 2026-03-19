@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import * as L from 'leaflet';
-import { loadKmzData, initializeMap, addPointsToLayer, toggleMapSize, createExitControl, createFullScreenControl } from '../maps/maps'
+import { loadKmzData, initializeMap, addPointsToLayer, toggleMapSize, createExitControl, createFullScreenControl, clearSmallMapFullscreenBodyLock } from '../maps/maps'
 import { kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointShort } from '../maps/types'
 
@@ -39,6 +39,7 @@ export class SmallMap extends LitElement {
 
 	disconnectedCallback() {
 		window.removeEventListener('keydown', this.onKeyDown);
+		clearSmallMapFullscreenBodyLock();
 		super.disconnectedCallback();
 	}
 
@@ -118,6 +119,7 @@ export class SmallMap extends LitElement {
 	}
 
 	private _closeMap() {
+		clearSmallMapFullscreenBodyLock();
 		const event = new CustomEvent('close-map', {
 			detail: {
 			},

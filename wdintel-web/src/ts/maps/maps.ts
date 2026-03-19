@@ -123,13 +123,20 @@ export function createExitControl(closeMap: () => void) {
 			button.innerHTML = '<i class="bi bi-x-lg" style="font-size: 12px;"></i>';
 			L.DomEvent.on(button, 'click', L.DomEvent.stopPropagation)
 				.on(button, 'click', L.DomEvent.preventDefault)
-				.on(button, 'click', closeMap, this);
+				.on(button, 'click', () => {
+					clearSmallMapFullscreenBodyLock();
+					closeMap();
+				}, this);
 			return container;
 		},
 	});
 }
 
 // UTILITY
+export function clearSmallMapFullscreenBodyLock() {
+	document.body.classList.remove('small-map-fullscreen-open');
+}
+
 export function toggleMapSize(map: L.Map, mapContainer: HTMLElement, bounds: L.LatLngBounds, fullScreenControl: any) {
 	const isExpanded = mapContainer.classList.toggle('expanded');
 	fullScreenControl?.setExpanded?.(isExpanded);
@@ -177,6 +184,7 @@ export async function setupMap(data: { points: MapPointShort[], containerId: str
 		const mapContainer = document.getElementById(`map-container-${data.containerId}`);
 		if (mapContainer) {
 			const map = initializeMap(`map-container-${data.containerId}`, data.points[0]);
+			map.on('unload', clearSmallMapFullscreenBodyLock);
 
 			const { bounds, markersGroup } = addPointsToLayer(data.points);
 			map.addLayer(markersGroup)
