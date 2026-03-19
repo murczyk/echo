@@ -131,6 +131,7 @@ type alias Model =
     , reportTemplate : ReportTemplate
     , reportTagsOnlyThisUnit : Bool
     , reportTagsOnlyThisUnitForReport : Bool
+    , reportWithoutComments : Bool
     , reportAdvancedSenders : Bool
     , reportAdjacentFreqsRangeSelect :
         { state : Select.State

@@ -195,6 +195,7 @@ init route _ =
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
             , reportTagsOnlyThisUnitForReport = False
+            , reportWithoutComments = False
             , reportAdvancedSenders = False
             , reportAdjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
@@ -3518,6 +3519,23 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportWithoutCommentsToggle ->
+            let
+                reportWithoutComments =
+                    not model.reportWithoutComments
+            in
+            ( { model
+                | reportWithoutComments = reportWithoutComments
+                , reportTagsOnlyThisUnitForReport =
+                    if reportWithoutComments then
+                        False
+
+                    else
+                        model.reportTagsOnlyThisUnitForReport
+              }
+            , E.none
+            )
+
         ReportAdvancedSendersToggle ->
             ( { model | reportAdvancedSenders = not model.reportAdvancedSenders }
             , E.none
@@ -3543,6 +3561,12 @@ update user shared route msg model =
                 , reportType = reportTemplateToApiType model model.reportTemplate
                 , req = getInboxReq model
                 , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
+                , withoutComments =
+                    if model.reportTemplate == RTBabak then
+                        Just model.reportWithoutComments
+
+                    else
+                        Nothing
                 }
             )
 

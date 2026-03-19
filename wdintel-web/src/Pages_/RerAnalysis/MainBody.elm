@@ -775,13 +775,24 @@ view user model shared route =
             RTMouse,
             RTReo
              ]) <|
+                let
+                    disableUnitCommentsFilter =
+                        model.reportTemplate == RTBabak
+                            && model.reportWithoutComments
+                in
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
-                    [ div [ class "form-check" ]
+                    [ div
+                        [ classList
+                            [ ( "form-check", True )
+                            , ( "opacity-50 cursor-not-allowed", disableUnitCommentsFilter )
+                            ]
+                        ]
                         [ input
                             [ class "form-check-input"
                             , type_ "checkbox"
                             , checked model.reportTagsOnlyThisUnitForReport
                             , id "report-tags-only-this-unit-docx"
+                            , disabled disableUnitCommentsFilter
                             , onClick <| ReportTagsOnlyThisUnitForReportToggle
                             ]
                             []
@@ -792,6 +803,22 @@ view user model shared route =
                             [ text "лише теги/коментарі мого підрозділу"
                             ]
                         ]
+                    , HtmlX.viewIf (model.reportTemplate == RTBabak) <|
+                        div [ class "form-check mt-2" ]
+                            [ input
+                                [ class "form-check-input"
+                                , type_ "checkbox"
+                                , checked model.reportWithoutComments
+                                , id "report-without-comments"
+                                , onClick ReportWithoutCommentsToggle
+                                ]
+                                []
+                            , label
+                                [ class "form-check-label"
+                                , for "report-without-comments"
+                                ]
+                                [ text "не включати коментарі" ]
+                            ]
                     ]
             , case model.reportTemplate of
                 RTSenders x ->
