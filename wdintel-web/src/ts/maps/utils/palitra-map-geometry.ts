@@ -1,6 +1,6 @@
 import * as L from 'leaflet';
 
-import { buildPalitraPopupContent, escapeHtml } from '../palitra-popup-content';
+import { buildPalitraPopupContent } from '../palitra-popup-content';
 import { Coords, Palitra, PalitraDetails, PalitraPoint } from '../palitra-types';
 
 export function boundsOfSearchResults(
@@ -82,7 +82,7 @@ export function createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon 
   const metaLines = [
     `Центр: ${centerLat}, ${centerLng}`,
     `Точок периметру: ${pointsCount}`,
-    palitra.source_file_name ? `Файл: ${escapeHtml(palitra.source_file_name)}` : null,
+    palitra.source_file_name ? `Файл: ${palitra.source_file_name}` : null,
   ].filter((value): value is string => value !== null);
 
   polygon.bindPopup(

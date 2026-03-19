@@ -3,7 +3,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css"
 import "leaflet.markercluster/dist/leaflet.markercluster.js"
 
 import { Palitra, PalitraPoint } from './palitra-types';
-import { buildPalitraPopupContent, escapeHtml } from './palitra-popup-content';
+import { buildPalitraPopupContent } from './palitra-popup-content';
 
 /** Max markers to add per frame when building clusters (keeps UI responsive). */
 const MARKER_ADD_CHUNK_SIZE = 60;
@@ -122,7 +122,7 @@ export class PalitraPointClusterRenderer {
     });
 
     const popupContent = buildPalitraPopupContent(marker as PointMarker & L.Layer & { closePopup: () => void }, palitra, {
-      emphasisLine: point.label ? `<strong>Мітка:</strong> ${escapeHtml(point.label)}` : null,
+      emphasisLine: point.label ? { label: 'Мітка', value: point.label } : null,
       metaLines: [`Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}`],
     });
 

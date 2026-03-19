@@ -216,11 +216,17 @@ ci-setup-cache-sccache clean="false":
 ci-save-cache-sccache clean="false":
     bash deploy/save_ci_cache_sccache.sh {{ clean }}
 
+# Full CI test suite: backend CI flow plus frontend TypeScript tests.
 ci-test:
     bash deploy/run_ci_tests.sh
 
-ci-test-be:
+# Backend-only CI test flow.
+ci-test-backend:
     bash deploy/run_backend_tests.sh
+
+# Backward-compatible alias. Prefer `ci-test-backend`.
+ci-test-be:
+    @just ci-test-backend
 
 [arg('builder', long='builder')]
 ci-clean builder="echo-gpu":

@@ -13,7 +13,7 @@ export function buildPalitraPopupContent(
   layer: PopupLayer,
   palitra: Palitra,
   details: {
-    emphasisLine?: string | null;
+    emphasisLine?: { label: string; value: string } | null;
     metaLines?: string[];
   },
 ): HTMLElement {
@@ -42,8 +42,11 @@ export function buildPalitraPopupContent(
   if (details.emphasisLine) {
     const line = document.createElement('div');
     line.className = 'analysis-map-compact-popup__line';
-    line.innerHTML = details.emphasisLine;
-    line.title = stripHtml(details.emphasisLine);
+    const label = document.createElement('strong');
+    label.textContent = `${details.emphasisLine.label}: `;
+    line.appendChild(label);
+    line.append(details.emphasisLine.value);
+    line.title = `${details.emphasisLine.label}: ${details.emphasisLine.value}`;
     container.appendChild(line);
   }
 
@@ -53,69 +56,57 @@ export function buildPalitraPopupContent(
     details.metaLines.forEach((metaLine) => {
       const row = document.createElement('div');
       row.className = 'analysis-map-compact-popup__meta';
-      row.innerHTML = metaLine;
-      row.title = stripHtml(metaLine);
+      row.textContent = metaLine;
+      row.title = metaLine;
       meta.appendChild(row);
     });
     container.appendChild(meta);
   }
 
-  const root = createRoot(closeHost);
-  layer._popupCloseRoot = root;
-  root.render(
-    React.createElement(
-      NeoMuiThemeProvider,
-      null,
+  const mountCloseButton = () => {
+    if (layer._popupCloseRoot) {
+      return;
+    }
+
+    const root = createRoot(closeHost);
+    layer._popupCloseRoot = root;
+    root.render(
       React.createElement(
-        IconButton,
-        {
-          'aria-label': 'Закрити',
-          size: 'small',
-          onClick: () => layer.closePopup(),
-          sx: {
-            width: 28,
-            height: 28,
-            borderRadius: 1.25,
-            color: 'rgba(255, 255, 255, 0.92)',
-            '&:hover': {
-              bgcolor: 'rgba(255, 255, 255, 0.08)',
-            },
-            '&.Mui-focusVisible': {
-              outline: 'none',
-              boxShadow: 'none',
+        NeoMuiThemeProvider,
+        null,
+        React.createElement(
+          IconButton,
+          {
+            'aria-label': 'Закрити',
+            size: 'small',
+            onClick: () => layer.closePopup(),
+            sx: {
+              width: 28,
+              height: 28,
+              borderRadius: 1.25,
+              color: 'rgba(255, 255, 255, 0.92)',
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.08)',
+              },
+              '&.Mui-focusVisible': {
+                outline: 'none',
+                boxShadow: 'none',
+              },
             },
           },
-        },
-        React.createElement(CloseIcon, { fontSize: 'small' }),
+          React.createElement(CloseIcon, { fontSize: 'small' }),
+        ),
       ),
-    ),
-  );
+    );
+  };
 
   const cleanup = () => {
     layer._popupCloseRoot?.unmount();
     layer._popupCloseRoot = undefined;
   };
+  layer.on?.('popupopen', mountCloseButton);
+  layer.on?.('popupclose', cleanup);
   layer.on?.('remove', cleanup);
 
   return container;
-}
-
-export function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function stripHtml(value: string): string {
-  return value
-    .replaceAll(/<br\s*\/?>/gi, '\n')
-    .replaceAll(/<[^>]*>/g, '')
-    .replaceAll('&amp;', '&')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'");
 }
