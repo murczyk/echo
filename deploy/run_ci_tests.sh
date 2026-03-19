@@ -10,9 +10,15 @@ bash "$SCRIPT_DIR/run_backend_tests.sh"
 echo "Running frontend TypeScript tests..."
 cd "$REPO_ROOT/wdintel-web"
 
-if [[ ! -d "node_modules" ]] || [[ ! -f "node_modules/.npm_installed" ]] || [[ "package-lock.json" -nt "node_modules/.npm_installed" ]]; then
+lockfile_hash="$(sha256sum package-lock.json | awk '{print $1}')"
+installed_hash=""
+if [[ -f "node_modules/.npm_installed" ]]; then
+    installed_hash="$(tr -d '[:space:]' < node_modules/.npm_installed)"
+fi
+
+if [[ ! -d "node_modules" ]] || [[ "$installed_hash" != "$lockfile_hash" ]]; then
     npm ci
-    touch node_modules/.npm_installed
+    printf '%s\n' "$lockfile_hash" > node_modules/.npm_installed
 fi
 
 npm run test:ts
