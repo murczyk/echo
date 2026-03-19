@@ -92,10 +92,18 @@ export function createFullScreenControl(toggleMapSize: () => void) {
 		onAdd: function(_: L.Map) {
 			let container = L.DomUtil.create('div', 'leaflet-custom-control');
 			let button = L.DomUtil.create('a', '', container);
+			const setExpanded = (isExpanded: boolean) => {
+				const title = isExpanded ? 'Згорнути мапу' : 'Розгорнути мапу';
+				button.setAttribute('aria-label', title);
+				button.title = title;
+				button.innerHTML = isExpanded
+					? '<i class="bi bi-fullscreen-exit" style="font-size: 12px;"></i>'
+					: '<i class="bi bi-arrows-fullscreen" style="font-size: 12px;"></i>';
+			};
+
 			button.href = '#';
-			button.setAttribute('aria-label', 'Розгорнути або згорнути мапу');
-			button.title = 'Розгорнути або згорнути мапу';
-			button.innerHTML = '<i class="bi bi-arrows-fullscreen" style="font-size: 12px;"></i>';
+			setExpanded(false);
+			(this as L.Control & { setExpanded?: (isExpanded: boolean) => void }).setExpanded = setExpanded;
 			L.DomEvent.on(button, 'click', L.DomEvent.stopPropagation)
 				.on(button, 'click', L.DomEvent.preventDefault)
 				.on(button, 'click', toggleMapSize, this);
@@ -123,7 +131,10 @@ export function createExitControl(closeMap: () => void) {
 
 // UTILITY
 export function toggleMapSize(map: L.Map, mapContainer: HTMLElement, bounds: L.LatLngBounds, fullScreenControl: any) {
-	mapContainer.classList.toggle('expanded');
+	const isExpanded = mapContainer.classList.toggle('expanded');
+	fullScreenControl?.setExpanded?.(isExpanded);
+	document.body.classList.toggle('small-map-fullscreen-open', isExpanded);
+	mapContainer.dispatchEvent(new CustomEvent('map-expanded-changed', { detail: { isExpanded } }));
 	setTimeout(function() {
 		map.invalidateSize();
 		map.fitBounds(bounds);
