@@ -130,6 +130,7 @@ type Msg
     | GotUserInfo String (Result ApiError B.User)
     | ReportTagsOnlyThisUnitToggle
     | ReportTagsOnlyThisUnitForReportToggle
+    | ReportWithoutCommentsToggle
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
     | ReportReoNoCommentsToggle

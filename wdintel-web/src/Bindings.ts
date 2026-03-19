@@ -1674,6 +1674,7 @@ export type ReportPreviewReq = {
   req: InboxMessagesReq;
   reportType: ReportType | null;
   reportTagsOnlyThisUnit: boolean | null;
+  withoutComments: boolean | null;
 };
 
 export type ReportType =

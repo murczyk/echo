@@ -4450,6 +4450,7 @@ type alias ReportPreviewReq =
     , req : InboxMessagesReq
     , reportType : Maybe ReportType
     , reportTagsOnlyThisUnit : Maybe Bool
+    , withoutComments : Maybe Bool
     }
 
 
@@ -4460,6 +4461,7 @@ reportPreviewReqEncoder struct =
         , ( "req", inboxMessagesReqEncoder struct.req )
         , ( "report_type", (Maybe.withDefault Json.Encode.null << Maybe.map reportTypeEncoder) struct.reportType )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
+        , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutComments )
         ]
 
 
@@ -10065,6 +10067,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" inboxMessagesReqDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_type" (Json.Decode.nullable reportTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable Json.Decode.bool)))
 
 
 reportTypeDecoder : Json.Decode.Decoder ReportType
