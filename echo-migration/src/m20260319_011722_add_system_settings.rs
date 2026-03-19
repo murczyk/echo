@@ -11,18 +11,14 @@ impl MigrationTrait for Migration {
             r#"
             create table system_settings (
                 id bigserial primary key,
-                rer_analysis_units_exact_match_only_default boolean not null default true,
+                rer_analysis_units_exact_match_only_default boolean not null default false,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null,
                 updated_at timestamp without time zone default (now() at time zone 'utc') not null,
                 updated_by text references login(login),
                 deleted boolean not null default false
             );
 
-            create unique index system_settings_single_active_idx
-                on system_settings ((1))
-                where deleted = false;
-
-            insert into system_settings (rer_analysis_units_exact_match_only_default) values (true);
+            insert into system_settings (rer_analysis_units_exact_match_only_default) values (false);
             "#,
         )
         .await?;
