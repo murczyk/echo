@@ -350,13 +350,9 @@ pub async fn report_docx_kind_babak(
         }
 
         doc = doc
-            .add_paragraph(
-                Paragraph::new().add_run(
-                    Run::new()
-                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
-                        .bold(),
-                ),
-            )
+            .add_paragraph(babak_unit_heading_paragraph(
+                &unit.unit.clone().unwrap_or("НВ".to_string()),
+            ))
             .add_paragraph(Paragraph::new());
 
         for comment in comments.clone() {
@@ -414,13 +410,9 @@ pub async fn report_docx_kind_babak(
         }
 
         doc = doc
-            .add_paragraph(
-                Paragraph::new().add_run(
-                    Run::new()
-                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
-                        .bold(),
-                ),
-            )
+            .add_paragraph(babak_unit_heading_paragraph(
+                &unit.unit.clone().unwrap_or("НВ".to_string()),
+            ))
             .add_paragraph(Paragraph::new());
 
         for comment in losses_comments.clone() {
@@ -494,32 +486,40 @@ pub async fn report_docx_kind_babak(
         }
 
         doc = doc
-            .add_paragraph(
-                Paragraph::new().add_run(
-                    Run::new()
-                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
-                        .bold(),
-                ),
-            )
+            .add_paragraph(babak_unit_heading_paragraph(
+                &unit.unit.clone().unwrap_or("НВ".to_string()),
+            ))
             .add_paragraph(Paragraph::new());
 
         for comment in others_comments.clone() {
-            if let Some(text) = comment.text {
+            if let Some(text) = comment
+                .text
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+            {
                 if let Some(d) = comment.datetime {
                     let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
-                    let mut paragraph = Paragraph::new().add_run(
-                        Run::new()
-                            .add_text(d_tz.format("%d/%m %H:%M").to_string()),
-                    );
-                    if let Some(comment_text) = comment.comment.as_deref() {
-                        paragraph =
-                            add_multiline_text(paragraph, comment_text, true);
-                    }
-                    paragraph = add_multiline_text(paragraph, &text, false);
                     doc = doc
-                        .add_paragraph(paragraph.numbering(
-                            NumberingId::new(1),
-                            IndentLevel::new(0),
+                        .add_paragraph(
+                            Paragraph::new()
+                                .add_run(Run::new().add_text(
+                                    d_tz.format("%d/%m %H:%M").to_string(),
+                                ))
+                                .numbering(
+                                    NumberingId::new(1),
+                                    IndentLevel::new(0),
+                                ),
+                        )
+                        .add_paragraph(add_multiline_text(
+                            Paragraph::new().indent(
+                                Some(720),
+                                None,
+                                None,
+                                None,
+                            ),
+                            text,
+                            false,
                         ))
                         .add_paragraph(Paragraph::new());
                 }
@@ -576,6 +576,15 @@ fn add_multiline_text(
     }
 
     paragraph
+}
+
+fn babak_unit_heading_paragraph(unit: &str) -> Paragraph {
+    Paragraph::new().add_run(
+        Run::new()
+            .add_text(format!(" {unit} "))
+            .bold()
+            .shading(Shading::new().fill("d9d9d9")),
+    )
 }
 
 fn dedup_babak_comments_across_units(units: &mut [StatsPerUnitReport]) {
