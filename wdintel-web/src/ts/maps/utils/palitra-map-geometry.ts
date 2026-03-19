@@ -1,5 +1,6 @@
 import * as L from 'leaflet';
 
+import { buildPalitraPopupContent } from '../palitra-popup-content';
 import { Coords, Palitra, PalitraDetails, PalitraPoint } from '../palitra-types';
 
 export function boundsOfSearchResults(
@@ -78,21 +79,22 @@ export function createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon 
   const centerLat = palitra.geometry.center.lat.toFixed(4);
   const centerLng = palitra.geometry.center.lng.toFixed(4);
 
-  const popupContent = `
-      <div style="padding: 8px;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-          <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 3px;"></span>
-          <strong style="font-size: 14px;">${palitra.name}</strong>
-        </div>
-        <div style="font-size: 12px; color: #666;">
-          <div>Центр: ${centerLat}, ${centerLng}</div>
-          <div>Точок периметру: ${pointsCount}</div>
-          ${palitra.source_file_name ? `<div>Файл: ${palitra.source_file_name}</div>` : ''}
-        </div>
-      </div>
-    `;
+  const metaLines = [
+    `Центр: ${centerLat}, ${centerLng}`,
+    `Точок периметру: ${pointsCount}`,
+    palitra.source_file_name ? `Файл: ${palitra.source_file_name}` : null,
+  ].filter((value): value is string => value !== null);
 
-  polygon.bindPopup(popupContent);
+  polygon.bindPopup(
+    buildPalitraPopupContent(polygon as L.Polygon & L.Layer & { closePopup: () => void }, palitra, {
+      emphasisLine: null,
+      metaLines,
+    }),
+    {
+      className: 'analysis-map-compact-popup-shell',
+      closeButton: false,
+    },
+  );
   polygon.bindTooltip(palitra.name, {
     permanent: true,
     direction: 'center',

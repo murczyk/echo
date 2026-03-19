@@ -9,7 +9,7 @@ import React from 'react';
 import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
-import { PageErrorState } from '../../components/PageErrorState';
+import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
@@ -22,8 +22,10 @@ import {
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  buildExplicitSingleSelectColumnFilter,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
+  withExplicitSelectAllOption,
 } from '../../components/mui-customized/table/get-default-table-options';
 import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { listAors } from '../../services/api/aor';
@@ -50,10 +52,10 @@ type OrganismLookup = {
 };
 
 const ROLE_OPTIONS = ['Admin', 'Rer', 'Bpla', 'Full', 'Basic', 'UnitsEditor', 'CallsignsEditor'];
-const ENABLED_FILTER_OPTIONS = [
+const ENABLED_FILTER_OPTIONS = withExplicitSelectAllOption([
   { text: 'так', value: 'так' },
   { text: 'ні', value: 'ні' },
-];
+]);
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   id: true,
@@ -247,7 +249,31 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
           header: 'Ролі',
           id: 'roles',
           accessorFn: (row) => row.roles ?? [],
-          Cell: ({ row }) => <span>{row.original.roles.length > 0 ? row.original.roles.join(', ') : '—'}</span>,
+          Cell: ({ row }) => {
+            if (row.original.roles.length === 0) return <span>—</span>;
+            return (
+              <div className="flex flex-wrap gap-1">
+                {row.original.roles.map((role) => (
+                  <PowerChip
+                    key={role}
+                    size="small"
+                    label={role}
+                    title={role}
+                    interactive={false}
+                    unselectedOpacity={1}
+                    fontSize="0.75rem"
+                    fontWeight={500}
+                    labelPaddingX={0.5}
+                    labelPaddingY={0.25}
+                    unselectedBackgroundColor="#f1f5f9"
+                    unselectedTextColor="#475569"
+                    unselectedBorderColor="#cbd5e1"
+                    sx={{ lineHeight: 1 }}
+                  />
+                ))}
+              </div>
+            );
+          },
           filterVariant: 'multi-select',
           filterSelectOptions: ROLE_OPTIONS,
           filterFn: 'arrIncludesSome',
@@ -268,6 +294,13 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
           ),
           filterVariant: 'select',
           filterSelectOptions: ENABLED_FILTER_OPTIONS,
+          Filter: buildExplicitSingleSelectColumnFilter<Organism>({
+            options: ENABLED_FILTER_OPTIONS,
+            fallbackValue: 'Усі',
+            onChange: (column, nextValue) => {
+              column.setFilterValue(nextValue === 'Усі' ? undefined : nextValue);
+            },
+          }),
           size: 110,
           muiTableBodyCellProps: () => ({
             sx: {

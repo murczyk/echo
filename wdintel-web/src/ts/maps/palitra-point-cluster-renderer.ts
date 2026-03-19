@@ -3,6 +3,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css"
 import "leaflet.markercluster/dist/leaflet.markercluster.js"
 
 import { Palitra, PalitraPoint } from './palitra-types';
+import { buildPalitraPopupContent } from './palitra-popup-content';
 
 /** Max markers to add per frame when building clusters (keeps UI responsive). */
 const MARKER_ADD_CHUNK_SIZE = 60;
@@ -13,7 +14,10 @@ export class PalitraPointClusterRenderer {
   private pointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
   private pointMarkers: PointMarker[] = [];
 
-  constructor(private map: L.Map) {}
+  constructor(
+    private map: L.Map,
+    private onOverlayContextMenu?: (target: { lat: number; lng: number }, latlng: { lat: number; lng: number }) => void,
+  ) {}
 
   clear(): void {
     this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
@@ -117,20 +121,27 @@ export class PalitraPointClusterRenderer {
       fillOpacity: 0.8
     });
 
-    const popupContent = `
-        <div style="padding: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 50%;"></span>
-            <strong style="font-size: 14px;">${palitra.name}</strong>
-          </div>
-          ${point.label ? `<div style="font-size: 13px; margin-bottom: 4px;"><strong>Мітка:</strong> ${point.label}</div>` : ''}
-          <div style="font-size: 12px; color: #666;">
-            <div>Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}</div>
-          </div>
-        </div>
-      `;
+    const popupContent = buildPalitraPopupContent(marker as PointMarker & L.Layer & { closePopup: () => void }, palitra, {
+      emphasisLine: point.label ? { label: 'Мітка', value: point.label } : null,
+      metaLines: [`Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}`],
+    });
 
-    marker.bindPopup(popupContent);
+    marker.bindPopup(popupContent, {
+      className: 'analysis-map-compact-popup-shell',
+      closeButton: false,
+    });
+    marker.on('mousedown', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+      if (event.originalEvent?.button !== 2) {
+        return;
+      }
+      event.originalEvent.preventDefault();
+      event.originalEvent.stopPropagation();
+      this.onOverlayContextMenu?.(point.coords, { lat: event.latlng.lat, lng: event.latlng.lng });
+    });
+    marker.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+      event.originalEvent?.preventDefault();
+      event.originalEvent?.stopPropagation();
+    });
 
     const tooltipLabel = point.label ?? palitra.name;
     if (tooltipLabel) {
@@ -140,4 +151,5 @@ export class PalitraPointClusterRenderer {
     markerSink.push(marker as PointMarker);
     clusterGroup.addLayer(marker);
   }
+
 }

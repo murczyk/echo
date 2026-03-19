@@ -23,16 +23,21 @@ import {
   PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
+  buildExplicitSingleSelectColumnFilter,
   buildDefaultColumnOrder,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
+  withExplicitSelectAllOption,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import type { CallsignRowView, CallsignsSortState, OnSort, SortColumn } from '../types';
 import { formatDateTime } from '../helpers';
 
 const defaultMRTOptions = getDefaultMRTOptions<CallsignRowView>();
-const STATUS_FILTER_OPTIONS = ['Відомий', 'В дорозвідці', 'Усі'] as const;
+const STATUS_FILTER_OPTIONS = withExplicitSelectAllOption([
+  { text: 'Відомий', value: 'Відомий' },
+  { text: 'В дорозвідці', value: 'В дорозвідці' },
+]);
 
 export const DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY = {
   callsign: true,
@@ -251,6 +256,13 @@ export function CallsignsTable({
         id: 'developing',
         filterVariant: 'select',
         filterSelectOptions: [...STATUS_FILTER_OPTIONS],
+        Filter: buildExplicitSingleSelectColumnFilter<CallsignRowView>({
+          options: STATUS_FILTER_OPTIONS,
+          fallbackValue: 'Відомий',
+          onChange: (column, nextValue) => {
+            column.setFilterValue([nextValue]);
+          },
+        }),
         enableSorting: false,
         size: 170,
         Cell: ({ row }) => (

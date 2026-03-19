@@ -1,12 +1,163 @@
 import { Box } from '@mui/material';
+import { MenuItem } from '@mui/material';
 import { Theme } from '@mui/material';
+import { TextField } from '@mui/material';
+import { TextFieldProps } from '@mui/material/TextField';
 import { TableRowProps } from '@mui/material/TableRow';
-import { MRT_ColumnOrderState, MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
+import { MRT_Column, MRT_ColumnDef, MRT_ColumnOrderState, MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
 import { MRT_Localization_UK } from 'material-react-table/locales/uk';
+import type React from 'react';
 
 import { TableEmptyState } from '../../TableEmptyState';
 import { CUSTOM_STYLES } from './custom-styles';
 import { windowWidth } from '../../../utils/browser';
+
+function onSharedSelectFilterMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+
+  if (target.closest('.MuiIconButton-root')) {
+    return;
+  }
+
+  if (target.closest('.MuiSelect-select[role="combobox"]')) {
+    return;
+  }
+
+  const selectDisplay = event.currentTarget.querySelector<HTMLElement>('.MuiSelect-select[role="combobox"]');
+  if (!selectDisplay) return;
+
+  selectDisplay.dispatchEvent(
+    new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }),
+  );
+}
+
+type ExplicitSelectFilterOption = {
+  text: string;
+  value: string;
+};
+
+export const EXPLICIT_SELECT_ALL_OPTION: ExplicitSelectFilterOption = {
+  text: 'Усі',
+  value: 'Усі',
+};
+
+export function withExplicitSelectAllOption(
+  options: readonly ExplicitSelectFilterOption[],
+): ExplicitSelectFilterOption[] {
+  return [EXPLICIT_SELECT_ALL_OPTION, ...options];
+}
+
+export function resolveExplicitSelectFilterValue(
+  value: unknown,
+  allowedValues: readonly string[],
+  fallbackValue: string,
+): string {
+  if (Array.isArray(value)) {
+    return resolveExplicitSelectFilterValue(value[0], allowedValues, fallbackValue);
+  }
+
+  if (typeof value === 'string' && allowedValues.includes(value)) {
+    return value;
+  }
+
+  return fallbackValue;
+}
+
+export function buildExplicitSingleSelectColumnFilter<TData extends MRT_RowData>({
+  options,
+  fallbackValue,
+  onChange,
+}: {
+  options: readonly ExplicitSelectFilterOption[];
+  fallbackValue: string;
+  onChange: (column: MRT_Column<TData>, nextValue: string) => void;
+}): NonNullable<MRT_ColumnDef<TData>['Filter']> {
+  const allowedValues = options.map((option) => option.value);
+
+  return ({ column }) => (
+    <TextField
+      select
+      fullWidth
+      margin="none"
+      variant="standard"
+      value={resolveExplicitSelectFilterValue(column.getFilterValue(), allowedValues, fallbackValue)}
+      onChange={(event) => onChange(column, event.target.value)}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      slotProps={{
+        inputLabel: { shrink: true },
+        select: {
+          displayEmpty: true,
+          MenuProps: { disableScrollLock: true },
+          SelectDisplayProps: {
+            style: {
+              cursor: 'pointer',
+              width: '100%',
+            },
+          },
+        },
+      }}
+      sx={{
+        '& .MuiInputBase-root': {
+          cursor: 'pointer',
+        },
+        '& .MuiSelect-select': {
+          cursor: 'pointer',
+          width: '100%',
+        },
+      }}
+    >
+      {options.map((option) => (
+        <MenuItem key={option.value} value={option.value}>
+          {option.text}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+export function getSharedFilterTextFieldProps(filterVariant?: string): TextFieldProps {
+  if (filterVariant !== 'select' && filterVariant !== 'multi-select') {
+    return {};
+  }
+
+  return {
+    sx: {
+      '& .MuiInputBase-root': {
+        cursor: 'pointer',
+      },
+      '& .MuiInputAdornment-positionEnd': {
+        cursor: 'pointer',
+        pointerEvents: 'none',
+      },
+      '& .MuiInputAdornment-positionEnd .MuiIconButton-root': {
+        pointerEvents: 'auto',
+      },
+      '& .MuiSelect-select': {
+        cursor: 'pointer',
+        width: '100%',
+      },
+    },
+    slotProps: {
+      input: {
+        onMouseDown: onSharedSelectFilterMouseDown,
+      },
+      select: {
+        SelectDisplayProps: {
+          style: {
+            cursor: 'pointer',
+            width: '100%',
+          },
+        },
+      },
+    },
+  };
+}
 
 export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_TableOptions<TData>> => ({
   layoutMode: 'grid',
@@ -20,6 +171,7 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
   getRowId: (row) => row.id,
   localization: MRT_Localization_UK,
   positionToolbarAlertBanner: 'bottom',
+  muiFilterTextFieldProps: ({ column }) => getSharedFilterTextFieldProps(column.columnDef.filterVariant),
   renderEmptyRowsFallback: ({ table }) => {
     const hasFilters =
       Boolean(table.getState().globalFilter) ||

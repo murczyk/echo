@@ -68,8 +68,8 @@ export class AnalysisMapCoordMenuController {
     const width = rect.width;
     const height = rect.height;
     const margin = 12;
-    const arrowHeight = 13;
-    const markerGap = 12;
+    const arrowHeight = 10;
+    const markerGap = 10;
 
     const maxLeft = Math.max(margin, container.clientWidth - width - margin);
     const unclampedLeft = point.x - width / 2;
