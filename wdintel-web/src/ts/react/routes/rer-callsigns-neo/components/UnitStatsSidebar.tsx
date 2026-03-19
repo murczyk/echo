@@ -153,6 +153,14 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 function collectExpansionPathToSelectedFilter(nodes: TreeNode[], selectedUnitFilter: SelectedSidebarUnitFilter): string[] {
+  const path = collectExpansionPathToSelectedFilterInner(nodes, selectedUnitFilter);
+  return path ?? [];
+}
+
+function collectExpansionPathToSelectedFilterInner(
+  nodes: TreeNode[],
+  selectedUnitFilter: SelectedSidebarUnitFilter,
+): string[] | null {
   for (const node of nodes) {
     if (node.kind === 'leaf') {
       if (selectedUnitFilter.kind === 'leaf' && node.unitName === selectedUnitFilter.unitName) return [];
@@ -163,13 +171,13 @@ function collectExpansionPathToSelectedFilter(nodes: TreeNode[], selectedUnitFil
       return [node.id];
     }
 
-    const childPath = collectExpansionPathToSelectedFilter(node.children, selectedUnitFilter);
-    if (childPath.length > 0) {
+    const childPath = collectExpansionPathToSelectedFilterInner(node.children, selectedUnitFilter);
+    if (childPath !== null) {
       return [node.id, ...childPath];
     }
   }
 
-  return [];
+  return null;
 }
 
 type TreeItemProps = {
@@ -311,10 +319,6 @@ export function UnitStatsSidebar({
     }
 
     if (!selectedUnitFilter) {
-      return;
-    }
-
-    if (selectedUnitFilter.kind === 'leaf') {
       return;
     }
 
