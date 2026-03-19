@@ -15,7 +15,7 @@ reportPermissionDeniedErrorCode =
 
 reportPermissionDeniedMessage : String
 reportPermissionDeniedMessage =
-    "У вас недостатньо прав для генерування даного звіту, зверніться до адміністратора"
+    "У вас недостатньо прав для конструювання даного звіту, зверніться до адміністратора."
 
 
 reportTemplateToString : ReportTemplate -> String
