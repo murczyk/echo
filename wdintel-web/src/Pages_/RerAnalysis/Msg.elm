@@ -137,6 +137,7 @@ type Msg
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
     | GotStatsCount (Result ApiError B.CountStatsRsp)
+    | GotSystemSettings (Result ApiError B.SystemSettingsCurrentRsp)
     | GotStatsAors (Result ApiError B.AreaOfResponsibilityStatsRsp)
     | GotStatsFreqs (Result ApiError B.FreqStatsRsp)
     | GotStatsCallsigns (Result ApiError B.CallsignStatsRsp)

@@ -261,6 +261,8 @@ init route _ =
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
+            , unitsExactMatchOnlyExplicit = False
+            , systemSettingsLoaded = False
             , withoutModelTags = False
             , editSidebar = Nothing
             , eventLastId = Nothing
@@ -289,6 +291,7 @@ init route _ =
     ( m4
     , E.batch
         [ E.getCurrentTime InitGotTime
+        , E.getSystemSettings GotSystemSettings
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
@@ -733,6 +736,68 @@ loadCoreStatsAndPushUrl model =
     ( m2, cmd3 )
 
 
+loadInitialFilterStats : Model -> List (Effect Msg)
+loadInitialFilterStats model =
+    let
+        filterNameToListLength : FilterName -> Bool
+        filterNameToListLength name =
+            case name of
+                AorsFilter ->
+                    List.length model.aorsSelected > 0
+
+                LocationsFilter ->
+                    List.length model.locationsSelected > 0
+
+                PostsFilter ->
+                    List.length model.postsSelected > 0
+
+                UnitsFilter ->
+                    List.length model.unitsSelected > 0
+
+                CallsignsFilter ->
+                    List.length model.callsignsSelected > 0
+
+                FreqsFilter ->
+                    List.length model.freqsSelected > 0
+
+                SendersFilter ->
+                    List.length model.sendersSelected > 0
+
+                GroupsFilter ->
+                    List.length model.groupsSelected > 0
+
+                NetworksFilter ->
+                    List.length model.networksSelected > 0
+
+        all =
+            [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter, NetworksFilter ]
+
+        preselectedFilters =
+            List.filter (\filterName -> filterNameToListLength filterName) all
+    in
+    preselectedFilters
+        |> List.filterMap (\name_ -> ListX.find (\( n, _ ) -> n == name_) FiltersReloading.endpoints)
+        |> List.map Tuple.second
+        |> List.map
+            (\endpoint_ ->
+                case ( model.from.datePosix, model.to.datePosix ) of
+                    ( Just dtFromPosix, Just dtToPosix ) ->
+                        endpoint_ (Query.analysisStatsParams dtFromPosix dtToPosix model)
+
+                    _ ->
+                        E.none
+            )
+
+
+loadInitialStats : Model -> ( Model, Effect Msg )
+loadInitialStats model =
+    let
+        ( m2, eff2 ) =
+            loadCoreStats model
+    in
+    ( m2, E.batch (eff2 :: loadInitialFilterStats model) )
+
+
 setFocusedFilterSnapshot : String -> List String -> Model -> Model
 setFocusedFilterSnapshot filterKey itemsBeforeChange model =
     { model
@@ -951,60 +1016,55 @@ update user shared route msg model =
                     }
 
                 ( m3, cmd3 ) =
-                    loadCoreStats m2
+                    if m2.systemSettingsLoaded then
+                        loadInitialStats m2
 
-                loadInitialFiltersStats =
-                    let
-                        filterNameToListLength : FilterName -> Bool
-                        filterNameToListLength name =
-                            case name of
-                                AorsFilter ->
-                                    List.length model.aorsSelected > 0
-
-                                LocationsFilter ->
-                                    List.length model.locationsSelected > 0
-
-                                PostsFilter ->
-                                    List.length model.postsSelected > 0
-
-                                UnitsFilter ->
-                                    List.length model.unitsSelected > 0
-
-                                CallsignsFilter ->
-                                    List.length model.callsignsSelected > 0
-
-                                FreqsFilter ->
-                                    List.length model.freqsSelected > 0
-
-                                SendersFilter ->
-                                    List.length model.sendersSelected > 0
-
-                                GroupsFilter ->
-                                    List.length model.groupsSelected > 0
-
-                                NetworksFilter ->
-                                    List.length model.networksSelected > 0
-
-                        all =
-                            [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter, NetworksFilter ]
-
-                        preselectedFilters =
-                            List.filter (\filterName -> filterNameToListLength filterName) all
-                    in
-                    preselectedFilters
-                        |> List.filterMap (\name_ -> ListX.find (\( n, _ ) -> n == name_) FiltersReloading.endpoints)
-                        |> List.map Tuple.second
-                        |> List.map
-                            (\endpoint_ ->
-                                case ( m2.from.datePosix, m2.to.datePosix ) of
-                                    ( Just dtFromPosix, Just dtToPosix ) ->
-                                        endpoint_ (Query.analysisStatsParams dtFromPosix dtToPosix m2)
-
-                                    _ ->
-                                        E.none
-                            )
+                    else
+                        ( m2, E.none )
             in
-            ( m3, E.batch (cmd3 :: loadInitialFiltersStats) )
+            ( m3, cmd3 )
+
+        GotSystemSettings (Err e) ->
+            let
+                m2 =
+                    { model | systemSettingsLoaded = True }
+
+                ( m3, eff3 ) =
+                    case model.now of
+                        Just _ ->
+                            loadInitialStats m2
+
+                        Nothing ->
+                            ( m2, E.none )
+            in
+            ( m3
+            , E.batch
+                [ Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження системних налаштувань" e
+                , eff3
+                ]
+            )
+
+        GotSystemSettings (Ok rsp) ->
+            let
+                m2 =
+                    if model.unitsExactMatchOnlyExplicit then
+                        { model | systemSettingsLoaded = True }
+
+                    else
+                        { model
+                            | unitsExactMatchOnly = rsp.rerAnalysisUnitsExactMatchOnlyDefault
+                            , systemSettingsLoaded = True
+                        }
+
+                ( m3, eff3 ) =
+                    case model.now of
+                        Just _ ->
+                            loadInitialStats m2
+
+                        Nothing ->
+                            ( m2, E.none )
+            in
+            ( m3, eff3 )
 
         DateRangePickerMsg imsg ->
             let
@@ -1916,7 +1976,11 @@ update user shared route msg model =
         UnitsExactMatchOnlyChanged val ->
             let
                 m2 =
-                    { model | unitsExactMatchOnly = val }
+                    invalidateOptionFilters
+                        { model
+                            | unitsExactMatchOnly = val
+                            , unitsExactMatchOnlyExplicit = True
+                        }
             in
             loadCoreStatsAndPushUrl m2
 

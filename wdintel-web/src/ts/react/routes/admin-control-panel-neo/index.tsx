@@ -1,4 +1,12 @@
-import { Checkbox, CircularProgress, FormControlLabel, FormGroup, Typography } from '@mui/material';
+import {
+  Card,
+  CardContent,
+  Checkbox,
+  CircularProgress,
+  FormControlLabel,
+  FormGroup,
+  Typography,
+} from '@mui/material';
 import React from 'react';
 
 import { Info } from '../../components/info';
@@ -82,39 +90,41 @@ export function AdminControlPanelNeoPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Панель керування" />
-      <div className="bg-[var(--bs-body-bg)] rounded-lg border p-6">
-        <div className="space-y-5">
-          <Typography variant="h6" component="h3" className="!text-lg !font-semibold mb-3">
-            Натисність щоби перезапустити Ехо Сервер
-          </Typography>
-          <FormGroup>
-            <FormControlLabel
-              disableTypography
-              control={<Checkbox checked={form.restartPostgres} onChange={handleToggleRestartPostgres} />}
-              label={
-                <span style={{ color: 'var(--bs-secondary-color)' }}>Перезапустити PostgreSQL (база даних)</span>
-              }
-            />
-            <FormControlLabel
-              disableTypography
-              control={<Checkbox checked={form.restartOutdatedSources} onChange={handleToggleRestartOutdatedSources} />}
-              label={<span style={{ color: 'var(--bs-secondary-color)' }}>Перезапустити месенджери що відстали</span>}
-            />
-          </FormGroup>
-          <div className="flex items-center gap-2">
-            <Button variant="contained" color="error" disabled={restarting.value} onClick={handleRestart}>
-              Перезапустити
-            </Button>
-            {restarting.value ? <CircularProgress size={18} /> : null}
+      <Card variant="outlined">
+        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
+          <div className="space-y-5">
+            <Typography variant="h6" component="h3" className="!text-lg !font-semibold mb-3">
+              Натисність щоби перезапустити Ехо Сервер
+            </Typography>
+            <FormGroup>
+              <FormControlLabel
+                disableTypography
+                control={<Checkbox checked={form.restartPostgres} onChange={handleToggleRestartPostgres} />}
+                label={
+                  <span style={{ color: 'var(--bs-secondary-color)' }}>Перезапустити PostgreSQL (база даних)</span>
+                }
+              />
+              <FormControlLabel
+                disableTypography
+                control={<Checkbox checked={form.restartOutdatedSources} onChange={handleToggleRestartOutdatedSources} />}
+                label={<span style={{ color: 'var(--bs-secondary-color)' }}>Перезапустити месенджери що відстали</span>}
+              />
+            </FormGroup>
+            <div className="flex items-center gap-2">
+              <Button variant="contained" color="error" disabled={restarting.value} onClick={handleRestart}>
+                Перезапустити
+              </Button>
+              {restarting.value ? <CircularProgress size={18} /> : null}
+            </div>
+            {status?.kind === 'error' ? <Info text={status.message} color="error" /> : null}
+            {status?.kind === 'success' ? (
+              <p className="text-sm" style={{ color: 'var(--bs-success)' }} role="status">
+                {status.message}
+              </p>
+            ) : null}
           </div>
-          {status?.kind === 'error' ? <Info text={status.message} color="error" /> : null}
-          {status?.kind === 'success' ? (
-            <p className="text-sm" style={{ color: 'var(--bs-success)' }} role="status">
-              {status.message}
-            </p>
-          ) : null}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

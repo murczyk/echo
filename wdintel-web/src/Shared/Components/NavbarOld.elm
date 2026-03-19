@@ -23,11 +23,16 @@ type Link
     | External String
 
 
-type alias Menu =
-    { link : Link
-    , activeName : String
-    , label : String
-    }
+type Menu
+    = MenuItem
+        { link : Link
+        , activeName : String
+        , label : String
+        }
+    | MenuGroup
+        { label : String
+        , subs : List Menu
+        }
 
 
 type alias Props msg =
@@ -58,6 +63,42 @@ goiExternalUrl rawHost =
         Just ("https://" ++ host)
 
 
+internalMenu : Route.Path.Path -> String -> String -> Menu
+internalMenu path activeName label =
+    MenuItem
+        { link = Internal path
+        , activeName = activeName
+        , label = label
+        }
+
+
+externalMenu : String -> String -> String -> Menu
+externalMenu link activeName label =
+    MenuItem
+        { link = External link
+        , activeName = activeName
+        , label = label
+        }
+
+
+menuGroup : String -> List Menu -> Menu
+menuGroup label subs =
+    MenuGroup
+        { label = label
+        , subs = subs
+        }
+
+
+menuIsActive : String -> Menu -> Bool
+menuIsActive activeName menu =
+    case menu of
+        MenuItem item ->
+            item.activeName == activeName
+
+        MenuGroup group ->
+            List.any (menuIsActive activeName) group.subs
+
+
 navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
 navBar user shared activeName props =
     let
@@ -75,33 +116,34 @@ navBar user shared activeName props =
             menuItemWithSubs props activeName
 
         adminSubs =
-            [ Menu (Internal Route.Path.Admin_DirectionsNeo) "zones" "напрямки"
-            , Menu (Internal Route.Path.Admin_UsersNeo) "users-neo" "користувачі"
-            , Menu (Internal Route.Path.Admin_OrganismsNeo) "organisms-neo" "організми"
-            , Menu (Internal Route.Path.Admin_TagsNeo) "tags-neo" "теги"
-            , Menu (Internal Route.Path.Admin_AorNeo) "aor-neo" "смуги"
-            , Menu (Internal Route.Path.Admin_KeysNeo) "keys-neo" "ключі"
-            , Menu (Internal Route.Path.Admin_MessengerNeo) "messenger-neo" "месенджери"
-            , Menu (Internal Route.Path.Admin_ControlPanelNeo) "control-panel-neo" "панель керування"
-            , Menu (Internal Route.Path.Admin_Directions) "zones-old" "напрямки (стара)"
-            , Menu (Internal Route.Path.Admin_Users) "users" "користувачі (стара)"
-            , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми (стара)"
-            , Menu (Internal Route.Path.Admin_Tags) "tags" "теги (стара)"
-            , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
-            , Menu (Internal Route.Path.Admin_Keys) "keys" "ключі (стара)"
-            , Menu (Internal Route.Path.Admin_Messenger) "messenger" "месенджери (стара)"
-            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
+            [ internalMenu Route.Path.Admin_DirectionsNeo "zones" "напрямки"
+            , internalMenu Route.Path.Admin_UsersNeo "users-neo" "користувачі"
+            , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "організми"
+            , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "теги"
+            , internalMenu Route.Path.Admin_AorNeo "aor-neo" "смуги"
+            , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "ключі"
+            , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "месенджери"
+            , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "панель керування"
+            , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "налаштування системи"
+            , internalMenu Route.Path.Admin_Directions "zones-old" "напрямки (стара)"
+            , internalMenu Route.Path.Admin_Users "users" "користувачі (стара)"
+            , internalMenu Route.Path.Admin_Organisms "organisms" "організми (стара)"
+            , internalMenu Route.Path.Admin_Tags "tags" "теги (стара)"
+            , internalMenu Route.Path.AreasOfResponsibility "areasOfResponsibility" "смуги (стара)"
+            , internalMenu Route.Path.Admin_Keys "keys" "ключі (стара)"
+            , internalMenu Route.Path.Admin_Messenger "messenger" "месенджери (стара)"
+            , internalMenu Route.Path.Admin_ControlPanel "control-panel" "панель керування (стара)"
             ]
 
         etalonkaSubs =
-            [ Menu (Internal Route.Path.RerFreqs) "freqs" "частоти"
-            , Menu (Internal Route.Path.RerCallsignsNeo) "callsigns-neo" "позивні"
-            , Menu (Internal Route.Path.RerUnits) "rer-units" "підрозділи"
-            , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
-            , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
-            , Menu (Internal Route.Path.RerPalitraNeo) "palitra-neo" "палітри"
-            , Menu (Internal Route.Path.RerCallsigns) "callsigns" "позивні (стара)"
-            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітри (стара)"
+            [ internalMenu Route.Path.RerFreqs "freqs" "частоти"
+            , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "позивні"
+            , internalMenu Route.Path.RerUnits "rer-units" "підрозділи"
+            , internalMenu Route.Path.RerSignals "signals" "сигнали"
+            , internalMenu Route.Path.RerNetworks "networks" "мережі"
+            , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "палітри"
+            , internalMenu Route.Path.RerCallsigns "callsigns" "позивні (стара)"
+            , internalMenu Route.Path.RerPalitra "palitra" "палітри (стара)"
             ]
 
         goiSubs =
@@ -109,14 +151,14 @@ navBar user shared activeName props =
                 |> Maybe.andThen goiExternalUrl
                 |> Maybe.map
                     (\url ->
-                        [ Menu (External url) "goi-external" "відкрити ГОІ"
+                        [ externalMenu url "goi-external" "відкрити ГОІ"
                         ]
                     )
                 |> Maybe.withDefault []
             )
                 ++ (if user.goiFullAccessForOrganism then
-                        [ Menu (Internal Route.Path.GoiAssociations) "goi-associations" "висновки"
-                        , Menu (Internal Route.Path.GoiKnowledge) "goi-knowledge" "інформованість"
+                        [ internalMenu Route.Path.GoiAssociations "goi-associations" "висновки"
+                        , internalMenu Route.Path.GoiKnowledge "goi-knowledge" "інформованість"
                         ]
 
                     else
@@ -124,27 +166,27 @@ navBar user shared activeName props =
                    )
 
         importSubs =
-            [ Menu (Internal Route.Path.RerDeltaImport) "rer-delta-import" "імпорт delta"
-            , Menu (Internal Route.Path.RerCsvImport) "rer-csv-import" "імпорт csv"
+            [ internalMenu Route.Path.RerDeltaImport "rer-delta-import" "імпорт delta"
+            , internalMenu Route.Path.RerCsvImport "rer-csv-import" "імпорт csv"
             ]
 
         otherSubs =
             (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
-                [ Menu (Internal Route.Path.RerDutyNeo) "rer-duty-neo" "оперативний"
+                [ internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "оперативний"
                 ]
 
              else
                 []
             )
-                ++ [ Menu (Internal Route.Path.Importer) "importer" "імпортер"
-                   , Menu (Internal Route.Path.Delta) "kmz2geojson" "kmz в geojson"
-                   , Menu (Internal Route.Path.AlpinequestKmz) "alpinequest-kmz" "alpinequest в kmz"
-                   , Menu (Internal Route.Path.DeltaCsv2kmz) "csv2kmz" "delta csv в kmz"
-                   , Menu (Internal Route.Path.DeltaFixkmz) "fixkmz" "очисник kmz"
-                   , Menu (Internal Route.Path.CoordsConverter) "coords-converter" "конвертер координат"
+                ++ [ internalMenu Route.Path.Importer "importer" "імпортер"
+                   , internalMenu Route.Path.Delta "kmz2geojson" "kmz в geojson"
+                   , internalMenu Route.Path.AlpinequestKmz "alpinequest-kmz" "alpinequest в kmz"
+                   , internalMenu Route.Path.DeltaCsv2kmz "csv2kmz" "delta csv в kmz"
+                   , internalMenu Route.Path.DeltaFixkmz "fixkmz" "очисник kmz"
+                   , internalMenu Route.Path.CoordsConverter "coords-converter" "конвертер координат"
                    ]
                 ++ (if hasRole "Admin" user then
-                        [ Menu (Internal Route.Path.RadiosConvert) "radios-convert" "радіо kmz конвертер" ]
+                        [ internalMenu Route.Path.RadiosConvert "radios-convert" "радіо kmz конвертер" ]
 
                     else
                         []
@@ -299,56 +341,83 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
             else
                 props.onDropdownToggle (Just activeNameExp)
 
+        dropdownLeaf :
+            { a
+                | activeName : String
+                , label : String
+                , link : Link
+            }
+            -> Html msg
+        dropdownLeaf item =
+            case item.link of
+                Internal path ->
+                    a
+                        [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
+                        , classList [ ( "font-medium", item.activeName == activeName ) ]
+                        , attribute "role" "menuitem"
+                        , Route.Path.href path
+                        , onClick (props.onDropdownToggle Nothing)
+                        ]
+                        [ menuItemLabel item
+                        , if item.activeName == activeName then
+                            i [ class "bi bi-check ml-2" ] []
+
+                          else
+                            text ""
+                        ]
+
+                External link ->
+                    a
+                        [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
+                        , classList [ ( "font-medium", item.activeName == activeName ) ]
+                        , attribute "role" "menuitem"
+                        , href link
+                        , target "_blank"
+                        , rel "noopener noreferrer"
+                        , onClick (props.onDropdownToggle Nothing)
+                        ]
+                        [ menuItemLabel item
+                        , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" ] []
+                        ]
+
         dropdownItem : Menu -> Html msg
         dropdownItem sub =
-            li []
-                [ case sub.link of
-                    Internal path ->
-                        a
-                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
-                            , classList [ ( "font-medium", sub.activeName == activeName ) ]
-                            , attribute "role" "menuitem"
-                            , Route.Path.href path
-                            , onClick (props.onDropdownToggle Nothing)
-                            ]
-                            [ menuItemLabel sub
-                            , if sub.activeName == activeName then
-                                i [ class "bi bi-check ml-2" ] []
+            case sub of
+                MenuItem item ->
+                    li [] [ dropdownLeaf item ]
 
-                              else
-                                text ""
+                MenuGroup group ->
+                    li [ class "px-2 py-1" ]
+                        [ div
+                            [ class "px-2 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]"
+                            , classList [ ( "text-[var(--color-text)]", menuIsActive activeName sub ) ]
                             ]
+                            [ text group.label ]
+                        , ul
+                            [ class "ml-3 border-l border-[var(--color-border)] pl-2" ]
+                            (List.map dropdownItem group.subs)
+                        ]
 
-                    External link ->
-                        a
-                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
-                            , classList [ ( "font-medium", sub.activeName == activeName ) ]
-                            , attribute "role" "menuitem"
-                            , href link
-                            , target "_blank"
-                            , rel "noopener noreferrer"
-                            , onClick (props.onDropdownToggle Nothing)
-                            ]
-                            [ menuItemLabel sub
-                            , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" ] []
-                            ]
-                ]
-
-        menuItemLabel : Menu -> Html msg
-        menuItemLabel sub =
+        menuItemLabel :
+            { a
+                | activeName : String
+                , label : String
+            }
+            -> Html msg
+        menuItemLabel item =
             let
                 oldSuffix =
                     " (стара)"
 
                 hasOldBadge =
-                    String.endsWith oldSuffix sub.label
+                    String.endsWith oldSuffix item.label
 
                 baseLabel =
                     if hasOldBadge then
-                        String.dropRight (String.length oldSuffix) sub.label
+                        String.dropRight (String.length oldSuffix) item.label
 
                     else
-                        sub.label
+                        item.label
             in
             span [ class "inline-flex items-center gap-2" ]
                 ([ text baseLabel ]
@@ -362,7 +431,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                         else
                             []
                        )
-                    ++ (if sub.activeName == "callsigns-neo" || sub.activeName == "rer-duty-neo" then
+                    ++ (if item.activeName == "callsigns-neo" || item.activeName == "rer-duty-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]
