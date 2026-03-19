@@ -119,11 +119,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_AorNeo "aor-neo" "смуги"
             , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "ключі"
             , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "месенджери"
-            , menuGroup "панель керування"
-                [ internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "нова панель"
-                , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "налаштування системи"
-                , internalMenu Route.Path.Admin_ControlPanel "control-panel" "стара панель"
-                ]
+            , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "панель керування"
             , internalMenu Route.Path.Admin_Directions "zones-old" "напрямки (стара)"
             , internalMenu Route.Path.Admin_Users "users" "користувачі (стара)"
             , internalMenu Route.Path.Admin_Organisms "organisms" "організми (стара)"
@@ -131,6 +127,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.AreasOfResponsibility "areasOfResponsibility" "смуги (стара)"
             , internalMenu Route.Path.Admin_Keys "keys" "ключі (стара)"
             , internalMenu Route.Path.Admin_Messenger "messenger" "месенджери (стара)"
+            , internalMenu Route.Path.Admin_ControlPanel "control-panel" "панель керування (стара)"
             ]
 
         etalonkaSubs =

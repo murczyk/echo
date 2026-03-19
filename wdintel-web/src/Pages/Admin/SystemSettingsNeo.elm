@@ -26,7 +26,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "system-settings-neo"
+        , activeName = "control-panel-neo"
         }
 
 
@@ -61,11 +61,11 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: налаштування системи"
+    { title = "Адмін: панель керування"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-hidden" ]
             [ div [ class "flex-1 min-h-0 w-full" ]
-                [ node "system-settings-neo" [ class "react-fill-host block w-full h-full" ] [] ]
+                [ node "control-panel-neo" [ class "react-fill-host block w-full h-full" ] [] ]
             ]
         ]
     }
