@@ -138,6 +138,7 @@ pub use super::stats_group_tag_5min::Entity as StatsGroupTag5min;
 pub use super::stats_group_tag_day::Entity as StatsGroupTagDay;
 pub use super::stats_group_unit_5min::Entity as StatsGroupUnit5min;
 pub use super::stats_group_unit_day::Entity as StatsGroupUnitDay;
+pub use super::system_settings::Entity as SystemSettings;
 pub use super::tag::Entity as Tag;
 pub use super::tag_keyword::Entity as TagKeyword;
 pub use super::tag_suggestion_worker_queue::Entity as TagSuggestionWorkerQueue;

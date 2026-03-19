@@ -3238,6 +3238,15 @@ async fn count_stats(
         stats::count_units(&req, &user, &env, master_keys.clone())
             .await
             .context(h!())?;
+    let (units_exact_matches_count, units_non_exact_matches_count) =
+        stats::count_unit_exact_match_breakdown(
+            &req,
+            &user,
+            &env,
+            master_keys.clone(),
+        )
+        .await
+        .context(h!())?;
     let locations_count =
         stats::count_locations(&req, &user, &env, master_keys.clone())
             .await
@@ -3266,6 +3275,8 @@ async fn count_stats(
         posts_count,
         callsigns_count,
         units_count,
+        units_exact_matches_count,
+        units_non_exact_matches_count,
         locations_count,
         tags_count,
         aors_count,

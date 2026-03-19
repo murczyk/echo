@@ -2240,7 +2240,7 @@ type alias RerAnalysisQueryState =
     , withoutMetadata : Bool
     , tags : List Int
     , includePelengLocations : Bool
-    , unitsExactMatchOnly : Bool
+    , unitsExactMatchOnly : Maybe Bool
     , adjacentFreqsRange : Float
     , withoutModelTags : Bool
     }
@@ -2276,7 +2276,7 @@ rerAnalysisQueryStateEncoder struct =
         , ( "without_metadata", Json.Encode.bool struct.withoutMetadata )
         , ( "tags", Json.Encode.list Json.Encode.int struct.tags )
         , ( "include_peleng_locations", Json.Encode.bool struct.includePelengLocations )
-        , ( "units_exact_match_only", Json.Encode.bool struct.unitsExactMatchOnly )
+        , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "adjacent_freqs_range", Json.Encode.float struct.adjacentFreqsRange )
         , ( "without_model_tags", Json.Encode.bool struct.withoutModelTags )
         ]
@@ -6731,6 +6731,8 @@ type alias CountStatsRsp =
     , postsCount : Int
     , callsignsCount : Int
     , unitsCount : Int
+    , unitsExactMatchesCount : Int
+    , unitsNonExactMatchesCount : Int
     , locationsCount : Int
     , tagsCount : Int
     , aorsCount : Int
@@ -6749,6 +6751,8 @@ countStatsRspEncoder struct =
         , ( "posts_count", Json.Encode.int struct.postsCount )
         , ( "callsigns_count", Json.Encode.int struct.callsignsCount )
         , ( "units_count", Json.Encode.int struct.unitsCount )
+        , ( "units_exact_matches_count", Json.Encode.int struct.unitsExactMatchesCount )
+        , ( "units_non_exact_matches_count", Json.Encode.int struct.unitsNonExactMatchesCount )
         , ( "locations_count", Json.Encode.int struct.locationsCount )
         , ( "tags_count", Json.Encode.int struct.tagsCount )
         , ( "aors_count", Json.Encode.int struct.aorsCount )
@@ -6899,6 +6903,78 @@ freqPelengsEntryEncoder struct =
     Json.Encode.object
         [ ( "freq", Json.Encode.string struct.freq )
         , ( "pelengs_count", Json.Encode.int struct.pelengsCount )
+        ]
+
+
+type alias SystemSettingsCurrentRsp =
+    { id : Maybe Int
+    , rerAnalysisUnitsExactMatchOnlyDefault : Bool
+    }
+
+
+systemSettingsCurrentRspEncoder : SystemSettingsCurrentRsp -> Json.Encode.Value
+systemSettingsCurrentRspEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.id )
+        , ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
+        ]
+
+
+type alias SystemSettingsItem =
+    { id : Int
+    , rerAnalysisUnitsExactMatchOnlyDefault : Bool
+    , createdAt : Int
+    , updatedAt : Int
+    , updatedBy : Maybe String
+    , deleted : Bool
+    }
+
+
+systemSettingsItemEncoder : SystemSettingsItem -> Json.Encode.Value
+systemSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        , ( "updated_at", Json.Encode.int struct.updatedAt )
+        , ( "updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.updatedBy )
+        , ( "deleted", Json.Encode.bool struct.deleted )
+        ]
+
+
+type alias SystemSettingsListRsp =
+    { items : List SystemSettingsItem
+    }
+
+
+systemSettingsListRspEncoder : SystemSettingsListRsp -> Json.Encode.Value
+systemSettingsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", Json.Encode.list systemSettingsItemEncoder struct.items )
+        ]
+
+
+type alias CreateSystemSettingsReq =
+    { rerAnalysisUnitsExactMatchOnlyDefault : Bool
+    }
+
+
+createSystemSettingsReqEncoder : CreateSystemSettingsReq -> Json.Encode.Value
+createSystemSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
+        ]
+
+
+type alias ActivateSystemSettingsReq =
+    { id : Int
+    }
+
+
+activateSystemSettingsReqEncoder : ActivateSystemSettingsReq -> Json.Encode.Value
+activateSystemSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
         ]
 
 
@@ -8502,7 +8578,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
 
@@ -11491,6 +11567,8 @@ countStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_matches_count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_non_exact_matches_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors_count" Json.Decode.int))
@@ -11568,6 +11646,42 @@ freqPelengsEntryDecoder =
     Json.Decode.succeed FreqPelengsEntry
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pelengs_count" Json.Decode.int))
+
+
+systemSettingsCurrentRspDecoder : Json.Decode.Decoder SystemSettingsCurrentRsp
+systemSettingsCurrentRspDecoder =
+    Json.Decode.succeed SystemSettingsCurrentRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
+
+
+systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
+systemSettingsItemDecoder =
+    Json.Decode.succeed SystemSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
+
+
+systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
+systemSettingsListRspDecoder =
+    Json.Decode.succeed SystemSettingsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list systemSettingsItemDecoder)))
+
+
+createSystemSettingsReqDecoder : Json.Decode.Decoder CreateSystemSettingsReq
+createSystemSettingsReqDecoder =
+    Json.Decode.succeed CreateSystemSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
+
+
+activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
+activateSystemSettingsReqDecoder =
+    Json.Decode.succeed ActivateSystemSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
 
 
 inboxByGroupDigestRspDecoder : Json.Decode.Decoder InboxByGroupDigestRsp

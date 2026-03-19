@@ -774,6 +774,8 @@ pub struct CountStatsRsp {
     pub posts_count: i64,
     pub callsigns_count: i64,
     pub units_count: i64,
+    pub units_exact_matches_count: i64,
+    pub units_non_exact_matches_count: i64,
     pub locations_count: i64,
     pub tags_count: i64,
     pub aors_count: i64,
@@ -961,7 +963,7 @@ pub struct RerAnalysisQueryState {
     pub without_metadata: bool,
     pub tags: Vec<i64>,
     pub include_peleng_locations: bool,
-    pub units_exact_match_only: bool,
+    pub units_exact_match_only: Option<bool>,
     pub adjacent_freqs_range: f64,
     pub without_model_tags: bool,
 }

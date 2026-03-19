@@ -864,7 +864,7 @@ export type RerAnalysisQueryState = {
   withoutMetadata: boolean;
   tags: Array<number>;
   includePelengLocations: boolean;
-  unitsExactMatchOnly: boolean;
+  unitsExactMatchOnly: boolean | null;
   adjacentFreqsRange: number;
   withoutModelTags: boolean;
 };
@@ -2539,6 +2539,8 @@ export type CountStatsRsp = {
   postsCount: number;
   callsignsCount: number;
   unitsCount: number;
+  unitsExactMatchesCount: number;
+  unitsNonExactMatchesCount: number;
   locationsCount: number;
   tagsCount: number;
   aorsCount: number;
@@ -2594,6 +2596,32 @@ export type LocationStatsRsp = {
 export type FreqPelengsEntry = {
   freq: string;
   pelengsCount: number;
+};
+
+export type SystemSettingsCurrentRsp = {
+  id: number | null;
+  rerAnalysisUnitsExactMatchOnlyDefault: boolean;
+};
+
+export type SystemSettingsItem = {
+  id: number;
+  rerAnalysisUnitsExactMatchOnlyDefault: boolean;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy: string | null;
+  deleted: boolean;
+};
+
+export type SystemSettingsListRsp = {
+  items: Array<SystemSettingsItem>;
+};
+
+export type CreateSystemSettingsReq = {
+  rerAnalysisUnitsExactMatchOnlyDefault: boolean;
+};
+
+export type ActivateSystemSettingsReq = {
+  id: number;
 };
 
 export type DeltaLoginUrl = {

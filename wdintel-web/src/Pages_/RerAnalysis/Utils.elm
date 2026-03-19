@@ -220,7 +220,7 @@ metadataHref dateFromStr dateToStr metadataFilter =
             , onlyWithMetadata = False
             , withoutMetadata = False
             , tags = []
-            , unitsExactMatchOnly = True
+            , unitsExactMatchOnly = Nothing
             , adjacentFreqsRange = 0
             , withoutModelTags = False
             }

@@ -363,8 +363,8 @@ fn spawn_background_workers(
         });
     }
 
-    if config.feature_refresh_ai_models.unwrap_or(false) {
-        if let Some(model_config) = env.config.ai_models_config.clone() {
+    if let Some(model_config) = env.config.ai_models_config.clone() {
+        if model_config.worker.unwrap_or_default() {
             let token = cancel_token.clone();
             spawn_named_worker("refresh_models_worker", bg_set, async move {
                 crate::tags::worker::refresh_models_worker_nofail(
@@ -619,6 +619,10 @@ pub async fn main_server(
             .service(crate::location::fetch_regions)
             .service(crate::location::aor_config::list_aor_location_configs)
             .service(crate::location::aor_config::save_aor_location_config)
+            .service(crate::system_settings::current_system_settings)
+            .service(crate::system_settings::list_system_settings)
+            .service(crate::system_settings::create_system_settings)
+            .service(crate::system_settings::activate_system_settings)
             .service(crate::users::user_login)
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)

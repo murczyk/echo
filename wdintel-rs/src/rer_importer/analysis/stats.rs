@@ -1585,6 +1585,32 @@ pub async fn count_units(
     Ok(count as i64)
 }
 
+pub async fn count_unit_exact_match_breakdown(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<(i64, i64), AppError> {
+    let mut exact_req = req.0.clone();
+    exact_req.units_exact_match_only = Some(true);
+    let (_, exact_matches_count) =
+        fetch_counts(&Json(exact_req), user, env, master_keys.clone())
+            .await
+            .context(h!())?;
+
+    let mut combined_req = req.0.clone();
+    combined_req.units_exact_match_only = Some(false);
+    let (_, total_matches_count) =
+        fetch_counts(&Json(combined_req), user, env, master_keys)
+            .await
+            .context(h!())?;
+
+    let non_exact_matches_count =
+        (total_matches_count - exact_matches_count).max(0);
+
+    Ok((exact_matches_count, non_exact_matches_count))
+}
+
 fn build_units_query(
     req: &&Json<AnalysisStatsReq>,
     user: &&Identity,
