@@ -22,12 +22,7 @@ impl MigrationTrait for Migration {
                 on system_settings ((1))
                 where deleted = false;
 
-            insert into system_settings (
-                rer_analysis_units_exact_match_only_default,
-                updated_by,
-                deleted
-            )
-            values (true, 'system', false);
+            insert into system_settings (rer_analysis_units_exact_match_only_default) values (true);
             "#,
         )
         .await?;
