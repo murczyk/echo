@@ -363,8 +363,8 @@ fn spawn_background_workers(
         });
     }
 
-    if config.feature_refresh_ai_models.unwrap_or(false) {
-        if let Some(model_config) = env.config.ai_models_config.clone() {
+    if let Some(model_config) = env.config.ai_models_config.clone() {
+        if model_config.worker.unwrap_or_default() {
             let token = cancel_token.clone();
             spawn_named_worker("refresh_models_worker", bg_set, async move {
                 crate::tags::worker::refresh_models_worker_nofail(

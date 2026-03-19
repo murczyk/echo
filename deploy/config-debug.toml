@@ -32,6 +32,7 @@ import_callsign_gdoc_worker = false
 #settlements_sources="kurska_oblast_rf, luhanska_oblast"
 settlements_sources = ""
 server_id = 37
+
 # Enable dual-write logs to Signoz (vector -> Signoz JSON receiver).
 # signoz_logs_enabled = true
 # signoz_logs_endpoint = "http://signoz-echo.eagle-atria.ts.net:8082"
@@ -69,15 +70,16 @@ s3_region = "eu-central-003"
 s3_bucket = "echouastaging"
 strongbox_key = ""
 
-# feature_refresh_ai_models = false
-# [ai_models_config]
-# prefix = "lfs/echo-ai/models-v2/"
-# directory = "echo-ai/fasttext-models"
+
+#[ai_models_config]
+#prefix = "lfs/echo-ai/models-v2/"
+#worker = true
+#directory = "echo-ai/fasttext-models"
 #
-# [ai_models_config.s3_config]
-# s3_access_key_id = "003f325aff5dd5c000000001c"
-# s3_secret_access_key = "K003uL32BhqEzo+9UCp+kOFUvTVoPfg"
-# s3_endpoint = "https://s3.eu-central-003.backblazeb2.com"
-# s3_region = "eu-central-003"
-# s3_bucket = "echouastorage"
-# strongbox_key = ""
+#[ai_models_config.s3_config]
+#s3_access_key_id = "003f325aff5dd5c000000001c"
+#s3_secret_access_key = "K003uL32BhqEzo+9UCp+kOFUvTVoPfg"
+#s3_endpoint = "https://s3.eu-central-003.backblazeb2.com"
+#s3_region = "eu-central-003"
+#s3_bucket = "echouastorage"
+#strongbox_key = ""
