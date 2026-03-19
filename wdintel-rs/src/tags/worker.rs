@@ -376,6 +376,7 @@ pub async fn refresh_models_worker_nofail(
         .or_else(|| std::env::var("WD_FASTTEXT_MODELS").ok())
         .unwrap_or_else(|| "/usr/share/wdintel-py/fasttext-models".to_string());
 
+    info!("refresh_models_worker started...");
     loop {
         if cancel_token.is_cancelled() {
             info!("cancel token received, stopping refresh_models_worker...");

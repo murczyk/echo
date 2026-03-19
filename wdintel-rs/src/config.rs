@@ -244,7 +244,6 @@ pub struct Config {
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
     pub alpine_converter_url: Option<String>,
-    pub feature_refresh_ai_models: Option<bool>,
     pub ai_models_config: Option<ModelsConfig>,
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
@@ -336,6 +335,7 @@ pub struct VaultConfig {
 pub struct ModelsConfig {
     pub s3_config: S3Config,
     pub prefix: String,
+    pub worker: Option<bool>,
     pub directory: Option<String>,
 }
 
