@@ -184,7 +184,42 @@ export async function setupMap(data: { points: MapPointShort[], containerId: str
 		const mapContainer = document.getElementById(`map-container-${data.containerId}`);
 		if (mapContainer) {
 			const map = initializeMap(`map-container-${data.containerId}`, data.points[0]);
-			map.on('unload', clearSmallMapFullscreenBodyLock);
+			let isCleanedUp = false;
+			const navigationApi =
+				'navigation' in window
+					? (window.navigation as {
+						addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+						removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+					})
+					: undefined;
+			const cleanup = () => {
+				if (isCleanedUp) {
+					return;
+				}
+				isCleanedUp = true;
+				clearSmallMapFullscreenBodyLock();
+				removalObserver.disconnect();
+				navigationApi?.removeEventListener('navigate', handleRouteChange);
+				window.removeEventListener('popstate', handleRouteChange);
+				window.removeEventListener('pagehide', handleRouteChange);
+				map.off('unload', cleanup);
+				if ((map as any)._container) {
+					map.remove();
+				}
+			};
+			const handleRouteChange = () => {
+				cleanup();
+			};
+			const removalObserver = new MutationObserver(() => {
+				if (!document.body.contains(mapContainer)) {
+					cleanup();
+				}
+			});
+			removalObserver.observe(document.body, { childList: true, subtree: true });
+			navigationApi?.addEventListener('navigate', handleRouteChange);
+			window.addEventListener('popstate', handleRouteChange);
+			window.addEventListener('pagehide', handleRouteChange);
+			map.on('unload', cleanup);
 
 			const { bounds, markersGroup } = addPointsToLayer(data.points);
 			map.addLayer(markersGroup)
