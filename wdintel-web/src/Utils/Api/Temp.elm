@@ -100,3 +100,42 @@ resolve toResult response =
 
                 Err err ->
                     Err { httpError = Http.BadBody err, formErrors = Dict.empty, errors = [] }
+
+
+resolveWithErrorCodeHeader :
+    String
+    -> (body -> Result String a)
+    -> Http.Response body
+    -> Result ApiError a
+resolveWithErrorCodeHeader headerName toResult response =
+    case response of
+        Http.BadUrl_ url ->
+            Err { httpError = Http.BadUrl url, formErrors = Dict.empty, errors = [] }
+
+        Http.Timeout_ ->
+            Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }
+
+        Http.NetworkError_ ->
+            Err { httpError = Http.NetworkError, formErrors = Dict.empty, errors = [] }
+
+        Http.BadStatus_ metadata _ ->
+            let
+                propagatedErrors =
+                    metadata.headers
+                        |> Dict.get headerName
+                        |> Maybe.map List.singleton
+                        |> Maybe.withDefault [ "Error while decoding a back-end response: <todo: see if we can extract more from elm>" ]
+            in
+            Err
+                { httpError = Http.BadStatus metadata.statusCode
+                , errors = propagatedErrors
+                , formErrors = Dict.empty
+                }
+
+        Http.GoodStatus_ _ body ->
+            case toResult body of
+                Ok v ->
+                    Ok v
+
+                Err err ->
+                    Err { httpError = Http.BadBody err, formErrors = Dict.empty, errors = [] }

@@ -43,7 +43,7 @@ import Task
 import Time
 import TimeZone
 import Url exposing (Url)
-import Utils.Api.Temp exposing (leExpectJson, resolve)
+import Utils.Api.Temp exposing (leExpectJson, resolve, resolveWithErrorCodeHeader)
 import Utils.Time
 import Utils.Utils exposing (decodePair)
 
@@ -1204,7 +1204,9 @@ toCmd options effect =
             Http.post
                 { url = "/api/rer/report-docx"
                 , body = Http.jsonBody (B.reportPreviewReqEncoder payload)
-                , expect = Http.expectBytesResponse toMsg (resolve Ok)
+                , expect =
+                    Http.expectBytesResponse toMsg
+                        (resolveWithErrorCodeHeader "x-echo-error-code" Ok)
                 }
 
         DownloadFile name mime content ->

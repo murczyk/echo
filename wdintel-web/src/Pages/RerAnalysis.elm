@@ -3548,7 +3548,11 @@ update user shared route msg model =
 
         ReportDownloadDocxDone (Err e) ->
             ( { model | reportDownloadInProgress = False }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту" e
+            , if List.member reportPermissionDeniedErrorCode e.errors then
+                E.showError reportPermissionDeniedMessage
+
+              else
+                Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту" e
             )
 
         ReportDownloadDocxDone (Ok bytes) ->

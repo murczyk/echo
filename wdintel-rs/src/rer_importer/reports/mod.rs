@@ -95,6 +95,30 @@ pub(crate) async fn save_report_log(
     Ok(())
 }
 
+async fn ensure_editor_report_permissions(
+    env: &Env,
+    user_login: &str,
+) -> Result<Option<HttpResponse>, AppError> {
+    match crate::users::has_any_role(
+        &env.dbx,
+        user_login,
+        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+    )
+    .await
+    {
+        Ok(()) => Ok(None),
+        Err(AppError::Forbidden(_)) => Ok(Some(
+            HttpResponse::Forbidden()
+                .insert_header((
+                    crate::config::RER_REPORT_ERROR_CODE_HEADER_NAME,
+                    crate::config::RER_REPORT_PERMISSION_DENIED_ERROR_CODE,
+                ))
+                .body("Forbidden"),
+        )),
+        Err(err) => Err(err),
+    }
+}
+
 /// Generates report in docx format using docx-rs library looking similar to html produced by the report_generate_html function
 #[post("/api/rer/report-docx")]
 pub async fn report_docx(
@@ -186,22 +210,20 @@ pub async fn report_docx(
             .await
             .c(h!())?;
     } else if req.kind == "reo" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user.id().c(h!())?,
-            vec!["UnitsEditor", "CallsignsEditor", "Admin"],
-        )
-        .await?;
+        if let Some(resp) =
+            ensure_editor_report_permissions(&env, &user_login).await?
+        {
+            return Ok(resp);
+        }
         self::revo::report_docx_kind_revo(user, &env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == "digest" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user.id().c(h!())?,
-            vec!["UnitsEditor", "CallsignsEditor", "Admin"],
-        )
-        .await?;
+        if let Some(resp) =
+            ensure_editor_report_permissions(&env, &user_login).await?
+        {
+            return Ok(resp);
+        }
         self::digest::report_docx_kind_digest(user, &env, &req, &outpath)
             .await
             .c(h!())?;
@@ -210,12 +232,11 @@ pub async fn report_docx(
             .await
             .c(h!())?;
     } else if req.kind == "active_networks" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user.id().c(h!())?,
-            vec!["UnitsEditor", "CallsignsEditor", "Admin"],
-        )
-        .await?;
+        if let Some(resp) =
+            ensure_editor_report_permissions(&env, &user_login).await?
+        {
+            return Ok(resp);
+        }
         self::active_networks::report_docx_kind_active_networks(
             &env, &req, &outpath,
         )
