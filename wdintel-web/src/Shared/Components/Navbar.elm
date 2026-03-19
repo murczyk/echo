@@ -120,6 +120,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "ключі"
             , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "месенджери"
             , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "панель керування"
+            , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "налаштування системи"
             , internalMenu Route.Path.Admin_Directions "zones-old" "напрямки (стара)"
             , internalMenu Route.Path.Admin_Users "users" "користувачі (стара)"
             , internalMenu Route.Path.Admin_Organisms "organisms" "організми (стара)"

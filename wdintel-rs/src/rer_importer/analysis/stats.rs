@@ -1593,15 +1593,15 @@ pub async fn count_unit_exact_match_breakdown(
 ) -> Result<(i64, i64), AppError> {
     let mut exact_req = req.0.clone();
     exact_req.units_exact_match_only = Some(true);
-    let exact_matches_count =
-        count_units(&Json(exact_req), user, env, master_keys.clone())
+    let (_, exact_matches_count) =
+        fetch_counts(&Json(exact_req), user, env, master_keys.clone())
             .await
             .context(h!())?;
 
     let mut combined_req = req.0.clone();
     combined_req.units_exact_match_only = Some(false);
-    let total_matches_count =
-        count_units(&Json(combined_req), user, env, master_keys)
+    let (_, total_matches_count) =
+        fetch_counts(&Json(combined_req), user, env, master_keys)
             .await
             .context(h!())?;
 

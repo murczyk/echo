@@ -132,18 +132,36 @@ freshMenuItems remoteData menuItems =
             []
 
 
-unitsExactMatchCheckboxLabel : Model -> String
-unitsExactMatchCheckboxLabel model =
+unitsExactMatchCheckboxChipLabel : Model -> Maybe String
+unitsExactMatchCheckboxChipLabel model =
     case model.counts of
         RD.Success counts ->
             if model.unitsExactMatchOnly then
-                "точний збіг за еталонкою (неточних збігів - " ++ fromInt counts.unitsNonExactMatchesCount ++ ")"
+                Just ("неточних збігів - " ++ fromInt counts.unitsNonExactMatchesCount)
 
             else
-                "точний збіг за еталонкою (точних збігів - " ++ fromInt counts.unitsExactMatchesCount ++ ")"
+                Just ("точних збігів - " ++ fromInt counts.unitsExactMatchesCount)
 
         _ ->
-            "точний збіг за еталонкою"
+            Nothing
+
+
+unitsExactMatchCheckboxContent : Model -> List (Html msg)
+unitsExactMatchCheckboxContent model =
+    [ span [ class "inline-flex items-center gap-2" ]
+        ([ text "точний збіг за еталонкою" ]
+            ++ (case unitsExactMatchCheckboxChipLabel model of
+                    Just chipLabel ->
+                        [ span
+                            [ class "inline-flex items-center rounded-full border border-amber-500/40 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold leading-none text-amber-700" ]
+                            [ text chipLabel ]
+                        ]
+
+                    Nothing ->
+                        []
+               )
+        )
+    ]
 
 
 view : Bool -> B.User -> Model -> Html Msg
@@ -743,7 +761,7 @@ view isDark user model =
                     )
                 , div [ class "my-1" ]
                     [ Shared.Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
-                        |> Shared.Components.Checkbox.withContent [ text (unitsExactMatchCheckboxLabel model) ]
+                        |> Shared.Components.Checkbox.withContent (unitsExactMatchCheckboxContent model)
                         |> Shared.Components.Checkbox.view
                     ]
                 ]
