@@ -258,6 +258,16 @@ def compare_models(
     registered_model: TrainedModel,
     split_csv,
 ) -> bool:
+    # find the version of registered model that didn't get re-trained on test dataset
+    for output in registered_model.run.outputs.model_outputs:
+        if not output.step:
+            model = mlflow.get_logged_model(model_id=output.model_id)
+            if model.name == registered_model.model.name:
+                registered_model = TrainedModel(
+                    registered_model.run, model_id=model.model_id
+                )
+                break
+
     registered_results = evaluate_model(
         registered_model.model_id, "test", split_csv["test"]
     )
@@ -286,8 +296,6 @@ def compare_models(
         "ap_improvement": ap_improvement,
         "pr_improvement": pr_improvement,
     }
-    if registered_model.version:
-        stats["compare_to_version"] = float(registered_model.version.version)
 
     mlflow.log_metrics(stats)
 
