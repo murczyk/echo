@@ -137,10 +137,10 @@ unitsExactMatchCheckboxChipLabel model =
     case model.counts of
         RD.Success counts ->
             if model.unitsExactMatchOnly then
-                Just ("неточних збігів - " ++ fromInt counts.unitsNonExactMatchesCount)
+                Just ("неточних збігів: " ++ fromInt counts.unitsNonExactMatchesCount)
 
             else
-                Just ("точних збігів - " ++ fromInt counts.unitsExactMatchesCount)
+                Just ("точних збігів: " ++ fromInt counts.unitsExactMatchesCount)
 
         _ ->
             Nothing
