@@ -1864,6 +1864,10 @@ export type ListCallsignsReq = {
   filterPosition: string | null;
   filterComment: string | null;
   filterUnit: string | null;
+  filterUnitArmy: string | null;
+  filterUnitDivision: string | null;
+  filterUnitRegiment: string | null;
+  filterUnitBattalion: string | null;
   filterDeveloping: DevelopingFilter | null;
   sinceDateInclusiveMs: number | null;
   tillDateInclusiveMs: number | null;
