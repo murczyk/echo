@@ -31,8 +31,8 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
   const page = useRerCallsignsNeoPage({ authUserRoles });
   const isDesktopLayout = useMediaQuery(`(min-width:${DESKTOP_LAYOUT_MIN_WIDTH_PX}px)`);
   const shellPermissions = getExportPermissionFromRoles(authUserRoles);
-  const controlsDisabled =
-    page.loading || page.refreshing || page.loadingMore || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
+  const controlsDisabled = page.loading || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
+  const filtersDisabled = page.loading || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
   const showExportButtons = shellPermissions.canExport || page.permissions.canExport;
   const showExportPlaceholders = page.loading && !showExportButtons;
   const hasActiveFilters =
@@ -41,6 +41,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
     page.filters.filterPosition.trim() !== '' ||
     page.filters.filterComment.trim() !== '' ||
     page.filters.filterUnit.trim() !== '' ||
+    page.selectedSidebarUnitFilter !== null ||
     page.filters.filterDeveloping !== 'OnlyNonDeveloping' ||
     !page.filters.isIgnoringDateFilter;
   const sidebarAction = (
@@ -172,7 +173,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
             loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
             onPickUnitFilter={page.onPickUnitFilter}
             onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
-            selectedUnitFilter={page.selectedSidebarUnitName ?? undefined}
+            selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
           />
 
           <Stack spacing={2} useFlexGap sx={{ flex: 1, minWidth: 0, minHeight: isDesktopLayout ? 0 : 'auto' }}>
@@ -204,13 +205,13 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 >
                   <CallsignsFiltersTopRow
                     filters={page.filters}
-                    filtersDisabled={controlsDisabled}
+                    filtersDisabled={filtersDisabled}
                     onFiltersChange={page.onFiltersChange}
                   />
                   <CallsignsDateInputs
                     isDesktopLayout={isDesktopLayout}
                     filters={page.filters}
-                    filtersDisabled={controlsDisabled}
+                    filtersDisabled={filtersDisabled}
                     onFiltersChange={page.onFiltersChange}
                   />
                 </Box>
@@ -259,13 +260,13 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 >
                   <CallsignsFiltersTopRow
                     filters={page.filters}
-                    filtersDisabled={controlsDisabled}
+                    filtersDisabled={filtersDisabled}
                     onFiltersChange={page.onFiltersChange}
                   />
                   <CallsignsDateInputs
                     isDesktopLayout={isDesktopLayout}
                     filters={page.filters}
-                    filtersDisabled={controlsDisabled}
+                    filtersDisabled={filtersDisabled}
                     onFiltersChange={page.onFiltersChange}
                   />
                 </Box>

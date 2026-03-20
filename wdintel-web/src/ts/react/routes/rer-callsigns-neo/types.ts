@@ -31,6 +31,25 @@ export type CallsignsFilterState = {
   toDateTimeLocal: string;
 };
 
+export type UnitHierarchyFilter = {
+  army: string | null;
+  division: string | null;
+  regiment: string | null;
+  battalion: string | null;
+};
+
+export type SelectedSidebarUnitFilter =
+  | {
+      kind: 'leaf';
+      label: string;
+      unitName: string;
+    }
+  | {
+      kind: 'group';
+      label: string;
+      hierarchy: UnitHierarchyFilter;
+    };
+
 export type CallsignDraftRow = {
   callsign: string;
   position: string;
@@ -92,6 +111,7 @@ export type BuildReqInput = {
   filters: CallsignsFilterState;
   sort: CallsignsSortState;
   query: ListQueryParams;
+  sidebarUnitHierarchyFilter?: UnitHierarchyFilter | null;
 };
 
 export type DownloadKind = 'csv' | 'xlsx';

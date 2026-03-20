@@ -6,13 +6,24 @@ div [id^='map-container-'] {
 }
 
 div [id^='map-container-'].expanded {
-	width: 100%;
-	height: 100%;
+	width: auto;
+	height: auto;
 	position: fixed;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
-	z-index: 1000;
+	top: var(--app-shell-navbar-height, 0px);
+	right: 0;
+	bottom: 0;
+	left: 0;
+	transform: none;
+	z-index: 2100;
+}
+
+div [id^='map-container-'].expanded .leaflet-top.leaflet-right .leaflet-control {
+	margin-top: 12px;
+	margin-right: 12px;
+}
+
+body.small-map-fullscreen-open {
+	overflow: hidden;
 }
 
 div [id='map-container-analysis'] {

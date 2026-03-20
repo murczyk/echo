@@ -22,6 +22,7 @@ import type {
   SortColumn,
   SortDirection,
   SortDescriptor,
+  UnitHierarchyFilter,
 } from './types';
 
 const DEFAULT_LIMIT = 100;
@@ -73,7 +74,7 @@ export function getExportPermissionFromRoles(rolesList: string[]): ExportPermiss
 }
 
 export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
-  const { filters, sort, query } = input;
+  const { filters, sort, query, sidebarUnitHierarchyFilter = null } = input;
 
   return {
     afterId: query.afterId,
@@ -83,12 +84,21 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
     filterPosition: filters.filterPosition.trim() || null,
     filterComment: filters.filterComment.trim() || null,
     filterUnit: filters.filterUnit.trim() || null,
+    filterUnitArmy: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.army),
+    filterUnitDivision: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.division),
+    filterUnitRegiment: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.regiment),
+    filterUnitBattalion: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.battalion),
     filterDeveloping: filters.filterDeveloping,
     sinceDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.fromDateTimeLocal),
     tillDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.toDateTimeLocal),
     limit: query.limit,
     sortBy: toBackendSort(sort),
   };
+}
+
+function normalizeHierarchyFilterValue(value: UnitHierarchyFilter[keyof UnitHierarchyFilter] | undefined): string | null {
+  if (value == null) return null;
+  return value.trim();
 }
 
 export function buildInitialListReq(): ListCallsignsReq {

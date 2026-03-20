@@ -92,10 +92,18 @@ export function createFullScreenControl(toggleMapSize: () => void) {
 		onAdd: function(_: L.Map) {
 			let container = L.DomUtil.create('div', 'leaflet-custom-control');
 			let button = L.DomUtil.create('a', '', container);
+			const setExpanded = (isExpanded: boolean) => {
+				const title = isExpanded ? 'Згорнути мапу' : 'Розгорнути мапу';
+				button.setAttribute('aria-label', title);
+				button.title = title;
+				button.innerHTML = isExpanded
+					? '<i class="bi bi-fullscreen-exit" style="font-size: 12px;"></i>'
+					: '<i class="bi bi-arrows-fullscreen" style="font-size: 12px;"></i>';
+			};
+
 			button.href = '#';
-			button.setAttribute('aria-label', 'Розгорнути або згорнути мапу');
-			button.title = 'Розгорнути або згорнути мапу';
-			button.innerHTML = '<i class="bi bi-arrows-fullscreen" style="font-size: 12px;"></i>';
+			setExpanded(false);
+			(this as L.Control & { setExpanded?: (isExpanded: boolean) => void }).setExpanded = setExpanded;
 			L.DomEvent.on(button, 'click', L.DomEvent.stopPropagation)
 				.on(button, 'click', L.DomEvent.preventDefault)
 				.on(button, 'click', toggleMapSize, this);
@@ -115,15 +123,25 @@ export function createExitControl(closeMap: () => void) {
 			button.innerHTML = '<i class="bi bi-x-lg" style="font-size: 12px;"></i>';
 			L.DomEvent.on(button, 'click', L.DomEvent.stopPropagation)
 				.on(button, 'click', L.DomEvent.preventDefault)
-				.on(button, 'click', closeMap, this);
+				.on(button, 'click', () => {
+					clearSmallMapFullscreenBodyLock();
+					closeMap();
+				}, this);
 			return container;
 		},
 	});
 }
 
 // UTILITY
+export function clearSmallMapFullscreenBodyLock() {
+	document.body.classList.remove('small-map-fullscreen-open');
+}
+
 export function toggleMapSize(map: L.Map, mapContainer: HTMLElement, bounds: L.LatLngBounds, fullScreenControl: any) {
-	mapContainer.classList.toggle('expanded');
+	const isExpanded = mapContainer.classList.toggle('expanded');
+	fullScreenControl?.setExpanded?.(isExpanded);
+	document.body.classList.toggle('small-map-fullscreen-open', isExpanded);
+	mapContainer.dispatchEvent(new CustomEvent('map-expanded-changed', { detail: { isExpanded } }));
 	setTimeout(function() {
 		map.invalidateSize();
 		map.fitBounds(bounds);
@@ -166,6 +184,42 @@ export async function setupMap(data: { points: MapPointShort[], containerId: str
 		const mapContainer = document.getElementById(`map-container-${data.containerId}`);
 		if (mapContainer) {
 			const map = initializeMap(`map-container-${data.containerId}`, data.points[0]);
+			let isCleanedUp = false;
+			const navigationApi =
+				'navigation' in window
+					? (window.navigation as {
+						addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+						removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+					})
+					: undefined;
+			const cleanup = () => {
+				if (isCleanedUp) {
+					return;
+				}
+				isCleanedUp = true;
+				clearSmallMapFullscreenBodyLock();
+				removalObserver.disconnect();
+				navigationApi?.removeEventListener('navigate', handleRouteChange);
+				window.removeEventListener('popstate', handleRouteChange);
+				window.removeEventListener('pagehide', handleRouteChange);
+				map.off('unload', cleanup);
+				if ((map as any)._container) {
+					map.remove();
+				}
+			};
+			const handleRouteChange = () => {
+				cleanup();
+			};
+			const removalObserver = new MutationObserver(() => {
+				if (!document.body.contains(mapContainer)) {
+					cleanup();
+				}
+			});
+			removalObserver.observe(document.body, { childList: true, subtree: true });
+			navigationApi?.addEventListener('navigate', handleRouteChange);
+			window.addEventListener('popstate', handleRouteChange);
+			window.addEventListener('pagehide', handleRouteChange);
+			map.on('unload', cleanup);
 
 			const { bounds, markersGroup } = addPointsToLayer(data.points);
 			map.addLayer(markersGroup)

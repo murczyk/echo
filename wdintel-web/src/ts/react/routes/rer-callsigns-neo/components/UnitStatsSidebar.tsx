@@ -4,21 +4,21 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
-import { CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Box, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import React from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
-import type { UnitStatView } from '../types';
+import type { SelectedSidebarUnitFilter, UnitHierarchyFilter, UnitStatView } from '../types';
 
 type Props = {
   stats: UnitStatView[];
   open: boolean;
   isDesktopLayout: boolean;
   loading: boolean;
-  onPickUnitFilter: (unitName: string) => void;
+  onPickUnitFilter: (filter: SelectedSidebarUnitFilter) => void;
   onToggleOpen?: () => void;
-  selectedUnitFilter?: string;
+  selectedUnitFilter?: SelectedSidebarUnitFilter;
 };
 
 type TreeLeafNode = {
@@ -34,12 +34,14 @@ type TreeGroupNode = {
   id: string;
   label: string;
   count: number;
+  hierarchy: UnitHierarchyFilter;
   children: TreeNode[];
 };
 
 type TreeNode = TreeGroupNode | TreeLeafNode;
 
 const HIERARCHY_LABELS = ['Армія', 'Дивізія', 'Полк', 'Батальйон'] as const;
+const HIERARCHY_KEYS = ['army', 'division', 'regiment', 'battalion'] as const;
 const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
 function normalizeHierarchyPart(part: string, level: number): string {
@@ -56,13 +58,16 @@ function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
     const rawParts = [row.army, row.division, row.regiment, row.battalion];
     let parentChildren = root;
     let path: string[] = [];
+    let rawPath: string[] = [];
 
     rawParts.forEach((part, level) => {
       const hasAnyDeeperPart = rawParts.slice(level).some((item) => item.trim() !== '');
       if (!hasAnyDeeperPart) return;
 
-      const label = normalizeHierarchyPart(part, level);
-      path = [...path, `${level}:${label}`];
+      const rawValue = part.trim();
+      const label = normalizeHierarchyPart(rawValue, level);
+      path = [...path, `${level}:${rawValue === '' ? '__EMPTY__' : rawValue}`];
+      rawPath = [...rawPath, rawValue];
       const id = `group:${path.join('|')}`;
 
       let group = groups.get(id);
@@ -72,6 +77,7 @@ function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
           id,
           label,
           count: 0,
+          hierarchy: createHierarchyFilter(rawPath),
           children: [],
         };
         groups.set(id, group);
@@ -107,6 +113,19 @@ function normalizeSearchQuery(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
+function createHierarchyFilter(rawPath: string[]): UnitHierarchyFilter {
+  return {
+    army: rawPath[0] ?? null,
+    division: rawPath[1] ?? null,
+    regiment: rawPath[2] ?? null,
+    battalion: rawPath[3] ?? null,
+  };
+}
+
+function areHierarchyFiltersEqual(left: UnitHierarchyFilter, right: UnitHierarchyFilter): boolean {
+  return HIERARCHY_KEYS.every((key) => left[key] === right[key]);
+}
+
 function matchesUnitSearch(row: UnitStatView, normalizedQuery: string): boolean {
   if (normalizedQuery === '') return true;
 
@@ -133,20 +152,32 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debouncedValue;
 }
 
-function collectPathToSelectedUnit(nodes: TreeNode[], selectedUnitFilter: string): string[] {
+function collectExpansionPathToSelectedFilter(nodes: TreeNode[], selectedUnitFilter: SelectedSidebarUnitFilter): string[] {
+  const path = collectExpansionPathToSelectedFilterInner(nodes, selectedUnitFilter);
+  return path ?? [];
+}
+
+function collectExpansionPathToSelectedFilterInner(
+  nodes: TreeNode[],
+  selectedUnitFilter: SelectedSidebarUnitFilter,
+): string[] | null {
   for (const node of nodes) {
     if (node.kind === 'leaf') {
-      if (node.unitName === selectedUnitFilter) return [];
+      if (selectedUnitFilter.kind === 'leaf' && node.unitName === selectedUnitFilter.unitName) return [];
       continue;
     }
 
-    const childPath = collectPathToSelectedUnit(node.children, selectedUnitFilter);
-    if (childPath.length > 0 || node.children.some((child) => child.kind === 'leaf' && child.unitName === selectedUnitFilter)) {
+    if (selectedUnitFilter.kind === 'group' && areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy)) {
+      return [node.id];
+    }
+
+    const childPath = collectExpansionPathToSelectedFilterInner(node.children, selectedUnitFilter);
+    if (childPath !== null) {
       return [node.id, ...childPath];
     }
   }
 
-  return [];
+  return null;
 }
 
 type TreeItemProps = {
@@ -154,19 +185,19 @@ type TreeItemProps = {
   depth: number;
   expandedIds: Set<string>;
   onToggle: (nodeId: string) => void;
-  onPickUnitFilter: (unitName: string) => void;
-  selectedUnitFilter?: string;
+  onPickUnitFilter: (filter: SelectedSidebarUnitFilter) => void;
+  selectedUnitFilter?: SelectedSidebarUnitFilter;
 };
 
 function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, selectedUnitFilter }: TreeItemProps) {
-  const paddingLeft = 2 + depth * 2;
+  const paddingLeft = 1 + depth * 2;
 
   if (node.kind === 'leaf') {
     return (
       <ListItemButton
-        onClick={() => onPickUnitFilter(node.unitName)}
-        selected={selectedUnitFilter === node.unitName}
-        sx={{ pl: paddingLeft, pr: 1.5 }}
+        onClick={() => onPickUnitFilter({ kind: 'leaf', label: node.unitName, unitName: node.unitName })}
+        selected={selectedUnitFilter?.kind === 'leaf' && selectedUnitFilter.unitName === node.unitName}
+        sx={{ pl: paddingLeft + 5, pr: 1.5 }}
         aria-label={`Фільтрувати за підрозділом ${node.unitName}, позивних ${node.count}`}
       >
         <ListItemText
@@ -188,29 +219,46 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
   }
 
   const isExpanded = expandedIds.has(node.id);
+  const isSelected = selectedUnitFilter?.kind === 'group' && areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy);
+  const collapseId = `${node.id}-children`;
 
   return (
     <>
-      <ListItemButton
-        onClick={() => onToggle(node.id)}
-        sx={{ pl: paddingLeft, pr: 1.5 }}
-        aria-expanded={isExpanded}
-        aria-label={`${isExpanded ? 'Згорнути' : 'Розгорнути'} ${node.label}, позивних ${node.count}`}
-      >
-        {isExpanded ? <ExpandMoreIcon fontSize="small" sx={{ mr: 0.5 }} /> : <ChevronRightIcon fontSize="small" sx={{ mr: 0.5 }} />}
-        <ListItemText primary={node.label} primaryTypographyProps={{ noWrap: true, title: node.label }} />
-        <PowerChip
+      <Box sx={{ display: 'flex', alignItems: 'stretch' }}>
+        <IconButton
           size="small"
-          label={node.count}
-          interactive={false}
-          unselectedOpacity={1}
-          unselectedBackgroundColor="action.selected"
-          unselectedTextColor="text.primary"
-          unselectedBorderColor="transparent"
-          sx={{ ml: 1 }}
-        />
-      </ListItemButton>
-      <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+          onClick={() => onToggle(node.id)}
+          aria-expanded={isExpanded}
+          aria-controls={collapseId}
+          aria-label={`${isExpanded ? 'Згорнути' : 'Розгорнути'} гілку ${node.label}`}
+          sx={{
+            ml: paddingLeft,
+            mr: 0.5,
+            alignSelf: 'center',
+          }}
+        >
+          {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+        </IconButton>
+        <ListItemButton
+          onClick={() => onPickUnitFilter({ kind: 'group', label: node.label, hierarchy: node.hierarchy })}
+          selected={isSelected}
+          sx={{ minWidth: 0, flex: 1, pr: 1.5 }}
+          aria-label={`Фільтрувати за гілкою ${node.label}, позивних ${node.count}`}
+        >
+          <ListItemText primary={node.label} primaryTypographyProps={{ noWrap: true, title: node.label }} />
+          <PowerChip
+            size="small"
+            label={node.count}
+            interactive={false}
+            unselectedOpacity={1}
+            unselectedBackgroundColor="action.selected"
+            unselectedTextColor="text.primary"
+            unselectedBorderColor="transparent"
+            sx={{ ml: 1 }}
+          />
+        </ListItemButton>
+      </Box>
+      <Collapse in={isExpanded} timeout="auto" unmountOnExit id={collapseId}>
         <List dense disablePadding>
           {node.children.map((child) => (
             <UnitTreeItem
@@ -227,6 +275,19 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
       </Collapse>
     </>
   );
+}
+
+function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter): string {
+  if (selectedUnitFilter.kind === 'leaf') {
+    return `Підрозділ: ${selectedUnitFilter.label}`;
+  }
+
+  const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>((lastIndex, key, index) => (
+    selectedUnitFilter.hierarchy[key] != null ? index : lastIndex
+  ), -1);
+  const hierarchyLabel = deepestLevelIndex >= 0 ? HIERARCHY_LABELS[deepestLevelIndex] : 'Підрозділ';
+
+  return `${hierarchyLabel}: ${selectedUnitFilter.label}`;
 }
 
 export function UnitStatsSidebar({
@@ -257,13 +318,11 @@ export function UnitStatsSidebar({
       return;
     }
 
-    const selectedUnit = selectedUnitFilter?.trim() ?? '';
-
-    if (!selectedUnit) {
+    if (!selectedUnitFilter) {
       return;
     }
 
-    const path = collectPathToSelectedUnit(tree, selectedUnit);
+    const path = collectExpansionPathToSelectedFilter(tree, selectedUnitFilter);
     setExpandedIds(new Set(path));
   }, [open, tree, selectedUnitFilter, normalizedSearchQuery]);
 
@@ -339,6 +398,26 @@ export function UnitStatsSidebar({
             </IconButton>
           ) : null}
         </Stack>
+        {selectedUnitFilter ? (
+          <Stack spacing={0.75}>
+            <Typography variant="caption" color="text.secondary">
+              Активний фільтр
+            </Typography>
+            <PowerChip
+              size="small"
+              selected
+              onClick={() => onPickUnitFilter(selectedUnitFilter)}
+              label={(
+                <Stack direction="row" spacing={0.75} alignItems="center">
+                  <span>{formatSelectedFilterLabel(selectedUnitFilter)}</span>
+                  <ClearIcon sx={{ fontSize: 16 }} aria-hidden="true" />
+                </Stack>
+              )}
+              title="Скинути фільтр підрозділу"
+              sx={{ width: 'fit-content', maxWidth: '100%' }}
+            />
+          </Stack>
+        ) : null}
         <TextField
           size="small"
           value={searchInput}
@@ -389,7 +468,9 @@ export function UnitStatsSidebar({
           />
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          Розгорніть групу та натисніть на підрозділ, щоб відфільтрувати по ньому
+          {selectedUnitFilter
+            ? `Натисніть на активний фільтр вище, щоб скинути його.`
+            : 'Натисніть на підрозділ, щоб обрати його. Стрілка ліворуч розгортає/згортає дочірні елементи.'}
         </Typography>
       </Stack>
       <Divider />
