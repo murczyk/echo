@@ -1,13 +1,9 @@
 use crate::entities::*;
-use crate::error::AppError;
 use crate::rer_importer::inbox::metadata::parser::*;
 use crate::rer_importer::inbox::metadata::types::*;
 use crate::types::*;
-use chrono::{NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 use futures_util::TryStreamExt;
-use indicatif::ProgressBar;
-use lazy_static::lazy_static;
-use regex::Regex;
 use sea_orm::*;
 
 pub mod oneoff;
@@ -69,7 +65,7 @@ where
 
 pub async fn refresh_metadata<'a, 'async_trait, C>(
     sigint_inbox_item_id: i64,
-    txn: &'a C,
+    dbx: &'a C,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'async_trait,
@@ -78,226 +74,11 @@ where
         .select_only()
         .column(signal_message::Column::Body)
         .into_tuple::<String>()
-        .one(txn)
+        .one(dbx)
         .await
         .c(h!())?
         .c(h!())?;
-    refresh_metadata_for_body(sigint_inbox_item_id, &body, txn).await
-}
-
-fn build_inbox_metadata_recalc_query(
-    since_ts: Option<NaiveDateTime>,
-    till_ts: Option<NaiveDateTime>,
-) -> Select<sigint_inbox_item::Entity> {
-    let mut q = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::Body.is_not_null())
-        .order_by_asc(sigint_inbox_item::Column::Id);
-    if let Some(since_ts) = since_ts {
-        q = q.filter(sigint_inbox_item::Column::Datetime.gte(since_ts));
-    }
-    if let Some(till_ts) = till_ts {
-        q = q.filter(sigint_inbox_item::Column::Datetime.lt(till_ts));
-    }
-    q
-}
-
-impl WorkingMetadata {
-    fn cg_kind(&self) -> Option<CgKind> {
-        if self.receiver_group.has_value()
-            || self.receiver_group_name.has_value()
-        {
-            return Some(CgKind::ReceiverGroup);
-        }
-
-        if self.receiver.has_value() || self.receiver_name.has_value() {
-            return Some(CgKind::Receiver);
-        }
-
-        None
-    }
-}
-
-fn push_metadata_if_nonempty(
-    result: &mut Vec<WorkingMetadata>,
-    metadata: WorkingMetadata,
-) {
-    if metadata.has_some_value() {
-        result.push(metadata);
-    }
-}
-
-fn expand_multi_source_ids(
-    items: Vec<WorkingMetadata>,
-) -> Vec<WorkingMetadata> {
-    let mut result = vec![];
-    for item in items {
-        let Some(ids) = split_multi_source_id(&item.id) else {
-            result.push(item);
-            continue;
-        };
-
-        for id in ids {
-            let mut item = item.clone();
-            item.id = id;
-            result.push(item);
-        }
-    }
-    result
-}
-
-fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
-    let raw_text = id.raw_text.as_ref()?;
-    let start_index = id.start_index?;
-    if !raw_text.contains(',') {
-        return None;
-    }
-
-    let chars = raw_text.chars().collect::<Vec<_>>();
-    let mut ids = vec![];
-    let mut part_start = 0_usize;
-    for idx in 0..=chars.len() {
-        if idx < chars.len() && chars[idx] != ',' {
-            continue;
-        }
-
-        let mut trimmed_start = part_start;
-        let mut trimmed_end = idx;
-        while trimmed_start < trimmed_end
-            && chars[trimmed_start].is_whitespace()
-        {
-            trimmed_start += 1;
-        }
-        while trimmed_end > trimmed_start
-            && chars[trimmed_end - 1].is_whitespace()
-        {
-            trimmed_end -= 1;
-        }
-        if trimmed_start < trimmed_end {
-            let raw_part =
-                chars[trimmed_start..trimmed_end].iter().collect::<String>();
-            let normalized_part = normalize_metadata_digits(&raw_part);
-            let value = normalize_metadata_value(&normalized_part)?;
-            ids.push(MatchedValue {
-                value: Some(value),
-                start_index: Some(start_index + trimmed_start as i32),
-                end_index: Some(start_index + trimmed_end as i32 - 1),
-                raw_text: Some(raw_part),
-            });
-        }
-        part_start = idx + 1;
-    }
-
-    if ids.len() <= 1
-        || ids.iter().any(|id| {
-            id.value.as_ref().is_none_or(|value| {
-                !value.chars().all(|ch| ch.is_ascii_digit())
-            })
-        })
-    {
-        return None;
-    }
-
-    Some(ids)
-}
-
-fn reduce_metadata_list(mut items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
-    loop {
-        if items.len() <= 1 {
-            return items;
-        }
-
-        let mut removed = false;
-        'outer: for idx in 0..items.len() {
-            for other_idx in 0..items.len() {
-                if idx == other_idx {
-                    continue;
-                }
-                if items[idx].matches(&items[other_idx]) {
-                    items.remove(idx);
-                    removed = true;
-                    break 'outer;
-                }
-            }
-        }
-
-        if !removed {
-            return items;
-        }
-    }
-}
-
-fn conflicts_with_option<T: PartialEq>(
-    left: Option<&T>,
-    right: Option<&T>,
-) -> bool {
-    matches!((left, right), (Some(left), Some(right)) if left != right)
-}
-
-fn trim_line(line: &str) -> (String, i32) {
-    let chars = line.chars().collect::<Vec<_>>();
-    if chars.is_empty() {
-        return (String::new(), 0);
-    }
-
-    let mut start = 0_usize;
-    let mut end = chars.len();
-    while start < end && chars[start].is_whitespace() {
-        start += 1;
-    }
-    while end > start && chars[end - 1].is_whitespace() {
-        end -= 1;
-    }
-
-    (chars[start..end].iter().collect::<String>(), start as i32)
-}
-
-fn offset_metadata(metadata: &mut WorkingMetadata, offset: i32) {
-    for value in [
-        &mut metadata.cc,
-        &mut metadata.receiver,
-        &mut metadata.receiver_name,
-        &mut metadata.receiver_group,
-        &mut metadata.receiver_group_name,
-        &mut metadata.id,
-        &mut metadata.id_name,
-        &mut metadata.hash_id,
-    ] {
-        if let Some(start_index) = value.start_index.as_mut() {
-            *start_index += offset;
-        }
-        if let Some(end_index) = value.end_index.as_mut() {
-            *end_index += offset;
-        }
-    }
-}
-
-fn keycap_digit_at(chars: &[char], idx: usize) -> Option<(char, usize)> {
-    let digit = *chars.get(idx)?;
-    if !digit.is_ascii_digit() {
-        return None;
-    }
-
-    let variation_selector = chars.get(idx + 1).copied();
-    let combining_keycap = chars.get(idx + 2).copied();
-    if variation_selector == Some('\u{FE0F}')
-        && combining_keycap == Some('\u{20E3}')
-    {
-        return Some((digit, 3));
-    }
-
-    None
-}
-
-fn matches_option<T: PartialEq>(left: Option<&T>, right: Option<&T>) -> bool {
-    match left {
-        Some(left) => right.is_some_and(|right| left == right),
-        None => true,
-    }
+    refresh_metadata_for_body(sigint_inbox_item_id, &body, dbx).await
 }
 
 #[cfg(test)]

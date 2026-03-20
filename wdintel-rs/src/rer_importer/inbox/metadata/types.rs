@@ -1,18 +1,10 @@
-use crate::rer_importer::inbox::metadata::{
-    conflicts_with_option, keycap_digit_at, matches_option,
-};
 use regex::Match;
-use sea_orm::FromQueryResult;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NormalizedLine {
     pub text: String,
     pub raw_text: String,
     pub source_spans: Vec<SourceSpan>,
-}
-#[derive(FromQueryResult)]
-pub(crate) struct InboxMetadataRecalcRow {
-    pub id: i64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -308,4 +300,51 @@ impl MatchedValue {
         self.value = self.value.map(|value| value.to_lowercase());
         self
     }
+}
+
+impl WorkingMetadata {
+    pub(crate) fn cg_kind(&self) -> Option<CgKind> {
+        if self.receiver_group.has_value()
+            || self.receiver_group_name.has_value()
+        {
+            return Some(CgKind::ReceiverGroup);
+        }
+
+        if self.receiver.has_value() || self.receiver_name.has_value() {
+            return Some(CgKind::Receiver);
+        }
+
+        None
+    }
+}
+
+fn keycap_digit_at(chars: &[char], idx: usize) -> Option<(char, usize)> {
+    let digit = *chars.get(idx)?;
+    if !digit.is_ascii_digit() {
+        return None;
+    }
+
+    let variation_selector = chars.get(idx + 1).copied();
+    let combining_keycap = chars.get(idx + 2).copied();
+    if variation_selector == Some('\u{FE0F}')
+        && combining_keycap == Some('\u{20E3}')
+    {
+        return Some((digit, 3));
+    }
+
+    None
+}
+
+fn matches_option<T: PartialEq>(left: Option<&T>, right: Option<&T>) -> bool {
+    match left {
+        Some(left) => right.is_some_and(|right| left == right),
+        None => true,
+    }
+}
+
+fn conflicts_with_option<T: PartialEq>(
+    left: Option<&T>,
+    right: Option<&T>,
+) -> bool {
+    matches!((left, right), (Some(left), Some(right)) if left != right)
 }

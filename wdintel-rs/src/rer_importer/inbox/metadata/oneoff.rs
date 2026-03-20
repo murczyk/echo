@@ -1,12 +1,9 @@
 use crate::entities::sigint_inbox_item;
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::inbox::metadata::types::InboxMetadataRecalcRow;
 use crate::rer_importer::inbox::metadata::*;
-use crate::types::*;
 use chrono::Utc;
 use indicatif::ProgressBar;
-use sea_orm::*;
 
 pub async fn oneoff_reprocess_inbox_metadata(
     mode: Mode,
@@ -30,17 +27,38 @@ pub async fn oneoff_reprocess_inbox_metadata(
     let mut rows = q
         .select_only()
         .column(sigint_inbox_item::Column::Id)
-        .into_model::<InboxMetadataRecalcRow>()
+        .into_tuple::<i64>()
         .stream(&dbx)
         .await
         .c(h!())?;
     let pb = ProgressBar::new(count);
     let mut processed = 0_u64;
-    while let Some(row) = rows.try_next().await.c(h!())? {
+    while let Some(id) = rows.try_next().await.c(h!())? {
         pb.inc(1);
-        refresh_metadata(row.id, &dbx).await.c(h!())?;
+        refresh_metadata(id, &dbx).await.c(h!())?;
         processed += 1;
     }
     println!("> done oneoff_reprocess_inbox_metadata: processed={processed}");
     Ok(())
+}
+
+fn build_inbox_metadata_recalc_query(
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+) -> Select<sigint_inbox_item::Entity> {
+    let mut q = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::Body.is_not_null())
+        .order_by_asc(sigint_inbox_item::Column::Id);
+    if let Some(since_ts) = since_ts {
+        q = q.filter(sigint_inbox_item::Column::Datetime.gte(since_ts));
+    }
+    if let Some(till_ts) = till_ts {
+        q = q.filter(sigint_inbox_item::Column::Datetime.lt(till_ts));
+    }
+    q
 }

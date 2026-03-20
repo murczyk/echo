@@ -1,6 +1,5 @@
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::inbox::metadata::types::*;
 use crate::rer_importer::inbox::metadata::*;
 use chrono::NaiveDateTime;
 use lazy_static::lazy_static;
@@ -354,4 +353,151 @@ pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     }
 
     parts
+}
+
+fn push_metadata_if_nonempty(
+    result: &mut Vec<WorkingMetadata>,
+    metadata: WorkingMetadata,
+) {
+    if metadata.has_some_value() {
+        result.push(metadata);
+    }
+}
+
+fn expand_multi_source_ids(
+    items: Vec<WorkingMetadata>,
+) -> Vec<WorkingMetadata> {
+    let mut result = vec![];
+    for item in items {
+        let Some(ids) = split_multi_source_id(&item.id) else {
+            result.push(item);
+            continue;
+        };
+
+        for id in ids {
+            let mut item = item.clone();
+            item.id = id;
+            result.push(item);
+        }
+    }
+    result
+}
+
+fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
+    let raw_text = id.raw_text.as_ref()?;
+    let start_index = id.start_index?;
+    if !raw_text.contains(',') {
+        return None;
+    }
+
+    let chars = raw_text.chars().collect::<Vec<_>>();
+    let mut ids = vec![];
+    let mut part_start = 0_usize;
+    for idx in 0..=chars.len() {
+        if idx < chars.len() && chars[idx] != ',' {
+            continue;
+        }
+
+        let mut trimmed_start = part_start;
+        let mut trimmed_end = idx;
+        while trimmed_start < trimmed_end
+            && chars[trimmed_start].is_whitespace()
+        {
+            trimmed_start += 1;
+        }
+        while trimmed_end > trimmed_start
+            && chars[trimmed_end - 1].is_whitespace()
+        {
+            trimmed_end -= 1;
+        }
+        if trimmed_start < trimmed_end {
+            let raw_part =
+                chars[trimmed_start..trimmed_end].iter().collect::<String>();
+            let normalized_part = normalize_metadata_digits(&raw_part);
+            let value = normalize_metadata_value(&normalized_part)?;
+            ids.push(MatchedValue {
+                value: Some(value),
+                start_index: Some(start_index + trimmed_start as i32),
+                end_index: Some(start_index + trimmed_end as i32 - 1),
+                raw_text: Some(raw_part),
+            });
+        }
+        part_start = idx + 1;
+    }
+
+    if ids.len() <= 1
+        || ids.iter().any(|id| {
+            id.value.as_ref().is_none_or(|value| {
+                !value.chars().all(|ch| ch.is_ascii_digit())
+            })
+        })
+    {
+        return None;
+    }
+
+    Some(ids)
+}
+
+fn reduce_metadata_list(mut items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
+    loop {
+        if items.len() <= 1 {
+            return items;
+        }
+
+        let mut removed = false;
+        'outer: for idx in 0..items.len() {
+            for other_idx in 0..items.len() {
+                if idx == other_idx {
+                    continue;
+                }
+                if items[idx].matches(&items[other_idx]) {
+                    items.remove(idx);
+                    removed = true;
+                    break 'outer;
+                }
+            }
+        }
+
+        if !removed {
+            return items;
+        }
+    }
+}
+
+fn trim_line(line: &str) -> (String, i32) {
+    let chars = line.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return (String::new(), 0);
+    }
+
+    let mut start = 0_usize;
+    let mut end = chars.len();
+    while start < end && chars[start].is_whitespace() {
+        start += 1;
+    }
+    while end > start && chars[end - 1].is_whitespace() {
+        end -= 1;
+    }
+
+    (chars[start..end].iter().collect::<String>(), start as i32)
+}
+
+fn offset_metadata(metadata: &mut WorkingMetadata, offset: i32) {
+    for value in [
+        &mut metadata.cc,
+        &mut metadata.receiver,
+        &mut metadata.receiver_name,
+        &mut metadata.receiver_group,
+        &mut metadata.receiver_group_name,
+        &mut metadata.id,
+        &mut metadata.id_name,
+        &mut metadata.hash_id,
+    ] {
+        if let Some(start_index) = value.start_index.as_mut() {
+            *start_index += offset;
+        }
+        if let Some(end_index) = value.end_index.as_mut() {
+            *end_index += offset;
+        }
+    }
 }

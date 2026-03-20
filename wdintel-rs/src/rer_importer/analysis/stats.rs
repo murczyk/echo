@@ -1168,38 +1168,20 @@ pub async fn fetch_metadata_stats(
     )
     .await
     .context(h!())?;
-    let senders = merge_metadata_value_stats(vec![
-        fetch_metadata_value_stats(
-            &env.dbx,
-            messages_q.clone(),
-            sigint_inbox_item_metadata::Column::SenderId,
-        )
-        .await
-        .context(h!())?,
-        fetch_metadata_value_stats(
-            &env.dbx,
-            messages_q.clone(),
-            sigint_inbox_item_metadata::Column::SenderName,
-        )
-        .await
-        .context(h!())?,
-    ]);
-    let receivers = merge_metadata_value_stats(vec![
-        fetch_metadata_value_stats(
-            &env.dbx,
-            messages_q.clone(),
-            sigint_inbox_item_metadata::Column::CallGroupId,
-        )
-        .await
-        .context(h!())?,
-        fetch_metadata_value_stats(
-            &env.dbx,
-            messages_q,
-            sigint_inbox_item_metadata::Column::CallGroupName,
-        )
-        .await
-        .context(h!())?,
-    ]);
+    let senders = fetch_metadata_value_stats(
+        &env.dbx,
+        messages_q.clone(),
+        sigint_inbox_item_metadata::Column::SenderId,
+    )
+    .await
+    .context(h!())?;
+    let receivers = fetch_metadata_value_stats(
+        &env.dbx,
+        messages_q.clone(),
+        sigint_inbox_item_metadata::Column::CallGroupId,
+    )
+    .await
+    .context(h!())?;
 
     Ok(MetadataStatsRsp {
         ccs,
@@ -1281,28 +1263,6 @@ async fn fetch_metadata_value_stats(
             })
         })
         .collect())
-}
-
-fn merge_metadata_value_stats(
-    groups: Vec<Vec<AnalysisStatsMetadataValue>>,
-) -> Vec<AnalysisStatsMetadataValue> {
-    let mut counts: BTreeMap<String, i64> = BTreeMap::new();
-    for group in groups {
-        for entry in group {
-            counts
-                .entry(entry.value)
-                .and_modify(|count| *count += entry.count)
-                .or_insert(entry.count);
-        }
-    }
-    let mut values = counts
-        .into_iter()
-        .map(|(value, count)| AnalysisStatsMetadataValue { value, count })
-        .collect_vec();
-    values.sort_by(|a, b| {
-        b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value))
-    });
-    values
 }
 
 fn build_callsigns_query(
