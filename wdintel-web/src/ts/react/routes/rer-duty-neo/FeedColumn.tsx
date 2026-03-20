@@ -3,7 +3,7 @@ import React from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 
 import type {
-  InboxMessage,
+  Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
@@ -70,6 +70,9 @@ export type FeedColumnProps = {
   authUserName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+  /** When true, empty network ids show "Не встановлена" only (no unit fallback). Server `featureStrictNetworks`. */
+  featureStrictNetworks: boolean;
   tagsMap: Record<number, Tag>;
   tagIdsList: number[];
   onLoadOlder: () => void;
@@ -141,6 +144,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     authUserName,
     copiedFeedbackId,
     networkDisplayMap,
+    networkMap,
+    featureStrictNetworks,
     tagsMap,
     tagIdsList,
     onLoadOlder,
@@ -436,6 +441,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   senderName={senderName}
                   copiedFeedbackId={copiedFeedbackId}
                   networkDisplayMap={networkDisplayMap}
+                  networkMap={networkMap}
+                  featureStrictNetworks={featureStrictNetworks}
                   tagsMap={tagsMap}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
                   onImportant={() => onMessageImportant(id, msg.important)}

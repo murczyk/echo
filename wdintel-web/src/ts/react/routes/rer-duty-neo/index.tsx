@@ -7,7 +7,7 @@ import { getStoredMessageCardLayout, setStoredMessageCardLayout } from './utils'
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
 
 export type RerDutyNeoPageProps = {
-  /** Auth user display name from Elm layout (avoids duplicate /api/user request). */
+  /** Auth user display name from the host page (avoids duplicate /api/user request). */
   authUserName?: string | null;
 };
 
@@ -67,6 +67,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     reloadFreqsLoading,
     reloadLatestFrequencies,
     networkDisplayMap,
+    networkMap,
+    featureStrictNetworks,
     watchModeByFeedId,
     setWatchModeByFeedId,
     loadingNewerFeedId,
@@ -138,6 +140,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               authUserName={authUserName}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
+              networkMap={networkMap}
+              featureStrictNetworks={featureStrictNetworks}
               tagsMap={tagsMap}
               tagIdsList={tagIdsList}
               onLoadOlder={() => loadFeedOlderMessages(w.id)}

@@ -12,7 +12,7 @@ export type RerDutyState = {
   messageFeeds: [string, RerDutyFeedFilterState][];
 };
 
-/** Elm-style network display text: "р/м " + name + " " + unit names + optional " (LOCATION)". */
+/** Network display text: "р/м " + name + " " + unit names + optional " (LOCATION)". */
 export function createMasterUnitText(network: Network, unitsMap: Record<number, Unit>): string {
   const unitIds = network.unitIds ?? [];
   const unitNames = unitIds.map((id) => {
@@ -146,7 +146,7 @@ export function buildInboxReq(opts: {
     orWithCoords: null,
     newestFirst: null,
     search: null,
-    // Match Elm Waterfall: highlightCallsigns/Keywords/Searchres always true; highlightSignals from opts; highlightPoints true for point-token links
+    // highlightCallsigns/Keywords/Searchres always true; highlightSignals from opts; highlightPoints for point-token links
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightSearchres: true,
@@ -244,6 +244,22 @@ export function formatDateNoYear(date: string | null): string {
   return `${day}.${month.toString().padStart(2, '0')}`;
 }
 
+/**
+ * When there are no resolved `networkIds`: no freq → no label (`null`, render as space);
+ * strict mode → "Не встановлена"; else `msg.unit` or "Не встановлена".
+ */
+export function etalonFallbackWhenNoNetworks(
+  msg: InboxMessage,
+  options?: { featureStrictNetworks?: boolean },
+): string | null {
+  const hasFreq = msg.freq != null && String(msg.freq).trim() !== '';
+  if (!hasFreq) return null;
+  const strict = options?.featureStrictNetworks ?? false;
+  if (strict) return 'Не встановлена';
+  const unit = msg.unit?.trim();
+  return unit != null && unit !== '' ? unit : 'Не встановлена';
+}
+
 /** Relative time from event to now, same logic */
 export function messageRenderDistance(eventMs: number, nowMs: number): string {
   const secsAgo = Math.floor((nowMs - eventMs) / 1000);
@@ -331,7 +347,7 @@ export function getPointEtalonsFromMessage(msg: InboxMessage): string[] {
 
 export type MessageItem = [number, InboxMessage];
 
-/** Sort message items by time ascending (oldest first), like Elm duty. Uses timestamp then id as tiebreaker. */
+/** Sort message items by time ascending (oldest first). Uses timestamp then id as tiebreaker. */
 export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
   return [...items].sort(([idA, a], [idB, b]) => {
     const tsA = a.timestamp ?? 0;

@@ -5,6 +5,8 @@ import {
   Box,
   CircularProgress,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -41,6 +43,7 @@ export function SettingsNeoPage() {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = React.useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState(0);
 
   const zoneOptions = React.useMemo<ZoneOption[]>(
     () => zones.map(([id, zone]) => ({ id, label: zone.name })),
@@ -130,80 +133,110 @@ export function SettingsNeoPage() {
         <PageHeader title="налаштування" className="px-4" />
 
         <div className="bg-[var(--card-color)] rounded-xl shadow-sm border border-[var(--border-color)] overflow-hidden">
-          <div className="px-6 py-4 border-b border-[var(--border-color)] bg-[var(--color-bg-inactive)]">
-            <Typography
-              component="h2"
-              sx={{ m: 0, fontSize: '1.75rem', lineHeight: 1.35, fontWeight: 600, color: 'text.primary' }}
-            >
-              Основні
-            </Typography>
-          </div>
+          <Tabs
+            value={settingsTab}
+            onChange={(_, value: number) => setSettingsTab(value)}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{
+              px: 2,
+              pt: 1,
+              borderBottom: 1,
+              borderColor: 'divider',
+              bgcolor: 'var(--color-bg-inactive)',
+              '& .MuiTab-root': {
+                textTransform: 'none',
+                fontSize: '1.75rem',
+                lineHeight: 1.35,
+                fontWeight: 600,
+                minHeight: 52,
+                py: 1.5,
+                color: 'text.secondary',
+              },
+              '& .MuiTab-root.Mui-selected': {
+                color: 'text.primary',
+              },
+            }}
+          >
+            <Tab label="Основні" id="settings-neo-tab-main" aria-controls="settings-neo-panel-main" />
+            <Tab label="Оперативний" id="settings-neo-tab-duty" aria-controls="settings-neo-panel-duty" />
+          </Tabs>
 
-          <Box component="form" onSubmit={handleSave} noValidate className="p-6">
-            <Stack spacing={3}>
-              {loadError ? <Alert severity="error">{loadError}</Alert> : null}
-              {saveError ? <Alert severity="error">{saveError}</Alert> : null}
-              {saveSuccess ? (
-                <Alert severity="success" role="status">
-                  {saveSuccess}
-                </Alert>
-              ) : null}
+          {settingsTab === 0 ? (
+            <div role="tabpanel" id="settings-neo-panel-main" aria-labelledby="settings-neo-tab-main">
+              <Box component="form" onSubmit={handleSave} noValidate className="p-6">
+                <Stack spacing={3}>
+                  {loadError ? <Alert severity="error">{loadError}</Alert> : null}
+                  {saveError ? <Alert severity="error">{saveError}</Alert> : null}
+                  {saveSuccess ? (
+                    <Alert severity="success" role="status">
+                      {saveSuccess}
+                    </Alert>
+                  ) : null}
 
-              <Box>
-                <Autocomplete
-                  size="small"
-                  options={zoneOptions}
-                  value={selectedZone}
-                  onChange={(_, option) => {
-                    setSaveSuccess(null);
-                    setZoneId(option?.id ?? null);
-                  }}
-                  isOptionEqualToValue={(option, value) => option.id === value.id}
-                  getOptionLabel={(option) => option.label}
-                  clearText="Очистити"
-                  noOptionsText="Немає варіантів"
-                  loading={loadInProgress}
-                  loadingText="Завантаження..."
-                  sx={{
-                    width: { xs: '100%', sm: '420px' },
-                    maxWidth: '100%',
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--bs-body-bg)',
-                    },
-                    '& .MuiAutocomplete-clearIndicator': {
-                      visibility: 'visible',
-                      opacity: 1,
-                    },
-                  }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      id="settings-zone"
-                      name="settings-zone"
-                      label="РЕР-напрямок"
-                      placeholder="Оберіть зону"
-                      helperText="Оберіть зону РЕР-напрямку для вашого облікового запису"
+                  <Box>
+                    <Autocomplete
+                      size="small"
+                      options={zoneOptions}
+                      value={selectedZone}
+                      onChange={(_, option) => {
+                        setSaveSuccess(null);
+                        setZoneId(option?.id ?? null);
+                      }}
+                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                      getOptionLabel={(option) => option.label}
+                      clearText="Очистити"
+                      noOptionsText="Немає варіантів"
+                      loading={loadInProgress}
+                      loadingText="Завантаження..."
+                      sx={{
+                        width: { xs: '100%', sm: '420px' },
+                        maxWidth: '100%',
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'var(--bs-body-bg)',
+                        },
+                        '& .MuiAutocomplete-clearIndicator': {
+                          visibility: 'visible',
+                          opacity: 1,
+                        },
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          id="settings-zone"
+                          name="settings-zone"
+                          label="РЕР-напрямок"
+                          placeholder="Оберіть зону"
+                          helperText="Оберіть зону РЕР-напрямку для вашого облікового запису"
+                        />
+                      )}
                     />
-                  )}
-                />
-              </Box>
+                  </Box>
 
-              <Box className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]">
-                <Typography variant="caption" color="text.secondary">
-                  Версія: {versionText}
-                </Typography>
-                <Button
-                  variant="contained"
-                  type="submit"
-                  disabled={saveInProgress || !isDirty}
-                  startIcon={saveInProgress ? <CircularProgress size={18} /> : <SaveIcon fontSize="small" />}
-                  sx={{ fontWeight: 500 }}
-                >
-                  зберегти
-                </Button>
+                  <Box className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]">
+                    <Typography variant="caption" color="text.secondary">
+                      Версія: {versionText}
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      type="submit"
+                      disabled={saveInProgress || !isDirty}
+                      startIcon={saveInProgress ? <CircularProgress size={18} /> : <SaveIcon fontSize="small" />}
+                      sx={{ fontWeight: 500 }}
+                    >
+                      зберегти
+                    </Button>
+                  </Box>
+                </Stack>
               </Box>
-            </Stack>
-          </Box>
+            </div>
+          ) : (
+            <div className="p-6" id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty">
+              <Typography variant="body2" color="text.secondary">
+                Налаштування оперативного режиму з’являться тут.
+              </Typography>
+            </div>
+          )}
         </div>
       </Stack>
     </Box>

@@ -309,7 +309,7 @@ menuItem props activeName hrefLink activeNameExp nameText =
     let
         neoAlphaBadge =
             span
-                [ class "pointer-events-none absolute -top-[1px] -right-[18px] z-10 rounded-full border border-rose-400/40 bg-rose-400/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-rose-50" ]
+                [ class "pointer-events-none absolute -top-[1px] -right-[18px] z-10 rounded-full border !border-rose-300 bg-rose-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-rose-900" ]
                 [ text "Alpha" ]
 
         linkContents =

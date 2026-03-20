@@ -26,5 +26,6 @@ export async function getNetworksList(): Promise<Network[]> {
 export async function getNetworksByIds(ids: number[]): Promise<Network[]> {
   if (ids.length === 0) return [];
   const data = await postJson<Network[]>('/api/sigint/network-info-batch-id', ids);
-  return Array.isArray(data) ? data : [];
+  if (!Array.isArray(data)) return [];
+  return data.map((row) => transformSnakeToCamel<Network>(row));
 }

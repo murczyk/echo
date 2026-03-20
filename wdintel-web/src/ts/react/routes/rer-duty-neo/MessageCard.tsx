@@ -1,17 +1,74 @@
 import { Box, Tooltip } from '@mui/material';
-import React from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import type { InboxMessage, Tag } from '../../../../Bindings';
+import type { InboxMessage, Network, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import {
   buildAnalysisHref,
   buildAnalysisMapHrefWithSearch,
+  etalonFallbackWhenNoNetworks,
   formatDateNoYear,
   getPointEtalonsFromMessage,
   formatTime,
   messageRenderDistance,
 } from './utils';
 import { renderMarkedText } from './MarkedText';
+
+function networkNeedsInvestigationBadge(n: Network | undefined): boolean {
+  if (n == null) return false;
+  const ids = n.unitIds;
+  if (ids == null) return true;
+  return ids.length === 0;
+}
+
+/** One row per resolved network: label + optional «в дорозвідці» + link icon. */
+function ResolvedNetworkEtalonRows({
+  networkIds,
+  networkDisplayMap,
+  networkMap,
+}: {
+  networkIds: number[];
+  networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+}) {
+  return (
+    <div className="flex flex-col gap-1 items-start w-full min-w-0">
+      {networkIds.map((networkId) => {
+        const n = networkMap[networkId];
+        const label = networkDisplayMap[networkId] ?? (n != null ? `р/м ${n.name}` : 'Невідома мережа');
+        const badge = networkNeedsInvestigationBadge(n);
+        const hasNetworkLink = n != null;
+        return (
+          <div key={networkId} className="flex items-center gap-1 group w-full min-w-0">
+            <span className="min-w-0">
+              <i className="bi bi-people text-icons shrink-0 mr-1" title="Еталонна прив'язка" />
+
+              <span className={hasNetworkLink ? 'min-w-0 break-words font-bold' : 'min-w-0 break-words font-normal'}>
+                {label}
+              </span>
+              {badge ? (
+                <span className="ml-1 shrink-0 rounded border border-border bg-[var(--color-bg-inactive)] px-1.5 py-0.5 text-[10px] font-semibold leading-none opacity-90">
+                  в дорозвідці
+                </span>
+              ) : null}
+              {hasNetworkLink ? (
+                <a
+                  href={`/rer-networks/${networkId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer shrink-0 ml-1"
+                  title="Відкрити мережу в новій вкладці"
+                >
+                  <i className="bi bi-box-arrow-up-right text-sm" />
+                </a>
+              ) : null}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export type MessageCardProps = {
   id: number;
@@ -21,7 +78,7 @@ export type MessageCardProps = {
   feedCount?: number;
   /** 'dividers' = sections with borders; 'fluid' = no dividers, spacing only (for A/B testing). */
   layoutVariant?: 'dividers' | 'fluid';
-  /** Reference time (ms) for "time ago" in top-right; set when feed was loaded. */
+  /** Baseline "now" when the card is off-screen; while visible, relative time updates every minute. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;
@@ -29,6 +86,10 @@ export type MessageCardProps = {
   senderName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
+  /** Loaded network models (for «в дорозвідці» badge); keys match `msg.networkIds`. */
+  networkMap: Record<number, Network>;
+  /** When false, show `msg.unit` if network ids are empty (and freq present). */
+  featureStrictNetworks: boolean;
   tagsMap: Record<number, Tag>;
   onBookmark: () => void;
   onImportant: () => void;
@@ -239,6 +300,49 @@ function ActionIconsRow({
   );
 }
 
+const RELATIVE_TIME_TICK_MS = 60_000;
+
+/** While the card intersects the viewport, keep a live clock for `messageRenderDistance`; otherwise use `referenceTimeMs`. */
+function useRelativeTimeDisplayMs(
+  referenceTimeMs: number | null,
+  messageTimestamp: number | null | undefined,
+): [React.RefObject<HTMLElement | null>, number | null] {
+  const rootRef = useRef<HTMLElement | null>(null);
+  const [inView, setInView] = useState(false);
+  const [liveNowMs, setLiveNowMs] = useState<number | null>(null);
+
+  const enabled = messageTimestamp != null && referenceTimeMs != null && !Number.isNaN(messageTimestamp);
+
+  useEffect(() => {
+    if (!enabled) {
+      setInView(false);
+      return;
+    }
+    const el = rootRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.01 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [enabled]);
+
+  useLayoutEffect(() => {
+    if (!enabled) {
+      setLiveNowMs(null);
+      return;
+    }
+    if (!inView) {
+      setLiveNowMs(null);
+      return;
+    }
+    setLiveNowMs(Date.now());
+    const id = window.setInterval(() => setLiveNowMs(Date.now()), RELATIVE_TIME_TICK_MS);
+    return () => window.clearInterval(id);
+  }, [enabled, inView, referenceTimeMs]);
+
+  const displayMs = enabled ? (inView ? (liveNowMs ?? referenceTimeMs) : referenceTimeMs) : null;
+  return [rootRef, displayMs];
+}
+
 export function MessageCard({
   id,
   msg,
@@ -251,6 +355,8 @@ export function MessageCard({
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
+  networkMap,
+  featureStrictNetworks,
   tagsMap,
   onBookmark,
   onImportant,
@@ -259,13 +365,19 @@ export function MessageCard({
   onComment,
   onToggleTag,
 }: MessageCardProps) {
+  const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
+  const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
   const pointEtalons = getPointEtalonsFromMessage(msg);
   const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
 
   if (layoutVariant === 'fluid') {
     return (
-      <Box component="li" className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2">
+      <Box
+        ref={messageRootRef}
+        component="li"
+        className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2"
+      >
         <div className="flex flex-col w-full bg-card rounded-sm p-2 gap-2 relative">
           {(authUserName ?? '').trim() !== '' && (
             <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -356,37 +468,36 @@ export function MessageCard({
             </span>
           </div>
           {/* Row 3 — Networks + location*/}
-          <div className="inline-flex gap-x-2">
-            <div className="flex flex-1 flex-col items-baseline gap-x-2 gap-y-1">
-              <span className={`inline-flex font-semibold shrink-1 items-start gap-1`}>
-                <i className="bi bi-people text-icons shrink-0 " title="Еталонна прив'язка" />
+          <div className="inline-flex gap-x-3">
+            <div className="flex flex-col items-baseline gap-x-2 gap-y-1">
+              <span className="inline-flex font-semibold shrink-1 items-start gap-1 w-full min-w-0">
                 {networkIds.length > 0 ? (
-                  networkIds.map((networkId) => (
-                    <a
-                      href={`/rer-networks/${networkId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer gap-1 font-medium group"
-                      title="Відкрити мережу в новій вкладці"
-                      key={networkId}
-                    >
-                      {networkDisplayMap[networkId] ?? `Мережа ${networkId}`}
-                      <i className="bi bi-box-arrow-up-right text-sm ml-2" />
-                    </a>
-                  ))
+                  <ResolvedNetworkEtalonRows
+                    networkIds={networkIds}
+                    networkDisplayMap={networkDisplayMap}
+                    networkMap={networkMap}
+                  />
+                ) : etalonNoNetworkLabel != null ? (
+                  <div className="flex items-center gap-1">
+                    <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
+                    <span className="ml-1">{etalonNoNetworkLabel}</span>
+                  </div>
                 ) : (
-                  <span className="inline-flex">Не встановлена</span>
+                  <span className="flex items-center gap-1" aria-hidden>
+                    <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
+                    <span>Не встановлена</span>
+                  </span>
                 )}
               </span>
             </div>
 
-            <span className="inline-flex flex-1 items-baseline gap-1 font-medium shrink-2">
+            <span className="inline-flex items-baseline gap-1 font-medium shrink-2">
               <i className="bi bi-geo text-icons shrink-0" title="Локація" />
               {msg.location ?? 'Не встановлена'}
             </span>
-            {msg.timestamp != null && referenceTimeMs != null && (
+            {msg.timestamp != null && relativeTimeMs != null && (
               <div className="shrink-0 mr-0 ml-auto" style={{ color: 'var(--bs-secondary-color)' }}>
-                {messageRenderDistance(msg.timestamp, referenceTimeMs)}
+                {messageRenderDistance(msg.timestamp, relativeTimeMs)}
               </div>
             )}
           </div>
@@ -425,7 +536,11 @@ export function MessageCard({
     : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 text-xs items-end';
 
   return (
-    <Box component="li" className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2">
+    <Box
+      ref={messageRootRef}
+      component="li"
+      className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2"
+    >
       <div className="flex flex-col w-full bg-card rounded-t-sm p-2 border-b border-border">
         <div className="flex items-stretch w-full">
           <div className={colLeft}>
@@ -547,7 +662,7 @@ export function MessageCard({
           className="flex justify-start items-start flex-wrap py-1 border-b-2 border-border gap-2"
           style={{ position: 'relative' }}
         >
-          {msg.timestamp != null && referenceTimeMs != null && (
+          {msg.timestamp != null && relativeTimeMs != null && (
             <div
               style={{
                 position: 'absolute',
@@ -557,28 +672,24 @@ export function MessageCard({
                 color: 'var(--bs-secondary-color)',
               }}
             >
-              {messageRenderDistance(msg.timestamp, referenceTimeMs)}
+              {messageRenderDistance(msg.timestamp, relativeTimeMs)}
             </div>
           )}
-          <div className={`font-semibold inline-flex flex-col items-start gap-0.5}`}>
-            <i className="bi bi-people text-icons shrink-0" title="Еталонна прив'язка" />
-            {networkIds.length > 0 ? (
-              networkIds.map((networkId) => (
-                <a
-                  href={`/rer-networks/${networkId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center gap-1 font-medium group"
-                  title="Відкрити мережу в новій вкладці"
-                  key={networkId}
-                >
-                  {networkDisplayMap[networkId] ?? `Мережа ${networkId}`}
-                  <i className="bi bi-box-arrow-up-right text-sm" />
-                </a>
-              ))
-            ) : (
-              <span>Не встановлена</span>
-            )}
+          <div className={`font-semibold inline-flex flex-col items-start gap-0.5 w-full min-w-0`}>
+            <span className="inline-flex items-start gap-1 w-full min-w-0">
+              <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
+              {networkIds.length > 0 ? (
+                <ResolvedNetworkEtalonRows
+                  networkIds={networkIds}
+                  networkDisplayMap={networkDisplayMap}
+                  networkMap={networkMap}
+                />
+              ) : etalonNoNetworkLabel != null ? (
+                <span>{etalonNoNetworkLabel}</span>
+              ) : (
+                <span aria-hidden>{'\u00A0'}</span>
+              )}
+            </span>
           </div>
           <div className="font-semibold break-words min-w-0">
             <i className="bi bi-geo text-icons" title="Локація" /> {msg.location ?? 'Не встановлена'}

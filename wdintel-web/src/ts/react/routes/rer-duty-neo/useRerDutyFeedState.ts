@@ -437,6 +437,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     removeMessageFeed: crud.removeMessageFeed,
     buildReqForFeed,
     networkDisplayMap,
+    networkMap,
     watchModeByFeedId,
     setWatchModeByFeedId,
     loadingNewerFeedId,

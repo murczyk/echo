@@ -10,6 +10,7 @@ import {
   getUserSigintGroups,
   savedFiltersList,
 } from '../../services/api/inbox';
+import { fetchServerInfo } from '../../services/api/server-info';
 
 export function useRerDutyFilterOptions() {
   const [profiles, setProfiles] = React.useState<Record<string, SignalProfileEntry | null>>({});
@@ -22,6 +23,7 @@ export function useRerDutyFilterOptions() {
   const [selectedSavedId, setSelectedSavedId] = React.useState<number | null>(null);
   const [saveFilterName, setSaveFilterName] = React.useState('');
   const [reloadFreqsLoading, setReloadFreqsLoading] = React.useState(false);
+  const [featureStrictNetworks, setFeatureStrictNetworks] = React.useState(false);
   const mountedRef = React.useRef(true);
 
   React.useEffect(() => {
@@ -78,6 +80,12 @@ export function useRerDutyFilterOptions() {
     } catch (e) {
       console.warn('loadFilterOptions: savedFiltersList failed', e);
     }
+    try {
+      const serverInfo = await fetchServerInfo();
+      if (mountedRef.current) setFeatureStrictNetworks(serverInfo.featureStrictNetworks);
+    } catch (e) {
+      console.warn('loadFilterOptions: fetchServerInfo failed', e);
+    }
   }, []);
 
   React.useEffect(() => {
@@ -101,5 +109,6 @@ export function useRerDutyFilterOptions() {
     setSaveFilterName,
     reloadFreqsLoading,
     reloadLatestFrequencies,
+    featureStrictNetworks,
   };
 }
