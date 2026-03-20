@@ -392,6 +392,7 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
       tableId="rer-callsigns-neo"
       defaultColumnVisibility={DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY}
       defaultColumnOrder={DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER}
+      defaultEnableColumnOrdering={false}
     >
       <RerCallsignsNeoPageBody authUserRoles={authUserRoles} />
     </TableStateProvider>

@@ -958,6 +958,7 @@ function OrphanGroupsSection(props: {
       defaultColumnOrder={DEFAULT_ORPHAN_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_ORPHAN_COLUMNS_VISIBILITY}
       defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
+      defaultEnableColumnOrdering={false}
     >
       <div className="flex min-h-0 w-full min-w-0 max-h-full overflow-hidden">
         <OrphanGroupsTable
@@ -997,6 +998,7 @@ function ZoneGroupsSection(props: {
       defaultColumnOrder={DEFAULT_ZONE_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_ZONE_COLUMNS_VISIBILITY}
       defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
+      defaultEnableColumnOrdering={false}
     >
       <div className="flex min-h-0 w-full min-w-0 max-h-full overflow-hidden">
         <ZoneGroupsTable

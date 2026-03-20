@@ -542,6 +542,7 @@ export function AdminAorNeoPage() {
       tableId="admin-aor-neo"
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
     >
       <AdminAorNeoPageBody />
     </TableStateProvider>

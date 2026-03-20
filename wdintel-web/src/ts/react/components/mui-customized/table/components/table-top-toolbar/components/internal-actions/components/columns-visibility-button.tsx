@@ -48,13 +48,9 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
     tableStateContext.setEnableColumnOrdering(event.target.checked);
   }
 
-  function onResetColumnOrdering(event: React.MouseEvent) {
+  function onResetLayoutSettings(event: React.MouseEvent) {
     event.stopPropagation();
     tableStateContext.onColumnOrderChange([]);
-  }
-
-  function onResetColumnSizing(event: React.MouseEvent) {
-    event.stopPropagation();
     tableStateContext.onColumnSizingChange({});
   }
 
@@ -64,6 +60,7 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
   }
 
   const allColumns = tableStateContext.tableInstance?.getAllColumns?.() || [];
+  const hasLayoutChanges = tableStateContext.columnOrderTouched || tableStateContext.columnSizeTouched;
   const getColumnIdentifier = React.useCallback(
     (column: { id: string; columnDef: { accessorKey?: string; id?: string } }) => column.id || column.columnDef.id || column.columnDef.accessorKey || '',
     [],
@@ -92,17 +89,23 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
       >
         <div className={clsx('!p-4 min-w-80')}>
           <div className="mb-3">
+            <div className="mb-1 flex min-h-10 items-center justify-between gap-2">
+              <p className="mb-0 font-semibold leading-6">Налаштування</p>
+              <Button
+                onClick={onResetLayoutSettings}
+                size="small"
+                disabled={!hasLayoutChanges}
+                style={{ alignSelf: 'center', minHeight: 'unset', paddingTop: 0, paddingBottom: 0 }}
+              >
+                Скинути
+              </Button>
+            </div>
             <div>
               <FormControlLabel
                 control={<Switch onChange={onToggleColumnOrdering} checked={tableStateContext.enableColumnOrdering} />}
                 label="Зміна порядку стовпців"
                 onClick={(e) => e.stopPropagation()}
               />
-              {tableStateContext.columnOrderTouched && (
-                <Button onClick={onResetColumnOrdering} size="small">
-                  Скинути
-                </Button>
-              )}
             </div>
             <div>
               <FormControlLabel
@@ -110,11 +113,6 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
                 label="Зміна розміру стовпців"
                 onClick={(e) => e.stopPropagation()}
               />
-              {tableStateContext.columnSizeTouched && (
-                <Button onClick={onResetColumnSizing} size="small">
-                  Скинути
-                </Button>
-              )}
             </div>
           </div>
           <Divider className="!mb-3" />

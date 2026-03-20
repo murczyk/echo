@@ -288,6 +288,7 @@ export function AdminTagsNeoPage() {
       tableId="admin-tags-neo"
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
     >
       <AdminTagsNeoPageBody />
     </TableStateProvider>
