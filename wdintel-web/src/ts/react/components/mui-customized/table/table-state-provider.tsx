@@ -88,7 +88,7 @@ const TableStateContext = React.createContext<TableStateContextValue>({
   onColumnOrderChange: () => {},
   columnSizing: {},
   onColumnSizingChange: () => {},
-  enableColumnOrdering: true,
+  enableColumnOrdering: false,
   setEnableColumnOrdering: () => {},
   enableColumnResizing: true,
   setEnableColumnResizing: () => {},
@@ -229,7 +229,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
         return JSON.parse(value);
       } catch (error) {}
     }
-    return true;
+    return false;
   }
 
   function getInitialEnableColumnResizing() {

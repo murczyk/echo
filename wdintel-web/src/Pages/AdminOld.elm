@@ -26,7 +26,7 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init () =
     ( {}
-    , E.replaceRoutePath Route.Path.Admin_Directions
+    , E.replaceRoutePath Route.Path.Admin_Messenger
     )
 
 
