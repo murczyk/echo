@@ -20,6 +20,7 @@ use itertools::Itertools;
 use log::*;
 use sea_orm::*;
 use std::collections::BTreeSet;
+use std::time::Instant;
 
 pub(crate) mod bl;
 pub mod metadata;
@@ -416,7 +417,7 @@ async fn inbox_messages_count(
 ) -> Result<Json<InboxMessagesDigestRsp>, AppError> {
     let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
-    let req = req.into_inner();
+    let mut req = req.into_inner();
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -427,6 +428,11 @@ async fn inbox_messages_count(
         .c(h!())?;
     let login = user_id;
 
+    if req.since_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+    {
+        req.since_date_inclusive_ms = Some(0);
+    }
     let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
     let q = format!(
         "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
@@ -446,6 +452,63 @@ async fn inbox_messages_count(
         quantity,
         first_element_ts,
     }))
+}
+
+#[post("/api/rer-importer/get-inbox-random")]
+async fn inbox_message_random(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxMessagesReq>,
+) -> Result<Json<MessageIdsRsp>, AppError> {
+    let user_id = user.id().c(h!())?;
+    let page_id = req.page_id.clone();
+    let mut req = req.into_inner();
+
+    let payload = serde_json::to_value(&req).context(h!())?;
+    record_page_visit(&user_id, &page_id, &env, Some(payload))
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+    let login = user_id;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .context(h!())?;
+    if req.since_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+    {
+        req.since_date_inclusive_ms = Some(0);
+    }
+    let start = Instant::now();
+    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
+    info!(
+        "inbox_random build_inbox_query took {}ms",
+        start.elapsed().as_millis()
+    );
+    let select_start = Instant::now();
+    let latest_q = format!(
+        "SELECT * FROM ({q}) q ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
+    );
+    let query_res = env
+        .dbx
+        .query_all(Statement::from_string(DatabaseBackend::Postgres, latest_q))
+        .await
+        .c(h!())?;
+    info!(
+        "inbox_random select took {}ms (rows={})",
+        select_start.elapsed().as_millis(),
+        query_res.len()
+    );
+    let messages: Vec<InboxMessageDesc> = query_res
+        .iter()
+        .map(|qr| InboxMessageDesc::from_query_result(qr, ""))
+        .collect::<Result<Vec<_>, DbErr>>()
+        .context(h!())?;
+    let messages =
+        aggregate_to_inbox_messages(&login, messages, &logins, &&req, &&**env)
+            .await?;
+    Ok(Json(MessageIdsRsp { messages }))
 }
 
 #[post("/api/rer-importer/delete-message")]

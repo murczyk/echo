@@ -8,7 +8,7 @@ import type {
   SignalProfileEntry,
   Unit,
 } from '../../../../Bindings';
-import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
+import { fetchInboxCount, fetchInboxMessages, fetchInboxRandomMessage } from '../../services/api/inbox';
 import { getNetworksByIds } from '../../services/api/networks';
 import { getUnitsList } from '../../services/api/units';
 import type { FeedColumnHandle } from './FeedColumn';
@@ -30,10 +30,12 @@ export type FeedStateDeps = {
   freqs: string[];
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
+  randomEnabled: boolean;
+  randomIntervalSec: number;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
-  const { freqs, setProfiles, setGroupInfos } = deps;
+  const { freqs, setProfiles, setGroupInfos, randomEnabled, randomIntervalSec } = deps;
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
     return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) => ({
@@ -53,11 +55,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     }));
   });
   const [error, setError] = useState<string | null>(null);
+  const messageFeedsRef = useRef(messageFeeds);
   const [networkMap, setNetworkMap] = useState<Record<number, Network>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const testRandomRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
   const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
+  const testRandomInFlightRef = useRef<Set<string>>(new Set());
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedId, setLoadingNewerFeedId] = useState<string | null>(null);
   const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
@@ -65,6 +70,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    messageFeedsRef.current = messageFeeds;
+  }, [messageFeeds]);
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -112,6 +121,45 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       });
     },
     [freqs],
+  );
+
+  const loadRandomMessage = useCallback(
+    async (feedId: string) => {
+      if (testRandomInFlightRef.current.has(feedId)) return;
+      const feed = messageFeedsRef.current.find((x) => x.id === feedId);
+      if (!feed) return;
+      testRandomInFlightRef.current.add(feedId);
+      try {
+        const req = buildReqForFeed(feed, { nolimit: true });
+        const existingIds = new Set(feed.items.map(([id]) => id));
+        let attempts = 0;
+        let newItems: typeof feed.items = [];
+        while (attempts < 3 && newItems.length === 0) {
+          const rsp = await fetchInboxRandomMessage(req);
+          if (rsp.inboxItems.length === 0) return;
+          newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
+          attempts += 1;
+        }
+        if (newItems.length === 0) return;
+        setMessageFeeds((prev) =>
+          prev.map((x) => {
+            if (x.id !== feedId) return x;
+            const combined = dedupeMessageItems([...x.items, ...newItems]);
+            const unreadCount = combined.length - x.readIds.size;
+            return {
+              ...x,
+              items: sortMessageItemsByTime(combined),
+              unreadCount,
+            };
+          }),
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        testRandomInFlightRef.current.delete(feedId);
+      }
+    },
+    [buildReqForFeed, setMessageFeeds, setError],
   );
 
   const loadFeedInitialMessages = useCallback(
@@ -347,6 +395,20 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
   }, [pollCountThenLoadNewerIfNeeded]);
+
+  useEffect(() => {
+    if (testRandomRef.current) clearInterval(testRandomRef.current);
+    if (!randomEnabled) return;
+    const intervalMs = Math.max(1, randomIntervalSec) * 1000;
+    testRandomRef.current = setInterval(() => {
+      messageFeedsRef.current.forEach((feed) => {
+        void loadRandomMessage(feed.id);
+      });
+    }, intervalMs);
+    return () => {
+      if (testRandomRef.current) clearInterval(testRandomRef.current);
+    };
+  }, [randomEnabled, randomIntervalSec, loadRandomMessage]);
 
   useEffect(() => {
     const feedId = scrollToEndAfterNewerRef.current;

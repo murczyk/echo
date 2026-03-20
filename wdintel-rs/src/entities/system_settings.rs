@@ -16,6 +16,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub updated_by: Option<String>,
     pub deleted: bool,
+    pub rer_duty_random_enabled: bool,
+    pub rer_duty_random_interval_sec: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

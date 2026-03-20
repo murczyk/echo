@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { currentSystemSettings } from '../../services/api/system-settings';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -22,11 +23,31 @@ function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [numb
 
 export function useRerDutyFeeds(authUserName: string | null) {
   const filterOpts = useRerDutyFilterOptions();
+  const [randomEnabled, setRandomEnabled] = React.useState(false);
+  const [randomIntervalSec, setRandomIntervalSec] = React.useState(1);
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
+    randomEnabled,
+    randomIntervalSec,
   });
+  React.useEffect(() => {
+    let cancelled = false;
+    currentSystemSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setRandomEnabled(settings.rerDutyRandomEnabled);
+        setRandomIntervalSec(settings.rerDutyRandomIntervalSec);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        feedState.setError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [feedState]);
   const actions = useRerDutyMessageActions({
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,

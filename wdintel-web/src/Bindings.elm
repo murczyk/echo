@@ -6923,6 +6923,8 @@ freqPelengsEntryEncoder struct =
 type alias SystemSettingsCurrentRsp =
     { id : Maybe Int
     , rerAnalysisUnitsExactMatchOnlyDefault : Bool
+    , rerDutyRandomEnabled : Bool
+    , rerDutyRandomIntervalSec : Int
     }
 
 
@@ -6931,12 +6933,16 @@ systemSettingsCurrentRspEncoder struct =
     Json.Encode.object
         [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.id )
         , ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
+        , ( "rer_duty_random_enabled", Json.Encode.bool struct.rerDutyRandomEnabled )
+        , ( "rer_duty_random_interval_sec", Json.Encode.int struct.rerDutyRandomIntervalSec )
         ]
 
 
 type alias SystemSettingsItem =
     { id : Int
     , rerAnalysisUnitsExactMatchOnlyDefault : Bool
+    , rerDutyRandomEnabled : Bool
+    , rerDutyRandomIntervalSec : Int
     , createdAt : Int
     , updatedAt : Int
     , updatedBy : Maybe String
@@ -6949,6 +6955,8 @@ systemSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
         , ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
+        , ( "rer_duty_random_enabled", Json.Encode.bool struct.rerDutyRandomEnabled )
+        , ( "rer_duty_random_interval_sec", Json.Encode.int struct.rerDutyRandomIntervalSec )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "updated_at", Json.Encode.int struct.updatedAt )
         , ( "updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.updatedBy )
@@ -6970,6 +6978,8 @@ systemSettingsListRspEncoder struct =
 
 type alias CreateSystemSettingsReq =
     { rerAnalysisUnitsExactMatchOnlyDefault : Bool
+    , rerDutyRandomEnabled : Bool
+    , rerDutyRandomIntervalSec : Int
     }
 
 
@@ -6977,6 +6987,8 @@ createSystemSettingsReqEncoder : CreateSystemSettingsReq -> Json.Encode.Value
 createSystemSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
+        , ( "rer_duty_random_enabled", Json.Encode.bool struct.rerDutyRandomEnabled )
+        , ( "rer_duty_random_interval_sec", Json.Encode.int struct.rerDutyRandomIntervalSec )
         ]
 
 
@@ -11674,6 +11686,8 @@ systemSettingsCurrentRspDecoder =
     Json.Decode.succeed SystemSettingsCurrentRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_random_enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_random_interval_sec" Json.Decode.int))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -11681,6 +11695,8 @@ systemSettingsItemDecoder =
     Json.Decode.succeed SystemSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_random_enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_random_interval_sec" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" (Json.Decode.nullable Json.Decode.string)))
@@ -11697,6 +11713,8 @@ createSystemSettingsReqDecoder : Json.Decode.Decoder CreateSystemSettingsReq
 createSystemSettingsReqDecoder =
     Json.Decode.succeed CreateSystemSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_random_enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_random_interval_sec" Json.Decode.int))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

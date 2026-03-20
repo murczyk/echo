@@ -5,8 +5,10 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  FormControlLabel,
   Stack,
   Switch,
+  TextField,
   Typography,
 } from '@mui/material';
 import React from 'react';
@@ -34,6 +36,8 @@ export function AdminSystemSettingsNeoPage() {
     React.useState(true);
   const [initialExactMatchOnlyDefault, setInitialExactMatchOnlyDefault] =
     React.useState(true);
+  const [draftDutyRandomEnabled, setDraftDutyRandomEnabled] = React.useState(false);
+  const [draftDutyRandomIntervalSec, setDraftDutyRandomIntervalSec] = React.useState(1);
   const [loadInProgress, setLoadInProgress] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
@@ -52,6 +56,8 @@ export function AdminSystemSettingsNeoPage() {
           activeSettings?.rerAnalysisUnitsExactMatchOnlyDefault ?? true;
         setDraftExactMatchOnlyDefault(nextValue);
         setInitialExactMatchOnlyDefault(nextValue);
+        setDraftDutyRandomEnabled(activeSettings?.rerDutyRandomEnabled ?? false);
+        setDraftDutyRandomIntervalSec(activeSettings?.rerDutyRandomIntervalSec ?? 1);
       } catch (error) {
         if (isUnauthorizedError(error)) {
           window.location.assign('/login');
@@ -86,9 +92,14 @@ export function AdminSystemSettingsNeoPage() {
     setSaveSuccess(null);
 
     try {
-      await createSystemSettings(draftExactMatchOnlyDefault);
+      const intervalSec = Math.max(1, Math.floor(draftDutyRandomIntervalSec) || 1);
+      await createSystemSettings(
+        draftExactMatchOnlyDefault,
+        draftDutyRandomEnabled,
+        intervalSec,
+      );
       setInitialExactMatchOnlyDefault(draftExactMatchOnlyDefault);
-      setSaveSuccess('Нове системне налаштування збережено');
+      setSaveSuccess('Нове системне налаштування збережено.');
     } catch (error) {
       if (isUnauthorizedError(error)) {
         window.location.assign('/login');
@@ -148,6 +159,34 @@ export function AdminSystemSettingsNeoPage() {
                     Прапорець «точний збіг за еталонкою» на аналізі увімкнений
                   </ButtonBase>
                 </Box>
+
+                <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
+                  Оперативний: випадкові повідомлення
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={draftDutyRandomEnabled}
+                      onChange={(_, checked) => {
+                        setSaveSuccess(null);
+                        setDraftDutyRandomEnabled(checked);
+                      }}
+                    />
+                  }
+                  label="Увімкнути автоматичну вибірку випадкових повідомлень"
+                />
+                <TextField
+                  label="Інтервал (секунди)"
+                  type="number"
+                  value={draftDutyRandomIntervalSec}
+                  onChange={(event) => {
+                    setSaveSuccess(null);
+                    const next = Number(event.target.value);
+                    setDraftDutyRandomIntervalSec(Number.isFinite(next) ? next : 1);
+                  }}
+                  inputProps={{ min: 1, step: 1 }}
+                  helperText="Мінімум 1 секунда"
+                />
 
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
                   <Button
