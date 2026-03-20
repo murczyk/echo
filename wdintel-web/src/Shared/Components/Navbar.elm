@@ -299,27 +299,29 @@ menuItem props activeName hrefLink activeNameExp nameText =
     let
         neoAlphaBadge =
             span
-                [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
+                [ class "pointer-events-none absolute -top-1 -right-1 z-10 rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                 [ text "Alpha" ]
 
         linkContents =
             if activeNameExp == "rer-duty-neo" then
-                span [ class "inline-flex items-center gap-2" ]
-                    [ text nameText
-                    , neoAlphaBadge
-                    ]
+                [ text nameText
+                , neoAlphaBadge
+                ]
 
             else
-                text nameText
+                [ text nameText ]
     in
     li []
         [ a
             [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
+            , classList
+                [ ( "relative", activeNameExp == "rer-duty-neo" )
+                , ( "text-[var(--color-text)] font-medium", activeName == activeNameExp )
+                ]
             , Route.Path.href hrefLink
-            , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
             , onClick (props.onDropdownToggle Nothing)
             ]
-            [ linkContents ]
+            linkContents
         ]
 
 
