@@ -53,6 +53,10 @@ type ListCallsignsReqBody = {
   filter_position: ListCallsignsReq['filterPosition'];
   filter_comment: ListCallsignsReq['filterComment'];
   filter_unit: ListCallsignsReq['filterUnit'];
+  filter_unit_army: ListCallsignsReq['filterUnitArmy'];
+  filter_unit_division: ListCallsignsReq['filterUnitDivision'];
+  filter_unit_regiment: ListCallsignsReq['filterUnitRegiment'];
+  filter_unit_battalion: ListCallsignsReq['filterUnitBattalion'];
   filter_developing: ListCallsignsReq['filterDeveloping'];
   since_date_inclusive_ms: ListCallsignsReq['sinceDateInclusiveMs'];
   till_date_inclusive_ms: ListCallsignsReq['tillDateInclusiveMs'];
@@ -194,6 +198,10 @@ function toListCallsignsReqBody(req: ListCallsignsReq): ListCallsignsReqBody {
     filter_position: req.filterPosition,
     filter_comment: req.filterComment,
     filter_unit: req.filterUnit,
+    filter_unit_army: req.filterUnitArmy,
+    filter_unit_division: req.filterUnitDivision,
+    filter_unit_regiment: req.filterUnitRegiment,
+    filter_unit_battalion: req.filterUnitBattalion,
     filter_developing: req.filterDeveloping,
     since_date_inclusive_ms: req.sinceDateInclusiveMs,
     till_date_inclusive_ms: req.tillDateInclusiveMs,

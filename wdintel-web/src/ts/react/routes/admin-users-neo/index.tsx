@@ -1136,6 +1136,7 @@ export function AdminUsersNeoPage() {
       tableId="admin-users-neo"
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
     >
       <AdminUsersNeoPageBody />
     </TableStateProvider>

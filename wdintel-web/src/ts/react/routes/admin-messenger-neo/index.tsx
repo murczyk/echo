@@ -1644,6 +1644,7 @@ export function AdminMessengerNeoPage() {
       tableId="admin-messenger"
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
     >
       <AdminMessengerNeoPageBody />
     </TableStateProvider>

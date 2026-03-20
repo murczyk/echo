@@ -45,9 +45,20 @@ import type {
   CallsignsFilterState,
   CallsignsSortState,
   DownloadKind,
+  SelectedSidebarUnitFilter,
   SortDirection,
   UiStatus,
+  UnitHierarchyFilter,
 } from './types';
+
+const EMPTY_HIERARCHY_PARAM = '__EMPTY__';
+const FILTERS_DEBOUNCE_MS = 500;
+const HIERARCHY_LABELS = {
+  army: 'Армія',
+  division: 'Дивізія',
+  regiment: 'Полк',
+  battalion: 'Батальйон',
+} as const;
 
 function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
   const url = new URL(window.location.href);
@@ -118,10 +129,81 @@ function readInitialSidebarSelectedUnitFromUrl(): string | null {
   return unit || null;
 }
 
+function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter | null {
+  const params = new URLSearchParams(window.location.search);
+  const hierarchy = {
+    army: decodeHierarchyParam(params.get('unit_army')),
+    division: decodeHierarchyParam(params.get('unit_division')),
+    regiment: decodeHierarchyParam(params.get('unit_regiment')),
+    battalion: decodeHierarchyParam(params.get('unit_battalion')),
+  };
+
+  if (Object.values(hierarchy).every((value) => value == null)) {
+    return null;
+  }
+
+  return hierarchy;
+}
+
+function getSidebarGroupLabel(hierarchy: UnitHierarchyFilter): string {
+  const lastDefinedEntry = (Object.entries(hierarchy) as Array<[keyof UnitHierarchyFilter, string | null]>)
+    .reverse()
+    .find(([, value]) => value != null);
+
+  if (!lastDefinedEntry) return 'Підрозділ';
+
+  const [key, value] = lastDefinedEntry;
+  return value === '' ? `Без ${HIERARCHY_LABELS[key].toLowerCase()}` : (value ?? 'Підрозділ');
+}
+
+function areSidebarFiltersEqual(
+  left: SelectedSidebarUnitFilter | null,
+  right: SelectedSidebarUnitFilter | null,
+): boolean {
+  if (left == null || right == null) return left === right;
+  if (left.kind !== right.kind) return false;
+
+  if (left.kind === 'leaf' && right.kind === 'leaf') {
+    return left.unitName === right.unitName;
+  }
+
+  if (left.kind === 'group' && right.kind === 'group') {
+    return left.hierarchy.army === right.hierarchy.army
+      && left.hierarchy.division === right.hierarchy.division
+      && left.hierarchy.regiment === right.hierarchy.regiment
+      && left.hierarchy.battalion === right.hierarchy.battalion;
+  }
+
+  return false;
+}
+
+function readInitialSidebarFilterFromUrl(): SelectedSidebarUnitFilter | null {
+  const hierarchy = readInitialSidebarHierarchyFilterFromUrl();
+  if (hierarchy) {
+    return {
+      kind: 'group',
+      label: getSidebarGroupLabel(hierarchy),
+      hierarchy,
+    };
+  }
+
+  const unitName = readInitialSidebarSelectedUnitFromUrl();
+  if (!unitName) {
+    return null;
+  }
+
+  return {
+    kind: 'leaf',
+    label: unitName,
+    unitName,
+  };
+}
+
 function syncCallsignsStateToUrl(
   filters: CallsignsFilterState,
   sort: CallsignsSortState,
   sidebarOpen: boolean,
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null,
 ) {
   updateUrlSearchParams((params) => {
     const setOrDelete = (key: string, value: string | null | undefined) => {
@@ -137,6 +219,10 @@ function syncCallsignsStateToUrl(
     setOrDelete('position', filters.filterPosition.trim() || null);
     setOrDelete('comment', filters.filterComment.trim() || null);
     setOrDelete('unit', filters.filterUnit.trim() || null);
+    setHierarchyParam(params, 'unit_army', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.army : null);
+    setHierarchyParam(params, 'unit_division', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.division : null);
+    setHierarchyParam(params, 'unit_regiment', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.regiment : null);
+    setHierarchyParam(params, 'unit_battalion', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.battalion : null);
 
     if (filters.filterDeveloping !== 'OnlyNonDeveloping') {
       params.set('developing', filters.filterDeveloping);
@@ -171,6 +257,20 @@ function syncCallsignsStateToUrl(
       params.set('units_sidebar', '0');
     }
   });
+}
+
+function decodeHierarchyParam(value: string | null): string | null {
+  if (value == null) return null;
+  return value === EMPTY_HIERARCHY_PARAM ? '' : value;
+}
+
+function setHierarchyParam(params: URLSearchParams, key: string, value: string | null) {
+  if (value == null) {
+    params.delete(key);
+    return;
+  }
+
+  params.set(key, value === '' ? EMPTY_HIERARCHY_PARAM : value);
 }
 
 function redirectToLogin() {
@@ -219,8 +319,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [filters, setFilters] = React.useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
   const [sort, setSort] = React.useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
   const [sidebarOpen, setSidebarOpen] = React.useState<boolean>(() => readInitialSidebarOpenFromUrl());
-  const [selectedSidebarUnitName, setSelectedSidebarUnitName] = React.useState<string | null>(() =>
-    readInitialSidebarSelectedUnitFromUrl(),
+  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] = React.useState<SelectedSidebarUnitFilter | null>(() =>
+    readInitialSidebarFilterFromUrl(),
   );
 
   const [addUnitId, setAddUnitId] = React.useState<number | null>(null);
@@ -333,7 +433,12 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
       try {
         const rsp = await listCallsigns(
-          buildListCallsignsReq({ filters, sort, query: { afterId, limit } }),
+          buildListCallsignsReq({
+            filters,
+            sort,
+            query: { afterId, limit },
+            sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
+          }),
           controller.signal,
         );
         if (listRequestSeqRef.current !== seq) return;
@@ -358,7 +463,14 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     if (announceLoading) setLoadingMore(true);
 
     try {
-      const rsp = await listCallsigns(buildListCallsignsReq({ filters, sort, query: { afterId, limit: getDefaultPageSize() } }));
+      const rsp = await listCallsigns(
+        buildListCallsignsReq({
+          filters,
+          sort,
+          query: { afterId, limit: getDefaultPageSize() },
+          sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
+        }),
+      );
       if (listRequestSeqRef.current !== seq) return;
       setCallsigns((prev) => {
         const byId = new Map<number, Callsign>();
@@ -403,7 +515,12 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       setStatus(null);
       try {
         const bootstrap = await fetchCallsignsBootstrapData(
-          buildListCallsignsReq({ filters, sort, query: { afterId: null, limit: getDefaultPageSize() } }),
+          buildListCallsignsReq({
+            filters,
+            sort,
+            query: { afterId: null, limit: getDefaultPageSize() },
+            sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
+          }),
         );
 
         if (cancelled) return;
@@ -453,7 +570,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       setStatus((prev) => (prev?.kind === 'success' ? null : prev));
       setRefreshing(true);
       void runListFetch({ append: false, afterId: null, announceLoading: false });
-    }, 300);
+    }, FILTERS_DEBOUNCE_MS);
 
     return () => {
       if (debounceTimerRef.current !== null) {
@@ -461,11 +578,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         debounceTimerRef.current = null;
       }
     };
-  }, [filters, sort]);
+  }, [filters, sort, selectedSidebarUnitFilter]);
 
   React.useEffect(() => {
-    syncCallsignsStateToUrl(filters, sort, sidebarOpen);
-  }, [filters, sort, sidebarOpen]);
+    syncCallsignsStateToUrl(filters, sort, sidebarOpen, selectedSidebarUnitFilter);
+  }, [filters, sort, sidebarOpen, selectedSidebarUnitFilter]);
 
   React.useEffect(() => {
     setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
@@ -474,8 +591,14 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   function onFiltersChange(updater: (prev: CallsignsFilterState) => CallsignsFilterState) {
     setFilters((prev) => {
       const next = updater(prev);
-      if (selectedSidebarUnitName && next.filterUnit.trim() !== selectedSidebarUnitName) {
-        setSelectedSidebarUnitName(null);
+      if (next.filterUnit.trim() !== prev.filterUnit.trim() && selectedSidebarUnitFilter) {
+        if (selectedSidebarUnitFilter.kind === 'leaf') {
+          if (next.filterUnit.trim() !== selectedSidebarUnitFilter.unitName) {
+            setSelectedSidebarUnitFilter(null);
+          }
+        } else if (next.filterUnit.trim() !== '') {
+          setSelectedSidebarUnitFilter(null);
+        }
       }
       return next;
     });
@@ -498,7 +621,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onClearFilters() {
-    setSelectedSidebarUnitName(null);
+    setSelectedSidebarUnitFilter(null);
     setFilters(createDefaultFilters());
   }
 
@@ -829,7 +952,12 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setStatus(null);
     setDownloadInProgress(kind);
     try {
-      const req = buildListCallsignsReq({ filters, sort, query: { afterId: null, limit: null } });
+      const req = buildListCallsignsReq({
+        filters,
+        sort,
+        query: { afterId: null, limit: null },
+        sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
+      });
       const blob = kind === 'csv' ? await downloadCallsignsCsv(req) : await downloadCallsignsXlsx(req);
       downloadBlob(blob, kind === 'csv' ? 'callsigns.csv' : 'callsigns.xlsx');
     } catch (error) {
@@ -850,12 +978,12 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     await runListFetch({ append: true, afterId: last.id, announceLoading: true });
   }
 
-  function onPickUnitFilter(unitName: string) {
-    setSelectedSidebarUnitName((prevSelected) => {
-      const nextSelected = prevSelected === unitName ? null : unitName;
+  function onPickUnitFilter(filter: SelectedSidebarUnitFilter) {
+    setSelectedSidebarUnitFilter((prevSelected) => {
+      const nextSelected = areSidebarFiltersEqual(prevSelected, filter) ? null : filter;
       setFilters((prev) => ({
         ...prev,
-        filterUnit: nextSelected ?? '',
+        filterUnit: nextSelected?.kind === 'leaf' ? nextSelected.unitName : '',
       }));
       return nextSelected;
     });
@@ -877,7 +1005,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     filters,
     sidebarOpen,
     setSidebarOpen,
-    selectedSidebarUnitName,
+    selectedSidebarUnitFilter,
     onFiltersChange,
     onSort,
     onRefresh,

@@ -333,6 +333,25 @@ async fn list_callsigns_impl(
             ));
         }
     }
+    if let Some(filter_unit_army) = &req.filter_unit_army {
+        callsigns = callsigns
+            .filter(sigint_unit::Column::Army.eq(filter_unit_army.clone()));
+    }
+    if let Some(filter_unit_division) = &req.filter_unit_division {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Division.eq(filter_unit_division.clone()),
+        );
+    }
+    if let Some(filter_unit_regiment) = &req.filter_unit_regiment {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Regiment.eq(filter_unit_regiment.clone()),
+        );
+    }
+    if let Some(filter_unit_battalion) = &req.filter_unit_battalion {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Battalion.eq(filter_unit_battalion.clone()),
+        );
+    }
 
     let filter_developing = req
         .filter_developing
@@ -1212,6 +1231,10 @@ mod tests {
             filter_position: None,
             filter_comment: None,
             filter_unit: None,
+            filter_unit_army: None,
+            filter_unit_division: None,
+            filter_unit_regiment: None,
+            filter_unit_battalion: None,
             filter_developing: None,
             since_date_inclusive_ms: None,
             till_date_inclusive_ms: None,
@@ -1345,5 +1368,70 @@ mod tests {
         }
 
         assert_eq!(paged_ids, full_ids);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_filters_by_unit_hierarchy_path() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+
+        let matching_unit = sigint_unit::ActiveModel {
+            company: Set("C".to_string()),
+            regiment: Set("11".to_string()),
+            division: Set("3".to_string()),
+            army: Set("A".to_string()),
+            active: Set(true),
+            deleted: Set(false),
+            created_at: Set(now),
+            created_by: Set(login.login.clone()),
+            name: Set("MatchingUnit".to_string()),
+            comment: Set(String::new()),
+            battalion: Set("B".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let other_division_unit = sigint_unit::ActiveModel {
+            company: Set("C".to_string()),
+            regiment: Set("11".to_string()),
+            division: Set("5".to_string()),
+            army: Set("A".to_string()),
+            active: Set(true),
+            deleted: Set(false),
+            created_at: Set(now),
+            created_by: Set(login.login.clone()),
+            name: Set("OtherDivisionUnit".to_string()),
+            comment: Set(String::new()),
+            battalion: Set("B".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        insert_test_callsign(&env.dbx, matching_unit.id, "alpha", now, "")
+            .await;
+        insert_test_callsign(
+            &env.dbx,
+            other_division_unit.id,
+            "bravo",
+            now,
+            "",
+        )
+        .await;
+
+        let mut req =
+            list_req(None, Some(100), ListCallsignsSortBy::CallsignAsc);
+        req.filter_unit_army = Some("A".to_string());
+        req.filter_unit_division = Some("3".to_string());
+
+        let callsigns = list_callsigns_impl(&env.dbx, &req).await.unwrap();
+
+        assert_eq!(callsigns.len(), 1);
+        assert_eq!(callsigns[0].callsign, "alpha");
     }
 }

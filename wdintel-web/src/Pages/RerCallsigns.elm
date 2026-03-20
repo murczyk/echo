@@ -365,6 +365,10 @@ buildListCallsignsReq model params =
     , filterPosition = Just model.filterPosition
     , filterComment = Just model.filterComment
     , filterUnit = Just model.filterUnit
+    , filterUnitArmy = Nothing
+    , filterUnitDivision = Nothing
+    , filterUnitRegiment = Nothing
+    , filterUnitBattalion = Nothing
     , filterDeveloping = Just model.filterDeveloping
     , sinceDateInclusiveMs =
         if model.isIgnoringDateFilter then
