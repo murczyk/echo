@@ -23,7 +23,7 @@ export function useRerDutyFilterOptions() {
   const [selectedSavedId, setSelectedSavedId] = React.useState<number | null>(null);
   const [saveFilterName, setSaveFilterName] = React.useState('');
   const [reloadFreqsLoading, setReloadFreqsLoading] = React.useState(false);
-  const [featureStrictNetworks, setFeatureStrictNetworks] = React.useState(false);
+  const [featureStrictNetworks, setFeatureStrictNetworks] = React.useState(true);
   const mountedRef = React.useRef(true);
 
   React.useEffect(() => {

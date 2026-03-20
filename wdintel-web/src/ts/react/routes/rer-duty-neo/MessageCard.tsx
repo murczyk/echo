@@ -485,7 +485,7 @@ export function MessageCard({
                 ) : (
                   <span className="flex items-center gap-1" aria-hidden>
                     <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
-                    <span>Не встановлена</span>
+                    <span aria-hidden>{'\u00A0'}</span>
                   </span>
                 )}
               </span>
