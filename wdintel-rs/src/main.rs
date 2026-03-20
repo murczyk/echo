@@ -1100,7 +1100,7 @@ async fn async_main(
                 .await
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
-            rer_importer::inbox::metadata::oneoff_reprocess_inbox_metadata(
+            rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(
                 mode, &ps,
             )
             .await
