@@ -343,7 +343,6 @@ fn build_form_1217_paragraphs(details: &InterceptionDetails) -> Vec<Paragraph> {
                     &format!("{label}: {value}"),
                     &util::ParagraphStyle::Italic,
                 )
-                .color("808080")
                 .size(16),
             )
         })
