@@ -456,9 +456,18 @@ where
     let palitra_filter = build_palitra_access_filter(access, exact);
 
     let rows = palitra_point::Entity::find()
-        .inner_join(palitra_point_lexeme::Entity)
-        .inner_join(palitra_geometry::Entity)
-        .inner_join(palitra::Entity)
+        .join(
+            JoinType::InnerJoin,
+            palitra_point::Relation::PalitraPointLexeme.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            palitra_point::Relation::PalitraGeometry.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            palitra_geometry::Relation::Palitra.def(),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra::Column::Deleted.eq(false))
         .filter(palitra_filter)
