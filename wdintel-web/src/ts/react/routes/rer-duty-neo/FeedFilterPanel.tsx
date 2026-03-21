@@ -144,6 +144,14 @@ export function FeedFilterPanel({
     });
   }, [postsSelected.length, postsDenied.length]);
 
+  /** Stable deps for resync effects — parent uses `x ?? []` so empty filters get a new [] each render. */
+  const sendersSelectedKey = JSON.stringify(filterStable.sendersSelected);
+  const deniedSendersKey = JSON.stringify(filterStable.deniedSenders);
+  const freqsSelectedKey = JSON.stringify(filterStable.freqsSelected);
+  const freqsDeniedKey = JSON.stringify(filterStable.freqsDenied);
+  const postsSelectedKey = JSON.stringify(postsSelected);
+  const postsDeniedKey = JSON.stringify(postsDenied);
+
   const postValue = postMode === 'include' ? postsSelected : postsDenied;
   const postEmptyLabel = postMode === 'include' ? 'всі' : 'ніяка';
 
@@ -162,31 +170,36 @@ export function FeedFilterPanel({
   const [localFreqValue, setLocalFreqValue] = React.useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = React.useState<string[]>(() => postValue);
 
-  // Resync local filter selections when feed filter changes. Guard: only setState when next value
-  // differs (parent passes fresh [] on each render when filter is null, so ref change would cause
-  // unnecessary resets and Autocomplete flicker with polling).
+  // Resync local selections when *parent* filter changes. Do not depend on local* state: if local
+  // is in deps, this runs after user picks an option but before the parent applies it, and would
+  // overwrite the selection with the old filter → fight with writeback + MUI Autocomplete loop.
   React.useEffect(() => {
-    const ids = senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
-    const currentIds = localSenderValue.map((o) => o.id);
-    if (ids.length === currentIds.length && ids.every((id, i) => id === currentIds[i])) return;
-    setLocalSenderValue(
-      ids.map((id) => {
+    const ids =
+      senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
+    setLocalSenderValue((prev) => {
+      const currentIds = prev.map((o) => o.id);
+      if (ids.length === currentIds.length && ids.every((id, i) => id === currentIds[i])) return prev;
+      return ids.map((id) => {
         const o = senderOptions.find((opt) => opt.id === id);
         return o ?? { id, label: id };
-      }),
-    );
-  }, [filterStable.sendersSelected, filterStable.deniedSenders, senderMode, senderOptions, localSenderValue]);
+      });
+    });
+  }, [sendersSelectedKey, deniedSendersKey, senderMode, senderOptions]);
   React.useEffect(() => {
     const value = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
     const next = value ?? [];
-    if (next.length === localFreqValue.length && next.every((v, i) => v === localFreqValue[i])) return;
-    setLocalFreqValue(next);
-  }, [filterStable.freqsSelected, filterStable.freqsDenied, freqMode, localFreqValue]);
+    setLocalFreqValue((prev) => {
+      if (next.length === prev.length && next.every((v, i) => v === prev[i])) return prev;
+      return next;
+    });
+  }, [freqsSelectedKey, freqsDeniedKey, freqMode]);
   React.useEffect(() => {
     const value = postMode === 'include' ? (filterStable.postsSelected ?? []) : (filterStable.postsDenied ?? []);
-    if (value.length === localPostValue.length && value.every((v, i) => v === localPostValue[i])) return;
-    setLocalPostValue(value);
-  }, [filterStable.postsSelected, filterStable.postsDenied, postMode, localPostValue]);
+    setLocalPostValue((prev) => {
+      if (value.length === prev.length && value.every((v, i) => v === prev[i])) return prev;
+      return value;
+    });
+  }, [postsSelectedKey, postsDeniedKey, postMode]);
 
   // Push local selections to parent only when they differ from filterStable; avoid rewriting on mount
   React.useEffect(() => {

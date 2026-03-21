@@ -292,25 +292,37 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
   from.setDate(from.getDate() - 15);
   const to = new Date(now);
   to.setDate(to.getDate() + 1);
+  const freqStr = msg.freq != null ? String(msg.freq).trim() : '';
+  const freqsSelected = freqStr !== '' ? [freqStr] : [];
   const stateSnake = {
     date_from_str: toDateStr(from),
     time_from_str: '',
     date_to_str: toDateStr(to),
     time_to_str: '00:00',
+    aors_selected: [] as string[],
     groups_selected: [] as string[],
     senders_selected: [] as string[],
-    freqs_selected: msg.freq != null && msg.freq !== '' ? [msg.freq] : ([] as string[]),
+    freqs_selected: freqsSelected,
     callsigns_selected: [] as string[],
     units_selected: [] as string[],
     locations_selected: [] as string[],
-    include_peleng_locations: false,
+    posts_selected: [] as string[],
+    networks_selected: [] as string[],
+    without_network: false,
     or_with_extended_form: false,
     or_bookmarked: false,
     or_important: false,
     or_with_coords: false,
     search: msg.messageUid ?? '',
+    metadata_cc: [] as string[],
+    metadata_sender: [] as string[],
+    metadata_receiver: [] as string[],
+    metadata_hash: [] as string[],
+    only_with_metadata: false,
+    without_metadata: false,
     tags: [] as number[],
-    units_exact_match_only: true,
+    include_peleng_locations: false,
+    units_exact_match_only: null as boolean | null,
     adjacent_freqs_range: 0,
     without_model_tags: false,
   };
