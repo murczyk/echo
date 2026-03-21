@@ -202,103 +202,17 @@ where
     }
 }
 
-fn apply_joined_group_aor_scope<E>(
+fn apply_message_aor_scope<E>(
     query: Select<E>,
     selected_aors: &Option<Vec<i64>>,
 ) -> Select<E>
 where
     E: EntityTrait,
 {
-    if selected_aors
-        .as_ref()
-        .map(|aors| aors.is_empty())
-        .unwrap_or(true)
-    {
-        return query;
+    match selected_aors_filter_condition(selected_aors) {
+        Some(condition) => query.filter(condition),
+        None => query,
     }
-
-    let query = query
-        .join(
-            JoinType::LeftJoin,
-            signal_message_group::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_group::Relation::SignalGroupAor.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_group_aor::Relation::AreaOfResponsibility.def(),
-        );
-
-    apply_joined_aor_overlap_filter(query, selected_aors)
-}
-
-fn apply_joined_aor_overlap_filter<Q>(
-    query: Q,
-    selected_aors: &Option<Vec<i64>>,
-) -> Q
-where
-    Q: QueryFilter,
-{
-    let Some(selected_aors) =
-        selected_aors.as_ref().filter(|aors| !aors.is_empty())
-    else {
-        return query;
-    };
-
-    let selected_aor_alias = Alias::new("selected_aor_filter");
-    let overlap_subquery = Query::select()
-        .expr(Expr::value(1))
-        .from_as(area_of_responsibility::Entity, selected_aor_alias.clone())
-        .cond_where(
-            Cond::all()
-                .add(
-                    Expr::col((
-                        selected_aor_alias.clone(),
-                        area_of_responsibility::Column::Id,
-                    ))
-                    .is_in(selected_aors.clone()),
-                )
-                .add(
-                    Cond::any()
-                        .add(
-                            Expr::col((
-                                area_of_responsibility::Entity,
-                                area_of_responsibility::Column::LeftBound,
-                            ))
-                            .between(
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::LeftBound,
-                                )),
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::RightBound,
-                                )),
-                            ),
-                        )
-                        .add(
-                            Expr::col((
-                                area_of_responsibility::Entity,
-                                area_of_responsibility::Column::RightBound,
-                            ))
-                            .between(
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::LeftBound,
-                                )),
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::RightBound,
-                                )),
-                            ),
-                        ),
-                ),
-        )
-        .to_owned();
-
-    query.filter(Expr::exists(overlap_subquery))
 }
 
 pub async fn count_groups(
@@ -366,8 +280,7 @@ fn build_groups_query(
         &req.selected_senders,
         &accessible_groups,
     );
-    let groups_res =
-        apply_joined_group_aor_scope(groups_res, &req.selected_aors);
+    let groups_res = apply_message_aor_scope(groups_res, &req.selected_aors);
     let groups_res =
         filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
     let groups_res =
@@ -700,7 +613,7 @@ fn build_join_for_sender_stats(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(sender_stats_groups),
         );
-        apply_joined_group_aor_scope(query, selected_aors)
+        apply_message_aor_scope(query, selected_aors)
     }
 }
 
@@ -1824,20 +1737,8 @@ pub async fn fetch_aors(
     }
 
     let instant = std::time::Instant::now();
-
-    #[derive(FromQueryResult)]
-    struct AorsRes {
-        aor_id: i64,
-        count: i64,
-    }
-    let aors_res =
-        build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
-    // println!(
-    //     "> aors_res: {}",
-    //     aors_res.build(DbBackend::Postgres).to_string()
-    // );
-    let aors_res: Vec<AorsRes> = aors_res
-        .into_model::<AorsRes>()
+    let stmt = build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let aors_res: Vec<AorsRes> = AorsRes::find_by_statement(stmt)
         .all(&env.dbx)
         .await
         .context(h!())?;
@@ -1852,6 +1753,12 @@ pub async fn fetch_aors(
     Ok(aors)
 }
 
+#[derive(FromQueryResult)]
+struct AorsRes {
+    aor_id: i64,
+    count: i64,
+}
+
 pub async fn count_aors(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -1863,9 +1770,12 @@ pub async fn count_aors(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let read_db = env.replica();
 
-    let aors_res =
-        build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = aors_res.count(&read_db).await.context(h!())?;
+    let stmt = build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let count = AorsRes::find_by_statement(stmt)
+        .all(&read_db)
+        .await
+        .context(h!())?
+        .len();
     Ok(count as i64)
 }
 
@@ -1875,10 +1785,15 @@ fn build_aors_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
-) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+) -> Result<Statement, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let aors_res = sigint_inbox_item::Entity::find()
+    let messages_q = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column_as(
+            Expr::cust(r#"DISTINCT "signal_message"."id""#),
+            "message_id",
+        )
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
@@ -1891,57 +1806,31 @@ fn build_aors_query(
             JoinType::InnerJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         )
-        .join(
-            JoinType::LeftJoin,
-            signal_message_group::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_group::Relation::SignalGroupAor.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_group_aor::Relation::AreaOfResponsibility.def(),
-        )
-        .select_only()
-        .column_as(
-            Expr::col((
-                area_of_responsibility::Entity,
-                area_of_responsibility::Column::Id,
-            )),
-            "aor_id",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
-        .group_by(Expr::cust("1"));
-    let aors_res = apply_joined_group_rows_filter(
-        aors_res,
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let messages_q = apply_joined_group_rows_filter(
+        messages_q,
         &req.selected_groups,
         &req.selected_senders,
         &master_keys,
     );
-    let aors_res =
-        filter_selected_freqs(aors_res, &req.selected_freqs).context(h!())?;
-    let aors_res =
-        filter_selected_posts(aors_res, &req.selected_posts).context(h!())?;
-    let aors_res = filter_selected_locations(
-        aors_res,
+    let messages_q =
+        filter_selected_freqs(messages_q, &req.selected_freqs).context(h!())?;
+    let messages_q =
+        filter_selected_posts(messages_q, &req.selected_posts).context(h!())?;
+    let messages_q = filter_selected_locations(
+        messages_q,
         &req.selected_locations,
         include_peleng_locations,
     )
     .context(h!())?;
-    let aors_res = filter_selected_callsigns(aors_res, &req.selected_callsigns)
-        .context(h!())?;
-    let aors_res = filter_selected_tags(
-        aors_res,
+    let messages_q =
+        filter_selected_callsigns(messages_q, &req.selected_callsigns)
+            .context(h!())?;
+    let messages_q = filter_selected_tags(
+        messages_q,
         &req.selected_tags,
         &req.or_bookmarked,
         &req.or_important,
@@ -1953,11 +1842,178 @@ fn build_aors_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let aors_res = filter_search(aors_res, &req.search).context(h!())?;
-    let aors_res = apply_metadata_filters(aors_res, &req.0)?;
-    let aors_res =
-        apply_joined_aor_overlap_filter(aors_res, &req.selected_aors);
-    Ok(aors_res)
+    let messages_q = filter_search(messages_q, &req.search).context(h!())?;
+    let messages_q = apply_metadata_filters(messages_q, &req.0)?;
+    let messages_q =
+        filter_selected_aors(messages_q, &req.selected_aors).context(h!())?;
+
+    let messages_cte_alias = Alias::new("messages_aor_cte");
+    let messages_alias = Alias::new("messages_aor");
+    let group_message_alias = Alias::new("group_message_aor");
+    let group_aor_alias = Alias::new("group_aor_link");
+    let group_value_alias = Alias::new("group_aor_value");
+    let network_message_alias = Alias::new("network_message_aor");
+    let network_alias = Alias::new("network_aor");
+    let network_aor_alias = Alias::new("network_aor_link");
+    let network_value_alias = Alias::new("network_aor_value");
+
+    let group_message_aors = Query::select()
+        .expr_as(
+            Expr::col((messages_alias.clone(), Alias::new("message_id"))),
+            Alias::new("message_id"),
+        )
+        .expr_as(
+            Expr::col((
+                group_value_alias.clone(),
+                area_of_responsibility::Column::Id,
+            )),
+            Alias::new("aor_id"),
+        )
+        .from_as(messages_cte_alias.clone(), messages_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            signal_message_group::Entity,
+            group_message_alias.clone(),
+            Condition::all().add(
+                Expr::col((
+                    group_message_alias.clone(),
+                    signal_message_group::Column::SignalMessageId,
+                ))
+                .equals((messages_alias.clone(), Alias::new("message_id"))),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            signal_group_aor::Entity,
+            group_aor_alias.clone(),
+            Condition::all().add(
+                Expr::col((
+                    group_aor_alias.clone(),
+                    signal_group_aor::Column::MasterKey,
+                ))
+                .equals((
+                    group_message_alias,
+                    signal_message_group::Column::GroupMasterKey,
+                )),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            group_value_alias.clone(),
+            Expr::col((group_aor_alias, signal_group_aor::Column::AorId))
+                .equals((
+                    group_value_alias.clone(),
+                    area_of_responsibility::Column::Id,
+                )),
+        )
+        .and_where(
+            Expr::col((
+                group_value_alias.clone(),
+                area_of_responsibility::Column::Deleted,
+            ))
+            .eq(false),
+        )
+        .and_where(
+            Expr::col((
+                group_value_alias,
+                area_of_responsibility::Column::IsTopLevel,
+            ))
+            .eq(true),
+        )
+        .to_owned();
+
+    let network_message_aors = Query::select()
+        .expr_as(
+            Expr::col((messages_alias.clone(), Alias::new("message_id"))),
+            Alias::new("message_id"),
+        )
+        .expr_as(
+            Expr::col((
+                network_value_alias.clone(),
+                area_of_responsibility::Column::Id,
+            )),
+            Alias::new("aor_id"),
+        )
+        .from_as(messages_cte_alias.clone(), messages_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Entity,
+            network_message_alias.clone(),
+            Condition::all().add(
+                Expr::col((
+                    network_message_alias.clone(),
+                    sigint_inbox_item_network::Column::SigintInboxItemId,
+                ))
+                .equals((messages_alias, Alias::new("message_id"))),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network::Entity,
+            network_alias.clone(),
+            Condition::all().add(
+                Expr::col((network_alias.clone(), sigint_network::Column::Id))
+                    .equals((
+                        network_message_alias,
+                        sigint_inbox_item_network::Column::SigintNetworkId,
+                    )),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network_aor::Entity,
+            network_aor_alias.clone(),
+            Condition::all().add(
+                Expr::col((
+                    network_aor_alias.clone(),
+                    sigint_network_aor::Column::NetworkId,
+                ))
+                .equals((network_alias.clone(), sigint_network::Column::Id)),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            network_value_alias.clone(),
+            Expr::col((network_aor_alias, sigint_network_aor::Column::AorId))
+                .equals((
+                    network_value_alias.clone(),
+                    area_of_responsibility::Column::Id,
+                )),
+        )
+        .and_where(
+            Expr::col((network_alias, sigint_network::Column::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((
+                network_value_alias.clone(),
+                area_of_responsibility::Column::Deleted,
+            ))
+            .eq(false),
+        )
+        .and_where(
+            Expr::col((
+                network_value_alias,
+                area_of_responsibility::Column::IsTopLevel,
+            ))
+            .eq(true),
+        )
+        .to_owned();
+
+    let sql = format!(
+        "WITH {messages_cte} AS ({messages_sql}) \
+         SELECT aor_id, COUNT(DISTINCT message_id) AS count \
+         FROM ({group_sql} UNION ALL {network_sql}) AS message_aors \
+         GROUP BY 1",
+        messages_cte = messages_cte_alias.to_string(),
+        messages_sql = messages_q.into_query().to_string(PostgresQueryBuilder),
+        group_sql = group_message_aors.to_string(PostgresQueryBuilder),
+        network_sql = network_message_aors.to_string(PostgresQueryBuilder),
+    );
+
+    Ok(Statement::from_string(DbBackend::Postgres, sql))
 }
 
 #[derive(FromQueryResult)]
@@ -2173,9 +2229,6 @@ fn build_networks_query_for_login(
         groups_q
             .filter(signal_group::Column::MasterKey.eq_any(effective_groups))
     };
-    let groups_q =
-        apply_joined_aor_overlap_filter(groups_q, &req.selected_aors);
-
     // add more custom filters to the messages CTE
     let messages_q =
         filter_selected_freqs(messages_q, &req.selected_freqs).context(h!())?;
@@ -2196,6 +2249,8 @@ fn build_networks_query_for_login(
     let messages_q =
         filter_selected_callsigns(messages_q, &req.selected_callsigns)
             .context(h!())?;
+    let messages_q =
+        filter_selected_aors(messages_q, &req.selected_aors).context(h!())?;
     let messages_q = filter_selected_networks(
         messages_q,
         &req.selected_networks,
