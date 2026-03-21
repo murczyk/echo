@@ -32,14 +32,14 @@ function ResolvedNetworkEtalonRows({
   networkMap: Record<number, Network>;
 }) {
   return (
-    <div className="flex flex-col gap-1 items-start w-full min-w-0">
+    <span className="flex flex-col gap-1 items-start w-full min-w-0">
       {networkIds.map((networkId) => {
         const n = networkMap[networkId];
         const label = networkDisplayMap[networkId] ?? (n != null ? `р/м ${n.name}` : 'Невідома мережа');
         const badge = networkNeedsInvestigationBadge(n);
         const hasNetworkLink = n != null;
         return (
-          <div key={networkId} className="flex items-center gap-1 group w-full min-w-0">
+          <span key={networkId} className="flex items-center gap-1 group w-full min-w-0">
             <span className="min-w-0">
               <i className="bi bi-people text-icons shrink-0 mr-1" title="Еталонна прив'язка" />
 
@@ -63,10 +63,10 @@ function ResolvedNetworkEtalonRows({
                 </a>
               ) : null}
             </span>
-          </div>
+          </span>
         );
       })}
-    </div>
+    </span>
   );
 }
 
@@ -478,10 +478,10 @@ export function MessageCard({
                     networkMap={networkMap}
                   />
                 ) : etalonNoNetworkLabel != null ? (
-                  <div className="flex items-center gap-1">
+                  <span className="inline-flex items-center gap-1">
                     <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
                     <span className="ml-1">{etalonNoNetworkLabel}</span>
-                  </div>
+                  </span>
                 ) : (
                   <span className="flex items-center gap-1" aria-hidden>
                     <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
