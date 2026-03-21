@@ -3656,7 +3656,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 [[package]]
 name = "milgeo-rs"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=b4dc3debf83eee1c62ccf4440951a45c2bef4c3c#b4dc3debf83eee1c62ccf4440951a45c2bef4c3c"
+source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=0d3f161016ed67ceaf64e92f53db9966855f2c84#0d3f161016ed67ceaf64e92f53db9966855f2c84"
 dependencies = [
  "anyhow",
  "chrono",

@@ -28,7 +28,7 @@ chrono = { workspace = true }
 chrono-tz = "0.10.4"
 lazy_static = "1.5.0"
 once_cell = "1.19.0"
-regex = { version = "1.11.1", features = ["pattern"] }
+regex = "1.11.1"
 tempfile = "3.20.0"
 walkdir = "^2.5.0"
 zip = "4.3.0"
@@ -113,7 +113,7 @@ rev = "97a705c5a15c0d4f18d28659ae954a9c352112e2"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
-rev = "b4dc3debf83eee1c62ccf4440951a45c2bef4c3c"
+rev = "0d3f161016ed67ceaf64e92f53db9966855f2c84"
 
 [dependencies.opencv]
 git = "https://github.com/twistedfall/opencv-rust"
@@ -133,7 +133,6 @@ chrono = { workspace = true }
 default = ["proj"]
 opencv = ["dep:opencv"]
 proj = ["milgeo-rs/proj"]
-
 
 
 [package.metadata.deb]
