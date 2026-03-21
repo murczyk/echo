@@ -775,7 +775,7 @@ view user model shared route =
                             [ class "form-check-label"
                             , for "report-digest-form-1217"
                             ]
-                            [ text "згідно форми 1.2.17" ]
+                            [ text "строго згідно форми 1.2.17" ]
                         ]
                     ]
             , HtmlX.viewIf (List.member model.reportTemplate [
