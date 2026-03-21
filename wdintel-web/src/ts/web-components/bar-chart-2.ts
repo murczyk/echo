@@ -12,6 +12,14 @@ export type Data2 = {
 	stats_per_minute: StatsPerPeriod
 }
 
+type DataCamel = {
+	dataPerDate?: DataPerDate | null
+}
+
+type Data2Camel = {
+	statsPerMinute?: StatsPerPeriod | null
+}
+
 type StatsPerPeriod = { timestamp: string, stats: Stats }[]
 type Stats = { [key: string]: { count: number, group_name: string } }
 
@@ -27,9 +35,18 @@ type DataPerDate = {
 
 type TransformedData = { date: string; group: string; count: number, groupName?: string }[]
 
-function a(data: Data): DataPerDate {
+function getDataPerDate(data: Data | DataCamel | null | undefined): DataPerDate {
+	if (!data) return {};
+	return (data as Data).data_per_date ?? (data as DataCamel).dataPerDate ?? {};
+}
 
-	const dataPerDate = data.data_per_date;
+function getStatsPerMinute(data: Data2 | Data2Camel | null | undefined): StatsPerPeriod {
+	if (!data) return [];
+	return (data as Data2).stats_per_minute ?? (data as Data2Camel).statsPerMinute ?? [];
+}
+
+function a(data: Data | DataCamel | null | undefined): DataPerDate {
+	const dataPerDate = getDataPerDate(data);
 	const sortedDates = Object.keys(dataPerDate)
 		.map(dateString => dayjs(dateString))
 		.filter(date => date.isValid())
@@ -111,7 +128,7 @@ function a(data: Data): DataPerDate {
 	}
 	return {}
 }
-export function transformData(data: Data): { transformedData: TransformedData, uniqueDates: string[] } {
+export function transformData(data: Data | DataCamel | null | undefined): { transformedData: TransformedData, uniqueDates: string[] } {
 	const dataPerDate = a(data)
 	const uniqueDates = Object.keys(dataPerDate);
 	const transformedData: TransformedData = [];
@@ -150,11 +167,12 @@ function mergeStats(stats1: Stats, stats2: Stats): Stats {
 	return mergedStats;
 }
 
-function transformData2(data: Data2): { transformedData: TransformedData, uniqueDates: string[] } {
+function transformData2(data: Data2 | Data2Camel | null | undefined): { transformedData: TransformedData, uniqueDates: string[] } {
 	const transformedData: TransformedData = [];
 	const uniqueDates: string[] = []
 
-	const a = data.stats_per_minute.reduce<StatsPerPeriod>((acc, current, index) => {
+	const statsPerMinute = getStatsPerMinute(data);
+	const a = statsPerMinute.reduce<StatsPerPeriod>((acc, current, index) => {
 		if (index % 5 === 0) {
 			acc.push(current)
 		} else {
@@ -285,12 +303,12 @@ export class BarChart2 extends LitElement {
 
 	connectedCallback(): void {
 		super.connectedCallback();
-		this.chartWidth = this.getBoundingClientRect().width;
-		this.chartHeight = this.getBoundingClientRect().height;
+		this.chartWidth = Math.max(0, this.getBoundingClientRect().width);
+		this.chartHeight = Math.max(0, this.getBoundingClientRect().height);
 		const topLine = this.renderRoot.querySelector("#top-line")?.getBoundingClientRect().height ?? 30
 		const rect = this.getBoundingClientRect();
-		this.chartWidth = rect.width
-		this.chartHeight = rect.height - topLine
+		this.chartWidth = Math.max(0, rect.width)
+		this.chartHeight = Math.max(0, rect.height - topLine)
 	}
 
 	disconnectedCallback(): void {
@@ -338,27 +356,37 @@ export class BarChart2 extends LitElement {
 	}
 
 	render() {
+		const safeChartWidth = Math.max(0, this.chartWidth);
+		const safeChartHeight = Math.max(0, this.chartHeight);
 		return html`
 		    <div>
 			<section id="top-line" style="display:flex; justify-content: space-between"> 
 			    <div style="flex-grow: 1;"></div>
 			    <slot name="period"></slot>
 			</section>
-			<svg id="chart"  width="${this.chartWidth}" height="${this.chartHeight}" viewBox="0 0 ${this.chartWidth} ${this.chartHeight}"></svg>
+			<svg id="chart"  width="${safeChartWidth}" height="${safeChartHeight}" viewBox="0 0 ${safeChartWidth} ${safeChartHeight}"></svg>
 		    </div>
 
 		    `
 	}
 
 	renderChart() {
+		const topLine = this.renderRoot.querySelector("#top-line")?.getBoundingClientRect().height ?? 30;
+		const rect = this.getBoundingClientRect();
+		this.chartWidth = Math.max(0, rect.width);
+		this.chartHeight = Math.max(0, rect.height - topLine);
+		if (this.chartWidth <= 0 || this.chartHeight <= 0 || !this.data) {
+			return;
+		}
+
 		let uniqueDates: string[] = []
 		let tickFormatFn: (x: string) => string = (x) => x;
-		if ("stats_per_minute" in this.data) {
-			const result = transformData2(this.data)
+		if ("stats_per_minute" in this.data || "statsPerMinute" in this.data) {
+			const result = transformData2(this.data as Data2 | Data2Camel)
 			this.transformedData = result.transformedData
 			uniqueDates = result.uniqueDates;
 		} else {
-			const result = transformData(this.data)
+			const result = transformData(this.data as Data | DataCamel)
 			this.transformedData = result.transformedData
 			uniqueDates = result.uniqueDates
 			tickFormatFn = (x: string) => dayjs(x).format("DD/MM")
@@ -486,5 +514,3 @@ function createBandScale(domain: string[], rangeValue: [number, number], tickFor
 function _gapBetweenTicks(totalTicks: number) {
 	return Math.max(1, Math.ceil(totalTicks / 8));
 }
-
-

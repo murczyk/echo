@@ -35,6 +35,8 @@ export type MessageCardProps = {
   onCopyText: () => void;
   onCopyFreq: () => void;
   onComment: () => void;
+  onDelete?: () => void;
+  onEditDetails?: () => void;
   onToggleTag: (tagId: number) => void;
 };
 
@@ -171,6 +173,8 @@ function ActionIconsRow({
   onComment,
   onCopyText,
   onCopyFreq,
+  onDelete,
+  onEditDetails,
 }: {
   id: number;
   msg: InboxMessage;
@@ -180,6 +184,8 @@ function ActionIconsRow({
   onComment: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onDelete?: () => void;
+  onEditDetails?: () => void;
 }) {
   return (
     <div className="flex items-center gap-2.5" style={{ fontSize: 14 }}>
@@ -226,15 +232,39 @@ function ActionIconsRow({
         className="cursor-pointer"
         onClick={onCopyText}
         onKeyDown={(e) => e.key === 'Enter' && onCopyText()}
-      >
-        <i
-          className={
+        >
+          <i
+            className={
             copiedFeedbackId === `text-${id}`
               ? 'bi bi-clipboard-check-fill text-action cursor-pointer'
               : 'bi bi-clipboard text-action cursor-pointer'
           }
         />
       </span>
+      {onDelete != null && (
+        <span
+          role="button"
+          tabIndex={0}
+          title="Видалити"
+          className="cursor-pointer"
+          onClick={onDelete}
+          onKeyDown={(e) => e.key === 'Enter' && onDelete()}
+        >
+          <i className="bi bi-trash text-action cursor-pointer" />
+        </span>
+      )}
+      {onEditDetails != null && (
+        <span
+          role="button"
+          tabIndex={0}
+          title="Редагувати додаткові поля"
+          className="cursor-pointer"
+          onClick={onEditDetails}
+          onKeyDown={(e) => e.key === 'Enter' && onEditDetails()}
+        >
+          <i className="bi bi-sliders text-action cursor-pointer" />
+        </span>
+      )}
     </div>
   );
 }
@@ -257,6 +287,8 @@ export function MessageCard({
   onCopyText,
   onCopyFreq,
   onComment,
+  onDelete,
+  onEditDetails,
   onToggleTag,
 }: MessageCardProps) {
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
@@ -352,6 +384,8 @@ export function MessageCard({
                 onComment={onComment}
                 onCopyText={onCopyText}
                 onCopyFreq={onCopyFreq}
+                onDelete={onDelete}
+                onEditDetails={onEditDetails}
               />
             </span>
           </div>
@@ -451,6 +485,8 @@ export function MessageCard({
                 onComment={onComment}
                 onCopyText={onCopyText}
                 onCopyFreq={onCopyFreq}
+                onDelete={onDelete}
+                onEditDetails={onEditDetails}
               />
             </div>
           </div>

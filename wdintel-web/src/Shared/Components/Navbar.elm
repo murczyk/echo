@@ -162,6 +162,7 @@ navBar user shared activeName props =
         otherSubs =
             (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
                 [ internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "оперативний"
+                , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "аналіз"
                 ]
 
              else
@@ -411,7 +412,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                         else
                             []
                        )
-                    ++ (if item.activeName == "callsigns-neo" || item.activeName == "rer-duty-neo" then
+                    ++ (if item.activeName == "callsigns-neo" || item.activeName == "rer-duty-neo" || item.activeName == "rer-analysis-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]

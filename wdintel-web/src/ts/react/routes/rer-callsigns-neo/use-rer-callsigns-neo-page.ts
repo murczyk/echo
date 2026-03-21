@@ -2,6 +2,7 @@ import React from 'react';
 
 import type { Callsign, CallsignUnitStatRow, Source, Unit, User } from '../../../../Bindings';
 import { isUnauthorizedError } from '../../services/api/client';
+import { downloadBlob } from '../../utils/download';
 import {
   createCallsign,
   deleteCallsign,
@@ -22,7 +23,6 @@ import {
   createSourcesById,
   createUnitsById,
   DEFAULT_SORT,
-  downloadBlob,
   formatErrorMessage,
   getDefaultPageSize,
   getExportPermission,

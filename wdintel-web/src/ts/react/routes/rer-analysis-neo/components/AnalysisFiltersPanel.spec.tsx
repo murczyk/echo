@@ -1,0 +1,238 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act } from 'react';
+import React from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { emptyQueryState } from '../helpers';
+
+const analysisFilterFieldSpy = vi.fn();
+
+vi.mock('@mui/material', () => ({
+  Checkbox: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
+    <input
+      type="checkbox"
+      checked={props.checked ?? false}
+      onChange={(event) => props.onChange?.(event.nativeEvent, event.currentTarget.checked)}
+    />
+  ),
+  Divider: () => <hr />,
+  FormControl: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  FormControlLabel: (props: { control: React.ReactNode; label: React.ReactNode }) => (
+    <label>
+      {props.control}
+      <span>{props.label}</span>
+    </label>
+  ),
+  InputAdornment: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  InputLabel: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  MenuItem: ({ children, value }: { children: React.ReactNode; value: string }) => <option value={value}>{children}</option>,
+  Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Select: (props: {
+    children: React.ReactNode;
+    value: string;
+    onChange?: (event: { target: { value: string } }) => void;
+  }) => (
+    <select value={props.value} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}>
+      {props.children}
+    </select>
+  ),
+  Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Switch: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
+    <input
+      type="checkbox"
+      checked={props.checked ?? false}
+      onChange={(event) => props.onChange?.(event.nativeEvent, event.currentTarget.checked)}
+    />
+  ),
+  TextField: (props: { label?: string; value?: string; onChange?: (event: { target: { value: string } }) => void; type?: string }) => (
+    <label>
+      <span>{props.label}</span>
+      <input type={props.type ?? 'text'} value={props.value ?? ''} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })} />
+    </label>
+  ),
+  Typography: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('@mui/icons-material/Search', () => ({
+  default: () => <span>search</span>,
+}));
+
+vi.mock('./AnalysisFilterField', () => ({
+  AnalysisFilterField: (props: unknown) => {
+    analysisFilterFieldSpy(props);
+    return <div data-testid={`filter-${String((props as { label?: string }).label ?? 'unknown')}`} />;
+  },
+}));
+
+vi.mock('./AnalysisSavedFiltersCard', () => ({
+  AnalysisSavedFiltersCard: () => <div data-testid="saved-filters-card" />,
+}));
+
+import { AnalysisFiltersPanel } from './AnalysisFiltersPanel';
+
+type Rendered = {
+  container: HTMLDivElement;
+  root: Root;
+};
+
+function buildOptions(): AnalysisPageState['options'] {
+  return {
+    aors: [],
+    groups: [],
+    senders: [],
+    freqs: ['100.0000'],
+    newFreqs: ['100.0000'],
+    callsigns: [],
+    units: [],
+    locations: [],
+    posts: [],
+    networks: ['12'],
+    metadataCcs: [],
+    metadataSenders: [],
+    metadataReceivers: [],
+    metadataHashes: [],
+  };
+}
+
+function buildProps(overrides: Partial<React.ComponentProps<typeof AnalysisFiltersPanel>> = {}): React.ComponentProps<typeof AnalysisFiltersPanel> {
+  return {
+    isDirty: false,
+    counts: null,
+    includeOnlyNewFreqs: false,
+    loadedSavedFilter: null,
+    options: buildOptions(),
+    queryState: emptyQueryState(),
+    saveInFlight: false,
+    savedFilterName: '',
+    savedFilters: [],
+    tagsMap: {},
+    applySavedFilter: vi.fn(),
+    deleteLoadedSavedFilter: vi.fn(),
+    renameExistingSavedFilter: vi.fn(),
+    saveAsNew: vi.fn(),
+    setIncludeOnlyNewFreqs: vi.fn(),
+    setSavedFilterName: vi.fn(),
+    updateExisting: vi.fn(),
+    updateQueryState: vi.fn(),
+    ...overrides,
+  };
+}
+
+async function renderComponent(props: React.ComponentProps<typeof AnalysisFiltersPanel>): Promise<Rendered> {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<AnalysisFiltersPanel {...props} />);
+  });
+  return { container, root };
+}
+
+function findLabelInput(container: HTMLElement, labelText: string): HTMLInputElement {
+  const label = Array.from(container.querySelectorAll('label')).find((item) => item.textContent?.includes(labelText));
+  if (!label) throw new Error(`Label not found: ${labelText}`);
+  const input = label.querySelector('input');
+  if (!(input instanceof HTMLInputElement)) throw new Error(`Input not found for label: ${labelText}`);
+  return input;
+}
+
+async function setChecked(input: HTMLInputElement, checked: boolean): Promise<void> {
+  await act(async () => {
+    if (input.checked !== checked) {
+      input.click();
+    }
+  });
+}
+
+describe('AnalysisFiltersPanel', () => {
+  const rendered: Rendered[] = [];
+
+  beforeEach(() => {
+    analysisFilterFieldSpy.mockClear();
+  });
+
+  afterEach(() => {
+    for (const item of rendered.splice(0)) {
+      act(() => {
+        item.root.unmount();
+      });
+      item.container.remove();
+    }
+  });
+
+  it('passes Elm-parity disabled states into the frequency and network filters', async () => {
+    const props = buildProps({
+      includeOnlyNewFreqs: true,
+      queryState: {
+        ...emptyQueryState(),
+        withoutNetwork: true,
+      },
+    });
+
+    rendered.push(await renderComponent(props));
+
+    const frequencyField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; disabled?: boolean })
+      .find((callProps) => callProps.label === 'Частоти');
+    const networkField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; disabled?: boolean })
+      .find((callProps) => callProps.label === 'Мережі');
+
+    expect(frequencyField?.disabled).toBe(true);
+    expect(networkField?.disabled).toBe(true);
+  });
+
+  it('wires checkbox and switch changes into the analysis callbacks', async () => {
+    const setIncludeOnlyNewFreqs = vi.fn();
+    const updateQueryState = vi.fn();
+    const props = buildProps({
+      setIncludeOnlyNewFreqs,
+      updateQueryState,
+    });
+
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    await setChecked(findLabelInput(view.container, 'Тільки нові частоти'), true);
+    await setChecked(findLabelInput(view.container, 'Лише теги мого підрозділу'), true);
+    await setChecked(findLabelInput(view.container, 'Тільки без мережі'), true);
+
+    expect(setIncludeOnlyNewFreqs).toHaveBeenCalledWith(true);
+    expect(updateQueryState).toHaveBeenCalledWith({ reportTagsOnlyThisUnit: true });
+    expect(updateQueryState).toHaveBeenCalledWith({ withoutNetwork: true });
+  });
+
+  it('shows the Elm-style exact-match hint chip when count stats are available', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 3,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
+        queryState: {
+          ...emptyQueryState(),
+          unitsExactMatchOnly: true,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('неточних збігів: 7');
+  });
+});

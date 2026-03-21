@@ -47,6 +47,7 @@ import './ts/react/users-neo-element'
 import './ts/react/goi-associations-element'
 import './ts/react/goi-knowledge-element'
 import './ts/react/rer-duty-neo-element'
+import './ts/react/rer-analysis-neo-element'
 import './ts/react/rer-palitra-neo-element'
 import './ts/react/rer-callsigns-neo-element'
 import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
@@ -61,6 +62,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY = 'rer-callsigns-neo-beta-banner-dismissed';
+const RER_ANALYSIS_NEO_BETA_BANNER_DISMISSED_KEY = 'rer-analysis-neo-beta-banner-dismissed';
 
 // Theme management functions
 type AppliedTheme = 'light' | 'dark';
@@ -801,6 +803,25 @@ export const onReady = ({ app, env }) => {
         app.ports.rer_callsigns_neo_loadBetaBannerDismissed.subscribe(() => {
             const storedValue = sessionStorage.getItem(RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY);
             app.ports.rer_callsigns_neo_loadBetaBannerDismissedRes.send(storedValue === '1');
+        });
+    }
+
+    if (
+        app.ports &&
+        app.ports.rer_analysis_neo_saveBetaBannerDismissed &&
+        app.ports.rer_analysis_neo_loadBetaBannerDismissed &&
+        app.ports.rer_analysis_neo_loadBetaBannerDismissedRes
+    ) {
+        app.ports.rer_analysis_neo_saveBetaBannerDismissed.subscribe((isDismissed: boolean) => {
+            sessionStorage.setItem(
+                RER_ANALYSIS_NEO_BETA_BANNER_DISMISSED_KEY,
+                isDismissed ? '1' : '0'
+            );
+        });
+
+        app.ports.rer_analysis_neo_loadBetaBannerDismissed.subscribe(() => {
+            const storedValue = sessionStorage.getItem(RER_ANALYSIS_NEO_BETA_BANNER_DISMISSED_KEY);
+            app.ports.rer_analysis_neo_loadBetaBannerDismissedRes.send(storedValue === '1');
         });
     }
 

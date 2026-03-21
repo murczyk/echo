@@ -1,0 +1,212 @@
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
+import { Alert, Backdrop, Box, CircularProgress, Paper, Skeleton, Stack, Tab, Tabs } from '@mui/material';
+import React from 'react';
+
+import { PageHeader } from '../../components/PageHeader';
+import { PowerChip } from '../../components/PowerChip';
+import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
+import { AnalysisMapPane } from './components/AnalysisMapPane';
+import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
+import { AnalysisReportDialog } from './components/AnalysisReportDialog';
+import { AnalysisSidebar } from './components/AnalysisSidebar';
+import { AnalysisToolbar } from './components/AnalysisToolbar';
+import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+
+export type RerAnalysisNeoPageProps = {
+  authUserName?: string | null;
+};
+
+export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPageProps = {}) {
+  const page = useRerAnalysisNeoPage(authUserName);
+  const centerTabsId = React.useId().replace(/:/g, '-');
+  const messagesTabId = `${centerTabsId}-messages-tab`;
+  const mapTabId = `${centerTabsId}-map-tab`;
+  const messagesPanelId = `${centerTabsId}-messages-panel`;
+  const mapPanelId = `${centerTabsId}-map-panel`;
+  const showLoadingSkeletons = page.loading && page.messages.length === 0 && page.counts == null;
+
+  return (
+    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <PageHeader
+        title="Аналіз"
+        actions={<AnalysisToolbar onOpenReport={page.openReport} onReset={page.resetFilters} />}
+      />
+
+      {page.error ? (
+        <Alert severity="error" role="alert">
+          {page.error}
+        </Alert>
+      ) : null}
+      {page.validationError ? (
+        <Alert severity="warning" role="status">
+          {page.validationError}
+        </Alert>
+      ) : null}
+
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          position: 'relative',
+        }}
+        aria-busy={page.loading}
+      >
+        <Box
+          sx={{ p: 2, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+        >
+          <Box
+            sx={{
+              height: '100%',
+              minHeight: 0,
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: { xs: '1fr', lg: '320px minmax(0,1fr) 360px' },
+            }}
+          >
+            {showLoadingSkeletons ? (
+              <>
+                <Paper variant="outlined" sx={{ p: 2, minHeight: 0, overflow: 'hidden' }}>
+                  <Stack spacing={2}>
+                    <Skeleton variant="text" width={96} height={36} />
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                      <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
+                      <Skeleton variant="rounded" height={40} sx={{ width: { xs: '100%', sm: 160 } }} />
+                    </Stack>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                      <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
+                      <Skeleton variant="rounded" height={40} sx={{ width: { xs: '100%', sm: 160 } }} />
+                    </Stack>
+                    <Skeleton variant="rounded" height={56} />
+                    {Array.from({ length: 8 }).map((_, index) => (
+                      <Skeleton key={index} variant="rounded" height={56} />
+                    ))}
+                  </Stack>
+                </Paper>
+
+                <Paper variant="outlined" sx={{ p: 2, minHeight: 0, overflow: 'hidden' }}>
+                  <Stack spacing={2}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                      <Skeleton variant="text" width={280} height={40} />
+                      <Stack direction="row" spacing={1}>
+                        <Skeleton variant="rounded" width={92} height={28} />
+                        <Skeleton variant="rounded" width={92} height={28} />
+                      </Stack>
+                    </Stack>
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <Skeleton key={index} variant="rounded" height={72} />
+                    ))}
+                  </Stack>
+                </Paper>
+
+                <Paper variant="outlined" sx={{ p: 2, minHeight: 0, overflow: 'hidden' }}>
+                  <Stack spacing={1.5}>
+                    <Skeleton variant="text" width={180} height={32} />
+                    {Array.from({ length: 7 }).map((_, index) => (
+                      <Skeleton key={index} variant="rounded" height={88} />
+                    ))}
+                  </Stack>
+                </Paper>
+              </>
+            ) : (
+              <>
+                <AnalysisFiltersPanel {...page} />
+
+                <Paper
+                  variant="outlined"
+                  component="section"
+                  aria-labelledby={page.centerTab === 'messages' ? messagesTabId : mapTabId}
+                  sx={{ p: 2, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                >
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+                    <Tabs value={page.centerTab} onChange={(_event, value) => page.setCenterTab(value)} sx={{ minHeight: 0 }} aria-label="Центральна панель аналізу">
+                      <Tab
+                        id={messagesTabId}
+                        aria-controls={messagesPanelId}
+                        value="messages"
+                        icon={<MessageOutlinedIcon />}
+                        iconPosition="start"
+                        label="Повідомлення"
+                      />
+                      <Tab id={mapTabId} aria-controls={mapPanelId} value="map" icon={<MapOutlinedIcon />} iconPosition="start" label="Мапа" />
+                    </Tabs>
+                    <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" role="status" aria-live="polite" aria-label="Поточна статистика вибірки">
+                      <PowerChip label={`Всього: ${page.counts?.countOverall ?? 0}`} color="default" />
+                      <PowerChip label={`Обрано: ${page.counts?.countSelected ?? 0}`} color="primary" selected />
+                    </Stack>
+                  </Stack>
+                  {page.centerTab === 'messages' ? (
+                    <Box id={messagesPanelId} role="tabpanel" aria-labelledby={messagesTabId} sx={{ flex: 1, minHeight: 0 }}>
+                      <AnalysisMessagesPane
+                        authUserName={page.authUserName}
+                        copiedFeedbackId={page.copiedFeedbackId}
+                        editorMessage={page.editorMessage}
+                        editorSaveInFlight={page.editorSaveInFlight}
+                        groupInfos={page.groupInfos}
+                        loading={page.loading}
+                        messages={page.messages}
+                        networkDisplayMap={page.networkDisplayMap}
+                        noMoreToLoad={page.noMoreToLoad}
+                        nolimitShown={page.nolimitShown}
+                        newestFirst={page.newestFirst}
+                        onCloseEditor={page.closeEditor}
+                        onDeleteMessage={page.onDeleteMessage}
+                        onLoadAllMessages={page.loadAllMessages}
+                        onLoadMoreMessages={page.loadMoreMessages}
+                        onOpenEditor={page.openEditor}
+                        onSaveEditor={page.saveEditor}
+                        onSaveMessageComment={page.onSaveMessageComment}
+                        onSetNewestFirst={page.setNewestFirst}
+                        onToggleMessageBookmark={page.onToggleMessageBookmark}
+                        onToggleMessageImportant={page.onToggleMessageImportant}
+                        onToggleMessageTag={page.onToggleMessageTag}
+                        onUpdateEditorField={page.updateEditorField}
+                        profiles={page.profiles}
+                        tagsMap={page.tagsMap}
+                      />
+                    </Box>
+                  ) : (
+                    <Box id={mapPanelId} role="tabpanel" aria-labelledby={mapTabId} sx={{ flex: 1, minHeight: 0 }}>
+                      <AnalysisMapPane
+                        mapAttrs={page.mapAttrs}
+                        search={page.queryState.search}
+                        onDateRangeChange={page.refreshMapDateRange}
+                        onLoadMessages={page.loadMessagesForMap}
+                        onUnitClick={page.toggleUnitFromMap}
+                      />
+                    </Box>
+                  )}
+                </Paper>
+
+                <AnalysisSidebar {...page} />
+              </>
+            )}
+          </Box>
+          <Backdrop
+            open={page.loading}
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: (theme) => theme.zIndex.drawer - 1,
+              borderRadius: 1,
+              color: 'primary.main',
+              backgroundColor: 'rgba(18, 18, 18, 0.42)',
+            }}
+          >
+            <CircularProgress color="inherit" />
+          </Backdrop>
+        </Box>
+      </Box>
+
+      <AnalysisReportDialog
+        aors={page.aorEntries}
+        downloadInFlight={page.reportDownloadInFlight}
+        open={page.report.open}
+        report={page.report}
+        onClose={page.closeReport}
+        onDownload={page.downloadReport}
+        onUpdate={page.updateReport}
+      />
+    </Box>
+  );
+}

@@ -1,0 +1,24 @@
+import { Autocomplete, TextField } from '@mui/material';
+import React from 'react';
+
+type Props = {
+  label: string;
+  options: string[];
+  value: string[];
+  disabled?: boolean;
+  onChange: (next: string[]) => void;
+};
+
+export function AnalysisFilterField({ label, options, value, disabled, onChange }: Props) {
+  return (
+    <Autocomplete
+      multiple
+      size="small"
+      options={options}
+      value={value}
+      disabled={disabled}
+      onChange={(_event, next) => onChange(next)}
+      renderInput={(params) => <TextField {...params} label={label} />}
+    />
+  );
+}

@@ -9,6 +9,7 @@ wdintel
 **/__pycache__
 *.pyc
 .vscode
+.codex
 deploy/config-local*.toml
 deploy/config-live*.toml
 deploy/client_secret_*
