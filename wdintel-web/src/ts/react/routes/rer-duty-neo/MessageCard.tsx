@@ -70,6 +70,40 @@ function ResolvedNetworkEtalonRows({
   );
 }
 
+function EtalonSection({
+  networkIds,
+  networkDisplayMap,
+  networkMap,
+  etalonNoNetworkLabel,
+}: {
+  networkIds: number[];
+  networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+  etalonNoNetworkLabel: string | null;
+}) {
+  return (
+    <>
+      {networkIds.length > 0 ? (
+        <ResolvedNetworkEtalonRows
+          networkIds={networkIds}
+          networkDisplayMap={networkDisplayMap}
+          networkMap={networkMap}
+        />
+      ) : etalonNoNetworkLabel != null ? (
+        <span className="inline-flex items-center gap-1">
+          <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
+          <span className="ml-1">{etalonNoNetworkLabel}</span>
+        </span>
+      ) : (
+        <span className="flex items-center gap-1" aria-hidden>
+          <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
+          <span aria-hidden>{'\u00A0'}</span>
+        </span>
+      )}
+    </>
+  );
+}
+
 export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
@@ -223,6 +257,316 @@ function MessageCardTagChips({
   );
 }
 
+/** Еталон + локація + відносний час — однаково для обох шапок. */
+function MessageCardEtalonLocationTime({
+  networkIds,
+  networkDisplayMap,
+  networkMap,
+  etalonNoNetworkLabel,
+  msg,
+  relativeTimeMs,
+}: {
+  networkIds: number[];
+  networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+  etalonNoNetworkLabel: string | null;
+  msg: InboxMessage;
+  relativeTimeMs: number | null;
+}) {
+  return (
+    <div className="inline-flex gap-x-3">
+      <div className="flex flex-col items-baseline gap-x-2 gap-y-1">
+        <span className="inline-flex font-semibold shrink-1 items-start gap-1 w-full min-w-0">
+          <EtalonSection
+            networkIds={networkIds}
+            networkDisplayMap={networkDisplayMap}
+            networkMap={networkMap}
+            etalonNoNetworkLabel={etalonNoNetworkLabel}
+          />
+        </span>
+      </div>
+
+      <span className="inline-flex items-baseline gap-1 font-medium shrink-2">
+        <i className="bi bi-geo text-icons shrink-0" title="Локація" />
+        {msg.location ?? 'Не встановлена'}
+      </span>
+      {msg.timestamp != null && relativeTimeMs != null && (
+        <div className="shrink-0 mr-0 ml-auto" style={{ color: 'var(--bs-secondary-color)' }}>
+          {messageRenderDistance(msg.timestamp, relativeTimeMs)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Текст, коментар, теги — однаково для обох шапок. */
+function MessageCardMessageBody({
+  msg,
+  tagsMap,
+  onToggleTag,
+}: {
+  msg: InboxMessage;
+  tagsMap: Record<number, Tag>;
+  onToggleTag: (tagId: number) => void;
+}) {
+  const textPrimary =
+    msg.textMarked && msg.textMarked.length > 0
+      ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg))
+      : msg.text || '—';
+
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
+      <span className="whitespace-pre-wrap break-words text-marked min-w-0">{textPrimary}</span>
+      {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
+        <span className="inline-flex items-center gap-1 shrink-0" style={{ fontSize: '.75rem' }}>
+          <i className="bi bi-chat-text text-icons shrink-0" title="Коментар" />
+          <span className="font-semibold text-xs">{msg.extendedForm}</span>
+        </span>
+      )}
+      <span className="inline-flex flex-wrap gap-1 min-w-0">
+        <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
+      </span>
+    </div>
+  );
+}
+
+type MessageCardHeaderProps = {
+  layout: 'fluid' | 'dividers';
+  feedCount: number;
+  id: number;
+  msg: InboxMessage;
+  mapHref: string;
+  copiedFeedbackId: string | null;
+  groupName: string | null;
+  senderName: string | null;
+  onBookmark: () => void;
+  onImportant: () => void;
+  onComment: () => void;
+  onCopyText: () => void;
+  onCopyFreq: () => void;
+};
+
+function MessageCardHeader({
+  layout,
+  feedCount,
+  id,
+  msg,
+  mapHref,
+  copiedFeedbackId,
+  groupName,
+  senderName,
+  onBookmark,
+  onImportant,
+  onComment,
+  onCopyText,
+  onCopyFreq,
+}: MessageCardHeaderProps) {
+  if (layout === 'fluid') {
+    return (
+      <>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs justify-between">
+          <span className="inline-flex items-center gap-1 shrink-0">
+            <i className="bi bi-clock text-icons" />
+            {formatTime(msg.time)}
+            {msg.date != null && (
+              <>
+                <span className="text-icons/70 mx-0.5">·</span>
+                <i className="bi bi-calendar text-icons shrink-0" />
+                {formatDateNoYear(msg.date)}
+              </>
+            )}
+          </span>
+          {groupName != null && (
+            <span className="inline-flex items-center gap-1 shrink-0 min-w-0 max-w-full" title={groupName}>
+              <i className="bi bi-signal text-icons shrink-0" title="Група" />
+              <span className="truncate">{groupName}</span>
+            </span>
+          )}
+          {senderName != null && (
+            <span className="inline-flex items-center gap-1 shrink-0 min-w-0 max-w-full" title={senderName}>
+              <i className="bi bi-person-circle text-icons shrink-0" title="Відправник" />
+              <span className="truncate">{senderName}</span>
+            </span>
+          )}
+          {msg.freq != null && (
+            <span>
+              <span className="inline-flex items-center gap-1 font-semibold shrink-0">
+                <i className="bi bi-broadcast text-icons" title="Частота" />
+                {msg.freq}
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                title="Копіювати частоту"
+                className="cursor-pointer shrink-0 inline-flex"
+                onClick={onCopyFreq}
+                onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
+              >
+                &nbsp;
+                <i className={copiedFeedbackId === `freq-${id}` ? 'bi bi-clipboard-check-fill' : 'bi bi-clipboard'} />
+              </span>
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs justify-between">
+          <a
+            href={buildAnalysisHref(msg, false)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Відкрити повідомлення в Аналізі"
+            className="inline-flex items-center gap-1 shrink-0"
+          >
+            <i className="bi bi-bar-chart-line" />
+            Аналіз
+            <i className="bi bi-box-arrow-up-right text-xs" />
+          </a>
+          <a
+            href={mapHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Відкрити повідомлення на карті в аналізі"
+            className="inline-flex items-center gap-1 shrink-0"
+          >
+            <i className="bi bi-map" />
+            Карта
+            <i className="bi bi-box-arrow-up-right text-xs" />
+          </a>
+
+          <span className="shrink-0 inline-flex">
+            <ActionIconsRow
+              id={id}
+              msg={msg}
+              copiedFeedbackId={copiedFeedbackId}
+              onBookmark={onBookmark}
+              onImportant={onImportant}
+              onComment={onComment}
+              onCopyText={onCopyText}
+            />
+          </span>
+        </div>
+      </>
+    );
+  }
+
+  // Divider layout
+  const narrowColumns = feedCount >= 3;
+  const colLeft = narrowColumns
+    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-3 border-r border-border min-w-[105px]'
+    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 border-r border-border';
+  const colCenter = narrowColumns
+    ? 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 shrink-1 text-xs border-r border-border min-w-[62px]'
+    : 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 text-xs border-r border-border';
+  const colRight = narrowColumns
+    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-0 basis-auto text-xs items-end'
+    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 text-xs items-end';
+
+  return (
+    <div className="flex items-stretch w-full">
+      <div className={colLeft}>
+        <div className="flex items-center justify-left" style={{ fontSize: '.75rem' }}>
+          <span className="flex items-center gap-1 pr-2">
+            <i className="bi bi-clock text-icons" />
+            {formatTime(msg.time)}
+          </span>
+          {msg.date != null && (
+            <span className="flex items-center gap-1">
+              <i className="bi bi-calendar text-icons" />
+              {formatDateNoYear(msg.date)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-stretch gap-2" style={{ fontSize: 14 }}>
+          <ActionIconsRow
+            id={id}
+            msg={msg}
+            copiedFeedbackId={copiedFeedbackId}
+            onBookmark={onBookmark}
+            onImportant={onImportant}
+            onComment={onComment}
+            onCopyText={onCopyText}
+          />
+        </div>
+      </div>
+      <div className={colCenter}>
+        <div className="flex items-center min-w-0">
+          {groupName != null ? (
+            <span className="flex items-center gap-1 truncate min-w-0 cursor-default" title={groupName}>
+              <i className="bi bi-signal text-icons shrink-0" title="Група" />
+              <span className="truncate">{groupName}</span>
+            </span>
+          ) : (
+            <span className="text-icons/70">—</span>
+          )}
+        </div>
+        <div className="flex items-center min-w-0">
+          {senderName != null ? (
+            <span className="flex items-center gap-1 truncate min-w-0 cursor-default" title={senderName}>
+              <i className="bi bi-person-circle text-icons shrink-0" title="Відправник" />
+              <span className="truncate">{senderName}</span>
+            </span>
+          ) : (
+            <span className="text-icons/70">—</span>
+          )}
+        </div>
+      </div>
+      <div className={colRight} style={narrowColumns ? { minWidth: 'min-content' } : undefined}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {msg.freq != null ? (
+            <>
+              <span className="flex items-center gap-1 font-semibold truncate">
+                <i className="bi bi-broadcast text-icons shrink-0" title="Частота" />
+                {msg.freq}
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                title="Копіювати частоту"
+                className="cursor-pointer shrink-0"
+                onClick={onCopyFreq}
+                onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
+              >
+                <i
+                  className={
+                    copiedFeedbackId === `freq-${id}`
+                      ? 'bi bi-clipboard-check-fill cursor-pointer'
+                      : 'bi bi-clipboard cursor-pointer'
+                  }
+                />
+              </span>
+            </>
+          ) : (
+            <span className="text-icons/70">—</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-nowrap text-xs min-w-[70px]">
+          <a
+            href={buildAnalysisHref(msg, false)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Відкрити повідомлення в Аналізі"
+            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+          >
+            <i className="bi bi-bar-chart-line" />
+            <span>Аналіз</span>
+            <i className="bi bi-box-arrow-up-right text-xs" />
+          </a>
+          <a
+            href={mapHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Відкрити повідомлення на карті в аналізі"
+            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+          >
+            <i className="bi bi-map" />
+            <span>Карта</span>
+            <i className="bi bi-box-arrow-up-right text-xs" />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActionIconsRow({
   id,
   msg,
@@ -231,7 +575,6 @@ function ActionIconsRow({
   onImportant,
   onComment,
   onCopyText,
-  onCopyFreq,
 }: {
   id: number;
   msg: InboxMessage;
@@ -240,7 +583,6 @@ function ActionIconsRow({
   onImportant: () => void;
   onComment: () => void;
   onCopyText: () => void;
-  onCopyFreq: () => void;
 }) {
   return (
     <div className="flex items-center gap-2.5" style={{ fontSize: 14 }}>
@@ -371,169 +713,34 @@ export function MessageCard({
   const pointEtalons = getPointEtalonsFromMessage(msg);
   const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
 
-  if (layoutVariant === 'fluid') {
-    return (
-      <Box
-        ref={messageRootRef}
-        component="li"
-        className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2"
-      >
-        <div className="flex flex-col w-full bg-card rounded-sm p-2 gap-2 relative">
-          {(authUserName ?? '').trim() !== '' && (
-            <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-              <MessageCardBody authUserName={authUserName!} />
-            </div>
-          )}
-          {/* Row 1 — Meta: time, date, group, sender, freq */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs justify-between">
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <i className="bi bi-clock text-icons" />
-              {formatTime(msg.time)}
-              {msg.date != null && (
-                <>
-                  <span className="text-icons/70 mx-0.5">·</span>
-                  <i className="bi bi-calendar text-icons shrink-0" />
-                  {formatDateNoYear(msg.date)}
-                </>
-              )}
-            </span>
-            {groupName != null && (
-              <span className="inline-flex items-center gap-1 shrink-0 min-w-0 max-w-full" title={groupName}>
-                <i className="bi bi-signal text-icons shrink-0" title="Група" />
-                <span className="truncate">{groupName}</span>
-              </span>
-            )}
-            {senderName != null && (
-              <span className="inline-flex items-center gap-1 shrink-0 min-w-0 max-w-full" title={senderName}>
-                <i className="bi bi-person-circle text-icons shrink-0" title="Відправник" />
-                <span className="truncate">{senderName}</span>
-              </span>
-            )}
-            {msg.freq != null && (
-              <span>
-                <span className="inline-flex items-center gap-1 font-semibold shrink-0">
-                  <i className="bi bi-broadcast text-icons" title="Частота" />
-                  {msg.freq}
-                </span>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  title="Копіювати частоту"
-                  className="cursor-pointer shrink-0 inline-flex"
-                  onClick={onCopyFreq}
-                  onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
-                >
-                  &nbsp;
-                  <i className={copiedFeedbackId === `freq-${id}` ? 'bi bi-clipboard-check-fill' : 'bi bi-clipboard'} />
-                </span>
-              </span>
-            )}
-          </div>
-          {/* Row 2 — Links + actions: Analysis, Map, time-ago, action icons */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs justify-between">
-            <a
-              href={buildAnalysisHref(msg, false)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Відкрити повідомлення в Аналізі"
-              className="inline-flex items-center gap-1 shrink-0"
-            >
-              <i className="bi bi-bar-chart-line" />
-              Аналіз
-              <i className="bi bi-box-arrow-up-right text-xs" />
-            </a>
-            <a
-              href={mapHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Відкрити повідомлення на карті в аналізі"
-              className="inline-flex items-center gap-1 shrink-0"
-            >
-              <i className="bi bi-map" />
-              Карта
-              <i className="bi bi-box-arrow-up-right text-xs" />
-            </a>
+  const headerProps: MessageCardHeaderProps = {
+    layout: layoutVariant === 'fluid' ? 'fluid' : 'dividers',
+    feedCount,
+    id,
+    msg,
+    mapHref,
+    copiedFeedbackId,
+    groupName,
+    senderName,
+    onBookmark,
+    onImportant,
+    onComment,
+    onCopyText,
+    onCopyFreq,
+  };
 
-            <span className="shrink-0 inline-flex">
-              <ActionIconsRow
-                id={id}
-                msg={msg}
-                copiedFeedbackId={copiedFeedbackId}
-                onBookmark={onBookmark}
-                onImportant={onImportant}
-                onComment={onComment}
-                onCopyText={onCopyText}
-                onCopyFreq={onCopyFreq}
-              />
-            </span>
-          </div>
-          {/* Row 3 — Networks + location*/}
-          <div className="inline-flex gap-x-3">
-            <div className="flex flex-col items-baseline gap-x-2 gap-y-1">
-              <span className="inline-flex font-semibold shrink-1 items-start gap-1 w-full min-w-0">
-                {networkIds.length > 0 ? (
-                  <ResolvedNetworkEtalonRows
-                    networkIds={networkIds}
-                    networkDisplayMap={networkDisplayMap}
-                    networkMap={networkMap}
-                  />
-                ) : etalonNoNetworkLabel != null ? (
-                  <span className="inline-flex items-center gap-1">
-                    <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
-                    <span className="ml-1">{etalonNoNetworkLabel}</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1" aria-hidden>
-                    <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
-                    <span aria-hidden>{'\u00A0'}</span>
-                  </span>
-                )}
-              </span>
-            </div>
+  const etalonBlock = (
+    <MessageCardEtalonLocationTime
+      networkIds={networkIds}
+      networkDisplayMap={networkDisplayMap}
+      networkMap={networkMap}
+      etalonNoNetworkLabel={etalonNoNetworkLabel}
+      msg={msg}
+      relativeTimeMs={relativeTimeMs}
+    />
+  );
 
-            <span className="inline-flex items-baseline gap-1 font-medium shrink-2">
-              <i className="bi bi-geo text-icons shrink-0" title="Локація" />
-              {msg.location ?? 'Не встановлена'}
-            </span>
-            {msg.timestamp != null && relativeTimeMs != null && (
-              <div className="shrink-0 mr-0 ml-auto" style={{ color: 'var(--bs-secondary-color)' }}>
-                {messageRenderDistance(msg.timestamp, relativeTimeMs)}
-              </div>
-            )}
-          </div>
-          {/* Row 4 — Body: text, comment, tags (one line with wrap) */}
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
-            <span className="whitespace-pre-wrap break-words text-marked min-w-0">
-              {msg.textMarked && msg.textMarked.length > 0
-                ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg))
-                : msg.text || '—'}
-            </span>
-            {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
-              <span className="inline-flex items-center gap-1 shrink-0" style={{ fontSize: '.75rem' }}>
-                <i className="bi bi-chat-text text-icons shrink-0" title="Коментар" />
-                <span className="font-semibold text-xs">{msg.extendedForm}</span>
-              </span>
-            )}
-            <span className="inline-flex flex-wrap gap-1 min-w-0">
-              <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
-            </span>
-          </div>
-        </div>
-      </Box>
-    );
-  }
-
-  // Header dividers layout: 3-column header, then comment block, then body (network, location, text, tags)
-  const narrowColumns = feedCount >= 3;
-  const colLeft = narrowColumns
-    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-3 border-r border-border min-w-[105px]'
-    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 border-r border-border';
-  const colCenter = narrowColumns
-    ? 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 shrink-1 text-xs border-r border-border min-w-[62px]'
-    : 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 text-xs border-r border-border';
-  const colRight = narrowColumns
-    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-0 basis-auto text-xs items-end'
-    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 text-xs items-end';
+  const messageMain = <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />;
 
   return (
     <Box
@@ -541,166 +748,15 @@ export function MessageCard({
       component="li"
       className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2"
     >
-      <div className="flex flex-col w-full bg-card rounded-t-sm p-2 border-b border-border">
-        <div className="flex items-stretch w-full">
-          <div className={colLeft}>
-            <div className="flex items-center justify-left" style={{ fontSize: '.75rem' }}>
-              <span className="flex items-center gap-1 pr-2">
-                <i className="bi bi-clock text-icons" />
-                {formatTime(msg.time)}
-              </span>
-              {msg.date != null && (
-                <span className="flex items-center gap-1">
-                  <i className="bi bi-calendar text-icons" />
-                  {formatDateNoYear(msg.date)}
-                </span>
-              )}
-            </div>
-            <div className="flex items-stretch gap-2" style={{ fontSize: 14 }}>
-              <ActionIconsRow
-                id={id}
-                msg={msg}
-                copiedFeedbackId={copiedFeedbackId}
-                onBookmark={onBookmark}
-                onImportant={onImportant}
-                onComment={onComment}
-                onCopyText={onCopyText}
-                onCopyFreq={onCopyFreq}
-              />
-            </div>
+      <div className="flex flex-col w-full bg-card rounded-sm p-2 gap-2 relative">
+        {(authUserName ?? '').trim() !== '' && (
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+            <MessageCardBody authUserName={authUserName!} />
           </div>
-          <div className={colCenter}>
-            <div className="flex items-center min-w-0">
-              {groupName != null ? (
-                <span className="flex items-center gap-1 truncate min-w-0 cursor-default" title={groupName}>
-                  <i className="bi bi-signal text-icons shrink-0" title="Група" />
-                  <span className="truncate">{groupName}</span>
-                </span>
-              ) : (
-                <span className="text-icons/70">—</span>
-              )}
-            </div>
-            <div className="flex items-center min-w-0">
-              {senderName != null ? (
-                <span className="flex items-center gap-1 truncate min-w-0 cursor-default" title={senderName}>
-                  <i className="bi bi-person-circle text-icons shrink-0" title="Відправник" />
-                  <span className="truncate">{senderName}</span>
-                </span>
-              ) : (
-                <span className="text-icons/70">—</span>
-              )}
-            </div>
-          </div>
-          {/* Right column: frequency, analysis, map */}
-          <div className={colRight} style={narrowColumns ? { minWidth: 'min-content' } : undefined}>
-            <div className="flex items-center gap-1.5 min-w-0">
-              {msg.freq != null ? (
-                <>
-                  <span className="flex items-center gap-1 font-semibold truncate">
-                    <i className="bi bi-broadcast text-icons shrink-0" title="Частота" />
-                    {msg.freq}
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    title="Копіювати частоту"
-                    className="cursor-pointer shrink-0"
-                    onClick={onCopyFreq}
-                    onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
-                  >
-                    <i
-                      className={
-                        copiedFeedbackId === `freq-${id}`
-                          ? 'bi bi-clipboard-check-fill cursor-pointer'
-                          : 'bi bi-clipboard cursor-pointer'
-                      }
-                    />
-                  </span>
-                </>
-              ) : (
-                <span className="text-icons/70">—</span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 flex-nowrap text-xs min-w-[70px]">
-              <a
-                href={buildAnalysisHref(msg, false)}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Відкрити повідомлення в Аналізі"
-                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-              >
-                <i className="bi bi-bar-chart-line" />
-                <span>Аналіз</span>
-                <i className="bi bi-box-arrow-up-right text-xs" />
-              </a>
-              <a
-                href={mapHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Відкрити повідомлення на карті в аналізі"
-                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-              >
-                <i className="bi bi-map" />
-                <span>Карта</span>
-                <i className="bi bi-box-arrow-up-right text-xs" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
-        <div className="px-2 py-1 border-b border-border bg-card/50" style={{ fontSize: '.75rem' }}>
-          <i className="bi bi-chat-text text-icons mr-1" title="Коментар" />
-          <span className="font-semibold text-xs">{msg.extendedForm}</span>
-        </div>
-      )}
-
-      <div className="mb-2 rounded-b-sm px-2 pt-2 pb-2 message-div bg-card relative min-w-0 break-words overflow-hidden">
-        {(authUserName ?? '').trim() !== '' && <MessageCardBody authUserName={authUserName!} />}
-        <div
-          className="flex justify-start items-start flex-wrap py-1 border-b-2 border-border gap-2"
-          style={{ position: 'relative' }}
-        >
-          {msg.timestamp != null && relativeTimeMs != null && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 4,
-                right: 8,
-                fontSize: '.8rem',
-                color: 'var(--bs-secondary-color)',
-              }}
-            >
-              {messageRenderDistance(msg.timestamp, relativeTimeMs)}
-            </div>
-          )}
-          <div className={`font-semibold inline-flex flex-col items-start gap-0.5 w-full min-w-0`}>
-            <span className="inline-flex items-start gap-1 w-full min-w-0">
-              <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
-              {networkIds.length > 0 ? (
-                <ResolvedNetworkEtalonRows
-                  networkIds={networkIds}
-                  networkDisplayMap={networkDisplayMap}
-                  networkMap={networkMap}
-                />
-              ) : etalonNoNetworkLabel != null ? (
-                <span>{etalonNoNetworkLabel}</span>
-              ) : (
-                <span aria-hidden>{'\u00A0'}</span>
-              )}
-            </span>
-          </div>
-          <div className="font-semibold break-words min-w-0">
-            <i className="bi bi-geo text-icons" title="Локація" /> {msg.location ?? 'Не встановлена'}
-          </div>
-        </div>
-        <div className="whitespace-pre-wrap break-words mt-1 mb-3 text-marked">
-          {msg.textMarked && msg.textMarked.length > 0
-            ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg))
-            : msg.text || '—'}
-        </div>
-        <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
+        )}
+        <MessageCardHeader {...headerProps} />
+        {etalonBlock}
+        {messageMain}
       </div>
     </Box>
   );
