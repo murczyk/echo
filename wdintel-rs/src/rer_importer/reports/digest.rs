@@ -216,21 +216,8 @@ pub async fn report_docx_kind_digest(
                 &config,
             )]));
             for note in network_row.notes {
-                let note_txt = match note.time {
-                    None => note.comment.clone(),
-                    Some(dt) => match show_date {
-                        false => format!(
-                            "{} {}",
-                            dt.time().format("%H:%M"),
-                            note.comment
-                        ),
-                        true => format!(
-                            "{} {}",
-                            dt.format("%d.%m %H:%M"),
-                            note.comment
-                        ),
-                    },
-                };
+                let note_txt =
+                    build_note_comment(&note, show_date, use_form_1217);
                 let Some(inter_cell) = build_interception_cell(
                     &note,
                     omit_exo_id,
@@ -275,6 +262,24 @@ pub async fn report_docx_kind_digest(
 
     info!("report_docx_kind_digest completed");
     Ok(())
+}
+
+fn build_note_comment(
+    note: &InterNote,
+    show_date: bool,
+    use_form_1217: bool,
+) -> String {
+    if use_form_1217 {
+        return note.comment.clone();
+    }
+
+    match note.time {
+        None => note.comment.clone(),
+        Some(dt) => match show_date {
+            false => format!("{} {}", dt.time().format("%H:%M"), note.comment),
+            true => format!("{} {}", dt.format("%d.%m %H:%M"), note.comment),
+        },
+    }
 }
 
 fn build_interception_cell(
@@ -939,5 +944,68 @@ fn extract_to_callsigns(message: &InboxMessage) -> Option<String> {
         None
     } else {
         Some(callsigns.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_note_comment_omits_time_for_form_1217() {
+        let note = InterNote {
+            time: Some(
+                NaiveDate::from_ymd_opt(2026, 3, 21)
+                    .unwrap()
+                    .and_hms_opt(14, 30, 0)
+                    .unwrap(),
+            ),
+            comment: "Test comment".to_string(),
+            interception: None,
+            interception_id: None,
+            details: InterceptionDetails {
+                date: None,
+                freq: None,
+                location: None,
+                unit: None,
+                time: None,
+                who_callsign: None,
+                to_callsigns: None,
+            },
+        };
+
+        assert_eq!(
+            build_note_comment(&note, false, true),
+            "Test comment".to_string()
+        );
+    }
+
+    #[test]
+    fn build_note_comment_keeps_time_when_form_1217_disabled() {
+        let note = InterNote {
+            time: Some(
+                NaiveDate::from_ymd_opt(2026, 3, 21)
+                    .unwrap()
+                    .and_hms_opt(14, 30, 0)
+                    .unwrap(),
+            ),
+            comment: "Test comment".to_string(),
+            interception: None,
+            interception_id: None,
+            details: InterceptionDetails {
+                date: None,
+                freq: None,
+                location: None,
+                unit: None,
+                time: None,
+                who_callsign: None,
+                to_callsigns: None,
+            },
+        };
+
+        assert_eq!(
+            build_note_comment(&note, false, false),
+            "14:30 Test comment".to_string()
+        );
     }
 }
