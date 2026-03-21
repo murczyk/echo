@@ -4451,6 +4451,8 @@ type alias ReportPreviewReq =
     , reportType : Maybe ReportType
     , reportTagsOnlyThisUnit : Maybe Bool
     , withoutComments : Maybe Bool
+    , digestOmitExoId : Maybe Bool
+    , digestForm1217 : Maybe Bool
     }
 
 
@@ -4462,6 +4464,8 @@ reportPreviewReqEncoder struct =
         , ( "report_type", (Maybe.withDefault Json.Encode.null << Maybe.map reportTypeEncoder) struct.reportType )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutComments )
+        , ( "digest_omit_exo_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.digestOmitExoId )
+        , ( "digest_form_1_2_17", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.digestForm1217 )
         ]
 
 
@@ -10076,6 +10080,8 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_type" (Json.Decode.nullable reportTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_omit_exo_id" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_form_1_2_17" (Json.Decode.nullable Json.Decode.bool)))
 
 
 reportTypeDecoder : Json.Decode.Decoder ReportType
