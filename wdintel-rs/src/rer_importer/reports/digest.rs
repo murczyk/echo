@@ -290,7 +290,7 @@ fn build_interception_cell(
         }
     }
     if use_form_1217 {
-        paragraphs.extend(build_form_1217_paragraphs(&note.details));
+        paragraphs.extend(build_form_1217_paragraphs(&note.details, config));
     }
     if let Some(interception) = &note.interception {
         for line in interception.split('\n') {
@@ -321,7 +321,10 @@ fn build_exo_id_paragraph(note: &InterNote) -> Option<Paragraph> {
     })
 }
 
-fn build_form_1217_paragraphs(details: &InterceptionDetails) -> Vec<Paragraph> {
+fn build_form_1217_paragraphs(
+    details: &InterceptionDetails,
+    config: &DocxConfig,
+) -> Vec<Paragraph> {
     let mut lines = vec![
         ("Дата", details.date.as_deref().unwrap_or("")),
         ("Частота", details.freq.as_deref().unwrap_or("")),
@@ -338,12 +341,10 @@ fn build_form_1217_paragraphs(details: &InterceptionDetails) -> Vec<Paragraph> {
     lines
         .into_iter()
         .map(|(label, value)| {
-            Paragraph::new().add_run(
-                mk_text(
-                    &format!("{label}: {value}"),
-                    &util::ParagraphStyle::Italic,
-                )
-                .size(16),
+            mk_paragraph(
+                &format!("{label}: {value}"),
+                util::ParagraphStyle::Italic,
+                config,
             )
         })
         .collect()
