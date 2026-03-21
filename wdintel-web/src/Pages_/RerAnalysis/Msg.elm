@@ -131,6 +131,8 @@ type Msg
     | ReportTagsOnlyThisUnitToggle
     | ReportTagsOnlyThisUnitForReportToggle
     | ReportWithoutCommentsToggle
+    | ReportDigestOmitExoIdToggle
+    | ReportDigestForm1217Toggle
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
     | ReportReoNoCommentsToggle

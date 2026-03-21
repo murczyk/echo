@@ -50,6 +50,17 @@ pub struct InterNote {
     pub comment: String,
     pub interception: Option<String>,
     pub interception_id: Option<String>,
+    pub details: InterceptionDetails,
+}
+
+pub struct InterceptionDetails {
+    pub date: Option<String>,
+    pub freq: Option<String>,
+    pub location: Option<String>,
+    pub unit: Option<String>,
+    pub time: Option<String>,
+    pub who_callsign: Option<String>,
+    pub to_callsigns: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, FromQueryResult)]
@@ -102,6 +113,8 @@ pub async fn report_docx_kind_digest(
         .await
         .context(h!())?;
     info!("report_docx_kind_digest data collected");
+    let omit_exo_id = req.digest_omit_exo_id.unwrap_or(false);
+    let use_form_1217 = req.digest_form_1_2_17.unwrap_or(false);
 
     let config = DocxConfig {
         columns_count: 2,
@@ -204,7 +217,7 @@ pub async fn report_docx_kind_digest(
             )]));
             for note in network_row.notes {
                 let note_txt = match note.time {
-                    None => note.comment,
+                    None => note.comment.clone(),
                     Some(dt) => match show_date {
                         false => format!(
                             "{} {}",
@@ -218,46 +231,13 @@ pub async fn report_docx_kind_digest(
                         ),
                     },
                 };
-                let m_inter_lines = note.interception.map(|interception| {
-                    interception
-                        .split('\n')
-                        .collect::<Vec<&str>>()
-                        .into_iter()
-                        .map(|s| s.to_string())
-                        .collect_vec()
-                });
-                let m_id_paragraph = note.interception_id.map(|text| {
-                    Paragraph::new().add_run(
-                        mk_text(
-                            &format!("EXO ID {text}"),
-                            &util::ParagraphStyle::Italic,
-                        )
-                        .color("808080")
-                        .size(16),
-                    )
-                });
-                let inter_cell = match (m_inter_lines, m_id_paragraph) {
-                    (None, None) => {
-                        continue;
-                    }
-                    (Some(lines), None) => mk_multiline_text_cell(
-                        lines,
-                        util::ParagraphStyle::Italic,
-                        &config,
-                    )
-                    .vertical_align(VAlignType::Top),
-                    (Some(lines), Some(inter_id)) => {
-                        let mut cell = mk_cell(&config, inter_id);
-                        for l in lines {
-                            cell = cell.add_paragraph(mk_paragraph(
-                                &l,
-                                util::ParagraphStyle::Italic,
-                                &config,
-                            ));
-                        }
-                        cell
-                    }
-                    (None, Some(inter_id)) => mk_cell(&config, inter_id),
+                let Some(inter_cell) = build_interception_cell(
+                    &note,
+                    omit_exo_id,
+                    use_form_1217,
+                    &config,
+                ) else {
+                    continue;
                 };
                 let comment_cell = mk_text_cell(
                     &note_txt,
@@ -295,6 +275,79 @@ pub async fn report_docx_kind_digest(
 
     info!("report_docx_kind_digest completed");
     Ok(())
+}
+
+fn build_interception_cell(
+    note: &InterNote,
+    omit_exo_id: bool,
+    use_form_1217: bool,
+    config: &DocxConfig,
+) -> Option<TableCell> {
+    let mut paragraphs = vec![];
+    if !omit_exo_id {
+        if let Some(paragraph) = build_exo_id_paragraph(note) {
+            paragraphs.push(paragraph);
+        }
+    }
+    if use_form_1217 {
+        paragraphs.extend(build_form_1217_paragraphs(&note.details));
+    }
+    if let Some(interception) = &note.interception {
+        for line in interception.split('\n') {
+            paragraphs.push(mk_paragraph(
+                line,
+                util::ParagraphStyle::Italic,
+                config,
+            ));
+        }
+    }
+
+    let mut paragraphs = paragraphs.into_iter();
+    let first = paragraphs.next()?;
+    let mut cell = mk_cell(config, first);
+    for paragraph in paragraphs {
+        cell = cell.add_paragraph(paragraph);
+    }
+    Some(cell.vertical_align(VAlignType::Top))
+}
+
+fn build_exo_id_paragraph(note: &InterNote) -> Option<Paragraph> {
+    note.interception_id.as_ref().map(|text| {
+        Paragraph::new().add_run(
+            mk_text(&format!("EXO ID {text}"), &util::ParagraphStyle::Italic)
+                .color("808080")
+                .size(16),
+        )
+    })
+}
+
+fn build_form_1217_paragraphs(details: &InterceptionDetails) -> Vec<Paragraph> {
+    let mut lines = vec![
+        ("Дата", details.date.as_deref().unwrap_or("")),
+        ("Частота", details.freq.as_deref().unwrap_or("")),
+        ("Локація", details.location.as_deref().unwrap_or("")),
+        ("Підрозділ", details.unit.as_deref().unwrap_or("")),
+        ("Час", details.time.as_deref().unwrap_or("")),
+    ];
+    if let Some(who_callsign) = details.who_callsign.as_deref() {
+        lines.push(("Хто", who_callsign));
+    }
+    if let Some(to_callsigns) = details.to_callsigns.as_deref() {
+        lines.push(("Кому", to_callsigns));
+    }
+    lines
+        .into_iter()
+        .map(|(label, value)| {
+            Paragraph::new().add_run(
+                mk_text(
+                    &format!("{label}: {value}"),
+                    &util::ParagraphStyle::Italic,
+                )
+                .color("808080")
+                .size(16),
+            )
+        })
+        .collect()
 }
 
 fn check_should_show_date(since: DateTime<Utc>, till: DateTime<Utc>) -> bool {
@@ -514,11 +567,26 @@ async fn collect_report(
                     .map(|ts| {
                         ts.with_timezone(&crate::config::get_tz()).naive_local()
                     });
+                let details = InterceptionDetails {
+                    date: extract_message_date(&message),
+                    freq: sanitize_optional_text(message.freq.clone()),
+                    location: sanitize_optional_text(message.location.clone())
+                        .or_else(|| network_location.clone()),
+                    unit: extract_message_unit(
+                        &message,
+                        unit_name.as_ref(),
+                        unit.as_ref(),
+                    ),
+                    time: extract_message_time(&message),
+                    who_callsign: extract_who_callsign(&message),
+                    to_callsigns: extract_to_callsigns(&message),
+                };
                 notes.push(InterNote {
                     time,
                     comment,
                     interception: Some(message.text),
-                    interception_id: message.message_uid,
+                    interception_id: message.message_uid.clone(),
+                    details,
                 });
             }
             notes.sort_by(|x, y| match (x.time, y.time) {
@@ -781,4 +849,95 @@ pub fn convert_utc_to_kyiv_time(utc_timestamp: DateTime<Utc>) -> String {
         ukrainian_month,
         local_time.year()
     )
+}
+
+fn sanitize_optional_text(value: Option<String>) -> Option<String> {
+    value
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
+fn extract_message_date(message: &InboxMessage) -> Option<String> {
+    sanitize_optional_text(message.date.clone())
+        .map(|date| normalize_message_date(&date))
+        .or_else(|| {
+            message.timestamp.and_then(|timestamp| {
+                chrono::DateTime::from_timestamp_millis(timestamp).map(|dt| {
+                    dt.with_timezone(&crate::config::get_tz())
+                        .format("%d.%m.%Y")
+                        .to_string()
+                })
+            })
+        })
+}
+
+fn normalize_message_date(raw: &str) -> String {
+    for format in ["%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"] {
+        if let Ok(date) = NaiveDate::parse_from_str(raw, format) {
+            return date.format("%d.%m.%Y").to_string();
+        }
+    }
+    raw.to_string()
+}
+
+fn extract_message_time(message: &InboxMessage) -> Option<String> {
+    sanitize_optional_text(message.time.clone())
+        .map(|time| normalize_message_time(&time))
+        .or_else(|| {
+            message.timestamp.and_then(|timestamp| {
+                chrono::DateTime::from_timestamp_millis(timestamp).map(|dt| {
+                    dt.with_timezone(&crate::config::get_tz())
+                        .format("%H:%M")
+                        .to_string()
+                })
+            })
+        })
+}
+
+fn normalize_message_time(raw: &str) -> String {
+    for format in ["%H:%M:%S", "%H:%M"] {
+        if let Ok(time) = NaiveTime::parse_from_str(raw, format) {
+            return time.format("%H:%M").to_string();
+        }
+    }
+    raw.to_string()
+}
+
+fn extract_message_unit(
+    message: &InboxMessage,
+    unit_name: Option<&String>,
+    unit_parts: Option<&Vec<String>>,
+) -> Option<String> {
+    sanitize_optional_text(message.unit.clone())
+        .or_else(|| {
+            unit_name
+                .cloned()
+                .and_then(|value| sanitize_optional_text(Some(value)))
+        })
+        .or_else(|| {
+            unit_parts
+                .map(|parts| parts.join(", "))
+                .and_then(|value| sanitize_optional_text(Some(value)))
+        })
+}
+
+fn extract_who_callsign(message: &InboxMessage) -> Option<String> {
+    message
+        .callsigns
+        .iter()
+        .find_map(|callsign| sanitize_optional_text(Some(callsign.clone())))
+}
+
+fn extract_to_callsigns(message: &InboxMessage) -> Option<String> {
+    let callsigns = message
+        .callsigns
+        .iter()
+        .skip(1)
+        .filter_map(|callsign| sanitize_optional_text(Some(callsign.clone())))
+        .collect::<Vec<_>>();
+    if callsigns.is_empty() {
+        None
+    } else {
+        Some(callsigns.join(", "))
+    }
 }
