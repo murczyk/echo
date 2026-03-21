@@ -116,6 +116,27 @@ describe('rer-palitra helpers', () => {
     ).toEqual([11]);
   });
 
+  it('defaults restricted AOR access to the current scope when nothing scoped is selected', () => {
+    const restrictedUser = makeUser({ name: 'scout', roles: ['UnitsEditor'] });
+    const scope = makeScope();
+
+    expect(
+      applyRestrictedAccess(
+        makeForm({ accessType: 'aor', aorIds: [] }),
+        restrictedUser,
+        scope,
+      ).aorIds,
+    ).toEqual([11, 12]);
+
+    expect(
+      applyRestrictedAccess(
+        makeForm({ accessType: 'aor', aorIds: [99] }),
+        restrictedUser,
+        scope,
+      ).aorIds,
+    ).toEqual([11, 12]);
+  });
+
   it('renders access summaries using visible names for admins and scoped users', () => {
     const palitra = {
       author: 'operator',
