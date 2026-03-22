@@ -7,9 +7,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::highlight::CNPoint;
-use crate::rer_importer::types::{
-    PalitraHighlight, PalitraLexeme, PalitraPattern,
-};
+use crate::rer_importer::types::{PalitraLexeme, PalitraPattern};
 use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::byte_to_char_index;
@@ -24,19 +22,19 @@ pub async fn highlight_points(
     rq: &reqwest::Client,
     body: &str,
     patterns: &[PalitraPattern],
-) -> Result<Vec<PalitraHighlight>, AppError> {
+) -> Result<HashMap<i64, Vec<CNPoint>>, AppError> {
+    let mut res: HashMap<i64, Vec<CNPoint>> = HashMap::new();
+
     if patterns.is_empty() {
-        return Ok(vec![]);
+        return Ok(res);
     }
     let body_trim = body.trim_end();
     if body_trim.is_empty() {
-        return Ok(vec![]);
+        return Ok(res);
     }
     let (body, offset) = cut_body(body);
     let body_chars: Vec<char> = body.chars().collect();
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
-
-    let mut res = Vec::new();
 
     for n in 1..=2 {
         for i in 0..tokens.len().saturating_sub(n - 1) {
@@ -56,28 +54,26 @@ pub async fn highlight_points(
 
             for pattern in patterns {
                 if let Some(etalon) = pattern.matcher.get(&text_lc) {
-                    let mut points = Vec::new();
-                    for lexeme in etalon {
-                        let point = CNPoint {
-                            etalon: lexeme.label.clone(),
-                            text: text.clone(),
-                            begin: offset + first.start,
-                            end: offset + last.end,
-                        };
-                        points.push(point);
-                    }
-                    if !points.is_empty() {
-                        points.sort();
-                        points.dedup();
-                        let highlight = PalitraHighlight {
-                            palitra_id: pattern.palitra_id,
-                            points,
-                        };
-                        res.push(highlight);
+                    if !etalon.is_empty() {
+                        let points = res.entry(pattern.palitra_id).or_default();
+                        for lexeme in etalon {
+                            let point = CNPoint {
+                                etalon: lexeme.label.clone(),
+                                text: text.clone(),
+                                begin: offset + first.start,
+                                end: offset + last.end,
+                            };
+                            points.push(point);
+                        }
                     }
                 }
             }
         }
+    }
+
+    for points in res.values_mut() {
+        points.sort();
+        points.dedup();
     }
 
     Ok(res)
@@ -147,6 +143,7 @@ where
             palitra_geometry::Relation::Palitra.def(),
         )
         .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
         .filter(palitra::Column::Deleted.eq(false))
         .filter(palitra::Column::Id.eq(palitra_id))
         .select_only()
@@ -470,6 +467,7 @@ where
         )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
         .filter(palitra_filter)
         .select_only()
         .column(palitra_geometry::Column::PalitraId)

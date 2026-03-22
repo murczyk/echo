@@ -225,10 +225,10 @@ where
             highlight_points(rq, &body, &patterns).await?;
         let inbox_item_point_tokens: Vec<_> = message_palitra_highlights
             .iter()
-            .map(|highlight| {
-                let point_tokens = serde_json::json!(&highlight.points);
+            .map(|(palitra_id, points)| {
+                let point_tokens = serde_json::json!(&points);
                 sigint_inbox_item_point_token::ActiveModel {
-                    palitra_id: Set(highlight.palitra_id),
+                    palitra_id: Set(*palitra_id),
                     point_tokens: Set(point_tokens),
                     sigint_inbox_item_id: Set(message_id),
                     ..Default::default()
