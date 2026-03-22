@@ -140,6 +140,8 @@ pub const PALITRA_DOWNLOAD_MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
 pub const PALITRA_DOWNLOAD_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 /// Global limit when since_id_noninclusive and since_date_inclusive_ms is not set, safety measure
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
+pub const RER_DUTY_SHORT_STATE_TTL_SEC: u64 = 7 * 24 * 60 * 60;
+pub const RER_DUTY_SHORT_STATE_REDIS_KEY_PREFIX: &str = "rer-duty:filters:";
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
 pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
 pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.8;
@@ -233,6 +235,7 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
+    pub feature_rer_duty_short_state: Option<bool>,
     pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,
     secret_config: Option<SecretConfig>,

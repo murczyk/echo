@@ -628,6 +628,8 @@ pub async fn main_server(
             .service(crate::rer_importer::analysis::saved_filters_duty_list)
             .service(crate::rer_importer::analysis::saved_filter_upsert)
             .service(crate::rer_importer::analysis::saved_filter_duty_upsert)
+            .service(crate::rer_importer::analysis::rer_duty_filters_create)
+            .service(crate::rer_importer::analysis::rer_duty_filters_get)
             .service(crate::rer_importer::analysis::saved_filter_rename)
             .service(crate::rer_importer::analysis::saved_filter_delete)
             .service(crate::rer_importer::analysis::new_callsigns)

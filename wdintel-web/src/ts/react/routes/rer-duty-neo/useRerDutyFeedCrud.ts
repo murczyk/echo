@@ -6,8 +6,6 @@ import {
   emptyFilter,
   filtersEqual,
   generateMessageFeedId,
-  pushStateToUrl,
-  toQueryState,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
 } from './utils';
 import type { MessageFeedState } from './utils';
@@ -18,11 +16,16 @@ export function useRerDutyFeedCrud(
   messageFeeds: MessageFeedState[],
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>,
   onFeedRemoved?: (feedId: string) => void,
+  persistStateToUrl: (next: MessageFeedState[]) => void,
 ) {
   const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
       const w = prev.find((w) => w.id === feedId);
-      if (!w || filtersEqual(w.filter, f)) return prev;
+      if (!w) return prev;
+      if (filtersEqual(w.filter, f)) {
+        persistStateToUrl(prev);
+        return prev;
+      }
       const next = prev.map((w) =>
         w.id === feedId
           ? {
@@ -41,10 +44,10 @@ export function useRerDutyFeedCrud(
             }
           : w,
       );
-      pushStateToUrl(toQueryState(next));
+      persistStateToUrl(next);
       return next;
     });
-  }, []);
+  }, [persistStateToUrl, setMessageFeeds]);
 
   const toggleGroup = useCallback(
     (feedId: string, key: string) => {
@@ -88,10 +91,10 @@ export function useRerDutyFeedCrud(
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
       const next = [...prev, newFeed];
-      pushStateToUrl(toQueryState(next));
+      persistStateToUrl(next);
       return next;
     });
-  }, []);
+  }, [persistStateToUrl, setMessageFeeds]);
 
   const removeMessageFeed = useCallback(
     (feedId: string) => {
@@ -99,12 +102,12 @@ export function useRerDutyFeedCrud(
       if (!messageFeeds.some((w) => w.id === feedId)) return;
       setMessageFeeds((prev) => {
         const next = prev.filter((w) => w.id !== feedId);
-        pushStateToUrl(toQueryState(next));
+        persistStateToUrl(next);
         return next;
       });
       onFeedRemoved?.(feedId);
     },
-    [messageFeeds, onFeedRemoved, setMessageFeeds],
+    [messageFeeds, onFeedRemoved, setMessageFeeds, persistStateToUrl],
   );
 
   return { applyFilter, toggleGroup, selectAllGroups, createMessageFeed, removeMessageFeed };

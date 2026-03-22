@@ -8,15 +8,30 @@ import type {
   SignalGroupEntry,
   SignalProfileEntry,
 } from '../../../../Bindings';
-import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
+import {
+  fetchInboxCount,
+  fetchInboxMessages,
+  rerDutyShortStateCreate,
+  rerDutyShortStateGet,
+} from '../../services/api/inbox';
+import { fetchServerInfo } from '../../services/api/server-info';
+import { getNetworksByIds } from '../../services/api/networks';
+import { getUnitsList } from '../../services/api/units';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
   dedupeMessageItems,
   emptyFilter,
   findAllAdjacentFreqs,
+  getShortStateIdFromUrl,
+  INBOX_COUNT_POLL_INTERVAL_MS,
   parseStateFromUrl,
+  pushShortStateToUrl,
+  pushStateToUrl,
+  stableStringify,
   sortMessageItemsByTime,
+  toRerDutyStateFromShort,
+  toShortQueryState,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
 } from './utils';
 import type { MessageFeedState } from './utils';
@@ -59,6 +74,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     }));
   });
   const [error, setError] = useState<string | null>(null);
+  const [featureShortStateEnabled, setFeatureShortStateEnabled] = useState(false);
+  const [shortStateReady, setShortStateReady] = useState(false);
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
@@ -74,6 +91,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const lastFilterSignatureByFeedIdRef = useRef<Record<string, string>>({});
   /** Virtuoso "at bottom" (pixel threshold); used so poll only auto-scrolls when the scroller is actually at the bottom. */
   const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  const shortStateRef = useRef<{ id: string | null; hash: string | null }>({
+    id: null,
+    hash: null,
+  });
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -90,6 +111,58 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       delete arrowResultTimeoutsRef.current[key];
       setArrowResultByFeedId((prev) => (prev[feedId] === message ? { ...prev, [feedId]: null } : prev));
     }, 3000);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadShortState = async () => {
+      try {
+        const serverInfo = await fetchServerInfo();
+        if (cancelled) return;
+        const enabled = serverInfo.featureRerDutyShortState ?? false;
+        setFeatureShortStateEnabled(enabled);
+        const shortId = getShortStateIdFromUrl();
+        if (enabled && shortId) {
+          try {
+            const rsp = await rerDutyShortStateGet(shortId);
+            if (cancelled) return;
+            const state = toRerDutyStateFromShort(rsp.state);
+            shortStateRef.current = { id: shortId, hash: stableStringify(rsp.state) };
+            setMessageFeeds(
+              (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) => ({
+                id,
+                filter,
+                items: [],
+                loading: true,
+                loadingOlder: false,
+                hasReachedStart: false,
+                firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+                referenceTimeMs: null,
+                readIds: new Set<number>(),
+                unreadCount: 0,
+                adjacentFreqsRange: 0,
+                highlightSignalsEnabled: false,
+                onlyMyUnitTagsEnabled: false,
+              }))
+            );
+          } catch (e) {
+            if (!cancelled) {
+              setError(e instanceof Error ? e.message : String(e));
+            }
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (!cancelled) setShortStateReady(true);
+      }
+    };
+    loadShortState();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -442,15 +515,41 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [messageFeeds]);
 
-  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
+    const persistStateToUrl = useCallback(
+        (next: MessageFeedState[]) => {
+            if (!featureShortStateEnabled) {
+                pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
+                return;
+            }
+            const queryState = toShortQueryState(next);
+            const stateHash = stableStringify(queryState);
+            const cached = shortStateRef.current;
+            if (cached.id && cached.hash === stateHash) {
+                pushShortStateToUrl(cached.id);
+                return;
+            }
+            rerDutyShortStateCreate(queryState)
+                .then((rsp) => {
+                    shortStateRef.current = { id: rsp.id, hash: stateHash };
+                    pushShortStateToUrl(rsp.id);
+                })
+                .catch((e) => {
+                    setError(e instanceof Error ? e.message : String(e));
+                });
+        },
+        [featureShortStateEnabled]
+    );
 
-  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, deps.onFeedRemoved);
+    const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
+
+  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, deps.onFeedRemoved, persistStateToUrl);
 
   return {
     messageFeeds,
     setMessageFeeds,
     error,
     setError,
+    shortStateReady,
     columnRefsRef,
     nearBottomByFeedIdRef,
     atBottomByFeedIdRef,

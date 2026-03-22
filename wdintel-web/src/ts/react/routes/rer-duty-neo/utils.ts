@@ -3,6 +3,7 @@ import type {
   ContentNode,
   InboxMessage,
   InboxMessagesReq,
+  RerDutyQueryState,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -57,6 +58,18 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     lastViewedMessageId: null,
   };
+}
+
+function normalizeFeedEntries(entries: unknown): [string, RerDutyFeedFilterState][] {
+  if (!Array.isArray(entries) || entries.length === 0) return [['mf-0', emptyFilter()]];
+  return entries.map((entry: unknown) => {
+    if (Array.isArray(entry) && entry.length >= 2) {
+      const id = String(entry[0]);
+      const f = normalizeFeed((entry[1] as Record<string, unknown>) ?? {});
+      return [id, f];
+    }
+    return [`mf-${Math.random().toString(36).slice(2, 7)}`, emptyFilter()];
+  });
 }
 
 /** Distinguishes null/undefined from []. Backend treats None (no filter) vs Some([]) (empty filter → no rows) differently. */
@@ -201,19 +214,15 @@ export function parseStateFromUrl(): RerDutyState {
     const raw = JSON.parse(decodeURIComponent(stateStr)) as Record<string, unknown>;
     if (!raw || typeof raw !== 'object') return { messageFeeds: [['mf-0', emptyFilter()]] };
     const wfs = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
-    if (!Array.isArray(wfs) || wfs.length === 0) return { messageFeeds: [['mf-0', emptyFilter()]] };
-    const list: [string, RerDutyFeedFilterState][] = wfs.map((entry: unknown) => {
-      if (Array.isArray(entry) && entry.length >= 2) {
-        const id = String(entry[0]);
-        const f = normalizeFeed((entry[1] as Record<string, unknown>) ?? {});
-        return [id, f];
-      }
-      return [`mf-${Math.random().toString(36).slice(2, 7)}`, emptyFilter()];
-    });
-    return { messageFeeds: list };
+    return { messageFeeds: normalizeFeedEntries(wfs) };
   } catch {
     return { messageFeeds: [['mf-0', emptyFilter()]] };
   }
+}
+
+export function getShortStateIdFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('state-short');
 }
 
 export function pushStateToUrl(state: RerDutyState) {
@@ -221,6 +230,42 @@ export function pushStateToUrl(state: RerDutyState) {
   q.set('state', encodeURIComponent(JSON.stringify(state)));
   const url = `${window.location.pathname}?${q.toString()}`;
   window.history.replaceState({}, '', url);
+}
+
+export function pushShortStateToUrl(id: string) {
+  const q = new URLSearchParams(window.location.search);
+  q.set('state-short', id);
+  q.delete('state');
+  const url = `${window.location.pathname}?${q.toString()}`;
+  window.history.replaceState({}, '', url);
+}
+
+function stableStringifyValue(value: unknown): string {
+  if (value == null) return 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringifyValue).join(',')}]`;
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringifyValue(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function stableStringify(state: unknown): string {
+  return stableStringifyValue(state);
+}
+
+export function toShortQueryState(messageFeeds: MessageFeedState[]): RerDutyQueryState {
+  return {
+    waterfalls: messageFeeds.map((f) => [f.id, f.filter]),
+  };
+}
+
+export function toRerDutyStateFromShort(state: RerDutyQueryState): RerDutyState {
+  return {
+    messageFeeds: normalizeFeedEntries(state.waterfalls ?? []),
+  };
 }
 
 export function generateMessageFeedId(): string {

@@ -22,6 +22,7 @@ use actix_web::HttpResponse;
 use chrono::prelude::*;
 use futures_util::TryStreamExt;
 use itertools::Itertools;
+use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{prelude::Expr, sea_query::Alias, *};
@@ -1294,6 +1295,64 @@ fn metadata_sender_match_expr(
         value,
         exact,
     ))
+}
+
+fn rer_duty_short_state_key(id: &str) -> String {
+    format!("{RER_DUTY_SHORT_STATE_REDIS_KEY_PREFIX}{id}")
+}
+
+#[post("/api/rer-duty/filters/create")]
+pub async fn rer_duty_filters_create(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<RerDutyShortStateCreateReq>,
+) -> Result<Json<RerDutyShortStateCreateRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let req = req.into_inner();
+    let id = Uuid::now_v7().to_string();
+    let key = rer_duty_short_state_key(&id);
+    let payload =
+        serde_json::to_string(&RerDutyShortStateGetRsp { state: req.state })
+            .c(h!())?;
+    let mut redis = env.redis.clone();
+    let _: () = redis.set(&key, payload).await.c(h!())?;
+    let _: () = redis
+        .expire(&key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
+        .await
+        .c(h!())?;
+    info!("rer duty short-state created id={id} login={login}");
+    Ok(Json(RerDutyShortStateCreateRsp { id }))
+}
+
+#[post("/api/rer-duty/filters/get")]
+pub async fn rer_duty_filters_get(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<RerDutyShortStateGetReq>,
+) -> Result<Json<RerDutyShortStateGetRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let req = req.into_inner();
+    let key = rer_duty_short_state_key(&req.id);
+    let mut redis = env.redis.clone();
+    let raw: Option<String> = redis.get(&key).await.c(h!())?;
+    let Some(raw) = raw else {
+        warn!("rer duty short-state missing id={} login={login}", req.id);
+        return Err(AppError::NotFound);
+    };
+    let payload: RerDutyShortStateGetRsp =
+        serde_json::from_str(&raw).c(h!())?;
+    let _: () = redis
+        .expire(&key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
+        .await
+        .c(h!())?;
+    info!("rer duty short-state loaded id={} login={login}", req.id);
+    Ok(Json(payload))
 }
 
 fn metadata_receiver_match_expr(
