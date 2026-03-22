@@ -4,6 +4,7 @@ import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
 
 import type {
+  Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -93,6 +94,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const shortStateRef = useRef<{ id: string | null; hash: string | null }>({
     id: null,
+    hash: null,
+  });
+  const shortStateRequestRef = React.useRef<{ requestId: number; hash: string | null }>({
+    requestId: 0,
     hash: null,
   });
 
@@ -480,6 +485,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   /** Keys are `${feedId}:${JSON.stringify(filter)}` so a filter change on the same feed triggers a new load. */
   const initialLoadStartedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (!shortStateReady) return;
     const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
     const needingKeys = new Set(needingLoad.map((w) => `${w.id}:${JSON.stringify(w.filter)}`));
     const started = initialLoadStartedRef.current;
@@ -493,7 +499,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         loadFeedInitialMessagesRef.current(w.id);
       }
     });
-  }, [feedIds, feedsNeedingLoadKey]);
+  }, [feedIds, feedsNeedingLoadKey, shortStateReady]);
 
   useEffect(() => {
     const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
@@ -515,30 +521,96 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [messageFeeds]);
 
-    const persistStateToUrl = useCallback(
-        (next: MessageFeedState[]) => {
-            if (!featureShortStateEnabled) {
-                pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
-                return;
-            }
-            const queryState = toShortQueryState(next);
-            const stateHash = stableStringify(queryState);
-            const cached = shortStateRef.current;
-            if (cached.id && cached.hash === stateHash) {
-                pushShortStateToUrl(cached.id);
-                return;
-            }
-            rerDutyShortStateCreate(queryState)
-                .then((rsp) => {
-                    shortStateRef.current = { id: rsp.id, hash: stateHash };
-                    pushShortStateToUrl(rsp.id);
-                })
-                .catch((e) => {
-                    setError(e instanceof Error ? e.message : String(e));
-                });
-        },
-        [featureShortStateEnabled]
-    );
+  const allNetworkIds = useMemo(() => {
+    const ids = new Set<number>();
+    messageFeeds.forEach((w) => {
+      w.items.forEach(([, msg]) => {
+        (msg.networkIds ?? []).forEach((id) => ids.add(id));
+      });
+    });
+    return Array.from(ids);
+  }, [messageFeeds]);
+
+  const networkMapRef = useRef(networkMap);
+  networkMapRef.current = networkMap;
+  useEffect(() => {
+    const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    getNetworksByIds(missing)
+      .then((networks) => {
+        if (cancelled) return;
+        setNetworkMap((prev) => {
+          const next = { ...prev };
+          networks.forEach((n) => {
+            next[n.id] = n;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Failed to load networks', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [allNetworkIds.join(',')]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUnitsList()
+      .then((units) => {
+        if (cancelled) return;
+        setUnitsMap((prev) => {
+          const next = { ...prev };
+          units.forEach((u) => {
+            next[u.id] = u;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Failed to load units', err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const networkDisplayMap = useMemo(() => {
+    const out: Record<number, string> = {};
+    Object.entries(networkMap).forEach(([idStr, n]) => {
+      const id = Number(idStr);
+      out[id] = createMasterUnitText(n, unitsMap);
+    });
+    return out;
+  }, [networkMap, unitsMap]);
+
+  const persistStateToUrl = useCallback(
+    (next: MessageFeedState[]) => {
+      if (!featureShortStateEnabled) {
+        pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
+        return;
+      }
+      const queryState = toShortQueryState(next);
+      const stateHash = stableStringify(queryState);
+      const cached = shortStateRef.current;
+      if (cached.id && cached.hash === stateHash) {
+        pushShortStateToUrl(cached.id);
+        return;
+      }
+      const requestId = shortStateRequestRef.current.requestId + 1;
+      shortStateRequestRef.current = { requestId, hash: stateHash };
+      rerDutyShortStateCreate(queryState)
+        .then((rsp) => {
+          if (shortStateRequestRef.current.requestId !== requestId) return;
+          if (shortStateRequestRef.current.hash !== stateHash) return;
+          shortStateRef.current = { id: rsp.id, hash: stateHash };
+          pushShortStateToUrl(rsp.id);
+        })
+        .catch((e) => {
+          setError(e instanceof Error ? e.message : String(e));
+          pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
+        });
+    },
+    [featureShortStateEnabled]
+  );
 
     const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
 
