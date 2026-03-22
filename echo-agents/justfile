@@ -1,0 +1,45 @@
+set positional-arguments := true
+
+builder := "echo-gpu-agent-build"
+server := "echo-gpu-agent"
+branch := `git -C "{{ justfile_directory() }}/.." branch --show-current`
+
+default:
+    @just --list
+
+fmt:
+    cargo fmt --manifest-path {{ justfile_directory() }}/echo-agent/Cargo.toml
+
+check:
+    cargo check --manifest-path {{ justfile_directory() }}/echo-agent/Cargo.toml
+
+deb:
+    #!/bin/bash
+    set -euxo pipefail
+    cd {{ justfile_directory() }}/echo-agent
+    cargo deb
+
+[arg('builder', long='builder')]
+[arg('server', long='server')]
+[arg('branch', long='branch')]
+deploy builder="{{ builder }}" server="{{ server }}" branch="{{ branch }}":
+    #!/bin/bash
+    set -euxo pipefail
+
+    BUILDER="{{ builder }}"
+    SERVER="{{ server }}"
+    BRANCH="{{ branch }}"
+    REMOTE_REPO="$HOME/workspace/echo"
+    REMOTE_CRATE="$REMOTE_REPO/echo-agents/echo-agent"
+
+    ssh "$BUILDER" "bash -lc 'set -euxo pipefail; source ~/.cargo/env; cd \"$REMOTE_REPO\"; git fetch origin \"$BRANCH\" || git fetch origin; git checkout \"$BRANCH\"; git pull --ff-only origin \"$BRANCH\" || git pull --ff-only; cd \"$REMOTE_CRATE\"; cargo deb'"
+
+    DEB_PATH=$(ssh "$BUILDER" "bash -lc 'cd \"$REMOTE_CRATE\" && ls -1t target/debian/echo-agent_*_*.deb | head -n 1'")
+    DEB_NAME=$(basename "$DEB_PATH")
+
+    scp "$BUILDER:$DEB_PATH" "/var/tmp/$DEB_NAME"
+    scp "/var/tmp/$DEB_NAME" "$SERVER:/var/tmp/$DEB_NAME"
+
+    ssh "$SERVER" "sudo dpkg -i /var/tmp/$DEB_NAME"
+    ssh "$SERVER" 'sudo systemctl daemon-reload && sudo systemctl enable --now echo-agent'
+    ssh "$SERVER" 'echo-agent freeform "How is the weather?"'

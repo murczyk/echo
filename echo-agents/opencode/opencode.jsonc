@@ -3,7 +3,8 @@
 
   "permission": {
     "*": "allow",
-    "websearch": "deny"
+    "websearch": "deny",
+    "webfetch": "deny"
   },
 
   "provider": {

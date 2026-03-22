@@ -30,10 +30,25 @@ root@echo-gpu-agent:~# curl -sS http://10.16.206.1:8000/v1/models | jq .
 }
 ```
 
+- install `node` and `opencode`:
+
+```
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+curl -fsSL https://opencode.ai/install | bash
+```
+
 - if `opencode` binary is not in `PATH`, set `OPENCODE_BIN`:
 
 ```bash
 export OPENCODE_BIN=/home/echo/.opencode/bin/opencode
+```
+
+- run Rust wrapper:
+
+```bash
+cd echo-agents/echo-agent
+cargo run -- freeform "What time is it?"
 ```
 
 - install tailscale:
