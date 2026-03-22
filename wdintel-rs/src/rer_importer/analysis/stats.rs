@@ -1772,14 +1772,6 @@ pub async fn fetch_aors(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result =
-            read_aor_stats_aggregated(env, master_keys, dt_since, dt_till)
-                .await
-                .c(h!())?;
-        return Ok(result);
-    }
-
     let instant = std::time::Instant::now();
     let stmt = build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
     let aors_res: Vec<AorsRes> = AorsRes::find_by_statement(stmt)
@@ -2202,7 +2194,6 @@ fn build_networks_query_for_login(
     let networks_cte_alias = Alias::new("networks_cte");
     let groups_cte_alias = Alias::new("groups_cte");
     let network_value_alias = Alias::new("networks_cte_aor");
-    let group_value_alias = Alias::new("groups_cte_aor");
 
     // 1) messages_cte
     let messages_q = sigint_inbox_item::Entity::find()
@@ -2276,40 +2267,65 @@ fn build_networks_query_for_login(
         )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false));
-    let networks_q = match selected_aor_overlap_condition(
-        network_value_alias,
-        &req.selected_aors,
-    ) {
-        Some(condition) => networks_q.filter(condition),
-        None => networks_q,
+    let networks_q = if req
+        .selected_aors
+        .as_ref()
+        .map(|aors| !aors.is_empty())
+        .unwrap_or(false)
+    {
+        let network_scope_link_alias = Alias::new("network_scope_link");
+        let network_scope_value_alias = Alias::new("network_scope_value");
+        let mut network_scope_exists = Query::select();
+        network_scope_exists
+            .expr(Expr::value(1))
+            .from_as(
+                sigint_network_aor::Entity,
+                network_scope_link_alias.clone(),
+            )
+            .join_as(
+                JoinType::InnerJoin,
+                area_of_responsibility::Entity,
+                network_scope_value_alias.clone(),
+                Expr::col((
+                    network_scope_link_alias.clone(),
+                    sigint_network_aor::Column::AorId,
+                ))
+                .equals((
+                    network_scope_value_alias.clone(),
+                    area_of_responsibility::Column::Id,
+                )),
+            )
+            .and_where(
+                Expr::col((
+                    network_scope_link_alias,
+                    sigint_network_aor::Column::NetworkId,
+                ))
+                .equals((sigint_network::Entity, sigint_network::Column::Id)),
+            );
+        if let Some(condition) = selected_aor_overlap_condition(
+            network_scope_value_alias,
+            &req.selected_aors,
+        ) {
+            network_scope_exists.cond_where(condition);
+        }
+        networks_q.filter(Expr::exists(network_scope_exists.to_owned()))
+    } else {
+        networks_q
     };
 
     // 3) groups_cte
     let groups_q = signal_group::Entity::find()
         .select_only()
         .column(signal_group::Column::MasterKey)
-        .column_as(
-            Expr::col((
-                group_value_alias.clone(),
-                area_of_responsibility::Column::LeftBound,
-            )),
-            "g_left",
-        )
-        .column_as(
-            Expr::col((
-                group_value_alias.clone(),
-                area_of_responsibility::Column::RightBound,
-            )),
-            "g_right",
-        )
+        .column_as(area_of_responsibility::Column::LeftBound, "g_left")
+        .column_as(area_of_responsibility::Column::RightBound, "g_right")
         .join(
             JoinType::InnerJoin,
             signal_group::Relation::SignalGroupAor.def(),
         )
-        .join_as(
+        .join(
             JoinType::InnerJoin,
             signal_group_aor::Relation::AreaOfResponsibility.def(),
-            group_value_alias.clone(),
         )
         .filter(signal_group::Column::Deleted.eq(false));
     let effective_groups =
@@ -2319,13 +2335,6 @@ fn build_networks_query_for_login(
     } else {
         groups_q
             .filter(signal_group::Column::MasterKey.eq_any(effective_groups))
-    };
-    let groups_q = match selected_aor_overlap_condition(
-        group_value_alias,
-        &req.selected_aors,
-    ) {
-        Some(condition) => groups_q.filter(condition),
-        None => groups_q,
     };
     // add more custom filters to the messages CTE
     let messages_q =
@@ -2394,7 +2403,7 @@ fn build_networks_query_for_login(
     let mut main_q = Query::select();
     main_q
         .expr_as(Expr::col((n.clone(), Alias::new("network_id"))), Alias::new("network_id"))
-        .expr_as(Expr::cust("count(1)"), Alias::new("msg_count"))
+        .expr_as(Expr::cust("count(distinct m.dedup_key)"), Alias::new("msg_count"))
         .from_as(messages_cte_alias.clone(), m.clone())
         .join_as(
             JoinType::InnerJoin,
