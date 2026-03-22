@@ -288,6 +288,33 @@ pub(crate) async fn collect_signal_group_batches(
         .c(h!())
 }
 
+async fn load_network_aor_map(
+    dbx: &DatabaseConnection,
+    network_ids: &HashSet<i64>,
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    if network_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sigint_network_aor::Entity::find()
+        .filter(
+            sigint_network_aor::Column::NetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut network_aors = HashMap::new();
+    for row in rows {
+        network_aors
+            .entry(row.network_id)
+            .or_insert_with(Vec::new)
+            .push(row.aor_id);
+    }
+    Ok(network_aors)
+}
+
 pub async fn read_group_stats_aggregated(
     dbx: &DatabaseConnection,
     master_keys: Vec<String>,
@@ -370,6 +397,82 @@ pub async fn read_group_stats_aggregated(
     let mut result = vec![];
     for (master_key, count) in stats {
         result.push(AnalysisStatsGroup { master_key, count });
+    }
+    Ok(result)
+}
+
+pub async fn read_aor_stats_aggregated(
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<Vec<AnalysisStatsAor>> {
+    let (intervals_5min, days) =
+        collect_time_intervals_for_stats(dt_since, dt_till).c(h!())?;
+
+    let mut interval_5mins_filter = Condition::any();
+    for (since, till) in intervals_5min {
+        let filter = stats_group_aor_id_5min::Column::Dt
+            .gte(since)
+            .and(stats_group_aor_id_5min::Column::Dt.lt(till));
+        interval_5mins_filter = interval_5mins_filter.add(filter);
+    }
+
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
+    let mut stats: HashMap<i64, i64> = stats_group_aor_id_5min::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            stats_group_aor_id_5min::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(interval_5mins_filter)
+        .filter(
+            stats_group_aor_id_5min::Column::SignalGroupBatchId
+                .eq_any(batch_ids.clone()),
+        )
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .fold(HashMap::new(), |mut acc, s| {
+            *acc.entry(s.aor_id).or_insert(0) += s.quantity as i64;
+            acc
+        });
+
+    if !days.is_empty() {
+        let mut interval_day_filter = Condition::any();
+        for d in days {
+            let filter = stats_group_aor_id_day::Column::Dt.eq(d);
+            interval_day_filter = interval_day_filter.add(filter);
+        }
+        stats_group_aor_id_day::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                stats_group_aor_id_day::Relation::AreaOfResponsibility.def(),
+            )
+            .filter(interval_day_filter)
+            .filter(
+                stats_group_aor_id_day::Column::SignalGroupBatchId
+                    .eq_any(batch_ids.clone()),
+            )
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .for_each(|s| {
+                *stats.entry(s.aor_id).or_insert(0) += s.quantity as i64;
+            });
+    };
+    let mut result = vec![];
+    for (aor_id, count) in stats {
+        result.push(AnalysisStatsAor { aor_id, count });
     }
     Ok(result)
 }
@@ -1020,6 +1123,15 @@ pub async fn recalculate_group_stats(
     if recalculate_5min_stats {
         let generic_stats =
             load_generic_stats(dbx, since_ts, till_ts).await.c(h!())?;
+        let network_stats = load_network_stats(dbx, since_ts, till_ts, None)
+            .await
+            .c(h!())?;
+        let network_ids = network_stats
+            .iter()
+            .map(|row| row.network_id)
+            .collect::<HashSet<_>>();
+        let network_aors =
+            load_network_aor_map(dbx, &network_ids).await.c(h!())?;
 
         let group_stats = generic_stats
             .clone()
@@ -1061,7 +1173,7 @@ pub async fn recalculate_group_stats(
                 )
             })
             .collect_vec();
-        let aor_stats = generic_stats
+        let group_aor_stats = generic_stats
             .clone()
             .into_iter()
             .filter_map(|x| {
@@ -1073,6 +1185,25 @@ pub async fn recalculate_group_stats(
                     )
                 })
             })
+            .collect_vec();
+        let network_aor_stats = network_stats
+            .into_iter()
+            .flat_map(|row| {
+                let ts =
+                    row.datetime.or(row.timestamp).unwrap_or(row.created_at);
+                network_aors
+                    .get(&row.network_id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(move |aor_id| {
+                        (row.group_master_key.clone(), (row.id, aor_id), ts)
+                    })
+            })
+            .collect_vec();
+        let aor_stats = group_aor_stats
+            .into_iter()
+            .chain(network_aor_stats)
             .collect_vec();
         let post_stats = generic_stats
             .clone()

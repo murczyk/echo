@@ -1772,6 +1772,14 @@ pub async fn fetch_aors(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
+    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+        let result =
+            read_aor_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
+        return Ok(result);
+    }
+
     let instant = std::time::Instant::now();
     let stmt = build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
     let aors_res: Vec<AorsRes> = AorsRes::find_by_statement(stmt)
@@ -1805,6 +1813,14 @@ pub async fn count_aors(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let read_db = env.replica();
+
+    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+        let aors =
+            read_aor_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
+        return Ok(aors.len() as i64);
+    }
 
     let stmt = build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
     let count = AorsRes::find_by_statement(stmt)
