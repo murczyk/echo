@@ -1857,7 +1857,7 @@ fn build_aors_query(
     let network_aor_alias = Alias::new("network_aor_link");
     let network_value_alias = Alias::new("network_aor_value");
 
-    let group_message_aors = Query::select()
+    let mut group_message_aors = Query::select()
         .expr_as(
             Expr::col((messages_alias.clone(), Alias::new("message_id"))),
             Alias::new("message_id"),
@@ -1916,14 +1916,20 @@ fn build_aors_query(
         )
         .and_where(
             Expr::col((
-                group_value_alias,
+                group_value_alias.clone(),
                 area_of_responsibility::Column::IsTopLevel,
             ))
             .eq(true),
         )
         .to_owned();
+    if let Some(condition) = selected_aor_overlap_condition(
+        group_value_alias.clone(),
+        &req.selected_aors,
+    ) {
+        group_message_aors.cond_where(condition);
+    }
 
-    let network_message_aors = Query::select()
+    let mut network_message_aors = Query::select()
         .expr_as(
             Expr::col((messages_alias.clone(), Alias::new("message_id"))),
             Alias::new("message_id"),
@@ -1995,12 +2001,18 @@ fn build_aors_query(
         )
         .and_where(
             Expr::col((
-                network_value_alias,
+                network_value_alias.clone(),
                 area_of_responsibility::Column::IsTopLevel,
             ))
             .eq(true),
         )
         .to_owned();
+    if let Some(condition) = selected_aor_overlap_condition(
+        network_value_alias.clone(),
+        &req.selected_aors,
+    ) {
+        network_message_aors.cond_where(condition);
+    }
 
     let sql = format!(
         "WITH {messages_cte} AS ({messages_sql}) \

@@ -856,7 +856,7 @@ fn build_selected_aor_overlap_exists(
                         )
                         .add(
                             Expr::col((
-                                linked_aor_alias,
+                                linked_aor_alias.clone(),
                                 area_of_responsibility::Column::RightBound,
                             ))
                             .between(
@@ -865,14 +865,52 @@ fn build_selected_aor_overlap_exists(
                                     area_of_responsibility::Column::LeftBound,
                                 )),
                                 Expr::col((
-                                    selected_aor_alias,
+                                    selected_aor_alias.clone(),
                                     area_of_responsibility::Column::RightBound,
                                 )),
                             ),
+                        )
+                        .add(
+                            Cond::all()
+                                .add(
+                                    Expr::col((
+                                        linked_aor_alias.clone(),
+                                        area_of_responsibility::Column::LeftBound,
+                                    ))
+                                    .lte(Expr::col((
+                                        selected_aor_alias.clone(),
+                                        area_of_responsibility::Column::LeftBound,
+                                    ))),
+                                )
+                                .add(
+                                    Expr::col((
+                                        linked_aor_alias.clone(),
+                                        area_of_responsibility::Column::RightBound,
+                                    ))
+                                    .gte(Expr::col((
+                                        selected_aor_alias.clone(),
+                                        area_of_responsibility::Column::RightBound,
+                                    ))),
+                                ),
                         ),
                 ),
         )
         .to_owned()
+}
+
+pub fn selected_aor_overlap_condition(
+    linked_aor_alias: Alias,
+    selected_aors: &Option<Vec<i64>>,
+) -> Option<Condition> {
+    let selected_aors =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())?;
+    Some(
+        Expr::exists(build_selected_aor_overlap_exists(
+            linked_aor_alias,
+            selected_aors,
+        ))
+        .into_condition(),
+    )
 }
 
 fn build_group_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
