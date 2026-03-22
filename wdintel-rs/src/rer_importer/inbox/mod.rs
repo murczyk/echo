@@ -26,6 +26,15 @@ pub(crate) mod bl;
 pub mod metadata;
 pub mod query;
 
+fn apply_default_inbox_since_date(req: &mut InboxMessagesReq) {
+    if req.since_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+    {
+        let since = Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS);
+        req.since_date_inclusive_ms = Some(since.and_utc().timestamp_millis());
+    }
+}
+
 #[post("/api/rer-importer/get-inbox-map")]
 async fn get_inbox_map(
     user: actix_identity::Identity,
@@ -427,12 +436,7 @@ async fn inbox_messages_count(
         .await
         .c(h!())?;
     let login = user_id;
-
-    if req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-    {
-        req.since_date_inclusive_ms = Some(0);
-    }
+    apply_default_inbox_since_date(&mut req);
     let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
     let q = format!(
         "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
@@ -462,7 +466,7 @@ async fn inbox_message_random(
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
-    let mut req = req.into_inner();
+    let req = req.into_inner();
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -475,39 +479,66 @@ async fn inbox_message_random(
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
-    if req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-    {
-        req.since_date_inclusive_ms = Some(0);
+    let start_ms = Utc::now().timestamp_millis();
+    let since_ms = req.since_date_inclusive_ms.unwrap_or(0);
+    let mut window_end_ms = req.till_date_inclusive_ms.unwrap_or(start_ms);
+    let step_ms =
+        Duration::hours(RER_DUTY_RANDOM_STEP_HOURS).num_milliseconds();
+    let mut messages = Vec::new();
+
+    while window_end_ms >= since_ms {
+        let window_start_ms = (window_end_ms - step_ms).max(since_ms);
+        let mut window_req = req.clone();
+        window_req.since_date_inclusive_ms = Some(window_start_ms);
+        window_req.till_date_inclusive_ms = Some(window_end_ms);
+
+        let start = Instant::now();
+        let q = build_inbox_query(&login, &env, &window_req)
+            .await
+            .context(h!())?;
+        info!(
+            "inbox_random build_inbox_query took {}ms",
+            start.elapsed().as_millis()
+        );
+        let select_start = Instant::now();
+        let latest_q = format!(
+            "SELECT * FROM ({q}) q ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
+        );
+        let query_res = env
+            .dbx
+            .query_all(Statement::from_string(
+                DatabaseBackend::Postgres,
+                latest_q,
+            ))
+            .await
+            .c(h!())?;
+        info!(
+            "inbox_random select took {}ms (rows={})",
+            select_start.elapsed().as_millis(),
+            query_res.len()
+        );
+        if query_res.is_empty() {
+            if window_start_ms <= since_ms {
+                break;
+            }
+            window_end_ms = window_start_ms - 1;
+            continue;
+        }
+        let raw_messages: Vec<InboxMessageDesc> = query_res
+            .iter()
+            .map(|qr| InboxMessageDesc::from_query_result(qr, ""))
+            .collect::<Result<Vec<_>, DbErr>>()
+            .context(h!())?;
+        messages = aggregate_to_inbox_messages(
+            &login,
+            raw_messages,
+            &logins,
+            &&window_req,
+            &&**env,
+        )
+        .await?;
+        break;
     }
-    let start = Instant::now();
-    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
-    info!(
-        "inbox_random build_inbox_query took {}ms",
-        start.elapsed().as_millis()
-    );
-    let select_start = Instant::now();
-    let latest_q = format!(
-        "SELECT * FROM ({q}) q ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
-    );
-    let query_res = env
-        .dbx
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, latest_q))
-        .await
-        .c(h!())?;
-    info!(
-        "inbox_random select took {}ms (rows={})",
-        select_start.elapsed().as_millis(),
-        query_res.len()
-    );
-    let messages: Vec<InboxMessageDesc> = query_res
-        .iter()
-        .map(|qr| InboxMessageDesc::from_query_result(qr, ""))
-        .collect::<Result<Vec<_>, DbErr>>()
-        .context(h!())?;
-    let messages =
-        aggregate_to_inbox_messages(&login, messages, &logins, &&req, &&**env)
-            .await?;
     Ok(Json(MessageIdsRsp { messages }))
 }
 
@@ -798,7 +829,7 @@ pub async fn get_inbox_messages_with_conn(
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let q = build_inbox_query(login, env, req).await.c(h!())?;
-
+    dbg!(&q);
     let results = dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
         .await

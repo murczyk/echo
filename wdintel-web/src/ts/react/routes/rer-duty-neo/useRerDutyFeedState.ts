@@ -70,6 +70,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  const randomCursorByFeedIdRef = React.useRef<Record<string, number | null>>({});
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -130,15 +131,27 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       if (!feed) return;
       testRandomInFlightRef.current.add(feedId);
       try {
-        const req = buildReqForFeed(feed, { nolimit: true });
+        const lastTimestamp = randomCursorByFeedIdRef.current[feedId] ?? null;
+        const req = buildReqForFeed(feed, {
+          nolimit: true,
+          tillDateInclusiveMs: lastTimestamp != null ? lastTimestamp : undefined,
+        });
         const existingIds = new Set(feed.items.map(([id]) => id));
         let attempts = 0;
         let newItems: typeof feed.items = [];
+        let nextCursor: number | null = null;
         while (attempts < 3 && newItems.length === 0) {
           const rsp = await fetchInboxRandomMessage(req);
           if (rsp.inboxItems.length === 0) return;
+          const rspTimestamp = rsp.inboxItems[0]?.[1]?.timestamp;
+          if (rspTimestamp != null) {
+            nextCursor = rspTimestamp - 1;
+          }
           newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
           attempts += 1;
+        }
+        if (nextCursor != null) {
+          randomCursorByFeedIdRef.current[feedId] = nextCursor;
         }
         if (newItems.length === 0) return;
         setMessageFeeds((prev) =>

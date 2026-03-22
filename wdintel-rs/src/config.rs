@@ -40,6 +40,7 @@ pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 pub const CLEANUP_REPORT_DAYS: u64 = 30;
 pub const RER_REPORT_ERROR_CODE_HEADER_NAME: &str = "x-echo-error-code";
 pub const RER_REPORT_PERMISSION_DENIED_ERROR_CODE: &str = "8125378";
+pub const RER_DUTY_RANDOM_STEP_HOURS: i64 = 1;
 // for xlsx import
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const FEATURE_DESKTOP_YOUTUBE_KEYS: bool = true;
