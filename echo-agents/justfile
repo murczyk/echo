@@ -2,7 +2,6 @@ set positional-arguments := true
 
 builder := "echo-gpu-agent-build"
 server := "echo-gpu-agent"
-branch := `git -C "{{ justfile_directory() }}/.." branch --show-current`
 
 default:
     @just --list
@@ -22,19 +21,17 @@ deb:
 [arg('builder', long='builder')]
 [arg('server', long='server')]
 [arg('branch', long='branch')]
-deploy builder="{{ builder }}" server="{{ server }}" branch="{{ branch }}":
+deploy builder=builder server=server branch="main":
     #!/bin/bash
     set -euxo pipefail
 
     BUILDER="{{ builder }}"
     SERVER="{{ server }}"
     BRANCH="{{ branch }}"
-    REMOTE_REPO="$HOME/workspace/echo"
-    REMOTE_CRATE="$REMOTE_REPO/echo-agents/echo-agent"
 
-    ssh "$BUILDER" "bash -lc 'set -euxo pipefail; source ~/.cargo/env; cd \"$REMOTE_REPO\"; git fetch origin \"$BRANCH\" || git fetch origin; git checkout \"$BRANCH\"; git pull --ff-only origin \"$BRANCH\" || git pull --ff-only; cd \"$REMOTE_CRATE\"; cargo deb'"
+    ssh "$BUILDER" "bash -lc 'set -euxo pipefail; source ~/.cargo/env; cd ~/workspace/echo; git fetch origin \"$BRANCH\" || git fetch origin; git checkout \"$BRANCH\"; git pull --ff-only origin \"$BRANCH\" || git pull --ff-only; cd ~/workspace/echo/echo-agents/echo-agent; cargo deb'"
 
-    DEB_PATH=$(ssh "$BUILDER" "bash -lc 'cd \"$REMOTE_CRATE\" && ls -1t target/debian/echo-agent_*_*.deb | head -n 1'")
+    DEB_PATH=$(ssh "$BUILDER" "bash -lc 'cd ~/workspace/echo/echo-agents/echo-agent && ls -1t \"\$HOME\"/workspace/echo/echo-agents/echo-agent/target/debian/echo-agent_*_*.deb | head -n 1'")
     DEB_NAME=$(basename "$DEB_PATH")
 
     scp "$BUILDER:$DEB_PATH" "/var/tmp/$DEB_NAME"
