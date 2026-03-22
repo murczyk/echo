@@ -215,6 +215,49 @@ where
     }
 }
 
+fn apply_joined_group_aor_scope<E>(
+    query: Select<E>,
+    selected_aors: &Option<Vec<i64>>,
+) -> Select<E>
+where
+    E: EntityTrait,
+{
+    let Some(selected_aors) =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())
+    else {
+        return query;
+    };
+
+    let group_alias = Alias::new("joined_group_scope");
+    let group_aor_alias = Alias::new("joined_group_aor_scope");
+    let aor_alias = Alias::new("joined_group_aor_value_scope");
+
+    let query = query
+        .join_as(
+            JoinType::LeftJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+            group_alias,
+        )
+        .join_as(
+            JoinType::LeftJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+            group_aor_alias,
+        )
+        .join_as(
+            JoinType::LeftJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+            aor_alias.clone(),
+        );
+
+    match selected_aor_overlap_condition(
+        aor_alias,
+        &Some(selected_aors.clone()),
+    ) {
+        Some(condition) => query.filter(condition),
+        None => query,
+    }
+}
+
 pub async fn count_groups(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -280,7 +323,8 @@ fn build_groups_query(
         &req.selected_senders,
         &accessible_groups,
     );
-    let groups_res = apply_message_aor_scope(groups_res, &req.selected_aors);
+    let groups_res =
+        apply_joined_group_aor_scope(groups_res, &req.selected_aors);
     let groups_res =
         filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
     let groups_res =
@@ -2158,6 +2202,7 @@ fn build_networks_query_for_login(
     let networks_cte_alias = Alias::new("networks_cte");
     let groups_cte_alias = Alias::new("groups_cte");
     let network_value_alias = Alias::new("networks_cte_aor");
+    let group_value_alias = Alias::new("groups_cte_aor");
 
     // 1) messages_cte
     let messages_q = sigint_inbox_item::Entity::find()
@@ -2243,15 +2288,28 @@ fn build_networks_query_for_login(
     let groups_q = signal_group::Entity::find()
         .select_only()
         .column(signal_group::Column::MasterKey)
-        .column_as(area_of_responsibility::Column::LeftBound, "g_left")
-        .column_as(area_of_responsibility::Column::RightBound, "g_right")
+        .column_as(
+            Expr::col((
+                group_value_alias.clone(),
+                area_of_responsibility::Column::LeftBound,
+            )),
+            "g_left",
+        )
+        .column_as(
+            Expr::col((
+                group_value_alias.clone(),
+                area_of_responsibility::Column::RightBound,
+            )),
+            "g_right",
+        )
         .join(
             JoinType::InnerJoin,
             signal_group::Relation::SignalGroupAor.def(),
         )
-        .join(
+        .join_as(
             JoinType::InnerJoin,
             signal_group_aor::Relation::AreaOfResponsibility.def(),
+            group_value_alias.clone(),
         )
         .filter(signal_group::Column::Deleted.eq(false));
     let effective_groups =
@@ -2261,6 +2319,13 @@ fn build_networks_query_for_login(
     } else {
         groups_q
             .filter(signal_group::Column::MasterKey.eq_any(effective_groups))
+    };
+    let groups_q = match selected_aor_overlap_condition(
+        group_value_alias,
+        &req.selected_aors,
+    ) {
+        Some(condition) => groups_q.filter(condition),
+        None => groups_q,
     };
     // add more custom filters to the messages CTE
     let messages_q =
