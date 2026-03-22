@@ -2157,6 +2157,7 @@ fn build_networks_query_for_login(
     let messages_cte_alias = Alias::new("messages_cte");
     let networks_cte_alias = Alias::new("networks_cte");
     let groups_cte_alias = Alias::new("groups_cte");
+    let network_value_alias = Alias::new("networks_cte_aor");
 
     // 1) messages_cte
     let messages_q = sigint_inbox_item::Entity::find()
@@ -2201,8 +2202,20 @@ fn build_networks_query_for_login(
         .column(sigint_network_freq::Column::Freq)
         .column(sigint_network_freq::Column::ActiveFrom)
         .column(sigint_network_freq::Column::ActiveTo)
-        .column_as(area_of_responsibility::Column::LeftBound, "n_left")
-        .column_as(area_of_responsibility::Column::RightBound, "n_right")
+        .column_as(
+            Expr::col((
+                network_value_alias.clone(),
+                area_of_responsibility::Column::LeftBound,
+            )),
+            "n_left",
+        )
+        .column_as(
+            Expr::col((
+                network_value_alias.clone(),
+                area_of_responsibility::Column::RightBound,
+            )),
+            "n_right",
+        )
         .join(
             JoinType::InnerJoin,
             sigint_network_freq::Relation::SigintNetwork.def(),
@@ -2211,12 +2224,20 @@ fn build_networks_query_for_login(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkAor.def(),
         )
-        .join(
+        .join_as(
             JoinType::InnerJoin,
             sigint_network_aor::Relation::AreaOfResponsibility.def(),
+            network_value_alias.clone(),
         )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false));
+    let networks_q = match selected_aor_overlap_condition(
+        network_value_alias,
+        &req.selected_aors,
+    ) {
+        Some(condition) => networks_q.filter(condition),
+        None => networks_q,
+    };
 
     // 3) groups_cte
     let groups_q = signal_group::Entity::find()
