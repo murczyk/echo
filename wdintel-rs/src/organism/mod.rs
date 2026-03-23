@@ -150,6 +150,42 @@ pub async fn organism_active_logins(
     Ok(Json(logins))
 }
 
+#[post("/api/organism/list-logins")]
+pub async fn organism_logins(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<String>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+
+    let login = login::Entity::find()
+        .filter(login::Column::Login.eq(login))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::Unauthenticated)?;
+
+    let Some(organism_id) = login.organism_id else {
+        return  Ok(Json(vec![login.login]));
+    };
+
+    let logins = login::Entity::find()
+        .filter(login::Column::OrganismId.eq(organism_id))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .order_by_asc(login::Column::Login)
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|login| login.login)
+        .collect();
+
+    Ok(Json(logins))
+}
+
 #[post("/api/organism/my-scope")]
 pub async fn my_scope(
     user: actix_identity::Identity,
