@@ -113,6 +113,8 @@ export function buildReportRequest(state: AnalysisReportState, req: InboxMessage
     },
     reportTagsOnlyThisUnit: state.reportTagsOnlyThisUnit,
     withoutComments: state.template === 'babak' ? state.withoutComments : null,
+    digestOmitExoId: state.template === 'digest' ? false : null,
+    digestForm1217: state.template === 'digest' ? false : null,
   };
 }
 

@@ -35,6 +35,12 @@ type DataPerDate = {
 
 type TransformedData = { date: string; group: string; count: number, groupName?: string }[]
 
+type YAxisConfig = {
+	domainMax: number;
+	tickValues?: number[];
+	tickFormat?: (value: d3.NumberValue) => string;
+}
+
 function getDataPerDate(data: Data | DataCamel | null | undefined): DataPerDate {
 	if (!data) return {};
 	return (data as Data).data_per_date ?? (data as DataCamel).dataPerDate ?? {};
@@ -225,6 +231,20 @@ function fillMissingDates(dates: dayjs.Dayjs[]) {
 		return acc;
 	}, [])
 
+}
+
+export function createYAxisConfig(maxStackedValue: number | undefined): YAxisConfig {
+	if (!maxStackedValue || maxStackedValue <= 0) {
+		return {
+			domainMax: 1,
+			tickValues: [ 0 ],
+			tickFormat: () => "0",
+		};
+	}
+
+	return {
+		domainMax: maxStackedValue,
+	};
 }
 
 
@@ -420,9 +440,11 @@ export class BarChart2 extends LitElement {
 		}
 		const tooltip = this.tooltip;
 		const { xScale, xAxis } = createBandScale(uniqueDates, [this.margins.left, this.chartWidth - this.margins.right], tickFormatFn)
+		const maxStackedValue = d3.max(s, d => d3.max(d, d => d[1]))
+		const yAxisConfig = createYAxisConfig(maxStackedValue)
 
 		const y = d3.scaleLinear()
-			.domain([0, d3.max(s, d => d3.max(d, d => d[1])) || 0])
+			.domain([0, yAxisConfig.domainMax])
 			.rangeRound([this.chartHeight - this.margins.bottom, this.margins.top]);
 		const groups = svg
 			.selectAll(".data-group")
@@ -488,8 +510,15 @@ export class BarChart2 extends LitElement {
 		if (!this.yAxisGroup) {
 			this.yAxisGroup = svg.append("g")
 		}
+		const yAxis = d3.axisLeft(y).ticks(null, "s")
+		if (yAxisConfig.tickValues) {
+			yAxis.tickValues(yAxisConfig.tickValues)
+		}
+		if (yAxisConfig.tickFormat) {
+			yAxis.tickFormat(yAxisConfig.tickFormat)
+		}
 		this.yAxisGroup.attr("transform", `translate(${this.margins.left},0)`)
-			.transition().call(d3.axisLeft(y).ticks(null, "s"))
+			.transition().call(yAxis)
 
 	}
 }

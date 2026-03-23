@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { transformData, Data } from './bar-chart-zoomable.ts';
+import { createYAxisConfig } from './bar-chart-2.ts';
 
 describe('transformData', () => {
     it('should return daily data for less than 28 days', () => {
@@ -75,3 +76,22 @@ const stubData28To120Days: Data = {
         expect(result["2025-05-18"]).toEqual({ count_by_group_name: { groupA: 7, groupB: 11 } });
     });
 });
+
+describe('createYAxisConfig', () => {
+    it('should use a stable zero tick for empty data', () => {
+        const config = createYAxisConfig(undefined);
+
+        expect(config.domainMax).toBe(1);
+        expect(config.tickValues).toEqual([0]);
+        expect(config.tickFormat?.(0)).toBe('0');
+    });
+
+    it('should preserve the real domain for non-empty data', () => {
+        const config = createYAxisConfig(7);
+
+        expect(config.domainMax).toBe(7);
+        expect(config.tickValues).toBeUndefined();
+        expect(config.tickFormat).toBeUndefined();
+    });
+});
+
