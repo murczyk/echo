@@ -150,7 +150,7 @@ pub async fn organism_active_logins(
     Ok(Json(logins))
 }
 
-#[post("/api/organism/logins")]
+#[post("/api/organism/list-logins")]
 pub async fn organism_logins(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
@@ -168,13 +168,12 @@ pub async fn organism_logins(
         .c(h!())?
         .ok_or(AppError::Unauthenticated)?;
 
-    let organism_id = login.organism_id.ok_or_else(|| AppError::BL {
-        msg: "User without organism_id is not supported".to_string(),
-    })?;
+    let Some(organism_id) = login.organism_id else {
+        return  Ok(Json(vec![login.login]));
+    };
 
     let logins = login::Entity::find()
         .filter(login::Column::OrganismId.eq(organism_id))
-        .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
         .order_by_asc(login::Column::Login)
         .all(&env.dbx)
