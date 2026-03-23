@@ -819,6 +819,221 @@ where
     Ok(q)
 }
 
+fn build_selected_aor_overlap_exists(
+    linked_aor_alias: Alias,
+    selected_aors: &[i64],
+) -> SelectStatement {
+    let selected_aor_alias = Alias::new("selected_aor_filter");
+    Query::select()
+        .expr(Expr::val(1))
+        .from_as(area_of_responsibility::Entity, selected_aor_alias.clone())
+        .cond_where(
+            Cond::all()
+                .add(
+                    Expr::col((
+                        selected_aor_alias.clone(),
+                        area_of_responsibility::Column::Id,
+                    ))
+                    .is_in(selected_aors.to_vec()),
+                )
+                .add(
+                    Cond::any()
+                        .add(
+                            Expr::col((
+                                linked_aor_alias.clone(),
+                                area_of_responsibility::Column::LeftBound,
+                            ))
+                            .between(
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::LeftBound,
+                                )),
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::RightBound,
+                                )),
+                            ),
+                        )
+                        .add(
+                            Expr::col((
+                                linked_aor_alias.clone(),
+                                area_of_responsibility::Column::RightBound,
+                            ))
+                            .between(
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::LeftBound,
+                                )),
+                                Expr::col((
+                                    selected_aor_alias.clone(),
+                                    area_of_responsibility::Column::RightBound,
+                                )),
+                            ),
+                        )
+                        .add(
+                            Cond::all()
+                                .add(
+                                    Expr::col((
+                                        linked_aor_alias.clone(),
+                                        area_of_responsibility::Column::LeftBound,
+                                    ))
+                                    .lte(Expr::col((
+                                        selected_aor_alias.clone(),
+                                        area_of_responsibility::Column::LeftBound,
+                                    ))),
+                                )
+                                .add(
+                                    Expr::col((
+                                        linked_aor_alias.clone(),
+                                        area_of_responsibility::Column::RightBound,
+                                    ))
+                                    .gte(Expr::col((
+                                        selected_aor_alias.clone(),
+                                        area_of_responsibility::Column::RightBound,
+                                    ))),
+                                ),
+                        ),
+                ),
+        )
+        .to_owned()
+}
+
+pub fn selected_aor_overlap_condition(
+    linked_aor_alias: Alias,
+    selected_aors: &Option<Vec<i64>>,
+) -> Option<Condition> {
+    let selected_aors =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())?;
+    Some(
+        Expr::exists(build_selected_aor_overlap_exists(
+            linked_aor_alias,
+            selected_aors,
+        ))
+        .into_condition(),
+    )
+}
+
+fn build_group_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
+    let group_aor_alias = Alias::new("group_aor_filter");
+    let linked_aor_alias = Alias::new("group_linked_aor_filter");
+    let message_group_alias = Alias::new("message_group_aor_filter");
+    let overlap_exists = build_selected_aor_overlap_exists(
+        linked_aor_alias.clone(),
+        selected_aors,
+    );
+
+    Query::select()
+        .expr(Expr::val(1))
+        .from_as(signal_message_group::Entity, message_group_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            signal_group_aor::Entity,
+            group_aor_alias.clone(),
+            Condition::all().add(
+                Expr::col((
+                    group_aor_alias.clone(),
+                    signal_group_aor::Column::MasterKey,
+                ))
+                .equals((
+                    message_group_alias.clone(),
+                    signal_message_group::Column::GroupMasterKey,
+                )),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            linked_aor_alias.clone(),
+            Expr::col((group_aor_alias, signal_group_aor::Column::AorId))
+                .equals((linked_aor_alias, area_of_responsibility::Column::Id)),
+        )
+        .and_where(
+            Expr::col((
+                message_group_alias,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(Expr::exists(overlap_exists))
+        .to_owned()
+}
+
+fn build_network_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
+    let inbox_network_alias = Alias::new("inbox_network_aor_filter");
+    let network_alias = Alias::new("network_aor_filter");
+    let network_aor_alias = Alias::new("network_aor_link_filter");
+    let linked_aor_alias = Alias::new("network_linked_aor_filter");
+    let overlap_exists = build_selected_aor_overlap_exists(
+        linked_aor_alias.clone(),
+        selected_aors,
+    );
+
+    Query::select()
+        .expr(Expr::val(1))
+        .from_as(
+            sigint_inbox_item_network::Entity,
+            inbox_network_alias.clone(),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network::Entity,
+            network_alias.clone(),
+            Condition::all().add(
+                Expr::col((network_alias.clone(), sigint_network::Column::Id))
+                    .equals((
+                        inbox_network_alias.clone(),
+                        sigint_inbox_item_network::Column::SigintNetworkId,
+                    )),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network_aor::Entity,
+            network_aor_alias.clone(),
+            Condition::all().add(
+                Expr::col((
+                    network_aor_alias.clone(),
+                    sigint_network_aor::Column::NetworkId,
+                ))
+                .equals((network_alias.clone(), sigint_network::Column::Id)),
+            ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            linked_aor_alias.clone(),
+            Expr::col((network_aor_alias, sigint_network_aor::Column::AorId))
+                .equals((linked_aor_alias, area_of_responsibility::Column::Id)),
+        )
+        .and_where(
+            Expr::col((
+                inbox_network_alias,
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(
+            Expr::col((network_alias, sigint_network::Column::Deleted))
+                .eq(false),
+        )
+        .and_where(Expr::exists(overlap_exists))
+        .to_owned()
+}
+
+pub fn selected_aors_filter_condition(
+    selected_aors: &Option<Vec<i64>>,
+) -> Option<Condition> {
+    let selected_aors =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())?;
+    let group_exists = build_group_selected_aor_exists(selected_aors);
+    let network_exists = build_network_selected_aor_exists(selected_aors);
+    Some(
+        Cond::any()
+            .add(Expr::exists(group_exists))
+            .add(Expr::exists(network_exists)),
+    )
+}
+
 pub fn filter_selected_aors<Q>(
     q: Q,
     selected_aors: &Option<Vec<i64>>,
@@ -826,115 +1041,8 @@ pub fn filter_selected_aors<Q>(
 where
     Q: QueryFilter,
 {
-    #[derive(Iden)]
-    pub enum AreaOfResponsibility {
-        Table,
-        Id,
-        LeftBound,
-        RightBound,
-    }
-
-    if let Some(aor_ids) = selected_aors {
-        if !aor_ids.is_empty() {
-            let aor_linked = Alias::new("aor_linked");
-            let aor_frontend = Alias::new("aor_frontend");
-            let smg_alias = Alias::new("smg_aor");
-            let ga_alias = Alias::new("ga_aor");
-
-            let inner_exists = Query::select()
-                .expr(Expr::val(1))
-                .from_as(AreaOfResponsibility::Table, aor_frontend.clone())
-                .cond_where(
-                    Cond::all()
-                        .add(
-                            Expr::col((
-                                aor_frontend.clone(),
-                                AreaOfResponsibility::Id,
-                            ))
-                            .is_in(aor_ids.clone()),
-                        )
-                        .add(
-                            Cond::any()
-                                .add(
-                                    Expr::col((
-                                        aor_linked.clone(),
-                                        AreaOfResponsibility::LeftBound,
-                                    ))
-                                    .between(
-                                        Expr::col((
-                                            aor_frontend.clone(),
-                                            AreaOfResponsibility::LeftBound,
-                                        )),
-                                        Expr::col((
-                                            aor_frontend.clone(),
-                                            AreaOfResponsibility::RightBound,
-                                        )),
-                                    ),
-                                )
-                                .add(
-                                    Expr::col((
-                                        aor_linked.clone(),
-                                        AreaOfResponsibility::RightBound,
-                                    ))
-                                    .between(
-                                        Expr::col((
-                                            aor_frontend.clone(),
-                                            AreaOfResponsibility::LeftBound,
-                                        )),
-                                        Expr::col((
-                                            aor_frontend.clone(),
-                                            AreaOfResponsibility::RightBound,
-                                        )),
-                                    ),
-                                ),
-                        ),
-                )
-                .to_owned();
-
-            let outer_exists = Query::select()
-                .expr(Expr::val(1))
-                .from_as(signal_message_group::Entity, smg_alias.clone())
-                .join_as(
-                    JoinType::InnerJoin,
-                    signal_group_aor::Entity,
-                    ga_alias.clone(),
-                    Condition::all().add(
-                        Expr::col((
-                            ga_alias.clone(),
-                            signal_group_aor::Column::MasterKey,
-                        ))
-                        .equals((
-                            smg_alias.clone(),
-                            signal_message_group::Column::GroupMasterKey,
-                        )),
-                    ),
-                )
-                .join_as(
-                    JoinType::InnerJoin,
-                    AreaOfResponsibility::Table,
-                    aor_linked.clone(),
-                    Expr::col((
-                        ga_alias.clone(),
-                        signal_group_aor::Column::AorId,
-                    ))
-                    .equals((aor_linked.clone(), AreaOfResponsibility::Id)),
-                )
-                .and_where(
-                    Expr::col((
-                        smg_alias.clone(),
-                        signal_message_group::Column::SignalMessageId,
-                    ))
-                    .equals((
-                        signal_message::Entity,
-                        signal_message::Column::Id,
-                    )),
-                )
-                .and_where(Expr::exists(inner_exists))
-                .to_owned();
-
-            // Final condition: WHERE EXISTS (outer_exists)
-            return Ok(q.filter(Expr::exists(outer_exists).into_condition()));
-        }
+    if let Some(condition) = selected_aors_filter_condition(selected_aors) {
+        return Ok(q.filter(condition));
     }
     Ok(q)
 }

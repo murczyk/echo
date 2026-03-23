@@ -18,7 +18,7 @@ fn parse_selected_configs(row: &aor_location_config::Model) -> Vec<String> {
                 .collect_vec()
         })
         .filter(|items| !items.is_empty())
-        .unwrap_or(vec![])
+        .unwrap_or_default()
 }
 
 fn normalize_selected_configs(
