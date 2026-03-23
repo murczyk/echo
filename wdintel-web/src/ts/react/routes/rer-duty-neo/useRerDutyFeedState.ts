@@ -1,4 +1,5 @@
-import React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 
 import type {
   Network,
@@ -27,13 +28,13 @@ import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 
 export type FeedStateDeps = {
   freqs: string[];
-  setProfiles: React.Dispatch<React.SetStateAction<Record<string, SignalProfileEntry | null>>>;
-  setGroupInfos: React.Dispatch<React.SetStateAction<Record<string, SignalGroupEntry>>>;
+  setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
+  setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { freqs, setProfiles, setGroupInfos } = deps;
-  const [messageFeeds, setMessageFeeds] = React.useState<MessageFeedState[]>(() => {
+  const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
     return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) => ({
       id,
@@ -51,21 +52,21 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       onlyMyUnitTagsEnabled: false,
     }));
   });
-  const [error, setError] = React.useState<string | null>(null);
-  const [networkMap, setNetworkMap] = React.useState<Record<number, Network>>({});
-  const [unitsMap, setUnitsMap] = React.useState<Record<number, Unit>>({});
-  const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const loadNewerInFlightRef = React.useRef<Set<string>>(new Set());
-  const countInFlightByFeedIdRef = React.useRef<Set<string>>(new Set());
-  const [watchModeByFeedId, setWatchModeByFeedId] = React.useState<Record<string, boolean>>({});
-  const [loadingNewerFeedId, setLoadingNewerFeedId] = React.useState<string | null>(null);
-  const [arrowResultByFeedId, setArrowResultByFeedId] = React.useState<Record<string, string | null>>({});
-  const columnRefsRef = React.useRef<Record<string, FeedColumnHandle | null>>({});
-  const arrowResultTimeoutsRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const scrollToEndAfterNewerRef = React.useRef<string | null>(null);
-  const nearBottomByFeedIdRef = React.useRef<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [networkMap, setNetworkMap] = useState<Record<number, Network>>({});
+  const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
+  const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadNewerInFlightRef = useRef<Set<string>>(new Set());
+  const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
+  const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
+  const [loadingNewerFeedId, setLoadingNewerFeedId] = useState<string | null>(null);
+  const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
+  const columnRefsRef = useRef<Record<string, FeedColumnHandle | null>>({});
+  const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const scrollToEndAfterNewerRef = useRef<string | null>(null);
+  const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
 
-  const showArrowResult = React.useCallback((feedId: string, message: string) => {
+  const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
     if (arrowResultTimeoutsRef.current[key]) clearTimeout(arrowResultTimeoutsRef.current[key]);
     setArrowResultByFeedId((prev) => ({ ...prev, [feedId]: message }));
@@ -75,13 +76,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     }, 3000);
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       Object.values(arrowResultTimeoutsRef.current).forEach(clearTimeout);
     };
   }, []);
 
-  const buildReqForFeed = React.useCallback(
+  const buildReqForFeed = useCallback(
     (
       feed: MessageFeedState,
       opts: Omit<
@@ -113,7 +114,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [freqs],
   );
 
-  const loadFeedInitialMessages = React.useCallback(
+  const loadFeedInitialMessages = useCallback(
     async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
@@ -156,7 +157,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [messageFeeds, buildReqForFeed, setProfiles, setGroupInfos],
   );
 
-  const loadFeedOlderMessages = React.useCallback(
+  const loadFeedOlderMessages = useCallback(
     async (feedId: string) => {
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w || w.items.length === 0 || w.hasReachedStart) return;
@@ -195,7 +196,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [messageFeeds, buildReqForFeed],
   );
 
-  const loadFeedNewerMessages = React.useCallback(
+  const loadFeedNewerMessages = useCallback(
     async (
       feedId: string,
       opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
@@ -255,7 +256,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [messageFeeds, buildReqForFeed],
   );
 
-  const pollCountThenLoadNewerIfNeeded = React.useCallback(async () => {
+  const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
     const counts = await Promise.all(
@@ -309,8 +310,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     }
   }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed]);
 
-  const feedIds = React.useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
-  const feedsNeedingLoadKey = React.useMemo(
+  const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
+  const feedsNeedingLoadKey = useMemo(
     () =>
       messageFeeds
         .filter((w) => w.loading && w.items.length === 0)
@@ -318,11 +319,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         .join(';'),
     [messageFeeds],
   );
-  const loadFeedInitialMessagesRef = React.useRef(loadFeedInitialMessages);
+  const loadFeedInitialMessagesRef = useRef(loadFeedInitialMessages);
   loadFeedInitialMessagesRef.current = loadFeedInitialMessages;
   /** Keys are `${feedId}:${JSON.stringify(filter)}` so a filter change on the same feed triggers a new load. */
-  const initialLoadStartedRef = React.useRef<Set<string>>(new Set());
-  React.useEffect(() => {
+  const initialLoadStartedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
     const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
     const needingKeys = new Set(needingLoad.map((w) => `${w.id}:${JSON.stringify(w.filter)}`));
     const started = initialLoadStartedRef.current;
@@ -338,7 +339,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [feedIds, feedsNeedingLoadKey]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();
     }, INBOX_COUNT_POLL_INTERVAL_MS);
@@ -347,7 +348,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     };
   }, [pollCountThenLoadNewerIfNeeded]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const feedId = scrollToEndAfterNewerRef.current;
     if (feedId == null) return;
     scrollToEndAfterNewerRef.current = null;
@@ -357,7 +358,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [messageFeeds]);
 
-  const allNetworkIds = React.useMemo(() => {
+  const allNetworkIds = useMemo(() => {
     const ids = new Set<number>();
     messageFeeds.forEach((w) => {
       w.items.forEach(([, msg]) => {
@@ -367,9 +368,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     return Array.from(ids);
   }, [messageFeeds]);
 
-  const networkMapRef = React.useRef(networkMap);
+  const networkMapRef = useRef(networkMap);
   networkMapRef.current = networkMap;
-  React.useEffect(() => {
+  useEffect(() => {
     const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
     if (missing.length === 0) return;
     let cancelled = false;
@@ -390,7 +391,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     };
   }, [allNetworkIds.join(',')]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
     getUnitsList()
       .then((units) => {
@@ -409,7 +410,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     };
   }, []);
 
-  const networkDisplayMap = React.useMemo(() => {
+  const networkDisplayMap = useMemo(() => {
     const out: Record<number, string> = {};
     Object.entries(networkMap).forEach(([idStr, n]) => {
       const id = Number(idStr);

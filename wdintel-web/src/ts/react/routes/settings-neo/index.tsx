@@ -10,7 +10,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 
 import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
@@ -34,28 +35,28 @@ function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
 }
 
 export function SettingsNeoPage() {
-  const [zones, setZones] = React.useState<ZonePair[]>([]);
-  const [zoneId, setZoneId] = React.useState<number | null>(null);
-  const [initialZoneId, setInitialZoneId] = React.useState<number | null>(null);
-  const [versionText, setVersionText] = React.useState<string>('невідома версія');
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [loadInProgress, setLoadInProgress] = React.useState(true);
-  const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = React.useState<string | null>(null);
-  const [saveInProgress, setSaveInProgress] = React.useState(false);
-  const [settingsTab, setSettingsTab] = React.useState(0);
+  const [zones, setZones] = useState<ZonePair[]>([]);
+  const [zoneId, setZoneId] = useState<number | null>(null);
+  const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
+  const [versionText, setVersionText] = useState<string>('невідома версія');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadInProgress, setLoadInProgress] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveInProgress, setSaveInProgress] = useState(false);
+  const [settingsTab, setSettingsTab] = useState(0);
 
-  const zoneOptions = React.useMemo<ZoneOption[]>(
+  const zoneOptions = useMemo<ZoneOption[]>(
     () => zones.map(([id, zone]) => ({ id, label: zone.name })),
     [zones],
   );
 
-  const selectedZone = React.useMemo(
+  const selectedZone = useMemo(
     () => zoneOptions.find((option) => option.id === zoneId) ?? null,
     [zoneOptions, zoneId],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     const abortController = new AbortController();
 
     async function loadPageData() {
@@ -103,7 +104,7 @@ export function SettingsNeoPage() {
 
   const isDirty = zoneId !== initialZoneId;
 
-  async function handleSave(event?: React.FormEvent) {
+  async function handleSave(event?: FormEvent) {
     event?.preventDefault();
     if (saveInProgress) return;
     if (!isDirty) return;

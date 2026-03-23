@@ -1,4 +1,4 @@
-import React from 'react';
+import { useMemo } from 'react';
 
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
@@ -50,7 +50,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     setSaveFilterName: filterOpts.setSaveFilterName,
   });
 
-  const freqs = React.useMemo(
+  const freqs = useMemo(
     () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
     [filterOpts.freqs, feedState.messageFeeds]
   );

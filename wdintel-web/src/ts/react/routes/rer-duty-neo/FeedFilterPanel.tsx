@@ -17,7 +17,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useState } from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
 import { PowerChip } from '../../components/PowerChip';
@@ -104,19 +104,19 @@ export function FeedFilterPanel({
   onApplySavedFilter,
   onDeleteSavedFilter,
 }: FeedFilterPanelProps) {
-  const [senderMode, setSenderMode] = React.useState<'include' | 'exclude'>(() =>
+  const [senderMode, setSenderMode] = useState<'include' | 'exclude'>(() =>
     filterStable.deniedSenders.length > 0 ? 'exclude' : 'include',
   );
-  const [freqMode, setFreqMode] = React.useState<'include' | 'exclude'>(() =>
+  const [freqMode, setFreqMode] = useState<'include' | 'exclude'>(() =>
     filterStable.freqsDenied.length > 0 ? 'exclude' : 'include',
   );
   const postsSelected = filterStable.postsSelected ?? [];
   const postsDenied = filterStable.postsDenied ?? [];
-  const [postMode, setPostMode] = React.useState<'include' | 'exclude'>(() =>
+  const [postMode, setPostMode] = useState<'include' | 'exclude'>(() =>
     postsDenied.length > 0 ? 'exclude' : 'include',
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     setSenderMode((m) => {
       const includeLen = filterStable.sendersSelected.length;
       const excludeLen = filterStable.deniedSenders.length;
@@ -125,7 +125,7 @@ export function FeedFilterPanel({
       return m;
     });
   }, [filterStable.sendersSelected.length, filterStable.deniedSenders.length]);
-  React.useEffect(() => {
+  useEffect(() => {
     setFreqMode((m) => {
       const includeLen = filterStable.freqsSelected.length;
       const excludeLen = filterStable.freqsDenied.length;
@@ -134,7 +134,7 @@ export function FeedFilterPanel({
       return m;
     });
   }, [filterStable.freqsSelected.length, filterStable.freqsDenied.length]);
-  React.useEffect(() => {
+  useEffect(() => {
     setPostMode((m) => {
       const includeLen = postsSelected.length;
       const excludeLen = postsDenied.length;
@@ -155,7 +155,7 @@ export function FeedFilterPanel({
   const postValue = postMode === 'include' ? postsSelected : postsDenied;
   const postEmptyLabel = postMode === 'include' ? 'всі' : 'ніяка';
 
-  const [localSenderValue, setLocalSenderValue] = React.useState<{ id: string; label: string }[]>(() => {
+  const [localSenderValue, setLocalSenderValue] = useState<{ id: string; label: string }[]>(() => {
     const ids =
       filterStable.deniedSenders?.length > 0 ? filterStable.deniedSenders : (filterStable.sendersSelected ?? []);
     return ids.map((id) => {
@@ -167,13 +167,13 @@ export function FeedFilterPanel({
 
   const freqValue = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
   const freqEmptyLabel = freqMode === 'include' ? 'всі' : 'ніяка';
-  const [localFreqValue, setLocalFreqValue] = React.useState<string[]>(() => freqValue);
-  const [localPostValue, setLocalPostValue] = React.useState<string[]>(() => postValue);
+  const [localFreqValue, setLocalFreqValue] = useState<string[]>(() => freqValue);
+  const [localPostValue, setLocalPostValue] = useState<string[]>(() => postValue);
 
   // Resync local selections when *parent* filter changes. Do not depend on local* state: if local
   // is in deps, this runs after user picks an option but before the parent applies it, and would
   // overwrite the selection with the old filter → fight with writeback + MUI Autocomplete loop.
-  React.useEffect(() => {
+  useEffect(() => {
     const ids =
       senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
     setLocalSenderValue((prev) => {
@@ -185,7 +185,7 @@ export function FeedFilterPanel({
       });
     });
   }, [sendersSelectedKey, deniedSendersKey, senderMode, senderOptions]);
-  React.useEffect(() => {
+  useEffect(() => {
     const value = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
     const next = value ?? [];
     setLocalFreqValue((prev) => {
@@ -193,7 +193,7 @@ export function FeedFilterPanel({
       return next;
     });
   }, [freqsSelectedKey, freqsDeniedKey, freqMode]);
-  React.useEffect(() => {
+  useEffect(() => {
     const value = postMode === 'include' ? (filterStable.postsSelected ?? []) : (filterStable.postsDenied ?? []);
     setLocalPostValue((prev) => {
       if (value.length === prev.length && value.every((v, i) => v === prev[i])) return prev;
@@ -202,7 +202,7 @@ export function FeedFilterPanel({
   }, [postsSelectedKey, postsDeniedKey, postMode]);
 
   // Push local selections to parent only when they differ from filterStable; avoid rewriting on mount
-  React.useEffect(() => {
+  useEffect(() => {
     const ids = localSenderValue.map((o) => o.id);
     const current = senderMode === 'include' ? filterStable.sendersSelected : filterStable.deniedSenders;
     if (current == null && ids.length === 0) return;
@@ -212,7 +212,7 @@ export function FeedFilterPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localSenderValue so writeback runs after resync
   }, [localSenderValue]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const current = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
     if (current == null && localFreqValue.length === 0) return;
     if (current != null && current.length === localFreqValue.length && current.every((v, i) => v === localFreqValue[i]))
@@ -222,7 +222,7 @@ export function FeedFilterPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localFreqValue so writeback runs after resync
   }, [localFreqValue]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const current = postMode === 'include' ? filterStable.postsSelected : filterStable.postsDenied;
     if (current == null && localPostValue.length === 0) return;
     if (current != null && current.length === localPostValue.length && current.every((v, i) => v === localPostValue[i]))

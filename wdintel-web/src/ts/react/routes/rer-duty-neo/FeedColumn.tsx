@@ -1,5 +1,6 @@
 import { Box, Button, CircularProgress, Fab, Paper, Typography } from '@mui/material';
-import React from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import type { ComponentProps } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 
 import type {
@@ -21,7 +22,7 @@ const LOAD_OLDER_BUFFER_ITEMS = 10;
 /** After loading older, don't trigger again until the user scrolls back up so the visible range is at least this far from the bottom. */
 const LOAD_OLDER_RESET_MARGIN = 20;
 
-const FeedScroller = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(function FeedScroller(
+const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function FeedScroller(
   { style, className, ...props },
   ref,
 ) {
@@ -120,7 +121,7 @@ export type FeedColumnProps = {
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
 
-export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
+export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   {
     feed,
     feedCount,
@@ -188,19 +189,19 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
   ref,
 ) {
   const feedId = feed.id;
-  const [showFilters, setShowFilters] = React.useState(false);
-  const [isAtBottom, setIsAtBottom] = React.useState(true);
-  const loadOlderTriggeredRef = React.useRef(false);
-  const virtuosoRef = React.useRef<VirtuosoHandle | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const loadOlderTriggeredRef = useRef(false);
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   /** Only enable watch mode when user has scrolled to bottom, not when we're at bottom on initial render. */
-  const hasSeenNotAtBottomRef = React.useRef(false);
+  const hasSeenNotAtBottomRef = useRef(false);
   /** Last at-bottom value from Virtuoso; use for transition detection so we don't rely on stale state. */
-  const atBottomRef = React.useRef(true);
-  React.useEffect(() => {
+  const atBottomRef = useRef(true);
+  useEffect(() => {
     if (!feed.loadingOlder) loadOlderTriggeredRef.current = false;
   }, [feed.loadingOlder]);
 
-  React.useImperativeHandle(
+  useImperativeHandle(
     ref,
     () => ({
       scrollToEnd() {
@@ -215,15 +216,15 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     [feed.items.length],
   );
 
-  const tryLoadOlder = React.useCallback(() => {
+  const tryLoadOlder = useCallback(() => {
     if (loadOlderTriggeredRef.current || feed.loadingOlder || feed.hasReachedStart) return;
     loadOlderTriggeredRef.current = true;
     onLoadOlder();
   }, [feed.loadingOlder, feed.hasReachedStart, onLoadOlder]);
 
-  const nearBottomRef = React.useRef<boolean | null>(null);
+  const nearBottomRef = useRef<boolean | null>(null);
   const firstItemIndex = feed.firstItemIndex ?? 0;
-  const handleRangeChanged = React.useCallback(
+  const handleRangeChanged = useCallback(
     (range: { startIndex: number; endIndex: number }) => {
       const len = feed.items.length;
       // Range indices are in Virtuoso's total space (offset by firstItemIndex); convert to data indices

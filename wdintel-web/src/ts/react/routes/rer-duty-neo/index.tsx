@@ -1,5 +1,5 @@
 import { Box, Button, Paper } from '@mui/material';
-import React from 'react';
+import { useCallback, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
@@ -13,8 +13,8 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
-  const [messageCardLayout, setMessageCardLayout] = React.useState(getStoredMessageCardLayout);
-  const handleMessageCardLayoutChange = React.useCallback((v: 'dividers' | 'fluid') => {
+  const [messageCardLayout, setMessageCardLayout] = useState(getStoredMessageCardLayout);
+  const handleMessageCardLayoutChange = useCallback((v: 'dividers' | 'fluid') => {
     setStoredMessageCardLayout(v);
     setMessageCardLayout(v);
   }, []);
