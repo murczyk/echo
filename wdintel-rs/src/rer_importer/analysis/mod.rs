@@ -2920,10 +2920,13 @@ async fn group_stats(
         stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
             .await
             .context(h!())?;
-    let groups =
+    let groups = if should_include_missing_secret_groups(&req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
             .await
-            .context(h!())?;
+            .context(h!())?
+    } else {
+        groups
+    };
     let group_names = collect_group_names(&groups, &env.dbx, is_admin)
         .await
         .context(h!())?;
@@ -2978,6 +2981,13 @@ async fn include_missing_secret_groups(
     }
 
     Ok(groups)
+}
+
+fn should_include_missing_secret_groups(req: &AnalysisStatsReq) -> bool {
+    req.selected_aors
+        .as_ref()
+        .map(|aors| aors.is_empty())
+        .unwrap_or(true)
 }
 
 #[post("/api/rer/analysis/stats/senders")]
@@ -3324,10 +3334,13 @@ async fn count_stats(
         stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
             .await
             .context(h!())?;
-    let groups =
+    let groups = if should_include_missing_secret_groups(&req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
             .await
-            .context(h!())?;
+            .context(h!())?
+    } else {
+        groups
+    };
     let groups_count = groups.len() as i64;
     let senders_count =
         stats::count_senders(&req, &user, &env, master_keys.clone())
