@@ -18,6 +18,7 @@ import {
 import React from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { APP_DATE_INPUT_MIN } from '../../../utils/misc';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 
@@ -86,6 +87,7 @@ export function AnalysisFiltersPanel({
             size="small"
             InputLabelProps={{ shrink: true }}
             value={queryState.dateFromStr}
+            slotProps={{ htmlInput: { min: APP_DATE_INPUT_MIN } }}
             onChange={(event) => updateQueryState({ dateFromStr: event.target.value })}
           />
           <TextField
@@ -104,6 +106,7 @@ export function AnalysisFiltersPanel({
             size="small"
             InputLabelProps={{ shrink: true }}
             value={queryState.dateToStr}
+            slotProps={{ htmlInput: { min: APP_DATE_INPUT_MIN } }}
             onChange={(event) => updateQueryState({ dateToStr: event.target.value })}
           />
           <TextField

@@ -1,21 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  buildAnalysisReq,
-  buildInboxReq,
-  combineDateTimeToMs,
-  createInitialQueryState,
-  createResetQueryState,
-  emptyQueryState,
-  isValidDateInput,
-  queryStateFromSavedFilter,
-  queryStateMatchesSavedFilter,
-} from './helpers';
+import { buildAnalysisReq, buildInboxReq, createInitialQueryState, createResetQueryState, emptyQueryState, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
+import { combineDateTimeToMs, isValidDateInput } from '../../utils/misc';
 
 describe('rer-analysis-neo helpers', () => {
   it('rejects invalid early years', () => {
-    expect(isValidDateInput('0001-01-01')).toBe(false);
-    expect(combineDateTimeToMs('0001-01-01', '12:00')).toBeNull();
+    expect(isValidDateInput('2021-12-31')).toBe(false);
+    expect(isValidDateInput('2022-01-01')).toBe(true);
+    expect(combineDateTimeToMs('2021-12-31', '12:00')).toBeNull();
+    expect(combineDateTimeToMs('2022-01-01', '12:00')).not.toBeNull();
   });
 
   it('builds analysis request from query state', () => {

@@ -3,7 +3,17 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatDateTime24, objectsEqual, strArraysEqual } from './misc';
+import {
+  APP_DATE_INPUT_MIN,
+  APP_DATE_INPUT_MIN_YEAR,
+  combineDateTimeToMs,
+  formatDate,
+  formatDateTime24,
+  formatLocalDateInputValue,
+  isValidDateInput,
+  objectsEqual,
+  strArraysEqual,
+} from './misc';
 
 describe('misc utils', () => {
   it('compares string arrays by value and order', () => {
@@ -27,5 +37,15 @@ describe('misc utils', () => {
     expect(formatDateTime24(null)).toBe('—');
     expect(formatDateTime24(Number.NaN)).toBe('—');
     expect(formatDateTime24(Date.UTC(2026, 2, 18, 14, 5))).toContain('14:05');
+  });
+
+  it('shares native date input bounds and parsing helpers', () => {
+    expect(APP_DATE_INPUT_MIN).toBe('2022-01-01');
+    expect(APP_DATE_INPUT_MIN_YEAR).toBe(2022);
+    expect(formatLocalDateInputValue(new Date(2026, 2, 23))).toBe('2026-03-23');
+    expect(isValidDateInput('2021-12-31')).toBe(false);
+    expect(isValidDateInput('2022-01-01')).toBe(true);
+    expect(combineDateTimeToMs('2021-12-31', '12:00')).toBeNull();
+    expect(combineDateTimeToMs('2022-01-01', '12:00')).not.toBeNull();
   });
 });
