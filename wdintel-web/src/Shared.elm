@@ -34,16 +34,14 @@ import Utils.RemoteData exposing (RemoteData(..))
 type alias Flags =
     { isDark : Bool
     , now : Int
-    , featureNavbarFrontOnly : Bool
     }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map3 Flags
+    Json.Decode.map2 Flags
         (Json.Decode.field "isDark" Json.Decode.bool)
         (Json.Decode.field "now" Json.Decode.int)
-        (Json.Decode.field "featureNavbarFrontOnly" Json.Decode.bool)
 
 
 type alias Model =
@@ -61,7 +59,6 @@ init flagsResult _ =
                 Err _ ->
                     { isDark = False
                     , now = 0
-                    , featureNavbarFrontOnly = False
                     }
     in
     ( { user =
@@ -89,7 +86,6 @@ init flagsResult _ =
       , callsignsInfo = Dict.empty
       , posts = NotAsked
       , toasts = Shared.Components.Toast.init
-      , featureNavbarFrontOnly = flags.featureNavbarFrontOnly
       , eventService = Core.EventService.init
       , pendingEvents = []
       , eventSubscriptions = Dict.empty

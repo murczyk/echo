@@ -1,11 +1,10 @@
-import SaveIcon from '@mui/icons-material/Save';
 import {
   Alert,
   Box,
+  ButtonBase,
   Card,
   CardContent,
   CircularProgress,
-  FormControlLabel,
   Stack,
   Switch,
   Typography,
@@ -33,6 +32,8 @@ function formatErrorMessage(error: unknown): string {
 export function AdminSystemSettingsNeoPage() {
   const [draftExactMatchOnlyDefault, setDraftExactMatchOnlyDefault] =
     React.useState(true);
+  const [initialExactMatchOnlyDefault, setInitialExactMatchOnlyDefault] =
+    React.useState(true);
   const [loadInProgress, setLoadInProgress] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
@@ -47,9 +48,10 @@ export function AdminSystemSettingsNeoPage() {
       try {
         const settings = await listSystemSettings();
         const activeSettings = settings.find((item) => !item.deleted);
-        setDraftExactMatchOnlyDefault(
-          activeSettings?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
-        );
+        const nextValue =
+          activeSettings?.rerAnalysisUnitsExactMatchOnlyDefault ?? true;
+        setDraftExactMatchOnlyDefault(nextValue);
+        setInitialExactMatchOnlyDefault(nextValue);
       } catch (error) {
         if (isUnauthorizedError(error)) {
           window.location.assign('/login');
@@ -66,9 +68,18 @@ export function AdminSystemSettingsNeoPage() {
     loadSystemSettings();
   }, []);
 
+  const isDirty =
+    draftExactMatchOnlyDefault !== initialExactMatchOnlyDefault;
+
+  function handleExactMatchOnlyChange(checked: boolean) {
+    setSaveSuccess(null);
+    setDraftExactMatchOnlyDefault(checked);
+  }
+
   async function handleSaveSystemSettings(event?: React.FormEvent) {
     event?.preventDefault();
     if (saveInProgress) return;
+    if (!isDirty) return;
 
     setSaveInProgress(true);
     setSaveError(null);
@@ -76,7 +87,8 @@ export function AdminSystemSettingsNeoPage() {
 
     try {
       await createSystemSettings(draftExactMatchOnlyDefault);
-      setSaveSuccess('Нове системне налаштування збережено.');
+      setInitialExactMatchOnlyDefault(draftExactMatchOnlyDefault);
+      setSaveSuccess('Нове системне налаштування збережено');
     } catch (error) {
       if (isUnauthorizedError(error)) {
         window.location.assign('/login');
@@ -89,16 +101,16 @@ export function AdminSystemSettingsNeoPage() {
   }
 
   return (
-    <Box className="w-full" sx={{ height: '100%', minHeight: 0, overflow: 'auto' }}>
-      <Stack spacing={3} useFlexGap sx={{ minHeight: '100%' }}>
-        <PageHeader title="Налаштування системи" className="px-4" />
+    <Box className="w-full" sx={{ maxWidth: 980, mx: "auto" }}>
+      <Stack spacing={2} useFlexGap>
+        <PageHeader title="Налаштування системи" />
 
-        <Card variant="outlined">
+        <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: 'none' }}>
           <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
             <Box component="form" onSubmit={handleSaveSystemSettings} noValidate>
-              <Stack spacing={3}>
-                <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
-                  Активне значення за замовчуванням
+              <Stack spacing={3} sx={{ width: '100%' }}>
+                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+                  Активні значення за замовчуванням
                 </Typography>
 
                 {loadError ? <Alert severity="error">{loadError}</Alert> : null}
@@ -109,31 +121,40 @@ export function AdminSystemSettingsNeoPage() {
                   </Alert>
                 ) : null}
 
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={draftExactMatchOnlyDefault}
-                      onChange={(_, checked) => {
-                        setSaveSuccess(null);
-                        setDraftExactMatchOnlyDefault(checked);
-                      }}
-                    />
-                  }
-                  label="За замовчуванням на /rer-analysis чекбокс `точний збіг за еталонкою` увімкнений"
-                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Switch
+                    sx={{ m: 0 }}
+                    checked={draftExactMatchOnlyDefault}
+                    onChange={(_, checked) => {
+                      handleExactMatchOnlyChange(checked);
+                    }}
+                  />
+                  <ButtonBase
+                    component="button"
+                    type="button"
+                    onClick={() => {
+                      handleExactMatchOnlyChange(!draftExactMatchOnlyDefault);
+                    }}
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      textAlign: 'left',
+                      borderRadius: 0.5,
+                      typography: 'body1',
+                      fontWeight: 400,
+                      color: 'text.primary',
+                    }}
+                  >
+                    Прапорець «точний збіг за еталонкою» на аналізі увімкнений
+                  </ButtonBase>
+                </Box>
 
-                <Box className="flex items-center justify-end">
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
                   <Button
                     variant="contained"
                     type="submit"
-                    disabled={saveInProgress || loadInProgress}
-                    startIcon={
-                      saveInProgress ? (
-                        <CircularProgress size={18} />
-                      ) : (
-                        <SaveIcon fontSize="small" />
-                      )
-                    }
+                    disabled={saveInProgress || loadInProgress || !isDirty}
+                    startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
                   >
                     зберегти
                   </Button>
