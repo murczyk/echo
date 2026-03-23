@@ -1,5 +1,5 @@
 import type { InboxMessage } from '../../../../Bindings';
-import React from 'react';
+import { useCallback, useState } from 'react';
 
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 
@@ -30,10 +30,10 @@ export function useAnalysisMessageEditor({
   onUnauthorized,
   onUpdateLocalMessage,
 }: Props): Result {
-  const [editorMessage, setEditorMessage] = React.useState<{ id: number; message: InboxMessage } | null>(null);
-  const [editorSaveInFlight, setEditorSaveInFlight] = React.useState(false);
+  const [editorMessage, setEditorMessage] = useState<{ id: number; message: InboxMessage } | null>(null);
+  const [editorSaveInFlight, setEditorSaveInFlight] = useState(false);
 
-  const openEditor = React.useCallback(
+  const openEditor = useCallback(
     (messageId: number) => {
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (entry == null) return;
@@ -42,15 +42,15 @@ export function useAnalysisMessageEditor({
     [messages],
   );
 
-  const closeEditor = React.useCallback(() => {
+  const closeEditor = useCallback(() => {
     setEditorMessage(null);
   }, []);
 
-  const updateEditorField = React.useCallback(<K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => {
+  const updateEditorField = useCallback(<K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => {
     setEditorMessage((current) => (current == null ? current : { ...current, message: { ...current.message, [field]: value } }));
   }, []);
 
-  const saveEditor = React.useCallback(async () => {
+  const saveEditor = useCallback(async () => {
     if (editorMessage == null) return;
     setEditorSaveInFlight(true);
     onError('');

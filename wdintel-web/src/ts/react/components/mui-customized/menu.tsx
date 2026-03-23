@@ -1,11 +1,12 @@
 import { Menu as MuiMenu, MenuProps as MuiMenuProps } from '@mui/material';
-import React from 'react';
+import { forwardRef } from 'react';
+import type { ForwardedRef, KeyboardEvent } from 'react';
 
-export const Menu = React.forwardRef(function Menu(
+export const Menu = forwardRef(function Menu(
   { children, ...props }: MuiMenuProps,
-  ref: React.ForwardedRef<HTMLDivElement>,
+  ref: ForwardedRef<HTMLDivElement>,
 ) {
-  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'Escape') {
       event.stopPropagation();
     }

@@ -1,5 +1,6 @@
 import type { SavedFilter } from '../../../../Bindings';
-import React from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
 import { buildAnalysisReq, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
@@ -10,7 +11,7 @@ type Props = {
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
-  setQueryState: React.Dispatch<React.SetStateAction<AnalysisQueryState>>;
+  setQueryState: Dispatch<SetStateAction<AnalysisQueryState>>;
 };
 
 type Result = {
@@ -33,28 +34,28 @@ function toErrorMessage(error: unknown): string {
 }
 
 export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorized, queryState, setQueryState }: Props): Result {
-  const [savedFilters, setSavedFilters] = React.useState<SavedFilter[]>([]);
-  const [loadedSavedFilterId, setLoadedSavedFilterId] = React.useState<number | null>(null);
-  const [savedFilterName, setSavedFilterName] = React.useState('');
-  const [saveInFlight, setSaveInFlight] = React.useState(false);
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
+  const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
+  const [savedFilterName, setSavedFilterName] = useState('');
+  const [saveInFlight, setSaveInFlight] = useState(false);
 
-  const loadedSavedFilter = React.useMemo(
+  const loadedSavedFilter = useMemo(
     () => savedFilters.find((savedFilter) => savedFilter.id === loadedSavedFilterId) ?? null,
     [loadedSavedFilterId, savedFilters],
   );
 
-  const isDirty = React.useMemo(() => {
+  const isDirty = useMemo(() => {
     if (!loadedSavedFilter) return false;
     return !queryStateMatchesSavedFilter(queryState, loadedSavedFilter, allFrequencies);
   }, [allFrequencies, loadedSavedFilter, queryState]);
 
-  const loadSavedFilters = React.useCallback(async () => {
+  const loadSavedFilters = useCallback(async () => {
     const next = await listAnalysisSavedFilters();
     setSavedFilters(next);
     return next;
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       try {
         await loadSavedFilters();
@@ -66,7 +67,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     })();
   }, [loadSavedFilters, onError, onUnauthorized]);
 
-  const applySavedFilter = React.useCallback(
+  const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
       setLoadedSavedFilterId(savedFilter?.id ?? null);
       if (savedFilter == null) {
@@ -78,7 +79,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     [setQueryState],
   );
 
-  const saveAsNew = React.useCallback(async () => {
+  const saveAsNew = useCallback(async () => {
     const req = buildAnalysisReq(queryState, allFrequencies);
     if (req == null || savedFilterName.trim() === '') return;
     setSaveInFlight(true);
@@ -97,7 +98,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     }
   }, [allFrequencies, onError, onUnauthorized, queryState, savedFilterName]);
 
-  const renameExisting = React.useCallback(async () => {
+  const renameExisting = useCallback(async () => {
     if (!loadedSavedFilter) return;
     const nextName = savedFilterName.trim();
     if (nextName === '' || nextName === loadedSavedFilter.name) return;
@@ -118,7 +119,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     }
   }, [loadSavedFilters, loadedSavedFilter, onError, onUnauthorized, savedFilterName]);
 
-  const updateExisting = React.useCallback(async () => {
+  const updateExisting = useCallback(async () => {
     if (!loadedSavedFilter) return;
     const req = buildAnalysisReq(queryState, allFrequencies);
     if (req == null) return;
@@ -137,7 +138,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     }
   }, [allFrequencies, loadedSavedFilter, onError, onUnauthorized, queryState]);
 
-  const deleteLoadedSavedFilter = React.useCallback(async () => {
+  const deleteLoadedSavedFilter = useCallback(async () => {
     if (!loadedSavedFilter) return;
     setSaveInFlight(true);
     onError('');

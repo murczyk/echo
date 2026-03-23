@@ -15,7 +15,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { APP_DATE_INPUT_MIN } from '../../../utils/misc';

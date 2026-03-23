@@ -1,5 +1,6 @@
 import clsx from 'clsx';
-import React from 'react';
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import { Button } from '../../../button';
 import { GlobalFilterTextField } from './components/global-filter-text-field';
@@ -7,20 +8,20 @@ import { InternalTableActions } from './components/internal-actions';
 import { useTableStateContext } from '../../table-state-provider';
 
 type MobileActionsBarProps = {
-  header: React.ReactNode;
-  children: React.ReactNode;
+  header: ReactNode;
+  children: ReactNode;
   onToggleMobileActions?: () => void;
   showMobileActions?: boolean;
 };
 
 function MobileActionsBar(props: MobileActionsBarProps) {
-  const [showMobileActions, setShowMobileActions] = React.useState(false);
+  const [showMobileActions, setShowMobileActions] = useState(false);
 
   function onToggleMobileActions() {
     setShowMobileActions(!showMobileActions);
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (props.onToggleMobileActions !== undefined) {
       setShowMobileActions(props.showMobileActions || false);
     }
@@ -46,7 +47,7 @@ function MobileActionsBar(props: MobileActionsBarProps) {
 }
 
 type DesktopActionsBarProps = {
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 function DesktopActionsBar(props: DesktopActionsBarProps) {
@@ -56,15 +57,15 @@ function DesktopActionsBar(props: DesktopActionsBarProps) {
 type TableTopToolbarProps = {
   // Date global filter
   withDatePicker: boolean;
-  datePicker?: React.ReactNode;
+  datePicker?: ReactNode;
   // Filter
-  filter?: React.ReactNode;
+  filter?: ReactNode;
   // Text global filter
   withGlobalTextFilter: boolean;
   // Toolbar elements
-  header: React.ReactNode;
-  additionalActions?: React.ReactNode;
-  additionalNoTableActions?: React.ReactNode;
+  header: ReactNode;
+  additionalActions?: ReactNode;
+  additionalNoTableActions?: ReactNode;
   // Internal table actions
   densityDisabled?: boolean;
   densityHidden?: boolean;
@@ -73,8 +74,8 @@ type TableTopToolbarProps = {
   colOrderDisabled?: boolean;
   filtersDisabled?: boolean;
   columnsVisibilityDisabled?: boolean;
-  additionalInternalActions?: React.ReactNode;
-  internalTableActionsPlaceholder?: React.ReactNode;
+  additionalInternalActions?: ReactNode;
+  internalTableActionsPlaceholder?: ReactNode;
   rowNumberAppearanceControl?: boolean;
 };
 

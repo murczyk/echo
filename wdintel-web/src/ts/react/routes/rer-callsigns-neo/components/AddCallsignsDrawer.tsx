@@ -1,4 +1,4 @@
-import React from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -85,13 +85,13 @@ export function AddCallsignsDrawer({
   const addSourceSelectLabelId = 'callsigns-add-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
   const confirmationSources = sources.filter((source) => source.id !== addSourceId);
-  const [unitSearchInput, setUnitSearchInput] = React.useState('');
-  const handleCloseDrawer = React.useCallback(() => {
+  const [unitSearchInput, setUnitSearchInput] = useState('');
+  const handleCloseDrawer = useCallback(() => {
     setUnitSearchInput('');
     onClose();
   }, [onClose]);
 
-  const filterUnits = React.useCallback((options: Unit[], inputValue: string) => {
+  const filterUnits = useCallback((options: Unit[], inputValue: string) => {
     const normalizedInput = inputValue.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
     if (normalizedInput === '') return options;
 
@@ -103,7 +103,7 @@ export function AddCallsignsDrawer({
     });
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) {
       setUnitSearchInput('');
     }

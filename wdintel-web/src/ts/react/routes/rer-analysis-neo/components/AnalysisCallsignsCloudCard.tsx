@@ -1,5 +1,5 @@
 import { Paper, Stack, Typography } from '@mui/material';
-import React from 'react';
+import { useId } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import type { AnalysisCountItem } from '../types';
@@ -9,7 +9,7 @@ type Props = {
 };
 
 export function AnalysisCallsignsCloudCard({ items }: Props) {
-  const headingId = React.useId().replace(/:/g, '-');
+  const headingId = useId().replace(/:/g, '-');
   const maxCount = items.reduce((best, item) => Math.max(best, item.count), 0);
 
   return (

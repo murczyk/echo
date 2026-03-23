@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { CircularProgress } from '@mui/material';
 
 import { PageErrorState } from './PageErrorState';
@@ -8,9 +9,9 @@ type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 type Props = {
   status: LoadingStatus;
   errorMessage: string;
-  children: React.ReactNode;
+  children: ReactNode;
   fillAvailableHeight?: boolean;
-  loadingContent?: React.ReactNode;
+  loadingContent?: ReactNode;
 };
 
 function TableLoadingSlot(props: { fillAvailableHeight: boolean }) {

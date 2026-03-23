@@ -1,5 +1,4 @@
 import { Stack } from '@mui/material';
-import React from 'react';
 
 import type { CorrelatedFreq, FreqDailyActivityCount } from '../../../../../Bindings';
 import type { AnalysisCountItem, AnalysisGroupsActivityPeriod } from '../types';

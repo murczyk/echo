@@ -25,7 +25,7 @@ import {
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   AccountStatusReq,
@@ -407,7 +407,7 @@ function MessengerIcon({ messenger }: { messenger: string }) {
 }
 
 function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
-  return React.useMemo(
+  return useMemo(
     () => [
       {
         header: 'Назва акаунту',
@@ -708,7 +708,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -716,37 +716,37 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
 }
 
 function AdminMessengerNeoPageBody() {
-  const [accounts, setAccounts] = React.useState<EchoAccountF1[]>([]);
+  const [accounts, setAccounts] = useState<EchoAccountF1[]>([]);
   const [accountsStatus, setAccountsStatus] =
-    React.useState<LoadingStatus>('idle');
-  const [accountsError, setAccountsError] = React.useState<string | null>(null);
-  const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
-  const [aorsStatus, setAorsStatus] = React.useState<LoadingStatus>('idle');
-  const [apiUsers, setApiUsers] = React.useState<Login[]>([]);
+    useState<LoadingStatus>('idle');
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [aorsStatus, setAorsStatus] = useState<LoadingStatus>('idle');
+  const [apiUsers, setApiUsers] = useState<Login[]>([]);
   const [apiUsersStatus, setApiUsersStatus] =
-    React.useState<LoadingStatus>('idle');
-  const [linkMode, setLinkMode] = React.useState<LinkMode>('phone');
-  const [linkStep, setLinkStep] = React.useState<LinkStep>('form');
-  const [linkSidebarOpen, setLinkSidebarOpen] = React.useState(false);
-  const [phoneForm, setPhoneForm] = React.useState<PhoneForm>(defaultPhoneForm);
-  const [apiForm, setApiForm] = React.useState<ApiForm>(defaultApiForm);
-  const [formErrors, setFormErrors] = React.useState<Record<string, string>>(
+    useState<LoadingStatus>('idle');
+  const [linkMode, setLinkMode] = useState<LinkMode>('phone');
+  const [linkStep, setLinkStep] = useState<LinkStep>('form');
+  const [linkSidebarOpen, setLinkSidebarOpen] = useState(false);
+  const [phoneForm, setPhoneForm] = useState<PhoneForm>(defaultPhoneForm);
+  const [apiForm, setApiForm] = useState<ApiForm>(defaultApiForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>(
     {}
   );
-  const [qrData, setQrData] = React.useState<QrData | null>(null);
+  const [qrData, setQrData] = useState<QrData | null>(null);
   const [linkSuccessAccount, setLinkSuccessAccount] =
-    React.useState<EchoAccountF1 | null>(null);
-  const [linkStatus, setLinkStatus] = React.useState<StatusMessage>(null);
-  const [editSidebarOpen, setEditSidebarOpen] = React.useState(false);
-  const [editForm, setEditForm] = React.useState<EditForm | null>(null);
-  const [editErrors, setEditErrors] = React.useState<Record<string, string>>(
+    useState<EchoAccountF1 | null>(null);
+  const [linkStatus, setLinkStatus] = useState<StatusMessage>(null);
+  const [editSidebarOpen, setEditSidebarOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [editErrors, setEditErrors] = useState<Record<string, string>>(
     {}
   );
-  const [deleteAccountId, setDeleteAccountId] = React.useState<number | null>(
+  const [deleteAccountId, setDeleteAccountId] = useState<number | null>(
     null
   );
-  const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
-  const [isMutating, setIsMutating] = React.useState(false);
+  const [actionStatus, setActionStatus] = useState<StatusMessage>(null);
+  const [isMutating, setIsMutating] = useState(false);
 
   async function loadAccounts() {
     setAccountsStatus('loading');
@@ -823,12 +823,12 @@ function AdminMessengerNeoPageBody() {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadAccounts();
     loadAors();
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (linkStep !== 'qr' || !qrData) return;
 
     const intervalId = window.setInterval(async () => {

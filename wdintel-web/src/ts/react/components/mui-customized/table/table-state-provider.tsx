@@ -1,5 +1,6 @@
 import dayjs, { Dayjs } from 'dayjs';
-import React from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import type { PropsWithChildren } from 'react';
 
 import { useLocalStorage } from '../../../hooks/use-local-storage';
 import { objectsEqual, strArraysEqual } from '../../../utils/misc';
@@ -60,7 +61,7 @@ type TableStateContextValue = {
   setEnableColumnResizing: (value: boolean) => void;
 };
 
-const TableStateContext = React.createContext<TableStateContextValue>({
+const TableStateContext = createContext<TableStateContextValue>({
   globalFilter: '',
   onChangeGlobalFilter: () => {},
   date: null,
@@ -108,9 +109,9 @@ type TableStateProviderProps = {
 };
 
 function useSearchParamsState(): [URLSearchParams, (value: SearchParams) => void] {
-  const [searchParams, setSearchParams] = React.useState(() => new URLSearchParams(window.location.search));
+  const [searchParams, setSearchParams] = useState(() => new URLSearchParams(window.location.search));
 
-  React.useEffect(() => {
+  useEffect(() => {
     function onPopState() {
       setSearchParams(new URLSearchParams(window.location.search));
     }
@@ -130,13 +131,13 @@ function useSearchParamsState(): [URLSearchParams, (value: SearchParams) => void
   return [searchParams, updateSearchParams];
 }
 
-export function TableStateProvider(props: React.PropsWithChildren<TableStateProviderProps>) {
+export function TableStateProvider(props: PropsWithChildren<TableStateProviderProps>) {
   const localStorage = useLocalStorage();
   const [searchParams, setSearchParams] = useSearchParamsState();
 
-  const [tableInstance, setTableInstance] = React.useState<MRT_TableInstance<any> | null>(null);
+  const [tableInstance, setTableInstance] = useState<MRT_TableInstance<any> | null>(null);
 
-  const [date, setDate] = React.useState<Dayjs | null>(() => {
+  const [date, setDate] = useState<Dayjs | null>(() => {
     const dateFromParams = searchParams.get('date');
     if (dateFromParams) {
       return dayjs(dateFromParams);
@@ -144,7 +145,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
     return props.defaultDate || dayjs().startOf('D');
   });
 
-  const [columnFilters, setColumnFilters] = React.useState<MRT_ColumnFiltersState>(() => {
+  const [columnFilters, setColumnFilters] = useState<MRT_ColumnFiltersState>(() => {
     const columnFiltersFromParams = searchParams.get('columnFilters');
     if (!columnFiltersFromParams) return [];
 
@@ -157,7 +158,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
       return [];
     }
   });
-  const [sorting, setSorting] = React.useState<MRT_SortingState>(() => {
+  const [sorting, setSorting] = useState<MRT_SortingState>(() => {
     const sortByFromParams = searchParams.get('sorting');
     if (!sortByFromParams) return props.defaultSorting ?? [];
 
@@ -170,19 +171,19 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
       return props.defaultSorting ?? [];
     }
   });
-  const [density, setDensity] = React.useState<MRT_DensityState>('compact');
-  const [globalFilter, setGlobalFilter] = React.useState(() => searchParams.get('globalFilter') || '');
-  const [columnSizing, setColumnSizing] = React.useState<MRT_ColumnSizingState>(() => getInitialColumnSizing());
-  const [enableColumnOrdering, setEnableColumnOrdering] = React.useState<boolean>(() => getInitialEnableColumnOrdering());
-  const [enableColumnResizing, setEnableColumnResizing] = React.useState<boolean>(() => getInitialEnableColumnResizing());
+  const [density, setDensity] = useState<MRT_DensityState>('compact');
+  const [globalFilter, setGlobalFilter] = useState(() => searchParams.get('globalFilter') || '');
+  const [columnSizing, setColumnSizing] = useState<MRT_ColumnSizingState>(() => getInitialColumnSizing());
+  const [enableColumnOrdering, setEnableColumnOrdering] = useState<boolean>(() => getInitialEnableColumnOrdering());
+  const [enableColumnResizing, setEnableColumnResizing] = useState<boolean>(() => getInitialEnableColumnResizing());
 
-  const [defaultColumnVisibility, setDefaultColumnVisibility] = React.useState<{ [key: string]: boolean }>(
+  const [defaultColumnVisibility, setDefaultColumnVisibility] = useState<{ [key: string]: boolean }>(
     () => props.defaultColumnVisibility,
   );
-  const [columnVisibility, setColumnVisibility] = React.useState<{ [key: string]: boolean }>(() =>
+  const [columnVisibility, setColumnVisibility] = useState<{ [key: string]: boolean }>(() =>
     getInitialColumnsVisibility(),
   );
-  const [columnOrder, setColumnOrder] = React.useState<MRT_ColumnOrderState>(() => getInitialColumnOrder());
+  const [columnOrder, setColumnOrder] = useState<MRT_ColumnOrderState>(() => getInitialColumnOrder());
 
   const columnOrderTouched = !strArraysEqual(
     columnOrder.filter((c) => columnVisibility[c]),
@@ -531,5 +532,5 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
 }
 
 export function useTableStateContext() {
-  return React.useContext(TableStateContext);
+  return useContext(TableStateContext);
 }

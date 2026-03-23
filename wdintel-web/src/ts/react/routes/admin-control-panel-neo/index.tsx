@@ -7,7 +7,8 @@ import {
   FormGroup,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useState } from 'react';
+import type { ChangeEvent } from 'react';
 
 import { Info } from '../../components/info';
 import { PageHeader } from '../../components/PageHeader';
@@ -43,18 +44,18 @@ function formatErrorMessage(error: unknown): string {
 }
 
 export function AdminControlPanelNeoPage() {
-  const [form, setForm] = React.useState<RestartEchoForm>(initialForm);
+  const [form, setForm] = useState<RestartEchoForm>(initialForm);
   const restarting = useBoolean(false);
-  const [status, setStatus] = React.useState<StatusState>(null);
+  const [status, setStatus] = useState<StatusState>(null);
 
-  function handleToggleRestartPostgres(event: React.ChangeEvent<HTMLInputElement>) {
+  function handleToggleRestartPostgres(event: ChangeEvent<HTMLInputElement>) {
     setForm((prev) => ({
       ...prev,
       restartPostgres: event.target.checked,
     }));
   }
 
-  function handleToggleRestartOutdatedSources(event: React.ChangeEvent<HTMLInputElement>) {
+  function handleToggleRestartOutdatedSources(event: ChangeEvent<HTMLInputElement>) {
     setForm((prev) => ({
       ...prev,
       restartOutdatedSources: event.target.checked,

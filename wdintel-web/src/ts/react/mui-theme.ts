@@ -1,14 +1,15 @@
 import { createTheme, ThemeProvider } from '@mui/material/styles';
-import React from 'react';
+import { createElement, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 
 export function getMuiPaletteMode(): 'light' | 'dark' {
   return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
 }
 
 export function useMuiPaletteMode() {
-  const [mode, setMode] = React.useState(getMuiPaletteMode);
+  const [mode, setMode] = useState(getMuiPaletteMode);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const syncMode = () => setMode(getMuiPaletteMode());
     const observer = new MutationObserver(syncMode);
     observer.observe(document.documentElement, {
@@ -33,7 +34,7 @@ const neoMuiFontFamily =
 export function useNeoMuiTheme() {
   const mode = useMuiPaletteMode();
 
-  return React.useMemo(
+  return useMemo(
     () =>
       createTheme({
         palette: { mode },
@@ -73,9 +74,9 @@ export function useNeoMuiTheme() {
   );
 }
 
-export function NeoMuiThemeProvider({ children }: { children: React.ReactNode }) {
+export function NeoMuiThemeProvider({ children }: { children: ReactNode }) {
   const mode = useMuiPaletteMode();
   const theme = useNeoMuiTheme();
 
-  return React.createElement(ThemeProvider, { theme, key: mode }, children);
+  return createElement(ThemeProvider, { theme, key: mode }, children);
 }

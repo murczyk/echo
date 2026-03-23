@@ -2,7 +2,8 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
-import React from 'react';
+import { act } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,7 +14,7 @@ vi.mock('@mui/material', () => ({
     options: SavedFilter[];
     value: SavedFilter | null;
     onChange?: (_event: Event, next: SavedFilter | null) => void;
-    renderInput: (params: object) => React.ReactNode;
+    renderInput: (params: object) => ReactNode;
   }) => (
     <div>
       {props.renderInput({})}
@@ -24,7 +25,7 @@ vi.mock('@mui/material', () => ({
     </div>
   ),
   Button: (props: {
-    children: React.ReactNode;
+    children: ReactNode;
     disabled?: boolean;
     onClick?: () => void;
     color?: string;
@@ -34,15 +35,15 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </button>
   ),
-  Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Paper: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TextField: (props: { label?: string; value?: string; onChange?: (event: { target: { value: string } }) => void }) => (
     <label>
       <span>{props.label}</span>
       <input value={props.value ?? ''} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })} />
     </label>
   ),
-  Typography: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
@@ -90,7 +91,7 @@ function buildSavedFilter(id: number, name: string): SavedFilter {
   };
 }
 
-function buildProps(overrides: Partial<React.ComponentProps<typeof AnalysisSavedFiltersCard>> = {}): React.ComponentProps<typeof AnalysisSavedFiltersCard> {
+function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSavedFiltersCard>> = {}): ComponentProps<typeof AnalysisSavedFiltersCard> {
   return {
     isDirty: false,
     loadedSavedFilter: null,
@@ -107,7 +108,7 @@ function buildProps(overrides: Partial<React.ComponentProps<typeof AnalysisSaved
   };
 }
 
-async function renderComponent(props: React.ComponentProps<typeof AnalysisSavedFiltersCard>): Promise<Rendered> {
+async function renderComponent(props: ComponentProps<typeof AnalysisSavedFiltersCard>): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);

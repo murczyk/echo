@@ -10,7 +10,8 @@ import {
   Switch,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { Button } from '../../components/mui-customized/button';
@@ -32,14 +33,14 @@ function formatErrorMessage(error: unknown): string {
 
 export function AdminSystemSettingsNeoPage() {
   const [draftExactMatchOnlyDefault, setDraftExactMatchOnlyDefault] =
-    React.useState(true);
-  const [loadInProgress, setLoadInProgress] = React.useState(true);
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = React.useState<string | null>(null);
-  const [saveInProgress, setSaveInProgress] = React.useState(false);
+    useState(true);
+  const [loadInProgress, setLoadInProgress] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveInProgress, setSaveInProgress] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     async function loadSystemSettings() {
       setLoadInProgress(true);
       setLoadError(null);
@@ -66,7 +67,7 @@ export function AdminSystemSettingsNeoPage() {
     loadSystemSettings();
   }, []);
 
-  async function handleSaveSystemSettings(event?: React.FormEvent) {
+  async function handleSaveSystemSettings(event?: FormEvent) {
     event?.preventDefault();
     if (saveInProgress) return;
 

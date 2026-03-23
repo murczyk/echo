@@ -1,5 +1,4 @@
 import { Autocomplete, Button, Paper, Stack, TextField, Typography } from '@mui/material';
-import React from 'react';
 
 import type { SavedFilter } from '../../../../../Bindings';
 

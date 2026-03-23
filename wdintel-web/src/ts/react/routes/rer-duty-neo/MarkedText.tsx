@@ -1,4 +1,4 @@
-import React from 'react';
+import type { ReactNode } from 'react';
 
 import type { ContentNode } from '../../../../Bindings';
 import { buildAnalysisMapHrefWithSearch } from './utils';
@@ -25,7 +25,7 @@ export function renderMarkedText(
   nodes: ContentNode[],
   bodyText: string,
   messagePointEtalons?: string[],
-): React.ReactNode[] {
+): ReactNode[] {
   const fromNodes = collectPointEtalons(nodes);
   const allPointEtalons =
     messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes;

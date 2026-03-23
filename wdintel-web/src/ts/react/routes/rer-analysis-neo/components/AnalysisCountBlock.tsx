@@ -1,5 +1,5 @@
 import { List, ListItem, ListItemText, Paper, Typography } from '@mui/material';
-import React from 'react';
+import { useId } from 'react';
 
 import type { AnalysisCountItem } from '../types';
 
@@ -9,7 +9,7 @@ type Props = {
 };
 
 export function AnalysisCountBlock({ title, items }: Props) {
-  const headingId = React.useId().replace(/:/g, '-');
+  const headingId = useId().replace(/:/g, '-');
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>

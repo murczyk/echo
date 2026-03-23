@@ -161,7 +161,7 @@ navBar user shared activeName props =
 
         otherSubs =
             (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
-                [ internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "аналіз (бета)" ]
+                [ internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "аналіз" ]
 
              else
                 []

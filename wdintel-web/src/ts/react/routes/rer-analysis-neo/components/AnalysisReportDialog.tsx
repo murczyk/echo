@@ -15,7 +15,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useId } from 'react';
 
 import {
   REPORT_ADJACENT_FREQS_OPTIONS,
@@ -48,7 +48,7 @@ const templateOptions: Array<{ id: ReportTemplateId; title: string; description:
 ];
 
 export function AnalysisReportDialog({ aors, downloadInFlight, open, report, onClose, onDownload, onUpdate }: Props) {
-  const titleId = React.useId().replace(/:/g, '-');
+  const titleId = useId().replace(/:/g, '-');
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" aria-labelledby={titleId}>

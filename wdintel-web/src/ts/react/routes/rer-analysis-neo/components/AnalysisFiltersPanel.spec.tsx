@@ -2,7 +2,8 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
-import React from 'react';
+import { act } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,19 +21,19 @@ vi.mock('@mui/material', () => ({
     />
   ),
   Divider: () => <hr />,
-  FormControl: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  FormControlLabel: (props: { control: React.ReactNode; label: React.ReactNode }) => (
+  FormControl: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
     <label>
       {props.control}
       <span>{props.label}</span>
     </label>
   ),
-  InputAdornment: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-  InputLabel: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-  MenuItem: ({ children, value }: { children: React.ReactNode; value: string }) => <option value={value}>{children}</option>,
-  Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  InputAdornment: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  InputLabel: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  MenuItem: ({ children, value }: { children: ReactNode; value: string }) => <option value={value}>{children}</option>,
+  Paper: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Select: (props: {
-    children: React.ReactNode;
+    children: ReactNode;
     value: string;
     onChange?: (event: { target: { value: string } }) => void;
   }) => (
@@ -40,7 +41,7 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </select>
   ),
-  Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
     <input
       type="checkbox"
@@ -54,7 +55,7 @@ vi.mock('@mui/material', () => ({
       <input type={props.type ?? 'text'} value={props.value ?? ''} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })} />
     </label>
   ),
-  Typography: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock('@mui/icons-material/Search', () => ({
@@ -98,7 +99,7 @@ function buildOptions(): AnalysisPageState['options'] {
   };
 }
 
-function buildProps(overrides: Partial<React.ComponentProps<typeof AnalysisFiltersPanel>> = {}): React.ComponentProps<typeof AnalysisFiltersPanel> {
+function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPanel>> = {}): ComponentProps<typeof AnalysisFiltersPanel> {
   return {
     isDirty: false,
     counts: null,
@@ -122,7 +123,7 @@ function buildProps(overrides: Partial<React.ComponentProps<typeof AnalysisFilte
   };
 }
 
-async function renderComponent(props: React.ComponentProps<typeof AnalysisFiltersPanel>): Promise<Rendered> {
+async function renderComponent(props: ComponentProps<typeof AnalysisFiltersPanel>): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);

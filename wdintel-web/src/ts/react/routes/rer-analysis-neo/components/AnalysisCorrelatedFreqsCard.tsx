@@ -1,5 +1,5 @@
 import { Button, CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
-import React from 'react';
+import { useId } from 'react';
 
 import type { CorrelatedFreq } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
@@ -11,7 +11,7 @@ type Props = {
 };
 
 export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, onLoad }: Props) {
-  const headingId = React.useId().replace(/:/g, '-');
+  const headingId = useId().replace(/:/g, '-');
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>

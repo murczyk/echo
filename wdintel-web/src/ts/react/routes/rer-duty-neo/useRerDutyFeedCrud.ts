@@ -1,4 +1,5 @@
-import React from 'react';
+import { useCallback } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 
 import type { RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
 import {
@@ -15,9 +16,9 @@ const MAX_MESSAGE_FEEDS = 4;
 
 export function useRerDutyFeedCrud(
   messageFeeds: MessageFeedState[],
-  setMessageFeeds: React.Dispatch<React.SetStateAction<MessageFeedState[]>>,
+  setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>,
 ) {
-  const applyFilter = React.useCallback((feedId: string, f: RerDutyFeedFilterState) => {
+  const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
       const w = prev.find((w) => w.id === feedId);
       if (!w || filtersEqual(w.filter, f)) return prev;
@@ -44,7 +45,7 @@ export function useRerDutyFeedCrud(
     });
   }, []);
 
-  const toggleGroup = React.useCallback(
+  const toggleGroup = useCallback(
     (feedId: string, key: string) => {
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w) return;
@@ -56,7 +57,7 @@ export function useRerDutyFeedCrud(
     [messageFeeds, applyFilter],
   );
 
-  const selectAllGroups = React.useCallback(
+  const selectAllGroups = useCallback(
     (feedId: string) => {
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w) return;
@@ -66,7 +67,7 @@ export function useRerDutyFeedCrud(
     [messageFeeds, applyFilter],
   );
 
-  const createMessageFeed = React.useCallback(() => {
+  const createMessageFeed = useCallback(() => {
     const id = generateMessageFeedId();
     const newFeed: MessageFeedState = {
       id,
@@ -91,7 +92,7 @@ export function useRerDutyFeedCrud(
     });
   }, []);
 
-  const removeMessageFeed = React.useCallback(
+  const removeMessageFeed = useCallback(
     (feedId: string) => {
       if (messageFeeds.length <= 1) return;
       setMessageFeeds((prev) => {

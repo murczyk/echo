@@ -1,5 +1,4 @@
 import { Box, Button, Drawer, Stack, TextField, Typography } from '@mui/material';
-import React from 'react';
 
 import type { InboxMessage } from '../../../../../Bindings';
 

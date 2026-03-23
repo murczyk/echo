@@ -1,5 +1,5 @@
 import type { InboxMessagesReq } from '../../../../Bindings';
-import React from 'react';
+import { useCallback, useState } from 'react';
 
 import { downloadAnalysisReport } from '../../services/api/analysis';
 import { downloadBlob } from '../../utils/download';
@@ -43,22 +43,22 @@ export function useAnalysisReport({
   timeFrom,
   timeTo,
 }: Props): Result {
-  const [report, setReport] = React.useState(createDefaultReportState);
-  const [reportDownloadInFlight, setReportDownloadInFlight] = React.useState(false);
+  const [report, setReport] = useState(createDefaultReportState);
+  const [reportDownloadInFlight, setReportDownloadInFlight] = useState(false);
 
-  const openReport = React.useCallback(() => {
+  const openReport = useCallback(() => {
     setReport((current) => ({ ...current, open: true }));
   }, []);
 
-  const closeReport = React.useCallback(() => {
+  const closeReport = useCallback(() => {
     setReport((current) => ({ ...current, open: false }));
   }, []);
 
-  const updateReport = React.useCallback((patch: Partial<AnalysisReportState>) => {
+  const updateReport = useCallback((patch: Partial<AnalysisReportState>) => {
     setReport((current) => ({ ...current, ...patch }));
   }, []);
 
-  const downloadReport = React.useCallback(async () => {
+  const downloadReport = useCallback(async () => {
     if (inboxReq == null) return;
 
     setReportDownloadInFlight(true);

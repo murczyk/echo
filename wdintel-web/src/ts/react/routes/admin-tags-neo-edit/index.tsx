@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { TagAdmin, TagKeyword, TagUpsertReq } from '../../../../Bindings';
 import { FormPageHeader } from '../../components/FormPageHeader';
@@ -333,21 +333,21 @@ type AdminTagsNeoEditPageProps = {
 };
 
 function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
-  const [form, setForm] = React.useState<TagFormState>(emptyForm);
-  const [keywords, setKeywords] = React.useState<TagKeyword[]>([]);
-  const [tagModelErrors, setTagModelErrors] = React.useState<TagModelErrorFE[]>([]);
-  const [modelErrorsLoadError, setModelErrorsLoadError] = React.useState<string | null>(null);
-  const [deletingIds, setDeletingIds] = React.useState<Set<number>>(new Set());
-  const [status, setStatus] = React.useState<LoadingStatus>('idle');
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [saving, setSaving] = React.useState(false);
-  const [tagId, setTagId] = React.useState<number | null>(null);
-  const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
-  const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
-  const [deleteKeywordId, setDeleteKeywordId] = React.useState<number | null>(null);
-  const [tabIndex, setTabIndex] = React.useState(0);
+  const [form, setForm] = useState<TagFormState>(emptyForm);
+  const [keywords, setKeywords] = useState<TagKeyword[]>([]);
+  const [tagModelErrors, setTagModelErrors] = useState<TagModelErrorFE[]>([]);
+  const [modelErrorsLoadError, setModelErrorsLoadError] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [tagId, setTagId] = useState<number | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [actionStatus, setActionStatus] = useState<StatusMessage>(null);
+  const [deleteKeywordId, setDeleteKeywordId] = useState<number | null>(null);
+  const [tabIndex, setTabIndex] = useState(0);
 
-  const backTo = React.useMemo(() => {
+  const backTo = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('backTo');
   }, []);
@@ -375,7 +375,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isNew) {
       setStatus('success');
       setForm(emptyForm);

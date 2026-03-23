@@ -16,7 +16,7 @@ import {
   Tooltip,
 } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
@@ -308,7 +308,7 @@ function getStatusInfo(login: Login): StatusInfo {
 }
 
 function useUsersColumns(): MRT_ColumnDef<Login>[] {
-  return React.useMemo(
+  return useMemo(
     () => [
       {
         header: 'Логін',
@@ -428,10 +428,10 @@ function AddUserDialog(props: {
   lookups: UserLookups;
 }) {
   const { open, onClose, onUserCreated, lookups } = props;
-  const [form, setForm] = React.useState<AddUserForm>(EMPTY_ADD_FORM);
-  const [errors, setErrors] = React.useState<AddUserErrors>({});
-  const [submitError, setSubmitError] = React.useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [form, setForm] = useState<AddUserForm>(EMPTY_ADD_FORM);
+  const [errors, setErrors] = useState<AddUserErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
@@ -449,13 +449,13 @@ function AddUserDialog(props: {
     label: organism.name || `ID ${organism.id}`,
   }));
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (lookups.zones.length === 0) return;
     const [zoneId] = lookups.zones[0];
     setForm((prev) => (prev.sigintZoneId === null ? { ...prev, sigintZoneId: zoneId } : prev));
   }, [lookups.zones]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open || !DEBUG_USERS_NEO) return;
     debugLog('add:options', {
       zonesStatus: lookups.zonesStatus,
@@ -477,7 +477,7 @@ function AddUserDialog(props: {
     lookups.organisms,
   ]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (open) return;
     setForm(EMPTY_ADD_FORM);
     setErrors({});
@@ -654,10 +654,10 @@ function EditUserDialog(props: {
   lookups: UserLookups;
 }) {
   const { open, login, onClose, onUserUpdated, lookups } = props;
-  const [form, setForm] = React.useState<EditUserForm | null>(null);
-  const [errors, setErrors] = React.useState<EditUserErrors>({});
-  const [submitError, setSubmitError] = React.useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [form, setForm] = useState<EditUserForm | null>(null);
+  const [errors, setErrors] = useState<EditUserErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
@@ -674,7 +674,7 @@ function EditUserDialog(props: {
     label: organism.name || `ID ${organism.id}`,
   }));
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open || !login) {
       setForm(null);
       setErrors({});
@@ -697,7 +697,7 @@ function EditUserDialog(props: {
     setIsSubmitting(false);
   }, [open, login]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open || !DEBUG_USERS_NEO || !form) return;
     debugLog('edit:options', {
       zonesStatus: lookups.zonesStatus,
@@ -982,7 +982,7 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -990,17 +990,17 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
 }
 
 function AdminUsersNeoPageBody() {
-  const [logins, setLogins] = React.useState<Login[]>([]);
-  const [status, setStatus] = React.useState<LoadingStatus>('idle');
-  const [error, setError] = React.useState<string | null>(null);
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [editingLogin, setEditingLogin] = React.useState<Login | null>(null);
-  const [zones, setZones] = React.useState<ZoneEntry[]>([]);
-  const [organisms, setOrganisms] = React.useState<Organism[]>([]);
-  const [zonesStatus, setZonesStatus] = React.useState<LoadingStatus>('idle');
-  const [zonesError, setZonesError] = React.useState<string | null>(null);
-  const [organismsStatus, setOrganismsStatus] = React.useState<LoadingStatus>('idle');
-  const [organismsError, setOrganismsError] = React.useState<string | null>(null);
+  const [logins, setLogins] = useState<Login[]>([]);
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingLogin, setEditingLogin] = useState<Login | null>(null);
+  const [zones, setZones] = useState<ZoneEntry[]>([]);
+  const [organisms, setOrganisms] = useState<Organism[]>([]);
+  const [zonesStatus, setZonesStatus] = useState<LoadingStatus>('idle');
+  const [zonesError, setZonesError] = useState<string | null>(null);
+  const [organismsStatus, setOrganismsStatus] = useState<LoadingStatus>('idle');
+  const [organismsError, setOrganismsError] = useState<string | null>(null);
 
   async function loadLogins() {
     debugLog('loadLogins:start');
@@ -1050,7 +1050,7 @@ function AdminUsersNeoPageBody() {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadLogins();
     void loadZones();
     void loadOrganisms();

@@ -3,6 +3,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
+import { Fragment } from 'react';
 import {
   Button,
   IconButton,
@@ -18,7 +19,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useCallback, useId, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
@@ -55,22 +56,22 @@ export function AnalysisSummaryTableCard({
   rows,
   unitsMap,
 }: Props) {
-  const headingId = React.useId().replace(/:/g, '-');
-  const [editingKey, setEditingKey] = React.useState<string | null>(null);
-  const [editingValue, setEditingValue] = React.useState('');
-  const [savingKey, setSavingKey] = React.useState<string | null>(null);
+  const headingId = useId().replace(/:/g, '-');
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
-  const startEdit = React.useCallback((freq: string, unit: string) => {
+  const startEdit = useCallback((freq: string, unit: string) => {
     setEditingKey(`${freq}::${unit}`);
     setEditingValue(unit);
   }, []);
 
-  const stopEdit = React.useCallback(() => {
+  const stopEdit = useCallback(() => {
     setEditingKey(null);
     setEditingValue('');
   }, []);
 
-  const saveEdit = React.useCallback(
+  const saveEdit = useCallback(
     async (freq: string, unit: string) => {
       const nextValue = editingValue.trim();
       if (!nextValue || nextValue === unit) {
@@ -201,7 +202,7 @@ export function AnalysisSummaryTableCard({
                                   <span>{chip}</span>
                                 </Tooltip>
                               ) : (
-                                <React.Fragment key={`${row.freq}-${callsign}`}>{chip}</React.Fragment>
+                                <Fragment key={`${row.freq}-${callsign}`}>{chip}</Fragment>
                               );
                             })}
                       </Stack>

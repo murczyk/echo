@@ -1,4 +1,4 @@
-import React from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
@@ -19,13 +19,13 @@ type Props = {
 
 export function EditCallsignDialog({ open, form, units, sources, submitting, error, onClose, onChange, onSave }: Props) {
   const titleId = 'callsigns-edit-dialog-title';
-  const latestFormRef = React.useRef<CallsignEditForm | null>(form);
+  const latestFormRef = useRef<CallsignEditForm | null>(form);
 
-  React.useEffect(() => {
+  useEffect(() => {
     latestFormRef.current = form;
   }, [form]);
 
-  const handleFormChange = React.useCallback(
+  const handleFormChange = useCallback(
     (next: CallsignEditForm) => {
       latestFormRef.current = next;
       onChange(next);
@@ -33,7 +33,7 @@ export function EditCallsignDialog({ open, form, units, sources, submitting, err
     [onChange],
   );
 
-  const handleCallsignAdditionalSourceIdsChange = React.useCallback(
+  const handleCallsignAdditionalSourceIdsChange = useCallback(
     (callsignAdditionalSourceIds: number[]) => {
       const current = latestFormRef.current;
       if (!current) return;

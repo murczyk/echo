@@ -1,5 +1,5 @@
 import { Alert, Box, Button, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
-import React from 'react';
+import { useEffect, useState } from 'react';
 
 import type { InboxMessage, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
@@ -62,12 +62,12 @@ export function AnalysisMessagesPane({
   profiles,
   tagsMap,
 }: Props) {
-  const [commentDraft, setCommentDraft] = React.useState('');
-  const [commentMessage, setCommentMessage] = React.useState<{ id: number; message: InboxMessage } | null>(null);
-  const [copiedFeedbackId, setCopiedFeedbackId] = React.useState<string | null>(copiedFeedbackIdProp);
-  const [deleteMessageId, setDeleteMessageId] = React.useState<number | null>(null);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [commentMessage, setCommentMessage] = useState<{ id: number; message: InboxMessage } | null>(null);
+  const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
+  const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setCopiedFeedbackId(copiedFeedbackIdProp);
   }, [copiedFeedbackIdProp]);
 

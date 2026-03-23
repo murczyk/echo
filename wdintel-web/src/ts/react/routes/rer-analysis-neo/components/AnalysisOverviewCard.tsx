@@ -1,5 +1,5 @@
 import { Divider, Paper, Stack, Typography } from '@mui/material';
-import React from 'react';
+import { useId } from 'react';
 
 import type { CountStatsRsp } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
@@ -9,7 +9,7 @@ type Props = {
 };
 
 export function AnalysisOverviewCard({ counts }: Props) {
-  const headingId = React.useId().replace(/:/g, '-');
+  const headingId = useId().replace(/:/g, '-');
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>

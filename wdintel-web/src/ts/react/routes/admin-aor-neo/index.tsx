@@ -5,7 +5,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { Alert, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputAdornment, MenuItem, OutlinedInput, Select, SelectChangeEvent, Stack, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
@@ -123,7 +123,7 @@ function buildAorLoadingRows(): AorRow[] {
 }
 
 function useAorColumns(): MRT_ColumnDef<AorRow>[] {
-  return React.useMemo(
+  return useMemo(
     () => [
       {
         header: 'Назва',
@@ -304,7 +304,7 @@ function AorTable(props: AorTableProps) {
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -312,11 +312,11 @@ function AorTable(props: AorTableProps) {
 }
 
 function AdminAorNeoPageBody() {
-  const [aors, setAors] = React.useState<AorRow[]>([]);
-  const [loadStatus, setLoadStatus] = React.useState<LoadingStatus>('idle');
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [availableLocationConfigs, setAvailableLocationConfigs] = React.useState<string[]>([]);
-  const [locationConfigDialog, setLocationConfigDialog] = React.useState<LocationConfigDialogState | null>(null);
+  const [aors, setAors] = useState<AorRow[]>([]);
+  const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [availableLocationConfigs, setAvailableLocationConfigs] = useState<string[]>([]);
+  const [locationConfigDialog, setLocationConfigDialog] = useState<LocationConfigDialogState | null>(null);
 
   async function loadAorPage() {
     setLoadStatus('loading');
@@ -335,7 +335,7 @@ function AdminAorNeoPageBody() {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     void loadAorPage();
   }, []);
 

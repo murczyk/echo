@@ -1,5 +1,5 @@
 import { Button, CircularProgress, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
-import React from 'react';
+import { useEffect, useId } from 'react';
 
 import type { NetJsonGraphAndMeta } from '../../../../../Bindings';
 
@@ -51,11 +51,11 @@ function renderGraph(elemId: string, graphDataAndMeta: NetJsonGraphAndMeta) {
 }
 
 export function AnalysisCallsignGraphCard({ graph, loading, nolimit, onLoad, onToggleNolimit }: Props) {
-  const graphId = React.useId().replace(/:/g, '-');
+  const graphId = useId().replace(/:/g, '-');
   const elementId = `callsign-graph-div-${graphId}`;
   const headingId = `${elementId}-heading`;
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!graph) return;
     let active = true;
     void loadNetjsonScript().then(() => {

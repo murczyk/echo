@@ -1,5 +1,5 @@
 import { Paper, Stack, Typography } from '@mui/material';
-import React from 'react';
+import { useCallback, useId } from 'react';
 
 import type { NewCallsignsRes } from '../../../../../Bindings';
 
@@ -8,8 +8,8 @@ type Props = {
 };
 
 export function AnalysisNewCallsignsCard({ newCallsigns }: Props) {
-  const headingId = React.useId().replace(/:/g, '-');
-  const renderList = React.useCallback((items: string[] | null | undefined) => ((items ?? []).join(', ') || 'немає'), []);
+  const headingId = useId().replace(/:/g, '-');
+  const renderList = useCallback((items: string[] | null | undefined) => ((items ?? []).join(', ') || 'немає'), []);
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>

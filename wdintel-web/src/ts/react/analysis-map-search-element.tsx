@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { createRoot, Root } from 'react-dom/client';
 
 import { MapSearchInput } from './components/MapSearchInput';

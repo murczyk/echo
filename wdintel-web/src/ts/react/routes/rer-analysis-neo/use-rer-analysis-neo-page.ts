@@ -1,4 +1,4 @@
-import React from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { isUnauthorizedError } from '../../services/api/client';
 import {
@@ -19,14 +19,14 @@ function initState(): AnalysisQueryState {
 }
 
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
-  const [queryState, setQueryState] = React.useState<AnalysisQueryState>(initState);
-  const [centerTab, setCenterTab] = React.useState<'messages' | 'map'>('messages');
-  const [error, setError] = React.useState<string | null>(null);
-  const [includeOnlyNewFreqs, setIncludeOnlyNewFreqsState] = React.useState(false);
-  const [newestFirst, setNewestFirst] = React.useState(true);
-  const setPageError = React.useCallback((message: string) => setError(message || null), []);
+  const [queryState, setQueryState] = useState<AnalysisQueryState>(initState);
+  const [centerTab, setCenterTab] = useState<'messages' | 'map'>('messages');
+  const [error, setError] = useState<string | null>(null);
+  const [includeOnlyNewFreqs, setIncludeOnlyNewFreqsState] = useState(false);
+  const [newestFirst, setNewestFirst] = useState(true);
+  const setPageError = useCallback((message: string) => setError(message || null), []);
 
-  const handleUnauthorized = React.useCallback((errorValue: unknown) => {
+  const handleUnauthorized = useCallback((errorValue: unknown) => {
     if (isUnauthorizedError(errorValue)) {
       window.location.assign('/login');
       return true;
@@ -66,16 +66,16 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     onUpdateLocalMessage: data.onUpdateLocalMessage,
   });
 
-  const validationError = React.useMemo(
+  const validationError = useMemo(
     () => (buildAnalysisReq(queryState) == null ? 'Перевірте дату та час. Роки раніше 1000 не допускаються.' : null),
     [queryState],
   );
 
-  const updateQueryState = React.useCallback((patch: Partial<AnalysisQueryState>) => {
+  const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
     setQueryState((current) => ({ ...current, ...patch }));
   }, []);
 
-  const toggleUnitFromMap = React.useCallback((unitName: string | null) => {
+  const toggleUnitFromMap = useCallback((unitName: string | null) => {
     if (!unitName) return;
     setQueryState((current) => ({
       ...current,
@@ -85,7 +85,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     }));
   }, []);
 
-  const resetFilters = React.useCallback(() => {
+  const resetFilters = useCallback(() => {
     const nextState = createResetQueryState();
     setQueryState(nextState);
     setIncludeOnlyNewFreqsState(false);
@@ -93,7 +93,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     pushQueryStateToUrl(nextState);
   }, []);
 
-  const setIncludeOnlyNewFreqs = React.useCallback(
+  const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
       setIncludeOnlyNewFreqsState(value);
       setQueryState((current) => ({
@@ -104,16 +104,16 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.options.newFreqs],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!includeOnlyNewFreqs) return;
     setQueryState((current) => ({ ...current, freqsSelected: data.options.newFreqs }));
   }, [data.options.newFreqs, includeOnlyNewFreqs]);
 
-  const selectOnlyFreq = React.useCallback((freq: string) => {
+  const selectOnlyFreq = useCallback((freq: string) => {
     setQueryState((current) => ({ ...current, freqsSelected: [freq] }));
   }, []);
 
-  const showFreqOnMap = React.useCallback((freq: string) => {
+  const showFreqOnMap = useCallback((freq: string) => {
     setCenterTab('map');
     setQueryState((current) => ({ ...current, freqsSelected: [freq] }));
   }, []);

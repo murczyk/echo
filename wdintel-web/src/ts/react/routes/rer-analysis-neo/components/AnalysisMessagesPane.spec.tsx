@@ -2,27 +2,28 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
-import React from 'react';
+import { act } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage } from '../../../../../Bindings';
 
 vi.mock('@mui/material', () => ({
-  Alert: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Box: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Button: (props: { children: React.ReactNode; onClick?: () => void; type?: 'button' | 'submit' | 'reset' }) => (
+  Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Button: (props: { children: ReactNode; onClick?: () => void; type?: 'button' | 'submit' | 'reset' }) => (
     <button type={props.type ?? 'button'} onClick={props.onClick}>
       {props.children}
     </button>
   ),
-  FormControlLabel: (props: { control: React.ReactNode; label: React.ReactNode }) => (
+  FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
     <label>
       {props.control}
       <span>{props.label}</span>
     </label>
   ),
-  Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
     <input
       type="checkbox"
@@ -30,7 +31,7 @@ vi.mock('@mui/material', () => ({
       onChange={(event) => props.onChange?.(event.nativeEvent, event.currentTarget.checked)}
     />
   ),
-  Typography: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock('../../rer-duty-neo/MessageCard', () => ({
@@ -111,7 +112,7 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 
-function buildProps(overrides: Partial<React.ComponentProps<typeof AnalysisMessagesPane>> = {}): React.ComponentProps<typeof AnalysisMessagesPane> {
+function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPane>> = {}): ComponentProps<typeof AnalysisMessagesPane> {
   return {
     authUserName: 'tester',
     copiedFeedbackId: null,
@@ -142,7 +143,7 @@ function buildProps(overrides: Partial<React.ComponentProps<typeof AnalysisMessa
   };
 }
 
-async function renderComponent(props: React.ComponentProps<typeof AnalysisMessagesPane>): Promise<Rendered> {
+async function renderComponent(props: ComponentProps<typeof AnalysisMessagesPane>): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);

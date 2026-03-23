@@ -16,7 +16,7 @@ import type {
   Tag,
   Unit,
 } from '../../../../Bindings';
-import React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   bookmarkAdd,
@@ -162,46 +162,46 @@ const emptyNewCallsigns: NewCallsignsRes = {
 };
 
 export function useAnalysisData({ newestFirst, onError, onUnauthorized, queryState }: Props): Result {
-  const [loading, setLoading] = React.useState(false);
-  const [counts, setCounts] = React.useState<CountStatsRsp | null>(null);
-  const [aorEntries, setAorEntries] = React.useState<AnalysisAorEntry[]>([]);
-  const [messages, setMessages] = React.useState<Array<[number, InboxMessage]>>([]);
-  const [summaryRows, setSummaryRows] = React.useState<SummaryTableFreqRow[]>([]);
-  const [newCallsigns, setNewCallsigns] = React.useState<NewCallsignsRes>(emptyNewCallsigns);
-  const [noMoreToLoad, setNoMoreToLoad] = React.useState(false);
-  const [nolimitShown, setNolimitShown] = React.useState(false);
-  const [options, setOptions] = React.useState<AnalysisFilterOptions>(emptyOptions);
-  const [topFreqs, setTopFreqs] = React.useState<AnalysisCountItem[]>([]);
-  const [topCallsigns, setTopCallsigns] = React.useState<AnalysisCountItem[]>([]);
-  const [topUnits, setTopUnits] = React.useState<AnalysisCountItem[]>([]);
-  const [topLocations, setTopLocations] = React.useState<AnalysisCountItem[]>([]);
-  const [mapLoading, setMapLoading] = React.useState(false);
-  const [mapDateRange, setMapDateRange] = React.useState({ startDate: 0, endDate: 0 });
-  const [mapPoints, setMapPoints] = React.useState<FreqDetailedPoint[]>([]);
-  const [mapNetworkUnits, setMapNetworkUnits] = React.useState<NetworkUnit[]>([]);
-  const [mapOpenMessages, setMapOpenMessages] = React.useState<Array<[number, InboxMessage]>>([]);
-  const [correlatedFreqs, setCorrelatedFreqs] = React.useState<CorrelatedFreq[]>([]);
-  const [correlatedFreqsLoading, setCorrelatedFreqsLoading] = React.useState(false);
-  const [callsignGraph, setCallsignGraph] = React.useState<NetJsonGraphAndMeta | null>(null);
-  const [callsignGraphLoading, setCallsignGraphLoading] = React.useState(false);
-  const [callsignGraphNolimit, setCallsignGraphNolimit] = React.useState(false);
-  const [groupsActivity, setGroupsActivity] = React.useState<FreqDailyActivityCount | null>(null);
-  const [groupsActivityLoading, setGroupsActivityLoading] = React.useState(false);
-  const [groupsActivityPeriod, setGroupsActivityPeriod] = React.useState<AnalysisGroupsActivityPeriod>('selected');
-  const [profiles, setProfiles] = React.useState<Record<string, SignalProfileEntry | null>>({});
-  const [groupInfos, setGroupInfos] = React.useState<Record<string, SignalGroupEntry>>({});
-  const [tagsMap, setTagsMap] = React.useState<Record<number, Tag>>({});
-  const [networkDisplayMap, setNetworkDisplayMap] = React.useState<Record<number, string>>({});
-  const [networks, setNetworks] = React.useState<Network[]>([]);
-  const [summaryCallsignsInfo, setSummaryCallsignsInfo] = React.useState<Record<string, CallsignInfoRes>>({});
-  const [unitsMap, setUnitsMap] = React.useState<Record<number, Unit>>({});
-  const optionsFreqsRef = React.useRef<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [counts, setCounts] = useState<CountStatsRsp | null>(null);
+  const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
+  const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [summaryRows, setSummaryRows] = useState<SummaryTableFreqRow[]>([]);
+  const [newCallsigns, setNewCallsigns] = useState<NewCallsignsRes>(emptyNewCallsigns);
+  const [noMoreToLoad, setNoMoreToLoad] = useState(false);
+  const [nolimitShown, setNolimitShown] = useState(false);
+  const [options, setOptions] = useState<AnalysisFilterOptions>(emptyOptions);
+  const [topFreqs, setTopFreqs] = useState<AnalysisCountItem[]>([]);
+  const [topCallsigns, setTopCallsigns] = useState<AnalysisCountItem[]>([]);
+  const [topUnits, setTopUnits] = useState<AnalysisCountItem[]>([]);
+  const [topLocations, setTopLocations] = useState<AnalysisCountItem[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapDateRange, setMapDateRange] = useState({ startDate: 0, endDate: 0 });
+  const [mapPoints, setMapPoints] = useState<FreqDetailedPoint[]>([]);
+  const [mapNetworkUnits, setMapNetworkUnits] = useState<NetworkUnit[]>([]);
+  const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [correlatedFreqs, setCorrelatedFreqs] = useState<CorrelatedFreq[]>([]);
+  const [correlatedFreqsLoading, setCorrelatedFreqsLoading] = useState(false);
+  const [callsignGraph, setCallsignGraph] = useState<NetJsonGraphAndMeta | null>(null);
+  const [callsignGraphLoading, setCallsignGraphLoading] = useState(false);
+  const [callsignGraphNolimit, setCallsignGraphNolimit] = useState(false);
+  const [groupsActivity, setGroupsActivity] = useState<FreqDailyActivityCount | null>(null);
+  const [groupsActivityLoading, setGroupsActivityLoading] = useState(false);
+  const [groupsActivityPeriod, setGroupsActivityPeriod] = useState<AnalysisGroupsActivityPeriod>('selected');
+  const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
+  const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
+  const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
+  const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
+  const [networks, setNetworks] = useState<Network[]>([]);
+  const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
+  const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
+  const optionsFreqsRef = useRef<string[]>([]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     optionsFreqsRef.current = options.freqs;
   }, [options.freqs]);
 
-  const patchMessages = React.useCallback(
+  const patchMessages = useCallback(
     (updater: (messageId: number, message: InboxMessage) => InboxMessage) => {
       const updateItems = (items: Array<[number, InboxMessage]>) =>
         items.map(([messageId, message]) => [messageId, updater(messageId, message)] as [number, InboxMessage]);
@@ -212,14 +212,14 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [],
   );
 
-  const onUpdateLocalMessage = React.useCallback(
+  const onUpdateLocalMessage = useCallback(
     (messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
       patchMessages((id, message) => (id === messageId ? updater(message) : message));
     },
     [patchMessages],
   );
 
-  const refreshMapDateRange = React.useCallback(
+  const refreshMapDateRange = useCallback(
     async (range: { startDate: number; endDate: number }) => {
       const inboxReq = buildInboxReq(queryState, options.freqs);
       if (inboxReq == null) {
@@ -253,7 +253,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [newestFirst, onError, onUnauthorized, options.freqs, queryState],
   );
 
-  const loadMessagesForMap = React.useCallback(
+  const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
       try {
         const nextMessages = await fetchMessagesByIds(messageIds);
@@ -267,7 +267,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [onError, onUnauthorized],
   );
 
-  const onToggleMessageBookmark = React.useCallback(
+  const onToggleMessageBookmark = useCallback(
     async (messageId: number, currentlyBookmarked: boolean) => {
       try {
         if (currentlyBookmarked) {
@@ -286,7 +286,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [onError, onUnauthorized, patchMessages],
   );
 
-  const onToggleMessageImportant = React.useCallback(
+  const onToggleMessageImportant = useCallback(
     async (messageId: number, currentlyImportant: boolean) => {
       try {
         if (currentlyImportant) {
@@ -305,7 +305,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [onError, onUnauthorized, patchMessages],
   );
 
-  const onSaveMessageComment = React.useCallback(
+  const onSaveMessageComment = useCallback(
     async (messageId: number, comment: string | null) => {
       try {
         await commentSave({ messageId, comment });
@@ -320,7 +320,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [onError, onUnauthorized, patchMessages],
   );
 
-  const onDeleteMessage = React.useCallback(
+  const onDeleteMessage = useCallback(
     async (messageId: number) => {
       try {
         await deleteMessage({ id: messageId });
@@ -335,7 +335,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [onError, onUnauthorized],
   );
 
-  const onToggleMessageTag = React.useCallback(
+  const onToggleMessageTag = useCallback(
     async (messageId: number, tagId: number) => {
       const sourceMessage =
         messages.find(([id]) => id === messageId)?.[1] ?? mapOpenMessages.find(([id]) => id === messageId)?.[1] ?? null;
@@ -385,7 +385,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [mapOpenMessages, messages, onError, onUnauthorized, patchMessages],
   );
 
-  const loadCorrelatedFreqs = React.useCallback(async () => {
+  const loadCorrelatedFreqs = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, options.freqs);
     if (analysisReq == null || queryState.freqsSelected.length === 0) {
       setCorrelatedFreqs([]);
@@ -405,7 +405,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [onError, onUnauthorized, options.freqs, queryState]);
 
-  const loadCallsignGraph = React.useCallback(async () => {
+  const loadCallsignGraph = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, options.freqs);
     if (analysisReq == null) {
       return;
@@ -427,11 +427,11 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [callsignGraphNolimit, onError, onUnauthorized, options.freqs, queryState]);
 
-  const toggleCallsignGraphNolimit = React.useCallback(() => {
+  const toggleCallsignGraphNolimit = useCallback(() => {
     setCallsignGraphNolimit((current) => !current);
   }, []);
 
-  const loadGroupsActivity = React.useCallback(async (period?: AnalysisGroupsActivityPeriod) => {
+  const loadGroupsActivity = useCallback(async (period?: AnalysisGroupsActivityPeriod) => {
     const analysisReq = buildAnalysisReq(queryState, options.freqs);
     const firstFreq = queryState.freqsSelected[0];
     if (analysisReq == null || !firstFreq) {
@@ -469,7 +469,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [groupsActivityPeriod, onError, onUnauthorized, options.freqs, queryState]);
 
-  const downloadSummaryXlsx = React.useCallback(async () => {
+  const downloadSummaryXlsx = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, options.freqs);
     if (analysisReq == null) {
       onError('Перевірте дату та час перед експортом.');
@@ -486,7 +486,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [onError, onUnauthorized, options.freqs, queryState]);
 
-  const downloadKmz = React.useCallback(async () => {
+  const downloadKmz = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, options.freqs);
     if (analysisReq == null) {
       onError('Перевірте дату та час перед експортом.');
@@ -503,7 +503,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [onError, onUnauthorized, options.freqs, queryState]);
 
-  const downloadGeojson = React.useCallback(async () => {
+  const downloadGeojson = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, options.freqs);
     if (analysisReq == null) {
       onError('Перевірте дату та час перед експортом.');
@@ -520,7 +520,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [onError, onUnauthorized, options.freqs, queryState]);
 
-  const renameSummaryUnit = React.useCallback(
+  const renameSummaryUnit = useCallback(
     async (freq: string, unit: string, unitNew: string) => {
       const analysisReq = buildAnalysisReq(queryState, options.freqs);
       if (analysisReq == null) {
@@ -557,7 +557,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [newestFirst, onError, onUnauthorized, options.freqs, queryState],
   );
 
-  const reload = React.useCallback(async () => {
+  const reload = useCallback(async () => {
     const allFrequencies = optionsFreqsRef.current;
     const analysisReq = buildAnalysisReq(queryState, allFrequencies);
     const inboxReq = buildInboxReq(queryState, allFrequencies);
@@ -702,7 +702,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [newestFirst, onError, onUnauthorized, queryState]);
 
-  const loadAllMessages = React.useCallback(async () => {
+  const loadAllMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, options.freqs);
     if (inboxReq == null) return;
 
@@ -721,7 +721,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [newestFirst, onError, onUnauthorized, options.freqs, queryState]);
 
-  const loadMoreMessages = React.useCallback(async () => {
+  const loadMoreMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, options.freqs);
     const lastMessage = messages.at(-1);
     if (inboxReq == null || lastMessage == null) return;
@@ -746,11 +746,11 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     }
   }, [messages, newestFirst, onError, onUnauthorized, options.freqs, queryState]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     void reload();
   }, [reload]);
 
-  const mapAttrs = React.useMemo(
+  const mapAttrs = useMemo(
     () =>
       buildMapAttrs({
         dateRange: mapDateRange,

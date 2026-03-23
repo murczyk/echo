@@ -1,5 +1,4 @@
 import { Box, Stack } from '@mui/material';
-import React from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';

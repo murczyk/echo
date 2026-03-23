@@ -1,7 +1,7 @@
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, CircularProgress, Stack } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { TagAdmin } from '../../../../Bindings';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -79,7 +79,7 @@ function buildTagLoadingRows(): TagAdmin[] {
 }
 
 function useTagColumns(): MRT_ColumnDef<TagAdmin>[] {
-  return React.useMemo(
+  return useMemo(
     () => [
       {
         header: 'ID',
@@ -212,7 +212,7 @@ function TagsTable(props: { data: TagAdmin[]; loading: boolean }) {
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -220,9 +220,9 @@ function TagsTable(props: { data: TagAdmin[]; loading: boolean }) {
 }
 
 function AdminTagsNeoPageBody() {
-  const [tags, setTags] = React.useState<TagAdmin[]>([]);
-  const [status, setStatus] = React.useState<LoadingStatus>('idle');
-  const [error, setError] = React.useState<string | null>(null);
+  const [tags, setTags] = useState<TagAdmin[]>([]);
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
 
   async function loadTags() {
     setStatus('loading');
@@ -237,7 +237,7 @@ function AdminTagsNeoPageBody() {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadTags();
   }, []);
 

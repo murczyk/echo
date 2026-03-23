@@ -1,6 +1,5 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { Button, Stack } from '@mui/material';
-import React from 'react';
 
 type Props = {
   onOpenReport: () => void;

@@ -1,5 +1,5 @@
 import { Button, CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
-import React from 'react';
+import { createElement, useEffect, useId, useRef } from 'react';
 
 import type { FreqDailyActivityCount } from '../../../../../Bindings';
 import type { AnalysisGroupsActivityPeriod } from '../types';
@@ -25,10 +25,10 @@ function periodLabel(period: AnalysisGroupsActivityPeriod): string {
 }
 
 export function AnalysisGroupsActivityCard({ groupsActivity, loading, period, onLoad }: Props) {
-  const hostRef = React.useRef<HTMLElement | null>(null);
-  const headingId = React.useId().replace(/:/g, '-');
+  const hostRef = useRef<HTMLElement | null>(null);
+  const headingId = useId().replace(/:/g, '-');
 
-  React.useEffect(() => {
+  useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     host.setAttribute('style', 'display:block;width:100%;height:250px;');
@@ -67,7 +67,7 @@ export function AnalysisGroupsActivityCard({ groupsActivity, loading, period, on
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
         Для графіка використовується перша обрана частота.
       </Typography>
-      {React.createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })}
+      {createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })}
     </Paper>
   );
 }

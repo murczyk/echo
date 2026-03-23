@@ -1,5 +1,4 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material';
-import React from 'react';
 
 type DeleteConfirmDialogProps = {
   open: boolean;

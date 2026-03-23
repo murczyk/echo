@@ -1,12 +1,12 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Stack, Typography } from '@mui/material';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 import { Button } from './mui-customized/button';
 
 type Props = {
-  title: React.ReactNode;
-  subtitle?: React.ReactNode;
+  title: ReactNode;
+  subtitle?: ReactNode;
   onBack: () => void;
   backLabel?: string;
 };

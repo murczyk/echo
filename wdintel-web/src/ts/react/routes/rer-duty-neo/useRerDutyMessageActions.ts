@@ -1,4 +1,5 @@
-import React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type {
   InboxMessage,
@@ -29,8 +30,8 @@ import type { MessageFeedState } from './utils';
 
 export type MessageActionsDeps = {
   messageFeeds: MessageFeedState[];
-  setMessageFeeds: React.Dispatch<React.SetStateAction<MessageFeedState[]>>;
-  setError: (value: React.SetStateAction<string | null>) => void;
+  setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
+  setError: (value: SetStateAction<string | null>) => void;
   applyFilter: (feedId: string, f: RerDutyFeedFilterState) => void;
   loadFeedInitialMessages: (
     feedId: string,
@@ -41,19 +42,19 @@ export type MessageActionsDeps = {
     opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
   ) => Promise<void>;
   buildReqForFeed: (feed: MessageFeedState, opts: { sinceDateInclusiveMs?: number; nolimit?: boolean }) => InboxMessagesReq;
-  columnRefsRef: React.MutableRefObject<Record<string, FeedColumnHandle | null>>;
+  columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
   showArrowResult: (feedId: string, message: string) => void;
-  setWatchModeByFeedId: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-  setLoadingNewerFeedId: React.Dispatch<React.SetStateAction<string | null>>;
+  setWatchModeByFeedId: Dispatch<SetStateAction<Record<string, boolean>>>;
+  setLoadingNewerFeedId: Dispatch<SetStateAction<string | null>>;
   authUserName: string | null;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
   savedFilters: SavedFilterDuty[];
-  setSavedFilters: React.Dispatch<React.SetStateAction<SavedFilterDuty[]>>;
+  setSavedFilters: Dispatch<SetStateAction<SavedFilterDuty[]>>;
   selectedSavedId: number | null;
-  setSelectedSavedId: React.Dispatch<React.SetStateAction<number | null>>;
+  setSelectedSavedId: Dispatch<SetStateAction<number | null>>;
   saveFilterName: string;
-  setSaveFilterName: React.Dispatch<React.SetStateAction<string>>;
+  setSaveFilterName: Dispatch<SetStateAction<string>>;
 };
 
 export function useRerDutyMessageActions(deps: MessageActionsDeps) {
@@ -80,21 +81,21 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     setSaveFilterName,
   } = deps;
 
-  const [deleteConfirmId, setDeleteConfirmId] = React.useState<number | null>(null);
-  const [deleteConfirmFeedId, setDeleteConfirmFeedId] = React.useState<string | null>(null);
-  const [commentMessageId, setCommentMessageId] = React.useState<number | null>(null);
-  const [commentFeedId, setCommentFeedId] = React.useState<string | null>(null);
-  const [commentText, setCommentText] = React.useState('');
-  const [copiedFeedbackId, setCopiedFeedbackId] = React.useState<string | null>(null);
-  const copiedFeedbackTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteConfirmFeedId, setDeleteConfirmFeedId] = useState<string | null>(null);
+  const [commentMessageId, setCommentMessageId] = useState<number | null>(null);
+  const [commentFeedId, setCommentFeedId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null);
+  const copiedFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
     };
   }, []);
 
-  const handleSaveFilter = React.useCallback(
+  const handleSaveFilter = useCallback(
     async (feedId: string) => {
       if (!saveFilterName.trim()) return;
       const w = messageFeeds.find((x) => x.id === feedId);
@@ -110,7 +111,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [messageFeeds, saveFilterName, setSavedFilters, setSaveFilterName, setError],
   );
 
-  const handleApplySavedFilter = React.useCallback(
+  const handleApplySavedFilter = useCallback(
     (feedId: string, saved: SavedFilterDuty) => {
       setSelectedSavedId(saved.id);
       applyFilter(feedId, normalizeFeed(saved.req as unknown as Record<string, unknown>));
@@ -118,7 +119,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [applyFilter, setSelectedSavedId],
   );
 
-  const handleDeleteSavedFilter = React.useCallback(
+  const handleDeleteSavedFilter = useCallback(
     async (id: number) => {
       try {
         await savedFilterDelete(id);
@@ -131,7 +132,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [selectedSavedId, setSavedFilters, setSelectedSavedId, setError],
   );
 
-  const handleMessageBookmark = React.useCallback(
+  const handleMessageBookmark = useCallback(
     async (feedId: string, id: number, currentlyBookmarked: boolean) => {
       try {
         if (currentlyBookmarked) await bookmarkRemove({ messageId: id });
@@ -155,7 +156,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [setMessageFeeds, setError],
   );
 
-  const handleMessageImportant = React.useCallback(
+  const handleMessageImportant = useCallback(
     async (feedId: string, id: number, currentlyImportant: boolean) => {
       try {
         if (currentlyImportant) await importantRemove({ messageId: id });
@@ -179,7 +180,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [setMessageFeeds, setError],
   );
 
-  const handleMessageCopy = React.useCallback((text: string, feedbackId: string) => {
+  const handleMessageCopy = useCallback((text: string, feedbackId: string) => {
     void copyTextToClipboard(text).catch((err) => {
       console.error('Failed to copy text to clipboard', err);
     });
@@ -191,7 +192,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     }, 1000);
   }, []);
 
-  const handleDeleteConfirm = React.useCallback(async () => {
+  const handleDeleteConfirm = useCallback(async () => {
     if (deleteConfirmId == null || deleteConfirmFeedId == null) return;
     try {
       await deleteMessage({ id: deleteConfirmId });
@@ -211,13 +212,13 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     setDeleteConfirmFeedId(null);
   }, [deleteConfirmId, deleteConfirmFeedId, setMessageFeeds, setError]);
 
-  const openCommentDialog = React.useCallback((msgId: number, feedId: string, currentComment: string | null) => {
+  const openCommentDialog = useCallback((msgId: number, feedId: string, currentComment: string | null) => {
     setCommentMessageId(msgId);
     setCommentFeedId(feedId);
     setCommentText(currentComment ?? '');
   }, []);
 
-  const handleCommentSave = React.useCallback(async () => {
+  const handleCommentSave = useCallback(async () => {
     if (commentMessageId == null || commentFeedId == null) return;
     const trimmed = commentText.trim() || null;
     try {
@@ -241,7 +242,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     }
   }, [commentMessageId, commentFeedId, commentText, setMessageFeeds, setError]);
 
-  const senderOptions = React.useMemo(() => {
+  const senderOptions = useMemo(() => {
     const next = Object.entries(profiles).map(([uuid, entry]) => ({
       id: uuid,
       label: profileLabel(uuid, entry),
@@ -250,14 +251,14 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     return next;
   }, [profiles]);
 
-  const senderOptionsStableRef = React.useRef(senderOptions);
+  const senderOptionsStableRef = useRef(senderOptions);
   const senderOptionsStable =
     senderOptionsStableRef.current.length === senderOptions.length &&
     senderOptionsStableRef.current.every((o, i) => o.id === senderOptions[i].id && o.label === senderOptions[i].label)
       ? senderOptionsStableRef.current
       : ((senderOptionsStableRef.current = senderOptions), senderOptions);
 
-  const tagIdsList = React.useMemo(
+  const tagIdsList = useMemo(
     () =>
       Object.keys(tagsMap)
         .map(Number)
@@ -266,7 +267,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [tagsMap],
   );
 
-  const handleToggleTag = React.useCallback(
+  const handleToggleTag = useCallback(
     async (feedId: string, msgId: number, tagId: number) => {
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w) return;
@@ -311,7 +312,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [messageFeeds, authUserName, setMessageFeeds, setError],
   );
 
-  const handleArrowClick = React.useCallback(
+  const handleArrowClick = useCallback(
     async (feedId: string) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
@@ -363,7 +364,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     ],
   );
 
-  const handleVisibleMessageIds = React.useCallback(
+  const handleVisibleMessageIds = useCallback(
     (feedId: string) => (ids: number[], opts?: { atBottom?: boolean }) => {
       if (ids.length === 0) return;
       setMessageFeeds((prev) =>

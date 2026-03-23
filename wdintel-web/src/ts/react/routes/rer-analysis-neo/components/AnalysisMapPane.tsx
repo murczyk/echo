@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import React from 'react';
+import { createElement, useEffect, useRef } from 'react';
 
 import type { AnalysisMapAttrs } from '../types';
 
@@ -12,9 +12,9 @@ type Props = {
 };
 
 export function AnalysisMapPane({ mapAttrs, search, onDateRangeChange, onLoadMessages, onUnitClick }: Props) {
-  const hostRef = React.useRef<HTMLElement | null>(null);
+  const hostRef = useRef<HTMLElement | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
@@ -45,7 +45,7 @@ export function AnalysisMapPane({ mapAttrs, search, onDateRangeChange, onLoadMes
       aria-label="Мапа аналізу"
       sx={{ flex: 1, minHeight: 0 }}
     >
-      {React.createElement('analysis-map', {
+      {createElement('analysis-map', {
         ref: hostRef,
         class: 'block h-full',
         style: { display: 'block', width: '100%', height: '100%' },

@@ -1,7 +1,7 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
 import { Alert, Backdrop, Box, CircularProgress, Paper, Skeleton, Stack, Tab, Tabs } from '@mui/material';
-import React from 'react';
+import { useId } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { PowerChip } from '../../components/PowerChip';
@@ -19,7 +19,7 @@ export type RerAnalysisNeoPageProps = {
 
 export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPageProps = {}) {
   const page = useRerAnalysisNeoPage(authUserName);
-  const centerTabsId = React.useId().replace(/:/g, '-');
+  const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
   const mapTabId = `${centerTabsId}-map-tab`;
   const messagesPanelId = `${centerTabsId}-messages-panel`;
