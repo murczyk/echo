@@ -228,6 +228,7 @@ export function getShortStateIdFromUrl(): string | null {
 export function pushStateToUrl(state: RerDutyState) {
   const q = new URLSearchParams(window.location.search);
   q.set('state', encodeURIComponent(JSON.stringify(state)));
+  q.delete('state-short');
   const url = `${window.location.pathname}?${q.toString()}`;
   window.history.replaceState({}, '', url);
 }

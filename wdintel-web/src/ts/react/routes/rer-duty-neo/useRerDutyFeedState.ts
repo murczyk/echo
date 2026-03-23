@@ -96,7 +96,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     id: null,
     hash: null,
   });
-  const shortStateRequestRef = React.useRef<{ requestId: number; hash: string | null }>({
+  const shortStateRequestRef = useRef<{ requestId: number; hash: string | null }>({
     requestId: 0,
     hash: null,
   });
@@ -605,6 +605,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           pushShortStateToUrl(rsp.id);
         })
         .catch((e) => {
+          if (shortStateRequestRef.current.requestId !== requestId) return;
+          if (shortStateRequestRef.current.hash !== stateHash) return;
           setError(e instanceof Error ? e.message : String(e));
           pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
         });
