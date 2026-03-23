@@ -1997,6 +1997,10 @@ fn network_stats_base_select() -> Select<signal_message::Entity> {
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
         .select_only()
         .column(signal_message::Column::Id)
         .column(signal_message::Column::CreatedAt)
@@ -2010,6 +2014,7 @@ fn network_stats_base_select() -> Select<signal_message::Entity> {
             "network_id",
         )
         .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(signal_message_group::Column::GroupMasterKey)
