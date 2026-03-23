@@ -68,6 +68,7 @@ type AuthorFilterOptions = {
 };
 
 type PalitraTableToolbarProps = {
+  loading: boolean;
   denseTable: boolean;
   authorFilter: string;
   authorFilterOptions: AuthorFilterOptions;
@@ -159,6 +160,7 @@ function useDebouncedSearchQuery(value: string, delayMs: number): string {
 }
 
 function PalitraTableToolbar({
+  loading,
   denseTable,
   authorFilter,
   authorFilterOptions,
@@ -186,13 +188,14 @@ function PalitraTableToolbar({
       }}
     >
       <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', flex: '1 1 auto', minWidth: 0 }}>
-        <FormControl size="small" sx={{ minWidth: 220 }}>
+        <FormControl size="small" sx={{ minWidth: 220 }} disabled={loading}>
           <InputLabel id="palitra-author-filter-label">Автор</InputLabel>
           <Select
             labelId="palitra-author-filter-label"
             label="Автор"
             value={authorFilter}
             onChange={(event) => onAuthorFilterChange(event.target.value)}
+            disabled={loading}
           >
             <MenuItem value={allAuthorsFilterValue}>Усі</MenuItem>
             {authorFilterOptions.hasEmptyAuthor ? <MenuItem value={emptyAuthorFilterValue}>—</MenuItem> : null}
@@ -214,6 +217,7 @@ function PalitraTableToolbar({
             event.preventDefault();
             onSearchInputChange('');
           }}
+          disabled={loading}
           sx={{ minWidth: 260, flex: '1 1 320px' }}
           InputProps={{
             endAdornment: searchInput !== '' ? (
@@ -231,6 +235,7 @@ function PalitraTableToolbar({
                       aria-label="Очистити пошук"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => onSearchInputChange('')}
+                      disabled={loading}
                     >
                       <CloseIcon fontSize="small" />
                     </IconButton>
@@ -245,16 +250,16 @@ function PalitraTableToolbar({
 
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexShrink: 0 }}>
         {hasActiveFilters ? (
-          <Button size="small" onClick={onResetFilters} sx={{ px: 1.5 }}>
+          <Button size="small" onClick={onResetFilters} sx={{ px: 1.5 }} disabled={loading}>
             Очистити фільтри
           </Button>
         ) : null}
         {selectedCount > 0 ? (
-          <Button size="small" onClick={onClearSelectedPalitras} sx={{ px: 1.5 }}>
+          <Button size="small" onClick={onClearSelectedPalitras} sx={{ px: 1.5 }} disabled={loading}>
             Очистити вибір
           </Button>
         ) : null}
-        <TableDensityToggleButton dense={denseTable} onToggle={() => onDenseTableChange(!denseTable)} />
+        <TableDensityToggleButton dense={denseTable} onToggle={() => onDenseTableChange(!denseTable)} disabled={loading} />
       </Box>
     </Box>
   );
@@ -429,6 +434,7 @@ export function PalitraTable({
       <>
         <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
           <PalitraTableToolbar
+            loading={loading}
             denseTable={denseTable}
             authorFilter={authorFilter}
             authorFilterOptions={authorFilterOptions}
@@ -468,7 +474,7 @@ export function PalitraTable({
                     slotProps={{ input: { 'aria-label': 'Вибрати всі палітри' } }}
                     checked={allSelectableChecked}
                     indeterminate={hasPartialSelectableChecked}
-                    disabled={selectablePalitraIds.length === 0}
+                    disabled={loading || selectablePalitraIds.length === 0}
                     onChange={(_, checked) => onSetAllPalitrasSelected(selectablePalitraIds, checked)}
                   />
                 </TableCell>
@@ -649,6 +655,9 @@ export function PalitraTable({
             rowsPerPage={rowsPerPage}
             onRowsPerPageChange={handleRowsPerPageChange}
             rowsPerPageOptions={[10, 25, 50, { label: 'Всі', value: -1 }]}
+            backIconButtonProps={{ disabled: loading }}
+            nextIconButtonProps={{ disabled: loading }}
+            SelectProps={{ disabled: loading }}
             labelRowsPerPage="Рядків на сторінці:"
             labelDisplayedRows={({ from, to, count }) => `${from}–${to} з ${count}`}
             sx={{
