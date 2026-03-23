@@ -236,16 +236,20 @@ where
         .join_as(
             JoinType::LeftJoin,
             signal_message_group::Relation::SignalGroup.def(),
-            group_alias,
+            group_alias.clone(),
         )
         .join_as(
             JoinType::LeftJoin,
-            signal_group::Relation::SignalGroupAor.def(),
-            group_aor_alias,
+            signal_group::Relation::SignalGroupAor
+                .def()
+                .from_alias(group_alias.clone()),
+            group_aor_alias.clone(),
         )
         .join_as(
             JoinType::LeftJoin,
-            signal_group_aor::Relation::AreaOfResponsibility.def(),
+            signal_group_aor::Relation::AreaOfResponsibility
+                .def()
+                .from_alias(group_aor_alias.clone()),
             aor_alias.clone(),
         );
 
