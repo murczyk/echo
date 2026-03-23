@@ -4,6 +4,7 @@ import type {
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
+  Tag,
 } from '../../../../Bindings';
 import type { Network, Unit } from '../../../../Bindings';
 import { emptyArrToNull } from '../../utils/misc';
@@ -331,21 +332,48 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
   return showMap ? `${base}&showMap=true` : base;
 }
 
+/** Trim, drop empty, dedupe by trimmed string (first occurrence wins). Used for map search etalon lists. */
+export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of etalons) {
+    const t = String(raw).trim();
+    if (t === '' || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
 export function buildAnalysisMapHrefWithSearch(etalons: string | string[]): string {
   const searchStr = Array.isArray(etalons)
-    ? [...new Set(etalons)].filter(Boolean).join(',')
-    : etalons;
-  if (!searchStr.trim()) return '/rer-analysis?showMap=true';
+    ? uniquePointEtalonsForMapSearch(etalons).join(',')
+    : String(etalons).trim();
+  if (!searchStr) return '/rer-analysis?showMap=true';
   const stateEnc = encodeURIComponent(JSON.stringify({ search: searchStr }));
   return `/rer-analysis?state=${stateEnc}&showMap=true`;
 }
 
-/** Collect all point etalons from a message (from pointTokens or textMarked). Used so "open with map" and inline point links fill the map search with comma-separated points. */
-export function getPointEtalonsFromMessage(msg: InboxMessage): string[] {
+/** True when the message has any applied tag whose definition has `isPalitra` (feed `tagsMap`). */
+export function messageHasPalitraTag(msg: InboxMessage, tagsMap: Record<number, Tag>): boolean {
+  for (const row of msg.inboxTags ?? []) {
+    if (tagsMap[row.tagId]?.isPalitra) return true;
+  }
+  for (const tagId of msg.tags ?? []) {
+    if (tagsMap[tagId]?.isPalitra) return true;
+  }
+  return false;
+}
+
+/** Collect all point etalons from a message (from pointTokens or textMarked). Used so "open with map" and inline point links fill the map search with comma-separated points. When `tagsMap` is passed, etalons are only returned if {@link messageHasPalitraTag} is true. */
+export function getPointEtalonsFromMessage(msg: InboxMessage, tagsMap?: Record<number, Tag>): string[] {
+  if (tagsMap != null && !messageHasPalitraTag(msg, tagsMap)) {
+    return [];
+  }
   const fromTokens = (msg.pointTokens ?? [])
     .map((p) => p.etalon)
     .filter((e) => e != null && String(e).trim() !== '');
-  if (fromTokens.length > 0) return fromTokens;
+  if (fromTokens.length > 0) return uniquePointEtalonsForMapSearch(fromTokens.map(String));
   const nodes = msg.textMarked ?? [];
   const etalons: string[] = [];
   for (const n of nodes) {
@@ -354,7 +382,7 @@ export function getPointEtalonsFromMessage(msg: InboxMessage): string[] {
       if (e !== '') etalons.push(e);
     }
   }
-  return etalons;
+  return uniquePointEtalonsForMapSearch(etalons);
 }
 
 export type MessageItem = [number, InboxMessage];

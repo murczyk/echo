@@ -1,7 +1,7 @@
 import React from 'react';
 
 import type { ContentNode } from '../../../../Bindings';
-import { buildAnalysisMapHrefWithSearch } from './utils';
+import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
 
 /**
  * Renders backend-produced marked content (callsigns, keywords, signals, points)
@@ -20,15 +20,19 @@ function collectPointEtalons(nodes: ContentNode[]): string[] {
 
 /**
  * @param messagePointEtalons - When provided (e.g. from msg.pointTokens), use for map href so all points from the message are in the search. Falls back to etalons from nodes when not provided.
+ * @param options.showPointLinks - When false (no palitra tag on message), point spans render as plain text (no link/highlight).
  */
 export function renderMarkedText(
   nodes: ContentNode[],
   bodyText: string,
   messagePointEtalons?: string[],
+  options?: { showPointLinks?: boolean },
 ): React.ReactNode[] {
+  const showPointLinks = options?.showPointLinks !== false;
   const fromNodes = collectPointEtalons(nodes);
-  const allPointEtalons =
-    messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes;
+  const allPointEtalons = uniquePointEtalonsForMapSearch(
+    messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
+  );
   return nodes.map((node, i) => {
     if (typeof node === 'string') {
       if (node === 'CNNewlineC') return <br key={i} />;
@@ -71,6 +75,9 @@ export function renderMarkedText(
     if ('CNPointC' in node) {
       const { begin, end, etalon } = node.CNPointC;
       const sliceText = bodyText.slice(begin, end);
+      if (!showPointLinks) {
+        return <span key={i}>{sliceText}</span>;
+      }
       const etalonsForUrl = allPointEtalons.length > 0 ? allPointEtalons : [etalon];
       const href = buildAnalysisMapHrefWithSearch(etalonsForUrl);
       const title =

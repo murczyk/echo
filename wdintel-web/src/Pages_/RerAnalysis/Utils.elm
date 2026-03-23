@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Utils exposing (buildMetadataLinks, updateQueryWithSelectedFreq, updateQueryWithSearch)
+module Pages_.RerAnalysis.Utils exposing (buildMetadataLinks, buildPointTokenClickUrlFor, getPointEtalonsFromMessage, messageHasPalitraTag, uniquePointEtalonsForMapSearch, updateQueryWithSelectedFreq, updateQueryWithSearch)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -6,10 +6,97 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Maybe
 import Route exposing (Route)
+import String
 import Time
 import Time.Extra
 import Url.Builder
 import Utils.Time
+import Utils.Utils exposing (insertShowMapToQuery)
+
+
+{-| Shared `Shared.Components.RerMessage.ViewParams.pointTokenClickUrlFor` wiring for `Pages.RerAnalysis` and `Pages_.RerAnalysis.MainBody`. -}
+buildPointTokenClickUrlFor : List ( Int, B.Tag ) -> Route () -> (B.InboxMessage -> Maybe (String -> String))
+buildPointTokenClickUrlFor tags route =
+    \message ->
+        if messageHasPalitraTag tags message then
+            let
+                searchStr =
+                    String.join "," (getPointEtalonsFromMessage message)
+            in
+            Just (\_ -> insertShowMapToQuery (updateQueryWithSearch searchStr route))
+
+        else
+            Nothing
+
+
+{-| Trim, drop empty, dedupe by trimmed string (first occurrence wins). Same rules as rer-duty-neo `uniquePointEtalonsForMapSearch`. -}
+uniquePointEtalonsForMapSearch : List String -> List String
+uniquePointEtalonsForMapSearch etalons =
+    List.foldl
+        (\raw acc ->
+            let
+                t =
+                    String.trim raw
+            in
+            if t == "" || List.member t acc then
+                acc
+            else
+                acc ++ [ t ]
+        )
+        []
+        etalons
+
+
+{-| Point etalons from `pointTokens` or `textMarked` CNPoint nodes (aligned with rer-duty-neo). -}
+getPointEtalonsFromMessage : B.InboxMessage -> List String
+getPointEtalonsFromMessage message =
+    let
+        fromTokens =
+            message.pointTokens
+                |> Maybe.withDefault []
+                |> List.map .etalon
+                |> List.filter (\e -> String.trim e /= "")
+    in
+    if not (List.isEmpty fromTokens) then
+        uniquePointEtalonsForMapSearch fromTokens
+
+    else
+        message.textMarked
+            |> Maybe.withDefault []
+            |> List.filterMap
+                (\node ->
+                    case node of
+                        B.CnPointC c ->
+                            Just c.etalon
+
+                        _ ->
+                            Nothing
+                )
+            |> uniquePointEtalonsForMapSearch
+
+
+{-| True when the message has a legacy `tags` id or an `inboxTags` row whose tag has `isPalitra` in the loaded tag list. -}
+messageHasPalitraTag : List ( Int, B.Tag ) -> B.InboxMessage -> Bool
+messageHasPalitraTag tagList message =
+    let
+        palitraTagIds =
+            tagList
+                |> List.filterMap
+                    (\( id, t ) ->
+                        if t.isPalitra then
+                            Just id
+
+                        else
+                            Nothing
+                    )
+
+        legacyIds =
+            message.tags |> Maybe.withDefault []
+
+        inboxIds =
+            message.inboxTags |> Maybe.withDefault [] |> List.map .tagId
+    in
+    List.any (\tid -> List.member tid palitraTagIds) (legacyIds ++ inboxIds)
 
 
 type MetadataFilter
