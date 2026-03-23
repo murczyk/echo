@@ -1675,6 +1675,8 @@ export type ReportPreviewReq = {
   reportType: ReportType | null;
   reportTagsOnlyThisUnit: boolean | null;
   withoutComments: boolean | null;
+  digestOmitExoId: boolean | null;
+  digestForm1217: boolean | null;
 };
 
 export type ReportType =

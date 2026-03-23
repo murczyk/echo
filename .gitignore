@@ -26,6 +26,7 @@ deploy/vector/kibana/sink-hammer.yaml
 .cursor/
 .ai/
 .j
+.issues/
 
 # GOI local/runtime artifacts
 goi/swapp/.runtime/

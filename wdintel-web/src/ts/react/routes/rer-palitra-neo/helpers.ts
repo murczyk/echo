@@ -244,10 +244,12 @@ export function applyRestrictedAccess(form: PalitraFormState, user: User | null,
   }
 
   const allowedAorIds = new Set(myScope?.aorIds ?? []);
+  const scopedAorIds = myScope?.aorIds ?? [];
+  const selectedScopedAorIds = form.aorIds.filter((id) => allowedAorIds.has(id));
 
   return {
     ...form,
-    aorIds: form.aorIds.filter((id) => allowedAorIds.has(id)),
+    aorIds: selectedScopedAorIds.length > 0 ? selectedScopedAorIds : scopedAorIds,
   };
 }
 

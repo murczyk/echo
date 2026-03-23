@@ -1164,6 +1164,8 @@ mod tests {
             report_type: None,
             report_tags_only_this_unit: Some(false),
             without_comments: Some(false),
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
         };
 
         let res = bl_babak_report(&login.login, &env, &req).await.unwrap();

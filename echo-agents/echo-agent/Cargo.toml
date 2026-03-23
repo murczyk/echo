@@ -1,0 +1,27 @@
+[package]
+name = "echo-agent"
+version = "0.1.0"
+edition = "2024"
+authors = ["ECHO"]
+description = "ECHO local agent worker"
+license = "All Rights Reserved"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+serde_json = "1.0"
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = [{ unit-name = "echo-agent" }]
+depends = ""
+assets = [
+    ["target/release/echo-agent", "usr/bin/", "755"],
+    ["../AGENTS.md", "usr/share/echo-agent/AGENTS.md", "644"],
+    ["../opencode/AGENTS.md", "usr/share/echo-agent/opencode/AGENTS.md", "644"],
+    ["../opencode/README.md", "usr/share/echo-agent/opencode/README.md", "644"],
+    ["../opencode/opencode.jsonc", "usr/share/echo-agent/opencode/opencode.jsonc", "644"],
+    ["../opencode/run.sh", "usr/share/echo-agent/opencode/run.sh", "755"],
+]
+
+[workspace]
