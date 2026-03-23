@@ -1010,7 +1010,7 @@ fn build_network_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
                 inbox_network_alias,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
             ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .and_where(
             Expr::col((network_alias, sigint_network::Column::Deleted))
@@ -1114,7 +1114,10 @@ fn network_filter_expr(
                     iin.clone(),
                     sigint_inbox_item_network::Column::SigintInboxItemId,
                 ))
-                .equals((signal_message::Entity, signal_message::Column::Id)),
+                .equals((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Id,
+                )),
             )
             .and_where(
                 Expr::col((n.clone(), sigint_network::Column::Id))
@@ -1157,7 +1160,7 @@ fn network_exists_subquery() -> SelectStatement {
                 network_alias,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
             ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .and_where(
             Expr::col((network_table_alias, sigint_network::Column::Deleted))
