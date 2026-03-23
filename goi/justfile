@@ -5,7 +5,7 @@ goi_app_dir := "/etc/goi"
 goi_timezone := "Europe/Kyiv"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
-goi_version := "1.1.8"
+goi_version := "1.2.0"
 
 default:
     @just --list
