@@ -1010,7 +1010,7 @@ fn build_network_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
                 inbox_network_alias,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
             ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .and_where(
             Expr::col((network_alias, sigint_network::Column::Deleted))
@@ -1114,7 +1114,10 @@ fn network_filter_expr(
                     iin.clone(),
                     sigint_inbox_item_network::Column::SigintInboxItemId,
                 ))
-                .equals((signal_message::Entity, signal_message::Column::Id)),
+                .equals((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Id,
+                )),
             )
             .and_where(
                 Expr::col((n.clone(), sigint_network::Column::Id))
@@ -1157,7 +1160,7 @@ fn network_exists_subquery() -> SelectStatement {
                 network_alias,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
             ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .and_where(
             Expr::col((network_table_alias, sigint_network::Column::Deleted))
@@ -2917,10 +2920,13 @@ async fn group_stats(
         stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
             .await
             .context(h!())?;
-    let groups =
+    let groups = if should_include_missing_secret_groups(&req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
             .await
-            .context(h!())?;
+            .context(h!())?
+    } else {
+        groups
+    };
     let group_names = collect_group_names(&groups, &env.dbx, is_admin)
         .await
         .context(h!())?;
@@ -2975,6 +2981,13 @@ async fn include_missing_secret_groups(
     }
 
     Ok(groups)
+}
+
+fn should_include_missing_secret_groups(req: &AnalysisStatsReq) -> bool {
+    req.selected_aors
+        .as_ref()
+        .map(|aors| aors.is_empty())
+        .unwrap_or(true)
 }
 
 #[post("/api/rer/analysis/stats/senders")]
@@ -3321,10 +3334,13 @@ async fn count_stats(
         stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
             .await
             .context(h!())?;
-    let groups =
+    let groups = if should_include_missing_secret_groups(&req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
             .await
-            .context(h!())?;
+            .context(h!())?
+    } else {
+        groups
+    };
     let groups_count = groups.len() as i64;
     let senders_count =
         stats::count_senders(&req, &user, &env, master_keys.clone())

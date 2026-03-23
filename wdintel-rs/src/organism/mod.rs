@@ -169,7 +169,7 @@ pub async fn organism_logins(
         .ok_or(AppError::Unauthenticated)?;
 
     let Some(organism_id) = login.organism_id else {
-        return  Ok(Json(vec![login.login]));
+        return Ok(Json(vec![login.login]));
     };
 
     let logins = login::Entity::find()

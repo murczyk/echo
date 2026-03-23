@@ -1,5 +1,5 @@
 import { Box, Button, Paper } from '@mui/material';
-import React from 'react';
+import { useCallback, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
@@ -7,14 +7,14 @@ import { getStoredMessageCardLayout, setStoredMessageCardLayout } from './utils'
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
 
 export type RerDutyNeoPageProps = {
-  /** Auth user display name from Elm layout (avoids duplicate /api/user request). */
+  /** Auth user display name from the host page (avoids duplicate /api/user request). */
   authUserName?: string | null;
 };
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
-  const [messageCardLayout, setMessageCardLayout] = React.useState(getStoredMessageCardLayout);
-  const handleMessageCardLayoutChange = React.useCallback((v: 'dividers' | 'fluid') => {
+  const [messageCardLayout, setMessageCardLayout] = useState(getStoredMessageCardLayout);
+  const handleMessageCardLayoutChange = useCallback((v: 'dividers' | 'fluid') => {
     setStoredMessageCardLayout(v);
     setMessageCardLayout(v);
   }, []);
@@ -67,6 +67,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     reloadFreqsLoading,
     reloadLatestFrequencies,
     networkDisplayMap,
+    networkMap,
+    featureStrictNetworks,
     watchModeByFeedId,
     setWatchModeByFeedId,
     loadingNewerFeedId,
@@ -138,6 +140,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               authUserName={authUserName}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
+              networkMap={networkMap}
+              featureStrictNetworks={featureStrictNetworks}
               tagsMap={tagsMap}
               tagIdsList={tagIdsList}
               onLoadOlder={() => loadFeedOlderMessages(w.id)}
