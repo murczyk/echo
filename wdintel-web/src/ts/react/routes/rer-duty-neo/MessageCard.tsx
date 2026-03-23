@@ -43,11 +43,8 @@ function ResolvedNetworkEtalonRows({
             <span className="min-w-0">
               <i className="bi bi-people text-icons shrink-0 mr-1" title="Еталонна прив'язка" />
 
-              <span className={hasNetworkLink ? 'min-w-0 break-words font-bold' : 'min-w-0 break-words font-normal'}>
-                {label}
-              </span>
               {badge ? (
-                <span className="ml-1 shrink-0 rounded border border-border bg-[var(--color-bg-inactive)] px-1.5 py-0.5 text-[10px] font-semibold leading-none opacity-90">
+                <span className="ml-1 shrink-0 rounded border border-border bg-[var(--color-bg-inactive)] px-1.5 py-0.5 text-[10px] leading-none opacity-90">
                   в дорозвідці
                 </span>
               ) : null}
@@ -56,12 +53,15 @@ function ResolvedNetworkEtalonRows({
                   href={`/rer-networks/${networkId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer shrink-0 ml-1"
+                  className="group-hover:opacity-50 transition-opacity duration-100 cursor-pointer shrink-0"
                   title="Відкрити мережу в новій вкладці"
                 >
-                  <i className="bi bi-box-arrow-up-right text-sm" />
+                  <span className="min-w-0 break-words font-bold">{label}</span>
+                  <i className="bi bi-box-arrow-up-right text-sm ml-1" />
                 </a>
-              ) : null}
+              ) : (
+                <span className="min-w-0 break-words font-normal">{label}</span>
+              )}
             </span>
           </span>
         );
@@ -70,7 +70,7 @@ function ResolvedNetworkEtalonRows({
   );
 }
 
-function EtalonSection({
+function NetworkSection({
   networkIds,
   networkDisplayMap,
   networkMap,
@@ -276,8 +276,8 @@ function MessageCardEtalonLocationTime({
   return (
     <div className="inline-flex gap-x-3">
       <div className="flex flex-col items-baseline gap-x-2 gap-y-1">
-        <span className="inline-flex font-semibold shrink-1 items-start gap-1 w-full min-w-0">
-          <EtalonSection
+        <span className="inline-flex shrink-1 items-start gap-1 w-full min-w-0">
+          <NetworkSection
             networkIds={networkIds}
             networkDisplayMap={networkDisplayMap}
             networkMap={networkMap}
@@ -286,7 +286,7 @@ function MessageCardEtalonLocationTime({
         </span>
       </div>
 
-      <span className="inline-flex items-baseline gap-1 font-medium shrink-2">
+      <span className="inline-flex break-words items-baseline gap-1 font-medium shrink-2">
         <i className="bi bi-geo text-icons shrink-0" title="Локація" />
         {msg.location ?? 'Не встановлена'}
       </span>
