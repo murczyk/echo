@@ -28,7 +28,8 @@
 - Use `git status` and `git diff` to show what will be committed
 - Even for urgent fixes or reverts, always ask before committing/pushing. The user needs to be aware of what's being changed in their repository.
 - When proposing commit messages, use Conventional Commits with a past-simple summary (for example: `fix(navbar): redirected login correctly`).
-- Prefer deriving commit scope from the current branch name (see `.github/skills/conventional-commit-branch-scope/SKILL.md`).
+- When asked to suggest or draft a commit message, ALWAYS use `.github/skills/conventional-commit-branch-scope/SKILL.md`.
+- Derive commit scope from the current branch name when possible, and do not replace a branch-derived ticket scope with ad hoc module scopes like `palettes` or `navbar`.
 
 ## CHANGELOG
 
