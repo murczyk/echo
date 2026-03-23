@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../Bindings';
 import {
@@ -10,27 +10,29 @@ import {
   getUserSigintGroups,
   savedFiltersList,
 } from '../../services/api/inbox';
+import { fetchServerInfo } from '../../services/api/server-info';
 
 export function useRerDutyFilterOptions() {
-  const [profiles, setProfiles] = React.useState<Record<string, SignalProfileEntry | null>>({});
-  const [freqs, setFreqs] = React.useState<string[]>([]);
-  const [postsList, setPostsList] = React.useState<string[]>([]);
-  const [groupInfos, setGroupInfos] = React.useState<Record<string, SignalGroupEntry>>({});
-  const [groupsList, setGroupsList] = React.useState<string[]>([]);
-  const [tagsMap, setTagsMap] = React.useState<Record<number, Tag>>({});
-  const [savedFilters, setSavedFilters] = React.useState<SavedFilterDuty[]>([]);
-  const [selectedSavedId, setSelectedSavedId] = React.useState<number | null>(null);
-  const [saveFilterName, setSaveFilterName] = React.useState('');
-  const [reloadFreqsLoading, setReloadFreqsLoading] = React.useState(false);
-  const mountedRef = React.useRef(true);
+  const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
+  const [freqs, setFreqs] = useState<string[]>([]);
+  const [postsList, setPostsList] = useState<string[]>([]);
+  const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
+  const [groupsList, setGroupsList] = useState<string[]>([]);
+  const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
+  const [savedFilters, setSavedFilters] = useState<SavedFilterDuty[]>([]);
+  const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
+  const [saveFilterName, setSaveFilterName] = useState('');
+  const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
+  const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
+  const mountedRef = useRef(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       mountedRef.current = false;
     };
   }, []);
 
-  const reloadLatestFrequencies = React.useCallback(async () => {
+  const reloadLatestFrequencies = useCallback(async () => {
     setReloadFreqsLoading(true);
     try {
       const list = await getLatestFrequencies();
@@ -40,7 +42,7 @@ export function useRerDutyFilterOptions() {
     }
   }, []);
 
-  const loadFilterOptions = React.useCallback(async () => {
+  const loadFilterOptions = useCallback(async () => {
     const [sendersResult, freqsResult, postsResult, groupKeysResult, tagsResult] = await Promise.allSettled([
       getLatestSenders(),
       getLatestFrequencies(),
@@ -78,9 +80,15 @@ export function useRerDutyFilterOptions() {
     } catch (e) {
       console.warn('loadFilterOptions: savedFiltersList failed', e);
     }
+    try {
+      const serverInfo = await fetchServerInfo();
+      if (mountedRef.current) setFeatureStrictNetworks(serverInfo.featureStrictNetworks);
+    } catch (e) {
+      console.warn('loadFilterOptions: fetchServerInfo failed', e);
+    }
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadFilterOptions();
   }, [loadFilterOptions]);
 
@@ -101,5 +109,6 @@ export function useRerDutyFilterOptions() {
     setSaveFilterName,
     reloadFreqsLoading,
     reloadLatestFrequencies,
+    featureStrictNetworks,
   };
 }

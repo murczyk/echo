@@ -9,6 +9,7 @@ import {
   buildInboxReq,
   createMasterUnitText,
   emptyFilter,
+  etalonFallbackWhenNoNetworks,
   filtersEqual,
   findAllAdjacentFreqs,
   getPointEtalonsFromMessage,
@@ -20,6 +21,14 @@ import {
 import type { InboxMessage, Network, Unit } from '../../../../Bindings';
 
 describe('rer-duty utils', () => {
+  it('etalon fallback when no networks: unit vs strict', () => {
+    const base = { freq: '100.0' } as InboxMessage;
+    expect(etalonFallbackWhenNoNetworks({ ...base, unit: '  1-й танк  ' })).toBe('1-й танк');
+    expect(etalonFallbackWhenNoNetworks({ ...base, unit: null })).toBe('Не встановлена');
+    expect(etalonFallbackWhenNoNetworks({ ...base, unit: 'x' }, { featureStrictNetworks: true })).toBe('Не встановлена');
+    expect(etalonFallbackWhenNoNetworks({ freq: null, unit: 'unit' } as InboxMessage)).toBe(null);
+  });
+
   it('builds network text with unit names and normalized location', () => {
     const network = {
       name: 'Alpha',

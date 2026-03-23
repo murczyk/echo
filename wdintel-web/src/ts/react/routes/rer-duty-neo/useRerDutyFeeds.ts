@@ -1,4 +1,4 @@
-import React from 'react';
+import { useMemo } from 'react';
 
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
@@ -8,7 +8,7 @@ const MAX_MESSAGE_FEEDS = 4;
 
 export { MAX_MESSAGE_FEEDS };
 
-/** Merge API freqs with frequencies from loaded messages (same as Elm RerDuty Waterfall). */
+/** Merge API freqs with frequencies from loaded messages. */
 function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [number, { freq?: string | null }][] }[]): string[] {
   const fromMsgs = new Set<string>();
   messageFeeds.forEach((feed) =>
@@ -50,7 +50,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     setSaveFilterName: filterOpts.setSaveFilterName,
   });
 
-  const freqs = React.useMemo(
+  const freqs = useMemo(
     () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
     [filterOpts.freqs, feedState.messageFeeds]
   );
@@ -106,6 +106,8 @@ export function useRerDutyFeeds(authUserName: string | null) {
     reloadFreqsLoading: filterOpts.reloadFreqsLoading,
     reloadLatestFrequencies: filterOpts.reloadLatestFrequencies,
     networkDisplayMap: feedState.networkDisplayMap,
+    networkMap: feedState.networkMap,
+    featureStrictNetworks: filterOpts.featureStrictNetworks,
     watchModeByFeedId: feedState.watchModeByFeedId,
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,
     loadingNewerFeedId: feedState.loadingNewerFeedId,
