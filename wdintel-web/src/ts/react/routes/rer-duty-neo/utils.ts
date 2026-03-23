@@ -147,7 +147,6 @@ export function buildInboxReq(opts: {
     orWithCoords: null,
     newestFirst: null,
     search: null,
-    // highlightCallsigns/Keywords/Searchres always true; highlightSignals from opts; highlightPoints for point-token links
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightSearchres: true,
@@ -332,7 +331,6 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
   return showMap ? `${base}&showMap=true` : base;
 }
 
-/** Trim, drop empty, dedupe by trimmed string (first occurrence wins). Used for map search etalon lists. */
 export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -354,7 +352,6 @@ export function buildAnalysisMapHrefWithSearch(etalons: string | string[]): stri
   return `/rer-analysis?state=${stateEnc}&showMap=true`;
 }
 
-/** True when the message has any applied tag whose definition has `isPalitra` (feed `tagsMap`). */
 export function messageHasPalitraTag(msg: InboxMessage, tagsMap: Record<number, Tag>): boolean {
   for (const row of msg.inboxTags ?? []) {
     if (tagsMap[row.tagId]?.isPalitra) return true;
@@ -365,7 +362,6 @@ export function messageHasPalitraTag(msg: InboxMessage, tagsMap: Record<number, 
   return false;
 }
 
-/** Collect all point etalons from a message (from pointTokens or textMarked). Used so "open with map" and inline point links fill the map search with comma-separated points. When `tagsMap` is passed, etalons are only returned if {@link messageHasPalitraTag} is true. */
 export function getPointEtalonsFromMessage(msg: InboxMessage, tagsMap?: Record<number, Tag>): string[] {
   if (tagsMap != null && !messageHasPalitraTag(msg, tagsMap)) {
     return [];

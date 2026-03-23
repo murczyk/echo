@@ -208,7 +208,7 @@ viewWithHintResults hintResultsDict signals networks mFreq bodyText pointTokenCl
                     in
                     case pointTokenClickUrl of
                         Just toUrl ->
-                            a [ class "content-token--point badge-highlighed-token", href (toUrl obj.etalon), target "_blank", rel "noopener noreferrer" ]
+                            a [ class "content-token--point hover:cursor-pointer", href (toUrl obj.etalon), target "_blank", rel "noopener noreferrer" ]
                                 [ text sliceText ]
 
                         Nothing ->

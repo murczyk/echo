@@ -14,7 +14,6 @@ import Utils.Time
 import Utils.Utils exposing (insertShowMapToQuery)
 
 
-{-| Shared `Shared.Components.RerMessage.ViewParams.pointTokenClickUrlFor` wiring for `Pages.RerAnalysis` and `Pages_.RerAnalysis.MainBody`. -}
 buildPointTokenClickUrlFor : List ( Int, B.Tag ) -> Route () -> (B.InboxMessage -> Maybe (String -> String))
 buildPointTokenClickUrlFor tags route =
     \message ->
@@ -29,7 +28,6 @@ buildPointTokenClickUrlFor tags route =
             Nothing
 
 
-{-| Trim, drop empty, dedupe by trimmed string (first occurrence wins). Same rules as rer-duty-neo `uniquePointEtalonsForMapSearch`. -}
 uniquePointEtalonsForMapSearch : List String -> List String
 uniquePointEtalonsForMapSearch etalons =
     List.foldl
@@ -47,7 +45,6 @@ uniquePointEtalonsForMapSearch etalons =
         etalons
 
 
-{-| Point etalons from `pointTokens` or `textMarked` CNPoint nodes (aligned with rer-duty-neo). -}
 getPointEtalonsFromMessage : B.InboxMessage -> List String
 getPointEtalonsFromMessage message =
     let
@@ -75,7 +72,6 @@ getPointEtalonsFromMessage message =
             |> uniquePointEtalonsForMapSearch
 
 
-{-| True when the message has a legacy `tags` id or an `inboxTags` row whose tag has `isPalitra` in the loaded tag list. -}
 messageHasPalitraTag : List ( Int, B.Tag ) -> B.InboxMessage -> Bool
 messageHasPalitraTag tagList message =
     let

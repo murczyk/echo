@@ -517,6 +517,12 @@
     transition: border-bottom-color 1s ease;
 }
 
+/* Palitra points: same underline treatment as callsign (ADP), orange accent */
+.text-marked .content-token--point {
+    border-bottom: 3px solid #fd884f;
+    transition: border-bottom-color 1s ease;
+}
+
 .text-marked .content-token--metadata {
     border-bottom: 3px solid #1b8057;
     transition: border-bottom-color 1s ease;

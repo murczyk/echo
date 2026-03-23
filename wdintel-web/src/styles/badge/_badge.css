@@ -224,6 +224,3 @@ html[data-bs-theme="dark"] .badge-main-radio {
     font-weight: 700;
 }
 
-.content-token--point.badge-highlighed-token {
-    cursor: pointer;
-}

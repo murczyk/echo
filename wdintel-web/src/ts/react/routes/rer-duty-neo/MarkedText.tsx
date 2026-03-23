@@ -3,10 +3,6 @@ import React from 'react';
 import type { ContentNode } from '../../../../Bindings';
 import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
 
-/**
- * Renders backend-produced marked content (callsigns, keywords, signals, points)
- * when highlight_* request params are used.
- */
 function collectPointEtalons(nodes: ContentNode[]): string[] {
   const etalons: string[] = [];
   for (const n of nodes) {
@@ -18,10 +14,6 @@ function collectPointEtalons(nodes: ContentNode[]): string[] {
   return etalons;
 }
 
-/**
- * @param messagePointEtalons - When provided (e.g. from msg.pointTokens), use for map href so all points from the message are in the search. Falls back to etalons from nodes when not provided.
- * @param options.showPointLinks - When false (no palitra tag on message), point spans render as plain text (no link/highlight).
- */
 export function renderMarkedText(
   nodes: ContentNode[],
   bodyText: string,
@@ -90,9 +82,8 @@ export function renderMarkedText(
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="content-token--point content-token--point-link badge-highlighed-token"
+          className="content-token--point hover:cursor-pointer"
           title={title}
-          style={{ cursor: 'pointer', display: 'inline-block', pointerEvents: 'auto', zIndex: 100 }}
         >
           {sliceText}
         </a>
