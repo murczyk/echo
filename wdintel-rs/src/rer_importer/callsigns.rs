@@ -165,25 +165,92 @@ fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
 }
 
 pub fn strip_callsigns_prefix(body: &str, message: &InboxMessage) -> String {
+    analyze_callsigns_prefix(body, message).stripped_body
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CallsignsPrefixInfo {
+    pub stripped_body: String,
+    pub callsigns: Vec<String>,
+    pub had_placeholder: bool,
+}
+
+#[derive(Debug)]
+struct ConsumedCallsignsHeader {
+    consumed_lines: usize,
+    callsigns: Vec<String>,
+    had_placeholder: bool,
+    header_lines: usize,
+}
+
+pub(crate) fn analyze_callsigns_prefix(
+    body: &str,
+    message: &InboxMessage,
+) -> CallsignsPrefixInfo {
     let lines = body.lines().collect::<Vec<_>>();
     if lines.is_empty() {
-        return body.to_string();
+        return CallsignsPrefixInfo {
+            stripped_body: body.to_string(),
+            callsigns: vec![],
+            had_placeholder: false,
+        };
     }
 
     let known_callsigns = message
         .callsigns
         .iter()
         .chain(message.callsigns_alg2.iter())
-        .map(|callsign| normalize_callsign_header_value(callsign))
-        .filter(|callsign| !callsign.is_empty() && callsign != "нв")
-        .collect::<BTreeSet<_>>();
+        .filter_map(|callsign| {
+            let normalized = normalize_callsign_header_value(callsign);
+            if normalized.is_empty() || normalized == "нв" {
+                None
+            } else {
+                Some((normalized, callsign.clone()))
+            }
+        })
+        .collect::<BTreeMap<_, _>>();
+    let known_callsign_keys =
+        BTreeSet::from_iter(known_callsigns.keys().cloned());
+    let search_limit = lines.len().min(crate::config::CALLSIGNS_MAX_LINES + 4);
 
-    let mut line_idx = 0;
-    while line_idx < lines.len() && lines[line_idx].trim().is_empty() {
-        line_idx += 1;
+    for start_idx in 0..search_limit {
+        let Some(header) = consume_callsigns_header(
+            &lines[start_idx..],
+            &known_callsign_keys,
+            &known_callsigns,
+        ) else {
+            continue;
+        };
+        if start_idx > 0 && header.header_lines < 2 {
+            continue;
+        }
+
+        return CallsignsPrefixInfo {
+            stripped_body: lines[start_idx + header.consumed_lines..]
+                .join("\n"),
+            callsigns: header.callsigns,
+            had_placeholder: header.had_placeholder,
+        };
     }
+
+    CallsignsPrefixInfo {
+        stripped_body: body.to_string(),
+        callsigns: vec![],
+        had_placeholder: false,
+    }
+}
+
+fn consume_callsigns_header(
+    lines: &[&str],
+    known_callsigns: &BTreeSet<String>,
+    known_callsigns_map: &BTreeMap<String, String>,
+) -> Option<ConsumedCallsignsHeader> {
+    let mut line_idx = 0;
+    let mut callsigns = vec![];
     let mut had_callsign_line = false;
     let mut placeholder_lines = 0;
+    let mut header_lines = 0;
+
     while line_idx < lines.len() {
         let line = lines[line_idx];
         if line.trim().is_empty() {
@@ -195,22 +262,33 @@ pub fn strip_callsigns_prefix(body: &str, message: &InboxMessage) -> String {
         }
         if is_callsigns_placeholder_line(line) {
             placeholder_lines += 1;
+            header_lines += 1;
             line_idx += 1;
             continue;
         }
-        if is_callsigns_header_line(line, &known_callsigns) {
-            had_callsign_line = true;
-            line_idx += 1;
-            continue;
-        }
-        break;
+        let Some(line_callsigns) = callsigns_from_header_line(
+            line,
+            known_callsigns,
+            known_callsigns_map,
+        ) else {
+            break;
+        };
+        had_callsign_line = true;
+        header_lines += 1;
+        callsigns.extend(line_callsigns);
+        line_idx += 1;
     }
 
     if !had_callsign_line && placeholder_lines < 2 {
-        return body.to_string();
+        return None;
     }
 
-    lines[line_idx..].join("\n")
+    Some(ConsumedCallsignsHeader {
+        consumed_lines: line_idx,
+        callsigns,
+        had_placeholder: placeholder_lines > 0,
+        header_lines,
+    })
 }
 
 fn is_callsigns_placeholder_line(line: &str) -> bool {
@@ -223,15 +301,16 @@ fn is_callsigns_placeholder_line(line: &str) -> bool {
     RE_PLACEHOLDER.is_match(line)
 }
 
-fn is_callsigns_header_line(
+fn callsigns_from_header_line(
     line: &str,
     known_callsigns: &BTreeSet<String>,
-) -> bool {
+    known_callsigns_map: &BTreeMap<String, String>,
+) -> Option<Vec<String>> {
     let Ok(callsigns) = extract_kazhanchik_callsigns(line) else {
-        return false;
+        return None;
     };
     if callsigns.is_empty() {
-        return false;
+        return None;
     }
 
     let normalized_callsigns = callsigns
@@ -240,13 +319,27 @@ fn is_callsigns_header_line(
         .filter(|callsign| !callsign.is_empty())
         .collect::<Vec<_>>();
     if normalized_callsigns.is_empty() {
-        return false;
+        return None;
+    }
+    if !known_callsigns.is_empty()
+        && normalized_callsigns
+            .iter()
+            .any(|callsign| !known_callsigns.contains(callsign))
+    {
+        return None;
     }
 
-    known_callsigns.is_empty()
-        || normalized_callsigns
-            .iter()
-            .all(|callsign| known_callsigns.contains(callsign))
+    Some(
+        normalized_callsigns
+            .into_iter()
+            .map(|callsign| {
+                known_callsigns_map
+                    .get(&callsign)
+                    .cloned()
+                    .unwrap_or(callsign)
+            })
+            .collect(),
+    )
 }
 
 fn normalize_callsign_header_value(callsign: &str) -> String {
@@ -2046,15 +2139,19 @@ mod tests {
     }
 
     #[test]
-    fn strip_callsigns_prefix_keeps_non_callsign_first_line() {
-        let body = r#"Лозуватське - Воздвіженка, УКХ р/м невизначеного підрозділу
-ЛУЧНИК
-ПИРОЖЕК
+    fn strip_callsigns_prefix_drops_preamble_before_callsigns() {
+        let body = r#"2 р/м 2 управління зрбатр 1430 мсп 42 мсд 58 А (НОВЕ, СОЛОДКА БАЛКА)
+Вафівфів23.02.2026, 07:59:07
+НВ
+ГНОМ
 
-— ПИРОЖЕК я ЛУЧНИК: ФПВ к нам идет"#;
-        let message = message_with_callsigns(vec!["ЛУЧНИК", "ПИРОЖЕК"]);
+— Все нормально, все нормально, Залыч, Залыч, там ГНОМ его встречает."#;
+        let message = message_with_callsigns(vec!["ГНОМ"]);
 
-        assert_eq!(strip_callsigns_prefix(body, &message), body);
+        assert_eq!(
+            strip_callsigns_prefix(body, &message),
+            "— Все нормально, все нормально, Залыч, Залыч, там ГНОМ его встречает."
+        );
     }
 
     #[test]

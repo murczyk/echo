@@ -571,6 +571,13 @@ async fn collect_report(
             let mut notes = vec![];
             for (message_id, comment) in comments {
                 let message = messages.get(&message_id).context(h!())?.clone();
+                let callsigns_prefix =
+                    crate::rer_importer::callsigns::analyze_callsigns_prefix(
+                        &message.text,
+                        &message,
+                    );
+                let (who_callsign, to_callsigns) =
+                    extract_form_1217_callsigns(&message, &callsigns_prefix);
                 // todo if message is missing, from a secret chat or other edge case - don't put it here, put Right(message_id) instead
                 let time = message
                     .timestamp
@@ -589,18 +596,15 @@ async fn collect_report(
                         unit.as_ref(),
                     ),
                     time: extract_message_time(&message),
-                    who_callsign: extract_who_callsign(&message),
-                    to_callsigns: extract_to_callsigns(&message),
+                    who_callsign,
+                    to_callsigns,
                 };
                 notes.push(InterNote {
                     time,
                     comment,
                     interception: Some(message.text.clone()),
                     interception_form_1217: Some(
-                        crate::rer_importer::callsigns::strip_callsigns_prefix(
-                            &message.text,
-                            &message,
-                        ),
+                        callsigns_prefix.stripped_body,
                     ),
                     interception_id: message.message_uid.clone(),
                     details,
@@ -959,6 +963,31 @@ fn extract_to_callsigns(message: &InboxMessage) -> Option<String> {
     }
 }
 
+fn extract_form_1217_callsigns(
+    message: &InboxMessage,
+    callsigns_prefix: &crate::rer_importer::callsigns::CallsignsPrefixInfo,
+) -> (Option<String>, Option<String>) {
+    if !callsigns_prefix.callsigns.is_empty() {
+        if callsigns_prefix.had_placeholder {
+            return (None, Some(callsigns_prefix.callsigns.join(", ")));
+        }
+
+        let mut callsigns = callsigns_prefix.callsigns.iter();
+        let who_callsign = callsigns.next().cloned();
+        let to_callsigns = callsigns.cloned().collect::<Vec<_>>();
+        return (
+            who_callsign,
+            if to_callsigns.is_empty() {
+                None
+            } else {
+                Some(to_callsigns.join(", "))
+            },
+        );
+    }
+
+    (extract_who_callsign(message), extract_to_callsigns(message))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1020,6 +1049,56 @@ mod tests {
         assert_eq!(
             build_note_comment(&note, false, false),
             "14:30 Test comment".to_string()
+        );
+    }
+
+    #[test]
+    fn extract_form_1217_callsigns_treats_placeholder_as_recipient_only() {
+        let message = InboxMessage {
+            message_uid: None,
+            text: String::new(),
+            media: vec![],
+            images: vec![],
+            image_recognized: vec![],
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: vec!["гном".to_string()],
+            callsigns_alg2: vec![],
+            checked: false,
+            important: false,
+            bookmarked: false,
+            timestamp: None,
+            group_master_key: None,
+            sender: None,
+            extended_form: None,
+            post: None,
+            post_id: None,
+            unit: None,
+            callsign_tokens: None,
+            signal_tokens: None,
+            point_tokens: None,
+            no_headers_body: None,
+            keyword_tokens: None,
+            text_marked: None,
+            datasource_id: None,
+            location: None,
+            tags: None,
+            network_ids: None,
+            inbox_tags: None,
+            metadata: vec![],
+        };
+        let callsigns_prefix =
+            crate::rer_importer::callsigns::CallsignsPrefixInfo {
+                stripped_body: "— test".to_string(),
+                callsigns: vec!["гном".to_string()],
+                had_placeholder: true,
+            };
+
+        assert_eq!(
+            extract_form_1217_callsigns(&message, &callsigns_prefix),
+            (None, Some("гном".to_string()))
         );
     }
 }
