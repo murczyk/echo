@@ -164,6 +164,100 @@ fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
     Ok(res)
 }
 
+pub fn strip_callsigns_prefix(body: &str, message: &InboxMessage) -> String {
+    let lines = body.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return body.to_string();
+    }
+
+    let known_callsigns = message
+        .callsigns
+        .iter()
+        .chain(message.callsigns_alg2.iter())
+        .map(|callsign| normalize_callsign_header_value(callsign))
+        .filter(|callsign| !callsign.is_empty() && callsign != "нв")
+        .collect::<BTreeSet<_>>();
+
+    let mut line_idx = 0;
+    while line_idx < lines.len() && lines[line_idx].trim().is_empty() {
+        line_idx += 1;
+    }
+    let mut had_callsign_line = false;
+    let mut placeholder_lines = 0;
+    while line_idx < lines.len() {
+        let line = lines[line_idx];
+        if line.trim().is_empty() {
+            if had_callsign_line || placeholder_lines > 0 {
+                line_idx += 1;
+                continue;
+            }
+            break;
+        }
+        if is_callsigns_placeholder_line(line) {
+            placeholder_lines += 1;
+            line_idx += 1;
+            continue;
+        }
+        if is_callsigns_header_line(line, &known_callsigns) {
+            had_callsign_line = true;
+            line_idx += 1;
+            continue;
+        }
+        break;
+    }
+
+    if !had_callsign_line && placeholder_lines < 2 {
+        return body.to_string();
+    }
+
+    lines[line_idx..].join("\n")
+}
+
+fn is_callsigns_placeholder_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_PLACEHOLDER: Regex =
+            Regex::new(r"(?iu)^\s*(\d+\s*(-|—)\s*)?нв(\s*\([^)]+\))?\s*$")
+                .unwrap();
+    }
+
+    RE_PLACEHOLDER.is_match(line)
+}
+
+fn is_callsigns_header_line(
+    line: &str,
+    known_callsigns: &BTreeSet<String>,
+) -> bool {
+    let Ok(callsigns) = extract_kazhanchik_callsigns(line) else {
+        return false;
+    };
+    if callsigns.is_empty() {
+        return false;
+    }
+
+    let normalized_callsigns = callsigns
+        .into_iter()
+        .map(|callsign| normalize_callsign_header_value(&callsign.text))
+        .filter(|callsign| !callsign.is_empty())
+        .collect::<Vec<_>>();
+    if normalized_callsigns.is_empty() {
+        return false;
+    }
+
+    known_callsigns.is_empty()
+        || normalized_callsigns
+            .iter()
+            .all(|callsign| known_callsigns.contains(callsign))
+}
+
+fn normalize_callsign_header_value(callsign: &str) -> String {
+    callsign
+        .trim()
+        .to_lowercase()
+        .chars()
+        .filter(|char_| char_.is_alphanumeric())
+        .collect()
+}
+
 pub async fn highlight_callsigns(
     rq: &reqwest::Client,
     body: &str,
@@ -1411,6 +1505,47 @@ pub async fn callsigns_graph(
 mod tests {
     use super::*;
 
+    fn message_with_callsigns(callsigns: Vec<&str>) -> InboxMessage {
+        InboxMessage {
+            message_uid: None,
+            text: String::new(),
+            media: vec![],
+            images: vec![],
+            image_recognized: vec![],
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: callsigns
+                .into_iter()
+                .map(|callsign| callsign.to_string())
+                .collect(),
+            callsigns_alg2: vec![],
+            checked: false,
+            important: false,
+            bookmarked: false,
+            timestamp: None,
+            group_master_key: None,
+            sender: None,
+            extended_form: None,
+            post: None,
+            post_id: None,
+            unit: None,
+            callsign_tokens: None,
+            signal_tokens: None,
+            point_tokens: None,
+            no_headers_body: None,
+            keyword_tokens: None,
+            text_marked: None,
+            datasource_id: None,
+            location: None,
+            tags: None,
+            network_ids: None,
+            inbox_tags: None,
+            metadata: vec![],
+        }
+    }
+
     #[tokio::test]
     async fn extract_callsigns_nofirstline_01() {
         let rq = reqwest::Client::new();
@@ -1855,6 +1990,71 @@ mod tests {
         let expected: Vec<String> = vec![];
         let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
+    }
+
+    #[test]
+    fn strip_callsigns_prefix_multiline_header() {
+        let body = r#"ЛАВИНА
+СЕРБ
+ОРЕНБУРГ
+ВОЛГОГРАД
+- (1) СЕРБ я ЛАВИНА дай мне ОРЕНБУРГА на связь
+- (2) -ЛАВИНА ... да сейчас!"#;
+        let message = message_with_callsigns(vec![
+            "ЛАВИНА",
+            "СЕРБ",
+            "ОРЕНБУРГ",
+            "ВОЛГОГРАД",
+        ]);
+
+        assert_eq!(
+            strip_callsigns_prefix(body, &message),
+            r#"- (1) СЕРБ я ЛАВИНА дай мне ОРЕНБУРГА на связь
+- (2) -ЛАВИНА ... да сейчас!"#
+        );
+    }
+
+    #[test]
+    fn strip_callsigns_prefix_placeholder_and_list() {
+        let body = r#"НВ
+МИТЯ, ГНОМ, КУБА, ИМАН
+
+1. Митя, Гном, Куба, Иман. Коса 18. Слышали, да?????"#;
+        let message =
+            message_with_callsigns(vec!["МИТЯ", "ГНОМ", "КУБА", "ИМАН"]);
+
+        assert_eq!(
+            strip_callsigns_prefix(body, &message),
+            "1. Митя, Гном, Куба, Иман. Коса 18. Слышали, да?????"
+        );
+    }
+
+    #[test]
+    fn strip_callsigns_prefix_numbered_callsigns() {
+        let body = r#"1- ДЕМОН
+2- ВОЛНА
+
+1-Волна, Волна, Демону, коробочка дома.
+2-Принял тебя, Демон."#;
+        let message = message_with_callsigns(vec!["ДЕМОН", "ВОЛНА"]);
+
+        assert_eq!(
+            strip_callsigns_prefix(body, &message),
+            r#"1-Волна, Волна, Демону, коробочка дома.
+2-Принял тебя, Демон."#
+        );
+    }
+
+    #[test]
+    fn strip_callsigns_prefix_keeps_non_callsign_first_line() {
+        let body = r#"Лозуватське - Воздвіженка, УКХ р/м невизначеного підрозділу
+ЛУЧНИК
+ПИРОЖЕК
+
+— ПИРОЖЕК я ЛУЧНИК: ФПВ к нам идет"#;
+        let message = message_with_callsigns(vec!["ЛУЧНИК", "ПИРОЖЕК"]);
+
+        assert_eq!(strip_callsigns_prefix(body, &message), body);
     }
 
     #[test]

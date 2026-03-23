@@ -786,12 +786,20 @@ view user model shared route =
             RTInterception,
             RTPostsDocx,
             RTMouse,
-            RTReo
+            RTReo,
+            RTDigest
              ]) <|
                 let
                     disableUnitCommentsFilter =
                         model.reportTemplate == RTBabak
                             && model.reportWithoutComments
+
+                    unitCommentsLabel =
+                        if model.reportTemplate == RTDigest then
+                            "лише коментарі мого підрозділу"
+
+                        else
+                            "лише теги/коментарі мого підрозділу"
                 in
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div
@@ -813,7 +821,7 @@ view user model shared route =
                             [ class "form-check-label"
                             , for "report-tags-only-this-unit-docx"
                             ]
-                            [ text "лише теги/коментарі мого підрозділу"
+                            [ text unitCommentsLabel
                             ]
                         ]
                     , HtmlX.viewIf (model.reportTemplate == RTBabak) <|

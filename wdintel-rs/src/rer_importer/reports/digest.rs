@@ -49,6 +49,7 @@ pub struct InterNote {
     pub time: Option<NaiveDateTime>,
     pub comment: String,
     pub interception: Option<String>,
+    pub interception_form_1217: Option<String>,
     pub interception_id: Option<String>,
     pub details: InterceptionDetails,
 }
@@ -297,7 +298,12 @@ fn build_interception_cell(
     if use_form_1217 {
         paragraphs.extend(build_form_1217_paragraphs(&note.details, config));
     }
-    if let Some(interception) = &note.interception {
+    let interception = if use_form_1217 {
+        note.interception_form_1217.as_ref()
+    } else {
+        note.interception.as_ref()
+    };
+    if let Some(interception) = interception {
         for line in interception.split('\n') {
             paragraphs.push(mk_paragraph(
                 line,
@@ -589,7 +595,13 @@ async fn collect_report(
                 notes.push(InterNote {
                     time,
                     comment,
-                    interception: Some(message.text),
+                    interception: Some(message.text.clone()),
+                    interception_form_1217: Some(
+                        crate::rer_importer::callsigns::strip_callsigns_prefix(
+                            &message.text,
+                            &message,
+                        ),
+                    ),
                     interception_id: message.message_uid.clone(),
                     details,
                 });
@@ -962,6 +974,7 @@ mod tests {
             ),
             comment: "Test comment".to_string(),
             interception: None,
+            interception_form_1217: None,
             interception_id: None,
             details: InterceptionDetails {
                 date: None,
@@ -991,6 +1004,7 @@ mod tests {
             ),
             comment: "Test comment".to_string(),
             interception: None,
+            interception_form_1217: None,
             interception_id: None,
             details: InterceptionDetails {
                 date: None,
