@@ -1,0 +1,13 @@
+[Unit]
+Description=echo-agent
+
+[Service]
+ExecStart=/usr/bin/echo-agent
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+WorkingDirectory=/usr/share/echo-agent
+
+[Install]
+WantedBy=multi-user.target
