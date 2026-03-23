@@ -38,6 +38,9 @@ pub struct ReportPreviewReq {
     pub req: InboxMessagesReq,
     pub report_type: Option<ReportType>,
     pub report_tags_only_this_unit: Option<bool>,
+    pub without_comments: Option<bool>,
+    pub digest_omit_exo_id: Option<bool>,
+    pub digest_form_1_2_17: Option<bool>,
 }
 
 #[derive(

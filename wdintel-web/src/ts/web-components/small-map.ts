@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import * as L from 'leaflet';
-import { loadKmzData, initializeMap, addPointsToLayer, toggleMapSize, createExitControl, createFullScreenControl } from '../maps/maps'
+import { loadKmzData, initializeMap, addPointsToLayer, toggleMapSize, createExitControl, createFullScreenControl, clearSmallMapFullscreenBodyLock } from '../maps/maps'
 import { kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointShort } from '../maps/types'
 
@@ -11,9 +11,37 @@ export class SmallMap extends LitElement {
 	@property() points: MapPointShort[] = [];
 	@property() isOpen = false;
 	@property() withExitButton = true;
+	private map?: L.Map;
+	private mapBounds?: L.LatLngBounds;
+	private mapContainer?: HTMLDivElement;
+	private fullScreenControl?: L.Control & { setExpanded?: (isExpanded: boolean) => void };
 
 	static styles = css`
   `;
+
+	private readonly onKeyDown = (event: KeyboardEvent) => {
+		if (event.key !== 'Escape') {
+			return;
+		}
+
+		if (!this.map || !this.mapBounds || !this.mapContainer?.classList.contains('expanded')) {
+			return;
+		}
+
+		event.preventDefault();
+		toggleMapSize(this.map, this.mapContainer, this.mapBounds, this.fullScreenControl);
+	};
+
+	connectedCallback() {
+		super.connectedCallback();
+		window.addEventListener('keydown', this.onKeyDown);
+	}
+
+	disconnectedCallback() {
+		window.removeEventListener('keydown', this.onKeyDown);
+		clearSmallMapFullscreenBodyLock();
+		super.disconnectedCallback();
+	}
 
 	firstUpdated() {
 		this.setupMap();
@@ -31,6 +59,9 @@ export class SmallMap extends LitElement {
 			const map = initializeMap(mapContainer, this.points[0]);
 
 			const { bounds, markersGroup } = addPointsToLayer(this.points);
+			this.map = map;
+			this.mapBounds = bounds;
+			this.mapContainer = mapContainer;
 			map.addLayer(markersGroup);
 			if (bounds.isValid()) {
 				map.fitBounds(bounds);
@@ -42,6 +73,7 @@ export class SmallMap extends LitElement {
 			const toggleSize = () => toggleMapSize(map, mapContainer, bounds, fullScreenControl);
 			const FullScreenControl = createFullScreenControl(toggleSize);
 			const fullScreenControl: any = new FullScreenControl()
+			this.fullScreenControl = fullScreenControl;
 			L.extend(FullScreenControl.prototype, L.Evented.prototype);
 			map.addControl(fullScreenControl);
 			if (this.withExitButton) {
@@ -87,6 +119,7 @@ export class SmallMap extends LitElement {
 	}
 
 	private _closeMap() {
+		clearSmallMapFullscreenBodyLock();
 		const event = new CustomEvent('close-map', {
 			detail: {
 			},

@@ -774,6 +774,7 @@ export function AdminOrganismsNeoPage() {
       tableId="admin-organisms-neo"
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
     >
       <AdminOrganismsNeoPageBody />
     </TableStateProvider>

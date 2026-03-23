@@ -497,6 +497,7 @@ export function AdminKeysNeoPage() {
       tableId="admin-keys-neo"
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
     >
       <AdminKeysNeoPageBody />
     </TableStateProvider>

@@ -100,12 +100,13 @@ pub fn normalize_trimmed_or_default(
 pub fn split_keep<'a>(r: &Regex, text: &'a str) -> Vec<&'a str> {
     let mut result = Vec::new();
     let mut last = 0;
-    for (index, matched) in text.match_indices(r) {
+    for matched in r.find_iter(text) {
+        let index = matched.start();
         if last != index {
             result.push(&text[last..index]);
         }
-        result.push(matched);
-        last = index + matched.len();
+        result.push(matched.as_str());
+        last = matched.end();
     }
     if last < text.len() {
         result.push(&text[last..]);

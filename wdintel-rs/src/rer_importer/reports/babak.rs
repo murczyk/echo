@@ -39,9 +39,14 @@ pub async fn bl_babak_report(
     };
     let date_from_dt = dt_from_millis(since_date_inclusive_ms)?;
     let date_to_dt = dt_from_millis(till_date_inclusive_ms)?;
+    let without_comments = req.without_comments.unwrap_or(false);
 
     let mut inbox_req = req.req.clone();
-    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    inbox_req.report_tags_only_this_unit = if without_comments {
+        Some(false)
+    } else {
+        req.report_tags_only_this_unit
+    };
 
     let units = get_inbox_messages_report_unit(user_login, env, &inbox_req)
         .await
@@ -106,6 +111,7 @@ pub async fn report_docx_kind_babak(
         date_to,
     } = bl_babak_report(user_login, env, req).await?;
     let tz = crate::config::get_tz();
+    let without_comments = req.without_comments.unwrap_or(false);
     let date_from_dt_tz = Utc.from_utc_datetime(&date_from).with_timezone(&tz);
     let date_to_dt_tz = Utc.from_utc_datetime(&date_to).with_timezone(&tz);
 
@@ -320,48 +326,55 @@ pub async fn report_docx_kind_babak(
                 ))
                 .align(docx_rs::alignment_type::AlignmentType::Left),
         )
-        .add_paragraph(Paragraph::new())
-        .add_paragraph(
-            Paragraph::new()
-                .style(head)
-                .add_run(
-                    Run::new()
-                        .add_text("Характер дій противника за звітний період"),
-                )
-                .align(docx_rs::alignment_type::AlignmentType::Left),
-        )
         .add_paragraph(Paragraph::new());
 
-    for unit in &units {
-        let comments: Vec<BabakComment> = serde_json::from_value(
-            unit.comments.clone().unwrap_or(Vec::<Value>::new().into()),
-        )
-        .unwrap_or(vec![]);
-        let comments = uniq_via_btreeset(&comments);
-
-        if comments
-            .clone()
-            .into_iter()
-            .filter(|c| c.comment.is_some() && c.datetime.is_some())
-            .collect::<Vec<_>>()
-            .is_empty()
-        {
-            continue;
-        }
-
+    if !without_comments {
         doc = doc
             .add_paragraph(
-                Paragraph::new().add_run(
-                    Run::new()
-                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
-                        .bold(),
-                ),
+                Paragraph::new()
+                    .style(head)
+                    .add_run(
+                        Run::new().add_text(
+                            "Характер дій противника за звітний період",
+                        ),
+                    )
+                    .align(docx_rs::alignment_type::AlignmentType::Left),
             )
             .add_paragraph(Paragraph::new());
 
-        for comment in comments.clone() {
-            if let Some(c) = comment.comment {
-                if let Some(d) = comment.datetime {
+        for unit in &units {
+            let comments: Vec<BabakComment> = serde_json::from_value(
+                unit.comments.clone().unwrap_or(Vec::<Value>::new().into()),
+            )
+            .unwrap_or(vec![]);
+            let comments = uniq_via_btreeset(&comments);
+
+            if comments
+                .clone()
+                .into_iter()
+                .filter(|comment| {
+                    babak_non_empty_text(comment.comment.as_deref()).is_some()
+                        && comment.datetime.is_some()
+                })
+                .collect::<Vec<_>>()
+                .is_empty()
+            {
+                continue;
+            }
+
+            doc = doc
+                .add_paragraph(babak_unit_heading_paragraph(
+                    &unit.unit.clone().unwrap_or("НВ".to_string()),
+                ))
+                .add_paragraph(Paragraph::new());
+
+            for comment in comments.clone() {
+                let comment_text =
+                    babak_non_empty_text(comment.comment.as_deref());
+
+                if let (Some(comment_text), Some(d)) =
+                    (comment_text, comment.datetime)
+                {
                     let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
                     doc = doc
                         .add_paragraph(
@@ -370,7 +383,7 @@ pub async fn report_docx_kind_babak(
                                 &format!(
                                     "{} {}",
                                     d_tz.format("%d/%m %H:%M"),
-                                    c
+                                    comment_text
                                 ),
                                 false,
                             )
@@ -406,7 +419,15 @@ pub async fn report_docx_kind_babak(
         if losses_comments
             .clone()
             .into_iter()
-            .filter(|c| c.comment.is_some() && c.datetime.is_some())
+            .filter(|comment| {
+                let has_comment = !without_comments
+                    && babak_non_empty_text(comment.comment.as_deref())
+                        .is_some();
+                let has_text =
+                    babak_non_empty_text(comment.text.as_deref()).is_some();
+
+                comment.datetime.is_some() && (has_comment || has_text)
+            })
             .collect::<Vec<_>>()
             .is_empty()
         {
@@ -414,37 +435,48 @@ pub async fn report_docx_kind_babak(
         }
 
         doc = doc
-            .add_paragraph(
-                Paragraph::new().add_run(
-                    Run::new()
-                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
-                        .bold(),
-                ),
-            )
+            .add_paragraph(babak_unit_heading_paragraph(
+                &unit.unit.clone().unwrap_or("НВ".to_string()),
+            ))
             .add_paragraph(Paragraph::new());
 
         for comment in losses_comments.clone() {
-            if let Some(c) = comment.comment {
-                if let Some(d) = comment.datetime {
-                    let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
-                    let mut paragraph = add_multiline_text(
-                        Paragraph::new(),
-                        &format!("{} {}", d_tz.format("%d/%m %H:%M"), c),
+            let comment_text = if without_comments {
+                None
+            } else {
+                babak_non_empty_text(comment.comment.as_deref())
+            };
+            let body_text = babak_non_empty_text(comment.text.as_deref());
+
+            if let Some(d) = comment.datetime {
+                if comment_text.is_none() && body_text.is_none() {
+                    continue;
+                }
+
+                let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
+                let mut paragraph = Paragraph::new().add_run(
+                    Run::new().add_text(d_tz.format("%d/%m %H:%M").to_string()),
+                );
+                if let Some(comment_text) = comment_text {
+                    paragraph = add_multiline_text(
+                        paragraph,
+                        &format!(" {comment_text}"),
                         false,
                     );
-                    if let Some(text) = comment.text.as_deref() {
-                        paragraph = paragraph.add_run(
-                            Run::new().add_break(BreakType::TextWrapping),
-                        );
-                        paragraph = add_multiline_text(paragraph, text, false);
-                    }
-                    doc = doc
-                        .add_paragraph(paragraph.numbering(
+                }
+                if let Some(text) = body_text {
+                    paragraph = paragraph
+                        .add_run(Run::new().add_break(BreakType::TextWrapping));
+                    paragraph = add_multiline_text(paragraph, text, false);
+                }
+                doc = doc
+                    .add_paragraph(
+                        paragraph.numbering(
                             NumberingId::new(1),
                             IndentLevel::new(0),
-                        ))
-                        .add_paragraph(Paragraph::new());
-                }
+                        ),
+                    )
+                    .add_paragraph(Paragraph::new());
             }
         }
     }
@@ -486,7 +518,15 @@ pub async fn report_docx_kind_babak(
         if others_comments
             .clone()
             .into_iter()
-            .filter(|c| c.text.is_some() && c.datetime.is_some())
+            .filter(|comment| {
+                let has_comment = !without_comments
+                    && babak_non_empty_text(comment.comment.as_deref())
+                        .is_some();
+                let has_text =
+                    babak_non_empty_text(comment.text.as_deref()).is_some();
+
+                comment.datetime.is_some() && (has_comment || has_text)
+            })
             .collect::<Vec<_>>()
             .is_empty()
         {
@@ -494,35 +534,50 @@ pub async fn report_docx_kind_babak(
         }
 
         doc = doc
-            .add_paragraph(
-                Paragraph::new().add_run(
-                    Run::new()
-                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
-                        .bold(),
-                ),
-            )
+            .add_paragraph(babak_unit_heading_paragraph(
+                &unit.unit.clone().unwrap_or("НВ".to_string()),
+            ))
             .add_paragraph(Paragraph::new());
 
         for comment in others_comments.clone() {
-            if let Some(text) = comment.text {
-                if let Some(d) = comment.datetime {
-                    let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
-                    let mut paragraph = Paragraph::new().add_run(
-                        Run::new()
-                            .add_text(d_tz.format("%d/%m %H:%M").to_string()),
-                    );
-                    if let Some(comment_text) = comment.comment.as_deref() {
-                        paragraph =
-                            add_multiline_text(paragraph, comment_text, true);
-                    }
-                    paragraph = add_multiline_text(paragraph, &text, false);
-                    doc = doc
-                        .add_paragraph(paragraph.numbering(
-                            NumberingId::new(1),
-                            IndentLevel::new(0),
-                        ))
-                        .add_paragraph(Paragraph::new());
+            let comment_text = if without_comments {
+                None
+            } else {
+                babak_non_empty_text(comment.comment.as_deref())
+            };
+            let body_text = babak_non_empty_text(comment.text.as_deref());
+
+            if let Some(d) = comment.datetime {
+                if comment_text.is_none() && body_text.is_none() {
+                    continue;
                 }
+
+                let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
+                let mut paragraph = Paragraph::new().add_run(
+                    Run::new().add_text(d_tz.format("%d/%m %H:%M").to_string()),
+                );
+                if let Some(comment_text) = comment_text {
+                    paragraph = add_multiline_text(
+                        paragraph,
+                        &format!(" {comment_text}"),
+                        true,
+                    );
+                }
+
+                doc = doc.add_paragraph(
+                    paragraph
+                        .numbering(NumberingId::new(1), IndentLevel::new(0)),
+                );
+
+                if let Some(text) = body_text {
+                    doc = doc.add_paragraph(add_multiline_text(
+                        Paragraph::new().indent(Some(720), None, None, None),
+                        text,
+                        false,
+                    ));
+                }
+
+                doc = doc.add_paragraph(Paragraph::new());
             }
         }
     }
@@ -576,6 +631,19 @@ fn add_multiline_text(
     }
 
     paragraph
+}
+
+fn babak_non_empty_text(text: Option<&str>) -> Option<&str> {
+    text.map(str::trim).filter(|text| !text.is_empty())
+}
+
+fn babak_unit_heading_paragraph(unit: &str) -> Paragraph {
+    Paragraph::new().add_run(
+        Run::new()
+            .add_text(format!(" {unit} "))
+            .bold()
+            .shading(Shading::new().fill("d9d9d9")),
+    )
 }
 
 fn dedup_babak_comments_across_units(units: &mut [StatsPerUnitReport]) {
@@ -1095,6 +1163,9 @@ mod tests {
             },
             report_type: None,
             report_tags_only_this_unit: Some(false),
+            without_comments: Some(false),
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
         };
 
         let res = bl_babak_report(&login.login, &env, &req).await.unwrap();

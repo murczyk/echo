@@ -1,5 +1,3 @@
-#![feature(error_generic_member_access)]
-#![feature(once_cell_try_insert)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::borrow_interior_mutable_const)]
@@ -1100,7 +1098,7 @@ async fn async_main(
                 .await
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
-            rer_importer::inbox::metadata::oneoff_reprocess_inbox_metadata(
+            rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(
                 mode, &ps,
             )
             .await

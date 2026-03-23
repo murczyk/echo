@@ -1,5 +1,5 @@
+use crate::location::SettlementDetails;
 use crate::messenger::group::types::SignalGroupEntry;
-use crate::{location::SettlementDetails, rer_importer::highlight::CNPoint};
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
@@ -1217,9 +1217,4 @@ pub struct PalitraLexeme {
 pub struct PalitraPattern {
     pub palitra_id: i64,
     pub matcher: Arc<HashMap<String, Vec<PalitraLexeme>>>,
-}
-
-pub struct PalitraHighlight {
-    pub palitra_id: i64,
-    pub points: Vec<CNPoint>,
 }

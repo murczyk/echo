@@ -195,6 +195,9 @@ init route _ =
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
             , reportTagsOnlyThisUnitForReport = False
+            , reportWithoutComments = False
+            , reportDigestOmitExoId = False
+            , reportDigestForm1217 = False
             , reportAdvancedSenders = False
             , reportAdjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
@@ -3518,6 +3521,33 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportWithoutCommentsToggle ->
+            let
+                reportWithoutComments =
+                    not model.reportWithoutComments
+            in
+            ( { model
+                | reportWithoutComments = reportWithoutComments
+                , reportTagsOnlyThisUnitForReport =
+                    if reportWithoutComments then
+                        False
+
+                    else
+                        model.reportTagsOnlyThisUnitForReport
+              }
+            , E.none
+            )
+
+        ReportDigestOmitExoIdToggle ->
+            ( { model | reportDigestOmitExoId = not model.reportDigestOmitExoId }
+            , E.none
+            )
+
+        ReportDigestForm1217Toggle ->
+            ( { model | reportDigestForm1217 = not model.reportDigestForm1217 }
+            , E.none
+            )
+
         ReportAdvancedSendersToggle ->
             ( { model | reportAdvancedSenders = not model.reportAdvancedSenders }
             , E.none
@@ -3543,6 +3573,24 @@ update user shared route msg model =
                 , reportType = reportTemplateToApiType model model.reportTemplate
                 , req = getInboxReq model
                 , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
+                , withoutComments =
+                    if model.reportTemplate == RTBabak then
+                        Just model.reportWithoutComments
+
+                    else
+                        Nothing
+                , digestOmitExoId =
+                    if model.reportTemplate == RTDigest then
+                        Just model.reportDigestOmitExoId
+
+                    else
+                        Nothing
+                , digestForm1217 =
+                    if model.reportTemplate == RTDigest then
+                        Just model.reportDigestForm1217
+
+                    else
+                        Nothing
                 }
             )
 

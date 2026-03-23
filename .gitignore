@@ -9,6 +9,7 @@ wdintel
 **/__pycache__
 *.pyc
 .vscode
+.codex
 deploy/config-local*.toml
 deploy/config-live*.toml
 deploy/client_secret_*
@@ -25,6 +26,7 @@ deploy/vector/kibana/sink-hammer.yaml
 .cursor/
 .ai/
 .j
+.issues/
 
 # GOI local/runtime artifacts
 goi/swapp/.runtime/

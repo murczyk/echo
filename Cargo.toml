@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1-rc.202603190724"
+version = "0.1.1-rc.202603230936"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"
@@ -15,15 +15,15 @@ description = "ЕХО - Root workspace"
 
 [workspace.dependencies]
 # Common dependencies that can be shared across workspace members
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
-tokio = { version = "1.47.1", features = ["tracing"] }
-anyhow = "1.0.100"
-chrono = "0.4.41"
-uuid = { version = "1.18.0", features = ["v4", "v7"] }
-log = "0.4.27"
-thiserror = "2.0.15"
-actix-web = "4.11.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.50.0", features = ["tracing"] }
+anyhow = "1.0.102"
+chrono = "0.4.44"
+uuid = { version = "1.22.0", features = ["v4", "v7"] }
+log = "0.4.29"
+thiserror = "2.0.18"
+actix-web = "4.13.0"
 sqlx = { version = "0.8.6", features = [
     "runtime-tokio-rustls",
     "macros",
@@ -31,18 +31,18 @@ sqlx = { version = "0.8.6", features = [
     "chrono",
     "json",
 ] }
-sea-orm = { version = "1.1.14", features = [
+sea-orm = { version = "1.1.19", features = [
     "debug-print",
     "runtime-tokio-rustls",
     "sqlx-postgres",
     "sea-orm-internal",
     "postgres-array",
 ] }
-sea-orm-migration = { version = "1.1.14", features = [
+sea-orm-migration = { version = "1.1.19", features = [
     "runtime-tokio-rustls",
     "sqlx-postgres",
 ] }
-syn = "2.0.106"
+syn = "2.0.117"
 
 [patch.crates-io]
 # Use forked sqlx with pool connection refused fix, backported to 0.8.6.

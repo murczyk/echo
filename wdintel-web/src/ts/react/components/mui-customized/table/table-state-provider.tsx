@@ -100,6 +100,7 @@ type ColumnVisibility = { [key: string]: boolean };
 type TableStateProviderProps = {
   defaultColumnVisibility: ColumnVisibility;
   defaultColumnOrder: MRT_ColumnOrderState;
+  defaultEnableColumnOrdering?: boolean;
   defaultSorting?: MRT_SortingState;
   defaultDate?: Dayjs;
   disableSavingOfColumnsVisibility?: boolean;
@@ -229,7 +230,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
         return JSON.parse(value);
       } catch (error) {}
     }
-    return true;
+    return props.defaultEnableColumnOrdering ?? true;
   }
 
   function getInitialEnableColumnResizing() {

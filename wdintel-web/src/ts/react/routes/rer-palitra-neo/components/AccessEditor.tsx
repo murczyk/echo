@@ -46,6 +46,7 @@ function AccessEditorComponent({
 }: Props) {
   const restrictedByRole = isAccessRestricted(user);
   const restricted = restrictedByRole || readOnly;
+  const disableAccessTypeSelection = Boolean(readOnly);
   const loginOptions = React.useMemo(() => Array.from(new Set([...allLogins, ...form.logins])), [allLogins, form.logins]);
   const organismOptions = React.useMemo(
     () => (restrictedByRole ? (myScope?.organism ? [myScope.organism] : []) : organisms),
@@ -72,6 +73,7 @@ function AccessEditorComponent({
           row
           value={form.accessType}
           onChange={(event) => {
+            if (disableAccessTypeSelection) return;
             const nextType = event.target.value as AccessType;
             onChange(applyRestrictedAccess(withDefaultOrganismAccess(form, nextType, myScope), user, myScope));
           }}
@@ -82,7 +84,7 @@ function AccessEditorComponent({
               value={accessType}
               control={<Radio size="small" />}
               label={accessTypeLabel(accessType)}
-              disabled={readOnly}
+              disabled={disableAccessTypeSelection}
             />
           ))}
         </RadioGroup>

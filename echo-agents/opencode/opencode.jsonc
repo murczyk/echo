@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "permission": {
+    "*": "allow",
+    "websearch": "deny",
+    "webfetch": "deny"
+  },
+
+  "provider": {
+    "vllm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "vLLM local",
+      "options": {
+        "baseURL": "http://vllm-host:8000/v1",
+        "apiKey": "local"
+      },
+      "models": {
+        "openai/gpt-oss-120b": {
+          "name": "gpt-oss-120b (vllm)"
+        }
+      }
+    }
+  },
+
+  "model": "vllm/openai/gpt-oss-120b"
+}

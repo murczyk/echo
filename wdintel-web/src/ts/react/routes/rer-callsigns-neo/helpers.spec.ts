@@ -48,6 +48,25 @@ describe('rer-callsigns helpers', () => {
     expect(req.tillDateInclusiveMs).toBe(parseDateTimeLocalToMs('2026-03-18T12:00'));
   });
 
+  it('keeps sidebar hierarchy filters in the request, including empty hierarchy nodes', () => {
+    const req = buildListCallsignsReq({
+      filters: createDefaultFilters(new Date('2026-03-18T12:00:00Z')),
+      sort: { column: 'unit', direction: 'asc' },
+      query: { afterId: null, limit: 100 },
+      sidebarUnitHierarchyFilter: {
+        army: 'A',
+        division: '',
+        regiment: null,
+        battalion: null,
+      },
+    });
+
+    expect(req.filterUnitArmy).toBe('A');
+    expect(req.filterUnitDivision).toBe('');
+    expect(req.filterUnitRegiment).toBeNull();
+    expect(req.filterUnitBattalion).toBeNull();
+  });
+
   it('maps sort state to backend sort enums', () => {
     expect(toBackendSort({ column: 'callsign', direction: 'asc' })).toEqual(['CallsignAsc']);
     expect(toBackendSort({ column: 'sourceName', direction: 'desc' })).toEqual(['CallsignSourceDesc']);

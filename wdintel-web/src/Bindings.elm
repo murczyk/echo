@@ -4450,6 +4450,9 @@ type alias ReportPreviewReq =
     , req : InboxMessagesReq
     , reportType : Maybe ReportType
     , reportTagsOnlyThisUnit : Maybe Bool
+    , withoutComments : Maybe Bool
+    , digestOmitExoId : Maybe Bool
+    , digestForm1217 : Maybe Bool
     }
 
 
@@ -4460,6 +4463,9 @@ reportPreviewReqEncoder struct =
         , ( "req", inboxMessagesReqEncoder struct.req )
         , ( "report_type", (Maybe.withDefault Json.Encode.null << Maybe.map reportTypeEncoder) struct.reportType )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
+        , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutComments )
+        , ( "digest_omit_exo_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.digestOmitExoId )
+        , ( "digest_form_1_2_17", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.digestForm1217 )
         ]
 
 
@@ -4980,6 +4986,10 @@ type alias ListCallsignsReq =
     , filterPosition : Maybe String
     , filterComment : Maybe String
     , filterUnit : Maybe String
+    , filterUnitArmy : Maybe String
+    , filterUnitDivision : Maybe String
+    , filterUnitRegiment : Maybe String
+    , filterUnitBattalion : Maybe String
     , filterDeveloping : Maybe DevelopingFilter
     , sinceDateInclusiveMs : Maybe Int
     , tillDateInclusiveMs : Maybe Int
@@ -4998,6 +5008,10 @@ listCallsignsReqEncoder struct =
         , ( "filter_position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterPosition )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterComment )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
+        , ( "filter_unit_army", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnitArmy )
+        , ( "filter_unit_division", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnitDivision )
+        , ( "filter_unit_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnitRegiment )
+        , ( "filter_unit_battalion", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnitBattalion )
         , ( "filter_developing", (Maybe.withDefault Json.Encode.null << Maybe.map developingFilterEncoder) struct.filterDeveloping )
         , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateInclusiveMs )
@@ -10065,6 +10079,9 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" inboxMessagesReqDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_type" (Json.Decode.nullable reportTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_omit_exo_id" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_form_1_2_17" (Json.Decode.nullable Json.Decode.bool)))
 
 
 reportTypeDecoder : Json.Decode.Decoder ReportType
@@ -10566,6 +10583,10 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_position" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_division" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_regiment" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_battalion" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_developing" (Json.Decode.nullable developingFilterDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
