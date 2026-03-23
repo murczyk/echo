@@ -372,20 +372,76 @@ getPointEtalonsFromMessage message =
                     )
 
 
-buildAnalysisMapUrlWithSearch : List String -> String
-buildAnalysisMapUrlWithSearch etalons =
+buildAnalysisMapUrlWithSearch : ViewParams -> B.InboxMessage -> List String -> String
+buildAnalysisMapUrlWithSearch ps message etalons =
     let
-        stateStr =
-            Encode.encode 0
-                (Encode.object
-                    [ ( "search", Encode.string (String.join "," etalons) )
-                    ]
-                )
+        searchStr =
+            etalons
+                |> ListX.unique
+                |> List.filter (\s -> String.trim s /= "")
+                |> String.join ","
     in
-    Url.Builder.absolute [ "rer-analysis" ]
-        [ Url.Builder.string "state" stateStr
-        , Url.Builder.string "showMap" "true"
-        ]
+    if String.trim searchStr == "" then
+        Url.Builder.absolute [ "rer-analysis" ] [ Url.Builder.string "showMap" "true" ]
+
+    else
+        let
+            dateFromStr =
+                case ps.time of
+                    Just time ->
+                        Utils.Time.renderDateF4 ps.zone (Utils.Time.xDaysAgo 15 time)
+
+                    _ ->
+                        ""
+
+            dateToStr =
+                case ps.time of
+                    Just time ->
+                        Utils.Time.renderDateF4 ps.zone (Utils.Time.xDaysAgo -1 time)
+
+                    _ ->
+                        ""
+
+            stateStr =
+                Encode.encode 0
+                    (B.rerAnalysisQueryStateEncoder
+                        { dateFromStr = dateFromStr
+                        , timeFromStr = ""
+                        , dateToStr = dateToStr
+                        , timeToStr = "00:00"
+                        , aorsSelected = []
+                        , groupsSelected = []
+                        , sendersSelected = []
+                        , freqsSelected = message.freq |> mmap (\x -> [ x ]) |> def []
+                        , callsignsSelected = []
+                        , unitsSelected = []
+                        , locationsSelected = []
+                        , postsSelected = []
+                        , networksSelected = []
+                        , withoutNetwork = False
+                        , includePelengLocations = False
+                        , orWithExtendedForm = False
+                        , orBookmarked = False
+                        , orImportant = False
+                        , orWithCoords = False
+                        , search = searchStr
+                        , metadataCc = []
+                        , metadataSender = []
+                        , metadataReceiver = []
+                        , metadataHash = []
+                        , onlyWithMetadata = False
+                        , withoutMetadata = False
+                        , tags = []
+                        , unitsExactMatchOnly = Nothing
+                        , adjacentFreqsRange = 0
+                        , withoutModelTags = False
+                        }
+                    )
+        in
+        Url.Builder.absolute [ "rer-analysis" ]
+            [ Url.Builder.string "state" stateStr
+            , Url.Builder.string "showMap" "true"
+            ]
 
 
 hasUserTag : Int -> String -> B.InboxMessage -> Bool
@@ -1252,11 +1308,11 @@ rightColumn ( messageId, message ) ps model =
                                                     Dict.empty
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch (getPointEtalonsFromMessage message))) metadataLinks
+                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch ps message (getPointEtalonsFromMessage message))) metadataLinks
 
                                 Nothing ->
                                     Shared.MarkedText.fromPlainText message.text
-                                        |> Shared.MarkedText.viewWithHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch (getPointEtalonsFromMessage message))) metadataLinks
+                                        |> Shared.MarkedText.viewWithHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch ps message (getPointEtalonsFromMessage message))) metadataLinks
                            )
                         ++ [ div
                                 [ class "flex flex-col items-start gap-2 mt-2"

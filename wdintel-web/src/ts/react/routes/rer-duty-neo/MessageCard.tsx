@@ -41,7 +41,13 @@ function ResolvedNetworkEtalonRows({
         return (
           <span key={networkId} className="flex items-center gap-1 group w-full min-w-0">
             <span className="min-w-0">
-              <i className="bi bi-people text-icons shrink-0 mr-1" title="Еталонна прив'язка" />
+              <span className="inline-grid shrink-0 mr-1 place-items-start" title="Еталонна прив'язка">
+                <i className="bi bi-people text-icons col-start-1 row-start-1 group-hover:hidden" aria-hidden />
+                <i
+                  className="bi bi-people-fill text-icons col-start-1 row-start-1 hidden group-hover:inline"
+                  aria-hidden
+                />
+              </span>
 
               {badge ? (
                 <span className="ml-1 shrink-0 rounded border border-border bg-[var(--color-bg-inactive)] px-1.5 py-0.5 text-[10px] leading-none opacity-90">
@@ -53,11 +59,14 @@ function ResolvedNetworkEtalonRows({
                   href={`/rer-networks/${networkId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group-hover:opacity-50 transition-opacity duration-100 cursor-pointer shrink-0"
+                  className="items-baseline gap-1 min-w-0 cursor-pointer shrink-0"
                   title="Відкрити мережу в новій вкладці"
                 >
                   <span className="min-w-0 break-words font-bold">{label}</span>
-                  <i className="bi bi-box-arrow-up-right text-sm ml-1" />
+                  <i
+                    className="bi bi-box-arrow-up-right text-sm ml-1 shrink-0 text-icons/60 transition-[color,transform] duration-150 group-hover:text-action group-hover:scale-110"
+                    aria-hidden
+                  />
                 </a>
               ) : (
                 <span className="min-w-0 break-words font-normal">{label}</span>
