@@ -650,6 +650,7 @@ pub async fn main_server(
             .service(crate::organism::organism_compute_available_groups_for_new)
             .service(crate::organism::organism_available_groups_batch)
             .service(crate::organism::organism_active_logins)
+            .service(crate::organism::organism_logins)
             .service(crate::organism::goi::organism_goi_settings)
             .service(crate::organism::goi::update_organism_goi_settings)
             .service(crate::organism::goi::check_organism_goi_connection)
