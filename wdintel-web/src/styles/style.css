@@ -517,6 +517,11 @@
     transition: border-bottom-color 1s ease;
 }
 
+.text-marked .content-token--point {
+    border-bottom: 3px solid #fd884f;
+    transition: border-bottom-color 1s ease;
+}
+
 .text-marked .content-token--metadata {
     border-bottom: 3px solid #1b8057;
     transition: border-bottom-color 1s ease;
@@ -1064,10 +1069,10 @@ sl-tooltip {
 }
 
 .app-navbar-links-list {
-    justify-content: flex-start;
+    justify-content: center;
 }
 
-@media (min-width: 992px) {
+@media (min-width: 1400px) {
     .app-navbar-row {
         flex-wrap: nowrap;
     }

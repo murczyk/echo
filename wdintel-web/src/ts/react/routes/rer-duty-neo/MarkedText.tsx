@@ -1,12 +1,8 @@
 import type { ReactNode } from 'react';
 
 import type { ContentNode } from '../../../../Bindings';
-import { buildAnalysisMapHrefWithSearch } from './utils';
+import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
 
-/**
- * Renders backend-produced marked content (callsigns, keywords, signals, points)
- * when highlight_* request params are used.
- */
 function collectPointEtalons(nodes: ContentNode[]): string[] {
   const etalons: string[] = [];
   for (const n of nodes) {
@@ -18,17 +14,17 @@ function collectPointEtalons(nodes: ContentNode[]): string[] {
   return etalons;
 }
 
-/**
- * @param messagePointEtalons - When provided (e.g. from msg.pointTokens), use for map href so all points from the message are in the search. Falls back to etalons from nodes when not provided.
- */
 export function renderMarkedText(
   nodes: ContentNode[],
   bodyText: string,
   messagePointEtalons?: string[],
+  options?: { showPointLinks?: boolean },
 ): ReactNode[] {
+  const showPointLinks = options?.showPointLinks !== false;
   const fromNodes = collectPointEtalons(nodes);
-  const allPointEtalons =
-    messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes;
+  const allPointEtalons = uniquePointEtalonsForMapSearch(
+    messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
+  );
   return nodes.map((node, i) => {
     if (typeof node === 'string') {
       if (node === 'CNNewlineC') return <br key={i} />;
@@ -71,6 +67,9 @@ export function renderMarkedText(
     if ('CNPointC' in node) {
       const { begin, end, etalon } = node.CNPointC;
       const sliceText = bodyText.slice(begin, end);
+      if (!showPointLinks) {
+        return <span key={i}>{sliceText}</span>;
+      }
       const etalonsForUrl = allPointEtalons.length > 0 ? allPointEtalons : [etalon];
       const href = buildAnalysisMapHrefWithSearch(etalonsForUrl);
       const title =
@@ -83,9 +82,8 @@ export function renderMarkedText(
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="content-token--point content-token--point-link badge-highlighed-token"
+          className="content-token--point hover:cursor-pointer"
           title={title}
-          style={{ cursor: 'pointer', display: 'inline-block', pointerEvents: 'auto', zIndex: 100 }}
         >
           {sliceText}
         </a>

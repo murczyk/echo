@@ -76,7 +76,7 @@ export function AnalysisSidebar({
   toggleCallsignGraphNolimit,
 }: Props) {
   return (
-    <Box component="aside" aria-label="Аналітична бічна панель" sx={{ minHeight: 0, overflow: 'auto' }}>
+    <Box component="aside" aria-label="Аналітична бічна панель" sx={{ minHeight: 0, height: '100%', overflow: 'auto' }}>
       <Stack spacing={2}>
         <AnalysisOverviewCard counts={counts} />
         <AnalysisChartsPanel

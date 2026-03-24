@@ -2,20 +2,22 @@ module Shared.Components.Navbar exposing (navBar)
 
 import Auth
 import Core.Auth exposing (hasRole, serverModeIs)
+import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on, onClick)
 import Json.Decode
+import Route
 import Route.Path
 import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
-import Shared.Model exposing (ThemeMode(..))
+import Shared.Model exposing (ThemeMode)
 import String
 import Utils.Utils exposing (..)
 
-
 type Link
     = Internal Route.Path.Path
+    | InternalRoute { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String }
     | External String
 
 
@@ -77,6 +79,15 @@ externalMenu link activeName label =
         }
 
 
+internalMenuRoute : { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String } -> String -> String -> Menu
+internalMenuRoute route activeName label =
+    MenuItem
+        { link = InternalRoute route
+        , activeName = activeName
+        , label = label
+        }
+
+
 menuGroup : String -> List Menu -> Menu
 menuGroup label subs =
     MenuGroup
@@ -89,10 +100,16 @@ menuIsActive : String -> Menu -> Bool
 menuIsActive activeName menu =
     case menu of
         MenuItem item ->
-            item.activeName == activeName
+            isActiveName item.activeName activeName
 
         MenuGroup group ->
             List.any (menuIsActive activeName) group.subs
+
+
+isActiveName : String -> String -> Bool
+isActiveName itemActiveName activeName =
+    itemActiveName == activeName
+        || (itemActiveName == "settings-neo" && String.startsWith "settings-neo" activeName)
 
 
 navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
@@ -110,6 +127,21 @@ navBar user shared activeName props =
 
         menuWithSubs =
             menuItemWithSubs props activeName
+
+        menuRoute =
+            menuItemRoute props activeName
+
+        operationalSubs =
+            [ internalMenu Route.Path.RerDuty "rer-duty" "класичний"
+            , internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "новий"
+            , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "duty" ) ], hash = Nothing } "settings-neo-duty" "налаштування"
+            ]
+
+        analysisSubs =
+            [ internalMenu Route.Path.RerAnalysis "analysis" "класичний"
+            , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "новий"
+            , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "analysis" ) ], hash = Nothing } "settings-neo-analysis" "налаштування"
+            ]
 
         adminSubs =
             [ internalMenu Route.Path.Admin_DirectionsNeo "zones" "напрямки"
@@ -160,13 +192,7 @@ navBar user shared activeName props =
             ]
 
         otherSubs =
-            (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
-                [ internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "аналіз" ]
-
-             else
-                []
-            )
-                ++ [ internalMenu Route.Path.Importer "importer" "імпортер"
+            [ internalMenu Route.Path.Importer "importer" "імпортер"
                    , internalMenu Route.Path.Delta "kmz2geojson" "kmz в geojson"
                    , internalMenu Route.Path.AlpinequestKmz "alpinequest-kmz" "alpinequest в kmz"
                    , internalMenu Route.Path.DeltaCsv2kmz "csv2kmz" "delta csv в kmz"
@@ -181,13 +207,11 @@ navBar user shared activeName props =
                    )
 
         menuItems =
-            [ menu Route.Path.Home_ "home" "головна" ]
+            menu Route.Path.Home_ "home" "головна"
+                :: ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                    [ menuWithSubs "operational" "оперативний" operationalSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menu Route.Path.RerDuty "rer-duty" "оперативний"
-                    , menu Route.Path.RerDutyNeo "rer-duty-neo" "оперативний"
-                    ]
-                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menu Route.Path.RerAnalysis "analysis" "аналіз" ]
+                    [ menuWithSubs "analysis" "аналіз" analysisSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "etalonka" "еталонка" etalonkaSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
@@ -199,13 +223,14 @@ navBar user shared activeName props =
                 -- ++ ifOrEmpty (hasRole "Basic" user)
                 --     [ menu Route.Path.Settings "settings" "налаштування (стара)" ]
                 ++ ifOrEmpty (hasRole "Basic" user)
-                    [ menu Route.Path.SettingsNeo "settings-neo" "налаштування" ]
+                    [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "general" ) ], hash = Nothing } "settings-neo" "налаштування" ]
                 ++ ifOrEmpty (hasRole "Admin" user)
                     [ menuWithSubs "admin" "адмін" adminSubs ]
 
-        -- Only the new/modern style remains
         navbarStyles =
-            [ class "bg-[var(--color-card)] border-b border-[var(--color-border)] py-2 [&_a]:!text-[var(--color-text)] [&_a:hover]:!text-[var(--color-text)]" ]
+            [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
+            , class "border-b border-black/15 py-2"
+            ]
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
@@ -251,12 +276,12 @@ navBar user shared activeName props =
                         []
                     ]
                 , div [ class "app-navbar-links w-full min-w-0" ]
-                    [ ul [ class "app-navbar-links-list flex flex-wrap items-center gap-x-6 gap-y-1 min-w-0" ] menuItems
+                    [ ul [ class "app-navbar-links-list flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0" ] menuItems
                     ]
                 , div [ class "app-navbar-actions flex gap-2 items-center shrink-0" ]
                     [ if props.supportsFullscreenToggle then
                         button
-                            [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200 text-[var(--color-text)] border-0 appearance-none flex items-center"
+                            [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center"
                             , onClick props.onNavbarVisibilityChange
                             , title fullscreenToggleLabel
                             , attribute "aria-label" fullscreenToggleLabel
@@ -269,7 +294,7 @@ navBar user shared activeName props =
                                 )
                             ]
                             [ i
-                                [ class "bi bi-arrows-fullscreen text-[var(--color-text)] cursor-pointer hover:text-[var(--color-text)] transition-colors duration-200"
+                                [ class "bi bi-arrows-fullscreen text-white cursor-pointer hover:text-white transition-colors duration-200"
                                 ]
                                 []
                             ]
@@ -279,10 +304,10 @@ navBar user shared activeName props =
                     , themeSwitcher
                         { currentTheme = shared.themeMode
                         , onThemeChange = props.onThemeChange
-                        , triggerClass = "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200 text-[var(--color-text)]"
+                        , triggerClass = "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
                         }
                     , button
-                        [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200 text-[var(--color-text)] border-0 appearance-none flex items-center gap-1"
+                        [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center gap-1"
                         , onClick props.onLogout
                         ]
                         [ i [ class "bi bi-box-arrow-right text-lg" ] []
@@ -294,11 +319,30 @@ navBar user shared activeName props =
         ]
 
 
+
+-- Main navbar links: always white text
+
+
+menuItemRoute : { a | onDropdownToggle : Maybe b -> msg } -> String -> { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String } -> String -> String -> Html msg
+menuItemRoute props activeName route activeNameExp nameText =
+    li []
+        [ a
+            [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
+            , classList
+                [ ( "font-medium", isActiveName activeNameExp activeName ) ]
+            , Route.href { path = route.path, query = route.query, hash = route.hash }
+            , onClick (props.onDropdownToggle Nothing)
+            ]
+            [ text nameText ]
+        ]
+
+
+menuItem : { a | onDropdownToggle : Maybe b -> msg } -> String -> Route.Path.Path -> String -> String -> Html msg
 menuItem props activeName hrefLink activeNameExp nameText =
     let
         neoAlphaBadge =
             span
-                [ class "pointer-events-none absolute -top-1 -right-1 z-10 rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
+                [ class "pointer-events-none absolute -top-[1px] -right-[18px] z-10 rounded-full border !border-rose-300 bg-rose-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-rose-900" ]
                 [ text "Alpha" ]
 
         linkContents =
@@ -312,16 +356,19 @@ menuItem props activeName hrefLink activeNameExp nameText =
     in
     li []
         [ a
-            [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
+            [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
             , classList
                 [ ( "relative", activeNameExp == "rer-duty-neo" )
-                , ( "text-[var(--color-text)] font-medium", activeName == activeNameExp )
+                , ( "font-medium", isActiveName activeNameExp activeName )
                 ]
             , Route.Path.href hrefLink
             , onClick (props.onDropdownToggle Nothing)
             ]
             linkContents
         ]
+
+
+-- Dropdowns: black text in light mode, white in dark mode
 
 
 menuItemWithSubs : Props msg -> String -> String -> String -> List Menu -> Html msg
@@ -351,15 +398,31 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
             case item.link of
                 Internal path ->
                     a
-                        [ class "flex items-center justify-between px-4 py-2 hover:bg-black/10 dark:hover:bg-white/10 hover:text-[var(--color-text)] rounded transition-all duration-200"
-                        , classList [ ( "text-[var(--color-text)] font-medium", item.activeName == activeName ) ]
+                        [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
+                        , classList [ ( "font-medium", isActiveName item.activeName activeName ) ]
                         , attribute "role" "menuitem"
                         , Route.Path.href path
                         , onClick (props.onDropdownToggle Nothing)
                         ]
                         [ menuItemLabel item
-                        , if item.activeName == activeName then
-                            i [ class "bi bi-check text-[var(--color-text)] ml-2" ] []
+                        , if isActiveName item.activeName activeName then
+                            i [ class "bi bi-check ml-2" ] []
+
+                          else
+                            text ""
+                        ]
+
+                InternalRoute route ->
+                    a
+                        [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
+                        , classList [ ( "font-medium", isActiveName item.activeName activeName ) ]
+                        , attribute "role" "menuitem"
+                        , Route.href { path = route.path, query = route.query, hash = route.hash }
+                        , onClick (props.onDropdownToggle Nothing)
+                        ]
+                        [ menuItemLabel item
+                        , if isActiveName item.activeName activeName then
+                            i [ class "bi bi-check ml-2" ] []
 
                           else
                             text ""
@@ -367,8 +430,8 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
 
                 External link ->
                     a
-                        [ class "flex items-center justify-between px-4 py-2 hover:bg-black/10 dark:hover:bg-white/10 hover:text-[var(--color-text)] rounded transition-all duration-200"
-                        , classList [ ( "text-[var(--color-text)] font-medium", item.activeName == activeName ) ]
+                        [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
+                        , classList [ ( "font-medium", isActiveName item.activeName activeName ) ]
                         , attribute "role" "menuitem"
                         , href link
                         , target "_blank"
@@ -449,8 +512,8 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
     in
     li [ class "relative group" ]
         [ button
-            [ class "inline-flex items-center py-2 px-2 cursor-pointer hover:text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-card)]"
-            , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
+            [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1"
+            , classList [ ( "font-medium", menuIsActive activeName (MenuGroup { label = nameText, subs = subs }) ) ]
             , onClick toggleMsg
             , onDropdownTriggerKey toggleMsg
             , attribute "aria-haspopup" "true"
@@ -474,7 +537,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         , div [ class "absolute left-0 pt-2 z-[3001]" ]
             [ ul
                 [ id dropdownMenuId
-                , class "w-64 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] group-hover:block transition-all duration-200"
+                , class "w-64 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )

@@ -1,9 +1,10 @@
 module Pages.SettingsNeo exposing (Model, Msg, page)
 
 import Auth
+import Dict
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
-import Html.Attributes exposing (class)
+import Html.Attributes exposing (attribute, class)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -27,21 +28,37 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared _ =
+page user shared route =
     Page.new
         { init = init
         , update = update
         , subscriptions = subscriptions
-        , view = view shared
+        , view = view route shared
         }
-        |> Page.withLayout (toLayout user)
+        |> Page.withLayout (toLayout user route)
 
 
-toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user _ =
+settingsSection : Route () -> String
+settingsSection route =
+    route.query
+        |> Dict.get "section"
+        |> Maybe.withDefault "general"
+
+
+toLayout : Auth.User -> Route () -> Model -> Layouts.Layout Msg
+toLayout user route _ =
     Layouts.Navbar
         { user = user
-        , activeName = "settings-neo"
+        , activeName =
+            case settingsSection route of
+                "duty" ->
+                    "settings-neo-duty"
+
+                "analysis" ->
+                    "settings-neo-analysis"
+
+                _ ->
+                    "settings-neo"
         }
 
 
@@ -57,11 +74,13 @@ subscriptions _ =
     Sub.none
 
 
-view : Shared.Model -> Model -> View Msg
-view _ _ =
-    { title = "налаштування"
+view : Route () -> Shared.Model -> Model -> View Msg
+view route _ _ =
+    { title = "Налаштування"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-4/5 mx-auto" ]
-            [ node "settings-neo" [] [] ]
+        [ div [ class "box-border px-6 pt-6 pb-6 w-full flex flex-col" ]
+            [ div [ class "w-full" ]
+                [ node "settings-neo" [ attribute "data-settings-section" (settingsSection route), class "react-fill-host block w-full" ] [] ]
+            ]
         ]
     }

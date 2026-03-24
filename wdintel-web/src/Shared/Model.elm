@@ -83,7 +83,6 @@ type alias Model =
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , posts : RemoteData ApiError (Dict Int B.Post)
     , toasts : Shared.Components.Toast.Model
-    , featureNavbarFrontOnly : Bool
     , eventService : Core.EventTypes.EventState
     , pendingEvents : List B.EventMsg
     , eventSubscriptions : Core.EventTypes.EventSubscriptions

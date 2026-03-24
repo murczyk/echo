@@ -74,7 +74,7 @@ export function AnalysisFiltersPanel({
         : `точних збігів: ${counts.unitsExactMatchesCount}`;
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, overflow: 'auto', minHeight: 0 }}>
+    <Paper variant="outlined" sx={{ p: 2, overflow: 'auto', minHeight: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Stack spacing={2}>
         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
           Фільтри

@@ -195,7 +195,14 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _handleVisibilityAttributeChanged(newValue: string): void {
-    if (this._initialized || newValue !== 'true') {
+    if (newValue !== 'true') {
+      return;
+    }
+
+    if (this._initialized) {
+      setTimeout(() => {
+        this._map?.invalidateSize();
+      }, 0);
       return;
     }
 

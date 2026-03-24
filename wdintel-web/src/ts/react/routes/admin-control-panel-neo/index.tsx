@@ -76,7 +76,7 @@ export function AdminControlPanelNeoPage() {
       await restartEcho(buildRestartEchoPayload(form));
       setStatus({
         kind: 'success',
-        message: 'Запит на перезапуск надіслано.',
+        message: 'Запит на перезапуск надіслано',
       });
     } catch (error) {
       setStatus({

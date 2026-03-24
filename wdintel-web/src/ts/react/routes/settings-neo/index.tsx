@@ -1,50 +1,74 @@
-import SaveIcon from '@mui/icons-material/Save';
 import {
   Alert,
   Autocomplete,
   Box,
+  Card,
   CircularProgress,
   Stack,
   Tab,
   Tabs,
   TextField,
   Typography,
-} from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+} from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent, SyntheticEvent } from "react";
 
-import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
-import { PageHeader } from '../../components/PageHeader';
-import { Button } from '../../components/mui-customized/button';
-import { isUnauthorizedError } from '../../services/api/client';
-import { fetchServerInfo } from '../../services/api/server-info';
-import { fetchCurrentUser, saveUserSettings } from '../../services/api/user';
-import { listSigintZones } from '../../services/api/zones';
+import { SettingsSaveReq, SigintZone } from "../../../../Bindings";
+import { PageHeader } from "../../components/PageHeader";
+import { Button } from "../../components/mui-customized/button";
+import { isUnauthorizedError } from "../../services/api/client";
+import { fetchServerInfo } from "../../services/api/server-info";
+import { fetchCurrentUser, saveUserSettings } from "../../services/api/user";
+import { listSigintZones } from "../../services/api/zones";
 
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
 
+export type SettingsSection = "general" | "duty" | "analysis";
+
+type SettingsNeoPageProps = {
+  section?: SettingsSection;
+};
+
+const SETTINGS_SECTION_QUERY_PARAM = "section";
+
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
-  if (typeof error === 'string' && error.trim().length > 0) return error;
-  return 'Невідома помилка. Спробуйте ще раз.';
+  if (typeof error === "string" && error.trim().length > 0) return error;
+  return "Невідома помилка. Спробуйте ще раз.";
 }
 
 function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
   return { sigintZoneId };
 }
 
-export function SettingsNeoPage() {
+function parseSettingsSection(section: string | null | undefined): SettingsSection {
+  if (section === "duty" || section === "analysis") return section;
+  return "general";
+}
+
+function readSettingsSectionFromUrl(): SettingsSection {
+  return parseSettingsSection(new URLSearchParams(window.location.search).get(SETTINGS_SECTION_QUERY_PARAM));
+}
+
+function buildSettingsSectionUrl(section: SettingsSection): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set(SETTINGS_SECTION_QUERY_PARAM, section);
+  url.hash = "";
+  return url.pathname + url.search + url.hash;
+}
+
+export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [zones, setZones] = useState<ZonePair[]>([]);
   const [zoneId, setZoneId] = useState<number | null>(null);
   const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
-  const [versionText, setVersionText] = useState<string>('невідома версія');
+  const [versionText, setVersionText] = useState<string>("невідома версія");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadInProgress, setLoadInProgress] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
-  const [settingsTab, setSettingsTab] = useState(0);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => parseSettingsSection(section ?? readSettingsSectionFromUrl()));
 
   const zoneOptions = useMemo<ZoneOption[]>(
     () => zones.map(([id, zone]) => ({ id, label: zone.name })),
@@ -55,6 +79,23 @@ export function SettingsNeoPage() {
     () => zoneOptions.find((option) => option.id === zoneId) ?? null,
     [zoneOptions, zoneId],
   );
+
+  useEffect(() => {
+    if (section == null) return;
+    setSettingsSection(parseSettingsSection(section));
+  }, [section]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setSettingsSection(readSettingsSectionFromUrl());
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -75,17 +116,17 @@ export function SettingsNeoPage() {
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
           if (!abortController.signal.aborted) {
-            setVersionText(serverInfo.version || 'невідома версія');
+            setVersionText(serverInfo.version || "невідома версія");
           }
         } catch (_) {
           if (!abortController.signal.aborted) {
-            setVersionText('невідома версія');
+            setVersionText("невідома версія");
           }
         }
       } catch (error) {
         if (abortController.signal.aborted) return;
         if (isUnauthorizedError(error)) {
-          window.location.assign('/login');
+          window.location.assign("/login");
           return;
         }
         setLoadError(`Помилка завантаження налаштувань: ${formatErrorMessage(error)}`);
@@ -116,10 +157,10 @@ export function SettingsNeoPage() {
     try {
       await saveUserSettings(toSettingsSaveReq(zoneId));
       setInitialZoneId(zoneId);
-      setSaveSuccess('Налаштування збережено.');
+      setSaveSuccess("Налаштування збережено");
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        window.location.assign('/login');
+        window.location.assign("/login");
         return;
       }
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
@@ -128,45 +169,41 @@ export function SettingsNeoPage() {
     }
   }
 
-  return (
-    <Box className="w-full" sx={{ height: '100%', minHeight: 0, overflow: 'auto' }}>
-      <Stack spacing={3} useFlexGap sx={{ minHeight: '100%' }}>
-        <PageHeader title="налаштування" className="px-4" />
+  function handleTabChange(_: SyntheticEvent, value: SettingsSection) {
+    if (value === settingsSection) return;
 
-        <div className="bg-[var(--card-color)] rounded-xl shadow-sm border border-[var(--border-color)] overflow-hidden">
+    setSettingsSection(value);
+    window.history.pushState(window.history.state, "", buildSettingsSectionUrl(value));
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
+
+  return (
+    <Box className="w-full" sx={{ maxWidth: 980, mx: "auto" }}>
+      <Stack spacing={2} useFlexGap>
+        <PageHeader title="Налаштування" />
+
+        <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: "none", overflow: "hidden", backgroundColor: "background.paper" }}>
           <Tabs
-            value={settingsTab}
-            onChange={(_, value: number) => setSettingsTab(value)}
+            value={settingsSection}
+            onChange={handleTabChange}
             variant="scrollable"
-            scrollButtons="auto"
+            allowScrollButtonsMobile
             sx={{
-              px: 2,
-              pt: 1,
+              minHeight: 48,
               borderBottom: 1,
-              borderColor: 'divider',
-              bgcolor: 'var(--color-bg-inactive)',
-              '& .MuiTab-root': {
-                textTransform: 'none',
-                fontSize: '1.75rem',
-                lineHeight: 1.35,
-                fontWeight: 600,
-                minHeight: 52,
-                py: 1.5,
-                color: 'text.secondary',
-              },
-              '& .MuiTab-root.Mui-selected': {
-                color: 'text.primary',
-              },
+              borderColor: "divider",
+              flexShrink: 0,
             }}
           >
-            <Tab label="Основні" id="settings-neo-tab-main" aria-controls="settings-neo-panel-main" />
-            <Tab label="Оперативний" id="settings-neo-tab-duty" aria-controls="settings-neo-panel-duty" />
+            <Tab value="general" label="ЗАГАЛЬНІ" id="settings-neo-tab-general" aria-controls="settings-neo-panel-general" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
+            <Tab value="duty" label="ОПЕРАТИВНИЙ" id="settings-neo-tab-duty" aria-controls="settings-neo-panel-duty" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
+            <Tab value="analysis" label="АНАЛІЗ" id="settings-neo-tab-analysis" aria-controls="settings-neo-panel-analysis" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
           </Tabs>
 
-          {settingsTab === 0 ? (
-            <div role="tabpanel" id="settings-neo-panel-main" aria-labelledby="settings-neo-tab-main">
-              <Box component="form" onSubmit={handleSave} noValidate className="p-6">
-                <Stack spacing={3}>
+          {settingsSection === "general" ? (
+            <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
+              <Box component="form" onSubmit={handleSave} noValidate sx={{ p: 3 }}>
+                <Stack spacing={3} sx={{ width: "100%" }}>
                   {loadError ? <Alert severity="error">{loadError}</Alert> : null}
                   {saveError ? <Alert severity="error">{saveError}</Alert> : null}
                   {saveSuccess ? (
@@ -191,13 +228,13 @@ export function SettingsNeoPage() {
                       loading={loadInProgress}
                       loadingText="Завантаження..."
                       sx={{
-                        width: { xs: '100%', sm: '420px' },
-                        maxWidth: '100%',
-                        '& .MuiOutlinedInput-root': {
-                          backgroundColor: 'var(--bs-body-bg)',
+                        width: { xs: "100%", sm: "420px" },
+                        maxWidth: "100%",
+                        "& .MuiOutlinedInput-root": {
+                          backgroundColor: "var(--bs-body-bg)",
                         },
-                        '& .MuiAutocomplete-clearIndicator': {
-                          visibility: 'visible',
+                        "& .MuiAutocomplete-clearIndicator": {
+                          visibility: "visible",
                           opacity: 1,
                         },
                       }}
@@ -214,7 +251,7 @@ export function SettingsNeoPage() {
                     />
                   </Box>
 
-                  <Box className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]">
+                  <Box sx={{ display: "flex", alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between", gap: 2, flexWrap: "wrap", pt: 2 }}>
                     <Typography variant="caption" color="text.secondary">
                       Версія: {versionText}
                     </Typography>
@@ -222,7 +259,7 @@ export function SettingsNeoPage() {
                       variant="contained"
                       type="submit"
                       disabled={saveInProgress || !isDirty}
-                      startIcon={saveInProgress ? <CircularProgress size={18} /> : <SaveIcon fontSize="small" />}
+                      startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
                       sx={{ fontWeight: 500 }}
                     >
                       зберегти
@@ -230,15 +267,25 @@ export function SettingsNeoPage() {
                   </Box>
                 </Stack>
               </Box>
-            </div>
-          ) : (
-            <div className="p-6" id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty">
-              <Typography variant="body2" color="text.secondary">
-                Налаштування оперативного режиму з’являться тут.
+            </Box>
+          ) : null}
+
+          {settingsSection === "duty" ? (
+            <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
+                Налаштування оперативного режиму з’являться тут
               </Typography>
-            </div>
-          )}
-        </div>
+            </Box>
+          ) : null}
+
+          {settingsSection === "analysis" ? (
+            <Box id="settings-neo-panel-analysis" role="tabpanel" aria-labelledby="settings-neo-tab-analysis" sx={{ p: 3 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
+                Налаштування аналізу з’являться тут
+              </Typography>
+            </Box>
+          ) : null}
+        </Card>
       </Stack>
     </Box>
   );

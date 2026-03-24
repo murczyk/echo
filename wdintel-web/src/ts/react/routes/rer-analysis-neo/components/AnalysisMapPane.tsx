@@ -6,12 +6,13 @@ import type { AnalysisMapAttrs } from '../types';
 type Props = {
   mapAttrs: AnalysisMapAttrs;
   search: string;
+  visible: boolean;
   onDateRangeChange: (range: { startDate: number; endDate: number }) => void;
   onLoadMessages: (messageIds: number[]) => void;
   onUnitClick: (unitName: string | null) => void;
 };
 
-export function AnalysisMapPane({ mapAttrs, search, onDateRangeChange, onLoadMessages, onUnitClick }: Props) {
+export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, onLoadMessages, onUnitClick }: Props) {
   const hostRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export function AnalysisMapPane({ mapAttrs, search, onDateRangeChange, onLoadMes
     <Box
       component="section"
       aria-label="Мапа аналізу"
-      sx={{ flex: 1, minHeight: 0 }}
+      sx={{ flex: 1, minHeight: 0, display: 'flex', height: '100%' }}
     >
       {createElement('analysis-map', {
         ref: hostRef,
@@ -60,7 +61,7 @@ export function AnalysisMapPane({ mapAttrs, search, onDateRangeChange, onLoadMes
         palitras: mapAttrs.palitras,
         'palitras-loaded': 'false',
         'palitras-load-state': 'idle',
-        visibility: 'true',
+        visibility: visible ? 'true' : 'false',
         search,
       })}
     </Box>
