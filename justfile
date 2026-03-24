@@ -229,12 +229,12 @@ ci-test-be:
     @just ci-test-backend
 
 [arg('builder', long='builder')]
-ci-clean builder="echo-gpu":
+ci-clean builder="echo-build-main":
     #!/bin/bash
     set -euo pipefail
     BUILDER="{{ builder }}"
     if [[ -z "$BUILDER" ]]; then
-      echo "missing --builder (example: just ci-clean --builder echo-gpu)" >&2
+      echo "missing --builder (example: just ci-clean --builder echo-build-main)" >&2
       exit 1
     fi
 
@@ -252,7 +252,10 @@ ci-clean builder="echo-gpu":
       rm -rf -- "/tmp/cache" || true
 
       # Remove workspace-local caches. Keep `.git` so Actions can reuse checkout.
-      for ws in "$HOME/actions-runner"*/_work/echo/echo /home/ubuntu/actions-runner*/_work/echo/echo; do
+      for ws in \
+        "$HOME/workspace/echo" \
+        "$HOME/actions-runner"*/_work/echo/echo \
+        /home/ubuntu/actions-runner*/_work/echo/echo; do
         [[ -d "$ws" ]] || continue
         echo "Cleaning workspace caches under: $ws"
         rm -rf -- "$ws/target" || true
@@ -340,9 +343,9 @@ deploy _server_pos="" server:
     STARTED_KEY="echo-ci:deploy:echo:started:$VERSION"
     FINISHED_KEY="echo-ci:deploy:echo:finished:$VERSION"
 
-    # Use SSH to the builder host and query redis on localhost there
-    # Fixed builder host; can override by setting env BUILDER
-    BUILDER="${BUILDER:-echo-gpu}"
+    # Use SSH to the CI build host and query redis on localhost there.
+    # Fixed builder host; can override by setting env BUILDER.
+    BUILDER="${BUILDER:-echo-build-main}"
     CI_SSH_TARGET="$BUILDER"
     if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$CI_SSH_TARGET" true 2>/dev/null; then
       echo "Cannot SSH to $CI_SSH_TARGET; required to check Redis keys" >&2
