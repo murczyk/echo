@@ -496,7 +496,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   /** Keys are `${feedId}:${JSON.stringify(filter)}` so a filter change on the same feed triggers a new load. */
   const initialLoadStartedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!shortStateReady) return;
     const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
     const needingKeys = new Set(needingLoad.map((w) => `${w.id}:${JSON.stringify(w.filter)}`));
     const started = initialLoadStartedRef.current;
@@ -510,7 +509,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         loadFeedInitialMessagesRef.current(w.id);
       }
     });
-  }, [feedIds, feedsNeedingLoadKey, shortStateReady]);
+  }, [feedIds, feedsNeedingLoadKey]);
 
   useEffect(() => {
     const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;

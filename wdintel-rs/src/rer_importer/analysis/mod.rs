@@ -1318,9 +1318,8 @@ pub async fn rer_duty_filters_create(
         serde_json::to_string(&RerDutyShortStateGetRsp { state: req.state })
             .c(h!())?;
     let mut redis = env.redis.clone();
-    let _: () = redis.set(&key, payload).await.c(h!())?;
     let _: () = redis
-        .expire(&key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
+        .set_ex(&key, payload, RER_DUTY_SHORT_STATE_TTL_SEC)
         .await
         .c(h!())?;
     info!("rer duty short-state created id={id} login={login}");
