@@ -13,7 +13,6 @@ import Json.Decode
 import Route exposing (Route)
 import Shared
 import Shared.Components.Navbar
-import Shared.Components.NavbarOld
 import Shared.Components.Toast as Toast
 import Shared.Model exposing (ThemeMode(..))
 import Task
@@ -163,7 +162,6 @@ view user activeName shared route { toContentMsg, model, content } =
         usesShellContentGap =
             route.url.path == "/rer-palitra-neo"
                 || route.url.path == "/rer-callsigns-neo"
-                || route.url.path == "/settings-neo"
 
         usesFixedViewportLayout =
             usesShellContentGap || supportsFullscreenToggle
@@ -178,13 +176,8 @@ view user activeName shared route { toContentMsg, model, content } =
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
             }
-
         navbarHtml =
-            if shared.featureNavbarFrontOnly then
-                Shared.Components.Navbar.navBar user shared activeName navbarProps
-
-            else
-                Shared.Components.NavbarOld.navBar user shared activeName navbarProps
+            Shared.Components.Navbar.navBar user shared activeName navbarProps
 
     in
     { title = content.title
@@ -238,8 +231,8 @@ view user activeName shared route { toContentMsg, model, content } =
                     ""
                 )
              , onClick (toContentMsg (SetOpenDropdown Nothing))
+             , attribute "data-auth-user-name" user.name
             ]
-                ++ [ attribute "data-auth-user-name" user.name ]
                 ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" then
                         [ attribute "data-auth-user-roles" (String.join "," user.roles) ]
 

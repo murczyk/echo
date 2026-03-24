@@ -1595,7 +1595,7 @@ function AdminDirectionsNeoPageBody() {
             minWidth: 0,
             display: 'flex',
             overflow: 'hidden',
-            pt: 2,
+            pt: 1.5,
           }}
         >
           {directionTabs.map((tab, index) => (
@@ -1630,7 +1630,7 @@ function AdminDirectionsNeoPageBody() {
   };
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col gap-6 overflow-hidden">
+    <div className="flex h-full w-full min-w-0 flex-col gap-4 overflow-hidden">
       {error ? (
         <Alert severity="error" onClose={() => setError(null)}>
           {error}

@@ -928,7 +928,7 @@ function AdminMessengerNeoPageBody() {
 
     setLinkStatus({
       kind: 'error',
-      message: 'Помилка отримання QR коду: порожня відповідь сервера.',
+      message: 'Помилка отримання QR коду: порожня відповідь сервера',
     });
   }
 
@@ -1156,7 +1156,7 @@ function AdminMessengerNeoPageBody() {
       await restartDatasource(accountId);
       setActionStatus({
         kind: 'success',
-        message: 'Запит на перезапуск надіслано.',
+        message: 'Запит на перезапуск надіслано',
       });
     } catch (error) {
       setActionStatus({
@@ -1480,7 +1480,7 @@ function AdminMessengerNeoPageBody() {
         {linkStep === 'success' && linkSuccessAccount ? (
           <Box className="flex-1 overflow-y-auto p-6 text-center space-y-4">
             <Typography variant="h6" className="!font-semibold">
-              Акаунт успішно прив'язано!
+              Акаунт успішно прив'язано
             </Typography>
             <div className="text-green-600 text-6xl">✅</div>
             <Typography variant="body2" className="text-muted-foreground">

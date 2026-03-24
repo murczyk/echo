@@ -381,8 +381,7 @@ export const flags = ({ env }) => {
     const now = dayjs().tz('Europe/Kiev').valueOf();
     return {
         "isDark": isDark,
-        "now": now,
-        "featureNavbarFrontOnly": false // Feature flag for navbar styling
+        "now": now
     };
 
 }

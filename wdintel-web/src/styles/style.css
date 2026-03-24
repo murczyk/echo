@@ -1069,10 +1069,10 @@ sl-tooltip {
 }
 
 .app-navbar-links-list {
-    justify-content: flex-start;
+    justify-content: center;
 }
 
-@media (min-width: 992px) {
+@media (min-width: 1400px) {
     .app-navbar-row {
         flex-wrap: nowrap;
     }
