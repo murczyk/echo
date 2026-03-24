@@ -125,27 +125,7 @@ mainBody user model shared route =
                                 (RD.withDefault Dict.empty shared.networks)
                         , masterUnits = masterUnitsDict
                         , currentRoute = Just route
-                        , pointTokenClickUrlFor =
-                            let
-                                palitraTagIds =
-                                    model.tags
-                                        |> List.filterMap
-                                            (\( id, t ) ->
-                                                if t.isPalitra then
-                                                    Just id
-                                                else
-                                                    Nothing
-                                            )
-                                messageTagIds m =
-                                    m.tags |> Maybe.withDefault []
-                                hasPalitraTag m =
-                                    List.any (\tid -> List.member tid palitraTagIds) (messageTagIds m)
-                            in
-                            \message ->
-                                if hasPalitraTag message then
-                                    Just (\etalon -> insertShowMapToQuery (Pages_.RerAnalysis.Utils.updateQueryWithSearch etalon route))
-                                else
-                                    Nothing
+                        , pointTokenClickUrlFor = Pages_.RerAnalysis.Utils.buildPointTokenClickUrlFor model.tags route
                         }
 
                     renderPs =

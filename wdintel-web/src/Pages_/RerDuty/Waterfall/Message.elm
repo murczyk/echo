@@ -352,26 +352,6 @@ inboxTagsFor message =
     message.inboxTags |> Maybe.withDefault []
 
 
-getPointEtalonsFromMessage : B.InboxMessage -> List String
-getPointEtalonsFromMessage message =
-    case message.pointTokens of
-        Just tokens ->
-            List.map .etalon tokens
-
-        Nothing ->
-            message.textMarked
-                |> Maybe.withDefault []
-                |> List.filterMap
-                    (\node ->
-                        case node of
-                            B.CnPointC c ->
-                                Just c.etalon
-
-                            _ ->
-                                Nothing
-                    )
-
-
 buildAnalysisMapUrlWithSearch : ViewParams -> B.InboxMessage -> List String -> String
 buildAnalysisMapUrlWithSearch ps message etalons =
     let
@@ -1023,6 +1003,13 @@ rightColumn ( messageId, message ) ps model =
 
         metadataLinks =
             Pages_.RerAnalysis.Utils.buildMetadataLinks ps.zone message
+
+        pointTokenClickUrl =
+            if Pages_.RerAnalysis.Utils.messageHasPalitraTag ps.tags message then
+                Just (\_ -> buildAnalysisMapUrlWithSearch ps message (Pages_.RerAnalysis.Utils.getPointEtalonsFromMessage message))
+
+            else
+                Nothing
     in
     div
         [ class "mb-2 rounded-3 px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative"
@@ -1308,11 +1295,11 @@ rightColumn ( messageId, message ) ps model =
                                                     Dict.empty
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch ps message (getPointEtalonsFromMessage message))) metadataLinks
+                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
 
                                 Nothing ->
                                     Shared.MarkedText.fromPlainText message.text
-                                        |> Shared.MarkedText.viewWithHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch ps message (getPointEtalonsFromMessage message))) metadataLinks
+                                        |> Shared.MarkedText.viewWithHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
                            )
                         ++ [ div
                                 [ class "flex flex-col items-start gap-2 mt-2"

@@ -11,7 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, SyntheticEvent } from "react";
 
 import { SettingsSaveReq, SigintZone } from "../../../../Bindings";
 import { PageHeader } from "../../components/PageHeader";
@@ -68,7 +68,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
-  const settingsSection = parseSettingsSection(section ?? readSettingsSectionFromUrl());
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => parseSettingsSection(section ?? readSettingsSectionFromUrl()));
 
   const zoneOptions = useMemo<ZoneOption[]>(
     () => zones.map(([id, zone]) => ({ id, label: zone.name })),
@@ -79,6 +79,23 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     () => zoneOptions.find((option) => option.id === zoneId) ?? null,
     [zoneOptions, zoneId],
   );
+
+  useEffect(() => {
+    if (section == null) return;
+    setSettingsSection(parseSettingsSection(section));
+  }, [section]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setSettingsSection(readSettingsSectionFromUrl());
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -152,9 +169,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     }
   }
 
-  function handleTabChange(_: React.SyntheticEvent, value: SettingsSection) {
+  function handleTabChange(_: SyntheticEvent, value: SettingsSection) {
     if (value === settingsSection) return;
-    window.location.assign(buildSettingsSectionUrl(value));
+
+    setSettingsSection(value);
+    window.history.pushState(window.history.state, "", buildSettingsSectionUrl(value));
+    window.dispatchEvent(new PopStateEvent("popstate"));
   }
 
   return (
