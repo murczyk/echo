@@ -228,6 +228,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       try {
         const req = buildReqForFeed(w, { beforeIdNoninclusive: firstId });
         const rsp = await fetchInboxMessages(req);
+        if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
+        if (rsp.signalGroups?.length) {
+          const map: Record<string, SignalGroupEntry> = {};
+          rsp.signalGroups.forEach((g) => {
+            map[g.masterKey] = g;
+          });
+          setGroupInfos((prev) => ({ ...prev, ...map }));
+        }
         setMessageFeeds((prev) =>
           prev.map((x) => {
             if (x.id !== feedId) return x;
@@ -274,6 +282,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           nolimit: opts?.nolimit ?? undefined,
         });
         const rsp = await fetchInboxMessages(req);
+        if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
+        if (rsp.signalGroups?.length) {
+          const map: Record<string, SignalGroupEntry> = {};
+          rsp.signalGroups.forEach((g) => {
+            map[g.masterKey] = g;
+          });
+          setGroupInfos((prev) => ({ ...prev, ...map }));
+        }
         if (rsp.inboxItems.length > 0) {
           const feedNow = messageFeeds.find((x) => x.id === feedId);
           if (feedNow) {

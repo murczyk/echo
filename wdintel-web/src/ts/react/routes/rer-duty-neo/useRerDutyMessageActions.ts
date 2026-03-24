@@ -242,13 +242,20 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   }, [commentMessageId, commentFeedId, commentText, setMessageFeeds, setError]);
 
   const senderOptions = React.useMemo(() => {
-    const next = Object.entries(profiles).map(([uuid, entry]) => ({
+    const ids = new Set<string>();
+    Object.keys(profiles).forEach((uuid) => ids.add(uuid));
+    messageFeeds.forEach((feed) =>
+      feed.items.forEach(([, msg]) => {
+        if (msg.sender && msg.sender.trim() !== '') ids.add(msg.sender.trim());
+      })
+    );
+    const next = Array.from(ids).map((uuid) => ({
       id: uuid,
-      label: profileLabel(uuid, entry),
+      label: profileLabel(uuid, profiles[uuid] ?? null),
     }));
     next.sort((a, b) => a.id.localeCompare(b.id));
     return next;
-  }, [profiles]);
+  }, [profiles, messageFeeds]);
 
   const senderOptionsStableRef = React.useRef(senderOptions);
   const senderOptionsStable =

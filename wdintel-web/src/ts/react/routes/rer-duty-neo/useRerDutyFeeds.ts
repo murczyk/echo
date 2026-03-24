@@ -21,6 +21,28 @@ function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [numb
   return [...merged].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
+function mergeGroupsFromMessages(apiGroups: string[], messageFeeds: { items: [number, { groupMasterKey?: string | null }][] }[]): string[] {
+  const fromMsgs = new Set<string>();
+  messageFeeds.forEach((feed) =>
+    feed.items.forEach(([, msg]) => {
+      if (msg.groupMasterKey && msg.groupMasterKey.trim() !== '') fromMsgs.add(msg.groupMasterKey.trim());
+    })
+  );
+  const merged = new Set<string>([...apiGroups, ...fromMsgs]);
+  return [...merged].sort((a, b) => a.localeCompare(b));
+}
+
+function mergePostsFromMessages(apiPosts: string[], messageFeeds: { items: [number, { post?: string | null }][] }[]): string[] {
+  const fromMsgs = new Set<string>();
+  messageFeeds.forEach((feed) =>
+    feed.items.forEach(([, msg]) => {
+      if (msg.post && msg.post.trim() !== '') fromMsgs.add(msg.post.trim());
+    })
+  );
+  const merged = new Set<string>([...apiPosts, ...fromMsgs]);
+  return [...merged].sort((a, b) => a.localeCompare(b));
+}
+
 export function useRerDutyFeeds(authUserName: string | null) {
   const filterOpts = useRerDutyFilterOptions();
   const [randomEnabled, setRandomEnabled] = React.useState(false);
@@ -75,6 +97,14 @@ export function useRerDutyFeeds(authUserName: string | null) {
     () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
     [filterOpts.freqs, feedState.messageFeeds]
   );
+  const groupsList = React.useMemo(
+    () => mergeGroupsFromMessages(filterOpts.groupsList, feedState.messageFeeds),
+    [filterOpts.groupsList, feedState.messageFeeds]
+  );
+  const postsList = React.useMemo(
+    () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
+    [filterOpts.postsList, feedState.messageFeeds]
+  );
 
   return {
     messageFeeds: feedState.messageFeeds,
@@ -114,8 +144,8 @@ export function useRerDutyFeeds(authUserName: string | null) {
     profiles: filterOpts.profiles,
     senderOptions: actions.senderOptions,
     freqs,
-    postsList: filterOpts.postsList,
-    groupsList: filterOpts.groupsList,
+    postsList,
+    groupsList,
     groupInfos: filterOpts.groupInfos,
     tagsMap: filterOpts.tagsMap,
     tagIdsList: actions.tagIdsList,
