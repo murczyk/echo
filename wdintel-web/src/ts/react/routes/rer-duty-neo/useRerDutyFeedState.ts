@@ -100,6 +100,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     requestId: 0,
     hash: null,
   });
+  const initialMessageFeedsHashRef = useRef<string>(stableStringify(toShortQueryState(messageFeeds)));
+  const blockShortStateHydrationRef = useRef(false);
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -119,6 +121,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
 
   useEffect(() => {
+    if (shortStateReady) return;
+    const currentHash = stableStringify(toShortQueryState(messageFeeds));
+    if (currentHash !== initialMessageFeedsHashRef.current) {
+      blockShortStateHydrationRef.current = true;
+    }
+  }, [messageFeeds, shortStateReady]);
+
+  useEffect(() => {
     let cancelled = false;
     const loadShortState = async () => {
       try {
@@ -131,6 +141,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           try {
             const rsp = await rerDutyShortStateGet(shortId);
             if (cancelled) return;
+            if (blockShortStateHydrationRef.current) return;
             const state = toRerDutyStateFromShort(rsp.state);
             shortStateRef.current = { id: shortId, hash: stableStringify(rsp.state) };
             setMessageFeeds(
@@ -592,6 +603,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const stateHash = stableStringify(queryState);
       const cached = shortStateRef.current;
       if (cached.id && cached.hash === stateHash) {
+        const requestId = shortStateRequestRef.current.requestId + 1;
+        shortStateRequestRef.current = { requestId, hash: stateHash };
         pushShortStateToUrl(cached.id);
         return;
       }
