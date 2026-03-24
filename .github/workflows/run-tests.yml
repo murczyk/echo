@@ -17,6 +17,9 @@ jobs:
     runs-on: [self-hosted, Linux, X64]
     env:
       GIT_TERMINAL_PROMPT: 0
+      ECHO_BUILD_MAIN_SSH_TARGET: ${{ secrets.ECHO_BUILD_MAIN_SSH_TARGET || 'echo-build-main' }}
+      ECHO_BUILD_MAIN_SSH_KEY: ${{ secrets.ECHO_BUILD_MAIN_SSH_KEY }}
+      ECHO_BUILD_MAIN_WORKDIR: ${{ secrets.ECHO_BUILD_MAIN_WORKDIR || '~/workspace/echo' }}
       # Optional echo-ci SSH configuration. If these secrets are not set, the
       # publish step is skipped and we only upload GitHub artifacts.
       ECHO_CI_SSH_HOST: ${{ secrets.ECHO_CI_SSH_HOST }}
@@ -52,32 +55,21 @@ jobs:
           lfs: true
           clean: false
 
-      - name: Ensure git-lfs installed and checkout LFS objects
+      - name: Verify runner transport tools and checkout LFS objects
         timeout-minutes: 5
         shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
-          echo "Checking for git-lfs..."
-          if ! command -v git >/dev/null 2>&1; then
-            echo "git is required" >&2
-            exit 1
-          fi
-          if ! command -v git-lfs >/dev/null 2>&1 && ! command -v git\ lfs >/dev/null 2>&1; then
-            echo "git-lfs not found, attempting to install..."
-            if command -v apt-get >/dev/null 2>&1; then
-              if command -v sudo >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y git-lfs; else apt-get update && apt-get install -y git-lfs; fi
-            elif command -v dnf >/dev/null 2>&1; then
-              if command -v sudo >/dev/null 2>&1; then sudo dnf install -y git-lfs; else dnf install -y git-lfs; fi
-            elif command -v yum >/dev/null 2>&1; then
-              if command -v sudo >/dev/null 2>&1; then sudo yum install -y git-lfs; else yum install -y git-lfs; fi
-            elif command -v apk >/dev/null 2>&1; then
-              if command -v sudo >/dev/null 2>&1; then sudo apk add --no-cache git-lfs; else apk add --no-cache git-lfs; fi
-            elif command -v pacman >/dev/null 2>&1; then
-              if command -v sudo >/dev/null 2>&1; then sudo pacman -Sy --noconfirm git-lfs; else pacman -Sy --noconfirm git-lfs; fi
-            else
-              echo "No supported package manager found to install git-lfs. Please install it on the runner." >&2
+          echo "Checking runner tools..."
+          for command_name in git ssh scp rsync tar; do
+            if ! command -v "$command_name" >/dev/null 2>&1; then
+              echo "Missing required runner command: $command_name" >&2
               exit 1
             fi
+          done
+          if ! command -v git-lfs >/dev/null 2>&1 && ! command -v git\ lfs >/dev/null 2>&1; then
+            echo "Missing required runner command: git-lfs" >&2
+            exit 1
           fi
 
           echo "Initializing Git LFS and ensuring binaries are present..."
@@ -98,44 +90,32 @@ jobs:
             deploy/signal-cli/signal-cli-rest-api; do
             if [ -f "$path" ]; then
               echo "Found: $path"
-              file "$path" || true
+              if command -v file >/dev/null 2>&1; then
+                file "$path" || true
+              else
+                ls -lh "$path" || true
+              fi
             else
               echo "WARNING: Missing expected LFS file: $path" >&2
             fi
           done
 
-      - name: Restore caches (npm/python/spacy)
+      - name: Sync checkout to echo-build-main
         shell: "bash --noprofile --norc {0}"
-        run: |
-          ./scripts/cache/restore-npm.sh || true
-          ./scripts/cache/restore-python.sh || true
-          ./scripts/cache/restore-spacy.sh || true
+        run: bash deploy/ci/run_on_build_main.sh sync
 
-      # Removed elm-land PATH manipulation to avoid PATH bloat
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Run combined FE/BE tests (single build)
+      - name: Run combined FE/BE tests on echo-build-main
         shell: "bash --noprofile --norc {0}"
-        env:
-          GITHUB_ACTIONS: true
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: bash deploy/run_ci_tests.sh
+        run: bash deploy/ci/run_on_build_main.sh stage run-tests
 
-      - name: Mark deploy started in redis (echo-ci)
+      - name: Mark deploy started in redis on echo-build-main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: "bash --noprofile --norc {0}"
-        run: bash deploy/ci/redis_mark_deploy.sh started
+        run: bash deploy/ci/run_on_build_main.sh stage redis-mark started
 
-      - name: Build deb packages
+      - name: Build deb packages on echo-build-main
         shell: "bash --noprofile --norc {0}"
-        run: bash deploy/ci/build_debs.sh
+        run: bash deploy/ci/run_on_build_main.sh stage build-debs
 
       # Temporarily disable cache saving to reduce risk of hangs
       #- name: Save caches (npm/python/spacy)
@@ -148,16 +128,16 @@ jobs:
       #    ./scripts/cache/save-spacy.sh || true
 
       # Publish directly from this job for speed. Do not gate on secrets;
-      # the script falls back to runner-configured SSH (like echo-install-utils/echo-gpu).
-      - name: Publish to echo-ci (aptly)
+      # the script falls back to runner-configured SSH when explicit secrets are absent.
+      - name: Publish to echo-ci from echo-build-main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: "bash --noprofile --norc {0}"
-        run: bash deploy/ci/publish_echo_ci.sh
+        run: bash deploy/ci/run_on_build_main.sh stage publish
 
-      - name: Mark deploy finished in redis (echo-ci)
+      - name: Mark deploy finished in redis on echo-build-main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: "bash --noprofile --norc {0}"
-        run: bash deploy/ci/redis_mark_deploy.sh finished
+        run: bash deploy/ci/run_on_build_main.sh stage redis-mark finished
 
       - name: Discord notification - CI failure
         if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -171,7 +151,7 @@ jobs:
             ci_failure "" "CI Build Failed" \
             "Build failed in workflow 'CI Build Test and Publish (amd64)'." || true
 
-      - name: Remove target on failure
+      - name: Remove remote target on failure
         if: failure()
         shell: "bash --noprofile --norc {0}"
-        run: rm -rf target/debian || true
+        run: bash deploy/ci/run_on_build_main.sh stage cleanup-failure
