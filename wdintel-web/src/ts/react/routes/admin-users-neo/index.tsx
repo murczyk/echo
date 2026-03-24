@@ -47,6 +47,7 @@ type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 const ROLE_OPTIONS = [
   'Admin',
   'Api',
+  'ApiAgent',
   'Rer',
   'Bpla',
   'Full',

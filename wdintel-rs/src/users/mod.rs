@@ -50,6 +50,7 @@ pub async fn has_any_role(
         let is_good = match role {
             "Admin" => roles.contains(&"Admin".to_string()),
             "Api" => roles.contains(&"Api".to_string()),
+            "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
             "Full" => {
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"Full".to_string())

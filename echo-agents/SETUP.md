@@ -51,6 +51,23 @@ cd echo-agents/echo-agent
 cargo run -- freeform "What time is it?"
 ```
 
+- agent config:
+
+- on deploy, the deb package creates `/etc/echo-agent/config.toml`
+  automatically from `config.toml.example` if it is missing
+
+- fill fields in `/etc/echo-agent/config.toml`:
+  - `echo_login`
+  - `echo_password`
+  - `echo_server`
+
+- try callsign extraction on a raw message:
+
+```bash
+cd echo-agents/echo-agent
+cargo run -- sigint-extract-callsigns --body '— Фаза, Фаза, я Мирный, прием.'
+```
+
 - install tailscale:
 
 ```

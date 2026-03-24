@@ -5,6 +5,9 @@ This directory contains the project-specific `opencode` configuration.
 By default it expects the local model endpoint at `http://vllm-host:8000/v1`.
 If the binary is not in `PATH`, export `OPENCODE_BIN` before using `run.sh`.
 
+The `skills/` directory contains local instructions used by
+`echo-agent sigint-extract-callsigns`.
+
 ## Direct one-shot usage
 
 Formatted markdown-like output:
