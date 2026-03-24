@@ -152,6 +152,11 @@ set -euo pipefail
 remote_workdir="$1"
 shift
 
+if [[ -f "$HOME/.profile" ]]; then
+  # Load host-managed PATH entries like cargo and nvm.
+  . "$HOME/.profile"
+fi
+
 cd "$remote_workdir"
 set -a
 source ./.ci-remote-env
