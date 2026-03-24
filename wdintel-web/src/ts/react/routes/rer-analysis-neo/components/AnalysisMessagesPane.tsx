@@ -1,4 +1,4 @@
-import { Alert, Box, Button, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
+import { Alert, Box, Button } from '@mui/material';
 import { useEffect, useState } from 'react';
 
 import type { InboxMessage, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../../Bindings';
@@ -15,18 +15,14 @@ type Props = {
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
-  newestFirst: boolean;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
   onCloseEditor: () => void;
   onDeleteMessage: (messageId: number) => void;
-  onLoadAllMessages: () => void;
   onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
   onSaveEditor: () => void;
   onSaveMessageComment: (messageId: number, comment: string | null) => void;
-  onSetNewestFirst: (value: boolean) => void;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
@@ -45,16 +41,12 @@ export function AnalysisMessagesPane({
   messages,
   networkDisplayMap,
   noMoreToLoad,
-  nolimitShown,
-  newestFirst,
   onCloseEditor,
   onDeleteMessage,
-  onLoadAllMessages,
   onLoadMoreMessages,
   onOpenEditor,
   onSaveEditor,
   onSaveMessageComment,
-  onSetNewestFirst,
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
@@ -76,21 +68,7 @@ export function AnalysisMessagesPane({
   }
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 2 }}>
-        <FormControlLabel
-          control={<Switch checked={newestFirst} onChange={(_event, value) => onSetNewestFirst(value)} />}
-          label="спочатку нові"
-        />
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Typography variant="body2">Показано повідомлень: {messages.length}</Typography>
-          {!nolimitShown ? (
-            <Button size="small" variant="outlined" onClick={onLoadAllMessages} disabled={loading}>
-              Показати всі
-            </Button>
-          ) : null}
-        </Stack>
-      </Stack>
+    <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 1 }}>
       <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
         {messages.map(([id, message]) => (
           <MessageCard

@@ -68,6 +68,7 @@ export function MessageCard({
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
+  const compactLayout = layoutVariant === 'dividers' && feedCount >= 3;
   const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
   const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
@@ -75,6 +76,7 @@ export function MessageCard({
 
   const headerProps: MessageCardHeaderProps = {
     layout: layoutVariant === 'fluid' ? 'fluid' : 'dividers',
+    compact: compactLayout,
     feedCount,
     id,
     msg,
@@ -95,16 +97,40 @@ export function MessageCard({
     <Box
       ref={messageRootRef}
       component="li"
-      className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2"
+      sx={{
+        listStyle: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        pl: 0,
+        pr: 0,
+        pb: 1.5,
+        mb: 0,
+        fontSize: 13,
+      }}
     >
-      <div className="flex flex-col w-full bg-card rounded-sm p-2 gap-2 relative">
+      <Box
+        sx={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: compactLayout ? 1.25 : 1.5,
+          width: '100%',
+          px: 1.5,
+          py: 1.25,
+          borderRadius: 1,
+          bgcolor: 'var(--color-card)',
+          color: 'text.primary',
+          overflow: 'hidden',
+        }}
+      >
         {watermarkUserName !== '' && (
-          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+          <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden>
             <MessageCardWatermark authUserName={watermarkUserName} />
-          </div>
+          </Box>
         )}
         <MessageCardHeader {...headerProps} />
         <MessageCardEtalonLocationTime
+          compact={compactLayout}
           networkIds={networkIds}
           networkDisplayMap={networkDisplayMap}
           networkMap={networkMap}
@@ -112,8 +138,8 @@ export function MessageCard({
           msg={msg}
           relativeTimeMs={relativeTimeMs}
         />
-        <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
-      </div>
+        <MessageCardMessageBody compact={compactLayout} msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
+      </Box>
     </Box>
   );
 }

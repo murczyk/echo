@@ -2,7 +2,6 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
-import { act } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,21 +16,6 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </button>
   ),
-  FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
-    <label>
-      {props.control}
-      <span>{props.label}</span>
-    </label>
-  ),
-  Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Switch: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
-    <input
-      type="checkbox"
-      checked={props.checked ?? false}
-      onChange={(event) => props.onChange?.(event.nativeEvent, event.currentTarget.checked)}
-    />
-  ),
-  Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock('../../rer-duty-neo/MessageCard', () => ({
@@ -121,18 +105,14 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     messages: [],
     networkDisplayMap: {},
     noMoreToLoad: true,
-    nolimitShown: true,
-    newestFirst: false,
     editorMessage: null,
     editorSaveInFlight: false,
     onCloseEditor: vi.fn(),
     onDeleteMessage: vi.fn(),
-    onLoadAllMessages: vi.fn(),
     onLoadMoreMessages: vi.fn(),
     onOpenEditor: vi.fn(),
     onSaveEditor: vi.fn(),
     onSaveMessageComment: vi.fn(),
-    onSetNewestFirst: vi.fn(),
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
@@ -159,25 +139,9 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   return button;
 }
 
-function getInputByLabel(container: HTMLElement, labelText: string): HTMLInputElement {
-  const label = Array.from(container.querySelectorAll('label')).find((item) => item.textContent?.includes(labelText));
-  if (!label) throw new Error(`Label not found: ${labelText}`);
-  const input = label.querySelector('input');
-  if (!(input instanceof HTMLInputElement)) throw new Error(`Input not found for label: ${labelText}`);
-  return input;
-}
-
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  });
-}
-
-async function setChecked(input: HTMLInputElement, checked: boolean): Promise<void> {
-  await act(async () => {
-    if (input.checked !== checked) {
-      input.click();
-    }
   });
 }
 
@@ -200,28 +164,19 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).toContain('Немає жодного повідомлення для аналізу.');
   });
 
-  it('wires list controls into the page callbacks', async () => {
-    const onLoadAllMessages = vi.fn();
+  it('wires load more into the page callback when more messages are available', async () => {
     const onLoadMoreMessages = vi.fn();
-    const onSetNewestFirst = vi.fn();
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage()]],
         noMoreToLoad: false,
-        nolimitShown: false,
-        onLoadAllMessages,
         onLoadMoreMessages,
-        onSetNewestFirst,
       }),
     );
     rendered.push(view);
 
-    await setChecked(getInputByLabel(view.container, 'спочатку нові'), true);
-    await click(getButton(view.container, 'Показати всі'));
     await click(getButton(view.container, 'Завантажити ще'));
 
-    expect(onSetNewestFirst).toHaveBeenCalledWith(true);
-    expect(onLoadAllMessages).toHaveBeenCalledTimes(1);
     expect(onLoadMoreMessages).toHaveBeenCalledTimes(1);
   });
 

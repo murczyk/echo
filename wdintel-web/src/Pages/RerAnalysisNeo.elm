@@ -111,7 +111,7 @@ view model =
                     ]
                 ]
     in
-    { title = "Аналіз"
+    { title = "РЕР-аналіз"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 px-6 py-4 w-full flex flex-col gap-6 overflow-visible lg:overflow-hidden" ]
             [ betaBannerNode

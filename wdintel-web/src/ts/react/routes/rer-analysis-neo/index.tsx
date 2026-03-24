@@ -1,6 +1,6 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
-import { Alert, Backdrop, Box, CircularProgress, Paper, Skeleton, Stack, Tab, Tabs } from '@mui/material';
+import { Alert, Backdrop, Box, CircularProgress, FormControlLabel, Paper, Skeleton, Stack, Switch, Tab, Tabs } from '@mui/material';
 import { useId } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
@@ -140,7 +140,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       value="messages"
                       icon={<MessageOutlinedIcon />}
                       iconPosition="start"
-                      label="Повідомлення"
+                      label={`Повідомлення (${page.messages.length})`}
                     />
                     <Tab
                       id={mapTabId}
@@ -153,13 +153,18 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   </Tabs>
                   <Stack
                     direction="row"
-                    spacing={1}
+                    spacing={1.5}
                     flexWrap="wrap"
                     alignItems="center"
                     role="status"
                     aria-live="polite"
                     aria-label="Поточна статистика вибірки"
                   >
+                    <FormControlLabel
+                      control={<Switch checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
+                      label="спочатку нові"
+                      sx={{ mr: 0, '& .MuiFormControlLabel-label': { fontSize: 14, fontWeight: 500 } }}
+                    />
                     <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
                     <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
                   </Stack>
@@ -173,6 +178,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   sx={{
                     flex: 1,
                     minHeight: 0,
+                    pt: 1,
                     display: page.centerTab === "messages" ? "flex" : "none",
                     overflow: "hidden",
                   }}
@@ -187,16 +193,12 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     messages={page.messages}
                     networkDisplayMap={page.networkDisplayMap}
                     noMoreToLoad={page.noMoreToLoad}
-                    nolimitShown={page.nolimitShown}
-                    newestFirst={page.newestFirst}
                     onCloseEditor={page.closeEditor}
                     onDeleteMessage={page.onDeleteMessage}
-                    onLoadAllMessages={page.loadAllMessages}
                     onLoadMoreMessages={page.loadMoreMessages}
                     onOpenEditor={page.openEditor}
                     onSaveEditor={page.saveEditor}
                     onSaveMessageComment={page.onSaveMessageComment}
-                    onSetNewestFirst={page.setNewestFirst}
                     onToggleMessageBookmark={page.onToggleMessageBookmark}
                     onToggleMessageImportant={page.onToggleMessageImportant}
                     onToggleMessageTag={page.onToggleMessageTag}
@@ -214,6 +216,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   sx={{
                     flex: 1,
                     minHeight: 0,
+                    pt: 1,
                     display: page.centerTab === "map" ? "flex" : "none",
                     overflow: "hidden",
                   }}

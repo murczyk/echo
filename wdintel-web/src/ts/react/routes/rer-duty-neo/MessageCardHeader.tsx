@@ -1,5 +1,58 @@
+import {
+  Box,
+  IconButton,
+  Link,
+  Stack,
+  Tooltip,
+  Typography,
+  type SxProps,
+  type Theme,
+} from '@mui/material';
+
 import type { InboxMessage } from '../../../../Bindings';
 import { buildAnalysisHref, formatDateNoYear, formatTime } from './utils';
+
+type ActionIconsRowProps = {
+  id: number;
+  msg: InboxMessage;
+  copiedFeedbackId: string | null;
+  onBookmark: () => void;
+  onImportant: () => void;
+  onComment: () => void;
+  onCopyText: () => void;
+  onDelete?: () => void;
+  onEditDetails?: () => void;
+  sx?: SxProps<Theme>;
+};
+
+function ActionIconButton({
+  title,
+  iconClassName,
+  onClick,
+}: {
+  title: string;
+  iconClassName: string;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip title={title}>
+      <IconButton
+        size="small"
+        aria-label={title}
+        onClick={onClick}
+        sx={{
+          width: 26,
+          height: 26,
+          color: 'var(--color-action)',
+          borderRadius: 0.75,
+          '& .bi': { fontSize: 15 },
+        }}
+      >
+        <Box component="i" className={iconClassName} />
+      </IconButton>
+    </Tooltip>
+  );
+}
 
 function ActionIconsRow({
   id,
@@ -11,101 +64,89 @@ function ActionIconsRow({
   onCopyText,
   onDelete,
   onEditDetails,
+  sx,
+}: ActionIconsRowProps) {
+  return (
+    <Stack direction="row" spacing={0.25} useFlexGap flexWrap="wrap" alignItems="center" sx={sx}>
+      <ActionIconButton
+        title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
+        iconClassName={msg.bookmarked ? 'bi bi-bookmark-fill' : 'bi bi-bookmark'}
+        onClick={onBookmark}
+      />
+      <ActionIconButton
+        title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
+        iconClassName={msg.important ? 'bi bi-exclamation-triangle-fill' : 'bi bi-exclamation-triangle'}
+        onClick={onImportant}
+      />
+      <ActionIconButton title="Редагувати коментар" iconClassName="bi bi-chat-square" onClick={onComment} />
+      <ActionIconButton
+        title="Копіювати"
+        iconClassName={copiedFeedbackId === `text-${id}` ? 'bi bi-clipboard-check-fill' : 'bi bi-clipboard'}
+        onClick={onCopyText}
+      />
+      {onDelete != null ? (
+        <ActionIconButton title="Видалити" iconClassName="bi bi-trash" onClick={onDelete} />
+      ) : null}
+      {onEditDetails != null ? (
+        <ActionIconButton title="Редагувати додаткові поля" iconClassName="bi bi-sliders" onClick={onEditDetails} />
+      ) : null}
+    </Stack>
+  );
+}
+
+function MetaLine({
+  iconClassName,
+  title,
+  text,
 }: {
-  id: number;
-  msg: InboxMessage;
-  copiedFeedbackId: string | null;
-  onBookmark: () => void;
-  onImportant: () => void;
-  onComment: () => void;
-  onCopyText: () => void;
-  onDelete?: () => void;
-  onEditDetails?: () => void;
+  iconClassName: string;
+  title: string;
+  text: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5" style={{ fontSize: 14 }}>
-      <span
-        role="button"
-        tabIndex={0}
-        title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
-        className="cursor-pointer"
-        onClick={onBookmark}
-        onKeyDown={(e) => e.key === 'Enter' && onBookmark()}
+    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }} title={text}>
+      <Box component="i" className={iconClassName} sx={{ color: 'var(--color-icons)', fontSize: 14, flexShrink: 0 }} title={title} />
+      <Typography variant="caption" sx={{ minWidth: 0, color: 'text.secondary' }} noWrap>
+        {text}
+      </Typography>
+    </Stack>
+  );
+}
+
+function AnalysisLinks({ msg, mapHref }: { msg: InboxMessage; mapHref: string }) {
+  return (
+    <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center">
+      <Link
+        href={buildAnalysisHref(msg, false)}
+        target="_blank"
+        rel="noopener noreferrer"
+        underline="hover"
+        color="inherit"
+        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: 12, whiteSpace: 'nowrap' }}
       >
-        <i
-          className={msg.bookmarked ? 'bi bi-bookmark-fill text-action' : 'bi bi-bookmark text-action cursor-pointer'}
-        />
-      </span>
-      <span
-        role="button"
-        tabIndex={0}
-        title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
-        className="cursor-pointer"
-        onClick={onImportant}
-        onKeyDown={(e) => e.key === 'Enter' && onImportant()}
+        <Box component="i" className="bi bi-bar-chart-line" />
+        <span>Аналіз</span>
+        <Box component="i" className="bi bi-box-arrow-up-right" sx={{ fontSize: 11 }} />
+      </Link>
+      <Link
+        href={mapHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        underline="hover"
+        color="inherit"
+        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: 12, whiteSpace: 'nowrap' }}
       >
-        <i
-          className={
-            msg.important ? 'bi bi-exclamation-triangle-fill text-action' : 'bi bi-exclamation-triangle text-action'
-          }
-        />
-      </span>
-      <span
-        role="button"
-        tabIndex={0}
-        title="редагувати коментар"
-        className="cursor-pointer"
-        onClick={onComment}
-        onKeyDown={(e) => e.key === 'Enter' && onComment()}
-      >
-        <i className="bi bi-chat-square text-action" />
-      </span>
-      <span
-        role="button"
-        tabIndex={0}
-        title="Копіювати"
-        className="cursor-pointer"
-        onClick={onCopyText}
-        onKeyDown={(e) => e.key === 'Enter' && onCopyText()}
-      >
-        <i
-          className={
-            copiedFeedbackId === `text-${id}`
-              ? 'bi bi-clipboard-check-fill text-action cursor-pointer'
-              : 'bi bi-clipboard text-action cursor-pointer'
-          }
-        />
-      </span>
-      {onDelete != null && (
-        <span
-          role="button"
-          tabIndex={0}
-          title="Видалити"
-          className="cursor-pointer"
-          onClick={onDelete}
-          onKeyDown={(e) => e.key === 'Enter' && onDelete()}
-        >
-          <i className="bi bi-trash text-action cursor-pointer" />
-        </span>
-      )}
-      {onEditDetails != null && (
-        <span
-          role="button"
-          tabIndex={0}
-          title="Редагувати додаткові поля"
-          className="cursor-pointer"
-          onClick={onEditDetails}
-          onKeyDown={(e) => e.key === 'Enter' && onEditDetails()}
-        >
-          <i className="bi bi-sliders text-action cursor-pointer" />
-        </span>
-      )}
-    </div>
+        <Box component="i" className="bi bi-map" />
+        <span>Карта</span>
+        <Box component="i" className="bi bi-box-arrow-up-right" sx={{ fontSize: 11 }} />
+      </Link>
+    </Stack>
   );
 }
 
 export type MessageCardHeaderProps = {
   layout: 'fluid' | 'dividers';
+  compact?: boolean;
   feedCount: number;
   id: number;
   msg: InboxMessage;
@@ -124,6 +165,7 @@ export type MessageCardHeaderProps = {
 
 export function MessageCardHeader({
   layout,
+  compact = false,
   feedCount,
   id,
   msg,
@@ -139,122 +181,48 @@ export function MessageCardHeader({
   onDelete,
   onEditDetails,
 }: MessageCardHeaderProps) {
+  const dateTimeBlock = (
+    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        <Box component="i" className="bi bi-clock" sx={{ color: 'var(--color-icons)', fontSize: 14 }} />
+        <Typography variant="caption">{formatTime(msg.time)}</Typography>
+      </Stack>
+      {msg.date != null ? (
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Box component="i" className="bi bi-calendar" sx={{ color: 'var(--color-icons)', fontSize: 14 }} />
+          <Typography variant="caption">{formatDateNoYear(msg.date)}</Typography>
+        </Stack>
+      ) : null}
+    </Stack>
+  );
+
+  const freqBlock = msg.freq != null ? (
+    <Stack direction="row" spacing={0.25} alignItems="center" sx={{ flexShrink: 0, marginRight: '-6px !important' }}>
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        <Box component="i" className="bi bi-broadcast" sx={{ color: 'var(--color-icons)', fontSize: 14 }} title="Частота" />
+        <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {msg.freq}
+        </Typography>
+      </Stack>
+      <ActionIconButton
+        title="Копіювати частоту"
+        iconClassName={copiedFeedbackId === `freq-${id}` ? 'bi bi-clipboard-check-fill' : 'bi bi-clipboard'}
+        onClick={onCopyFreq}
+      />
+    </Stack>
+  ) : null;
+
   if (layout === 'fluid') {
     return (
-      <>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs justify-between">
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <i className="bi bi-clock text-icons" />
-            {formatTime(msg.time)}
-            {msg.date != null && (
-              <>
-                <span className="text-icons/70 mx-0.5">·</span>
-                <i className="bi bi-calendar text-icons shrink-0" />
-                {formatDateNoYear(msg.date)}
-              </>
-            )}
-          </span>
-          {groupName != null && (
-            <span className="inline-flex items-center gap-1 shrink-0 min-w-0 max-w-full" title={groupName}>
-              <i className="bi bi-signal text-icons shrink-0" title="Група" />
-              <span className="truncate">{groupName}</span>
-            </span>
-          )}
-          {senderName != null && (
-            <span className="inline-flex items-center gap-1 shrink-0 min-w-0 max-w-full" title={senderName}>
-              <i className="bi bi-person-circle text-icons shrink-0" title="Відправник" />
-              <span className="truncate">{senderName}</span>
-            </span>
-          )}
-          {msg.freq != null && (
-            <span>
-              <span className="inline-flex items-center gap-1 font-semibold shrink-0">
-                <i className="bi bi-broadcast text-icons" title="Частота" />
-                {msg.freq}
-              </span>
-              <span
-                role="button"
-                tabIndex={0}
-                title="Копіювати частоту"
-                className="cursor-pointer shrink-0 inline-flex"
-                onClick={onCopyFreq}
-                onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
-              >
-                &nbsp;
-                <i className={copiedFeedbackId === `freq-${id}` ? 'bi bi-clipboard-check-fill' : 'bi bi-clipboard'} />
-              </span>
-            </span>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs justify-between">
-          <a
-            href={buildAnalysisHref(msg, false)}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Відкрити повідомлення в Аналізі"
-            className="inline-flex items-center gap-1 shrink-0"
-          >
-            <i className="bi bi-bar-chart-line" />
-            Аналіз
-            <i className="bi bi-box-arrow-up-right text-xs" />
-          </a>
-          <a
-            href={mapHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Відкрити повідомлення на карті в аналізі"
-            className="inline-flex items-center gap-1 shrink-0"
-          >
-            <i className="bi bi-map" />
-            Карта
-            <i className="bi bi-box-arrow-up-right text-xs" />
-          </a>
-
-          <span className="shrink-0 inline-flex">
-            <ActionIconsRow
-              id={id}
-              msg={msg}
-              copiedFeedbackId={copiedFeedbackId}
-              onBookmark={onBookmark}
-              onImportant={onImportant}
-              onComment={onComment}
-              onCopyText={onCopyText}
-              onDelete={onDelete}
-              onEditDetails={onEditDetails}
-            />
-          </span>
-        </div>
-      </>
-    );
-  }
-
-  const narrowColumns = feedCount >= 3;
-  const colLeft = narrowColumns
-    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-3 border-r border-border min-w-[105px]'
-    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 border-r border-border';
-  const colCenter = narrowColumns
-    ? 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 shrink-1 text-xs border-r border-border min-w-[62px]'
-    : 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 text-xs border-r border-border';
-  const colRight = narrowColumns
-    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-0 basis-auto text-xs items-end'
-    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 text-xs items-end';
-
-  return (
-    <div className="flex items-stretch w-full">
-      <div className={colLeft}>
-        <div className="flex items-center justify-left" style={{ fontSize: '.75rem' }}>
-          <span className="flex items-center gap-1 pr-2">
-            <i className="bi bi-clock text-icons" />
-            {formatTime(msg.time)}
-          </span>
-          {msg.date != null && (
-            <span className="flex items-center gap-1">
-              <i className="bi bi-calendar text-icons" />
-              {formatDateNoYear(msg.date)}
-            </span>
-          )}
-        </div>
-        <div className="flex items-stretch gap-2" style={{ fontSize: 14 }}>
+      <Stack spacing={1}>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5} useFlexGap flexWrap="wrap">
+          {dateTimeBlock}
+          {groupName != null ? <MetaLine iconClassName="bi bi-signal" title="Група" text={groupName} /> : null}
+          {senderName != null ? <MetaLine iconClassName="bi bi-person-circle" title="Відправник" text={senderName} /> : null}
+          {freqBlock}
+        </Stack>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} useFlexGap flexWrap="wrap">
+          <AnalysisLinks msg={msg} mapHref={mapHref} />
           <ActionIconsRow
             id={id}
             msg={msg}
@@ -266,84 +234,101 @@ export function MessageCardHeader({
             onDelete={onDelete}
             onEditDetails={onEditDetails}
           />
-        </div>
-      </div>
-      <div className={colCenter}>
-        <div className="flex items-center min-w-0">
-          {groupName != null ? (
-            <span className="flex items-center gap-1 truncate min-w-0 cursor-default" title={groupName}>
-              <i className="bi bi-signal text-icons shrink-0" title="Група" />
-              <span className="truncate">{groupName}</span>
-            </span>
-          ) : (
-            <span className="text-icons/70">—</span>
-          )}
-        </div>
-        <div className="flex items-center min-w-0">
-          {senderName != null ? (
-            <span className="flex items-center gap-1 truncate min-w-0 cursor-default" title={senderName}>
-              <i className="bi bi-person-circle text-icons shrink-0" title="Відправник" />
-              <span className="truncate">{senderName}</span>
-            </span>
-          ) : (
-            <span className="text-icons/70">—</span>
-          )}
-        </div>
-      </div>
-      <div className={colRight} style={narrowColumns ? { minWidth: 'min-content' } : undefined}>
-        <div className="flex items-center gap-1.5 min-w-0">
-          {msg.freq != null ? (
-            <>
-              <span className="flex items-center gap-1 font-semibold truncate">
-                <i className="bi bi-broadcast text-icons shrink-0" title="Частота" />
-                {msg.freq}
-              </span>
-              <span
-                role="button"
-                tabIndex={0}
-                title="Копіювати частоту"
-                className="cursor-pointer shrink-0"
-                onClick={onCopyFreq}
-                onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
-              >
-                <i
-                  className={
-                    copiedFeedbackId === `freq-${id}`
-                      ? 'bi bi-clipboard-check-fill cursor-pointer'
-                      : 'bi bi-clipboard cursor-pointer'
-                  }
-                />
-              </span>
-            </>
-          ) : (
-            <span className="text-icons/70">—</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-nowrap text-xs min-w-[70px]">
-          <a
-            href={buildAnalysisHref(msg, false)}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Відкрити повідомлення в Аналізі"
-            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+        </Stack>
+      </Stack>
+    );
+  }
+
+  if (compact) {
+    return (
+      <Stack spacing={0.75} sx={{ pb: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.25} useFlexGap flexWrap="wrap">
+          {dateTimeBlock}
+          {freqBlock}
+        </Stack>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.25} useFlexGap flexWrap="wrap" sx={{ minWidth: 0 }}>
+          <Stack
+            direction="row"
+            spacing={1.25}
+            useFlexGap
+            flexWrap="wrap"
+            alignItems="center"
+            sx={{ flex: 1, minWidth: 0, '& > *': { maxWidth: '100%' } }}
           >
-            <i className="bi bi-bar-chart-line" />
-            <span>Аналіз</span>
-            <i className="bi bi-box-arrow-up-right text-xs" />
-          </a>
-          <a
-            href={mapHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Відкрити повідомлення на карті в аналізі"
-            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-          >
-            <i className="bi bi-map" />
-            <span>Карта</span>
-            <i className="bi bi-box-arrow-up-right text-xs" />
-          </a>
-        </div>
-      </div>
-    </div>
+            {groupName != null ? <MetaLine iconClassName="bi bi-signal" title="Група" text={groupName} /> : null}
+            {senderName != null ? <MetaLine iconClassName="bi bi-person-circle" title="Відправник" text={senderName} /> : null}
+            <AnalysisLinks msg={msg} mapHref={mapHref} />
+          </Stack>
+          <ActionIconsRow
+            id={id}
+            msg={msg}
+            copiedFeedbackId={copiedFeedbackId}
+            onBookmark={onBookmark}
+            onImportant={onImportant}
+            onComment={onComment}
+            onCopyText={onCopyText}
+            onDelete={onDelete}
+            onEditDetails={onEditDetails}
+          />
+        </Stack>
+      </Stack>
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+        width: '100%',
+        alignItems: 'stretch',
+      }}
+    >
+      <Stack
+        spacing={1}
+        sx={{
+          minWidth: 0,
+          pl: 0,
+          pr: 2,
+          pt: 0.5,
+          justifyContent: 'center',
+          borderRight: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        {dateTimeBlock}
+        <ActionIconsRow
+          sx={{ marginLeft: '-6px !important' }}
+          id={id}
+          msg={msg}
+          copiedFeedbackId={copiedFeedbackId}
+          onBookmark={onBookmark}
+          onImportant={onImportant}
+          onComment={onComment}
+          onCopyText={onCopyText}
+          onDelete={onDelete}
+          onEditDetails={onEditDetails}
+        />
+      </Stack>
+      <Stack
+        spacing={0.75}
+        sx={{
+          minWidth: 0,
+          px: 2,
+          pt: 0.5,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRight: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        {groupName != null ? <MetaLine iconClassName="bi bi-signal" title="Група" text={groupName} /> : <Typography variant="caption" color="text.secondary">—</Typography>}
+        {senderName != null ? <MetaLine iconClassName="bi bi-person-circle" title="Відправник" text={senderName} /> : <Typography variant="caption" color="text.secondary">—</Typography>}
+      </Stack>
+      <Stack spacing={0.75} alignItems="flex-end" justifyContent="center" sx={{ minWidth: 0, pl: 2, pr: 2, pt: 0.5 }}>
+        {freqBlock ?? <Typography variant="caption" color="text.secondary">—</Typography>}
+        <AnalysisLinks msg={msg} mapHref={mapHref} />
+      </Stack>
+    </Box>
   );
 }
