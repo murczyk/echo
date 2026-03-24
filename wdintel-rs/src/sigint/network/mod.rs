@@ -65,7 +65,7 @@ pub async fn network_list(
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Api", "ApiAgent"],
     )
     .await?;
 
@@ -254,7 +254,7 @@ pub async fn network_info_batch_freq(
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Api", "ApiAgent"],
     )
     .await?;
     let txn = env.dbx.begin().await.context(h!())?;
@@ -275,7 +275,7 @@ pub async fn network_info_batch_id(
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Api", "ApiAgent"],
     )
     .await?;
     let txn = env.dbx.begin().await.context(h!())?;

@@ -118,9 +118,13 @@ async fn messages_by_id(
     env: actix_web::web::Data<Env>,
     req: Json<MessageIdsReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
@@ -288,7 +292,7 @@ async fn inbox_messages(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
         .await
         .c(h!())?;
     let is_admin =
@@ -418,7 +422,7 @@ async fn inbox_messages_count(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
         .await
         .c(h!())?;
     let login = user_id;

@@ -46,9 +46,13 @@ pub async fn list_callsigns(
     env: actix_web::web::Data<Env>,
     mut req: Json<ListCallsignsReq>,
 ) -> Result<Json<ListCallsignsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
 
     let limit = *req.limit.get_or_insert(1000);
     req.limit = Some(limit.saturating_add(1));
