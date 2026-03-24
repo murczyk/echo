@@ -40,6 +40,10 @@ hasRole role user =
             List.member "Admin" user.roles
                 || List.member "CallsignsEditor" user.roles
 
+        "AdvancedReports" ->
+            List.member "Admin" user.roles
+                || List.member "AdvancedReports" user.roles
+
         "DeleteMsg" ->
             List.member "DeleteMsg" user.roles
 
