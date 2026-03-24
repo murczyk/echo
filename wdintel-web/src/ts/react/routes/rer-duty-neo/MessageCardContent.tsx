@@ -2,7 +2,7 @@ import { Box, Tooltip } from '@mui/material';
 
 import type { InboxMessage, Network, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
-import { getPointEtalonsFromMessage, messageRenderDistance } from './utils';
+import { getPointEtalonsFromMessage, messageHasPalitraTag, messageRenderDistance } from './utils';
 import { renderMarkedText } from './MarkedText';
 
 function networkNeedsInvestigationBadge(network: Network | undefined): boolean {
@@ -277,9 +277,12 @@ export function MessageCardMessageBody({
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
 }) {
+  const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const textPrimary =
     msg.textMarked && msg.textMarked.length > 0
-      ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg))
+      ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
+          showPointLinks,
+        })
       : msg.text || '—';
 
   return (

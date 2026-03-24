@@ -4,7 +4,12 @@ import type { InboxMessage, Network, Tag } from '../../../../Bindings';
 import { MessageCardEtalonLocationTime, MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
-import { buildAnalysisHref, buildAnalysisMapHrefWithSearch, etalonFallbackWhenNoNetworks, getPointEtalonsFromMessage } from './utils';
+import {
+  buildAnalysisHref,
+  buildAnalysisMapHrefWithSearch,
+  etalonFallbackWhenNoNetworks,
+  getPointEtalonsFromMessage,
+} from './utils';
 
 export type MessageCardProps = {
   id: number;
@@ -60,7 +65,7 @@ export function MessageCard({
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
   const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
-  const pointEtalons = getPointEtalonsFromMessage(msg);
+  const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
   const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
 
   const headerProps: MessageCardHeaderProps = {

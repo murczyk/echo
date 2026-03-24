@@ -13,12 +13,14 @@ import {
   filtersEqual,
   findAllAdjacentFreqs,
   getPointEtalonsFromMessage,
+  messageHasPalitraTag,
+  uniquePointEtalonsForMapSearch,
   getStoredMessageCardLayout,
   parseStateFromUrl,
   pushStateToUrl,
   setStoredMessageCardLayout,
 } from './utils';
-import type { InboxMessage, Network, Unit } from '../../../../Bindings';
+import type { InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
 
 describe('rer-duty utils', () => {
   it('etalon fallback when no networks: unit vs strict', () => {
@@ -106,11 +108,32 @@ describe('rer-duty utils', () => {
     } as InboxMessage);
     expect(fromTokens).toEqual(['P-1', 'P-2']);
 
+    const dedupedTokens = getPointEtalonsFromMessage({
+      pointTokens: [{ etalon: 'P-1' }, { etalon: 'P-1' }, { etalon: ' P-1 ' }],
+      textMarked: [],
+    } as InboxMessage);
+    expect(dedupedTokens).toEqual(['P-1']);
+
     const fromMarkedText = getPointEtalonsFromMessage({
       pointTokens: [],
       textMarked: ['x', { CNPointC: { etalon: ' P-3 ' } }, { CNPointC: { etalon: '' } }],
     } as unknown as InboxMessage);
     expect(fromMarkedText).toEqual(['P-3']);
+
+    expect(uniquePointEtalonsForMapSearch(['a', ' a ', 'b', 'a'])).toEqual(['a', 'b']);
+  });
+
+  it('messageHasPalitraTag and point etalons respect tagsMap gate', () => {
+    const tag = { isPalitra: true } as Tag;
+    const msg: InboxMessage = {
+      inboxTags: [{ id: 1, tagId: 7, confidence: 1, login: null, model: null, organismId: null }],
+      pointTokens: [{ etalon: 'X' }],
+    } as InboxMessage;
+    expect(messageHasPalitraTag(msg, { 7: tag })).toBe(true);
+    expect(getPointEtalonsFromMessage(msg, { 7: tag })).toEqual(['X']);
+
+    expect(messageHasPalitraTag(msg, { 7: { ...tag, isPalitra: false } })).toBe(false);
+    expect(getPointEtalonsFromMessage(msg, { 7: { ...tag, isPalitra: false } })).toEqual([]);
   });
 
   it('stores message card layout preference in localStorage', () => {
