@@ -306,16 +306,74 @@ fn callsigns_from_header_line(
     known_callsigns: &BTreeSet<String>,
     known_callsigns_map: &BTreeMap<String, String>,
 ) -> Option<Vec<String>> {
-    let Ok(callsigns) = extract_kazhanchik_callsigns(line) else {
+    if let Ok(callsigns) = extract_kazhanchik_callsigns(line) {
+        let callsigns = callsigns
+            .into_iter()
+            .map(|callsign| callsign.text)
+            .collect::<Vec<_>>();
+        if let Some(callsigns) = resolve_header_callsigns(
+            callsigns,
+            known_callsigns,
+            known_callsigns_map,
+        ) {
+            return Some(callsigns);
+        }
+    }
+
+    fallback_known_header_callsigns(line, known_callsigns, known_callsigns_map)
+}
+
+fn fallback_known_header_callsigns(
+    line: &str,
+    known_callsigns: &BTreeSet<String>,
+    known_callsigns_map: &BTreeMap<String, String>,
+) -> Option<Vec<String>> {
+    if known_callsigns.is_empty() {
         return None;
-    };
+    }
+
+    let callsigns = line
+        .split(|char_| [',', '/', ';'].contains(&char_))
+        .map(prepare_callsign_header_candidate)
+        .filter(|candidate| !candidate.is_empty())
+        .collect::<Vec<_>>();
     if callsigns.is_empty() {
         return None;
     }
 
+    resolve_header_callsigns(callsigns, known_callsigns, known_callsigns_map)
+}
+
+fn prepare_callsign_header_candidate(candidate: &str) -> String {
+    let candidate = candidate
+        .trim()
+        .trim_matches(|char_| ['"', '\'', '“', '”'].contains(&char_));
+    let candidate = candidate
+        .trim_start_matches(|char_: char| {
+            char_.is_ascii_digit()
+                || char_.is_whitespace()
+                || ['.', '-', '—', ')', '('].contains(&char_)
+        })
+        .trim();
+    let candidate = candidate
+        .split('(')
+        .next()
+        .unwrap_or(candidate)
+        .trim_end_matches(|char_: char| {
+            char_.is_whitespace() || ['.', ',', ';', ':'].contains(&char_)
+        })
+        .trim();
+    candidate.to_string()
+}
+
+fn resolve_header_callsigns(
+    callsigns: Vec<String>,
+    known_callsigns: &BTreeSet<String>,
+    known_callsigns_map: &BTreeMap<String, String>,
+) -> Option<Vec<String>> {
     let normalized_callsigns = callsigns
         .into_iter()
-        .map(|callsign| normalize_callsign_header_value(&callsign.text))
+        .map(|callsign| normalize_callsign_header_value(&callsign))
         .filter(|callsign| !callsign.is_empty())
         .collect::<Vec<_>>();
     if normalized_callsigns.is_empty() {
@@ -2152,6 +2210,20 @@ mod tests {
             strip_callsigns_prefix(body, &message),
             "— Все нормально, все нормально, Залыч, Залыч, там ГНОМ его встречает."
         );
+    }
+
+    #[test]
+    fn strip_callsigns_prefix_non_caps_header() {
+        let body = r#"УКХ р/м ймов. 352 мсп 1 ТА
+(БЕРЕСТОВЕ - СТЕЛЬМАХІВКА)
+11:32
+Барс
+Борец
+
+1.Барс Борцу."#;
+        let message = message_with_callsigns(vec!["Барс", "Борец"]);
+
+        assert_eq!(strip_callsigns_prefix(body, &message), "1.Барс Борцу.");
     }
 
     #[test]

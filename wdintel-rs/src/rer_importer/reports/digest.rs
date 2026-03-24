@@ -102,7 +102,7 @@ pub async fn report_docx_kind_digest(
         .await
         .context(h!())?;
     let mut request = req.req.clone();
-    request.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
@@ -110,9 +110,14 @@ pub async fn report_docx_kind_digest(
         )
         .await
         .context(h!())?;
-    let report = collect_report(messages, logins.clone(), &read_db)
-        .await
-        .context(h!())?;
+    let report = collect_report(
+        messages,
+        logins.clone(),
+        req.report_tags_only_this_unit.unwrap_or(false),
+        &read_db,
+    )
+    .await
+    .context(h!())?;
     info!("report_docx_kind_digest data collected");
     let omit_exo_id = req.digest_omit_exo_id.unwrap_or(false);
     let use_form_1217 = req.digest_form_1_2_17.unwrap_or(false);
@@ -372,11 +377,17 @@ fn check_should_show_date(since: DateTime<Utc>, till: DateTime<Utc>) -> bool {
 
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
-    _logins: Vec<String>,
+    logins: Vec<String>,
+    comments_only_this_unit: bool,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Report> {
-    let (comments, messages) =
-        load_messages_with_comments(messages, dbx).await.c(h!())?;
+    let (comments, messages) = load_messages_with_comments(
+        messages,
+        dbx,
+        comments_only_this_unit.then_some(logins.as_slice()),
+    )
+    .await
+    .c(h!())?;
     debug!("loaded {} messages with comments {}", messages.len(), h!());
 
     let freqs = messages
@@ -782,6 +793,7 @@ async fn load_aors(
 async fn load_messages_with_comments(
     messages: Vec<(i64, InboxMessage)>,
     dbx: &DatabaseConnection,
+    allowed_comment_logins: Option<&[String]>,
 ) -> anyhow::Result<(Vec<(i64, String)>, Vec<(i64, InboxMessage)>)> {
     let message_ids = messages
         .iter()
@@ -810,6 +822,11 @@ async fn load_messages_with_comments(
             .column(sigint_comment::Column::SignalMessageId)
             .column(sigint_comment::Column::Comment)
             .column(sigint_inbox_item::Column::BodyNoheader)
+            .apply_if(allowed_comment_logins, |query, logins| {
+                query.filter(
+                    sigint_comment::Column::Login.eq_any(logins.to_vec()),
+                )
+            })
             .into_tuple::<(i64, String, Option<Json>)>()
             .all(dbx)
             .await
@@ -839,6 +856,7 @@ async fn load_messages_with_comments(
             }
             (id, message)
         })
+        .filter(|(id, _)| messages_with_comment.contains(id))
         .collect::<Vec<_>>();
     messages.sort_by_key(|(_, v)| v.freq.clone().unwrap_or("0.0".to_string()));
     Ok((comments, messages))
@@ -967,6 +985,10 @@ fn extract_form_1217_callsigns(
     message: &InboxMessage,
     callsigns_prefix: &crate::rer_importer::callsigns::CallsignsPrefixInfo,
 ) -> (Option<String>, Option<String>) {
+    if callsigns_prefix.had_placeholder && callsigns_prefix.callsigns.is_empty()
+    {
+        return (None, None);
+    }
     if !callsigns_prefix.callsigns.is_empty() {
         if callsigns_prefix.had_placeholder {
             return (None, Some(callsigns_prefix.callsigns.join(", ")));
@@ -991,6 +1013,15 @@ fn extract_form_1217_callsigns(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{
+        datasource_group, login, organism, sigint_comment, sigint_inbox_item,
+        signal_message,
+    };
+    use crate::functest::tests::*;
+    use chrono::Utc;
+    use sea_orm::ActiveValue::Set;
+    use serde_json::json;
+    use serial_test::serial;
 
     #[test]
     fn build_note_comment_omits_time_for_form_1217() {
@@ -1100,5 +1131,221 @@ mod tests {
             extract_form_1217_callsigns(&message, &callsigns_prefix),
             (None, Some("гном".to_string()))
         );
+    }
+
+    #[test]
+    fn extract_form_1217_callsigns_keeps_unknown_placeholder_unknown() {
+        let message = InboxMessage {
+            message_uid: None,
+            text: String::new(),
+            media: vec![],
+            images: vec![],
+            image_recognized: vec![],
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: vec!["гном".to_string()],
+            callsigns_alg2: vec![],
+            checked: false,
+            important: false,
+            bookmarked: false,
+            timestamp: None,
+            group_master_key: None,
+            sender: None,
+            extended_form: None,
+            post: None,
+            post_id: None,
+            unit: None,
+            callsign_tokens: None,
+            signal_tokens: None,
+            point_tokens: None,
+            no_headers_body: None,
+            keyword_tokens: None,
+            text_marked: None,
+            datasource_id: None,
+            location: None,
+            tags: None,
+            network_ids: None,
+            inbox_tags: None,
+            metadata: vec![],
+        };
+        let callsigns_prefix =
+            crate::rer_importer::callsigns::CallsignsPrefixInfo {
+                stripped_body: "— test".to_string(),
+                callsigns: vec![],
+                had_placeholder: true,
+            };
+
+        assert_eq!(
+            extract_form_1217_callsigns(&message, &callsigns_prefix),
+            (None, None)
+        );
+    }
+
+    fn test_inbox_message(id: i64, text: &str) -> (i64, InboxMessage) {
+        (
+            id,
+            InboxMessage {
+                message_uid: Some(format!("uid-{id}")),
+                text: text.to_string(),
+                media: vec![],
+                images: vec![],
+                image_recognized: vec![],
+                date: None,
+                time: None,
+                freq: None,
+                coords: None,
+                callsigns: vec![],
+                callsigns_alg2: vec![],
+                checked: false,
+                important: false,
+                bookmarked: false,
+                timestamp: None,
+                group_master_key: None,
+                sender: None,
+                extended_form: None,
+                post: None,
+                post_id: None,
+                unit: None,
+                callsign_tokens: None,
+                signal_tokens: None,
+                point_tokens: None,
+                no_headers_body: None,
+                keyword_tokens: None,
+                text_marked: None,
+                datasource_id: None,
+                location: None,
+                tags: None,
+                network_ids: None,
+                inbox_tags: None,
+                metadata: vec![],
+            },
+        )
+    }
+
+    async fn seed_digest_message(
+        dbx: &DatabaseConnection,
+        datasource_group: &datasource_group::Model,
+        body: &str,
+        body_noheader: &str,
+    ) -> signal_message::Model {
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                body_noheader: Set(Some(json!(SigintBodyNoHeader {
+                    start: None,
+                    end: None,
+                    body: body_noheader.to_string(),
+                }))),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        message
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn load_messages_with_comments_filters_by_allowed_logins() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let sigint_zone = find_test_sigint_zone(&env.dbx).await.unwrap();
+        let other_organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                name: Set("OtherOrgDigest".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                roles: Set(json!(["Rer"])),
+                enabled: Set(true),
+                parent_id: Set(None),
+                deleted_permanently: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("OtherDigestTester".to_string()),
+                organism_id: Set(Some(other_organism.id)),
+                sigint_zone_id: Set(Some(sigint_zone.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let own_message = seed_digest_message(
+            &env.dbx,
+            &datasource_group,
+            "raw own body",
+            "body without header",
+        )
+        .await;
+        let other_message = seed_digest_message(
+            &env.dbx,
+            &datasource_group,
+            "raw other body",
+            "other body without header",
+        )
+        .await;
+        let now = Utc::now().naive_utc();
+        sigint_comment::ActiveModel {
+            login: Set(login.login.clone()),
+            signal_message_id: Set(own_message.id),
+            comment: Set("own comment".to_string()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        sigint_comment::ActiveModel {
+            login: Set(other_login.login.clone()),
+            signal_message_id: Set(other_message.id),
+            comment: Set("other comment".to_string()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let (comments, messages) = load_messages_with_comments(
+            vec![
+                test_inbox_message(own_message.id, "raw own body"),
+                test_inbox_message(other_message.id, "raw other body"),
+            ],
+            &env.dbx,
+            Some(std::slice::from_ref(&login.login)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(comments, vec![(own_message.id, "own comment".to_string())]);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, own_message.id);
+        assert_eq!(messages[0].1.text, "body without header");
     }
 }
