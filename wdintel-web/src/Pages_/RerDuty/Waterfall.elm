@@ -1421,11 +1421,8 @@ update shared user msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
             )
 
-        GotInitialInbox reload (Ok inboxRsp_) ->
+        GotInitialInbox reload (Ok inboxRsp) ->
             let
-                inboxRsp =
-                    inboxRsp_
-
                 messages =
                     inboxRsp.inboxItems
 
@@ -1475,11 +1472,8 @@ update shared user msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження старіших повідомлень" e
             )
 
-        GotInboxEarlier (Ok inboxRsp_) ->
+        GotInboxEarlier (Ok inboxRsp) ->
             let
-                inboxRsp =
-                    inboxRsp_
-
                 messages =
                     inboxRsp.inboxItems
 
@@ -1743,11 +1737,8 @@ update shared user msg model =
             , E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
             )
 
-        InboxLoopGotMessages once (Ok inboxRsp_) ->
+        InboxLoopGotMessages once (Ok inboxRsp) ->
             let
-                inboxRsp =
-                    inboxRsp_
-
                 messages =
                     inboxRsp.inboxItems
             in

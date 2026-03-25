@@ -1150,11 +1150,8 @@ update user shared route msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
             )
 
-        GotInbox (Ok rsp_) ->
+        GotInbox (Ok rsp) ->
             let
-                rsp =
-                    rsp_
-
                 messages =
                     rsp.inboxItems
 
@@ -1183,11 +1180,8 @@ update user shared route msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження додаткових повідомлень" e
             )
 
-        GotInboxMore (Ok rsp_) ->
+        GotInboxMore (Ok rsp) ->
             let
-                rsp =
-                    rsp_
-
                 messages =
                     rsp.inboxItems
 
