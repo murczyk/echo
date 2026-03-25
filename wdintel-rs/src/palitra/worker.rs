@@ -16,6 +16,7 @@ use sea_orm::*;
 use tokio::sync::RwLock;
 
 const PALITRA_WORKER_MESSAGES_PER_BATCH: usize = 50;
+const PALITRA_WORKER_ERROR_COOLDOWN_SEC: u64 = 3;
 
 #[derive(Default)]
 pub struct PalitraPatternCache {
@@ -62,6 +63,8 @@ pub async fn palitra_highlight_worker_nofail(
     redis: &mut redis::aio::ConnectionManager,
     context: &Arc<PalitraWorkerContext>,
 ) {
+    let mut suppresed_count: u64 = 0;
+    let mut last_error = None;
     loop {
         let no_messages = match palitra_highlight_worker_impl(
             rq, dbx, redis, context,
@@ -70,7 +73,23 @@ pub async fn palitra_highlight_worker_nofail(
         {
             Ok(no_messages) => no_messages,
             Err(e) => {
-                log::error!("palitra_highlight_worker error: {e}");
+                let now = std::time::Instant::now();
+                let supress = last_error.is_some_and(|last| {
+                    now.duration_since(last).as_secs()
+                        < PALITRA_WORKER_ERROR_COOLDOWN_SEC
+                });
+
+                if supress {
+                    suppresed_count += 1;
+                } else {
+                    if suppresed_count > 0 {
+                        log::error!("palitra_highlight_worker error (suppressed {suppresed_count} additional errors): {e:#}");
+                        suppresed_count = 0;
+                    } else {
+                        log::error!("palitra_highlight_worker error: {e:#}");
+                    }
+                    last_error = Some(now);
+                }
                 false
             }
         };
