@@ -5,6 +5,7 @@ use crate::config::{
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_SSH_PORT_DEFAULT, ORGANISM_GOI_SSH_SETUP_TIMEOUT_MS,
+    ORGANISM_GOI_SSH_TIMEOUT_MS,
 };
 use crate::entities::{goi_association, goi_knowledge, login, organism};
 use crate::error::AppError;
@@ -30,6 +31,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
+use serde::{Deserialize, Serialize};
 
 mod goi_ssh;
 pub mod shared;
@@ -48,6 +50,24 @@ struct GoiSettingsInput {
     api_password: Option<String>,
 }
 
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum RestartCurrentUserGoiService {
+    Swapp,
+    Goi,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct RestartCurrentUserGoiServiceReq {
+    pub service: RestartCurrentUserGoiService,
+}
+
+#[derive(Debug, Serialize, PartialEq, Clone)]
+pub struct CurrentUserGoiControlState {
+    pub can_restart: bool,
+    pub restart_unavailable_reason: Option<String>,
+}
+
 #[post("/api/organism/goi-settings")]
 pub async fn organism_goi_settings(
     user: actix_identity::Identity,
@@ -63,7 +83,7 @@ pub async fn organism_goi_settings(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
 
-    Ok(Json(goi_settings_from_organism(organism)))
+    Ok(Json(goi_settings_from_organism(&organism)))
 }
 
 #[post("/api/organism/goi-settings/update")]
@@ -91,7 +111,7 @@ pub async fn update_organism_goi_settings(
     };
     let organism = goi_store_settings(&env.dbx, organism, settings).await?;
 
-    Ok(Json(goi_settings_from_organism(organism)))
+    Ok(Json(goi_settings_from_organism(&organism)))
 }
 
 #[post("/api/organism/goi-settings/setup-worker")]
@@ -132,7 +152,7 @@ pub async fn setup_organism_goi_worker(
     };
     let organism = goi_store_settings(&env.dbx, organism, settings).await?;
 
-    Ok(Json(goi_settings_from_organism(organism)))
+    Ok(Json(goi_settings_from_organism(&organism)))
 }
 
 #[post("/api/organism/goi-settings/check-connection")]
@@ -254,6 +274,60 @@ pub async fn list_current_user_goi_knowledge(
     Ok(Json(ListGoiKnowledgeRsp { items, has_more }))
 }
 
+#[post("/api/organism/goi-settings/restart-service")]
+pub async fn restart_current_user_goi_service(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<RestartCurrentUserGoiServiceReq>,
+) -> Result<Json<bool>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let login = goi_associations_current_login(&env.dbx, &user_id)
+        .await
+        .c(h!())?;
+    let organism_id = login.organism_id.ok_or_else(|| AppError::BL {
+        msg: "Для користувача не налаштовано організм".to_string(),
+    })?;
+    let organism = goi_find_organism(&env.dbx, organism_id).await.c(h!())?;
+    let ssh_req = goi_connection_req_from_organism(&organism)?;
+    let req = req.into_inner();
+
+    goi_run_command(
+        ssh_req,
+        goi_restart_service_command(&req.service).to_string(),
+        goi_restart_service_error_context(&req.service),
+    )
+    .await?;
+
+    Ok(Json(true))
+}
+
+#[post("/api/organism/goi-settings/current-user-control-state")]
+pub async fn current_user_goi_control_state(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<CurrentUserGoiControlState>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let login = goi_associations_current_login(&env.dbx, &user_id)
+        .await
+        .c(h!())?;
+    let Some(organism_id) = login.organism_id else {
+        return Ok(Json(CurrentUserGoiControlState {
+            can_restart: false,
+            restart_unavailable_reason: Some(
+                "Для користувача не налаштовано організм".to_string(),
+            ),
+        }));
+    };
+
+    let organism = goi_find_organism(&env.dbx, organism_id).await.c(h!())?;
+
+    Ok(Json(goi_control_state_from_organism(&organism)))
+}
+
 pub async fn goi_upload_file(
     req: CheckOrganismGoiConnectionReq,
     remote_file_path: String,
@@ -305,6 +379,30 @@ pub async fn goi_delete_file_loose(
         log::warn!(
             "Skipping GOI file delete for {ssh_target} {remote_file_path_for_log}: {err:#}"
         );
+    }
+}
+
+async fn goi_run_command(
+    ssh_req: CheckOrganismGoiConnectionReq,
+    command: String,
+    error_context: &'static str,
+) -> Result<(), AppError> {
+    match tokio::task::spawn_blocking(move || {
+        goi_ssh::goi_exec_command_sync(
+            ssh_req,
+            command,
+            ORGANISM_GOI_SSH_TIMEOUT_MS,
+        )
+    })
+    .await
+    {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(err)) => Err(AppError::BL {
+            msg: format!("{error_context}: {err:#}"),
+        }),
+        Err(err) => Err(AppError::BL {
+            msg: format!("{error_context}: {err}"),
+        }),
     }
 }
 
@@ -772,24 +870,24 @@ fn goi_validate_api_port(port: i32) -> Result<(), AppError> {
 }
 
 fn goi_settings_from_organism(
-    organism: organism::Model,
+    organism: &organism::Model,
 ) -> OrganismGoiSettings {
-    let integration_type = goi_integration_type(&organism);
+    let integration_type = goi_integration_type(organism);
     let ssh_host = normalize_optional_trimmed(organism.goi_ssh_host.clone());
-    let api_host = normalize_optional_trimmed(organism.goi_api_host)
+    let api_host = normalize_optional_trimmed(organism.goi_api_host.clone())
         .or_else(|| ssh_host.clone());
     OrganismGoiSettings {
         organism_id: organism.id,
         integration_type,
         ssh_host,
-        ssh_user: normalize_optional_trimmed(organism.goi_ssh_user),
+        ssh_user: normalize_optional_trimmed(organism.goi_ssh_user.clone()),
         ssh_port: if organism.goi_ssh_port > 0 {
             organism.goi_ssh_port
         } else {
             ORGANISM_GOI_SSH_PORT_DEFAULT
         },
         path: normalize_trimmed_or_default(
-            organism.goi_path,
+            organism.goi_path.clone(),
             ORGANISM_GOI_PATH_DEFAULT,
         ),
         api_host,
@@ -798,8 +896,73 @@ fn goi_settings_from_organism(
         } else {
             ORGANISM_GOI_API_PORT_DEFAULT
         },
-        api_login: normalize_optional_trimmed(organism.goi_api_login),
-        api_password: normalize_optional_trimmed(organism.goi_api_password),
+        api_login: normalize_optional_trimmed(organism.goi_api_login.clone()),
+        api_password: normalize_optional_trimmed(
+            organism.goi_api_password.clone(),
+        ),
+    }
+}
+
+fn goi_connection_req_from_organism(
+    organism: &organism::Model,
+) -> Result<CheckOrganismGoiConnectionReq, AppError> {
+    let settings = goi_settings_from_organism(organism);
+    let ssh_host = settings.ssh_host.ok_or_else(|| AppError::BL {
+        msg: "Для вашого організму не налаштовано GOI SSH host".to_string(),
+    })?;
+    let ssh_user = settings.ssh_user.ok_or_else(|| AppError::BL {
+        msg: "Для вашого організму не налаштовано GOI SSH user".to_string(),
+    })?;
+    let req = CheckOrganismGoiConnectionReq {
+        ssh_host,
+        ssh_user,
+        ssh_port: settings.ssh_port,
+        path: settings.path,
+    };
+    goi_validate_connection_req(&req)?;
+    Ok(req)
+}
+
+fn goi_control_state_from_organism(
+    organism: &organism::Model,
+) -> CurrentUserGoiControlState {
+    match goi_connection_req_from_organism(organism) {
+        Ok(_) => CurrentUserGoiControlState {
+            can_restart: true,
+            restart_unavailable_reason: None,
+        },
+        Err(AppError::BL { msg }) => CurrentUserGoiControlState {
+            can_restart: false,
+            restart_unavailable_reason: Some(msg),
+        },
+        Err(_) => CurrentUserGoiControlState {
+            can_restart: false,
+            restart_unavailable_reason: Some(
+                "Не вдалося визначити доступність перезапуску GOI".to_string(),
+            ),
+        },
+    }
+}
+
+fn goi_restart_service_command(
+    service: &RestartCurrentUserGoiService,
+) -> &'static str {
+    match service {
+        RestartCurrentUserGoiService::Swapp => "sudo systemctl restart swapp",
+        RestartCurrentUserGoiService::Goi => "sudo systemctl restart goi",
+    }
+}
+
+fn goi_restart_service_error_context(
+    service: &RestartCurrentUserGoiService,
+) -> &'static str {
+    match service {
+        RestartCurrentUserGoiService::Swapp => {
+            "Не вдалося перезапустити SWAPP на інстансі ГОІ"
+        }
+        RestartCurrentUserGoiService::Goi => {
+            "Не вдалося перезапустити GOI на інстансі ГОІ"
+        }
     }
 }
 
