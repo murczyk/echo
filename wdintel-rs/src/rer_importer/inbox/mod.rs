@@ -493,7 +493,6 @@ async fn inbox_messages_count(
     }))
 }
 
-
 #[post("/api/rer-importer/delete-message")]
 async fn delete_message(
     user: Identity,
