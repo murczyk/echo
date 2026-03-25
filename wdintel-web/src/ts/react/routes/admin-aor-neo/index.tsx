@@ -19,7 +19,7 @@ import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
-  PAGE_SCROLL_TABLE_CONTAINER_SX,
+  getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
@@ -298,7 +298,7 @@ function AorTable(props: AorTableProps) {
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+        ...getPageScrollTableContainerSx({ loading: props.loading, idleOverflow: 'auto' }),
       },
     },
     state,

@@ -21,6 +21,7 @@ import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
   PAGE_SCROLL_TABLE_CONTAINER_SX,
+  getPageScrollTableContainerSx,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   buildExplicitSingleSelectColumnFilter,
@@ -458,9 +459,9 @@ export function CallsignsTable({
           ...FULL_WIDTH_TABLE_PAPER_SX,
           height: isInitialLoading ? '100%' : 'auto',
           minHeight: isInitialLoading ? '100%' : undefined,
-          overflowX: isFullScreen ? 'auto' : 'visible',
-          overflowY: isFullScreen ? 'auto' : 'visible',
-          overflow: isFullScreen ? 'auto' : 'visible',
+          overflowX: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
+          overflowY: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
+          overflow: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
         },
         style: {
           ...(baseProps as { style?: React.CSSProperties })?.style,
@@ -473,14 +474,16 @@ export function CallsignsTable({
       return {
         sx: {
           ...(CUSTOM_STYLES.muiTableContainerProps as { sx?: object })?.sx,
-          ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+          ...getPageScrollTableContainerSx({
+            loading: showTableOverlay,
+            height: isInitialLoading ? '100%' : 'auto',
+            minHeight: isInitialLoading ? '100%' : undefined,
+            maxHeight: isFullScreen ? '100%' : 'none',
+            idleOverflowX: isFullScreen ? 'auto' : 'visible',
+            idleOverflowY: isFullScreen ? 'auto' : 'visible',
+            idleOverflow: isFullScreen ? 'auto' : 'visible',
+          }),
           border: 0,
-          height: isInitialLoading ? '100%' : 'auto',
-          ...(isInitialLoading ? { minHeight: '100%' } : {}),
-          maxHeight: isFullScreen ? '100%' : 'none',
-          overflowX: isFullScreen ? 'auto' : 'visible',
-          overflowY: isFullScreen ? 'auto' : 'visible',
-          overflow: isFullScreen ? 'auto' : 'visible',
         },
       };
     },

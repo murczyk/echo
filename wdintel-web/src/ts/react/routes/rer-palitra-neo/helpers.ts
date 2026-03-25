@@ -9,7 +9,7 @@ import {
   User,
 } from '../../../../Bindings';
 
-import { AccessType, KmzColorOption, PalitraFormState } from './types';
+import { AccessType, KmzColorOption, PalitraFormState, PalitraRowView } from './types';
 
 export const DEFAULT_COLOR_HEX = '#00bcd4';
 
@@ -26,6 +26,10 @@ export function isAdmin(user: User | null): boolean {
 export function isEditor(user: User | null): boolean {
   if (!user) return false;
   return user.roles.includes('UnitsEditor') || user.roles.includes('CallsignsEditor');
+}
+
+export function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
+  return isAdmin(user) || palitra.author === user?.name;
 }
 
 export function getAvailableAccessTypes(user: User | null, myScope: MyScope | null): AccessType[] {
@@ -162,7 +166,7 @@ export function buildPalitraNameWithSuffix(baseName: string, suffix: string): st
   const normalizedBaseName = baseName.trim();
   const normalizedSuffix = suffix.trim();
   if (!normalizedSuffix) return normalizedBaseName;
-  return `${normalizedBaseName} ${normalizedSuffix}`;
+  return normalizedBaseName + ' ' + normalizedSuffix;
 }
 
 export function kmzColorOptionsFromAnalysis(analysis: AnalyzeKmzResponse): KmzColorOption[] {
@@ -194,18 +198,18 @@ export function getAccessSummary(
   const isAuthor = palitra.author === user?.name;
   if (!admin && !isAuthor) return '—';
 
-  if (palitra.accessLogins.length > 0) return `Логіни: ${palitra.accessLogins.join(', ')}`;
+  if (palitra.accessLogins.length > 0) return 'Логіни: ' + palitra.accessLogins.join(', ');
 
   if (palitra.accessOrganismIds.length > 0) {
     if (admin) {
       const names = palitra.accessOrganismIds
         .map((id) => organisms.find((organism) => organism.id === id)?.name)
         .filter((name): name is string => Boolean(name));
-      return names.length > 0 ? `Підрозділи: ${names.join(', ')}` : `Підрозділи: ${palitra.accessOrganismIds.join(', ')}`;
+      return names.length > 0 ? 'Підрозділи: ' + names.join(', ') : 'Підрозділи: ' + palitra.accessOrganismIds.join(', ');
     }
 
     const name = myScope?.organism?.name;
-    return name ? `Підрозділи: ${name}` : 'Підрозділи: —';
+    return name ? 'Підрозділи: ' + name : 'Підрозділи: —';
   }
 
   if (palitra.accessAorId.length > 0) {
@@ -213,17 +217,54 @@ export function getAccessSummary(
       const names = palitra.accessAorId
         .map((id) => aors.find((aor) => aor.id === id)?.name)
         .filter((name): name is string => Boolean(name));
-      return names.length > 0 ? `Смуги: ${names.join(', ')}` : `Смуги: ${palitra.accessAorId.join(', ')}`;
+      return names.length > 0 ? 'Смуги: ' + names.join(', ') : 'Смуги: ' + palitra.accessAorId.join(', ');
     }
 
     const allowed = new Set(myScope?.aorIds ?? []);
     const names = palitra.accessAorId
       .filter((id) => allowed.has(id))
       .map((id) => myScope?.aors.find((aor) => aor.id === id)?.name ?? String(id));
-    return names.length > 0 ? `Смуги: ${names.join(', ')}` : 'Смуги: —';
+    return names.length > 0 ? 'Смуги: ' + names.join(', ') : 'Смуги: —';
   }
 
   return 'без доступу';
+}
+
+export function mapPalitraToRowView({
+  palitra,
+  user,
+  myScope,
+  organisms,
+  aors,
+  inFlightDeleteId,
+  inFlightUploadId,
+}: {
+  palitra: Palitra;
+  user: User | null;
+  myScope: MyScope | null;
+  organisms: Organism[];
+  aors: AreaOfResponsibility[];
+  inFlightDeleteId: number | null;
+  inFlightUploadId: number | null;
+}): PalitraRowView {
+  const canModify = canModifyPalitra(user, palitra);
+  const deleteInFlight = inFlightDeleteId === palitra.id;
+  const uploadInFlight = inFlightUploadId === palitra.id;
+
+  return {
+    id: palitra.id,
+    palitra,
+    name: palitra.name,
+    colorHex: palitra.colorHex,
+    sourceFileName: palitra.sourceFileName,
+    lastUploadedAtTs: palitra.lastUploadedAtTs,
+    author: palitra.author,
+    accessSummary: getAccessSummary(palitra, user, myScope, organisms, aors),
+    canModify,
+    canSelect: canModify && !deleteInFlight && !uploadInFlight,
+    deleteInFlight,
+    uploadInFlight,
+  };
 }
 
 export function applyRestrictedAccess(form: PalitraFormState, user: User | null, myScope: MyScope | null): PalitraFormState {
@@ -257,12 +298,4 @@ export function accessTypeLabel(accessType: AccessType): string {
   if (accessType === 'logins') return 'Логіни';
   if (accessType === 'organisms') return 'Підрозділи';
   return 'Смуги';
-}
-
-export function normalizeSortableValue(value: string | null | undefined): string {
-  return (value ?? '').toLocaleLowerCase('uk-UA');
-}
-
-export function compareStrings(a: string, b: string): number {
-  return a.localeCompare(b, 'uk-UA');
 }

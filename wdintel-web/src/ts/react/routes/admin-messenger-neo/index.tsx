@@ -48,7 +48,7 @@ import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
-  PAGE_SCROLL_TABLE_CONTAINER_SX,
+  getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
@@ -691,18 +691,8 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
         ...(props.loading
-          ? PAGE_SCROLL_TABLE_CONTAINER_SX
-          : {
-              minHeight: 0,
-              minWidth: 0,
-              maxWidth: '100%',
-              width: '100%',
-              maxHeight: '100%',
-              height: 'auto',
-              overflowX: 'auto',
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch',
-            }),
+          ? getPageScrollTableContainerSx({ loading: true })
+          : getPageScrollTableContainerSx({ height: 'auto' })),
       },
     },
     state,
