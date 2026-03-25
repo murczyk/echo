@@ -1,6 +1,6 @@
 import { Box, Tooltip } from '@mui/material';
 
-import type { InboxMessage, Network, Tag } from '../../../../Bindings';
+import type { ContentNode, InboxMessage, Network, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, messageRenderDistance } from './utils';
 import { renderMarkedText } from './MarkedText';

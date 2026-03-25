@@ -269,6 +269,7 @@
     --watermark-color: var(--neutral-400);
 
     --action-color: var(--teal-blue-normal);
+    --message-callsign-color: #1976d2;
     --action-hovered-color: var(--teal-blue-normal-hover);
     --button-text-color: white;
     --toggle-color: white;
@@ -295,6 +296,7 @@ html[data-bs-theme="dark"] {
     --text-color: white;
     --watermark-color: var(--neutral-600);
     --action-color: var(--baby-blue-normal);
+    --message-callsign-color: #90caf9;
     --action-hovered-color: var(--baby-blue-normal-hover);
     --button-text-color: black;
     --toggle-color: black;
