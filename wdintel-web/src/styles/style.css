@@ -513,13 +513,18 @@
 }
 
 .text-marked .content-token--ADP {
-    border-bottom: 3px solid #1a7998;
+    color: var(--message-callsign-color);
+    border-bottom: 2px solid var(--message-callsign-color);
     transition: border-bottom-color 1s ease;
 }
 
 .text-marked .content-token--point {
-    border-bottom: 3px solid #fd884f;
-    transition: border-bottom-color 1s ease;
+    transition: filter 0.2s ease;
+}
+
+.text-marked .content-token--point:hover,
+.text-marked .content-token--point:focus-visible {
+    filter: brightness(0.88);
 }
 
 .text-marked .content-token--metadata {
