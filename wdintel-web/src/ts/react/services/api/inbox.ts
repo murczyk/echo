@@ -32,10 +32,6 @@ const defaultGroupStats: SignalGroupStats = {
   activityLastWeek: 0,
 };
 
-type MessageIdsRsp = {
-  messages: Array<[number, InboxMessageType & { group_master_key?: string | null }]>;
-};
-
 /** Raw API response (snake_case) */
 type InboxMessagesRspRaw = {
   inbox_items: Array<[number, InboxMessageType & { group_master_key?: string | null }]>;
@@ -203,18 +199,6 @@ export async function fetchInboxMessages(req: InboxMessagesReq): Promise<InboxMe
   const body = inboxMsgtoSnakeBody(req);
   const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any);
   return mapRsp(raw);
-}
-
-export async function fetchInboxRandomMessage(req: InboxMessagesReq): Promise<InboxMessagesRsp> {
-  const body = inboxMsgtoSnakeBody(req);
-  const raw = await postJson<MessageIdsRsp>('/api/rer-importer/get-inbox-random', body as any);
-  return mapRsp({
-    inbox_items: raw.messages ?? [],
-    callsigns: [],
-    signal_profiles: {},
-    signal_groups: [],
-    freq_pelengs_summary: null,
-  });
 }
 
 export type InboxMessagesDigestRsp = {

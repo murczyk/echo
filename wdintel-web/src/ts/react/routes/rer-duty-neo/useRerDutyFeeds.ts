@@ -64,14 +64,16 @@ function mergePostsFromMessages(
 
 export function useRerDutyFeeds(authUserName: string | null) {
   const filterOpts = useRerDutyFilterOptions();
-  const [randomEnabled, setRandomEnabled] = useState(false);
-  const [randomIntervalSec, setRandomIntervalSec] = useState(1);
+  const [testEnabled, setTestEnabled] = useState(false);
+  const [testSinceMs, setTestSinceMs] = useState(0);
+  const [testLimit, setTestLimit] = useState(1);
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
-    randomEnabled,
-    randomIntervalSec,
+    testEnabled,
+    testSinceMs,
+    testLimit,
   });
   const setFeedError = feedState.setError;
   useEffect(() => {
@@ -79,8 +81,9 @@ export function useRerDutyFeeds(authUserName: string | null) {
     currentSystemSettings()
       .then((settings) => {
         if (cancelled) return;
-        setRandomEnabled(settings.rerDutyRandomEnabled);
-        setRandomIntervalSec(settings.rerDutyRandomIntervalSec);
+        setTestEnabled(settings.rerDutyTestEnabled);
+        setTestSinceMs(settings.rerDutyTestSinceMs);
+        setTestLimit(settings.rerDutyTestLimit);
       })
       .catch((error) => {
         if (cancelled) return;

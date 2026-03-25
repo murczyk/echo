@@ -224,7 +224,7 @@ mod m20260317_234004_add_goi_knowledge_deleted_at;
 mod m20260318_110000_add_sigint_network_freq_last_seen_dt;
 mod m20260318_131247_add_organism_goi_integration_type;
 mod m20260319_011722_add_system_settings;
-mod m20260320_152500_add_rer_duty_random_settings;
+mod m20260325_123200_add_rer_duty_test_settings;
 
 pub struct Migrator;
 
@@ -458,7 +458,7 @@ impl MigratorTrait for Migrator {
                 m20260318_131247_add_organism_goi_integration_type::Migration,
             ),
             Box::new(m20260319_011722_add_system_settings::Migration),
-            Box::new(m20260320_152500_add_rer_duty_random_settings::Migration),
+            Box::new(m20260325_123200_add_rer_duty_test_settings::Migration),
         ]
     }
 }

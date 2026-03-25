@@ -20,19 +20,33 @@ use itertools::Itertools;
 use log::*;
 use sea_orm::*;
 use std::collections::BTreeSet;
-use std::time::Instant;
 
 pub(crate) mod bl;
 pub mod metadata;
 pub mod query;
 
-fn apply_default_inbox_since_date(req: &mut InboxMessagesReq) {
-    if req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-    {
-        let since = Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS);
-        req.since_date_inclusive_ms = Some(since.and_utc().timestamp_millis());
+async fn apply_test_inbox_settings(
+    env: &Env,
+    req: &mut InboxMessagesReq,
+) -> Result<Option<i64>, AppError> {
+    let settings = crate::system_settings::get_active_system_settings(&env.dbx)
+        .await
+        .c(h!())?;
+    let Some(settings) = settings else {
+        return Ok(None);
+    };
+    if !settings.rer_duty_test_enabled {
+        return Ok(None);
     }
+    let since_ms = settings.rer_duty_test_since_ms.max(0);
+    let window_ms = Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES)
+        .num_milliseconds();
+    req.since_id_noninclusive = None;
+    req.before_id_noninclusive = None;
+    req.since_date_inclusive_ms = Some(since_ms);
+    req.till_date_inclusive_ms = Some(since_ms + window_ms);
+    req.nolimit = Some(true);
+    Ok(Some(settings.rer_duty_test_limit.max(1)))
 }
 
 #[post("/api/rer-importer/get-inbox-map")]
@@ -295,7 +309,7 @@ async fn inbox_messages(
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
     let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
-    let req = req.into_inner();
+    let mut req = req.into_inner();
     let skip_group_stats = req.skip_group_stats.unwrap_or(false);
 
     let payload = serde_json::to_value(&req).context(h!())?;
@@ -313,9 +327,16 @@ async fn inbox_messages(
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
-    let inbox_items = get_inbox_messages(&login, &logins, &env, &req)
-        .await
-        .context(h!())?;
+    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
+    let inbox_items = if let Some(limit) = test_limit {
+        get_inbox_messages_limited(&login, &logins, &env, &req, limit)
+            .await
+            .context(h!())?
+    } else {
+        get_inbox_messages(&login, &logins, &env, &req)
+            .await
+            .context(h!())?
+    };
     let txn = env.dbx.begin().await.context(h!())?;
     let callsigns: Vec<CallsignInfoRes> =
         load_inbox_callsigns(&inbox_items, &env).await.c(h!())?;
@@ -436,7 +457,12 @@ async fn inbox_messages_count(
         .await
         .c(h!())?;
     let login = user_id;
-    apply_default_inbox_since_date(&mut req);
+
+    if req.since_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+    {
+        req.since_date_inclusive_ms = Some(0);
+    }
     let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
     let q = format!(
         "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
@@ -447,7 +473,11 @@ async fn inbox_messages_count(
         .await
         .c(h!())?;
     let query_res = query_res.unwrap();
-    let quantity: i64 = query_res.try_get("", "count")?;
+    let mut quantity: i64 = query_res.try_get("", "count")?;
+    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
+    if let Some(limit) = test_limit {
+        quantity = quantity.min(limit);
+    }
     let first_element_ts: Option<NaiveDateTime> =
         query_res.try_get("", "first_element_ts")?;
     let first_element_ts =
@@ -458,140 +488,6 @@ async fn inbox_messages_count(
     }))
 }
 
-#[post("/api/rer-importer/get-inbox-random")]
-async fn inbox_message_random(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<InboxMessagesReq>,
-) -> Result<Json<MessageIdsRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
-    let page_id = req.page_id.clone();
-    let req = req.into_inner();
-
-    let payload = serde_json::to_value(&req).context(h!())?;
-    record_page_visit(&user_id, &page_id, &env, Some(payload))
-        .await
-        .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
-        .await
-        .c(h!())?;
-    let login = user_id;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
-    let start_ms = Utc::now().timestamp_millis();
-    let since_ms = req.since_date_inclusive_ms.unwrap_or_else(|| {
-        (Utc::now() - Duration::days(365)).timestamp_millis()
-    });
-    let mut window_end_ms = req.till_date_inclusive_ms.unwrap_or(start_ms);
-    let day_step_ms = Duration::days(1).num_milliseconds();
-    let hour_step_ms =
-        Duration::hours(RER_DUTY_RANDOM_STEP_HOURS).num_milliseconds();
-    let mut day_window: Option<(i64, i64)> = None;
-
-    while window_end_ms >= since_ms {
-        let window_start_ms = (window_end_ms - day_step_ms).max(since_ms);
-        let mut window_req = req.clone();
-        window_req.since_date_inclusive_ms = Some(window_start_ms);
-        window_req.till_date_inclusive_ms = Some(window_end_ms);
-
-        let start = Instant::now();
-        let q = build_inbox_query(&login, &env, &window_req)
-            .await
-            .context(h!())?;
-        info!(
-            "inbox_random build_inbox_query took {}ms",
-            start.elapsed().as_millis()
-        );
-        let select_start = Instant::now();
-        let latest_q = format!(
-            "SELECT * FROM ({q}) q WHERE length(trim(q.sender)) > 0 AND q.post_id IS NOT NULL AND length(trim(q.post_name)) > 0 ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
-        );
-        let query_res = env
-            .dbx
-            .query_all(Statement::from_string(
-                DatabaseBackend::Postgres,
-                latest_q,
-            ))
-            .await
-            .c(h!())?;
-        info!(
-            "inbox_random select took {}ms (rows={})",
-            select_start.elapsed().as_millis(),
-            query_res.len()
-        );
-        if query_res.is_empty() {
-            if window_start_ms <= since_ms {
-                break;
-            }
-            window_end_ms = window_start_ms - 1;
-            continue;
-        }
-        day_window = Some((window_start_ms, window_end_ms));
-        break;
-    }
-
-    let (hour_start_ms, mut hour_end_ms) = match day_window {
-        Some(window) => window,
-        None => return Ok(Json(MessageIdsRsp { messages: vec![] })),
-    };
-
-    while hour_end_ms >= hour_start_ms {
-        let window_start_ms = (hour_end_ms - hour_step_ms).max(hour_start_ms);
-        let mut window_req = req.clone();
-        window_req.since_date_inclusive_ms = Some(window_start_ms);
-        window_req.till_date_inclusive_ms = Some(hour_end_ms);
-
-        let start = Instant::now();
-        let q = build_inbox_query(&login, &env, &window_req)
-            .await
-            .context(h!())?;
-        info!(
-            "inbox_random build_inbox_query took {}ms",
-            start.elapsed().as_millis()
-        );
-        let select_start = Instant::now();
-        let latest_q = format!(
-            "SELECT * FROM ({q}) q WHERE length(trim(q.sender)) > 0 AND q.post_id IS NOT NULL AND length(trim(q.post_name)) > 0 ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
-        );
-        let query_res = env
-            .dbx
-            .query_all(Statement::from_string(
-                DatabaseBackend::Postgres,
-                latest_q,
-            ))
-            .await
-            .c(h!())?;
-        info!(
-            "inbox_random select took {}ms (rows={})",
-            select_start.elapsed().as_millis(),
-            query_res.len()
-        );
-        if query_res.is_empty() {
-            if window_start_ms <= hour_start_ms {
-                break;
-            }
-            hour_end_ms = window_start_ms - 1;
-            continue;
-        }
-        let raw_messages: Vec<InboxMessageDesc> = query_res
-            .iter()
-            .map(|qr| InboxMessageDesc::from_query_result(qr, ""))
-            .collect::<Result<Vec<_>, DbErr>>()
-            .context(h!())?;
-        let messages = aggregate_to_inbox_messages(
-            &login,
-            raw_messages,
-            &logins,
-            &&window_req,
-            &&**env,
-        )
-        .await?;
-        return Ok(Json(MessageIdsRsp { messages }));
-    }
-
-    Ok(Json(MessageIdsRsp { messages: vec![] }))
-}
 
 #[post("/api/rer-importer/delete-message")]
 async fn delete_message(
@@ -880,6 +776,35 @@ pub async fn get_inbox_messages_with_conn(
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let q = build_inbox_query(login, env, req).await.c(h!())?;
+    let res = fetch_inbox_messages_with_query(dbx, login, logins, env, req, &q)
+        .await
+        .context(h!())?;
+    Ok(res)
+}
+
+async fn get_inbox_messages_limited(
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    limit: i64,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let q = build_inbox_query(login, env, req).await.c(h!())?;
+    let q = format!("SELECT * FROM ({q}) q LIMIT {limit}");
+    let res = fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q)
+        .await
+        .context(h!())?;
+    Ok(res)
+}
+
+async fn fetch_inbox_messages_with_query(
+    dbx: &DatabaseConnection,
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    q: &str,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let results = dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
         .await

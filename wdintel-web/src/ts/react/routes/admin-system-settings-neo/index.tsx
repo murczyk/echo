@@ -36,10 +36,12 @@ export function AdminSystemSettingsNeoPage() {
     React.useState(true);
   const [initialExactMatchOnlyDefault, setInitialExactMatchOnlyDefault] =
     React.useState(true);
-  const [draftDutyRandomEnabled, setDraftDutyRandomEnabled] = React.useState(false);
-  const [draftDutyRandomIntervalSec, setDraftDutyRandomIntervalSec] = React.useState(1);
-  const [initialDutyRandomEnabled, setInitialDutyRandomEnabled] = React.useState(false);
-  const [initialDutyRandomIntervalSec, setInitialDutyRandomIntervalSec] = React.useState(1);
+  const [draftDutyTestEnabled, setDraftDutyTestEnabled] = React.useState(false);
+  const [draftDutyTestSinceMs, setDraftDutyTestSinceMs] = React.useState(0);
+  const [draftDutyTestLimit, setDraftDutyTestLimit] = React.useState(1);
+  const [initialDutyTestEnabled, setInitialDutyTestEnabled] = React.useState(false);
+  const [initialDutyTestSinceMs, setInitialDutyTestSinceMs] = React.useState(0);
+  const [initialDutyTestLimit, setInitialDutyTestLimit] = React.useState(1);
   const [loadInProgress, setLoadInProgress] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
@@ -58,10 +60,12 @@ export function AdminSystemSettingsNeoPage() {
           activeSettings?.rerAnalysisUnitsExactMatchOnlyDefault ?? true;
         setDraftExactMatchOnlyDefault(nextValue);
         setInitialExactMatchOnlyDefault(nextValue);
-        setDraftDutyRandomEnabled(activeSettings?.rerDutyRandomEnabled ?? false);
-        setDraftDutyRandomIntervalSec(activeSettings?.rerDutyRandomIntervalSec ?? 1);
-        setInitialDutyRandomEnabled(activeSettings?.rerDutyRandomEnabled ?? false);
-        setInitialDutyRandomIntervalSec(activeSettings?.rerDutyRandomIntervalSec ?? 1);
+        setDraftDutyTestEnabled(activeSettings?.rerDutyTestEnabled ?? false);
+        setDraftDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
+        setDraftDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
+        setInitialDutyTestEnabled(activeSettings?.rerDutyTestEnabled ?? false);
+        setInitialDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
+        setInitialDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
       } catch (error) {
         if (isUnauthorizedError(error)) {
           window.location.assign('/login');
@@ -80,8 +84,9 @@ export function AdminSystemSettingsNeoPage() {
 
   const isDirty =
     draftExactMatchOnlyDefault !== initialExactMatchOnlyDefault ||
-    draftDutyRandomEnabled !== initialDutyRandomEnabled ||
-    draftDutyRandomIntervalSec !== initialDutyRandomIntervalSec;
+    draftDutyTestEnabled !== initialDutyTestEnabled ||
+    draftDutyTestSinceMs !== initialDutyTestSinceMs ||
+    draftDutyTestLimit !== initialDutyTestLimit;
 
   function handleExactMatchOnlyChange(checked: boolean) {
     setSaveSuccess(null);
@@ -98,15 +103,18 @@ export function AdminSystemSettingsNeoPage() {
     setSaveSuccess(null);
 
     try {
-      const intervalSec = Math.max(1, Math.floor(draftDutyRandomIntervalSec) || 1);
+      const testSinceMs = Math.max(0, Math.floor(draftDutyTestSinceMs) || 0);
+      const testLimit = Math.max(1, Math.floor(draftDutyTestLimit) || 1);
       await createSystemSettings(
         draftExactMatchOnlyDefault,
-        draftDutyRandomEnabled,
-        intervalSec,
+        draftDutyTestEnabled,
+        testSinceMs,
+        testLimit,
       );
       setInitialExactMatchOnlyDefault(draftExactMatchOnlyDefault);
-      setInitialDutyRandomEnabled(draftDutyRandomEnabled);
-      setInitialDutyRandomIntervalSec(intervalSec);
+      setInitialDutyTestEnabled(draftDutyTestEnabled);
+      setInitialDutyTestSinceMs(testSinceMs);
+      setInitialDutyTestLimit(testLimit);
       setSaveSuccess('Нове системне налаштування збережено.');
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -169,31 +177,43 @@ export function AdminSystemSettingsNeoPage() {
                 </Box>
 
                 <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
-                  Оперативний: випадкові повідомлення
+                  Оперативний: тестові повідомлення
                 </Typography>
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={draftDutyRandomEnabled}
+                      checked={draftDutyTestEnabled}
                       onChange={(_, checked) => {
                         setSaveSuccess(null);
-                        setDraftDutyRandomEnabled(checked);
+                        setDraftDutyTestEnabled(checked);
                       }}
                     />
                   }
-                  label="Увімкнути автоматичну вибірку випадкових повідомлень"
+                  label="Увімкнути тестову вибірку повідомлень"
                 />
                 <TextField
-                  label="Інтервал (секунди)"
+                  label="Дата старту (timestamp ms)"
                   type="number"
-                  value={draftDutyRandomIntervalSec}
+                  value={draftDutyTestSinceMs}
                   onChange={(event) => {
                     setSaveSuccess(null);
                     const next = Number(event.target.value);
-                    setDraftDutyRandomIntervalSec(Number.isFinite(next) ? next : 1);
+                    setDraftDutyTestSinceMs(Number.isFinite(next) ? next : 0);
+                  }}
+                  inputProps={{ min: 0, step: 1000 }}
+                  helperText="Використовується як sinceDateInclusiveMs"
+                />
+                <TextField
+                  label="Ліміт повідомлень"
+                  type="number"
+                  value={draftDutyTestLimit}
+                  onChange={(event) => {
+                    setSaveSuccess(null);
+                    const next = Number(event.target.value);
+                    setDraftDutyTestLimit(Number.isFinite(next) ? next : 1);
                   }}
                   inputProps={{ min: 1, step: 1 }}
-                  helperText="Мінімум 1 секунда"
+                  helperText="Мінімум 1"
                 />
 
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
