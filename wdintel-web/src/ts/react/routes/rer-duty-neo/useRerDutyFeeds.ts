@@ -73,6 +73,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     randomEnabled,
     randomIntervalSec,
   });
+  const setFeedError = feedState.setError;
   useEffect(() => {
     let cancelled = false;
     currentSystemSettings()
@@ -83,12 +84,12 @@ export function useRerDutyFeeds(authUserName: string | null) {
       })
       .catch((error) => {
         if (cancelled) return;
-        feedState.setError(error instanceof Error ? error.message : String(error));
+        setFeedError(error instanceof Error ? error.message : String(error));
       });
     return () => {
       cancelled = true;
     };
-  }, [feedState]);
+  }, [setFeedError]);
   const actions = useRerDutyMessageActions({
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,

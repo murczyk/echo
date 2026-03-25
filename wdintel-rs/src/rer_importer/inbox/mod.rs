@@ -480,7 +480,9 @@ async fn inbox_message_random(
         .await
         .context(h!())?;
     let start_ms = Utc::now().timestamp_millis();
-    let since_ms = req.since_date_inclusive_ms.unwrap_or(0);
+    let since_ms = req.since_date_inclusive_ms.unwrap_or_else(|| {
+        (Utc::now() - Duration::days(365)).timestamp_millis()
+    });
     let mut window_end_ms = req.till_date_inclusive_ms.unwrap_or(start_ms);
     let step_ms =
         Duration::hours(RER_DUTY_RANDOM_STEP_HOURS).num_milliseconds();
@@ -829,7 +831,6 @@ pub async fn get_inbox_messages_with_conn(
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let q = build_inbox_query(login, env, req).await.c(h!())?;
-    dbg!(&q);
     let results = dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
