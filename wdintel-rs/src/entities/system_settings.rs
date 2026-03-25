@@ -19,6 +19,7 @@ pub struct Model {
     pub rer_duty_test_enabled: bool,
     pub rer_duty_test_since_ms: i64,
     pub rer_duty_test_limit: i64,
+    pub rer_duty_poll_interval_sec: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

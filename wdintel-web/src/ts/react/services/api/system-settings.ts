@@ -6,6 +6,7 @@ type SystemSettingsItemRaw = {
   rer_duty_test_enabled: boolean;
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
+  rer_duty_poll_interval_sec: number;
   created_at: number;
   updated_at: number;
   updated_by?: string | null;
@@ -18,6 +19,7 @@ type SystemSettingsCurrentRspRaw = {
   rer_duty_test_enabled: boolean;
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
+  rer_duty_poll_interval_sec: number;
 };
 
 type SystemSettingsListRspRaw = {
@@ -29,6 +31,7 @@ type CreateSystemSettingsReqRaw = {
   rer_duty_test_enabled: boolean;
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
+  rer_duty_poll_interval_sec: number;
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -41,6 +44,7 @@ export type SystemSettingsItem = {
   rerDutyTestEnabled: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -53,6 +57,7 @@ export type SystemSettingsCurrent = {
   rerDutyTestEnabled: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -63,6 +68,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     rerDutyTestEnabled: raw.rer_duty_test_enabled,
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
+    rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
     updatedBy: raw.updated_by ?? null,
@@ -78,6 +84,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerDutyTestEnabled: raw.rer_duty_test_enabled,
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
+    rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
   };
 }
 
@@ -93,6 +100,7 @@ export async function createSystemSettings(
   rerDutyTestEnabled: boolean,
   rerDutyTestSinceMs: number,
   rerDutyTestLimit: number,
+  rerDutyPollIntervalSec: number,
 ): Promise<SystemSettingsItem> {
   const req: CreateSystemSettingsReqRaw = {
     rer_analysis_units_exact_match_only_default:
@@ -100,6 +108,7 @@ export async function createSystemSettings(
     rer_duty_test_enabled: rerDutyTestEnabled,
     rer_duty_test_since_ms: rerDutyTestSinceMs,
     rer_duty_test_limit: rerDutyTestLimit,
+    rer_duty_poll_interval_sec: rerDutyPollIntervalSec,
   };
   const data = await postJson<SystemSettingsItemRaw>(
     '/api/admin/system-settings/create',

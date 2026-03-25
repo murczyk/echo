@@ -67,6 +67,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
   const [testEnabled, setTestEnabled] = useState(false);
   const [testSinceMs, setTestSinceMs] = useState(0);
   const [testLimit, setTestLimit] = useState(1);
+  const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
@@ -74,6 +75,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     testEnabled,
     testSinceMs,
     testLimit,
+    pollIntervalSec,
   });
   const setFeedError = feedState.setError;
   useEffect(() => {
@@ -84,6 +86,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
         setTestEnabled(settings.rerDutyTestEnabled);
         setTestSinceMs(settings.rerDutyTestSinceMs);
         setTestLimit(settings.rerDutyTestLimit);
+        setPollIntervalSec(settings.rerDutyPollIntervalSec);
       })
       .catch((error) => {
         if (cancelled) return;

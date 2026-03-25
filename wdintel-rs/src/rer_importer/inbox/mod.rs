@@ -44,8 +44,8 @@ async fn apply_test_inbox_settings(
         && req.till_date_inclusive_ms.is_none()
     {
         let since_ms = settings.rer_duty_test_since_ms.max(0);
-        let window_ms = Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES)
-            .num_milliseconds();
+        let window_ms =
+            Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES).num_milliseconds();
         req.since_date_inclusive_ms = Some(since_ms);
         req.till_date_inclusive_ms = Some(since_ms + window_ms);
     }
@@ -796,9 +796,10 @@ async fn get_inbox_messages_limited(
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let q = build_inbox_query(login, env, req).await.c(h!())?;
     let q = format!("SELECT * FROM ({q}) q LIMIT {limit}");
-    let res = fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q)
-        .await
-        .context(h!())?;
+    let res =
+        fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q)
+            .await
+            .context(h!())?;
     Ok(res)
 }
 

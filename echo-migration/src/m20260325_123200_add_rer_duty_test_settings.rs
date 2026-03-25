@@ -15,6 +15,8 @@ impl MigrationTrait for Migration {
                     ADD COLUMN IF NOT EXISTS rer_duty_test_since_ms int8 NOT NULL DEFAULT 0;
                 ALTER TABLE system_settings
                     ADD COLUMN IF NOT EXISTS rer_duty_test_limit int8 NOT NULL DEFAULT 1;
+                ALTER TABLE system_settings
+                    ADD COLUMN IF NOT EXISTS rer_duty_poll_interval_sec int8 NOT NULL DEFAULT 1;
                 ",
         )
             .await?;
@@ -31,9 +33,11 @@ impl MigrationTrait for Migration {
                     DROP COLUMN IF EXISTS rer_duty_test_since_ms;
                 ALTER TABLE system_settings
                     DROP COLUMN IF EXISTS rer_duty_test_enabled;
+                ALTER TABLE system_settings
+                    DROP COLUMN IF EXISTS rer_duty_poll_interval_sec;
                 ",
         )
-            .await?;
+        .await?;
         Ok(())
     }
 }

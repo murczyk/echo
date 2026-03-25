@@ -18,7 +18,6 @@ import {
   dedupeMessageItems,
   emptyFilter,
   findAllAdjacentFreqs,
-  INBOX_COUNT_POLL_INTERVAL_MS,
   parseStateFromUrl,
   sortMessageItemsByTime,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
@@ -33,6 +32,7 @@ export type FeedStateDeps = {
   testEnabled: boolean;
   testSinceMs: number;
   testLimit: number;
+  pollIntervalSec: number;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
@@ -364,13 +364,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [feedIds, feedsNeedingLoadKey]);
 
   useEffect(() => {
+    const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();
-    }, INBOX_COUNT_POLL_INTERVAL_MS);
+    }, intervalMs);
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [pollCountThenLoadNewerIfNeeded]);
+  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded]);
 
   useEffect(() => {
     const feedId = scrollToEndAfterNewerRef.current;

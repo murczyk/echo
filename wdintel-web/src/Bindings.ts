@@ -2611,6 +2611,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyTestEnabled: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
 };
 
 export type SystemSettingsItem = {
@@ -2619,6 +2620,7 @@ export type SystemSettingsItem = {
   rerDutyTestEnabled: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -2634,6 +2636,7 @@ export type CreateSystemSettingsReq = {
   rerDutyTestEnabled: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
 };
 
 export type ActivateSystemSettingsReq = {

@@ -6926,6 +6926,7 @@ type alias SystemSettingsCurrentRsp =
     , rerDutyTestEnabled : Bool
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
+    , rerDutyPollIntervalSec : Int
     }
 
 
@@ -6937,6 +6938,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "rer_duty_test_enabled", Json.Encode.bool struct.rerDutyTestEnabled )
         , ( "rer_duty_test_since_ms", Json.Encode.int struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", Json.Encode.int struct.rerDutyTestLimit )
+        , ( "rer_duty_poll_interval_sec", Json.Encode.int struct.rerDutyPollIntervalSec )
         ]
 
 
@@ -6946,6 +6948,7 @@ type alias SystemSettingsItem =
     , rerDutyTestEnabled : Bool
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
+    , rerDutyPollIntervalSec : Int
     , createdAt : Int
     , updatedAt : Int
     , updatedBy : Maybe String
@@ -6961,6 +6964,7 @@ systemSettingsItemEncoder struct =
         , ( "rer_duty_test_enabled", Json.Encode.bool struct.rerDutyTestEnabled )
         , ( "rer_duty_test_since_ms", Json.Encode.int struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", Json.Encode.int struct.rerDutyTestLimit )
+        , ( "rer_duty_poll_interval_sec", Json.Encode.int struct.rerDutyPollIntervalSec )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "updated_at", Json.Encode.int struct.updatedAt )
         , ( "updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.updatedBy )
@@ -6985,6 +6989,7 @@ type alias CreateSystemSettingsReq =
     , rerDutyTestEnabled : Bool
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
+    , rerDutyPollIntervalSec : Int
     }
 
 
@@ -6995,6 +7000,7 @@ createSystemSettingsReqEncoder struct =
         , ( "rer_duty_test_enabled", Json.Encode.bool struct.rerDutyTestEnabled )
         , ( "rer_duty_test_since_ms", Json.Encode.int struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", Json.Encode.int struct.rerDutyTestLimit )
+        , ( "rer_duty_poll_interval_sec", Json.Encode.int struct.rerDutyPollIntervalSec )
         ]
 
 
@@ -11695,6 +11701,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" Json.Decode.int))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -11705,6 +11712,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" (Json.Decode.nullable Json.Decode.string)))
@@ -11724,6 +11732,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" Json.Decode.int))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
