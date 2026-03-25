@@ -118,6 +118,9 @@ export function AdminSystemSettingsNeoPage() {
         testLimit,
         pollIntervalSec,
       );
+      setDraftDutyTestSinceMs(testSinceMs);
+      setDraftDutyTestLimit(testLimit);
+      setDraftDutyPollIntervalSec(pollIntervalSec);
       setInitialExactMatchOnlyDefault(draftExactMatchOnlyDefault);
       setInitialDutyTestEnabled(draftDutyTestEnabled);
       setInitialDutyTestSinceMs(testSinceMs);

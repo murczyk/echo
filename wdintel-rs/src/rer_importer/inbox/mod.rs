@@ -794,7 +794,7 @@ async fn get_inbox_messages_limited(
     limit: i64,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let q = build_inbox_query(login, env, req).await.c(h!())?;
-    let q = format!("SELECT * FROM ({q}) q LIMIT {limit}");
+    let q = format!("{q} LIMIT {limit}");
     let res =
         fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q)
             .await
