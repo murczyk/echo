@@ -100,6 +100,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     requestId: 0,
     hash: null,
   });
+  const shortStateIdRef = useRef(getShortStateIdFromUrl());
   const initialMessageFeedsHashRef = useRef<string>(stableStringify(toShortQueryState(messageFeeds)));
   const blockShortStateHydrationRef = useRef(false);
 
@@ -136,7 +137,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         if (cancelled) return;
         const enabled = serverInfo.featureRerDutyShortState ?? false;
         setFeatureShortStateEnabled(enabled);
-        const shortId = getShortStateIdFromUrl();
+        const shortId = shortStateIdRef.current;
         if (enabled && shortId) {
           try {
             const rsp = await rerDutyShortStateGet(shortId);
@@ -496,6 +497,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   /** Keys are `${feedId}:${JSON.stringify(filter)}` so a filter change on the same feed triggers a new load. */
   const initialLoadStartedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (shortStateIdRef.current && !shortStateReady) return;
     const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
     const needingKeys = new Set(needingLoad.map((w) => `${w.id}:${JSON.stringify(w.filter)}`));
     const started = initialLoadStartedRef.current;
@@ -509,7 +511,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         loadFeedInitialMessagesRef.current(w.id);
       }
     });
-  }, [feedIds, feedsNeedingLoadKey]);
+  }, [feedIds, feedsNeedingLoadKey, shortStateReady]);
 
   useEffect(() => {
     const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
