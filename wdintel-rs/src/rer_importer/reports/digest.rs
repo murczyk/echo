@@ -43,6 +43,7 @@ pub struct NetworkRow {
     pub notes: Vec<InterNote>,
     pub unit: Option<Vec<String>>,
     pub unit_name: Option<String>,
+    pub is_anonymous: bool,
 }
 
 pub struct InterNote {
@@ -560,6 +561,7 @@ async fn collect_report(
             let unit = network.unit.clone();
             let unit_name = network.unit_name.clone();
             let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
+            let is_anonymous = network.name.trim().is_empty();
             let mut network_name = network.name.clone();
             if network_name.trim().is_empty() {
                 network_name = format!(
@@ -631,12 +633,10 @@ async fn collect_report(
                 notes,
                 unit,
                 unit_name,
+                is_anonymous,
             });
         }
-        network_data.sort_by(|n1, n2| match (&n1.unit, &n2.unit) {
-            (Some(u1), Some(u2)) => compare_units(u1, u2),
-            (a, b) => compare_options(a, b).reverse(),
-        });
+        network_data.sort_by(compare_network_rows);
         aor_data.push(AorRow {
             aor_name,
             network_data,
@@ -674,6 +674,17 @@ fn compare_units(u1: &Vec<String>, u2: &Vec<String>) -> Ordering {
             (a, b) => return compare_options(&a, &b),
         };
     }
+}
+
+fn compare_network_rows(n1: &NetworkRow, n2: &NetworkRow) -> Ordering {
+    match n1.is_anonymous.cmp(&n2.is_anonymous) {
+        Ordering::Equal => match (&n1.unit, &n2.unit) {
+            (Some(u1), Some(u2)) => compare_units(u1, u2),
+            (a, b) => compare_options(a, b).reverse(),
+        },
+        ordering => ordering,
+    }
+    .then_with(|| n1.network_name.cmp(&n2.network_name))
 }
 
 async fn collect_networks(
@@ -1080,6 +1091,45 @@ mod tests {
         assert_eq!(
             build_note_comment(&note, false, false),
             "14:30 Test comment".to_string()
+        );
+    }
+
+    #[test]
+    fn compare_network_rows_keeps_anonymous_networks_last() {
+        let mut network_data = vec![
+            NetworkRow {
+                network_name: "Невизначена радіомережа 123.4МГц".to_string(),
+                network_location: None,
+                notes: vec![],
+                unit: None,
+                unit_name: None,
+                is_anonymous: true,
+            },
+            NetworkRow {
+                network_name: "Мережа Б".to_string(),
+                network_location: None,
+                notes: vec![],
+                unit: None,
+                unit_name: None,
+                is_anonymous: false,
+            },
+            NetworkRow {
+                network_name: "Мережа А".to_string(),
+                network_location: None,
+                notes: vec![],
+                unit: Some(vec!["2 бат".to_string()]),
+                unit_name: None,
+                is_anonymous: false,
+            },
+        ];
+
+        network_data.sort_by(compare_network_rows);
+
+        assert_eq!(network_data[0].network_name, "Мережа А");
+        assert_eq!(network_data[1].network_name, "Мережа Б");
+        assert_eq!(
+            network_data[2].network_name,
+            "Невизначена радіомережа 123.4МГц"
         );
     }
 

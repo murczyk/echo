@@ -52,7 +52,7 @@ import { PowerChip } from '../../components/PowerChip';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
-  PAGE_SCROLL_TABLE_CONTAINER_SX,
+  getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
@@ -539,10 +539,13 @@ function OrphanGroupsTable(props: {
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
-        height: isLoading ? '100%' : 'auto',
-        minHeight: isLoading ? '100%' : undefined,
-        maxHeight: '100%',
+        ...getPageScrollTableContainerSx({
+          loading: isLoading,
+          height: isLoading ? '100%' : 'auto',
+          minHeight: isLoading ? '100%' : undefined,
+          maxHeight: '100%',
+          idleOverflow: 'auto',
+        }),
       },
     },
     state,
@@ -885,10 +888,13 @@ function ZoneGroupsTable(props: {
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
-        height: isLoading ? '100%' : 'auto',
-        minHeight: isLoading ? '100%' : undefined,
-        maxHeight: '100%',
+        ...getPageScrollTableContainerSx({
+          loading: isLoading,
+          height: isLoading ? '100%' : 'auto',
+          minHeight: isLoading ? '100%' : undefined,
+          maxHeight: '100%',
+          idleOverflow: 'auto',
+        }),
       },
     },
     state,
