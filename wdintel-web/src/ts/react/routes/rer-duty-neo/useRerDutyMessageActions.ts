@@ -249,10 +249,13 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
         if (msg.sender && msg.sender.trim() !== '') ids.add(msg.sender.trim());
       })
     );
-    const next = Array.from(ids).map((uuid) => ({
-      id: uuid,
-      label: profileLabel(uuid, profiles[uuid] ?? null),
-    }));
+    const next = Array.from(ids).map((uuid) => {
+      const entry = profiles[uuid] ?? null;
+      return {
+        id: uuid,
+        label: entry ? profileLabel(uuid, entry) : uuid,
+      };
+    });
     next.sort((a, b) => a.id.localeCompare(b.id));
     return next;
   }, [profiles, messageFeeds]);

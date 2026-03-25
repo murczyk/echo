@@ -38,6 +38,8 @@ export function AdminSystemSettingsNeoPage() {
     React.useState(true);
   const [draftDutyRandomEnabled, setDraftDutyRandomEnabled] = React.useState(false);
   const [draftDutyRandomIntervalSec, setDraftDutyRandomIntervalSec] = React.useState(1);
+  const [initialDutyRandomEnabled, setInitialDutyRandomEnabled] = React.useState(false);
+  const [initialDutyRandomIntervalSec, setInitialDutyRandomIntervalSec] = React.useState(1);
   const [loadInProgress, setLoadInProgress] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
@@ -58,6 +60,8 @@ export function AdminSystemSettingsNeoPage() {
         setInitialExactMatchOnlyDefault(nextValue);
         setDraftDutyRandomEnabled(activeSettings?.rerDutyRandomEnabled ?? false);
         setDraftDutyRandomIntervalSec(activeSettings?.rerDutyRandomIntervalSec ?? 1);
+        setInitialDutyRandomEnabled(activeSettings?.rerDutyRandomEnabled ?? false);
+        setInitialDutyRandomIntervalSec(activeSettings?.rerDutyRandomIntervalSec ?? 1);
       } catch (error) {
         if (isUnauthorizedError(error)) {
           window.location.assign('/login');
@@ -75,7 +79,9 @@ export function AdminSystemSettingsNeoPage() {
   }, []);
 
   const isDirty =
-    draftExactMatchOnlyDefault !== initialExactMatchOnlyDefault;
+    draftExactMatchOnlyDefault !== initialExactMatchOnlyDefault ||
+    draftDutyRandomEnabled !== initialDutyRandomEnabled ||
+    draftDutyRandomIntervalSec !== initialDutyRandomIntervalSec;
 
   function handleExactMatchOnlyChange(checked: boolean) {
     setSaveSuccess(null);
@@ -99,6 +105,8 @@ export function AdminSystemSettingsNeoPage() {
         intervalSec,
       );
       setInitialExactMatchOnlyDefault(draftExactMatchOnlyDefault);
+      setInitialDutyRandomEnabled(draftDutyRandomEnabled);
+      setInitialDutyRandomIntervalSec(intervalSec);
       setSaveSuccess('Нове системне налаштування збережено.');
     } catch (error) {
       if (isUnauthorizedError(error)) {

@@ -502,7 +502,7 @@ async fn inbox_message_random(
         );
         let select_start = Instant::now();
         let latest_q = format!(
-            "SELECT * FROM ({q}) q ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
+            "SELECT * FROM ({q}) q WHERE length(trim(q.sender)) > 0 AND q.post_id IS NOT NULL AND length(trim(q.post_name)) > 0 ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
         );
         let query_res = env
             .dbx

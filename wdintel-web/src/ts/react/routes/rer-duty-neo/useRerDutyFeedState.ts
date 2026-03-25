@@ -70,7 +70,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
-  const randomCursorByFeedIdRef = React.useRef<Record<string, number | null>>({});
+  const randomCursorByFeedIdRef = useRef<Record<string, number | null>>({});
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
