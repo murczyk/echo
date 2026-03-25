@@ -412,9 +412,7 @@ pub async fn oneoff_refresh_models(mode: Mode) -> Result<(), AppError> {
     let model_dir = models_config
         .directory
         .or_else(|| std::env::var("WD_FASTTEXT_MODELS").ok())
-        .unwrap_or_else(|| {
-            DEFAULT_MODEL_DIR.to_string()
-        });
+        .unwrap_or_else(|| DEFAULT_MODEL_DIR.to_string());
 
     let changed = do_refresh_models(&s3_config, &model_dir).await?;
     if changed {

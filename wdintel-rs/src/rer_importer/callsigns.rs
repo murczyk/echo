@@ -306,6 +306,10 @@ fn callsigns_from_header_line(
     known_callsigns: &BTreeSet<String>,
     known_callsigns_map: &BTreeMap<String, String>,
 ) -> Option<Vec<String>> {
+    if known_callsigns.is_empty() {
+        return None;
+    }
+
     if let Ok(callsigns) = extract_kazhanchik_callsigns(line) {
         let callsigns = callsigns
             .into_iter()
@@ -2224,6 +2228,32 @@ mod tests {
         let message = message_with_callsigns(vec!["Барс", "Борец"]);
 
         assert_eq!(strip_callsigns_prefix(body, &message), "1.Барс Борцу.");
+    }
+
+    #[test]
+    fn strip_callsigns_prefix_keeps_non_caps_header_without_matching_callsigns()
+    {
+        let body = r#"УКХ р/м ймов. 352 мсп 1 ТА
+(БЕРЕСТОВЕ - СТЕЛЬМАХІВКА)
+11:32
+Барс
+Борец
+
+1.Барс Борцу."#;
+        let message = message_with_callsigns(vec!["Гном", "Куба"]);
+
+        assert_eq!(strip_callsigns_prefix(body, &message), body);
+    }
+
+    #[test]
+    fn strip_callsigns_prefix_keeps_caps_header_without_matching_callsigns() {
+        let body = r#"БАРС
+БОРЕЦ
+
+1.Барс Борцу."#;
+        let message = message_with_callsigns(vec!["Гном", "Куба"]);
+
+        assert_eq!(strip_callsigns_prefix(body, &message), body);
     }
 
     #[test]
