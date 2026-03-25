@@ -484,12 +484,13 @@ async fn inbox_message_random(
         (Utc::now() - Duration::days(365)).timestamp_millis()
     });
     let mut window_end_ms = req.till_date_inclusive_ms.unwrap_or(start_ms);
-    let step_ms =
+    let day_step_ms = Duration::days(1).num_milliseconds();
+    let hour_step_ms =
         Duration::hours(RER_DUTY_RANDOM_STEP_HOURS).num_milliseconds();
-    let mut messages = Vec::new();
+    let mut day_window: Option<(i64, i64)> = None;
 
     while window_end_ms >= since_ms {
-        let window_start_ms = (window_end_ms - step_ms).max(since_ms);
+        let window_start_ms = (window_end_ms - day_step_ms).max(since_ms);
         let mut window_req = req.clone();
         window_req.since_date_inclusive_ms = Some(window_start_ms);
         window_req.till_date_inclusive_ms = Some(window_end_ms);
@@ -526,12 +527,59 @@ async fn inbox_message_random(
             window_end_ms = window_start_ms - 1;
             continue;
         }
+        day_window = Some((window_start_ms, window_end_ms));
+        break;
+    }
+
+    let (hour_start_ms, mut hour_end_ms) = match day_window {
+        Some(window) => window,
+        None => return Ok(Json(MessageIdsRsp { messages: vec![] })),
+    };
+
+    while hour_end_ms >= hour_start_ms {
+        let window_start_ms = (hour_end_ms - hour_step_ms).max(hour_start_ms);
+        let mut window_req = req.clone();
+        window_req.since_date_inclusive_ms = Some(window_start_ms);
+        window_req.till_date_inclusive_ms = Some(hour_end_ms);
+
+        let start = Instant::now();
+        let q = build_inbox_query(&login, &env, &window_req)
+            .await
+            .context(h!())?;
+        info!(
+            "inbox_random build_inbox_query took {}ms",
+            start.elapsed().as_millis()
+        );
+        let select_start = Instant::now();
+        let latest_q = format!(
+            "SELECT * FROM ({q}) q WHERE length(trim(q.sender)) > 0 AND q.post_id IS NOT NULL AND length(trim(q.post_name)) > 0 ORDER BY q.\"timestamp\" DESC, q.id DESC LIMIT 1"
+        );
+        let query_res = env
+            .dbx
+            .query_all(Statement::from_string(
+                DatabaseBackend::Postgres,
+                latest_q,
+            ))
+            .await
+            .c(h!())?;
+        info!(
+            "inbox_random select took {}ms (rows={})",
+            select_start.elapsed().as_millis(),
+            query_res.len()
+        );
+        if query_res.is_empty() {
+            if window_start_ms <= hour_start_ms {
+                break;
+            }
+            hour_end_ms = window_start_ms - 1;
+            continue;
+        }
         let raw_messages: Vec<InboxMessageDesc> = query_res
             .iter()
             .map(|qr| InboxMessageDesc::from_query_result(qr, ""))
             .collect::<Result<Vec<_>, DbErr>>()
             .context(h!())?;
-        messages = aggregate_to_inbox_messages(
+        let messages = aggregate_to_inbox_messages(
             &login,
             raw_messages,
             &logins,
@@ -539,9 +587,10 @@ async fn inbox_message_random(
             &&**env,
         )
         .await?;
-        break;
+        return Ok(Json(MessageIdsRsp { messages }));
     }
-    Ok(Json(MessageIdsRsp { messages }))
+
+    Ok(Json(MessageIdsRsp { messages: vec![] }))
 }
 
 #[post("/api/rer-importer/delete-message")]
