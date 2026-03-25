@@ -974,8 +974,7 @@ async fn find_known_callsigns(
         .column_as(source::Column::Name, "source_name")
         .column(sigint_callsign::Column::CreatedAt)
         .filter(sigint_callsign::Column::Deleted.eq(false))
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .filter(sigint_callsign::Column::Callsign.ne(""));
+        .filter(sigint_unit::Column::Deleted.eq(false));
 
     if let Some(callsigns) = callsigns.filter(|callsigns| !callsigns.is_empty())
     {

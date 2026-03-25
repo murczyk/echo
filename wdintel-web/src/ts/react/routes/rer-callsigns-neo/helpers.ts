@@ -261,17 +261,19 @@ export function validateDraftRows(rows: CallsignDraftRow[], _sourceId: number | 
   if (rows.length === 0) return { valid: false, error: 'Немає рядків для додавання' };
 
   const nonEmptyRows = rows.filter((row) => hasAnyDraftValue(row));
-  if (nonEmptyRows.length === 0) return { valid: false, error: 'Заповніть хоча б один позивний' };
+  if (nonEmptyRows.length === 0) return { valid: false, error: 'Заповніть хоча б один рядок' };
 
-  const missingCallsign = nonEmptyRows.find((row) => row.callsign.trim() === '');
-  if (missingCallsign) return { valid: false, error: 'Поле "Позивний" є обовʼязковим' };
+  const missingCallsignOrComment = nonEmptyRows.find((row) => row.callsign.trim() === '' && row.comment.trim() === '');
+  if (missingCallsignOrComment) return { valid: false, error: 'Заповніть поле "Позивний" або "Коментар"' };
 
   return { valid: true, error: null };
 }
 
 export function validateEditForm(form: CallsignEditForm | null): CallsignDraftValidation {
   if (!form) return { valid: false, error: 'Не вибрано позивний для редагування' };
-  if (form.callsign.trim() === '') return { valid: false, error: 'Поле "Позивний" є обовʼязковим' };
+  if (form.callsign.trim() === '' && form.comment.trim() === '') {
+    return { valid: false, error: 'Заповніть поле "Позивний" або "Коментар"' };
+  }
   if (form.sourceId === 2 && form.radioFreq.trim() === '') {
     return { valid: false, error: "При виборі джерела 'РО' необхідно вказати частоту" };
   }

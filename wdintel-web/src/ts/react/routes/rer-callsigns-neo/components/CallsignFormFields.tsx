@@ -32,6 +32,8 @@ type Props<T extends CommonFormValue> = {
   onCallsignAdditionalSourceIdsChange?: (sourceIds: number[]) => void;
   disabled?: boolean;
   compact?: boolean;
+  controlsFirst?: boolean;
+  hintContent?: React.ReactNode;
 };
 
 export function CallsignFormFields<T extends CommonFormValue>({
@@ -46,6 +48,8 @@ export function CallsignFormFields<T extends CommonFormValue>({
   onCallsignAdditionalSourceIdsChange,
   disabled = false,
   compact = false,
+  controlsFirst = false,
+  hintContent,
 }: Props<T>) {
   const spacing = compact ? 1.5 : 2;
   const reactId = React.useId();
@@ -55,6 +59,49 @@ export function CallsignFormFields<T extends CommonFormValue>({
 
   return (
     <Stack spacing={spacing}>
+      {controlsFirst && includeUnitSelect ? (
+        <Stack direction={{ xs: "column", md: "row" }} spacing={spacing}>
+          <FormControl fullWidth size={compact ? "small" : "medium"} disabled={disabled}>
+            <InputLabel id={unitLabelId}>Підрозділ</InputLabel>
+            <Select labelId={unitLabelId} label="Підрозділ" value={value.unitId ?? ""} onChange={(event) => onChange({ ...value, unitId: Number(event.target.value) || 0 })}>
+              {units.map((unit) => (
+                <MenuItem key={unit.id} value={unit.id}>
+                  {unit.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {includeSourceSelect ? (
+            <FormControl fullWidth size={compact ? "small" : "medium"} disabled={disabled}>
+              <InputLabel id={sourceLabelId}>Основне джерело</InputLabel>
+              <Select labelId={sourceLabelId} label="Основне джерело" value={value.sourceId ?? ""} onChange={(event) => { const raw = event.target.value; const nextSourceId = raw === "" ? null : Number(raw); onChange({ ...value, sourceId: nextSourceId }); if (includeConfirmationSources && onCallsignAdditionalSourceIdsChange) { onCallsignAdditionalSourceIdsChange(callsignAdditionalSourceIds.filter((sourceId) => sourceId !== nextSourceId)); } }}>
+                <MenuItem value="">
+                  <em>Оберіть джерело</em>
+                </MenuItem>
+                {sources.map((source) => (
+                  <MenuItem key={source.id} value={source.id}>
+                    {source.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          ) : null}
+        </Stack>
+      ) : null}
+      {controlsFirst && includeConfirmationSources ? (
+        <FormControl fullWidth size={compact ? "small" : "medium"} disabled={disabled}>
+          <InputLabel id={sourceLabelId + "-confirm"}>Підтвердження</InputLabel>
+          <Select labelId={sourceLabelId + "-confirm"} label="Підтвердження" multiple value={callsignAdditionalSourceIds} onChange={(event) => { if (!onCallsignAdditionalSourceIdsChange) return; const raw = event.target.value; onCallsignAdditionalSourceIdsChange(typeof raw === "string" ? raw.split(",").map(Number) : raw.map(Number)); }} renderValue={(selected) => { const names = selected.map((sourceId) => sources.find((source) => source.id === Number(sourceId))?.name ?? ("#" + sourceId)); return names.length > 0 ? names.join(", ") : "Оберіть підтвердження"; }}>
+            {confirmationSources.map((source) => (
+              <MenuItem key={source.id} value={source.id}>
+                {source.name}
+              </MenuItem>
+            ))}
+          </Select>
+          <FormHelperText sx={{ ml: 0 }}>Додаткові джерела підтвердження.</FormHelperText>
+        </FormControl>
+      ) : null}
+      {controlsFirst && hintContent ? hintContent : null}
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={spacing}>
         <TextField
           label="Позивний"
@@ -62,7 +109,6 @@ export function CallsignFormFields<T extends CommonFormValue>({
           onChange={(event) => onChange({ ...value, callsign: toUpperCaseCallsign(event.target.value) })}
           disabled={disabled}
           fullWidth
-          required
           size={compact ? 'small' : 'medium'}
         />
         <TextField
@@ -110,7 +156,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
         />
       </Stack>
 
-      {includeUnitSelect ? (
+      {!controlsFirst && includeUnitSelect ? (
         <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
           <InputLabel id={unitLabelId}>Підрозділ</InputLabel>
           <Select
@@ -128,7 +174,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
         </FormControl>
       ) : null}
 
-      {includeSourceSelect ? (
+      {!controlsFirst && includeSourceSelect ? (
         <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
           <InputLabel id={sourceLabelId}>Основне джерело</InputLabel>
           <Select
@@ -156,7 +202,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
         </FormControl>
       ) : null}
 
-      {includeConfirmationSources ? (
+      {!controlsFirst && includeConfirmationSources ? (
         <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
           <InputLabel id={`${sourceLabelId}-confirm`}>Підтвердження</InputLabel>
           <Select
@@ -181,7 +227,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
               </MenuItem>
             ))}
           </Select>
-          <FormHelperText>Додаткові джерела підтвердження.</FormHelperText>
+          <FormHelperText sx={{ ml: 0 }}>Додаткові джерела підтвердження.</FormHelperText>
         </FormControl>
       ) : null}
     </Stack>

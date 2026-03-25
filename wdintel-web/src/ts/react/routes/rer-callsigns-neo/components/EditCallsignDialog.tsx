@@ -1,7 +1,8 @@
 import React from 'react';
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack } from '@mui/material';
+import { Alert, Box, Button, Drawer, Stack, Typography } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
+import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignEditForm } from '../types';
 
@@ -17,8 +18,8 @@ type Props = {
   onSave: () => void;
 };
 
-export function EditCallsignDialog({ open, form, units, sources, submitting, error, onClose, onChange, onSave }: Props) {
-  const titleId = 'callsigns-edit-dialog-title';
+export function EditCallsignDrawer({ open, form, units, sources, submitting, error, onClose, onChange, onSave }: Props) {
+  const titleId = 'callsigns-edit-drawer-title';
   const latestFormRef = React.useRef<CallsignEditForm | null>(form);
 
   React.useEffect(() => {
@@ -45,42 +46,67 @@ export function EditCallsignDialog({ open, form, units, sources, submitting, err
   );
 
   return (
-    <Dialog
+    <Drawer
+      anchor='right'
       open={open}
       onClose={submitting ? undefined : onClose}
-      disableRestoreFocus
-      fullWidth
-      maxWidth="md"
-      aria-labelledby={titleId}
+      ModalProps={{
+        BackdropProps: {
+          sx: (theme) => pageDrawerBackdropSx(theme),
+        },
+      }}
+      PaperProps={{
+        'aria-labelledby': titleId,
+        sx: {
+          width: { xs: '100vw', sm: 640 },
+          maxWidth: '100vw',
+          display: 'flex',
+          backgroundColor: 'background.default',
+          backgroundImage: 'none',
+        },
+      }}
     >
-      <DialogTitle id={titleId}>Редагувати позивний</DialogTitle>
-      <DialogContent dividers>
-        <Stack spacing={2} sx={{ pt: 0.5 }}>
-          {error ? <Alert severity="error">{error}</Alert> : null}
+      <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Typography variant='h6' id={titleId}>
+          Редагувати позивний
+        </Typography>
+      </Box>
+      <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
+        <Stack spacing={2.5}>
+          {error ? <Alert severity='error'>{error}</Alert> : null}
           {form ? (
             <CallsignFormFields
-              value={form}
-              onChange={handleFormChange}
-              units={units}
-              sources={sources}
-              includeUnitSelect
-              includeSourceSelect
-              includeConfirmationSources
-              callsignAdditionalSourceIds={form.callsignAdditionalSourceIds}
-              onCallsignAdditionalSourceIdsChange={handleCallsignAdditionalSourceIdsChange}
-              disabled={submitting}
-            />
+                value={form}
+                onChange={handleFormChange}
+                units={units}
+                sources={sources}
+                includeUnitSelect
+                includeSourceSelect
+                includeConfirmationSources
+                compact
+                controlsFirst
+                hintContent={
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>   
+                    <Typography variant='caption' color='text.secondary' sx={{ textAlign: 'left' }}>
+                      Обов’язково заповніть "Позивний" або "Коментар"
+                    </Typography>
+                  </Box>
+                }
+                callsignAdditionalSourceIds={form.callsignAdditionalSourceIds}
+                onCallsignAdditionalSourceIdsChange={handleCallsignAdditionalSourceIdsChange}
+                disabled={submitting}
+              />
           ) : null}
         </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, py: 2 }}>
+      </Box>
+      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>
-        <Button onClick={onSave} variant="contained" disabled={submitting || !form}>
+        <Button onClick={onSave} variant='contained' disabled={submitting || !form}>
           {submitting ? 'Збереження…' : 'Зберегти'}
         </Button>
-      </DialogActions>
-    </Dialog>
+      </Box>
+    </Drawer>
   );
 }

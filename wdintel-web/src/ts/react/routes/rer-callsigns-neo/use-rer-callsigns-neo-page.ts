@@ -743,7 +743,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
     const validation = validateDraftRows(addRows, addSourceId);
     if (!validation.valid) {
-      if (validation.error === 'Заповніть хоча б один позивний') {
+      if (validation.error === 'Заповніть хоча б один рядок') {
         return;
       }
       setAddValidationError(validation.error);

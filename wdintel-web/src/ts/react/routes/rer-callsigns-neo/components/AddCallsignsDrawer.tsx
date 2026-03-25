@@ -80,14 +80,20 @@ export function AddCallsignsDrawer({
   onSubmit,
 }: Props) {
   const formDisabled = disabled || submitting;
-  const hasAtLeastOneCallsign = rows.some((row) => row.callsign.trim() !== '');
+  const hasAtLeastOneCallableRow = rows.some((row) => row.callsign.trim() !== '' || row.comment.trim() !== '');
   const drawerTitleId = 'callsigns-add-drawer-title';
   const addSourceSelectLabelId = 'callsigns-add-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
   const confirmationSources = sources.filter((source) => source.id !== addSourceId);
   const [unitSearchInput, setUnitSearchInput] = React.useState('');
+  const [pastedInput, setPastedInput] = React.useState('');
+  const handleClearRows = React.useCallback(() => {
+    setPastedInput('');
+    onClearRows();
+  }, [onClearRows]);
   const handleCloseDrawer = React.useCallback(() => {
     setUnitSearchInput('');
+    setPastedInput('');
     onClose();
   }, [onClose]);
 
@@ -106,6 +112,7 @@ export function AddCallsignsDrawer({
   React.useEffect(() => {
     if (!open) {
       setUnitSearchInput('');
+      setPastedInput('');
     }
   }, [open]);
 
@@ -166,6 +173,14 @@ export function AddCallsignsDrawer({
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(unit) => unit.name.trim() || `#${unit.id}`}
               filterOptions={(options, state) => filterUnits(options, state.inputValue)}
+              renderOption={(props, unit) => {
+                const { key: _ignoredKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={unit.id}>
+                    {unit.name.trim() || ("#" + unit.id)}
+                  </li>
+                );
+              }}
               clearOnBlur={false}
               noOptionsText="Нічого не знайдено"
               renderInput={(params) => (
@@ -225,34 +240,39 @@ export function AddCallsignsDrawer({
                 </MenuItem>
               ))}
             </Select>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-              Додаткові джерела підтвердження для всіх рядків цієї пачки.
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 0 }}>
+              Додаткові джерела підтвердження для всіх рядків цього набору.
             </Typography>
           </FormControl>
-
-          <Typography variant="body2" color="text.secondary">
-            Підтримується вставка табличних даних (TSV: позивний, посада, коментар)
-          </Typography>
-
           <TextField
             label="Швидка вставка TSV"
-            placeholder="Пакетно вставте рядки: позивний<TAB>посада<TAB>коментар"
+            placeholder="Швидка вставка табличних даних (TSV: позивний, посада, коментар)"
+            value={pastedInput}
             multiline
-            minRows={2}
-            onChange={(event) => onApplyPastedRows(event.target.value)}
+            minRows={1}
+            onChange={(event) => {
+              const value = event.target.value;
+              setPastedInput(value);
+              onApplyPastedRows(value);
+            }}
             disabled={formDisabled}
             InputProps={{
               endAdornment: <UploadFileIcon fontSize="small" color="action" aria-hidden="true" focusable="false" />,
             }}
           />
 
-          <Stack direction="row" spacing={1}>
-            <Button size="small" startIcon={<AddIcon />} onClick={onAppendRow} disabled={formDisabled} sx={{ px: '9px' }}>
-              Рядок
-            </Button>
-            <Button size="small" startIcon={<ClearAllIcon />} onClick={onClearRows} disabled={formDisabled} sx={{ px: '9px' }}>
-              Очистити
-            </Button>
+          <Stack direction={{ xs: "column", sm: "row-reverse" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }}>
+            <Stack direction="row" spacing={1}>
+              <Button size="small" startIcon={<AddIcon />} onClick={onAppendRow} disabled={formDisabled} sx={{ px: '9px' }}>
+                Рядок
+              </Button>
+              <Button size="small" startIcon={<ClearAllIcon />} onClick={handleClearRows} disabled={formDisabled} sx={{ px: '9px' }}>
+                Очистити
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: { xs: "left", sm: "left" } }}>
+              Обов’язково заповніть "Позивний" або "Коментар"
+            </Typography>
           </Stack>
 
           <Stack spacing={2} divider={<Divider flexItem />}>
@@ -288,7 +308,7 @@ export function AddCallsignsDrawer({
         <Button
           variant="contained"
           onClick={onSubmit}
-          disabled={formDisabled || addUnitId == null || !hasAtLeastOneCallsign}
+          disabled={formDisabled || addUnitId == null || !hasAtLeastOneCallableRow}
         >
           {submitting ? 'Збереження…' : 'Додати'}
         </Button>

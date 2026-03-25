@@ -22,7 +22,7 @@ import {
   DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY,
 } from './components/CallsignsTable';
 import { DeleteCallsignDialog } from './components/DeleteCallsignDialog';
-import { EditCallsignDialog } from './components/EditCallsignDialog';
+import { EditCallsignDrawer } from './components/EditCallsignDialog';
 import { UnitStatsSidebar } from './components/UnitStatsSidebar';
 import { DESKTOP_LAYOUT_MIN_WIDTH_PX, getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
@@ -349,7 +349,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         onSubmit={page.onSubmitAdd}
       />
 
-      <EditCallsignDialog
+      <EditCallsignDrawer
         open={page.editForm !== null}
         form={page.editForm}
         units={page.units}

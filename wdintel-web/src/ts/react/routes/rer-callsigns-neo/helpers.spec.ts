@@ -10,6 +10,8 @@ import {
   nextSortState,
   parseDateTimeLocalToMs,
   toBackendSort,
+  validateDraftRows,
+  validateEditForm,
 } from './helpers';
 import type { CallsignsSortState } from './types';
 
@@ -87,6 +89,54 @@ describe('rer-callsigns helpers', () => {
     expect(getSortDescriptor({ column: 'position', direction: 'asc' }, 'unit')).toEqual({
       backend: [],
       label: 'none',
+    });
+  });
+
+  it("requires callsign or comment for draft rows", () => {
+    expect(validateDraftRows([{ callsign: "", position: "Командир", comment: "", developing: false, radioFreq: "" }], null)).toEqual({
+      valid: false,
+      error: "Заповніть поле \"Позивний\" або \"Коментар\"",
+    });
+
+    expect(validateDraftRows([{ callsign: "", position: "Командир", comment: "Іваненко І.І.", developing: false, radioFreq: "" }], null)).toEqual({
+      valid: true,
+      error: null,
+    });
+  });
+
+  it("requires callsign or comment when editing", () => {
+    expect(validateEditForm({
+      id: 1,
+      callsign: "",
+      position: "Командир",
+      comment: "",
+      callsignAdditionalSourceIds: [],
+      unitId: 10,
+      sourceId: 1,
+      developing: false,
+      radioFreq: "",
+      createdAt: 0,
+      active: true,
+    })).toEqual({
+      valid: false,
+      error: "Заповніть поле \"Позивний\" або \"Коментар\"",
+    });
+
+    expect(validateEditForm({
+      id: 1,
+      callsign: "",
+      position: "Командир",
+      comment: "Іваненко І.І.",
+      callsignAdditionalSourceIds: [],
+      unitId: 10,
+      sourceId: 1,
+      developing: false,
+      radioFreq: "",
+      createdAt: 0,
+      active: true,
+    })).toEqual({
+      valid: true,
+      error: null,
     });
   });
 });
