@@ -38,13 +38,17 @@ async fn apply_test_inbox_settings(
     if !settings.rer_duty_test_enabled {
         return Ok(None);
     }
-    let since_ms = settings.rer_duty_test_since_ms.max(0);
-    let window_ms = Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES)
-        .num_milliseconds();
-    req.since_id_noninclusive = None;
-    req.before_id_noninclusive = None;
-    req.since_date_inclusive_ms = Some(since_ms);
-    req.till_date_inclusive_ms = Some(since_ms + window_ms);
+    if req.since_id_noninclusive.is_none()
+        && req.before_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+        && req.till_date_inclusive_ms.is_none()
+    {
+        let since_ms = settings.rer_duty_test_since_ms.max(0);
+        let window_ms = Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES)
+            .num_milliseconds();
+        req.since_date_inclusive_ms = Some(since_ms);
+        req.till_date_inclusive_ms = Some(since_ms + window_ms);
+    }
     req.nolimit = Some(true);
     Ok(Some(settings.rer_duty_test_limit.max(1)))
 }
@@ -458,7 +462,9 @@ async fn inbox_messages_count(
         .c(h!())?;
     let login = user_id;
 
-    if req.since_id_noninclusive.is_none()
+    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
+    if test_limit.is_none()
+        && req.since_id_noninclusive.is_none()
         && req.since_date_inclusive_ms.is_none()
     {
         req.since_date_inclusive_ms = Some(0);
@@ -474,7 +480,6 @@ async fn inbox_messages_count(
         .c(h!())?;
     let query_res = query_res.unwrap();
     let mut quantity: i64 = query_res.try_get("", "count")?;
-    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
     if let Some(limit) = test_limit {
         quantity = quantity.min(limit);
     }
