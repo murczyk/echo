@@ -32,6 +32,36 @@ export const PAGE_SCROLL_TABLE_CONTAINER_SX = {
   WebkitOverflowScrolling: 'touch',
 };
 
+export function getPageScrollTableContainerSx({
+  loading = false,
+  height = '100%',
+  minHeight = 0,
+  maxHeight = '100%',
+  idleOverflowX = 'auto',
+  idleOverflowY = 'auto',
+  idleOverflow,
+}: {
+  loading?: boolean;
+  height?: string | number;
+  minHeight?: string | number | undefined;
+  maxHeight?: string | number;
+  idleOverflowX?: 'auto' | 'hidden' | 'visible';
+  idleOverflowY?: 'auto' | 'hidden' | 'visible';
+  idleOverflow?: 'auto' | 'hidden' | 'visible' | undefined;
+}) {
+  return {
+    ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+    height,
+    minHeight,
+    maxHeight,
+    overflowX: loading ? 'hidden' : idleOverflowX,
+    overflowY: loading ? 'hidden' : idleOverflowY,
+    ...(loading || idleOverflow !== undefined
+      ? { overflow: loading ? 'hidden' : idleOverflow }
+      : {}),
+  };
+}
+
 export const FULL_HEIGHT_LOADING_ROW_COUNT = 24;
 
 function getAuthUserNameFromShell(): string {
