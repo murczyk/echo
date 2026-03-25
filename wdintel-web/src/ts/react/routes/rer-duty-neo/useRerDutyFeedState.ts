@@ -179,6 +179,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
+      randomCursorByFeedIdRef.current[feedId] = null;
       const effectiveFeed = overrides ? { ...feed, ...overrides } : feed;
       setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: true } : x)));
       setError(null);
