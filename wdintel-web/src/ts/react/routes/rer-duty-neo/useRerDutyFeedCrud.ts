@@ -19,11 +19,12 @@ export function useRerDutyFeedCrud(
   persistStateToUrl: (next: MessageFeedState[]) => void,
 ) {
   const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
-    setMessageFeeds((prev) => {
+      let nextState: MessageFeedState[] | null = null;
+      setMessageFeeds((prev) => {
       const w = prev.find((w) => w.id === feedId);
       if (!w) return prev;
       if (filtersEqual(w.filter, f)) {
-        persistStateToUrl(prev);
+        nextState = prev;
         return prev;
       }
       const next = prev.map((w) =>
@@ -44,10 +45,11 @@ export function useRerDutyFeedCrud(
             }
           : w,
       );
-      persistStateToUrl(next);
+      nextState = next;
       return next;
     });
-  }, [persistStateToUrl, setMessageFeeds]);
+    if (nextState) requestPersist(nextState);
+  }, [requestPersist, setMessageFeeds]);
 
   const toggleGroup = useCallback(
     (feedId: string, key: string) => {
@@ -88,24 +90,28 @@ export function useRerDutyFeedCrud(
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,
     };
+    let nextState: MessageFeedState[] | null = null;
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
       const next = [...prev, newFeed];
-      persistStateToUrl(next);
+      nextState = next;
       return next;
     });
-  }, [persistStateToUrl, setMessageFeeds]);
+    if (nextState) requestPersist(nextState);
+  }, [requestPersist, setMessageFeeds]);
 
   const removeMessageFeed = useCallback(
     (feedId: string) => {
       if (messageFeeds.length <= 1) return;
       if (!messageFeeds.some((w) => w.id === feedId)) return;
+      let nextState: MessageFeedState[] | null = null;
       setMessageFeeds((prev) => {
         const next = prev.filter((w) => w.id !== feedId);
-        persistStateToUrl(next);
+        nextState = next;
         return next;
       });
       onFeedRemoved?.(feedId);
+      if (nextState) requestPersist(nextState);
     },
     [messageFeeds, onFeedRemoved, setMessageFeeds, persistStateToUrl],
   );
