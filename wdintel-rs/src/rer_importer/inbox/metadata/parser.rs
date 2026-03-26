@@ -74,10 +74,15 @@ pub fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
             Regex::new(r#"[cCсС]{2}\s*:\s*(\d+)"#).unwrap();
     }
     lazy_static! {
+        static ref RE_CC_UA: Regex =
+            Regex::new(r#"(?i)код\s+кольору\s*:\s*(\d+|нв|-)"#).unwrap();
+    }
+    lazy_static! {
         static ref RE_CC_NO_COLON: Regex =
             Regex::new(r#"(?:^|\s)[cCсС]{2}\s+(\d+)"#).unwrap();
     }
-    parse_value_from_regexes(line, &[&RE_CC])
+    parse_numeric_value_from_standalone_regexes(line, &[&RE_CC_UA])
+        .or_else(|| parse_value_from_regexes(line, &[&RE_CC]))
         .or_else(|| parse_numeric_value_from_regexes(line, &[&RE_CC_NO_COLON]))
 }
 
@@ -90,10 +95,19 @@ pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
             Regex::new(r#"[іІiI][dD]\s*:\s*(\d+)"#).unwrap();
     }
     lazy_static! {
+        static ref RE_SENDER_ID_UA: Regex =
+            Regex::new(r#"(?i)[іІiI][dD]\s+відправника\s*:\s*(\d+|нв|-)"#)
+                .unwrap();
+    }
+    lazy_static! {
         static ref RE_SOURCE_ID: Regex =
             Regex::new(r#"(?i)SOURCE\s+ID\s*:\s*([\d,\s]+)"#).unwrap();
     }
-    parse_numeric_value_from_standalone_regexes(line, &[&RE_ID]).or_else(|| {
+    parse_numeric_value_from_standalone_regexes(
+        line,
+        &[&RE_SENDER_ID_UA, &RE_ID],
+    )
+    .or_else(|| {
         parse_numeric_value_from_regexes(line, &[&RE_CG, &RE_SOURCE_ID])
     })
 }
@@ -210,7 +224,16 @@ pub fn parse_string_from_standalone_regexes(
 
 pub fn normalize_metadata_value(value: &str) -> Option<String> {
     let value = value.trim();
-    (!value.is_empty()).then(|| value.to_string())
+    let value_lower = value.to_lowercase();
+    if value.is_empty()
+        || value == "-"
+        || value_lower == "нв"
+        || value_lower == "hb"
+    {
+        return None;
+    }
+
+    Some(value.to_string())
 }
 
 pub fn normalize_metadata_digits(line: &str) -> String {
@@ -257,6 +280,12 @@ pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
                 .unwrap();
     }
     lazy_static! {
+        static ref RE_RECEIVER_ID_UA: Regex = Regex::new(
+            r#"(?i:[iі]d)\s+отримувача\s*:\s*(\d+|нв|-)(?:\s*\(([^)]+)\))?"#
+        )
+        .unwrap();
+    }
+    lazy_static! {
         static ref RE_RECEIVER_GROUP: Regex =
             Regex::new(r#"(?i:[cс]g)\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
     }
@@ -264,6 +293,12 @@ pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
         static ref RE_RECEIVER_GROUP_EN: Regex =
             Regex::new(r#"(?i)GROUP\s+ID\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
                 .unwrap();
+    }
+    lazy_static! {
+        static ref RE_RECEIVER_GROUP_UA: Regex = Regex::new(
+            r#"(?i)код\s+групи\s*:\s*(\d+|нв|-)(?:\s*\(([^)]+)\))?"#
+        )
+        .unwrap();
     }
     lazy_static! {
         static ref RE_RECEIVER_GROUP_X: Regex = Regex::new(
@@ -274,7 +309,11 @@ pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
 
     let mut parts = vec![];
 
-    for regex in [&*RE_RECEIVER_ARROW as &Regex, &*RE_RECEIVER_ID as &Regex] {
+    for regex in [
+        &*RE_RECEIVER_ARROW as &Regex,
+        &*RE_RECEIVER_ID as &Regex,
+        &*RE_RECEIVER_ID_UA as &Regex,
+    ] {
         for caps in regex.captures_iter(&line.text) {
             let Some(value) = caps.get(1) else {
                 continue;
@@ -301,6 +340,7 @@ pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     for regex in [
         &*RE_RECEIVER_GROUP as &Regex,
         &*RE_RECEIVER_GROUP_EN as &Regex,
+        &*RE_RECEIVER_GROUP_UA as &Regex,
     ] {
         for caps in regex.captures_iter(&line.text) {
             let Some(value) = caps.get(1) else {
