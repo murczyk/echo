@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 const KEYWORDS_REGEX_MODEL_NAME: &str = "bot-navara-v1";
 const NLP_MODEL_NAME_PREFIX: &str = "bot-willys-v";
+const DEFAULT_MODEL_DIR: &str = "/usr/share/wdintel-py/fasttext-models-v2";
 
 #[derive(Default)]
 pub struct ProcessMessagesResult {
@@ -374,7 +375,7 @@ pub async fn refresh_models_worker_nofail(
     let model_dir = config
         .directory
         .or_else(|| std::env::var("WD_FASTTEXT_MODELS").ok())
-        .unwrap_or_else(|| "/usr/share/wdintel-py/fasttext-models".to_string());
+        .unwrap_or_else(|| DEFAULT_MODEL_DIR.to_string());
 
     info!("refresh_models_worker started...");
     loop {
@@ -411,9 +412,7 @@ pub async fn oneoff_refresh_models(mode: Mode) -> Result<(), AppError> {
     let model_dir = models_config
         .directory
         .or_else(|| std::env::var("WD_FASTTEXT_MODELS").ok())
-        .unwrap_or_else(|| {
-            "/usr/share/wdintel-py/fasttext-models-v2".to_string()
-        });
+        .unwrap_or_else(|| DEFAULT_MODEL_DIR.to_string());
 
     let changed = do_refresh_models(&s3_config, &model_dir).await?;
     if changed {

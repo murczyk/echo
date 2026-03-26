@@ -80,8 +80,8 @@ if [ -f "docs/echo-docs/Cargo.toml" ]; then
   if [ ! -d "docs/public" ] || [ -z "$(ls -A docs/public 2>/dev/null || true)" ]; then
     echo "> Building docs site (zola)"
     if ! command -v zola >/dev/null 2>&1; then
-      echo "Zola not found, installing via cargo..."
-      cargo install zola --locked
+      echo "Missing required command: zola" >&2
+      exit 1
     fi
     (cd docs && zola build)
   fi

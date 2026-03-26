@@ -2,6 +2,15 @@
 
 set -e
 
+CONFIG_DIR="/etc/echo-agent"
+CONFIG_FILE="$CONFIG_DIR/config.toml"
+CONFIG_EXAMPLE="/usr/share/echo-agent/config.toml.example"
+
+install -d -m 755 "$CONFIG_DIR"
+if [ ! -f "$CONFIG_FILE" ] && [ -f "$CONFIG_EXAMPLE" ]; then
+  install -m 600 "$CONFIG_EXAMPLE" "$CONFIG_FILE"
+fi
+
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   #DEBHELPER#
 else

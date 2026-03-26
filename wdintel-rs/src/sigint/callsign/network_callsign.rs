@@ -29,7 +29,7 @@ pub async fn list_network_callsigns(
     req: Json<ListNetworkCallsignsReq>,
 ) -> Result<Json<ListNetworkCallsignsRes>, AppError> {
     let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
         .await
         .c(h!())?;
 

@@ -1,3 +1,5 @@
+import type { Palitra } from '../../../../Bindings';
+
 export type AccessType = 'logins' | 'organisms' | 'aor';
 
 export type PalitraFormState = {
@@ -23,5 +25,17 @@ export type UiError = {
   text: string;
 };
 
-export type SortColumn = 'name' | 'colorHex' | 'sourceFileName' | 'author' | 'lastUploadedAtTs';
-export type SortDirection = 'asc' | 'desc';
+export type PalitraRowView = {
+  id: number;
+  palitra: Palitra;
+  name: string;
+  colorHex: string;
+  sourceFileName: string | null;
+  lastUploadedAtTs: number | null;
+  author: string | null;
+  accessSummary: string;
+  canModify: boolean;
+  canSelect: boolean;
+  deleteInFlight: boolean;
+  uploadInFlight: boolean;
+};

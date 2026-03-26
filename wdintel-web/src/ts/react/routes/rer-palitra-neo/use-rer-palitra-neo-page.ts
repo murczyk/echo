@@ -17,72 +17,20 @@ import { fetchCurrentUser } from '../../services/api/user';
 import {
   applyRestrictedAccess,
   buildPalitraNameWithSuffix,
-  compareStrings,
+  canModifyPalitra,
   DEFAULT_COLOR_HEX,
   formatErrorMessage,
   getAvailableAccessTypes,
   getInitialCreateForm,
   isFormValid,
   kmzColorOptionsFromAnalysis,
-  normalizeSortableValue,
+  mapPalitraToRowView,
   palitraToForm,
-  isAdmin,
   toCreateReq,
 } from './helpers';
-import { readDenseTableFromUrl, setDenseTableQueryParam } from '../../utils/denseTableQuery';
-import { KmzColorOption, PalitraCreateMode, PalitraFormState, SortColumn, SortDirection, UiError } from './types';
-
-function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
-  const url = new URL(window.location.href);
-  const params = new URLSearchParams(url.search);
-  mutator(params);
-  const nextSearch = params.toString();
-  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
-  window.history.replaceState({}, '', nextUrl);
-}
-
-function readInitialPalitraSortFromUrl(): { sortColumn: SortColumn; sortDirection: SortDirection } {
-  const params = new URLSearchParams(window.location.search);
-  const sortColumnRaw = params.get('pal_sort_col');
-  const sortDirectionRaw = params.get('pal_sort_dir');
-
-  const sortColumn: SortColumn =
-    sortColumnRaw === 'name' ||
-    sortColumnRaw === 'colorHex' ||
-    sortColumnRaw === 'sourceFileName' ||
-    sortColumnRaw === 'author' ||
-    sortColumnRaw === 'lastUploadedAtTs'
-      ? sortColumnRaw
-      : 'lastUploadedAtTs';
-  const sortDirection: SortDirection = sortDirectionRaw === 'asc' || sortDirectionRaw === 'desc' ? sortDirectionRaw : 'desc';
-
-  return { sortColumn, sortDirection };
-}
-
-function syncPalitraSortToUrl(sortColumn: SortColumn, sortDirection: SortDirection, denseTable: boolean) {
-  updateUrlSearchParams((params) => {
-    if (sortColumn === 'lastUploadedAtTs') {
-      params.delete('pal_sort_col');
-    } else {
-      params.set('pal_sort_col', sortColumn);
-    }
-
-    if (sortDirection === 'desc') {
-      params.delete('pal_sort_dir');
-    } else {
-      params.set('pal_sort_dir', sortDirection);
-    }
-
-    setDenseTableQueryParam(params, denseTable);
-  });
-}
-
-function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
-  return isAdmin(user) || palitra.author === user?.name;
-}
+import { KmzColorOption, PalitraCreateMode, PalitraFormState, UiError } from './types';
 
 export function useRerPalitraNeoPage() {
-  const initialSort = useMemo(() => readInitialPalitraSortFromUrl(), []);
   const [user, setUser] = useState<User | null>(null);
   const [palitras, setPalitras] = useState<Palitra[]>([]);
   const [myScope, setMyScope] = useState<MyScope | null>(null);
@@ -101,10 +49,6 @@ export function useRerPalitraNeoPage() {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleteInFlight, setBulkDeleteInFlight] = useState(false);
   const [error, setError] = useState<UiError | null>(null);
-
-  const [sortColumn, setSortColumn] = useState<SortColumn>(initialSort.sortColumn);
-  const [sortDirection, setSortDirection] = useState<SortDirection>(initialSort.sortDirection);
-  const [denseTable, setDenseTable] = useState<boolean>(() => readDenseTableFromUrl());
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<PalitraCreateMode>('basic');
@@ -127,6 +71,25 @@ export function useRerPalitraNeoPage() {
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
 
   const availableAccessTypes = useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
+  const rows = useMemo(() => {
+    const sortedPalitras = [...palitras].sort((left, right) => {
+      const leftTs = left.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
+      const rightTs = right.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
+      return rightTs - leftTs;
+    });
+
+    return sortedPalitras.map((palitra) =>
+      mapPalitraToRowView({
+        palitra,
+        user,
+        myScope,
+        organisms,
+        aors,
+        inFlightDeleteId,
+        inFlightUploadId,
+      }),
+    );
+  }, [palitras, user, myScope, organisms, aors, inFlightDeleteId, inFlightUploadId]);
   const updateCreateForm = useCallback(
     (updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)),
     [],
@@ -139,35 +102,6 @@ export function useRerPalitraNeoPage() {
     (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => setEditForm((prev) => updater(prev)),
     [],
   );
-
-  const sortedPalitras = useMemo(() => {
-    const sorted = [...palitras];
-
-    sorted.sort((a, b) => {
-      let result = 0;
-      if (sortColumn === 'name') {
-        result = compareStrings(normalizeSortableValue(a.name), normalizeSortableValue(b.name));
-      } else if (sortColumn === 'colorHex') {
-        result = compareStrings(normalizeSortableValue(a.colorHex), normalizeSortableValue(b.colorHex));
-      } else if (sortColumn === 'sourceFileName') {
-        result = compareStrings(normalizeSortableValue(a.sourceFileName), normalizeSortableValue(b.sourceFileName));
-      } else if (sortColumn === 'author') {
-        result = compareStrings(normalizeSortableValue(a.author), normalizeSortableValue(b.author));
-      } else {
-        const left = a.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
-        const right = b.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
-        result = left - right;
-      }
-
-      return sortDirection === 'asc' ? result : -result;
-    });
-
-    return sorted;
-  }, [palitras, sortColumn, sortDirection]);
-
-  useEffect(() => {
-    syncPalitraSortToUrl(sortColumn, sortDirection, denseTable);
-  }, [sortColumn, sortDirection, denseTable]);
 
   const reloadPalitras = useCallback(async () => {
     const list = await listPalitras();
@@ -201,14 +135,14 @@ export function useRerPalitraNeoPage() {
           setOrganisms(references.organisms ?? []);
           setAors(references.aors ?? []);
           setReferenceDataReady(true);
-          setCreateForm((createForm) => {
+          setCreateForm((prevForm) => {
             const initialCreateForm = getInitialCreateForm(currentUser, references.myScope);
 
             return {
-              ...createForm,
+              ...prevForm,
               ...initialCreateForm,
-              name: createForm.name,
-              colorHex: createForm.colorHex,
+              name: prevForm.name,
+              colorHex: prevForm.colorHex,
             };
           });
         } catch (referencesError) {
@@ -221,14 +155,14 @@ export function useRerPalitraNeoPage() {
             return;
           }
 
-          setError({ text: `Не вдалося завантажити довідники палітр: ${formatErrorMessage(referencesError)}` });
+          setError({ text: 'Не вдалося завантажити довідники палітр: ' + formatErrorMessage(referencesError) });
         }
 
         try {
-          const palitras = await palitrasPromise;
+          const palitrasList = await palitrasPromise;
           if (cancelled) return;
 
-          setPalitras(palitras);
+          setPalitras(palitrasList);
         } catch (palitrasError) {
           if (cancelled) return;
 
@@ -237,7 +171,7 @@ export function useRerPalitraNeoPage() {
             return;
           }
 
-          setError({ text: `Не вдалося завантажити палітри: ${formatErrorMessage(palitrasError)}` });
+          setError({ text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(palitrasError) });
         }
       } catch (loadError) {
         if (cancelled) return;
@@ -247,7 +181,7 @@ export function useRerPalitraNeoPage() {
           return;
         }
 
-        setError({ text: `Не вдалося завантажити палітри: ${formatErrorMessage(loadError)}` });
+        setError({ text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(loadError) });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -300,16 +234,6 @@ export function useRerPalitraNeoPage() {
     setEditInFlight(false);
   }
 
-  function onSortColumn(column: SortColumn) {
-    if (sortColumn === column) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-
-    setSortColumn(column);
-    setSortDirection(column === 'lastUploadedAtTs' ? 'desc' : 'asc');
-  }
-
   function requestDelete(palitra: Palitra) {
     if (inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen) return;
     setDeleteDialogPalitra(palitra);
@@ -339,7 +263,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: `Не вдалося видалити палітру: ${formatErrorMessage(deleteError)}` });
+      setError({ text: 'Не вдалося видалити палітру: ' + formatErrorMessage(deleteError) });
     } finally {
       setInFlightDeleteId(null);
     }
@@ -349,38 +273,6 @@ export function useRerPalitraNeoPage() {
     if (deleteDialogOpen || inFlightDeleteId !== null) return;
     setDeleteDialogPalitra(null);
   }
-
-  function setPalitraSelected(palitraId: number, checked: boolean) {
-    setSelectedPalitraIds((prev) => {
-      if (checked) {
-        if (prev.includes(palitraId)) return prev;
-        return [...prev, palitraId];
-      }
-
-      return prev.filter((id) => id !== palitraId);
-    });
-  }
-
-  function setAllPalitrasSelected(palitraIds: number[], checked: boolean) {
-    if (palitraIds.length === 0) return;
-
-    setSelectedPalitraIds((prev) => {
-      if (checked) {
-        const selected = new Set(prev);
-        for (const palitraId of palitraIds) {
-          selected.add(palitraId);
-        }
-        return Array.from(selected);
-      }
-
-      const toRemove = new Set(palitraIds);
-      return prev.filter((id) => !toRemove.has(id));
-    });
-  }
-
-  const clearSelectedPalitras = useCallback(() => {
-    setSelectedPalitraIds((prev) => (prev.length === 0 ? prev : []));
-  }, []);
 
   function requestBulkDelete() {
     if (bulkDeleteInFlight || inFlightDeleteId !== null || deleteDialogOpen) return;
@@ -430,14 +322,14 @@ export function useRerPalitraNeoPage() {
             return;
           }
 
-          failed.push(`${palitra.name}: ${formatErrorMessage(deleteError)}`);
+          failed.push(palitra.name + ': ' + formatErrorMessage(deleteError));
         } finally {
           setInFlightDeleteId(null);
         }
       }
 
       if (failed.length > 0) {
-        setError({ text: `Не вдалося видалити деякі палітри: ${failed[0]}` });
+        setError({ text: 'Не вдалося видалити деякі палітри: ' + failed[0] });
       }
     } finally {
       setBulkDeleteInFlight(false);
@@ -474,7 +366,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: `Не вдалося завантажити точки: ${formatErrorMessage(uploadError)}` });
+      setError({ text: 'Не вдалося завантажити точки: ' + formatErrorMessage(uploadError) });
     } finally {
       setInFlightUploadId(null);
       pendingUploadPalitraIdRef.current = null;
@@ -517,7 +409,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: `Не вдалося проаналізувати KMZ файл: ${formatErrorMessage(analysisError)}` });
+      setError({ text: 'Не вдалося проаналізувати KMZ файл: ' + formatErrorMessage(analysisError) });
     } finally {
       setKmzAnalyzing(false);
     }
@@ -563,7 +455,7 @@ export function useRerPalitraNeoPage() {
 
         const firstError = rejected[0];
         if (firstError) {
-          setError({ text: `Помилка створення палітри: ${formatErrorMessage(firstError.reason)}` });
+          setError({ text: 'Помилка створення палітри: ' + formatErrorMessage(firstError.reason) });
         }
 
         if (created.length > 0) {
@@ -589,7 +481,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: `Не вдалося створити палітру: ${formatErrorMessage(createError)}` });
+      setError({ text: 'Не вдалося створити палітру: ' + formatErrorMessage(createError) });
     } finally {
       setCreateInFlight(false);
     }
@@ -614,7 +506,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: `Не вдалося оновити палітру: ${formatErrorMessage(updateError)}` });
+      setError({ text: 'Не вдалося оновити палітру: ' + formatErrorMessage(updateError) });
     } finally {
       setEditInFlight(false);
     }
@@ -628,15 +520,14 @@ export function useRerPalitraNeoPage() {
     allLogins,
     error,
     loading,
-    sortedPalitras,
-    sortColumn,
-    sortDirection,
-    denseTable,
+    rows,
+    palitras,
     inFlightDeleteId,
     inFlightUploadId,
     deleteDialogPalitra,
     deleteDialogOpen,
     selectedPalitraIds,
+    setSelectedPalitraIds,
     bulkDeleteDialogPalitras,
     bulkDeleteDialogOpen,
     bulkDeleteInFlight,
@@ -668,16 +559,11 @@ export function useRerPalitraNeoPage() {
     resetCreateFlow,
     openEdit,
     closeEdit,
-    onSortColumn,
-    setDenseTable,
     requestUploadPoints,
     requestDelete,
     cancelDelete,
     confirmDelete,
     onDeleteDialogExited,
-    setPalitraSelected,
-    setAllPalitrasSelected,
-    clearSelectedPalitras,
     requestBulkDelete,
     cancelBulkDelete,
     confirmBulkDelete,

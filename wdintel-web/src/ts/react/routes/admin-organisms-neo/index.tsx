@@ -19,7 +19,7 @@ import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
   FULL_WIDTH_TABLE_PAPER_SX,
-  PAGE_SCROLL_TABLE_CONTAINER_SX,
+  getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
   buildExplicitSingleSelectColumnFilter,
@@ -51,7 +51,7 @@ type OrganismLookup = {
   computedGroupsById: Map<number, SignalGroupFull[]>;
 };
 
-const ROLE_OPTIONS = ['Admin', 'Rer', 'Bpla', 'Full', 'Basic', 'UnitsEditor', 'CallsignsEditor'];
+const ROLE_OPTIONS = ['Admin', 'ApiAgent', 'Rer', 'Bpla', 'Full', 'Basic', 'UnitsEditor', 'CallsignsEditor'];
 const ENABLED_FILTER_OPTIONS = withExplicitSelectAllOption([
   { text: 'так', value: 'так' },
   { text: 'ні', value: 'ні' },
@@ -457,7 +457,7 @@ function OrganismsTable(props: {
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+        ...getPageScrollTableContainerSx({ loading: props.loading, idleOverflow: 'auto' }),
       },
     },
     state,

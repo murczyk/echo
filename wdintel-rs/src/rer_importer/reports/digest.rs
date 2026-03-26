@@ -43,12 +43,14 @@ pub struct NetworkRow {
     pub notes: Vec<InterNote>,
     pub unit: Option<Vec<String>>,
     pub unit_name: Option<String>,
+    pub is_anonymous: bool,
 }
 
 pub struct InterNote {
     pub time: Option<NaiveDateTime>,
     pub comment: String,
     pub interception: Option<String>,
+    pub interception_form_1217: Option<String>,
     pub interception_id: Option<String>,
     pub details: InterceptionDetails,
 }
@@ -101,7 +103,7 @@ pub async fn report_docx_kind_digest(
         .await
         .context(h!())?;
     let mut request = req.req.clone();
-    request.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
@@ -109,9 +111,14 @@ pub async fn report_docx_kind_digest(
         )
         .await
         .context(h!())?;
-    let report = collect_report(messages, logins.clone(), &read_db)
-        .await
-        .context(h!())?;
+    let report = collect_report(
+        messages,
+        logins.clone(),
+        req.report_tags_only_this_unit.unwrap_or(false),
+        &read_db,
+    )
+    .await
+    .context(h!())?;
     info!("report_docx_kind_digest data collected");
     let omit_exo_id = req.digest_omit_exo_id.unwrap_or(false);
     let use_form_1217 = req.digest_form_1_2_17.unwrap_or(false);
@@ -297,7 +304,12 @@ fn build_interception_cell(
     if use_form_1217 {
         paragraphs.extend(build_form_1217_paragraphs(&note.details, config));
     }
-    if let Some(interception) = &note.interception {
+    let interception = if use_form_1217 {
+        note.interception_form_1217.as_ref()
+    } else {
+        note.interception.as_ref()
+    };
+    if let Some(interception) = interception {
         for line in interception.split('\n') {
             paragraphs.push(mk_paragraph(
                 line,
@@ -366,11 +378,17 @@ fn check_should_show_date(since: DateTime<Utc>, till: DateTime<Utc>) -> bool {
 
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
-    _logins: Vec<String>,
+    logins: Vec<String>,
+    comments_only_this_unit: bool,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Report> {
-    let (comments, messages) =
-        load_messages_with_comments(messages, dbx).await.c(h!())?;
+    let (comments, messages) = load_messages_with_comments(
+        messages,
+        dbx,
+        comments_only_this_unit.then_some(logins.as_slice()),
+    )
+    .await
+    .c(h!())?;
     debug!("loaded {} messages with comments {}", messages.len(), h!());
 
     let freqs = messages
@@ -543,6 +561,7 @@ async fn collect_report(
             let unit = network.unit.clone();
             let unit_name = network.unit_name.clone();
             let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
+            let is_anonymous = network.name.trim().is_empty();
             let mut network_name = network.name.clone();
             if network_name.trim().is_empty() {
                 network_name = format!(
@@ -565,6 +584,13 @@ async fn collect_report(
             let mut notes = vec![];
             for (message_id, comment) in comments {
                 let message = messages.get(&message_id).context(h!())?.clone();
+                let callsigns_prefix =
+                    crate::rer_importer::callsigns::analyze_callsigns_prefix(
+                        &message.text,
+                        &message,
+                    );
+                let (who_callsign, to_callsigns) =
+                    extract_form_1217_callsigns(&message, &callsigns_prefix);
                 // todo if message is missing, from a secret chat or other edge case - don't put it here, put Right(message_id) instead
                 let time = message
                     .timestamp
@@ -583,13 +609,16 @@ async fn collect_report(
                         unit.as_ref(),
                     ),
                     time: extract_message_time(&message),
-                    who_callsign: extract_who_callsign(&message),
-                    to_callsigns: extract_to_callsigns(&message),
+                    who_callsign,
+                    to_callsigns,
                 };
                 notes.push(InterNote {
                     time,
                     comment,
-                    interception: Some(message.text),
+                    interception: Some(message.text.clone()),
+                    interception_form_1217: Some(
+                        callsigns_prefix.stripped_body,
+                    ),
                     interception_id: message.message_uid.clone(),
                     details,
                 });
@@ -604,12 +633,10 @@ async fn collect_report(
                 notes,
                 unit,
                 unit_name,
+                is_anonymous,
             });
         }
-        network_data.sort_by(|n1, n2| match (&n1.unit, &n2.unit) {
-            (Some(u1), Some(u2)) => compare_units(u1, u2),
-            (a, b) => compare_options(a, b).reverse(),
-        });
+        network_data.sort_by(compare_network_rows);
         aor_data.push(AorRow {
             aor_name,
             network_data,
@@ -647,6 +674,17 @@ fn compare_units(u1: &Vec<String>, u2: &Vec<String>) -> Ordering {
             (a, b) => return compare_options(&a, &b),
         };
     }
+}
+
+fn compare_network_rows(n1: &NetworkRow, n2: &NetworkRow) -> Ordering {
+    match n1.is_anonymous.cmp(&n2.is_anonymous) {
+        Ordering::Equal => match (&n1.unit, &n2.unit) {
+            (Some(u1), Some(u2)) => compare_units(u1, u2),
+            (a, b) => compare_options(a, b).reverse(),
+        },
+        ordering => ordering,
+    }
+    .then_with(|| n1.network_name.cmp(&n2.network_name))
 }
 
 async fn collect_networks(
@@ -766,6 +804,7 @@ async fn load_aors(
 async fn load_messages_with_comments(
     messages: Vec<(i64, InboxMessage)>,
     dbx: &DatabaseConnection,
+    allowed_comment_logins: Option<&[String]>,
 ) -> anyhow::Result<(Vec<(i64, String)>, Vec<(i64, InboxMessage)>)> {
     let message_ids = messages
         .iter()
@@ -794,6 +833,11 @@ async fn load_messages_with_comments(
             .column(sigint_comment::Column::SignalMessageId)
             .column(sigint_comment::Column::Comment)
             .column(sigint_inbox_item::Column::BodyNoheader)
+            .apply_if(allowed_comment_logins, |query, logins| {
+                query.filter(
+                    sigint_comment::Column::Login.eq_any(logins.to_vec()),
+                )
+            })
             .into_tuple::<(i64, String, Option<Json>)>()
             .all(dbx)
             .await
@@ -823,6 +867,7 @@ async fn load_messages_with_comments(
             }
             (id, message)
         })
+        .filter(|(id, _)| messages_with_comment.contains(id))
         .collect::<Vec<_>>();
     messages.sort_by_key(|(_, v)| v.freq.clone().unwrap_or("0.0".to_string()));
     Ok((comments, messages))
@@ -947,9 +992,47 @@ fn extract_to_callsigns(message: &InboxMessage) -> Option<String> {
     }
 }
 
+fn extract_form_1217_callsigns(
+    message: &InboxMessage,
+    callsigns_prefix: &crate::rer_importer::callsigns::CallsignsPrefixInfo,
+) -> (Option<String>, Option<String>) {
+    if callsigns_prefix.had_placeholder && callsigns_prefix.callsigns.is_empty()
+    {
+        return (None, None);
+    }
+    if !callsigns_prefix.callsigns.is_empty() {
+        if callsigns_prefix.had_placeholder {
+            return (None, Some(callsigns_prefix.callsigns.join(", ")));
+        }
+
+        let mut callsigns = callsigns_prefix.callsigns.iter();
+        let who_callsign = callsigns.next().cloned();
+        let to_callsigns = callsigns.cloned().collect::<Vec<_>>();
+        return (
+            who_callsign,
+            if to_callsigns.is_empty() {
+                None
+            } else {
+                Some(to_callsigns.join(", "))
+            },
+        );
+    }
+
+    (extract_who_callsign(message), extract_to_callsigns(message))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{
+        datasource_group, login, organism, sigint_comment, sigint_inbox_item,
+        signal_message,
+    };
+    use crate::functest::tests::*;
+    use chrono::Utc;
+    use sea_orm::ActiveValue::Set;
+    use serde_json::json;
+    use serial_test::serial;
 
     #[test]
     fn build_note_comment_omits_time_for_form_1217() {
@@ -962,6 +1045,7 @@ mod tests {
             ),
             comment: "Test comment".to_string(),
             interception: None,
+            interception_form_1217: None,
             interception_id: None,
             details: InterceptionDetails {
                 date: None,
@@ -991,6 +1075,7 @@ mod tests {
             ),
             comment: "Test comment".to_string(),
             interception: None,
+            interception_form_1217: None,
             interception_id: None,
             details: InterceptionDetails {
                 date: None,
@@ -1007,5 +1092,310 @@ mod tests {
             build_note_comment(&note, false, false),
             "14:30 Test comment".to_string()
         );
+    }
+
+    #[test]
+    fn compare_network_rows_keeps_anonymous_networks_last() {
+        let mut network_data = vec![
+            NetworkRow {
+                network_name: "Невизначена радіомережа 123.4МГц".to_string(),
+                network_location: None,
+                notes: vec![],
+                unit: None,
+                unit_name: None,
+                is_anonymous: true,
+            },
+            NetworkRow {
+                network_name: "Мережа Б".to_string(),
+                network_location: None,
+                notes: vec![],
+                unit: None,
+                unit_name: None,
+                is_anonymous: false,
+            },
+            NetworkRow {
+                network_name: "Мережа А".to_string(),
+                network_location: None,
+                notes: vec![],
+                unit: Some(vec!["2 бат".to_string()]),
+                unit_name: None,
+                is_anonymous: false,
+            },
+        ];
+
+        network_data.sort_by(compare_network_rows);
+
+        assert_eq!(network_data[0].network_name, "Мережа А");
+        assert_eq!(network_data[1].network_name, "Мережа Б");
+        assert_eq!(
+            network_data[2].network_name,
+            "Невизначена радіомережа 123.4МГц"
+        );
+    }
+
+    #[test]
+    fn extract_form_1217_callsigns_treats_placeholder_as_recipient_only() {
+        let message = InboxMessage {
+            message_uid: None,
+            text: String::new(),
+            media: vec![],
+            images: vec![],
+            image_recognized: vec![],
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: vec!["гном".to_string()],
+            callsigns_alg2: vec![],
+            checked: false,
+            important: false,
+            bookmarked: false,
+            timestamp: None,
+            group_master_key: None,
+            sender: None,
+            extended_form: None,
+            post: None,
+            post_id: None,
+            unit: None,
+            callsign_tokens: None,
+            signal_tokens: None,
+            point_tokens: None,
+            no_headers_body: None,
+            keyword_tokens: None,
+            text_marked: None,
+            datasource_id: None,
+            location: None,
+            tags: None,
+            network_ids: None,
+            inbox_tags: None,
+            metadata: vec![],
+        };
+        let callsigns_prefix =
+            crate::rer_importer::callsigns::CallsignsPrefixInfo {
+                stripped_body: "— test".to_string(),
+                callsigns: vec!["гном".to_string()],
+                had_placeholder: true,
+            };
+
+        assert_eq!(
+            extract_form_1217_callsigns(&message, &callsigns_prefix),
+            (None, Some("гном".to_string()))
+        );
+    }
+
+    #[test]
+    fn extract_form_1217_callsigns_keeps_unknown_placeholder_unknown() {
+        let message = InboxMessage {
+            message_uid: None,
+            text: String::new(),
+            media: vec![],
+            images: vec![],
+            image_recognized: vec![],
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: vec!["гном".to_string()],
+            callsigns_alg2: vec![],
+            checked: false,
+            important: false,
+            bookmarked: false,
+            timestamp: None,
+            group_master_key: None,
+            sender: None,
+            extended_form: None,
+            post: None,
+            post_id: None,
+            unit: None,
+            callsign_tokens: None,
+            signal_tokens: None,
+            point_tokens: None,
+            no_headers_body: None,
+            keyword_tokens: None,
+            text_marked: None,
+            datasource_id: None,
+            location: None,
+            tags: None,
+            network_ids: None,
+            inbox_tags: None,
+            metadata: vec![],
+        };
+        let callsigns_prefix =
+            crate::rer_importer::callsigns::CallsignsPrefixInfo {
+                stripped_body: "— test".to_string(),
+                callsigns: vec![],
+                had_placeholder: true,
+            };
+
+        assert_eq!(
+            extract_form_1217_callsigns(&message, &callsigns_prefix),
+            (None, None)
+        );
+    }
+
+    fn test_inbox_message(id: i64, text: &str) -> (i64, InboxMessage) {
+        (
+            id,
+            InboxMessage {
+                message_uid: Some(format!("uid-{id}")),
+                text: text.to_string(),
+                media: vec![],
+                images: vec![],
+                image_recognized: vec![],
+                date: None,
+                time: None,
+                freq: None,
+                coords: None,
+                callsigns: vec![],
+                callsigns_alg2: vec![],
+                checked: false,
+                important: false,
+                bookmarked: false,
+                timestamp: None,
+                group_master_key: None,
+                sender: None,
+                extended_form: None,
+                post: None,
+                post_id: None,
+                unit: None,
+                callsign_tokens: None,
+                signal_tokens: None,
+                point_tokens: None,
+                no_headers_body: None,
+                keyword_tokens: None,
+                text_marked: None,
+                datasource_id: None,
+                location: None,
+                tags: None,
+                network_ids: None,
+                inbox_tags: None,
+                metadata: vec![],
+            },
+        )
+    }
+
+    async fn seed_digest_message(
+        dbx: &DatabaseConnection,
+        datasource_group: &datasource_group::Model,
+        body: &str,
+        body_noheader: &str,
+    ) -> signal_message::Model {
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                body_noheader: Set(Some(json!(SigintBodyNoHeader {
+                    start: None,
+                    end: None,
+                    body: body_noheader.to_string(),
+                }))),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        message
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn load_messages_with_comments_filters_by_allowed_logins() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let sigint_zone = find_test_sigint_zone(&env.dbx).await.unwrap();
+        let other_organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                name: Set("OtherOrgDigest".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                roles: Set(json!(["Rer"])),
+                enabled: Set(true),
+                parent_id: Set(None),
+                deleted_permanently: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("OtherDigestTester".to_string()),
+                organism_id: Set(Some(other_organism.id)),
+                sigint_zone_id: Set(Some(sigint_zone.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let own_message = seed_digest_message(
+            &env.dbx,
+            &datasource_group,
+            "raw own body",
+            "body without header",
+        )
+        .await;
+        let other_message = seed_digest_message(
+            &env.dbx,
+            &datasource_group,
+            "raw other body",
+            "other body without header",
+        )
+        .await;
+        let now = Utc::now().naive_utc();
+        sigint_comment::ActiveModel {
+            login: Set(login.login.clone()),
+            signal_message_id: Set(own_message.id),
+            comment: Set("own comment".to_string()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        sigint_comment::ActiveModel {
+            login: Set(other_login.login.clone()),
+            signal_message_id: Set(other_message.id),
+            comment: Set("other comment".to_string()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let (comments, messages) = load_messages_with_comments(
+            vec![
+                test_inbox_message(own_message.id, "raw own body"),
+                test_inbox_message(other_message.id, "raw other body"),
+            ],
+            &env.dbx,
+            Some(std::slice::from_ref(&login.login)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(comments, vec![(own_message.id, "own comment".to_string())]);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, own_message.id);
+        assert_eq!(messages[0].1.text, "body without header");
     }
 }

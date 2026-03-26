@@ -159,7 +159,7 @@ html[data-bs-theme="dark"] .badge-no-unit-sm {
 /* Highlighted Token Badges - For text analysis */
 .badge-highlighed-token {
     background-color: #fd884f;
-    color: #fff;
+    color: #000;
     font-size: 90%;
     padding: 0.15em 0.3em;
     font-weight: 700;
@@ -194,6 +194,7 @@ html[data-bs-theme="dark"] .badge-main-radio {
 
 .badge-highlighed-token--callsign {
     background-color: #fd884f;
+    color: #000;
 }
 
 .badge-highlighed-token--sm {

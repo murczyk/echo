@@ -2,7 +2,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Box, Button, Link, Stack, Tooltip, Typography } from '@mui/material';
 import { useState } from 'react';
 
-import type { InboxMessage, Network, Tag } from '../../../../Bindings';
+import type { ContentNode, InboxMessage, Network, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, messageRenderDistance } from './utils';
 import { renderMarkedText } from './MarkedText';

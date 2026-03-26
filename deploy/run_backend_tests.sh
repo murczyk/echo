@@ -31,12 +31,27 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
     export CARGO_TARGET_DIR="$REPO_ROOT/target"
 fi
 
-# Launch Python service in background
-just dev-py &
-DEV_PID=$!
+# Launch Python service in a separate process group so CI teardown can stop it cleanly.
+PY_SERVICE_LOG_DIR="$REPO_ROOT/target"
+PY_SERVICE_LOG="$PY_SERVICE_LOG_DIR/dev-py.log"
+mkdir -p "$PY_SERVICE_LOG_DIR"
+: > "$PY_SERVICE_LOG"
 
-# Ensure dev server is killed on script exit (success or failure)
-trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
+setsid just dev-py >>"$PY_SERVICE_LOG" 2>&1 &
+DEV_PGID=$!
+
+cleanup_dev_py() {
+    local exit_status=$?
+    kill -- "-$DEV_PGID" 2>/dev/null || true
+    wait "$DEV_PGID" 2>/dev/null || true
+    if [[ $exit_status -ne 0 ]]; then
+        echo "Last dev-py log lines:"
+        tail -n 50 "$PY_SERVICE_LOG" || true
+    fi
+    exit "$exit_status"
+}
+
+trap cleanup_dev_py EXIT
 
 # Wait for the service to be ready
 PY_SERVICE_STARTUP_TIMEOUT_SECS="${PY_SERVICE_STARTUP_TIMEOUT_SECS:-240}"

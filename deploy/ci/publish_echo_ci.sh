@@ -146,6 +146,50 @@ pick_existing_pool_file_for_pkg_ref() {
   return 1
 }
 
+pkg_query_for_pkg_ref() {
+  local pkg_ref="$1"
+  local arch="${pkg_ref##*_}"
+  local pkg_and_ver="${pkg_ref%_*}"
+  local pkg="${pkg_and_ver%%_*}"
+  local ver="${pkg_and_ver#*_}"
+  printf 'Name (= %s), Version (= %s), Architecture (= %s)\n' "$pkg" "$ver" "$arch"
+}
+
+copy_pkg_ref_between_repos() {
+  local src_repo="$1"
+  local dst_repo="$2"
+  local pkg_ref="$3"
+  local pkg_query=""
+  pkg_query="$(pkg_query_for_pkg_ref "$pkg_ref")"
+  aptly repo copy "$src_repo" "$dst_repo" "$pkg_query" 1>&2
+}
+
+published_pool_files_for_pkg_ref() {
+  local pkg_ref="$1"
+  local public_pool_dir="$HOME/.aptly/public/$REPO/pool"
+  local pool_file=""
+  local bn=""
+
+  [[ -d "$public_pool_dir" ]] || return 0
+
+  while IFS= read -r pool_file; do
+    [[ -f "$pool_file" ]] || continue
+    bn="$(basename "$pool_file")"
+    find "$public_pool_dir" -type f -name "$bn" -print 2>/dev/null || true
+  done < <(pool_files_for_pkg_ref "$pkg_ref")
+}
+
+pick_published_pool_file_for_pkg_ref() {
+  local pkg_ref="$1"
+  local p=""
+  while IFS= read -r p; do
+    [[ -f "$p" ]] || continue
+    echo "$p"
+    return 0
+  done < <(published_pool_files_for_pkg_ref "$pkg_ref" | sort -u)
+  return 1
+}
+
 add_latest_pkgs_to_repo_from_repos() {
   local dst_repo="$1"
   local pkg_name="$2"
@@ -166,13 +210,14 @@ add_latest_pkgs_to_repo_from_repos() {
       pkg_ref="$(aptly repo search "$src_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
       [[ -n "$pkg_ref" ]] || continue
 
-      pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
-      [[ -z "$pool_file" ]] && continue
-
-      # Keep stdout clean so callers can capture only our numeric return value.
-      aptly repo add "$dst_repo" "$pool_file" 1>&2
-      arch_added["$arch"]=1
-      added=$((added + 1))
+      # Copy package refs directly between repos so aptly reuses package records
+      # instead of repeatedly re-importing already-hashed pool file names.
+      if copy_pkg_ref_between_repos "$src_repo" "$dst_repo" "$pkg_ref"; then
+        arch_added["$arch"]=1
+        added=$((added + 1))
+      else
+        echo "::error::failed to copy $pkg_ref from repo '$src_repo' to '$dst_repo'" >&2
+      fi
     done
   done
 
@@ -210,25 +255,28 @@ add_latest_pkgs_to_repo_from_sources() {
     if [[ -n "$primary_repo" ]]; then
       pkg_ref="$(aptly repo search "$primary_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
       if [[ -n "$pkg_ref" ]]; then
-        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
-        if [[ -n "$pool_file" ]]; then
-          aptly repo add "$dst_repo" "$pool_file" 1>&2
+        if copy_pkg_ref_between_repos "$primary_repo" "$dst_repo" "$pkg_ref"; then
           arch_added["$arch"]=1
           added=$((added + 1))
           continue
         fi
+        echo "::error::failed to copy $pkg_ref from repo '$primary_repo' to '$dst_repo'" >&2
       fi
     fi
 
     if [[ -n "$published_snapshot" ]]; then
       pkg_ref="$(aptly snapshot search "$published_snapshot" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
       if [[ -n "$pkg_ref" ]]; then
-        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+        # Snapshot packages do not support repo copy, so re-import the current
+        # published artifact instead of an internal pool path with a growing hash prefix.
+        pool_file="$(pick_published_pool_file_for_pkg_ref "$pkg_ref")" || true
         if [[ -n "$pool_file" ]]; then
-          aptly repo add "$dst_repo" "$pool_file" 1>&2
-          arch_added["$arch"]=1
-          added=$((added + 1))
-          continue
+          if aptly repo add "$dst_repo" "$pool_file" 1>&2; then
+            arch_added["$arch"]=1
+            added=$((added + 1))
+            continue
+          fi
+          echo "::error::failed to add published pool file '$pool_file' for $pkg_ref into '$dst_repo'" >&2
         fi
       fi
     fi
@@ -236,13 +284,12 @@ add_latest_pkgs_to_repo_from_sources() {
     if [[ -n "$fallback_repo" ]]; then
       pkg_ref="$(aptly repo search "$fallback_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
       if [[ -n "$pkg_ref" ]]; then
-        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
-        if [[ -n "$pool_file" ]]; then
-          aptly repo add "$dst_repo" "$pool_file" 1>&2
+        if copy_pkg_ref_between_repos "$fallback_repo" "$dst_repo" "$pkg_ref"; then
           arch_added["$arch"]=1
           added=$((added + 1))
           continue
         fi
+        echo "::error::failed to copy $pkg_ref from repo '$fallback_repo' to '$dst_repo'" >&2
       fi
     fi
   done

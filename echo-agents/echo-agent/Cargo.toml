@@ -9,7 +9,10 @@ license = "All Rights Reserved"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"
@@ -18,10 +21,15 @@ depends = ""
 assets = [
     ["target/release/echo-agent", "usr/bin/", "755"],
     ["../AGENTS.md", "usr/share/echo-agent/AGENTS.md", "644"],
+    ["config.toml.example", "usr/share/echo-agent/config.toml.example", "644"],
     ["../opencode/AGENTS.md", "usr/share/echo-agent/opencode/AGENTS.md", "644"],
     ["../opencode/README.md", "usr/share/echo-agent/opencode/README.md", "644"],
     ["../opencode/opencode.jsonc", "usr/share/echo-agent/opencode/opencode.jsonc", "644"],
     ["../opencode/run.sh", "usr/share/echo-agent/opencode/run.sh", "755"],
+    ["../opencode/skills/README.md", "usr/share/echo-agent/opencode/skills/README.md", "644"],
+    ["../opencode/skills/same-frequency-context.md", "usr/share/echo-agent/opencode/skills/same-frequency-context.md", "644"],
+    ["../opencode/skills/callsign-database.md", "usr/share/echo-agent/opencode/skills/callsign-database.md", "644"],
+    ["../opencode/skills/speaker-extraction-heuristics.md", "usr/share/echo-agent/opencode/skills/speaker-extraction-heuristics.md", "644"],
 ]
 
 [workspace]

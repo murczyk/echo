@@ -16,8 +16,14 @@
 
 - `opencode/`: конфіг OpenCode, helper-скрипт та skills
 - `echo-agent/`: імплементація агенту, що як відповідає на API-запити, так і працює як systemd-сервіс
+  - `freeform`: довільний analyst prompt через OpenCode
+  - `sigint-extract-callsigns`: витягає позивні спікерів із повідомлення
+  - `api ...`: локальні helper-підкоманди для opencode skills
 - `justfile`: локальні команди для форматування, пакування та деплою `echo-agent`
 
 ## НАЛАШТУВАННЯ
 
 Див. [SETUP.md](./SETUP.md).
+
+Пакет `echo-agent` очікує конфіг у `/etc/echo-agent/config.toml`.
+Під час інсталяції він буде створений із `config.toml.example`, якщо ще не існує.
