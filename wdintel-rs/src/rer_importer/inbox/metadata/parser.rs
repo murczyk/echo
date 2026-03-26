@@ -139,7 +139,11 @@ pub fn parse_value_from_regexes(
     for regex in regexes {
         if let Some(caps) = regex.captures(&line.text) {
             if let Some(value) = caps.get(1) {
-                return line.build_value(value, normalize_metadata_value);
+                if let Some(value) =
+                    line.build_value(value, normalize_metadata_value)
+                {
+                    return Some(value);
+                }
             }
         }
     }
@@ -156,7 +160,11 @@ pub fn parse_numeric_value_from_regexes(
                 if line.has_forbidden_suffix(value.end()) {
                     continue;
                 }
-                return line.build_value(value, normalize_metadata_value);
+                if let Some(value) =
+                    line.build_value(value, normalize_metadata_value)
+                {
+                    return Some(value);
+                }
             }
         }
     }
@@ -179,7 +187,11 @@ pub fn parse_numeric_value_from_standalone_regexes(
                 if line.has_forbidden_suffix(value.end()) {
                     continue;
                 }
-                return line.build_value(value, normalize_metadata_value);
+                if let Some(value) =
+                    line.build_value(value, normalize_metadata_value)
+                {
+                    return Some(value);
+                }
             }
         }
     }
@@ -194,7 +206,11 @@ pub fn parse_string_from_regexes(
     for regex in regexes {
         if let Some(caps) = regex.captures(&line.text) {
             if let Some(value) = caps.get(group_idx) {
-                return line.build_value(value, normalize_metadata_value);
+                if let Some(value) =
+                    line.build_value(value, normalize_metadata_value)
+                {
+                    return Some(value);
+                }
             }
         }
     }
@@ -215,7 +231,11 @@ pub fn parse_string_from_standalone_regexes(
                 continue;
             }
             if let Some(value) = caps.get(group_idx) {
-                return line.build_value(value, normalize_metadata_value);
+                if let Some(value) =
+                    line.build_value(value, normalize_metadata_value)
+                {
+                    return Some(value);
+                }
             }
         }
     }

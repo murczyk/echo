@@ -308,6 +308,15 @@ ID отримувача: 3359939
     }
 
     #[test]
+    fn parse_metadata_keeps_regular_id_when_optional_sender_marker_is_blank() {
+        let metadata = metadata_without_spans(parse_metadata(
+            "ID відправника: -; ID:123; код групи: НВ",
+        ));
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].id.as_deref(), Some("123"));
+    }
+
+    #[test]
     fn parse_metadata_line_handles_group_id_variant() {
         let metadata = working_metadata_without_spans(parse_metadata_line(
             &NormalizedLine::new("GROUP ID: 0".to_string()),
