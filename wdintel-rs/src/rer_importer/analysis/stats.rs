@@ -228,53 +228,6 @@ where
     }
 }
 
-fn apply_joined_group_aor_scope<E>(
-    query: Select<E>,
-    selected_aors: &Option<Vec<i64>>,
-) -> Select<E>
-where
-    E: EntityTrait,
-{
-    let Some(selected_aors) =
-        selected_aors.as_ref().filter(|aors| !aors.is_empty())
-    else {
-        return query;
-    };
-
-    let group_alias = Alias::new("joined_group_scope");
-    let group_aor_alias = Alias::new("joined_group_aor_scope");
-    let aor_alias = Alias::new("joined_group_aor_value_scope");
-
-    let query = query
-        .join_as(
-            JoinType::LeftJoin,
-            signal_message_group::Relation::SignalGroup.def(),
-            group_alias.clone(),
-        )
-        .join_as(
-            JoinType::LeftJoin,
-            signal_group::Relation::SignalGroupAor
-                .def()
-                .from_alias(group_alias.clone()),
-            group_aor_alias.clone(),
-        )
-        .join_as(
-            JoinType::LeftJoin,
-            signal_group_aor::Relation::AreaOfResponsibility
-                .def()
-                .from_alias(group_aor_alias.clone()),
-            aor_alias.clone(),
-        );
-
-    match selected_aor_overlap_condition(
-        aor_alias,
-        &Some(selected_aors.clone()),
-    ) {
-        Some(condition) => query.filter(condition),
-        None => query,
-    }
-}
-
 pub async fn count_groups(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -347,8 +300,6 @@ fn build_groups_query(
         &accessible_groups,
     );
     let groups_res =
-        apply_joined_group_aor_scope(groups_res, &req.selected_aors);
-    let groups_res =
         filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
     let groups_res =
         filter_selected_posts(groups_res, &req.selected_posts).context(h!())?;
@@ -375,6 +326,8 @@ fn build_groups_query(
     .context(h!())?;
     let groups_res = apply_metadata_filters(groups_res, req)?;
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
+    let groups_res =
+        filter_selected_aors(groups_res, &req.selected_aors).context(h!())?;
     let groups_res = filter_selected_tags(
         groups_res,
         &req.selected_tags,
@@ -1071,14 +1024,27 @@ fn build_freqs_query(
 
 pub async fn fetch_callsigns(
     req: &Json<AnalysisStatsReq>,
+    user: &Identity,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_callsigns_for_login(&req.0, login_value.as_str(), env, master_keys)
+        .await
+}
+
+pub async fn fetch_callsigns_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+    let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())? {
         let result =
             read_callsign_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -1093,8 +1059,13 @@ pub async fn fetch_callsigns(
         callsign: Option<String>,
         count: i64,
     }
-    let callsigns_res =
-        build_callsigns_query(&req, dt_since, dt_till, master_keys)?;
+    let callsigns_res = build_callsigns_query(
+        &req.0,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     // println!(
     //     "> callsigns_res: {}",
     //     callsigns_res.build(DbBackend::Postgres).to_string()
@@ -1119,9 +1090,11 @@ pub async fn fetch_callsigns(
 
 pub async fn count_callsigns(
     req: &Json<AnalysisStatsReq>,
+    user: &Identity,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let login_value = user.id().c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1129,8 +1102,13 @@ pub async fn count_callsigns(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res =
-        build_callsigns_query(&req, dt_since, dt_till, master_keys)?;
+    let groups_res = build_callsigns_query(
+        &req.0,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
@@ -1265,7 +1243,8 @@ async fn fetch_metadata_value_stats(
 }
 
 fn build_callsigns_query(
-    req: &&Json<AnalysisStatsReq>,
+    req: &AnalysisStatsReq,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1317,13 +1296,26 @@ fn build_callsigns_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let callsigns_res = filter_selected_tags(
+        callsigns_res,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        login_str,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .context(h!())?;
     let callsigns_res = filter_selected_networks(
         callsigns_res,
         &req.selected_networks,
         &req.without_network,
     )
     .context(h!())?;
-    let callsigns_res = apply_metadata_filters(callsigns_res, &req.0)?;
+    let callsigns_res = apply_metadata_filters(callsigns_res, req)?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
     let callsigns_res = filter_selected_aors(callsigns_res, &req.selected_aors)
         .context(h!())?;
@@ -1332,15 +1324,27 @@ fn build_callsigns_query(
 
 pub async fn fetch_tags(
     req: &Json<AnalysisStatsReq>,
+    user: &Identity,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsTag>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_tags_for_login(&req.0, login_value.as_str(), env, master_keys).await
+}
+
+pub async fn fetch_tags_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsTag>, AppError> {
+    let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if req.without_model_tags != Some(true)
-        && should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())?
+        && should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())?
     {
         let result =
             read_tag_stats_aggregated(env, master_keys, dt_since, dt_till)
@@ -1356,7 +1360,8 @@ pub async fn fetch_tags(
         tag_id: i64,
         count: i64,
     }
-    let tags_res = build_tags_query(&req, dt_since, dt_till, master_keys)?;
+    let tags_res =
+        build_tags_query(&req.0, login_str, dt_since, dt_till, master_keys)?;
 
     let tags_res: Vec<TagsRes> = tags_res
         .into_model::<TagsRes>()
@@ -1383,9 +1388,11 @@ pub async fn fetch_tags(
 
 pub async fn count_tags(
     req: &Json<AnalysisStatsReq>,
+    user: &Identity,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let login_value = user.id().c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1393,13 +1400,20 @@ pub async fn count_tags(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res = build_tags_query(&req, dt_since, dt_till, master_keys)?;
+    let groups_res = build_tags_query(
+        &req.0,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
 fn build_tags_query(
-    req: &&Json<AnalysisStatsReq>,
+    req: &AnalysisStatsReq,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1461,13 +1475,27 @@ fn build_tags_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let tags_res =
+        filter_selected_callsigns(tags_res, &req.selected_callsigns)?;
+    let tags_res = filter_selected_tags(
+        tags_res,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        login_str,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )?;
     let tags_res = filter_selected_networks(
         tags_res,
         &req.selected_networks,
         &req.without_network,
     )
     .context(h!())?;
-    let tags_res = apply_metadata_filters(tags_res, &req.0)?;
+    let tags_res = apply_metadata_filters(tags_res, req)?;
     let tags_res = filter_search(tags_res, &req.search)?;
     let tags_res =
         filter_selected_aors(tags_res, &req.selected_aors).context(h!())?;
@@ -1656,11 +1684,23 @@ pub async fn fetch_locations(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsLocation>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_locations_for_login(&req.0, login_value.as_str(), env, master_keys)
+        .await
+}
+
+pub async fn fetch_locations_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsLocation>, AppError> {
+    let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())? {
         let result =
             read_location_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -1675,8 +1715,13 @@ pub async fn fetch_locations(
         location: Option<String>,
         count: i64,
     }
-    let locations_res =
-        build_locations_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let locations_res = build_locations_query_for_login(
+        &req.0,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     // println!(
     //     "> locations_res: {}",
     //     locations_res.build(DbBackend::Postgres).to_string()
@@ -1729,6 +1774,23 @@ fn build_locations_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let login_value = user.id().context(h!())?;
+    build_locations_query_for_login(
+        &req.0,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )
+}
+
+fn build_locations_query_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let locations_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -1773,6 +1835,12 @@ fn build_locations_query(
     let locations_res =
         filter_selected_posts(locations_res, &req.selected_posts)
             .context(h!())?;
+    let locations_res = filter_selected_locations(
+        locations_res,
+        &req.selected_locations,
+        req.include_peleng_locations.unwrap_or(false),
+    )
+    .context(h!())?;
     let locations_res =
         filter_selected_callsigns(locations_res, &req.selected_callsigns)
             .context(h!())?;
@@ -1785,7 +1853,7 @@ fn build_locations_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().context(h!())?,
+        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -1795,7 +1863,7 @@ fn build_locations_query(
         &req.without_network,
     )
     .context(h!())?;
-    let locations_res = apply_metadata_filters(locations_res, &req.0)?;
+    let locations_res = apply_metadata_filters(locations_res, req)?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
     let locations_res = filter_selected_aors(locations_res, &req.selected_aors)
