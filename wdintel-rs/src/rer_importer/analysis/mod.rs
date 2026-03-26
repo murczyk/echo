@@ -2187,6 +2187,15 @@ mod tests {
             .collect()
     }
 
+    fn sender_counts(
+        senders: Vec<AnalysisStatsSender>,
+    ) -> BTreeMap<String, i64> {
+        senders
+            .into_iter()
+            .map(|sender| (sender.uuid, sender.count))
+            .collect()
+    }
+
     fn callsign_counts(
         callsigns: Vec<AnalysisStatsCallsign>,
     ) -> BTreeMap<String, i64> {
@@ -2199,6 +2208,15 @@ mod tests {
     fn tag_counts(tags: Vec<AnalysisStatsTag>) -> BTreeMap<i64, i64> {
         tags.into_iter()
             .map(|tag| (tag.tag_id, tag.count))
+            .collect()
+    }
+
+    fn metadata_value_counts(
+        values: Vec<AnalysisStatsMetadataValue>,
+    ) -> BTreeMap<String, i64> {
+        values
+            .into_iter()
+            .map(|value| (value.value, value.count))
             .collect()
     }
 
@@ -2258,6 +2276,19 @@ mod tests {
                 .await
                 .context(h!())?;
         Ok(freq_counts(freqs))
+    }
+
+    async fn fetch_sender_counts_for_req(
+        env: &Arc<Env>,
+        req: &AnalysisStatsReq,
+    ) -> Result<BTreeMap<String, i64>, AppError> {
+        let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+        let env = Data::from(env.clone());
+        let senders =
+            stats::fetch_senders_for_login(req, &login, &env, master_keys)
+                .await
+                .context(h!())?;
+        Ok(sender_counts(senders))
     }
 
     async fn fetch_aor_counts_for_req(
@@ -2323,6 +2354,22 @@ mod tests {
             .await
             .context(h!())?;
         Ok(tag_counts(tags))
+    }
+
+    async fn fetch_metadata_stats_for_req(
+        env: &Arc<Env>,
+        req: &AnalysisStatsReq,
+    ) -> Result<MetadataStatsRsp, AppError> {
+        let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+        let env = Data::from(env.clone());
+        Ok(stats::fetch_metadata_stats_for_login(
+            req,
+            &login,
+            &env,
+            master_keys,
+        )
+        .await
+        .context(h!())?)
     }
 
     async fn fetch_selected_count_for_req(
@@ -2956,6 +3003,108 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+        assert!(fetch_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_selected_network_filter_uses_explicit_network_links()
+    {
+        let fixture = mk_aor_filter_fixture().await.unwrap();
+        let db = &fixture.env.dbx;
+        let competing_network = mk_network_fixture(
+            db,
+            "Competing Network",
+            "910.1",
+            fixture.aor_a.id,
+            fixture.created_at,
+        )
+        .await
+        .unwrap();
+
+        mk_analysis_message(
+            db,
+            "network-link-match",
+            "910.1",
+            test_dt(2026, 3, 2, 10, 0),
+            &[&fixture.group_x],
+            &[fixture.network_k.network.id],
+            false,
+        )
+        .await
+        .unwrap();
+
+        let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+        req.selected_networks = Some(vec![fixture.network_k.network.id]);
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            1
+        );
+
+        req.selected_networks = Some(vec![competing_network.network.id]);
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            0
+        );
+        assert!(fetch_group_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_deleted_networks_behave_like_missing_networks() {
+        let fixture = mk_aor_filter_fixture().await.unwrap();
+        let db = &fixture.env.dbx;
+
+        mk_analysis_message(
+            db,
+            "deleted-network-only",
+            "906.2",
+            test_dt(2026, 3, 2, 10, 0),
+            &[&fixture.group_x],
+            &[fixture.network_k.network.id],
+            false,
+        )
+        .await
+        .unwrap();
+
+        let deleted_network_id = fixture.network_k.network.id;
+        let mut deleted_network =
+            fixture.network_k.network.clone().into_active_model();
+        deleted_network.deleted = Set(true);
+        deleted_network.update(db).await.unwrap();
+
+        let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+        req.selected_aors = Some(vec![fixture.aor_a.id]);
+        req.without_network = Some(true);
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(fetch_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap()
+            .is_empty());
+
+        req.without_network = None;
+        req.selected_networks = Some(vec![deleted_network_id]);
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            0
+        );
         assert!(fetch_network_counts_for_req(&fixture.env, &req)
             .await
             .unwrap()
@@ -3799,6 +3948,89 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn rer_analysis_sender_and_group_filters_share_same_group_row() {
+        let fixture = mk_aor_filter_fixture().await.unwrap();
+        let db = &fixture.env.dbx;
+
+        let msg = mk_analysis_message(
+            db,
+            "sender-group-shared",
+            "942.5",
+            test_dt(2026, 3, 2, 10, 0),
+            &[&fixture.group_x, &fixture.group_y],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+
+        let mut group_x_row = signal_message_group::Entity::find()
+            .filter(signal_message_group::Column::SignalMessageId.eq(msg.id))
+            .filter(
+                signal_message_group::Column::GroupMasterKey.eq(fixture
+                    .group_x
+                    .signal_group
+                    .master_key
+                    .clone()),
+            )
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        group_x_row.sender = Set(Some("sender-a".to_string()));
+        group_x_row.update(db).await.unwrap();
+
+        let mut group_y_row = signal_message_group::Entity::find()
+            .filter(signal_message_group::Column::SignalMessageId.eq(msg.id))
+            .filter(
+                signal_message_group::Column::GroupMasterKey.eq(fixture
+                    .group_y
+                    .signal_group
+                    .master_key
+                    .clone()),
+            )
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        group_y_row.sender = Set(Some("sender-b".to_string()));
+        group_y_row.update(db).await.unwrap();
+
+        let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+        req.selected_senders = Some(vec!["sender-a".to_string()]);
+        assert_eq!(
+            fetch_group_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            BTreeMap::from([(
+                fixture.group_x.signal_group.master_key.clone(),
+                1,
+            )])
+        );
+
+        let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+        req.selected_groups =
+            Some(vec![fixture.group_x.signal_group.master_key.clone()]);
+        assert_eq!(
+            fetch_sender_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            BTreeMap::from([("sender-a".to_string(), 1)])
+        );
+
+        req.selected_senders = Some(vec!["sender-b".to_string()]);
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn rer_analysis_metadata_and_important_filters_follow_surviving_messages(
     ) {
         let fixture = mk_rer_analysis_fixture().await.unwrap();
@@ -4020,6 +4252,54 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_metadata_stats_use_ids_not_display_names() {
+        let fixture = mk_rer_analysis_fixture().await.unwrap();
+        let db = &fixture.env.dbx;
+
+        let msg = mk_analysis_message(
+            db,
+            "msg-metadata-values",
+            "943.5",
+            test_dt(2026, 3, 1, 10, 9),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_metadata(
+            db,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(msg.id),
+                sender_id: Set(Some("SID-01".to_string())),
+                sender_name: Set(Some("Sender Name".to_string())),
+                call_group_id: Set(Some("RID-01".to_string())),
+                call_group_name: Set(Some("Receiver Name".to_string())),
+                created_at: Set(test_dt(2026, 3, 1, 10, 9)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let req = analysis_stats_req0(&fixture);
+        let metadata = fetch_metadata_stats_for_req(&fixture.env, &req)
+            .await
+            .unwrap();
+        let sender_values = metadata_value_counts(metadata.senders);
+        let receiver_values = metadata_value_counts(metadata.receivers);
+
+        assert_eq!(sender_values, BTreeMap::from([("SID-01".to_string(), 1)]));
+        assert!(!sender_values.contains_key("Sender Name"));
+        assert_eq!(
+            receiver_values,
+            BTreeMap::from([("RID-01".to_string(), 1)])
+        );
+        assert!(!receiver_values.contains_key("Receiver Name"));
     }
 
     #[tokio::test]
@@ -4418,6 +4698,64 @@ mod tests {
             .unwrap()
             .1,
             1
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_deleted_messages_do_not_contribute_to_filter_values()
+    {
+        let fixture = mk_aor_filter_fixture().await.unwrap();
+        let db = &fixture.env.dbx;
+
+        mk_analysis_message(
+            db,
+            "active-message",
+            "944.1",
+            test_dt(2026, 3, 2, 10, 0),
+            &[&fixture.group_x],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        let deleted_msg = mk_analysis_message(
+            db,
+            "deleted-message",
+            "944.2",
+            test_dt(2026, 3, 2, 10, 1),
+            &[&fixture.group_x],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+
+        let mut deleted_msg = deleted_msg.into_active_model();
+        deleted_msg.deleted = Set(true);
+        deleted_msg.update(db).await.unwrap();
+
+        let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+        req.selected_aors = Some(vec![fixture.aor_a.id]);
+
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            fetch_group_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            BTreeMap::from([(
+                fixture.group_x.signal_group.master_key.clone(),
+                1,
+            )])
+        );
+        assert_eq!(
+            fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
+            BTreeMap::from([("944.1".to_string(), 1)])
         );
     }
 

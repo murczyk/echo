@@ -127,3 +127,24 @@ when the same location is selected with `include peleng locations = true`, make 
 we have one message without metadata and one message with metadata sender S.
 when `without metadata` is enabled together with a concrete metadata filter like sender S, make sure we still see only non-metadata messages.
 concrete metadata fields must not narrow the result further in this mode.
+36. sender + group filters must match the same message-group row:
+we have one message attached to groups X and Y.
+in group X the sender is A, in group Y the sender is B.
+when group X and sender B are selected together, make sure the message is not matched.
+also make sure group dropdown under sender A does not leak group Y, and sender dropdown under group X does not leak sender B.
+37. selected network filter must use explicit inbox-network links, not only matching frequency:
+we have two networks K and L active on the same frequency in the same visible scope.
+we have one message on that frequency, explicitly linked only to network K.
+when network K is selected, make sure the message is visible.
+when network L is selected, make sure the message is not visible.
+38. deleted networks must be ignored by network filters:
+we have one message linked only to network K, and K is deleted.
+make sure network K is absent from network filter values.
+when `without network` is enabled, make sure this message behaves like a message without network.
+when deleted network K is selected directly in request params, make sure the result is empty.
+39. deleted messages must not contribute to filter values:
+we have one normal message and one deleted message in the same visible group.
+make sure counts and dependent filter values are calculated only from the non-deleted message.
+40. metadata filter values must use metadata ids, not display names:
+we have metadata with sender id SID and sender name SNAME, and receiver id RID with receiver name RNAME.
+make sure metadata sender values contain SID but not SNAME, and metadata receiver values contain RID but not RNAME.

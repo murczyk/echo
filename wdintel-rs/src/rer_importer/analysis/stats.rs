@@ -85,71 +85,6 @@ pub async fn fetch_groups_for_login(
     Ok(groups)
 }
 
-fn apply_sender_filters<E>(
-    query: Select<E>,
-    req: &Json<AnalysisStatsReq>,
-    user: &Identity,
-    master_keys: Vec<String>,
-) -> Result<Select<E>, AppError>
-where
-    E: EntityTrait,
-{
-    let include_peleng_locations =
-        req.include_peleng_locations.unwrap_or(false);
-    let query = filter_selected_groups_and_senders_with_access(
-        query,
-        &req.selected_groups,
-        &req.selected_senders,
-        &master_keys,
-    )
-    .context(h!())?;
-    let query =
-        filter_selected_freqs(query, &req.selected_freqs).context(h!())?;
-    let query =
-        filter_selected_posts(query, &req.selected_posts).context(h!())?;
-    let query = filter_selected_units(
-        query,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )
-    .context(h!())?;
-    let query = filter_selected_locations(
-        query,
-        &req.selected_locations,
-        include_peleng_locations,
-    )
-    .context(h!())?;
-    let query = filter_selected_callsigns(query, &req.selected_callsigns)
-        .context(h!())?;
-    let query = filter_selected_tags(
-        query,
-        &req.selected_tags,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
-        user.id().context(h!())?.as_str(),
-        req.report_tags_only_this_unit.unwrap_or(false),
-    )
-    .context(h!())?;
-    let query = filter_selected_networks(
-        query,
-        &req.selected_networks,
-        &req.without_network,
-    )
-    .context(h!())?;
-    let query = apply_metadata_filters(query, &req.0)?;
-    let query = filter_search(query, &req.search).context(h!())?;
-    let query =
-        filter_selected_aors(query, &req.selected_aors).context(h!())?;
-    if !master_keys.is_empty() {
-        return Ok(query.filter(message_in_groups_exists(master_keys)));
-    }
-    Ok(query)
-}
-
 fn apply_metadata_filters<E>(
     query: Select<E>,
     req: &AnalysisStatsReq,
@@ -350,11 +285,23 @@ pub async fn fetch_senders(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsSender>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_senders_for_login(&req.0, login_value.as_str(), env, master_keys)
+        .await
+}
+
+pub async fn fetch_senders_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsSender>, AppError> {
+    let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())? {
         let result =
             read_sender_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -383,8 +330,8 @@ pub async fn fetch_senders(
 
     let instant = std::time::Instant::now();
     let senders_query = build_senders_query(
-        &req,
-        &user,
+        &&req,
+        login_str,
         dt_since,
         dt_till,
         master_keys.clone(),
@@ -403,7 +350,7 @@ pub async fn fetch_senders(
         .await
         .context(h!())?;
 
-    let sender_stats_groups = sender_stats_groups(req, &master_keys);
+    let sender_stats_groups = sender_stats_groups(&req, &master_keys);
 
     let freq_query =
         build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
@@ -420,9 +367,13 @@ pub async fn fetch_senders(
             .group_by(signal_message_group::Column::Sender)
             .group_by(sigint_inbox_item::Column::Freq)
             .group_by(sigint_inbox_item::Column::PostId);
-    let freq_query = apply_sender_dimension_filters(freq_query, req);
-    let freq_query =
-        apply_sender_filters(freq_query, req, user, master_keys.clone())?;
+    let freq_query = apply_sender_dimension_filters(freq_query, &req);
+    let freq_query = apply_sender_filters_for_login(
+        freq_query,
+        &req,
+        login_str,
+        master_keys.clone(),
+    )?;
     let freq_rows: Vec<SenderFreqRes> = freq_query
         .into_model::<SenderFreqRes>()
         .all(&env.dbx)
@@ -446,9 +397,13 @@ pub async fn fetch_senders(
             .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
             .group_by(signal_message_group::Column::Sender)
             .group_by(per_day_expr);
-    let per_day_query = apply_sender_dimension_filters(per_day_query, req);
-    let per_day_query =
-        apply_sender_filters(per_day_query, req, user, master_keys)?;
+    let per_day_query = apply_sender_dimension_filters(per_day_query, &req);
+    let per_day_query = apply_sender_filters_for_login(
+        per_day_query,
+        &req,
+        login_str,
+        master_keys,
+    )?;
     let per_day_rows: Vec<SenderPerDayRes> = per_day_query
         .into_model::<SenderPerDayRes>()
         .all(&env.dbx)
@@ -525,18 +480,24 @@ pub async fn count_senders(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let read_db = env.replica();
+    let login_value = user.id().context(h!())?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res =
-        build_senders_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let groups_res = build_senders_query(
+        &req,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
 fn build_senders_query(
     req: &&Json<AnalysisStatsReq>,
-    user: &&Identity,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -593,7 +554,7 @@ fn build_senders_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().context(h!())?,
+        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -652,6 +613,71 @@ fn apply_sender_dimension_filters(
         ),
         None => query,
     }
+}
+
+fn apply_sender_filters_for_login<E>(
+    query: Select<E>,
+    req: &Json<AnalysisStatsReq>,
+    login_str: &str,
+    master_keys: Vec<String>,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
+    let query = filter_selected_groups_and_senders_with_access(
+        query,
+        &req.selected_groups,
+        &req.selected_senders,
+        &master_keys,
+    )
+    .context(h!())?;
+    let query =
+        filter_selected_freqs(query, &req.selected_freqs).context(h!())?;
+    let query =
+        filter_selected_posts(query, &req.selected_posts).context(h!())?;
+    let query = filter_selected_units(
+        query,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )
+    .context(h!())?;
+    let query = filter_selected_locations(
+        query,
+        &req.selected_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
+    let query = filter_selected_callsigns(query, &req.selected_callsigns)
+        .context(h!())?;
+    let query = filter_selected_tags(
+        query,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        login_str,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .context(h!())?;
+    let query = filter_selected_networks(
+        query,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
+    let query = apply_metadata_filters(query, &req.0)?;
+    let query = filter_search(query, &req.search).context(h!())?;
+    let query =
+        filter_selected_aors(query, &req.selected_aors).context(h!())?;
+    if !master_keys.is_empty() {
+        return Ok(query.filter(message_in_groups_exists(master_keys)));
+    }
+    Ok(query)
 }
 
 pub async fn fetch_posts(
@@ -1119,12 +1145,29 @@ pub async fn fetch_metadata_stats(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<MetadataStatsRsp, AppError> {
+    let login_value = user.id().context(h!())?;
+    fetch_metadata_stats_for_login(
+        &req.0,
+        login_value.as_str(),
+        env,
+        master_keys,
+    )
+    .await
+}
+
+pub async fn fetch_metadata_stats_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<MetadataStatsRsp, AppError> {
+    let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let messages_q = build_metadata_messages_query(
-        req,
-        user,
+        &req,
+        login_str,
         dt_since,
         dt_till,
         master_keys,
@@ -1170,7 +1213,7 @@ pub async fn fetch_metadata_stats(
 
 fn build_metadata_messages_query(
     req: &Json<AnalysisStatsReq>,
-    user: &Identity,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1179,7 +1222,7 @@ fn build_metadata_messages_query(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    apply_sender_filters(messages_q, req, user, master_keys)
+    apply_sender_filters_for_login(messages_q, req, login_str, master_keys)
 }
 
 #[derive(FromQueryResult)]
