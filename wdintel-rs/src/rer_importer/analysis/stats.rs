@@ -27,10 +27,23 @@ pub async fn fetch_groups(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_groups_for_login(&req.0, login_value.as_str(), env, master_keys).await
+}
+
+pub async fn fetch_groups_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsGroup>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
+    let req_json = Json(req.clone());
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if should_read_stats_aggregated(&req_json, env, dt_since, dt_till)
+        .c(h!())?
+    {
         let result = read_group_stats_aggregated(
             &env.dbx,
             master_keys,
@@ -51,7 +64,7 @@ pub async fn fetch_groups(
     let instant = std::time::Instant::now();
 
     let groups_res =
-        build_groups_query(&req, user, dt_since, dt_till, master_keys)?;
+        build_groups_query(req, login_str, dt_since, dt_till, master_keys)?;
 
     let groups_res: Vec<GroupsRes> = groups_res
         .into_model::<GroupsRes>()
@@ -271,15 +284,21 @@ pub async fn count_groups(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
     let read_db = env.replica();
-    let groups_res =
-        build_groups_query(&req, user, dt_since, dt_till, master_keys)?;
+    let login_value = user.id().c(h!())?;
+    let groups_res = build_groups_query(
+        &req.0,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     let count = groups_res.count(&read_db).await.c(h!())?;
     Ok(count as i64)
 }
 
 fn build_groups_query(
-    req: &&Json<AnalysisStatsReq>,
-    user: &Identity,
+    req: &AnalysisStatsReq,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -354,7 +373,7 @@ fn build_groups_query(
         &req.without_network,
     )
     .context(h!())?;
-    let groups_res = apply_metadata_filters(groups_res, &req.0)?;
+    let groups_res = apply_metadata_filters(groups_res, req)?;
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
     let groups_res = filter_selected_tags(
         groups_res,
@@ -365,7 +384,7 @@ fn build_groups_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        user.id().c(h!())?.as_str(),
+        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -836,11 +855,24 @@ pub async fn fetch_freqs(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_freqs_for_login(&req.0, login_value.as_str(), env, master_keys).await
+}
+
+pub async fn fetch_freqs_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsFreq>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let req_json = Json(req.clone());
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if should_read_stats_aggregated(&req_json, env, dt_since, dt_till)
+        .c(h!())?
+    {
         let result = read_frequency_stats_aggregated(
             env,
             master_keys,
@@ -860,7 +892,7 @@ pub async fn fetch_freqs(
         count: i64,
     }
     let freqs_res =
-        build_freqs_query(&req, &user, dt_since, dt_till, master_keys)?;
+        build_freqs_query(req, login_str, dt_since, dt_till, master_keys)?;
     // debug!(
     //     "> freqs_res: {}",
     //     freqs_res.build(DbBackend::Postgres).to_string()
@@ -942,15 +974,21 @@ pub async fn count_freqs(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res =
-        build_freqs_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let login_value = user.id().c(h!())?;
+    let groups_res = build_freqs_query(
+        &req.0,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
 fn build_freqs_query(
-    req: &&Json<AnalysisStatsReq>,
-    user: &&Identity,
+    req: &AnalysisStatsReq,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1014,7 +1052,7 @@ fn build_freqs_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().context(h!())?,
+        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -1024,7 +1062,7 @@ fn build_freqs_query(
         &req.without_network,
     )
     .context(h!())?;
-    let freqs_res = apply_metadata_filters(freqs_res, &req.0)?;
+    let freqs_res = apply_metadata_filters(freqs_res, req)?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
     let freqs_res =
         filter_selected_aors(freqs_res, &req.selected_aors).context(h!())?;
@@ -1772,11 +1810,24 @@ pub async fn fetch_aors(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsAor>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_aors_for_login(&req.0, login_value.as_str(), env, master_keys).await
+}
+
+pub async fn fetch_aors_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsAor>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let req_json = Json(req.clone());
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if should_read_stats_aggregated(&req_json, env, dt_since, dt_till)
+        .c(h!())?
+    {
         let result =
             read_aor_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -1785,7 +1836,8 @@ pub async fn fetch_aors(
     }
 
     let instant = std::time::Instant::now();
-    let stmt = build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let stmt =
+        build_aors_query(req, login_str, dt_since, dt_till, master_keys)?;
     let aors_res: Vec<AorsRes> = AorsRes::find_by_statement(stmt)
         .all(&env.dbx)
         .await
@@ -1826,7 +1878,14 @@ pub async fn count_aors(
         return Ok(aors.len() as i64);
     }
 
-    let stmt = build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let login_value = user.id().c(h!())?;
+    let stmt = build_aors_query(
+        &req.0,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
     let count = AorsRes::find_by_statement(stmt)
         .all(&read_db)
         .await
@@ -1836,8 +1895,8 @@ pub async fn count_aors(
 }
 
 fn build_aors_query(
-    req: &&Json<AnalysisStatsReq>,
-    user: &&Identity,
+    req: &AnalysisStatsReq,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1894,12 +1953,12 @@ fn build_aors_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().context(h!())?,
+        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let messages_q = filter_search(messages_q, &req.search).context(h!())?;
-    let messages_q = apply_metadata_filters(messages_q, &req.0)?;
+    let messages_q = apply_metadata_filters(messages_q, req)?;
     let messages_q =
         filter_selected_aors(messages_q, &req.selected_aors).context(h!())?;
 

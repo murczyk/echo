@@ -1447,6 +1447,542 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use actix_web::web::{Data, Json};
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
+
+    struct GroupFixture {
+        signal_group: signal_group::Model,
+        datasource_group: datasource_group::Model,
+    }
+
+    struct NetworkFixture {
+        network: sigint_network::Model,
+    }
+
+    struct RerAnalysisFixture {
+        env: Arc<Env>,
+        north_aor: area_of_responsibility::Model,
+        south_aor: area_of_responsibility::Model,
+        wide_aor: area_of_responsibility::Model,
+        alpha: GroupFixture,
+        beta: GroupFixture,
+        secret_live: GroupFixture,
+        secret_empty: GroupFixture,
+        secret_hidden: GroupFixture,
+        network_wide: NetworkFixture,
+        network_south: NetworkFixture,
+        since_date_inclusive_ms: i64,
+        till_date_noninclusive_ms: i64,
+    }
+
+    fn test_dt(
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+        minute: u32,
+    ) -> NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(hour, minute, 0)
+            .unwrap()
+    }
+
+    fn analysis_stats_req0(fixture: &RerAnalysisFixture) -> AnalysisStatsReq {
+        AnalysisStatsReq {
+            since_date_inclusive_ms: fixture.since_date_inclusive_ms,
+            till_date_noninclusive_ms: fixture.till_date_noninclusive_ms,
+            selected_groups: None,
+            selected_senders: None,
+            selected_freqs: None,
+            selected_posts: None,
+            selected_callsigns: None,
+            selected_units: None,
+            selected_locations: None,
+            selected_aors: None,
+            or_with_extended_form: None,
+            or_bookmarked: None,
+            or_important: None,
+            or_with_coords: None,
+            search: None,
+            selected_tags: None,
+            selected_networks: None,
+            without_network: None,
+            metadata_cc: None,
+            metadata_sender: None,
+            metadata_receiver: None,
+            metadata_hash: None,
+            only_with_metadata: None,
+            without_metadata: None,
+            include_peleng_locations: None,
+            units_exact_match_only: None,
+            filter_tags_option: None,
+            without_model_tags: None,
+            report_tags_only_this_unit: None,
+        }
+    }
+
+    async fn mk_group_fixture(
+        db: &DatabaseConnection,
+        datasource: &datasource::Model,
+        zone: &sigint_zone::Model,
+        name: &str,
+        master_key: &str,
+        aor_id: i64,
+        is_secret: bool,
+        created_at: NaiveDateTime,
+    ) -> Result<GroupFixture, AppError> {
+        let signal_group = mk_signal_group(
+            db,
+            signal_group::ActiveModel {
+                master_key: Set(master_key.to_string()),
+                name: Set(Some(name.to_string())),
+                datasource_id: Set(Some(datasource.id)),
+                created_at: Set(created_at),
+                is_secret: Set(is_secret),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        let datasource_group = mk_datasource_group(
+            db,
+            datasource_group::ActiveModel {
+                group_master_key: Set(signal_group.master_key.clone()),
+                datasource_id: Set(datasource.id),
+                last_sync_at: Set(created_at),
+                created_at: Set(created_at),
+                name: Set(name.to_string()),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_sigint_zone_datasource(
+            db,
+            sigint_zone_datasource::ActiveModel {
+                sigint_zone_id: Set(zone.id),
+                datasource_id: Set(datasource.id),
+                group_master_key: Set(signal_group.master_key.clone()),
+                created_at: Set(created_at),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_signal_group_aor(
+            db,
+            signal_group_aor::ActiveModel {
+                master_key: Set(signal_group.master_key.clone()),
+                aor_id: Set(aor_id),
+                created_at: Set(created_at),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        Ok(GroupFixture {
+            signal_group,
+            datasource_group,
+        })
+    }
+
+    async fn mk_network_fixture(
+        db: &DatabaseConnection,
+        name: &str,
+        freq: &str,
+        aor_id: i64,
+        active_from: NaiveDateTime,
+    ) -> Result<NetworkFixture, AppError> {
+        let network = mk_sigint_network(
+            db,
+            sigint_network::ActiveModel {
+                name: Set(name.to_string()),
+                location: Set(String::new()),
+                created_at: Set(active_from),
+                updated_at: Set(active_from),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_sigint_network_aor(
+            db,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(network.id),
+                aor_id: Set(aor_id),
+                created_at: Set(active_from),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_sigint_network_freq(
+            db,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                created_at: Set(active_from),
+                active_from: Set(active_from),
+                active_to: Set(None),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        Ok(NetworkFixture { network })
+    }
+
+    async fn mk_analysis_message(
+        db: &DatabaseConnection,
+        label: &str,
+        freq: &str,
+        datetime: NaiveDateTime,
+        groups: &[&GroupFixture],
+        network_ids: &[i64],
+        with_peleng: bool,
+    ) -> Result<signal_message::Model, AppError> {
+        let primary_group = groups.first().context(h!())?;
+        let signal_message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                body: Set(Some(label.to_string())),
+                created_at: Set(datetime),
+                timestamp: Set(Some(datetime)),
+                message_uid: Set(Some(label.to_string())),
+                datasource_group_id: Set(Some(
+                    primary_group.datasource_group.id,
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(signal_message.id),
+                freq: Set(Some(freq.to_string())),
+                date: Set(Some(datetime.date().to_string())),
+                time: Set(Some(datetime.time().format("%H:%M:%S").to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        for group in groups {
+            mk_signal_message_group(
+                db,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(signal_message.id),
+                    group_master_key: Set(Some(
+                        group.signal_group.master_key.clone(),
+                    )),
+                    datasource_group_id: Set(Some(group.datasource_group.id)),
+                    sender: Set(Some(format!("{label}-sender"))),
+                    message_uid: Set(Some(label.to_string())),
+                    created_at: Set(datetime),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+        }
+        for network_id in network_ids {
+            mk_sigint_inbox_item_network(
+                db,
+                sigint_inbox_item_network::ActiveModel {
+                    sigint_inbox_item_id: Set(signal_message.id),
+                    sigint_network_id: Set(*network_id),
+                    created_at: Set(datetime),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+        }
+        if with_peleng {
+            mk_sigint_peleng(
+                db,
+                sigint_peleng::ActiveModel {
+                    source_inbox_item_id: Set(signal_message.id),
+                    lat: Set(48.0),
+                    lng: Set(37.0),
+                    created_at: Set(datetime),
+                    deleted: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+        }
+        Ok(signal_message)
+    }
+
+    async fn mk_rer_analysis_fixture() -> Result<RerAnalysisFixture, AppError> {
+        let env = cleanup().await?;
+        let db = &env.dbx;
+        let created_at = test_dt(2026, 3, 1, 7, 0);
+        let north_aor = find_test_aor(db).await?;
+        let south_aor = mk_aor(
+            db,
+            area_of_responsibility::ActiveModel {
+                name: Set("South AOR".to_string()),
+                left_bound: Set(200.0),
+                right_bound: Set(300.0),
+                is_top_level: Set(true),
+                created_at: Set(created_at),
+                updated_at: Set(created_at),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        let wide_aor = mk_aor(
+            db,
+            area_of_responsibility::ActiveModel {
+                name: Set("Wide AOR".to_string()),
+                left_bound: Set(0.0),
+                right_bound: Set(300.0),
+                is_top_level: Set(true),
+                created_at: Set(created_at),
+                updated_at: Set(created_at),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        let organism = find_test_organism(db).await?;
+        mk_organism_aor(
+            db,
+            organism_aor::ActiveModel {
+                organism_id: Set(organism.id),
+                aor_id: Set(south_aor.id),
+                created_at: Set(created_at),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        let datasource = find_test_datasource(db).await?;
+        let zone = find_test_sigint_zone(db).await?;
+        let alpha = GroupFixture {
+            signal_group: find_test_signal_group(db).await?,
+            datasource_group: find_test_datasource_group(db).await?,
+        };
+        let beta = mk_group_fixture(
+            db,
+            &datasource,
+            &zone,
+            "South Group",
+            "south-group-master-key",
+            south_aor.id,
+            false,
+            created_at,
+        )
+        .await?;
+        let secret_live = mk_group_fixture(
+            db,
+            &datasource,
+            &zone,
+            "Secret Live Group",
+            "secret-live-group-master-key",
+            north_aor.id,
+            true,
+            created_at,
+        )
+        .await?;
+        let secret_empty = mk_group_fixture(
+            db,
+            &datasource,
+            &zone,
+            "Secret Empty Group",
+            "secret-empty-group-master-key",
+            north_aor.id,
+            true,
+            created_at,
+        )
+        .await?;
+        let secret_hidden = mk_group_fixture(
+            db,
+            &datasource,
+            &zone,
+            "Secret Hidden Group",
+            "secret-hidden-group-master-key",
+            north_aor.id,
+            true,
+            created_at,
+        )
+        .await?;
+
+        let login = find_test_login(db).await?;
+        for group in [&secret_live, &secret_empty] {
+            mk_secret_group_user(
+                db,
+                secret_group_user::ActiveModel {
+                    master_key: Set(group.signal_group.master_key.clone()),
+                    login: Set(login.login.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+        }
+
+        let network_wide = mk_network_fixture(
+            db,
+            "Wide Network",
+            "333.3",
+            wide_aor.id,
+            created_at,
+        )
+        .await?;
+        let network_south = mk_network_fixture(
+            db,
+            "South Network",
+            "444.4",
+            south_aor.id,
+            created_at,
+        )
+        .await?;
+
+        mk_analysis_message(
+            db,
+            "msg-alpha",
+            "111.1",
+            test_dt(2026, 3, 1, 10, 0),
+            &[&alpha],
+            &[],
+            false,
+        )
+        .await?;
+        mk_analysis_message(
+            db,
+            "msg-secret-live",
+            "222.2",
+            test_dt(2026, 3, 1, 10, 1),
+            &[&secret_live],
+            &[],
+            false,
+        )
+        .await?;
+        mk_analysis_message(
+            db,
+            "msg-wide-network",
+            "333.3",
+            test_dt(2026, 3, 1, 10, 2),
+            &[&alpha],
+            &[network_wide.network.id],
+            false,
+        )
+        .await?;
+        mk_analysis_message(
+            db,
+            "msg-south-network",
+            "444.4",
+            test_dt(2026, 3, 1, 10, 3),
+            &[&beta],
+            &[network_south.network.id],
+            false,
+        )
+        .await?;
+        mk_analysis_message(
+            db,
+            "msg-multi-group",
+            "555.5",
+            test_dt(2026, 3, 1, 10, 4),
+            &[&alpha, &beta],
+            &[],
+            false,
+        )
+        .await?;
+        mk_analysis_message(
+            db,
+            "msg-peleng",
+            "666.6",
+            test_dt(2026, 3, 1, 10, 5),
+            &[&beta],
+            &[],
+            true,
+        )
+        .await?;
+        mk_analysis_message(
+            db,
+            "msg-south-no-network",
+            "777.7",
+            test_dt(2026, 3, 1, 10, 6),
+            &[&beta],
+            &[],
+            false,
+        )
+        .await?;
+        mk_analysis_message(
+            db,
+            "msg-secret-hidden",
+            "888.8",
+            test_dt(2026, 3, 1, 10, 7),
+            &[&secret_hidden],
+            &[],
+            false,
+        )
+        .await?;
+
+        Ok(RerAnalysisFixture {
+            env,
+            north_aor,
+            south_aor,
+            wide_aor,
+            alpha,
+            beta,
+            secret_live,
+            secret_empty,
+            secret_hidden,
+            network_wide,
+            network_south,
+            since_date_inclusive_ms: test_dt(2026, 3, 1, 8, 0)
+                .and_utc()
+                .timestamp_millis(),
+            till_date_noninclusive_ms: test_dt(2026, 3, 1, 8, 10)
+                .and_utc()
+                .timestamp_millis(),
+        })
+    }
+
+    fn group_counts(groups: Vec<AnalysisStatsGroup>) -> BTreeMap<String, i64> {
+        groups
+            .into_iter()
+            .map(|group| (group.master_key, group.count))
+            .collect()
+    }
+
+    fn freq_counts(freqs: Vec<AnalysisStatsFreq>) -> BTreeMap<String, i64> {
+        freqs
+            .into_iter()
+            .map(|freq| (freq.freq, freq.count))
+            .collect()
+    }
+
+    fn aor_counts(aors: Vec<AnalysisStatsAor>) -> BTreeMap<i64, i64> {
+        aors.into_iter()
+            .map(|aor| (aor.aor_id, aor.count))
+            .collect()
+    }
+
+    fn network_counts(
+        networks: Vec<AnalysisStatsNetwork>,
+    ) -> BTreeMap<i64, i64> {
+        networks
+            .into_iter()
+            .map(|network| (network.network_id, network.count))
+            .collect()
+    }
 
     #[test]
     fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
@@ -1467,6 +2003,421 @@ mod tests {
         assert!(sql.contains("NOT EXISTS"));
         assert!(!sql.contains("sender_id"));
         assert!(!sql.contains("sender_name"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
+        let fixture = mk_rer_analysis_fixture().await.unwrap();
+        let test_identity = mk_test_identity().await.unwrap();
+        let env = Data::from(fixture.env.clone());
+        let req = Json(analysis_stats_req0(&fixture));
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let groups = stats::fetch_groups_for_login(
+            &req.0,
+            &test_identity.login,
+            &env,
+            master_keys.clone(),
+        )
+        .await
+        .unwrap();
+        let groups = include_missing_secret_groups(
+            &fixture.env.dbx,
+            groups,
+            &master_keys,
+        )
+        .await
+        .unwrap();
+        let counts = group_counts(groups);
+
+        assert_eq!(
+            counts.get(&fixture.alpha.signal_group.master_key),
+            Some(&3)
+        );
+        assert_eq!(counts.get(&fixture.beta.signal_group.master_key), Some(&4));
+        assert_eq!(
+            counts.get(&fixture.secret_live.signal_group.master_key),
+            Some(&1)
+        );
+        assert_eq!(
+            counts.get(&fixture.secret_empty.signal_group.master_key),
+            Some(&0)
+        );
+        assert!(!counts
+            .contains_key(&fixture.secret_hidden.signal_group.master_key));
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let env = Data::from(fixture.env.clone());
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_aors = Some(vec![fixture.south_aor.id]);
+        let req = Json(req);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let counts = group_counts(
+            stats::fetch_groups_for_login(
+                &req.0,
+                &test_identity.login,
+                &env,
+                master_keys,
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts.get(&fixture.beta.signal_group.master_key), Some(&4));
+        assert!(!counts.contains_key(&fixture.alpha.signal_group.master_key));
+        assert!(
+            !counts.contains_key(&fixture.secret_empty.signal_group.master_key)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
+        let fixture = mk_rer_analysis_fixture().await.unwrap();
+        let env = Data::from(fixture.env.clone());
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_groups =
+            Some(vec![fixture.alpha.signal_group.master_key.clone()]);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let counts = freq_counts(
+            stats::fetch_freqs_for_login(
+                &req,
+                &test_identity.login,
+                &env,
+                master_keys,
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                ("111.1".to_string(), 1),
+                ("333.3".to_string(), 1),
+                ("555.5".to_string(), 1),
+            ])
+        );
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_groups =
+            Some(vec![fixture.alpha.signal_group.master_key.clone()]);
+        req.selected_aors = Some(vec![fixture.south_aor.id]);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let counts = freq_counts(
+            stats::fetch_freqs_for_login(
+                &req,
+                &test_identity.login,
+                &env,
+                master_keys,
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                ("333.3".to_string(), 1),
+                ("555.5".to_string(), 1),
+            ])
+        );
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.without_network = Some(true);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let counts = freq_counts(
+            stats::fetch_freqs_for_login(
+                &req,
+                &test_identity.login,
+                &env,
+                master_keys,
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                ("111.1".to_string(), 1),
+                ("222.2".to_string(), 1),
+                ("555.5".to_string(), 1),
+                ("666.6".to_string(), 1),
+                ("777.7".to_string(), 1),
+            ])
+        );
+        assert!(!counts.contains_key("888.8"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters()
+    {
+        let fixture = mk_rer_analysis_fixture().await.unwrap();
+        let env = Data::from(fixture.env.clone());
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let req = Json(analysis_stats_req0(&fixture));
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let master_keys_noimport = master_keys.clone();
+        let groups = stats::fetch_groups_for_login(
+            &req.0,
+            &test_identity.login,
+            &env,
+            master_keys_noimport.clone(),
+        )
+        .await
+        .unwrap();
+        let groups = include_missing_secret_groups(
+            &fixture.env.dbx,
+            groups,
+            &master_keys_noimport,
+        )
+        .await
+        .unwrap();
+        let (count_overall, count_selected) = stats::fetch_counts_for_login(
+            &req,
+            &test_identity.login,
+            &fixture.env,
+            master_keys.clone(),
+        )
+        .await
+        .unwrap();
+        let rsp = CountStatsRsp {
+            count_overall,
+            count_selected,
+            groups_count: groups.len() as i64,
+            senders_count: 0,
+            freqs_count: stats::fetch_freqs_for_login(
+                &req.0,
+                &test_identity.login,
+                &env,
+                master_keys.clone(),
+            )
+            .await
+            .unwrap()
+            .len() as i64,
+            posts_count: 0,
+            callsigns_count: 0,
+            units_count: 0,
+            units_exact_matches_count: 0,
+            units_non_exact_matches_count: 0,
+            locations_count: 0,
+            tags_count: 0,
+            aors_count: 0,
+            networks_count: 0,
+        };
+        assert_eq!(rsp.count_overall, 7);
+        assert_eq!(rsp.count_selected, 7);
+        assert_eq!(rsp.groups_count, 4);
+        assert_eq!(rsp.freqs_count, 7);
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_aors = Some(vec![fixture.south_aor.id]);
+        let req = Json(req);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        assert_eq!(
+            stats::fetch_counts_for_login(
+                &req,
+                &test_identity.login,
+                &fixture.env,
+                master_keys,
+            )
+            .await
+            .unwrap()
+            .1,
+            5
+        );
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_aors = Some(vec![fixture.south_aor.id]);
+        req.selected_groups =
+            Some(vec![fixture.alpha.signal_group.master_key.clone()]);
+        let req = Json(req);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        assert_eq!(
+            stats::fetch_counts_for_login(
+                &req,
+                &test_identity.login,
+                &fixture.env,
+                master_keys,
+            )
+            .await
+            .unwrap()
+            .1,
+            2
+        );
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_freqs = Some(vec!["555.5".to_string()]);
+        let req = Json(req);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        assert_eq!(
+            stats::fetch_counts_for_login(
+                &req,
+                &test_identity.login,
+                &fixture.env,
+                master_keys,
+            )
+            .await
+            .unwrap()
+            .1,
+            1
+        );
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.without_network = Some(true);
+        let req = Json(req);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        assert_eq!(
+            stats::fetch_counts_for_login(
+                &req,
+                &test_identity.login,
+                &fixture.env,
+                master_keys,
+            )
+            .await
+            .unwrap()
+            .1,
+            5
+        );
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.or_with_coords = Some(true);
+        let req = Json(req);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        assert_eq!(
+            stats::fetch_counts_for_login(
+                &req,
+                &test_identity.login,
+                &fixture.env,
+                master_keys,
+            )
+            .await
+            .unwrap()
+            .1,
+            1
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
+        let fixture = mk_rer_analysis_fixture().await.unwrap();
+        let env = Data::from(fixture.env.clone());
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_freqs = Some(vec!["444.4".to_string()]);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let counts = aor_counts(
+            stats::fetch_aors_for_login(
+                &req,
+                &test_identity.login,
+                &env,
+                master_keys,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(counts, BTreeMap::from([(fixture.south_aor.id, 1)]));
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_freqs = Some(vec!["333.3".to_string()]);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let counts = aor_counts(
+            stats::fetch_aors_for_login(
+                &req,
+                &test_identity.login,
+                &env,
+                master_keys,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                (fixture.north_aor.id, 1),
+                (fixture.wide_aor.id, 1),
+            ])
+        );
+
+        let test_identity = mk_test_identity().await.unwrap();
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_aors = Some(vec![fixture.south_aor.id]);
+        let master_keys =
+            get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        let counts = network_counts(
+            stats::fetch_networks_for_login(
+                &req,
+                &test_identity.login,
+                &fixture.env.dbx,
+                master_keys,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                (fixture.network_south.network.id, 1),
+                (fixture.network_wide.network.id, 1),
+            ])
+        );
     }
 }
 
