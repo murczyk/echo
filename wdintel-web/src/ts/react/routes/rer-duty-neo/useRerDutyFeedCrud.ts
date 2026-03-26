@@ -90,15 +90,11 @@ export function useRerDutyFeedCrud(
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,
     };
-    let nextState: MessageFeedState[] | null = null;
-    setMessageFeeds((prev) => {
-      if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
-      const next = [...prev, newFeed];
-      nextState = next;
-      return next;
-    });
-    if (nextState) requestPersist(nextState);
-  }, [requestPersist, setMessageFeeds]);
+    if (messageFeeds.length >= MAX_MESSAGE_FEEDS || messageFeeds.some((w) => w.id === id)) return;
+    const next = [...messageFeeds, newFeed];
+    setMessageFeeds(next);
+    requestPersist(next);
+  }, [messageFeeds, requestPersist, setMessageFeeds]);
 
   const removeMessageFeed = useCallback(
     (feedId: string) => {
