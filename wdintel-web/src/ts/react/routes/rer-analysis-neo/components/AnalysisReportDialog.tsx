@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 import { useId } from 'react';
 
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import {
   REPORT_ADJACENT_FREQS_OPTIONS,
   type AnalysisReportState,
@@ -189,7 +190,7 @@ export function AnalysisReportDialog({ aors, downloadInFlight, open, report, onC
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose}>Закрити</Button>
         <Button variant="contained" startIcon={<DownloadOutlinedIcon />} onClick={onDownload} disabled={downloadInFlight}>
           {downloadInFlight ? 'Готуємо...' : 'Завантажити docx/xlsx'}

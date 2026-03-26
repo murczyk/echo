@@ -1,4 +1,5 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 
 type DeleteConfirmDialogProps = {
   open: boolean;
@@ -11,7 +12,7 @@ export function DeleteConfirmDialog({ open, onClose, onConfirm }: DeleteConfirmD
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>Видалити повідомлення?</DialogTitle>
       <DialogContent>Цю дію не можна скасувати.</DialogContent>
-      <DialogActions>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose}>Скасувати</Button>
         <Button color="error" variant="contained" onClick={onConfirm}>
           Видалити
@@ -45,7 +46,7 @@ export function CommentDialog({ open, commentText, onCommentTextChange, onClose,
           className="mt-2 min-w-[300px]"
         />
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose}>Відміна</Button>
         <Button variant="contained" onClick={onSave}>
           Зберегти

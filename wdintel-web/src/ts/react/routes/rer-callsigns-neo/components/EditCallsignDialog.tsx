@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignEditForm } from '../types';
 
@@ -73,7 +74,7 @@ export function EditCallsignDialog({ open, form, units, sources, submitting, err
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, py: 2 }}>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>

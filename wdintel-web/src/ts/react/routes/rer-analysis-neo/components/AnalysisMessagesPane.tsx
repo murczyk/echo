@@ -68,7 +68,7 @@ export function AnalysisMessagesPane({
   }
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 1 }}>
+    <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 0 }}>
       <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
         {messages.map(([id, message]) => (
           <MessageCard

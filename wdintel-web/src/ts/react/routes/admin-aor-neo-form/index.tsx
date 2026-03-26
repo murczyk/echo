@@ -20,7 +20,7 @@ import {
   DeleteAreaOfResponsibilityReq,
   UpdateAreaOfResponsibilityReq,
 } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { FormPageHeader } from '../../components/FormPageHeader';
 import { FormPageLayout } from '../../components/FormPageLayout';
 import { PageErrorState } from '../../components/PageErrorState';

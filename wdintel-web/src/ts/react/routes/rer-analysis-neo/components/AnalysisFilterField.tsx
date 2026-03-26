@@ -16,6 +16,9 @@ export function AnalysisFilterField({ label, options, value, disabled, onChange 
       options={options}
       value={value}
       disabled={disabled}
+      openText="Відкрити"
+      closeText="Закрити"
+      clearText="Очистити"
       onChange={(_event, next) => onChange(next)}
       renderInput={(params) => <TextField {...params} label={label} />}
     />

@@ -1,7 +1,7 @@
 import { Box } from '@mui/material';
 
 import type { InboxMessage, Network, Tag } from '../../../../Bindings';
-import { MessageCardEtalonLocationTime, MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
+import { MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import {
@@ -40,6 +40,7 @@ export type MessageCardProps = {
   onDelete?: () => void;
   onEditDetails?: () => void;
   onToggleTag: (tagId: number) => void;
+  rightHeaderInsetPx?: number;
 };
 
 export function MessageCard({
@@ -65,6 +66,7 @@ export function MessageCard({
   onDelete,
   onEditDetails,
   onToggleTag,
+  rightHeaderInsetPx = 0,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
@@ -84,6 +86,12 @@ export function MessageCard({
     copiedFeedbackId,
     groupName,
     senderName,
+    networkIds,
+    networkDisplayMap,
+    networkMap,
+    etalonNoNetworkLabel,
+    relativeTimeMs,
+    rightInsetPx: rightHeaderInsetPx,
     onBookmark,
     onImportant,
     onComment,
@@ -129,15 +137,6 @@ export function MessageCard({
           </Box>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardEtalonLocationTime
-          compact={compactLayout}
-          networkIds={networkIds}
-          networkDisplayMap={networkDisplayMap}
-          networkMap={networkMap}
-          etalonNoNetworkLabel={etalonNoNetworkLabel}
-          msg={msg}
-          relativeTimeMs={relativeTimeMs}
-        />
         <MessageCardMessageBody compact={compactLayout} msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
       </Box>
     </Box>

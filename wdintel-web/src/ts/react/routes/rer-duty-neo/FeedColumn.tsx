@@ -451,6 +451,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
                   onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
                   onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
+                  rightHeaderInsetPx={12}
                 />
               );
               return card;

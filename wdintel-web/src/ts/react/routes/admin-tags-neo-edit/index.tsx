@@ -20,6 +20,7 @@ import { Info } from '../../components/info';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { Button } from '../../components/mui-customized/button';
 import { createTag, deleteTagKeyword, getTagModelErrors, listTags, updateTag } from '../../services/api/tags';
 import type { TagModelErrorFE } from '../../services/api/tags';
@@ -316,7 +317,7 @@ function KeywordDeleteDialog(props: { open: boolean; onClose: () => void; onConf
     <Dialog open={props.open} onClose={props.onClose}>
       <DialogTitle>Підтвердження видалення</DialogTitle>
       <DialogContent>Видалити ключове слово?</DialogContent>
-      <DialogActions>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button variant="outlined" onClick={props.onClose}>
           Скасувати
         </Button>

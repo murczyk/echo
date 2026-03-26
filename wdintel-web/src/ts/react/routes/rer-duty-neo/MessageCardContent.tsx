@@ -1,5 +1,5 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Box, Button, Link, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Collapse, Link, Stack, Tooltip, Typography } from '@mui/material';
 import { useState } from 'react';
 
 import type { ContentNode, InboxMessage, Network, Tag } from '../../../../Bindings';
@@ -175,97 +175,107 @@ function MessageCardTagChips({
   onToggleTag: (tagId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const compactVisibleCount = 6;
+  const visibleTagCount = 5;
   const tagIds = Object.keys(tagsMap);
-  const visibleTagIds = compact && !expanded ? tagIds.slice(0, compactVisibleCount) : tagIds;
-  const hiddenCount = compact && !expanded ? Math.max(0, tagIds.length - visibleTagIds.length) : 0;
+  const inboxTagList = msg.inboxTags ?? [];
+  const selectedTagIds = tagIds.filter((tagId) => (
+    inboxTagList.length > 0
+      ? inboxTagList.some((tag) => tag.tagId === Number(tagId))
+      : (msg.tags ?? []).includes(Number(tagId))
+  ));
+  const unselectedTagIds = tagIds.filter((tagId) => !selectedTagIds.includes(tagId));
+  const visibleTagIds = [...selectedTagIds, ...unselectedTagIds].slice(0, visibleTagCount);
+  const hiddenTagIds = tagIds.filter((tagId) => !visibleTagIds.includes(tagId));
 
-  return (
-    <Stack spacing={compact ? 0.75 : 0.5} sx={{ minWidth: 0 }}>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-        {visibleTagIds.map((tagId) => {
-        const tag = tagsMap[tagId];
-        const label = tag.label ?? `#${tagId}`;
-        const inboxTagList = msg.inboxTags ?? [];
-        const isSet =
-          inboxTagList.length > 0
-            ? inboxTagList.some((t) => t.tagId === Number(tagId))
-            : (msg.tags ?? []).includes(Number(tagId));
-        const contribs = inboxTagList.filter((t) => t.tagId === Number(tagId));
-        const humanContribs = contribs.filter((t) => !t.model);
-        const botContribs = contribs.filter((t) => t.model);
-        const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
-        const bots = botContribs.map((t) => `${t.model} (${Math.round((t.confidence ?? 0) * 100)}%)`);
-        const tip =
-          isSet &&
-          (humanContribs.length > 0 || botContribs.length > 0) &&
-          [
-            ...(humanLogins.length > 0
-              ? [`Користувачі: ${humanLogins.join(', ')}`]
-              : humanContribs.length > 0
-                ? ['Користувачі: (ваш вибір)']
-                : []),
-            ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
-          ].join('\n');
-        const showBadge = isSet && (humanContribs.length > 0 || botContribs.length > 0);
+  function renderTagChip(tagId: string) {
+    const tag = tagsMap[tagId];
+    const label = tag.label ?? `#${tagId}`;
+    const isSet =
+      inboxTagList.length > 0
+        ? inboxTagList.some((t) => t.tagId === Number(tagId))
+        : (msg.tags ?? []).includes(Number(tagId));
+    const contribs = inboxTagList.filter((t) => t.tagId === Number(tagId));
+    const humanContribs = contribs.filter((t) => !t.model);
+    const botContribs = contribs.filter((t) => t.model);
+    const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
+    const bots = botContribs.map((t) => `${t.model} (${Math.round((t.confidence ?? 0) * 100)}%)`);
+    const tip =
+      isSet &&
+      (humanContribs.length > 0 || botContribs.length > 0) &&
+      [
+        ...(humanLogins.length > 0
+          ? [`Користувачі: ${humanLogins.join(', ')}`]
+          : humanContribs.length > 0
+            ? ['Користувачі: (ваш вибір)']
+            : []),
+        ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
+      ].join('\n');
+    const showBadge = isSet && (humanContribs.length > 0 || botContribs.length > 0);
 
-        return (
-          <Tooltip key={tagId} title={tip} placement="top">
-            <Box component="span" sx={{ position: 'relative', display: 'inline-flex' }}>
-              <PowerChip
-                label={label}
-                selected={isSet}
-                onClick={() => onToggleTag(Number(tagId))}
-                size="small"
-                fontSize="0.875rem"
-                unselectedBackgroundColor="var(--color-background)"
-                unselectedBorderColor="var(--text-color)"
-                unselectedTextColor="var(--text-color)"
-                selectedBackgroundColor="var(--color-tag-selected)"
-                selectedBorderColor="var(--color-border-selected)"
-                selectedTextColor="var(--neutral-900)"
-              />
-              {showBadge ? (
-                <Box
-                  component="span"
-                  sx={{
-                    position: 'absolute',
-                    top: -13,
-                    right: -4,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.5,
-                    px: 0.75,
-                    py: 0.25,
-                    borderRadius: 999,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    bgcolor: 'var(--color-card)',
-                    fontSize: 10,
-                    boxShadow: 1,
-                  }}
-                  aria-hidden
-                >
-                  {botContribs.length > 0 ? (
-                    <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }} title="Боти">
-                      <Box component="i" className="bi bi-robot" />
-                      <span>{botContribs.length}</span>
-                    </Box>
-                  ) : null}
-                  {humanContribs.length > 0 ? (
-                    <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }} title="Користувачі">
-                      <Box component="i" className="bi bi-person-fill" />
-                      <span>{humanContribs.length}</span>
-                    </Box>
-                  ) : null}
+    return (
+      <Tooltip key={tagId} title={tip} placement="top">
+        <Box component="span" sx={{ position: 'relative', display: 'inline-flex' }}>
+          <PowerChip
+            label={label}
+            selected={isSet}
+            onClick={() => onToggleTag(Number(tagId))}
+            size="small"
+            fontSize="0.875rem"
+            unselectedBackgroundColor="var(--color-background)"
+            unselectedBorderColor="var(--text-color)"
+            unselectedTextColor="var(--text-color)"
+            selectedBackgroundColor="var(--color-tag-selected)"
+            selectedBorderColor="var(--color-border-selected)"
+            selectedTextColor="var(--neutral-900)"
+          />
+          {showBadge ? (
+            <Box
+              component="span"
+              sx={{
+                position: 'absolute',
+                top: -13,
+                right: -4,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                px: 0.75,
+                py: 0.25,
+                borderRadius: 999,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: 'var(--color-card)',
+                fontSize: 10,
+                boxShadow: 1,
+              }}
+              aria-hidden
+            >
+              {botContribs.length > 0 ? (
+                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }} title="Боти">
+                  <Box component="i" className="bi bi-robot" />
+                  <span>{botContribs.length}</span>
+                </Box>
+              ) : null}
+              {humanContribs.length > 0 ? (
+                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }} title="Користувачі">
+                  <Box component="i" className="bi bi-person-fill" />
+                  <span>{humanContribs.length}</span>
                 </Box>
               ) : null}
             </Box>
-          </Tooltip>
-        );
-        })}
-      </Box>
-      {compact && tagIds.length > compactVisibleCount ? (
+          ) : null}
+        </Box>
+      </Tooltip>
+    );
+  }
+
+    return (
+    <Stack spacing={compact ? 0.75 : 0.5} sx={{ minWidth: 0 }}>
+      {visibleTagIds.length > 0 ? (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+          {visibleTagIds.map(renderTagChip)}
+        </Box>
+      ) : null}
+      {hiddenTagIds.length > 0 ? (
         <Button
           size="small"
           variant="text"
@@ -282,17 +292,25 @@ function MessageCardTagChips({
           sx={{
             alignSelf: 'flex-start',
             minWidth: 0,
-            px: 0.5,
-            py: 0,
+            px: 0.75,
+            py: 0.5,
+            mt: 1.25,
             color: 'text.secondary',
             textTransform: 'none',
             fontSize: 12,
             lineHeight: 1.2,
           }}
         >
-          {expanded ? 'Згорнути теги' : `Ще ${hiddenCount} тег${hiddenCount === 1 ? '' : hiddenCount < 5 ? 'и' : 'ів'}`}
+          {expanded
+            ? 'Сховати інші теги'
+            : `Ще ${hiddenTagIds.length} тег${hiddenTagIds.length === 1 ? '' : hiddenTagIds.length < 5 ? 'и' : 'ів'}`}
         </Button>
       ) : null}
+      <Collapse in={expanded} timeout="auto" unmountOnExit>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, pt: 0.25 }}>
+          {hiddenTagIds.map(renderTagChip)}
+        </Box>
+      </Collapse>
     </Stack>
   );
 }
@@ -405,7 +423,12 @@ export function MessageCardMessageBody({
 
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
-      <Typography component="div" variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.35 }}>
+      <Typography
+        component="div"
+        variant="body2"
+        className={msg.textMarked && msg.textMarked.length > 0 ? 'text-marked' : undefined}
+        sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.35 }}
+      >
         {textPrimary}
       </Typography>
       {msg.extendedForm != null && msg.extendedForm.trim() !== '' ? (

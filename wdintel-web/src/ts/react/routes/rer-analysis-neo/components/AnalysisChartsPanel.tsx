@@ -1,4 +1,4 @@
-import { Stack } from '@mui/material';
+import { Box, Stack } from '@mui/material';
 
 import type { CorrelatedFreq, FreqDailyActivityCount } from '../../../../../Bindings';
 import type { AnalysisCountItem, AnalysisGroupsActivityPeriod } from '../types';
@@ -32,17 +32,27 @@ export function AnalysisChartsPanel({
   topUnits,
 }: Props) {
   return (
-    <Stack spacing={2}>
-      <AnalysisCountBlock title="Частоти" items={topFreqs} />
-      <AnalysisCountBlock title="Підрозділи" items={topUnits} />
-      <AnalysisCountBlock title="Локації" items={topLocations} />
-      <AnalysisCorrelatedFreqsCard correlatedFreqs={correlatedFreqs} loading={correlatedFreqsLoading} onLoad={onLoadCorrelatedFreqs} />
-      <AnalysisGroupsActivityCard
-        groupsActivity={groupsActivity}
-        loading={groupsActivityLoading}
-        period={groupsActivityPeriod}
-        onLoad={onLoadGroupsActivity}
-      />
+    <Stack spacing={0}>
+      <Box sx={{ pb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <AnalysisCountBlock title="Частоти" items={topFreqs} />
+      </Box>
+      <Box sx={{ py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <AnalysisCountBlock title="Підрозділи" items={topUnits} />
+      </Box>
+      <Box sx={{ py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <AnalysisCountBlock title="Локації" items={topLocations} />
+      </Box>
+      <Box sx={{ py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <AnalysisCorrelatedFreqsCard correlatedFreqs={correlatedFreqs} loading={correlatedFreqsLoading} onLoad={onLoadCorrelatedFreqs} />
+      </Box>
+      <Box sx={{ pt: 2 }}>
+        <AnalysisGroupsActivityCard
+          groupsActivity={groupsActivity}
+          loading={groupsActivityLoading}
+          period={groupsActivityPeriod}
+          onLoad={onLoadGroupsActivity}
+        />
+      </Box>
     </Stack>
   );
 }

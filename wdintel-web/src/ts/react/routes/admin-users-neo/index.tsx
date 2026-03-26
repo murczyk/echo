@@ -19,7 +19,7 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import { useEffect, useMemo, useState } from 'react';
 
 import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -878,7 +878,7 @@ function EditUserDialog(props: {
           </div>
         ) : null}
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button variant="outlined" onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </Button>

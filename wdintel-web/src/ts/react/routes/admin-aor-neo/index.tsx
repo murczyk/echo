@@ -8,7 +8,7 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import { useEffect, useMemo, useState } from 'react';
 
 import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';

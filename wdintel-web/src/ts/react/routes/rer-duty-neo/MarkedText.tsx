@@ -43,6 +43,14 @@ function tokenInteractiveResetStyle(cursor: CSSProperties['cursor']): CSSPropert
   };
 }
 
+function callsignLinkStyle(): CSSProperties {
+  return {
+    color: 'var(--message-callsign-color)',
+    borderBottom: '2px solid var(--message-callsign-color)',
+    textDecoration: 'none',
+  };
+}
+
 function PointToken({
   text,
   hrefAll,
@@ -187,6 +195,7 @@ export function renderMarkedText(
           target="_blank"
           rel="noopener noreferrer"
           className="content-token--ADP hover:cursor-pointer"
+          style={callsignLinkStyle()}
         >
           {displayText}
         </a>

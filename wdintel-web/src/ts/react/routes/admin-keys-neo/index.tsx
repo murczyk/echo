@@ -17,7 +17,7 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import { useEffect, useMemo, useState } from 'react';
 
 import { ListOrganismsReq, Organism } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -457,12 +457,7 @@ function AdminKeysNeoPageBody() {
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
         </DialogContent>
-        <DialogActions
-          sx={{
-            ...STANDARD_DIALOG_ACTIONS_SX,
-            pt: 2,
-          }}
-        >
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
           <Button onClick={closeCreateDialog} disabled={createSaving}>
             Скасувати
           </Button>

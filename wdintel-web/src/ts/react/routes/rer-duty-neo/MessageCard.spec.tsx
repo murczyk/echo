@@ -44,6 +44,7 @@ vi.mock('@mui/material', () => ({
       {endIcon}
     </button>
   ),
+  Collapse: ({ children, in: open }: { children?: ReactNode; in?: boolean }) => (open ? <>{children}</> : null),
   IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <button {...omitMuiLayoutProps(props)}>{children}</button>
   ),
@@ -180,16 +181,23 @@ describe('MessageCard', () => {
     expect(view.container.querySelectorAll('a').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('collapses compact tags behind an expand control and can reveal the rest', async () => {
+  it('shows selected tags first and can reveal the rest on demand', async () => {
     const view = await renderCard();
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Ще 1 тег');
+    expect(view.container.textContent).toContain('переміщення');
+    expect(view.container.textContent).toContain('зв’язок');
+    expect(view.container.textContent).toContain('РЕБ');
+    expect(view.container.textContent).toContain('арта');
+    expect(view.container.textContent).toContain('палітра');
+    expect(view.container.textContent).toContain('Ще 2 теги');
+    expect(view.container.textContent).not.toContain('іфо');
     expect(view.container.textContent).not.toContain('розвідка');
 
-    await click(getButton(view.container, 'Ще 1 тег'));
+    await click(getButton(view.container, 'Ще 2 теги'));
 
-    expect(view.container.textContent).toContain('Згорнути теги');
+    expect(view.container.textContent).toContain('Сховати інші теги');
+    expect(view.container.textContent).toContain('іфо');
     expect(view.container.textContent).toContain('розвідка');
   });
 });

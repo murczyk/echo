@@ -25,12 +25,26 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
   const showLoadingSkeletons = page.loading && page.messages.length === 0 && page.counts == null;
+  const rightSidebarDisabled = !Object.values(page.rightSidebarSections).some(Boolean);
+  const leftColumnWidth = page.leftPanelOpen ? '400px' : '28px';
+  const rightColumnWidth = page.rightPanelOpen ? '360px' : '28px';
+  const gridTemplateColumns = {
+    xs: '1fr',
+    lg: [leftColumnWidth, 'minmax(0,1fr)', rightColumnWidth].join(' '),
+  };
 
   return (
     <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       <PageHeader
         title="Аналіз"
-        actions={<AnalysisToolbar onOpenReport={page.openReport} onReset={page.resetFilters} />}
+        actions={
+          <AnalysisToolbar
+            onOpenReport={page.openReport}
+            onReset={page.resetFilters}
+            onToggleRightSidebarSection={page.toggleRightSidebarSection}
+            rightSidebarSections={page.rightSidebarSections}
+          />
+        }
       />
 
       {page.error ? (
@@ -61,7 +75,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             gap: 2,
             overflow: "hidden",
             alignItems: "stretch",
-            gridTemplateColumns: { xs: "1fr", lg: "320px minmax(0,1fr) 360px" },
+            gridTemplateColumns,
           }}
         >
           {showLoadingSkeletons ? (
@@ -74,11 +88,11 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   <Skeleton variant="text" width={96} height={36} />
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                     <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
-                    <Skeleton variant="rounded" height={40} sx={{ width: { xs: "100%", sm: 160 } }} />
+                    <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
                   </Stack>
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                     <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
-                    <Skeleton variant="rounded" height={40} sx={{ width: { xs: "100%", sm: 160 } }} />
+                    <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
                   </Stack>
                   <Skeleton variant="rounded" height={56} />
                   {Array.from({ length: 8 }).map((_, index) => (
@@ -94,7 +108,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 <Stack spacing={2}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                     <Skeleton variant="text" width={280} height={40} />
-                    <Stack direction="row" spacing={1}>
+                    <Stack direction="row" spacing={2}>
                       <Skeleton variant="rounded" width={92} height={28} />
                       <Skeleton variant="rounded" width={92} height={28} />
                     </Stack>
@@ -107,19 +121,86 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
 
               <Paper
                 variant="outlined"
-                sx={{ p: 2, minHeight: 0, height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}
+                component="aside"
+                aria-label="Аналітична права секція"
+                aria-disabled="true"
+                sx={{
+                  minHeight: 0,
+                  height: "100%",
+                  overflow: "hidden",
+                  display: { xs: 'none', lg: 'flex' },
+                  opacity: 0.55,
+                }}
               >
-                <Stack spacing={1.5}>
-                  <Skeleton variant="text" width={180} height={32} />
-                  {Array.from({ length: 7 }).map((_, index) => (
-                    <Skeleton key={index} variant="rounded" height={88} />
-                  ))}
-                </Stack>
+                <Box
+                  sx={{
+                    width: 28,
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    bgcolor: 'background.paper',
+                    borderRight: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <Box component="i" className="bi bi-chevron-left" sx={{ fontSize: 16, color: 'text.secondary' }} />
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0, p: 2, display: 'flex', flexDirection: 'column' }}>
+                  <Skeleton variant="rounded" sx={{ flex: 1, minHeight: 240 }} />
+                </Box>
               </Paper>
+
             </>
           ) : (
             <>
-              <AnalysisFiltersPanel {...page} />
+              <Paper
+                variant="outlined"
+                component="aside"
+                aria-label="Панель фільтрів"
+                sx={{
+                  minHeight: 0,
+                  height: { xs: 'auto', lg: '100%' },
+                  overflow: 'hidden',
+                  display: { xs: 'block', lg: 'flex' },
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 28,
+                    flexShrink: 0,
+                    borderRight: page.leftPanelOpen ? '1px solid' : 'none',
+                    borderColor: 'divider',
+                    display: { xs: 'none', lg: 'flex' },
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    bgcolor: 'background.paper',
+                    cursor: 'pointer',
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={page.leftPanelOpen ? 'Згорнути панель фільтрів' : 'Розгорнути панель фільтрів'}
+                  onClick={page.toggleLeftPanel}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      page.toggleLeftPanel();
+                    }
+                  }}
+                >
+                  <Box component="i" className={page.leftPanelOpen ? 'bi bi-chevron-left' : 'bi bi-chevron-right'} sx={{ fontSize: 16, color: 'text.secondary' }} />
+                </Box>
+                <Box
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    display: { xs: 'block', lg: page.leftPanelOpen ? 'block' : 'none' },
+                  }}
+                >
+                    <AnalysisFiltersPanel {...page} />
+                </Box>
+              </Paper>
 
               <Paper
                 variant="outlined"
@@ -127,11 +208,20 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 aria-labelledby={page.centerTab === "messages" ? messagesTabId : mapTabId}
                 sx={{ pt: 1, px: 2, pb: 2, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
               >
-                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 1 }}>
+                <Stack spacing={0.75} sx={{ mb: 0.25 }}>
                   <Tabs
                     value={page.centerTab}
                     onChange={(_event, value) => page.setCenterTab(value)}
-                    sx={{ minHeight: 0, ml: -1, "& .MuiTabs-flexContainer": { gap: 1 }, "& .MuiTab-root": { minHeight: 40, px: 1, py: 0.5 }, "& .MuiTab-iconWrapper": { mr: 0.75, mb: 0 } }}
+                    variant="scrollable"
+                    allowScrollButtonsMobile
+                    sx={{
+                      minHeight: 0,
+                      ml: -1,
+                      width: "100%",
+                      "& .MuiTabs-flexContainer": { gap: 1 },
+                      "& .MuiTab-root": { minHeight: 40, px: 1, py: 0.5, whiteSpace: "nowrap" },
+                      "& .MuiTab-iconWrapper": { mr: 0.75, mb: 0 },
+                    }}
                     aria-label="Центральна панель аналізу"
                   >
                     <Tab
@@ -156,17 +246,28 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     spacing={1.5}
                     flexWrap="wrap"
                     alignItems="center"
+                    justifyContent="space-between"
                     role="status"
                     aria-live="polite"
                     aria-label="Поточна статистика вибірки"
+                    sx={{ rowGap: 1, width: '100%' }}
                   >
                     <FormControlLabel
                       control={<Switch checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
                       label="спочатку нові"
                       sx={{ mr: 0, '& .MuiFormControlLabel-label': { fontSize: 14, fontWeight: 500 } }}
                     />
-                    <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
-                    <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
+                    <Stack
+                      direction="row"
+                      spacing={1.5}
+                      flexWrap="wrap"
+                      useFlexGap
+                      justifyContent="flex-end"
+                      sx={{ ml: 'auto', width: { xs: '100%', sm: 'auto' } }}
+                    >
+                      <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
+                      <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
+                    </Stack>
                   </Stack>
                 </Stack>
 
@@ -232,7 +333,61 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 </Box>
               </Paper>
 
-              <AnalysisSidebar {...page} />
+              <Paper
+                variant="outlined"
+                component="aside"
+                aria-label="Аналітична права секція"
+                aria-disabled={rightSidebarDisabled}
+                sx={{
+                  minHeight: 0,
+                  height: { xs: 'auto', lg: '100%' },
+                  overflow: 'hidden',
+                  display: { xs: rightSidebarDisabled ? 'none' : 'block', lg: 'flex' },
+                  opacity: rightSidebarDisabled ? 0.55 : 1,
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 28,
+                    flexShrink: 0,
+                    borderRight: page.rightPanelOpen ? '1px solid' : 'none',
+                    borderColor: 'divider',
+                    display: { xs: 'none', lg: 'flex' },
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    bgcolor: 'background.paper',
+                    cursor: rightSidebarDisabled ? 'not-allowed' : 'pointer',
+                  }}
+                  role="button"
+                  tabIndex={rightSidebarDisabled ? -1 : 0}
+                  aria-label={page.rightPanelOpen ? 'Згорнути праву секцію' : 'Розгорнути праву секцію'}
+                  onClick={rightSidebarDisabled ? undefined : page.toggleRightPanel}
+                  onKeyDown={(event) => {
+                    if (rightSidebarDisabled) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      page.toggleRightPanel();
+                    }
+                  }}
+                >
+                  <Box component="i" className={page.rightPanelOpen ? 'bi bi-chevron-right' : 'bi bi-chevron-left'} sx={{ fontSize: 16, color: 'text.secondary' }} />
+                </Box>
+                <Box
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    display: { xs: 'block', lg: page.rightPanelOpen ? 'block' : 'none' },
+                  }}
+                >
+                    <AnalysisSidebar {...page} />
+                </Box>
+                {!rightSidebarDisabled && !page.rightPanelOpen && showLoadingSkeletons ? (
+                  <Box sx={{ flex: 1, minWidth: 0, p: 2, display: 'flex', flexDirection: 'column' }}>
+                    <Skeleton variant="rounded" sx={{ flex: 1, minHeight: 240 }} />
+                  </Box>
+                ) : null}
+              </Paper>
             </>
           )}
         </Box>

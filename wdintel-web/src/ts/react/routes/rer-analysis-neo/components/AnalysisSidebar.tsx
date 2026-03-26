@@ -1,4 +1,5 @@
 import { Box, Stack } from '@mui/material';
+import { useEffect, useRef } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
@@ -22,6 +23,8 @@ type Props = Pick<
   | 'networkDisplayMap'
   | 'networks'
   | 'newCallsigns'
+  | 'rightSidebarSections'
+  | 'rightPanelOpen'
   | 'summaryRows'
   | 'summaryCallsignsInfo'
   | 'unitsMap'
@@ -64,6 +67,8 @@ export function AnalysisSidebar({
   networks,
   newCallsigns,
   renameSummaryUnit,
+  rightPanelOpen,
+  rightSidebarSections,
   selectOnlyFreq,
   summaryRows,
   summaryCallsignsInfo,
@@ -75,44 +80,110 @@ export function AnalysisSidebar({
   topUnits,
   toggleCallsignGraphNolimit,
 }: Props) {
+  const statsRef = useRef<HTMLDivElement | null>(null);
+  const summaryRef = useRef<HTMLDivElement | null>(null);
+  const callsignsRef = useRef<HTMLDivElement | null>(null);
+  const newCallsignsRef = useRef<HTMLDivElement | null>(null);
+  const prevSectionsRef = useRef(rightSidebarSections);
+
+  useEffect(() => {
+    const prevSections = prevSectionsRef.current;
+    const activatedSection = (Object.keys(rightSidebarSections) as Array<keyof typeof rightSidebarSections>).find(
+      (section) => rightSidebarSections[section] && !prevSections[section],
+    );
+
+    prevSectionsRef.current = rightSidebarSections;
+
+    if (!activatedSection) return;
+
+    const sectionRefMap = {
+      stats: statsRef,
+      summary: summaryRef,
+      callsigns: callsignsRef,
+      newCallsigns: newCallsignsRef,
+    };
+
+    window.requestAnimationFrame(() => {
+      sectionRefMap[activatedSection].current?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    });
+  }, [rightSidebarSections]);
+
   return (
     <Box component="aside" aria-label="Аналітична бічна панель" sx={{ minHeight: 0, height: '100%', overflow: 'auto' }}>
-      <Stack spacing={2}>
-        <AnalysisOverviewCard counts={counts} />
-        <AnalysisChartsPanel
-          correlatedFreqs={correlatedFreqs}
-          correlatedFreqsLoading={correlatedFreqsLoading}
-          groupsActivity={groupsActivity}
-          groupsActivityPeriod={groupsActivityPeriod}
-          groupsActivityLoading={groupsActivityLoading}
-          onLoadCorrelatedFreqs={loadCorrelatedFreqs}
-          onLoadGroupsActivity={loadGroupsActivity}
-          topFreqs={topFreqs}
-          topLocations={topLocations}
-          topUnits={topUnits}
-        />
-        <AnalysisSummaryTableCard
-          callsignInfoMap={summaryCallsignsInfo}
-          networkDisplayMap={networkDisplayMap}
-          networks={networks}
-          onDownloadGeojson={downloadGeojson}
-          onDownloadKmz={downloadKmz}
-          onDownloadXlsx={downloadSummaryXlsx}
-          onRenameUnit={renameSummaryUnit}
-          onSelectFreq={selectOnlyFreq}
-          onShowFreqOnMap={showFreqOnMap}
-          rows={summaryRows}
-          unitsMap={unitsMap}
-        />
-        <AnalysisCallsignsCloudCard items={topCallsigns} />
-        <AnalysisCallsignGraphCard
-          graph={callsignGraph}
-          loading={callsignGraphLoading}
-          nolimit={callsignGraphNolimit}
-          onLoad={loadCallsignGraph}
-          onToggleNolimit={toggleCallsignGraphNolimit}
-        />
-        <AnalysisNewCallsignsCard newCallsigns={newCallsigns} />
+      <Stack
+        spacing={0}
+        sx={{
+          '& > *': {
+            pb: 2,
+            mb: 2,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          },
+          '& > *:last-child': {
+            pb: 0,
+            mb: 0,
+            borderBottom: 'none',
+          },
+          '& .MuiPaper-root': {
+            border: 'none',
+            borderRadius: 0,
+            boxShadow: 'none',
+            backgroundColor: 'transparent',
+          },
+        }}
+      >
+        {rightSidebarSections.stats ? <Box ref={statsRef}><AnalysisOverviewCard counts={counts} /></Box> : null}
+        {rightSidebarSections.stats ? (
+          <Box>
+            <AnalysisChartsPanel
+              correlatedFreqs={correlatedFreqs}
+              correlatedFreqsLoading={correlatedFreqsLoading}
+              groupsActivity={groupsActivity}
+              groupsActivityPeriod={groupsActivityPeriod}
+              groupsActivityLoading={groupsActivityLoading}
+              onLoadCorrelatedFreqs={loadCorrelatedFreqs}
+              onLoadGroupsActivity={loadGroupsActivity}
+              topFreqs={topFreqs}
+              topLocations={topLocations}
+              topUnits={topUnits}
+            />
+          </Box>
+        ) : null}
+        {rightSidebarSections.summary ? (
+          <Box ref={summaryRef}>
+            <AnalysisSummaryTableCard
+              callsignInfoMap={summaryCallsignsInfo}
+              networkDisplayMap={networkDisplayMap}
+              networks={networks}
+              onDownloadGeojson={downloadGeojson}
+              onDownloadKmz={downloadKmz}
+              onDownloadXlsx={downloadSummaryXlsx}
+              onRenameUnit={renameSummaryUnit}
+              onSelectFreq={selectOnlyFreq}
+              onShowFreqOnMap={showFreqOnMap}
+              rows={summaryRows}
+              unitsMap={unitsMap}
+            />
+          </Box>
+        ) : null}
+        {rightSidebarSections.callsigns ? (
+          <Box ref={callsignsRef}>
+            <AnalysisCallsignsCloudCard items={topCallsigns} />
+            <AnalysisCallsignGraphCard
+              graph={callsignGraph}
+              loading={callsignGraphLoading}
+              nolimit={callsignGraphNolimit}
+              visible={rightPanelOpen}
+              onLoad={loadCallsignGraph}
+              onToggleNolimit={toggleCallsignGraphNolimit}
+            />
+          </Box>
+        ) : null}
+        {rightSidebarSections.newCallsigns ? (
+          <Box ref={newCallsignsRef}>
+            <AnalysisNewCallsignsCard newCallsigns={newCallsigns} />
+          </Box>
+        ) : null}
       </Stack>
     </Box>
   );

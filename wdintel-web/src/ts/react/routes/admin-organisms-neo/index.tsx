@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';

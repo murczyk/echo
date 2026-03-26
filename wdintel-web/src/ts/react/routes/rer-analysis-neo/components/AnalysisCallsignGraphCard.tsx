@@ -7,6 +7,7 @@ type Props = {
   graph: NetJsonGraphAndMeta | null;
   loading: boolean;
   nolimit: boolean;
+  visible?: boolean;
   onLoad: () => void;
   onToggleNolimit: () => void;
 };
@@ -50,22 +51,26 @@ function renderGraph(elemId: string, graphDataAndMeta: NetJsonGraphAndMeta) {
   graph.render();
 }
 
-export function AnalysisCallsignGraphCard({ graph, loading, nolimit, onLoad, onToggleNolimit }: Props) {
+export function AnalysisCallsignGraphCard({ graph, loading, nolimit, visible = true, onLoad, onToggleNolimit }: Props) {
   const graphId = useId().replace(/:/g, '-');
   const elementId = `callsign-graph-div-${graphId}`;
   const headingId = `${elementId}-heading`;
 
   useEffect(() => {
-    if (!graph) return;
+    if (!graph || !visible) return;
     let active = true;
     void loadNetjsonScript().then(() => {
       if (!active) return;
       renderGraph(elementId, graph);
+      window.requestAnimationFrame(() => {
+        if (!active) return;
+        renderGraph(elementId, graph);
+      });
     });
     return () => {
       active = false;
     };
-  }, [elementId, graph]);
+  }, [elementId, graph, visible]);
 
   const nodes = graph?.graph.nodes ?? [];
 
@@ -91,6 +96,10 @@ export function AnalysisCallsignGraphCard({ graph, loading, nolimit, onLoad, onT
         <Stack alignItems="center" justifyContent="center" sx={{ height: 260 }}>
           <CircularProgress size={24} />
         </Stack>
+      ) : !graph ? (
+        <Typography variant="body2" color="text.secondary" sx={{ minHeight: 120, display: 'flex', alignItems: 'center' }}>
+          Натисніть «Завантажити», щоб побудувати граф позивних.
+        </Typography>
       ) : (
         <div
           id={elementId}

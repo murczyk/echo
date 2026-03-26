@@ -6,16 +6,9 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  SxProps,
-  Theme,
 } from '@mui/material';
 import type { ReactNode } from 'react';
-
-export const STANDARD_DIALOG_ACTIONS_SX: SxProps<Theme> = {
-  px: 3,
-  pb: 3,
-  pt: 3,
-};
+import { STANDARD_DIALOG_ACTIONS_SX } from './dialogStyles';
 
 type Props = {
   open: boolean;

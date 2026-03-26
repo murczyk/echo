@@ -74,7 +74,21 @@ export function AnalysisFiltersPanel({
         : `точних збігів: ${counts.unitsExactMatchesCount}`;
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, overflow: 'auto', minHeight: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 2,
+        overflow: 'auto',
+        minHeight: 0,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        border: 'none',
+        borderRadius: 0,
+        boxShadow: 'none',
+        backgroundColor: 'transparent',
+      }}
+    >
       <Stack spacing={2}>
         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
           Фільтри
@@ -88,6 +102,7 @@ export function AnalysisFiltersPanel({
             value={queryState.dateFromStr}
             slotProps={{ htmlInput: { min: APP_DATE_INPUT_MIN } }}
             onChange={(event) => updateQueryState({ dateFromStr: event.target.value })}
+            sx={{ flex: 1, minWidth: 0 }}
           />
           <TextField
             label="Час від"
@@ -96,6 +111,7 @@ export function AnalysisFiltersPanel({
             InputLabelProps={{ shrink: true }}
             value={queryState.timeFromStr}
             onChange={(event) => updateQueryState({ timeFromStr: event.target.value })}
+            sx={{ flex: 1, minWidth: 0 }}
           />
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -107,6 +123,7 @@ export function AnalysisFiltersPanel({
             value={queryState.dateToStr}
             slotProps={{ htmlInput: { min: APP_DATE_INPUT_MIN } }}
             onChange={(event) => updateQueryState({ dateToStr: event.target.value })}
+            sx={{ flex: 1, minWidth: 0 }}
           />
           <TextField
             label="Час до"
@@ -115,6 +132,7 @@ export function AnalysisFiltersPanel({
             InputLabelProps={{ shrink: true }}
             value={queryState.timeToStr}
             onChange={(event) => updateQueryState({ timeToStr: event.target.value })}
+            sx={{ flex: 1, minWidth: 0 }}
           />
         </Stack>
         <TextField

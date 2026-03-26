@@ -13,6 +13,7 @@ import { emptyQueryState } from '../helpers';
 const analysisFilterFieldSpy = vi.fn();
 
 vi.mock('@mui/material', () => ({
+  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Checkbox: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
     <input
       type="checkbox"
