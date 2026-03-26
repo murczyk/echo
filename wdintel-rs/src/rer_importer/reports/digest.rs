@@ -1096,7 +1096,7 @@ mod tests {
 
     #[test]
     fn compare_network_rows_keeps_anonymous_networks_last() {
-        let mut network_data = vec![
+        let mut network_data = [
             NetworkRow {
                 network_name: "Невизначена радіомережа 123.4МГц".to_string(),
                 network_location: None,
