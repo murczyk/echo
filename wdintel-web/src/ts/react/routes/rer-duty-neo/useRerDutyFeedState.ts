@@ -123,6 +123,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useEffect(() => {
     if (shortStateReady) return;
+    if (shortStateIdRef.current) return;
     const currentHash = stableStringify(toShortQueryState(messageFeeds));
     if (currentHash !== initialMessageFeedsHashRef.current) {
       blockShortStateHydrationRef.current = true;
@@ -514,6 +515,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [feedIds, feedsNeedingLoadKey, shortStateReady]);
 
   useEffect(() => {
+    if (shortStateIdRef.current && !shortStateReady) return;
     const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();
@@ -521,7 +523,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded]);
+  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded, shortStateReady]);
 
   useEffect(() => {
     const feedId = scrollToEndAfterNewerRef.current;
