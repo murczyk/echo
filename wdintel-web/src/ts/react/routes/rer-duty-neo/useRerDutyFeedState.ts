@@ -100,6 +100,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     requestId: 0,
     hash: null,
   });
+  const shortStateMountedRef = useRef(true);
   const shortStateIdRef = useRef(getShortStateIdFromUrl());
   const initialMessageFeedsHashRef = useRef<string>(stableStringify(toShortQueryState(messageFeeds)));
   const blockShortStateHydrationRef = useRef(false);
@@ -123,7 +124,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useEffect(() => {
     if (shortStateReady) return;
-    if (shortStateIdRef.current) return;
     const currentHash = stableStringify(toShortQueryState(messageFeeds));
     if (currentHash !== initialMessageFeedsHashRef.current) {
       blockShortStateHydrationRef.current = true;
@@ -184,7 +184,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
 
   useEffect(() => {
+    shortStateMountedRef.current = true;
     return () => {
+      shortStateMountedRef.current = false;
       Object.values(arrowResultTimeoutsRef.current).forEach(clearTimeout);
     };
   }, []);
@@ -615,12 +617,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       shortStateRequestRef.current = { requestId, hash: stateHash };
       rerDutyShortStateCreate(queryState)
         .then((rsp) => {
+          if (!shortStateMountedRef.current) return;
           if (shortStateRequestRef.current.requestId !== requestId) return;
           if (shortStateRequestRef.current.hash !== stateHash) return;
           shortStateRef.current = { id: rsp.id, hash: stateHash };
           pushShortStateToUrl(rsp.id);
         })
         .catch((e) => {
+          if (!shortStateMountedRef.current) return;
           if (shortStateRequestRef.current.requestId !== requestId) return;
           if (shortStateRequestRef.current.hash !== stateHash) return;
           setError(e instanceof Error ? e.message : String(e));
