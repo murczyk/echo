@@ -20,6 +20,7 @@ type CallsignLike = Partial<Callsign> & {
   source_id?: number | string | null;
   callsign_additional_sources?: Array<number | string> | null;
   created_at?: number | string;
+  full_name?: string;
   radio_freq?: string | null;
 };
 
@@ -51,6 +52,7 @@ type ListCallsignsReqBody = {
   filter_text: ListCallsignsReq['filterText'];
   filter_callsign: ListCallsignsReq['filterCallsign'];
   filter_position: ListCallsignsReq['filterPosition'];
+  filter_full_name: ListCallsignsReq['filterFullName'];
   filter_comment: ListCallsignsReq['filterComment'];
   filter_unit: ListCallsignsReq['filterUnit'];
   filter_unit_army: ListCallsignsReq['filterUnitArmy'];
@@ -68,6 +70,7 @@ type CreateCallsignReqBody = {
   callsign: CreateCallsignReq['callsign'];
   position: CreateCallsignReq['position'];
   comment: CreateCallsignReq['comment'];
+  full_name: CreateCallsignReq['fullName'];
   unit_id: CreateCallsignReq['unitId'];
   source_id: CreateCallsignReq['sourceId'];
   callsign_additional_sources: CreateCallsignReq['callsignAdditionalSources'];
@@ -80,6 +83,7 @@ type UpdateCallsignReqBody = {
   callsign: Callsign['callsign'];
   position: Callsign['position'];
   comment: Callsign['comment'];
+  full_name: Callsign['fullName'];
   unit_id: Callsign['unitId'];
   active: Callsign['active'];
   source_id: Callsign['sourceId'];
@@ -122,6 +126,7 @@ function normalizeCallsign(raw: CallsignLike | null | undefined): Callsign {
     callsign: raw?.callsign ?? '',
     position: raw?.position ?? '',
     comment: raw?.comment ?? '',
+    fullName: raw?.fullName ?? raw?.full_name ?? '',
     unitId: toNumber(raw?.unitId ?? raw?.unit_id),
     active: raw?.active ?? true,
     sourceId: toNullableNumber(raw?.sourceId ?? raw?.source_id),
@@ -196,6 +201,7 @@ function toListCallsignsReqBody(req: ListCallsignsReq): ListCallsignsReqBody {
     filter_text: req.filterText,
     filter_callsign: req.filterCallsign,
     filter_position: req.filterPosition,
+    filter_full_name: req.filterFullName,
     filter_comment: req.filterComment,
     filter_unit: req.filterUnit,
     filter_unit_army: req.filterUnitArmy,
@@ -215,6 +221,7 @@ function toCreateCallsignReqBody(req: CreateCallsignReq): CreateCallsignReqBody 
     callsign: req.callsign,
     position: req.position,
     comment: req.comment,
+    full_name: req.fullName,
     unit_id: req.unitId,
     source_id: req.sourceId,
     callsign_additional_sources: req.callsignAdditionalSources,
@@ -229,6 +236,7 @@ function toUpdateCallsignReqBody(req: Callsign): UpdateCallsignReqBody {
     callsign: req.callsign,
     position: req.position,
     comment: req.comment,
+    full_name: req.fullName,
     unit_id: req.unitId,
     active: req.active,
     source_id: req.sourceId,

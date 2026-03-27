@@ -42,6 +42,7 @@ pub const RER_REPORT_ERROR_CODE_HEADER_NAME: &str = "x-echo-error-code";
 pub const RER_REPORT_PERMISSION_DENIED_ERROR_CODE: &str = "8125378";
 // for xlsx import
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
+pub const SIGINT_SOURCE_RO_ID: i32 = 2;
 pub const FEATURE_DESKTOP_YOUTUBE_KEYS: bool = true;
 pub const DISCORD_WEBHOOK: &str = "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA";
 pub const FEATURE_CALLSIGNS_ALG2: bool = false;

@@ -28,6 +28,7 @@ struct CallsignExportRow {
     pub id: i64,
     pub callsign: String,
     pub position: String,
+    pub full_name: String,
     pub comment: String,
     pub unit_id: i64,
     pub unit_name: String,
@@ -138,6 +139,7 @@ pub async fn list_callsigns_xlsx(
         "id",
         "callsign",
         "position",
+        "full_name",
         "comment",
         "unit_id",
         "unit_name",
@@ -149,7 +151,8 @@ pub async fn list_callsigns_xlsx(
         "radio_freq",
     ];
     let col_widths = [
-        10.0, 20.0, 24.0, 40.0, 10.0, 34.0, 10.0, 10.0, 20.0, 22.0, 12.0, 16.0,
+        10.0, 20.0, 24.0, 28.0, 40.0, 10.0, 34.0, 10.0, 10.0, 20.0, 22.0, 12.0,
+        16.0,
     ];
 
     let format_bold = Format::new().set_bold();
@@ -167,28 +170,29 @@ pub async fn list_callsigns_xlsx(
         sheet.write_number(row_num, 0, row.id as f64).c(h!())?;
         sheet.write_string(row_num, 1, &row.callsign).c(h!())?;
         sheet.write_string(row_num, 2, &row.position).c(h!())?;
-        sheet.write_string(row_num, 3, &row.comment).c(h!())?;
-        sheet.write_number(row_num, 4, row.unit_id as f64).c(h!())?;
-        sheet.write_string(row_num, 5, &row.unit_name).c(h!())?;
+        sheet.write_string(row_num, 3, &row.full_name).c(h!())?;
+        sheet.write_string(row_num, 4, &row.comment).c(h!())?;
+        sheet.write_number(row_num, 5, row.unit_id as f64).c(h!())?;
+        sheet.write_string(row_num, 6, &row.unit_name).c(h!())?;
         sheet
-            .write_string(row_num, 6, if row.active { "true" } else { "false" })
+            .write_string(row_num, 7, if row.active { "true" } else { "false" })
             .c(h!())?;
         if let Some(source_id) = row.source_id {
-            sheet.write_number(row_num, 7, source_id as f64).c(h!())?;
+            sheet.write_number(row_num, 8, source_id as f64).c(h!())?;
         }
         if let Some(source_name) = row.source_name.as_ref() {
-            sheet.write_string(row_num, 8, source_name).c(h!())?;
+            sheet.write_string(row_num, 9, source_name).c(h!())?;
         }
-        sheet.write_string(row_num, 9, &row.created_at).c(h!())?;
+        sheet.write_string(row_num, 10, &row.created_at).c(h!())?;
         sheet
             .write_string(
                 row_num,
-                10,
+                11,
                 if row.developing { "true" } else { "false" },
             )
             .c(h!())?;
         if let Some(radio_freq) = row.radio_freq.as_ref() {
-            sheet.write_string(row_num, 11, radio_freq).c(h!())?;
+            sheet.write_string(row_num, 12, radio_freq).c(h!())?;
         }
     }
 
@@ -250,6 +254,7 @@ async fn list_callsigns_export_rows(
                 id: callsign.id,
                 callsign: callsign.callsign,
                 position: callsign.position,
+                full_name: callsign.full_name,
                 comment: callsign.comment,
                 unit_id: callsign.unit_id,
                 unit_name: units
@@ -296,6 +301,10 @@ async fn list_callsigns_impl(
                 vec![pattern.clone()],
             ))
             .add(Expr::cust_with_values(
+                "lower(sigint_callsign.full_name collate \"ru-x-icu\") ilike $1",
+                vec![pattern.clone()],
+            ))
+            .add(Expr::cust_with_values(
                 "lower(sigint_callsign.comment collate \"ru-x-icu\") ilike $1",
                 vec![pattern.clone()],
             ))
@@ -318,6 +327,14 @@ async fn list_callsigns_impl(
             callsigns = callsigns.filter(Expr::cust_with_values(
                 "lower(sigint_callsign.position collate \"ru-x-icu\") ilike $1",
                 vec![format!("%{}%", filter_position.to_lowercase())],
+            ));
+        }
+    }
+    if let Some(filter_full_name) = &req.filter_full_name {
+        if !filter_full_name.is_empty() {
+            callsigns = callsigns.filter(Expr::cust_with_values(
+                "lower(sigint_callsign.full_name collate \"ru-x-icu\") ilike $1",
+                vec![format!("%{}%", filter_full_name.to_lowercase())],
             ));
         }
     }
@@ -425,6 +442,7 @@ struct CallsignSeekCursor {
     unit: sigint_unit::Model,
     sort_created_at: chrono::NaiveDateTime,
     sort_position: String,
+    sort_full_name: String,
     sort_comment: String,
     sort_source_name: String,
     sort_radio_freq: String,
@@ -495,6 +513,7 @@ async fn load_callsign_seek_cursor(
     Ok(CallsignSeekCursor {
         sort_created_at: effective_created_at,
         sort_position: callsign.position.clone(),
+        sort_full_name: callsign.full_name.clone(),
         sort_comment: callsign.comment.clone(),
         sort_source_name: source_name,
         sort_radio_freq: normalize_callsign_sort_radio_freq_value(
@@ -608,6 +627,26 @@ fn apply_callsigns_after_cursor(
             ])
             .lt(SimpleExpr::Tuple(vec![
                 cursor.sort_position.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignFullNameAsc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::FullName.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.sort_full_name.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignFullNameDesc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::FullName.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.sort_full_name.clone().into(),
                 cursor.callsign.id.into(),
             ])),
         ),
@@ -750,6 +789,12 @@ fn apply_callsigns_sort(
             .order_by_asc(sigint_callsign::Column::Id),
         ListCallsignsSortBy::CallsignPositionDesc => callsigns
             .order_by_desc(sigint_callsign::Column::Position)
+            .order_by_desc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignFullNameAsc => callsigns
+            .order_by_asc(sigint_callsign::Column::FullName)
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignFullNameDesc => callsigns
+            .order_by_desc(sigint_callsign::Column::FullName)
             .order_by_desc(sigint_callsign::Column::Id),
         ListCallsignsSortBy::CallsignCommentAsc => callsigns
             .order_by_asc(sigint_callsign::Column::Comment)
@@ -976,7 +1021,7 @@ pub async fn create_callsign(
 pub async fn update_callsign(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    req: Json<Callsign>,
+    req: Json<UpdateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
     let user_id = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
@@ -1088,6 +1133,7 @@ pub fn render_callsign(
         id: callsign.id,
         callsign: callsign.callsign,
         position: callsign.position,
+        full_name: callsign.full_name,
         unit_id: callsign.unit_id,
         active: unit.is_none_or(|u| u.active),
         source_id: callsign.source_id,
@@ -1207,12 +1253,40 @@ mod tests {
             callsign: Set(callsign.to_string()),
             position: Set("pos".to_string()),
             comment: Set("comment".to_string()),
+            full_name: Set(String::new()),
             unit_id: Set(unit_id),
             deleted: Set(false),
             created_at: Set(created_at),
             source_id: Set(None),
             developing: Set(false),
             radio_freq: Set(radio_freq.to_string()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_test_callsign_with_full_name(
+        dbx: &DatabaseConnection,
+        unit_id: i64,
+        callsign: &str,
+        full_name: &str,
+        created_at: chrono::NaiveDateTime,
+    ) -> sigint_callsign::Model {
+        sigint_callsign::ActiveModel {
+            callsign: Set(callsign.to_string()),
+            position: Set("pos".to_string()),
+            comment: Set("comment".to_string()),
+            full_name: Set(full_name.to_string()),
+            unit_id: Set(unit_id),
+            deleted: Set(false),
+            created_at: Set(created_at),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(String::new()),
             sigint_origin_id: Set(None),
             original_id: Set(None),
             ..Default::default()
@@ -1233,6 +1307,7 @@ mod tests {
             filter_text: None,
             filter_callsign: None,
             filter_position: None,
+            filter_full_name: None,
             filter_comment: None,
             filter_unit: None,
             filter_unit_army: None,
@@ -1437,5 +1512,42 @@ mod tests {
 
         assert_eq!(callsigns.len(), 1);
         assert_eq!(callsigns[0].callsign, "alpha");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_filters_and_sorts_by_full_name() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit =
+            insert_test_unit(&env.dbx, &login.login, "CallsignTestUnit").await;
+        let now = Utc::now().naive_utc();
+
+        insert_test_callsign_with_full_name(
+            &env.dbx,
+            unit.id,
+            "alpha",
+            "Іваненко Іван Іванович",
+            now,
+        )
+        .await;
+        insert_test_callsign_with_full_name(
+            &env.dbx,
+            unit.id,
+            "bravo",
+            "Бондаренко Петро Петрович",
+            now + Duration::minutes(1),
+        )
+        .await;
+
+        let mut req =
+            list_req(None, Some(100), ListCallsignsSortBy::CallsignFullNameAsc);
+        req.filter_full_name = Some("бондаренко".to_string());
+
+        let callsigns = list_callsigns_impl(&env.dbx, &req).await.unwrap();
+
+        assert_eq!(callsigns.len(), 1);
+        assert_eq!(callsigns[0].callsign, "bravo");
+        assert_eq!(callsigns[0].full_name, "Бондаренко Петро Петрович");
     }
 }

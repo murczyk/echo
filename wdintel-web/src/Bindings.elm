@@ -4839,6 +4839,7 @@ type alias Callsign =
     , callsign : String
     , position : String
     , comment : String
+    , fullName : String
     , unitId : Int
     , active : Bool
     , sourceId : Maybe Int
@@ -4856,6 +4857,7 @@ callsignEncoder struct =
         , ( "callsign", Json.Encode.string struct.callsign )
         , ( "position", Json.Encode.string struct.position )
         , ( "comment", Json.Encode.string struct.comment )
+        , ( "full_name", Json.Encode.string struct.fullName )
         , ( "unit_id", Json.Encode.int struct.unitId )
         , ( "active", Json.Encode.bool struct.active )
         , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
@@ -4901,6 +4903,8 @@ type ListCallsignsSortBy
     | CallsignDesc
     | CallsignPositionAsc
     | CallsignPositionDesc
+    | CallsignFullNameAsc
+    | CallsignFullNameDesc
     | CallsignCommentAsc
     | CallsignCommentDesc
     | CallsignSourceAsc
@@ -4927,6 +4931,12 @@ listCallsignsSortByEncoder enum =
 
         CallsignPositionDesc ->
             Json.Encode.string "CallsignPositionDesc"
+
+        CallsignFullNameAsc ->
+            Json.Encode.string "CallsignFullNameAsc"
+
+        CallsignFullNameDesc ->
+            Json.Encode.string "CallsignFullNameDesc"
 
         CallsignCommentAsc ->
             Json.Encode.string "CallsignCommentAsc"
@@ -4984,6 +4994,7 @@ type alias ListCallsignsReq =
     , filterText : Maybe String
     , filterCallsign : Maybe String
     , filterPosition : Maybe String
+    , filterFullName : Maybe String
     , filterComment : Maybe String
     , filterUnit : Maybe String
     , filterUnitArmy : Maybe String
@@ -5006,6 +5017,7 @@ listCallsignsReqEncoder struct =
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
         , ( "filter_callsign", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterCallsign )
         , ( "filter_position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterPosition )
+        , ( "filter_full_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFullName )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterComment )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
         , ( "filter_unit_army", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnitArmy )
@@ -5115,6 +5127,7 @@ type alias CreateCallsignReq =
     { callsign : String
     , position : String
     , comment : String
+    , fullName : String
     , unitId : Int
     , sourceId : Maybe Int
     , callsignAdditionalSources : List Int
@@ -5129,9 +5142,44 @@ createCallsignReqEncoder struct =
         [ ( "callsign", Json.Encode.string struct.callsign )
         , ( "position", Json.Encode.string struct.position )
         , ( "comment", Json.Encode.string struct.comment )
+        , ( "full_name", Json.Encode.string struct.fullName )
         , ( "unit_id", Json.Encode.int struct.unitId )
         , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
         , ( "callsign_additional_sources", Json.Encode.list Json.Encode.int struct.callsignAdditionalSources )
+        , ( "developing", Json.Encode.bool struct.developing )
+        , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
+        ]
+
+
+type alias UpdateCallsignReq =
+    { id : Int
+    , callsign : String
+    , position : String
+    , comment : String
+    , fullName : Maybe String
+    , unitId : Int
+    , active : Bool
+    , sourceId : Maybe Int
+    , callsignAdditionalSources : List Int
+    , createdAt : Int
+    , developing : Bool
+    , radioFreq : Maybe String
+    }
+
+
+updateCallsignReqEncoder : UpdateCallsignReq -> Json.Encode.Value
+updateCallsignReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "callsign", Json.Encode.string struct.callsign )
+        , ( "position", Json.Encode.string struct.position )
+        , ( "comment", Json.Encode.string struct.comment )
+        , ( "full_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.fullName )
+        , ( "unit_id", Json.Encode.int struct.unitId )
+        , ( "active", Json.Encode.bool struct.active )
+        , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
+        , ( "callsign_additional_sources", Json.Encode.list Json.Encode.int struct.callsignAdditionalSources )
+        , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "developing", Json.Encode.bool struct.developing )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         ]
@@ -10367,6 +10415,7 @@ callsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
@@ -10430,6 +10479,26 @@ listCallsignsSortByDecoder =
                     case x of
                         "CallsignPositionDesc" ->
                             Json.Decode.succeed CallsignPositionDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignFullNameAsc" ->
+                            Json.Decode.succeed CallsignFullNameAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignFullNameDesc" ->
+                            Json.Decode.succeed CallsignFullNameDesc
 
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
@@ -10581,6 +10650,7 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_callsign" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_position" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_full_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army" (Json.Decode.nullable Json.Decode.string)))
@@ -10680,6 +10750,7 @@ createCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_additional_sources" (Json.Decode.list Json.Decode.int)))
