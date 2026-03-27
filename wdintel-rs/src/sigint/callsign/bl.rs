@@ -15,6 +15,17 @@ fn has_callsign_identity(callsign: &str, full_name: &str) -> bool {
     !callsign.trim().is_empty() || !full_name.trim().is_empty()
 }
 
+fn resolve_updated_full_name(
+    current_full_name: &str,
+    req_full_name: &str,
+) -> String {
+    if req_full_name.is_empty() {
+        current_full_name.to_string()
+    } else {
+        req_full_name.to_string()
+    }
+}
+
 fn validate_ro_callsign_radio_freq(
     source_id: Option<i32>,
     radio_freq: Option<&str>,
@@ -185,7 +196,10 @@ pub async fn bl_callsign_update(
     callsign.position = Set(req.position.clone());
     callsign.unit_id = Set(req.unit_id);
     callsign.comment = Set(req.comment.clone());
-    callsign.full_name = Set(req.full_name.clone());
+    callsign.full_name = Set(resolve_updated_full_name(
+        callsign.full_name.as_ref(),
+        &req.full_name,
+    ));
     callsign.source_id = Set(req.source_id);
     callsign.developing = Set(req.developing);
     callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
@@ -549,5 +563,24 @@ mod tests {
         req.radio_freq = Some("145.500".to_string());
 
         assert!(validate_update_callsign_req(&req).is_ok());
+    }
+
+    #[test]
+    fn resolve_updated_full_name_preserves_existing_when_request_is_empty() {
+        assert_eq!(
+            resolve_updated_full_name("Іваненко Іван Іванович", ""),
+            "Іваненко Іван Іванович"
+        );
+    }
+
+    #[test]
+    fn resolve_updated_full_name_uses_request_value_when_present() {
+        assert_eq!(
+            resolve_updated_full_name(
+                "Іваненко Іван Іванович",
+                "Петренко Петро Петрович"
+            ),
+            "Петренко Петро Петрович"
+        );
     }
 }

@@ -750,6 +750,7 @@ update _ shared msg model =
                                     effs =
                                         model.addState
                                             |> EL.toList
+                                            |> List.filter hasAnyAddStateInput
                                             |> List.map
                                                 (\addState ->
                                                     E.sendCmd <|
