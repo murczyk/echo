@@ -65,6 +65,7 @@ pub async fn bl_create_network_callsign(
         callsign: req.callsign.clone(),
         position: req.position.clone().unwrap_or_default(),
         comment: req.comment.clone().unwrap_or_default(),
+        full_name: String::new(),
         unit_id,
         source_id: req.source_id.map(|v| v as i32),
         callsign_additional_sources: vec![],
@@ -313,6 +314,7 @@ pub(crate) async fn ensure_callsign(
             callsign: req.callsign.clone(),
             position: req.position.clone().unwrap_or_default(),
             comment: req.comment.clone().unwrap_or_default(),
+            full_name: String::new(),
             unit_id,
             source_id: req.source_id.map(|v| v as i32),
             callsign_additional_sources: vec![],
@@ -345,11 +347,13 @@ async fn update_network_callsign_linked(
     known_callsign: sigint_callsign::Model,
     clear_position_comment: bool,
 ) -> Result<i64, AppError> {
-    let known_callsing_req = Callsign {
+    let known_callsing_req = UpdateCallsignReq {
         id: known_callsign.id,
         callsign: req.callsign.clone(),
         position: req.position.clone().unwrap_or_default(),
         comment: req.comment.clone().unwrap_or_default(),
+        full_name: Some(known_callsign.full_name.clone()),
+        full_name_is_missing: false,
         unit_id: req.unit_id.unwrap_or(known_callsign.unit_id),
         active: known_callsign.deleted,
         source_id: req.source_id.map(|v| v as i32),

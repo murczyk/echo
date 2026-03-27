@@ -22,7 +22,7 @@ import {
   DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY,
 } from './components/CallsignsTable';
 import { DeleteCallsignDialog } from './components/DeleteCallsignDialog';
-import { EditCallsignDialog } from './components/EditCallsignDialog';
+import { EditCallsignDrawer } from './components/EditCallsignDialog';
 import { UnitStatsSidebar } from './components/UnitStatsSidebar';
 import { DESKTOP_LAYOUT_MIN_WIDTH_PX, getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
@@ -39,6 +39,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
     page.filters.filterText.trim() !== '' ||
     page.filters.filterCallsign.trim() !== '' ||
     page.filters.filterPosition.trim() !== '' ||
+    page.filters.filterFullName.trim() !== '' ||
     page.filters.filterComment.trim() !== '' ||
     page.filters.filterUnit.trim() !== '' ||
     page.selectedSidebarUnitFilter !== null ||
@@ -298,6 +299,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 textFilters={{
                   filterCallsign: page.filters.filterCallsign,
                   filterPosition: page.filters.filterPosition,
+                  filterFullName: page.filters.filterFullName,
                   filterComment: page.filters.filterComment,
                   filterUnit: page.filters.filterUnit,
                 }}
@@ -349,7 +351,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         onSubmit={page.onSubmitAdd}
       />
 
-      <EditCallsignDialog
+      <EditCallsignDrawer
         open={page.editForm !== null}
         form={page.editForm}
         units={page.units}

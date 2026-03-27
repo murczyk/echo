@@ -269,6 +269,7 @@ pub async fn import_unit(
                         .comment
                         .clone()
                         .unwrap_or_default()),
+                    full_name: Set(String::new()),
                     radio_freq: Set(json_callsign
                         .freq
                         .clone()
