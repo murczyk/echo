@@ -302,7 +302,7 @@ export function AddCallsignsDrawer({
           </FormControl>
           <TextField
             label="Швидка вставка TSV"
-            placeholder="TSV: позивний, посада, коментар або позивний, посада, ПІП, коментар"
+            placeholder={'TSV: "позивний<TAB>посада<TAB>коментар" або "позивний<TAB>посада<TAB>ПІП<TAB>коментар"'}
             value={pastedInput}
             size="small"
             multiline
@@ -319,7 +319,7 @@ export function AddCallsignsDrawer({
             }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1, ml: 0 }}>
-            Підтримуються лише формати: позивний, посада, коментар або позивний, посада, ПІП, коментар.
+            Підтримуються лише формати: "позивний&lt;TAB&gt;посада&lt;TAB&gt;коментар" або "позивний&lt;TAB&gt;посада&lt;TAB&gt;ПІП&lt;TAB&gt;коментар".
           </Typography>
 
           <Stack direction={{ xs: "column", sm: "row-reverse" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }}>

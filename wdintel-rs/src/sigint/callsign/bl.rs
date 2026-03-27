@@ -35,13 +35,11 @@ fn has_callsign_create_content(
     comment: &str,
     radio_freq: Option<&str>,
     developing: bool,
-    callsign_additional_sources: &[i64],
 ) -> bool {
     !position.trim().is_empty()
         || !comment.trim().is_empty()
         || radio_freq.is_some_and(|radio_freq| !radio_freq.trim().is_empty())
         || developing
-        || !callsign_additional_sources.is_empty()
 }
 
 fn validate_create_callsign_req(
@@ -56,7 +54,6 @@ fn validate_create_callsign_req(
         &req.comment,
         req.radio_freq.as_deref(),
         req.developing,
-        &req.callsign_additional_sources,
     ) {
         return Ok(());
     }
@@ -343,82 +340,6 @@ pub async fn sync_callsign_additional_source_ids(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn create_req() -> CreateCallsignReq {
-        CreateCallsignReq {
-            callsign: String::new(),
-            position: String::new(),
-            comment: String::new(),
-            full_name: String::new(),
-            unit_id: 0,
-            source_id: None,
-            callsign_additional_sources: vec![],
-            developing: false,
-            radio_freq: None,
-        }
-    }
-
-    fn update_req() -> Callsign {
-        Callsign {
-            id: 1,
-            callsign: String::new(),
-            position: String::new(),
-            comment: String::new(),
-            full_name: String::new(),
-            unit_id: 0,
-            active: true,
-            source_id: None,
-            callsign_additional_sources: vec![],
-            created_at: 0,
-            developing: false,
-            radio_freq: None,
-        }
-    }
-
-    #[test]
-    fn validate_create_callsign_req_allows_identity_or_legacy_content() {
-        let mut req = create_req();
-        req.full_name = "Іваненко Іван Іванович".to_string();
-        assert!(validate_create_callsign_req(&req).is_ok());
-
-        let mut req = create_req();
-        req.comment = "невстановлений оператор".to_string();
-        assert!(validate_create_callsign_req(&req).is_ok());
-    }
-
-    #[test]
-    fn validate_create_callsign_req_rejects_identityless_record_with_only_unit_and_source(
-    ) {
-        let mut req = create_req();
-        req.unit_id = 123;
-        req.source_id = Some(2);
-
-        assert!(validate_create_callsign_req(&req).is_err());
-    }
-
-    #[test]
-    fn validate_create_callsign_req_rejects_empty_record() {
-        assert!(validate_create_callsign_req(&create_req()).is_err());
-    }
-
-    #[test]
-    fn validate_update_callsign_req_allows_identityless_record_with_other_content(
-    ) {
-        let mut req = update_req();
-        req.comment = "невстановлений оператор".to_string();
-
-        assert!(validate_update_callsign_req(&req).is_ok());
-    }
-
-    #[test]
-    fn validate_update_callsign_req_rejects_empty_record() {
-        assert!(validate_update_callsign_req(&update_req()).is_err());
-    }
-}
-
 pub fn match_known_callsigns(
     known_callsigns: Option<&Vec<KnownCallsignRes>>,
     callsign: &str,
@@ -484,4 +405,89 @@ where
         .c(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     Ok(callsign)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_req() -> CreateCallsignReq {
+        CreateCallsignReq {
+            callsign: String::new(),
+            position: String::new(),
+            comment: String::new(),
+            full_name: String::new(),
+            unit_id: 0,
+            source_id: None,
+            callsign_additional_sources: vec![],
+            developing: false,
+            radio_freq: None,
+        }
+    }
+
+    fn update_req() -> Callsign {
+        Callsign {
+            id: 1,
+            callsign: String::new(),
+            position: String::new(),
+            comment: String::new(),
+            full_name: String::new(),
+            unit_id: 0,
+            active: true,
+            source_id: None,
+            callsign_additional_sources: vec![],
+            created_at: 0,
+            developing: false,
+            radio_freq: None,
+        }
+    }
+
+    #[test]
+    fn validate_create_callsign_req_allows_identity_or_legacy_content() {
+        let mut req = create_req();
+        req.full_name = "Іваненко Іван Іванович".to_string();
+        assert!(validate_create_callsign_req(&req).is_ok());
+
+        let mut req = create_req();
+        req.comment = "невстановлений оператор".to_string();
+        assert!(validate_create_callsign_req(&req).is_ok());
+    }
+
+    #[test]
+    fn validate_create_callsign_req_rejects_identityless_record_with_only_unit_and_source(
+    ) {
+        let mut req = create_req();
+        req.unit_id = 123;
+        req.source_id = Some(2);
+
+        assert!(validate_create_callsign_req(&req).is_err());
+    }
+
+    #[test]
+    fn validate_create_callsign_req_rejects_empty_record() {
+        assert!(validate_create_callsign_req(&create_req()).is_err());
+    }
+
+    #[test]
+    fn validate_create_callsign_req_rejects_identityless_record_with_only_confirmation_sources(
+    ) {
+        let mut req = create_req();
+        req.callsign_additional_sources = vec![7, 11];
+
+        assert!(validate_create_callsign_req(&req).is_err());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_allows_identityless_record_with_other_content(
+    ) {
+        let mut req = update_req();
+        req.comment = "невстановлений оператор".to_string();
+
+        assert!(validate_update_callsign_req(&req).is_ok());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_rejects_empty_record() {
+        assert!(validate_update_callsign_req(&update_req()).is_err());
+    }
 }
