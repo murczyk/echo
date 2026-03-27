@@ -3,6 +3,7 @@ import { Alert, Box, Button, Drawer, Stack, Typography } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
+import { CALLSIGN_FORM_HINT, RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR } from '../helpers';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignEditForm } from '../types';
 
@@ -88,7 +89,8 @@ export function EditCallsignDrawer({ open, form, units, sources, submitting, err
                 hintContent={
                   <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>   
                     <Typography variant='caption' color='text.secondary' sx={{ textAlign: 'left' }}>
-                      Обов’язково заповніть "Позивний" або "Коментар"
+                      {CALLSIGN_FORM_HINT}
+                      {form.sourceId === 2 ? ` ${RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}` : ''}
                     </Typography>
                   </Box>
                 }

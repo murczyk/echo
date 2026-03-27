@@ -1816,6 +1816,7 @@ export type Callsign = {
   callsign: string;
   position: string;
   comment: string;
+  fullName: string;
   unitId: number;
   active: boolean;
   sourceId: number | null;
@@ -1841,6 +1842,8 @@ export type ListCallsignsSortBy =
   | 'CallsignDesc'
   | 'CallsignPositionAsc'
   | 'CallsignPositionDesc'
+  | 'CallsignFullNameAsc'
+  | 'CallsignFullNameDesc'
   | 'CallsignCommentAsc'
   | 'CallsignCommentDesc'
   | 'CallsignSourceAsc'
@@ -1865,6 +1868,7 @@ export type ListCallsignsReq = {
   filterText: string | null;
   filterCallsign: string | null;
   filterPosition: string | null;
+  filterFullName: string | null;
   filterComment: string | null;
   filterUnit: string | null;
   filterUnitArmy: string | null;
@@ -1913,6 +1917,7 @@ export type CreateCallsignReq = {
   callsign: string;
   position: string;
   comment: string;
+  fullName: string;
   unitId: number;
   sourceId: number | null;
   callsignAdditionalSources: Array<number>;

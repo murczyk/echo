@@ -16,6 +16,8 @@ pub struct Model {
     pub position: String,
     #[sea_orm(column_type = "Text")]
     pub comment: String,
+    #[sea_orm(column_type = "Text")]
+    pub full_name: String,
     pub unit_id: i64,
     pub deleted: bool,
     pub created_at: DateTime,

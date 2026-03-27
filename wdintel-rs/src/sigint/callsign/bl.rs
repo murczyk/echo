@@ -5,17 +5,103 @@ use crate::types::*;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 
+const CALLSIGN_IDENTITY_REQUIRED_MSG: &str =
+    "Заповніть поле \"Позивний\" або \"ПІП\"";
+
+fn has_callsign_identity(callsign: &str, full_name: &str) -> bool {
+    !callsign.trim().is_empty() || !full_name.trim().is_empty()
+}
+
+fn has_callsign_legacy_content(
+    position: &str,
+    comment: &str,
+    radio_freq: Option<&str>,
+    developing: bool,
+    unit_id: i64,
+    source_id: Option<i32>,
+    callsign_additional_sources: &[i64],
+) -> bool {
+    !position.trim().is_empty()
+        || !comment.trim().is_empty()
+        || radio_freq.is_some_and(|radio_freq| !radio_freq.trim().is_empty())
+        || developing
+        || unit_id > 0
+        || source_id.is_some()
+        || !callsign_additional_sources.is_empty()
+}
+
+fn has_callsign_create_content(
+    position: &str,
+    comment: &str,
+    radio_freq: Option<&str>,
+    developing: bool,
+    callsign_additional_sources: &[i64],
+) -> bool {
+    !position.trim().is_empty()
+        || !comment.trim().is_empty()
+        || radio_freq.is_some_and(|radio_freq| !radio_freq.trim().is_empty())
+        || developing
+        || !callsign_additional_sources.is_empty()
+}
+
+fn validate_create_callsign_req(
+    req: &CreateCallsignReq,
+) -> Result<(), AppError> {
+    if has_callsign_identity(&req.callsign, &req.full_name) {
+        return Ok(());
+    }
+
+    if has_callsign_create_content(
+        &req.position,
+        &req.comment,
+        req.radio_freq.as_deref(),
+        req.developing,
+        &req.callsign_additional_sources,
+    ) {
+        return Ok(());
+    }
+
+    Err(AppError::BL {
+        msg: CALLSIGN_IDENTITY_REQUIRED_MSG.to_string(),
+    })
+}
+
+fn validate_update_callsign_req(req: &Callsign) -> Result<(), AppError> {
+    if has_callsign_identity(&req.callsign, &req.full_name) {
+        return Ok(());
+    }
+
+    if has_callsign_legacy_content(
+        &req.position,
+        &req.comment,
+        req.radio_freq.as_deref(),
+        req.developing,
+        req.unit_id,
+        req.source_id,
+        &req.callsign_additional_sources,
+    ) {
+        return Ok(());
+    }
+
+    Err(AppError::BL {
+        msg: CALLSIGN_IDENTITY_REQUIRED_MSG.to_string(),
+    })
+}
+
 pub async fn bl_callsign_create(
     req: &CreateCallsignReq,
     user_id: &str,
     txn: &DatabaseTransaction,
 ) -> Result<sigint_callsign::Model, AppError> {
+    validate_create_callsign_req(req)?;
+
     let callsign = sigint_callsign::ActiveModel {
         id: NotSet,
         callsign: Set(req.callsign.clone().trim().to_lowercase()),
         position: Set(req.position.clone()),
         unit_id: Set(req.unit_id),
         comment: Set(req.comment.clone()),
+        full_name: Set(req.full_name.clone()),
         deleted: Set(false),
         source_id: Set(req.source_id),
         created_at: NotSet,
@@ -68,6 +154,7 @@ pub async fn bl_callsign_update(
     txn: &DatabaseTransaction,
 ) -> Result<sigint_callsign::Model, AppError> {
     let callsign = find_callsign(txn, req.id).await.context(h!())?;
+    validate_update_callsign_req(req)?;
     let callsign_json_old = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(txn)
@@ -79,6 +166,7 @@ pub async fn bl_callsign_update(
     callsign.position = Set(req.position.clone());
     callsign.unit_id = Set(req.unit_id);
     callsign.comment = Set(req.comment.clone());
+    callsign.full_name = Set(req.full_name.clone());
     callsign.source_id = Set(req.source_id);
     callsign.developing = Set(req.developing);
     callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
@@ -253,6 +341,82 @@ pub async fn sync_callsign_additional_source_ids(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_req() -> CreateCallsignReq {
+        CreateCallsignReq {
+            callsign: String::new(),
+            position: String::new(),
+            comment: String::new(),
+            full_name: String::new(),
+            unit_id: 0,
+            source_id: None,
+            callsign_additional_sources: vec![],
+            developing: false,
+            radio_freq: None,
+        }
+    }
+
+    fn update_req() -> Callsign {
+        Callsign {
+            id: 1,
+            callsign: String::new(),
+            position: String::new(),
+            comment: String::new(),
+            full_name: String::new(),
+            unit_id: 0,
+            active: true,
+            source_id: None,
+            callsign_additional_sources: vec![],
+            created_at: 0,
+            developing: false,
+            radio_freq: None,
+        }
+    }
+
+    #[test]
+    fn validate_create_callsign_req_allows_identity_or_legacy_content() {
+        let mut req = create_req();
+        req.full_name = "Іваненко Іван Іванович".to_string();
+        assert!(validate_create_callsign_req(&req).is_ok());
+
+        let mut req = create_req();
+        req.comment = "невстановлений оператор".to_string();
+        assert!(validate_create_callsign_req(&req).is_ok());
+    }
+
+    #[test]
+    fn validate_create_callsign_req_rejects_identityless_record_with_only_unit_and_source(
+    ) {
+        let mut req = create_req();
+        req.unit_id = 123;
+        req.source_id = Some(2);
+
+        assert!(validate_create_callsign_req(&req).is_err());
+    }
+
+    #[test]
+    fn validate_create_callsign_req_rejects_empty_record() {
+        assert!(validate_create_callsign_req(&create_req()).is_err());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_allows_identityless_record_with_other_content(
+    ) {
+        let mut req = update_req();
+        req.comment = "невстановлений оператор".to_string();
+
+        assert!(validate_update_callsign_req(&req).is_ok());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_rejects_empty_record() {
+        assert!(validate_update_callsign_req(&update_req()).is_err());
+    }
 }
 
 pub fn match_known_callsigns(

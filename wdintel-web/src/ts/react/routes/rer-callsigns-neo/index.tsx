@@ -39,6 +39,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
     page.filters.filterText.trim() !== '' ||
     page.filters.filterCallsign.trim() !== '' ||
     page.filters.filterPosition.trim() !== '' ||
+    page.filters.filterFullName.trim() !== '' ||
     page.filters.filterComment.trim() !== '' ||
     page.filters.filterUnit.trim() !== '' ||
     page.selectedSidebarUnitFilter !== null ||
@@ -298,6 +299,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 textFilters={{
                   filterCallsign: page.filters.filterCallsign,
                   filterPosition: page.filters.filterPosition,
+                  filterFullName: page.filters.filterFullName,
                   filterComment: page.filters.filterComment,
                   filterUnit: page.filters.filterUnit,
                 }}

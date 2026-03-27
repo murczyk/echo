@@ -1,4 +1,4 @@
-module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, cellsToTriples, mkAddState, page, processTabDelimitedInput)
+module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, mkAddState, page, processTabDelimitedInput)
 
 import Api
 import Auth
@@ -247,6 +247,7 @@ type Msg
 type alias AddState =
     { inpCallsign : String
     , inpPosition : String
+    , inpFullName : String
     , inpComment : String
     , inpDeveloping : Bool
     , inpRadioFreq : String
@@ -256,6 +257,7 @@ type alias AddState =
 type alias EditCallsignState =
     { inpCallsign : String
     , inpPosition : String
+    , inpFullName : String
     , inpComment : String
     , inpUnitId : Int
     , inpUnitSelState : Select.State
@@ -268,7 +270,12 @@ type alias EditCallsignState =
 
 initAddState : Maybe String -> AddState
 initAddState mCallsignName =
-    { inpCallsign = Maybe.withDefault "" mCallsignName, inpPosition = "", inpComment = "", inpDeveloping = False, inpRadioFreq = "" }
+    { inpCallsign = Maybe.withDefault "" mCallsignName, inpPosition = "", inpFullName = "", inpComment = "", inpDeveloping = False, inpRadioFreq = "" }
+
+
+quickPasteTsvFormatError : String
+quickPasteTsvFormatError =
+    "Швидка вставка підтримує лише TSV-формат: позивний, посада, коментар або позивний, посада, ПІП, коментар"
 
 
 
@@ -363,6 +370,7 @@ buildListCallsignsReq model params =
     , filterText = Nothing
     , filterCallsign = Just model.filterCallsign
     , filterPosition = Just model.filterPosition
+    , filterFullName = Nothing
     , filterComment = Just model.filterComment
     , filterUnit = Just model.filterUnit
     , filterUnitArmy = Nothing
@@ -535,27 +543,37 @@ update _ shared msg model =
         AddStateMsg pos state ->
             let
                 isTabDelimitedInput =
-                    pos
-                        == 0
-                        && String.contains "\t" state.inpCallsign
-                        || String.contains "\n" state.inpCallsign
+                    pos == 0 && (String.contains "\t" state.inpCallsign || String.contains "\n" state.inpCallsign)
 
-                triples : List AddState
-                triples =
+                parseResult : Result String (List AddState)
+                parseResult =
                     if isTabDelimitedInput then
                         processTabDelimitedInput state.inpCallsign
-
                     else
-                        []
+                        Ok []
 
                 addState =
-                    if pos > 0 || triples == [] then
-                        EL.setAtPos pos state model.addState
+                    case parseResult of
+                        Ok parsedRows ->
+                            if pos > 0 || parsedRows == [] then
+                                EL.setAtPos pos state model.addState
 
-                    else
-                        triples |> EL.fromList
+                            else
+                                parsedRows |> EL.fromList
+
+                        Err _ ->
+                            EL.setAtPos pos state model.addState
             in
-            ( { model | addState = addState }
+            ( { model
+                | addState = addState
+                , validationError =
+                    case parseResult of
+                        Err err ->
+                            Just err
+
+                        Ok _ ->
+                            Nothing
+              }
             , E.none
             )
 
@@ -666,6 +684,7 @@ update _ shared msg model =
                                                         { callsign = addState.inpCallsign
                                                         , position = addState.inpPosition
                                                         , comment = addState.inpComment
+                                                        , fullName = addState.inpFullName
                                                         , unitId = unitId
                                                         , sourceId = Just sourceId
                                                         , callsignAdditionalSources = []
@@ -703,6 +722,7 @@ update _ shared msg model =
                             Just
                                 { inpCallsign = callsign.callsign
                                 , inpPosition = callsign.position
+                                , inpFullName = callsign.fullName
                                 , inpComment = callsign.comment
                                 , inpUnitId = callsign.unitId
                                 , inpSourceId = callsign.sourceId
@@ -761,6 +781,7 @@ update _ shared msg model =
                                         , callsign = editState.inpCallsign
                                         , position = editState.inpPosition
                                         , comment = editState.inpComment
+                                        , fullName = editState.inpFullName
                                         , unitId = editState.inpUnitId
                                         , sourceId = editState.inpSourceId
                                         , callsignAdditionalSources = []
@@ -1225,6 +1246,7 @@ update _ shared msg model =
                     Just
                         { inpCallsign = callsign.callsign
                         , inpPosition = callsign.position
+                        , inpFullName = callsign.fullName
                         , inpComment = callsign.comment
                         , inpUnitId = callsign.unitId
                         , inpSourceId = callsign.sourceId
@@ -1269,6 +1291,7 @@ update _ shared msg model =
                                         , callsign = editState.inpCallsign
                                         , position = editState.inpPosition
                                         , comment = editState.inpComment
+                                        , fullName = editState.inpFullName
                                         , unitId = editState.inpUnitId
                                         , sourceId = editState.inpSourceId
                                         , callsignAdditionalSources = []
@@ -1678,6 +1701,18 @@ editSidebarContent model shared _ =
                                 ]
                             , div []
                                 [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
+                                    [ text "ПІП" ]
+                                , input
+                                    [ class "form-input w-full"
+                                    , type_ "text"
+                                    , placeholder "ПІП"
+                                    , value editState.inpFullName
+                                    , onInput <| EditCallsignMsg << (\v -> { editState | inpFullName = v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
                                     [ text "Коментар" ]
                                 , textarea
                                     [ class "form-input w-full"
@@ -1865,6 +1900,17 @@ contentBlock shared model user =
                         , placeholder "Посада"
                         , onInput <| AddStateMsg pos << (\v -> { addState | inpPosition = v })
                         , value addState.inpPosition
+                        ]
+                        []
+                    ]
+                , div [ class "col-span-3" ]
+                    [ input
+                        [ class "form-input w-full"
+                        , Attr.disabled (not hasEditorRole)
+                        , type_ "text"
+                        , placeholder "ПІП"
+                        , onInput <| AddStateMsg pos << (\v -> { addState | inpFullName = v })
+                        , value addState.inpFullName
                         ]
                         []
                     ]
@@ -2369,48 +2415,67 @@ mkAddState : String -> String -> String -> AddState
 mkAddState a b c =
     { inpCallsign = String.trim a
     , inpPosition = String.trim b
+    , inpFullName = ""
     , inpComment = String.trim c
     , inpDeveloping = False
     , inpRadioFreq = ""
     }
 
 
-cellsToTriples : List String -> List AddState
-cellsToTriples cells =
-    case cells of
-        a :: b :: c :: rest ->
-            mkAddState a b c :: cellsToTriples rest
+mkAddStateWithFullName : String -> String -> String -> String -> AddState
+mkAddStateWithFullName callsign position fullName comment =
+    { inpCallsign = String.trim callsign
+    , inpPosition = String.trim position
+    , inpFullName = String.trim fullName
+    , inpComment = String.trim comment
+    , inpDeveloping = False
+    , inpRadioFreq = ""
+    }
 
-        a :: b :: [] ->
-            [ mkAddState a b "" ]
-
-        a :: [] ->
-            [ mkAddState a "" "" ]
-
-        [] ->
-            []
-
-
-processTabDelimitedInput : String -> List AddState
+processTabDelimitedInput : String -> Result String (List AddState)
 processTabDelimitedInput input =
-    input
-        |> String.trimRight
-        |> String.lines
-        |> List.concatMap
-            (\line ->
-                let
-                    cells =
-                        String.split "\t" line
-                in
-                case cells of
-                    -- Exact triple
-                    [ a, b, c ] ->
-                        [ mkAddState a b c ]
+    let
+        stripTrailingLineBreaks value =
+            if String.endsWith "\r\n" value then
+                stripTrailingLineBreaks (String.dropRight 2 value)
 
-                    -- Anything else: treat as a flat sequence of cells to be chunked into triples
-                    _ ->
-                        cellsToTriples cells
+            else if String.endsWith "\n" value || String.endsWith "\r" value then
+                stripTrailingLineBreaks (String.dropRight 1 value)
+
+            else
+                value
+
+        parseLine line =
+            let
+                cells =
+                    String.split "\t" line
+            in
+            case cells of
+                [ a, b, c ] ->
+                    Ok [ mkAddState a b c ]
+
+                [ a, b, c, d ] ->
+                    Ok [ mkAddStateWithFullName a b c d ]
+
+                _ ->
+                    Err quickPasteTsvFormatError
+    in
+    input
+        |> stripTrailingLineBreaks
+        |> String.lines
+        |> List.foldl
+            (\line acc ->
+                case ( acc, parseLine line ) of
+                    ( Ok rows, Ok parsedRows ) ->
+                        Ok (rows ++ parsedRows)
+
+                    ( Err err, _ ) ->
+                        Err err
+
+                    ( _, Err err ) ->
+                        Err err
             )
+            (Ok [])
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg

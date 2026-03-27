@@ -12,10 +12,10 @@ import {
 } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
-import { toUpperCaseCallsign } from '../helpers';
+import { RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, toUpperCaseCallsign } from '../helpers';
 import type { CallsignDraftRow, CallsignEditForm } from '../types';
 
-type CommonFormValue = Pick<CallsignDraftRow, 'callsign' | 'position' | 'comment' | 'developing' | 'radioFreq'> & {
+type CommonFormValue = Pick<CallsignDraftRow, 'callsign' | 'position' | 'fullName' | 'comment' | 'developing' | 'radioFreq'> & {
   unitId?: number;
   sourceId?: number | null;
 };
@@ -122,6 +122,15 @@ export function CallsignFormFields<T extends CommonFormValue>({
       </Stack>
 
       <TextField
+        label="ПІП"
+        value={value.fullName}
+        onChange={(event) => onChange({ ...value, fullName: event.target.value })}
+        disabled={disabled}
+        fullWidth
+        size={compact ? 'small' : 'medium'}
+      />
+
+      <TextField
         label="Коментар"
         value={value.comment}
         onChange={(event) => onChange({ ...value, comment: event.target.value })}
@@ -133,15 +142,20 @@ export function CallsignFormFields<T extends CommonFormValue>({
       />
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={spacing} alignItems={{ md: 'center' }}>
-        <TextField
-          label="Частота"
-          value={value.radioFreq}
-          onChange={(event) => onChange({ ...value, radioFreq: event.target.value })}
-          disabled={disabled}
-          fullWidth
-          size={compact ? 'small' : 'medium'}
-          placeholder="Напр. 145.500"
-        />
+        <FormControl fullWidth size={compact ? 'small' : 'medium'}>
+          <TextField
+            label="Частота"
+            value={value.radioFreq}
+            onChange={(event) => onChange({ ...value, radioFreq: event.target.value })}
+            disabled={disabled}
+            fullWidth
+            size={compact ? 'small' : 'medium'}
+            placeholder="Напр. 145.500"
+          />
+          {value.sourceId === 2 ? (
+            <FormHelperText sx={{ ml: 0 }}>{RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}</FormHelperText>
+          ) : null}
+        </FormControl>
         <FormControlLabel
           control={
             <Checkbox

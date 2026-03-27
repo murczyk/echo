@@ -9,6 +9,8 @@ pub struct Callsign {
     pub callsign: String,
     pub position: String,
     pub comment: String,
+    #[serde(default)]
+    pub full_name: String,
     pub unit_id: i64,
     pub active: bool,
     pub source_id: Option<i32>,
@@ -28,6 +30,8 @@ pub enum ListCallsignsSortBy {
     CallsignDesc,
     CallsignPositionAsc,
     CallsignPositionDesc,
+    CallsignFullNameAsc,
+    CallsignFullNameDesc,
     CallsignCommentAsc,
     CallsignCommentDesc,
     CallsignSourceAsc,
@@ -58,6 +62,7 @@ pub struct ListCallsignsReq {
     pub filter_text: Option<String>,
     pub filter_callsign: Option<String>,
     pub filter_position: Option<String>,
+    pub filter_full_name: Option<String>,
     pub filter_comment: Option<String>,
     pub filter_unit: Option<String>,
     pub filter_unit_army: Option<String>,
@@ -86,6 +91,8 @@ pub struct CreateCallsignReq {
     pub callsign: String,
     pub position: String,
     pub comment: String,
+    #[serde(default)]
+    pub full_name: String,
     pub unit_id: i64,
     pub source_id: Option<i32>,
     #[serde(default)]
