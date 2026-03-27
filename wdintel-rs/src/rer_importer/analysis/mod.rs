@@ -33,6 +33,7 @@ pub mod geojson;
 pub mod kmz;
 pub mod search;
 pub mod stats;
+#[cfg(test)]
 mod tests;
 
 pub fn filter_selected_groups<Q>(
