@@ -1021,7 +1021,7 @@ pub async fn create_callsign(
 pub async fn update_callsign(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    req: Json<Callsign>,
+    req: Json<UpdateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
     let user_id = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")

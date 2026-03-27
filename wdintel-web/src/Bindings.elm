@@ -5151,6 +5151,40 @@ createCallsignReqEncoder struct =
         ]
 
 
+type alias UpdateCallsignReq =
+    { id : Int
+    , callsign : String
+    , position : String
+    , comment : String
+    , fullName : Maybe String
+    , unitId : Int
+    , active : Bool
+    , sourceId : Maybe Int
+    , callsignAdditionalSources : List Int
+    , createdAt : Int
+    , developing : Bool
+    , radioFreq : Maybe String
+    }
+
+
+updateCallsignReqEncoder : UpdateCallsignReq -> Json.Encode.Value
+updateCallsignReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "callsign", Json.Encode.string struct.callsign )
+        , ( "position", Json.Encode.string struct.position )
+        , ( "comment", Json.Encode.string struct.comment )
+        , ( "full_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.fullName )
+        , ( "unit_id", Json.Encode.int struct.unitId )
+        , ( "active", Json.Encode.bool struct.active )
+        , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
+        , ( "callsign_additional_sources", Json.Encode.list Json.Encode.int struct.callsignAdditionalSources )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        , ( "developing", Json.Encode.bool struct.developing )
+        , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
+        ]
+
+
 type alias CreateNetworkCallsignReq =
     { networkId : Int
     , callsign : String

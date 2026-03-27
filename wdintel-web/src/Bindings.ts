@@ -1925,6 +1925,21 @@ export type CreateCallsignReq = {
   radioFreq: string | null;
 };
 
+export type UpdateCallsignReq = {
+  id: number;
+  callsign: string;
+  position: string;
+  comment: string;
+  fullName: string | null;
+  unitId: number;
+  active: boolean;
+  sourceId: number | null;
+  callsignAdditionalSources: Array<number>;
+  createdAt: number;
+  developing: boolean;
+  radioFreq: string | null;
+};
+
 export type CreateNetworkCallsignReq = {
   networkId: number;
   callsign: string;

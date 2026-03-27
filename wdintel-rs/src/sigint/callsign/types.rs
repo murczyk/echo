@@ -1,4 +1,5 @@
 use elm_rs::{Elm, ElmDecode, ElmEncode};
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -20,6 +21,71 @@ pub struct Callsign {
     pub developing: bool,
     /// Set when source_id points to "radio" (id=2)
     pub radio_freq: Option<String>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Debug, Serialize, PartialEq, Clone)]
+pub struct UpdateCallsignReq {
+    pub id: i64,
+    pub callsign: String,
+    pub position: String,
+    pub comment: String,
+    pub full_name: Option<String>,
+    #[serde(skip)]
+    pub full_name_is_missing: bool,
+    pub unit_id: i64,
+    pub active: bool,
+    pub source_id: Option<i32>,
+    #[serde(default)]
+    pub callsign_additional_sources: Vec<i64>,
+    pub created_at: i64,
+    pub developing: bool,
+    /// Set when source_id points to "radio" (id=2)
+    pub radio_freq: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateCallsignReqRaw {
+    id: i64,
+    callsign: String,
+    position: String,
+    comment: String,
+    full_name: Option<String>,
+    unit_id: i64,
+    active: bool,
+    source_id: Option<i32>,
+    #[serde(default)]
+    callsign_additional_sources: Vec<i64>,
+    created_at: i64,
+    developing: bool,
+    radio_freq: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for UpdateCallsignReq {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let full_name_is_missing = value.get("full_name").is_none();
+        let raw = UpdateCallsignReqRaw::deserialize(value)
+            .map_err(serde::de::Error::custom)?;
+
+        Ok(Self {
+            id: raw.id,
+            callsign: raw.callsign,
+            position: raw.position,
+            comment: raw.comment,
+            full_name: raw.full_name,
+            full_name_is_missing,
+            unit_id: raw.unit_id,
+            active: raw.active,
+            source_id: raw.source_id,
+            callsign_additional_sources: raw.callsign_additional_sources,
+            created_at: raw.created_at,
+            developing: raw.developing,
+            radio_freq: raw.radio_freq,
+        })
+    }
 }
 
 #[derive(

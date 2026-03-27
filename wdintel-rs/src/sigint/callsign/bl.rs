@@ -15,14 +15,14 @@ fn has_callsign_identity(callsign: &str, full_name: &str) -> bool {
     !callsign.trim().is_empty() || !full_name.trim().is_empty()
 }
 
-fn resolve_updated_full_name(
-    current_full_name: &str,
-    req_full_name: &str,
-) -> String {
-    if req_full_name.is_empty() {
-        current_full_name.to_string()
+fn effective_update_full_name<'a>(
+    req: &'a UpdateCallsignReq,
+    current_full_name: &'a str,
+) -> &'a str {
+    if req.full_name_is_missing {
+        current_full_name
     } else {
-        req_full_name.to_string()
+        req.full_name.as_deref().unwrap_or("")
     }
 }
 
@@ -94,10 +94,16 @@ fn validate_create_callsign_req(
     })
 }
 
-fn validate_update_callsign_req(req: &Callsign) -> Result<(), AppError> {
+fn validate_update_callsign_req(
+    req: &UpdateCallsignReq,
+    current_full_name: &str,
+) -> Result<(), AppError> {
     validate_ro_callsign_radio_freq(req.source_id, req.radio_freq.as_deref())?;
 
-    if has_callsign_identity(&req.callsign, &req.full_name) {
+    if has_callsign_identity(
+        &req.callsign,
+        effective_update_full_name(req, current_full_name),
+    ) {
         return Ok(());
     }
 
@@ -179,12 +185,12 @@ pub async fn bl_callsign_create(
 }
 
 pub async fn bl_callsign_update(
-    req: &Callsign,
+    req: &UpdateCallsignReq,
     user_id: &str,
     txn: &DatabaseTransaction,
 ) -> Result<sigint_callsign::Model, AppError> {
     let callsign = find_callsign(txn, req.id).await.context(h!())?;
-    validate_update_callsign_req(req)?;
+    validate_update_callsign_req(req, &callsign.full_name)?;
     let callsign_json_old = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(txn)
@@ -196,10 +202,9 @@ pub async fn bl_callsign_update(
     callsign.position = Set(req.position.clone());
     callsign.unit_id = Set(req.unit_id);
     callsign.comment = Set(req.comment.clone());
-    callsign.full_name = Set(resolve_updated_full_name(
-        callsign.full_name.as_ref(),
-        &req.full_name,
-    ));
+    if !req.full_name_is_missing {
+        callsign.full_name = Set(req.full_name.clone().unwrap_or_default());
+    }
     callsign.source_id = Set(req.source_id);
     callsign.developing = Set(req.developing);
     callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
@@ -461,13 +466,14 @@ mod tests {
         }
     }
 
-    fn update_req() -> Callsign {
-        Callsign {
+    fn update_req() -> UpdateCallsignReq {
+        UpdateCallsignReq {
             id: 1,
             callsign: String::new(),
             position: String::new(),
             comment: String::new(),
-            full_name: String::new(),
+            full_name: Some(String::new()),
+            full_name_is_missing: false,
             unit_id: 0,
             active: true,
             source_id: None,
@@ -538,12 +544,12 @@ mod tests {
         let mut req = update_req();
         req.comment = "невстановлений оператор".to_string();
 
-        assert!(validate_update_callsign_req(&req).is_ok());
+        assert!(validate_update_callsign_req(&req, "").is_ok());
     }
 
     #[test]
     fn validate_update_callsign_req_rejects_empty_record() {
-        assert!(validate_update_callsign_req(&update_req()).is_err());
+        assert!(validate_update_callsign_req(&update_req(), "").is_err());
     }
 
     #[test]
@@ -552,7 +558,7 @@ mod tests {
         req.callsign = "alpha".to_string();
         req.source_id = Some(SIGINT_SOURCE_RO_ID);
 
-        assert!(validate_update_callsign_req(&req).is_err());
+        assert!(validate_update_callsign_req(&req, "").is_err());
     }
 
     #[test]
@@ -562,25 +568,46 @@ mod tests {
         req.source_id = Some(SIGINT_SOURCE_RO_ID);
         req.radio_freq = Some("145.500".to_string());
 
-        assert!(validate_update_callsign_req(&req).is_ok());
+        assert!(validate_update_callsign_req(&req, "").is_ok());
     }
 
     #[test]
-    fn resolve_updated_full_name_preserves_existing_when_request_is_empty() {
-        assert_eq!(
-            resolve_updated_full_name("Іваненко Іван Іванович", ""),
-            "Іваненко Іван Іванович"
-        );
+    fn validate_update_callsign_req_preserves_legacy_missing_full_name() {
+        let mut req = update_req();
+        req.full_name = None;
+        req.full_name_is_missing = true;
+        req.comment = "невстановлений оператор".to_string();
+
+        assert!(validate_update_callsign_req(&req, "").is_ok());
     }
 
     #[test]
-    fn resolve_updated_full_name_uses_request_value_when_present() {
-        assert_eq!(
-            resolve_updated_full_name(
-                "Іваненко Іван Іванович",
-                "Петренко Петро Петрович"
-            ),
-            "Петренко Петро Петрович"
-        );
+    fn validate_update_callsign_req_allows_explicit_full_name_clear() {
+        let mut req = update_req();
+        req.full_name = Some(String::new());
+        req.comment = "невстановлений оператор".to_string();
+
+        assert!(validate_update_callsign_req(&req, "").is_ok());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_allows_legacy_request_when_db_has_full_name_only(
+    ) {
+        let mut req = update_req();
+        req.full_name = None;
+        req.full_name_is_missing = true;
+
+        assert!(validate_update_callsign_req(&req, "Іваненко Іван Іванович")
+            .is_ok());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_allows_null_full_name_to_clear_identity() {
+        let mut req = update_req();
+        req.full_name = None;
+        req.full_name_is_missing = false;
+        req.comment = "невстановлений оператор".to_string();
+
+        assert!(validate_update_callsign_req(&req, "").is_ok());
     }
 }
