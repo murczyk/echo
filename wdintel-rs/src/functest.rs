@@ -21,6 +21,7 @@
 
 #[cfg(test)]
 pub mod tests {
+    use crate::entities::sea_orm_active_enums::SigintNetworkKind;
     use crate::entities::*;
     use crate::types::*;
     use sea_orm::*;
@@ -38,6 +39,11 @@ pub mod tests {
     const TEST_DATASOURCE_GROUP_NAME: &str = "TestDatasourceGroup";
     const TEST_TAG_LABEL_BPLA: &str = "бпла";
     const TEST_PALITRA_NAME: &str = "TestPalitra";
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct TestIdentity {
+        pub login: String,
+    }
 
     pub async fn cleanup() -> Result<Arc<Env>, AppError> {
         MIGRATE
@@ -134,6 +140,10 @@ pub mod tests {
             .await
             .context(h!())?;
         sigint_peleng::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        freq_location::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
@@ -550,6 +560,18 @@ pub mod tests {
             .await
             .context(h!())?
             .context(h!())?)
+    }
+
+    pub async fn mk_test_identity() -> Result<TestIdentity, AppError> {
+        mk_test_identity_for_login(TEST_LOGIN).await
+    }
+
+    pub async fn mk_test_identity_for_login(
+        login: &str,
+    ) -> Result<TestIdentity, AppError> {
+        Ok(TestIdentity {
+            login: login.to_string(),
+        })
     }
 
     fn build_datasource(
@@ -1214,6 +1236,155 @@ pub mod tests {
         Ok(out)
     }
 
+    fn build_secret_group_user(
+        inp: secret_group_user::ActiveModel,
+    ) -> Result<secret_group_user::ActiveModel, AppError> {
+        let out = inp.clone();
+        if out.master_key == NotSet {
+            return Err(AppError::from(
+                anyhow!("master_key must be set for secret_group_user")
+                    .context(h!()),
+            ));
+        }
+        if out.login == NotSet {
+            return Err(AppError::from(
+                anyhow!("login must be set for secret_group_user")
+                    .context(h!()),
+            ));
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_secret_group_user<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: secret_group_user::ActiveModel,
+    ) -> Result<secret_group_user::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.master_key == NotSet {
+            let signal_group = mk_signal_group(
+                txn,
+                signal_group::ActiveModel {
+                    is_secret: Set(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.master_key = Set(signal_group.master_key);
+        }
+        if inp.login == NotSet {
+            let login = mk_login(
+                txn,
+                login::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.login = Set(login.login);
+        }
+        let out = build_secret_group_user(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_signal_message_group(
+        inp: signal_message_group::ActiveModel,
+    ) -> Result<signal_message_group::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.signal_message_id == NotSet {
+            return Err(AppError::from(
+                anyhow!(
+                    "signal_message_id must be set for signal_message_group"
+                )
+                .context(h!()),
+            ));
+        }
+        if out.group_master_key == NotSet {
+            return Err(AppError::from(
+                anyhow!(
+                    "group_master_key must be set for signal_message_group"
+                )
+                .context(h!()),
+            ));
+        }
+        if out.sender == NotSet {
+            out.sender = Set(None);
+        }
+        if out.message_uid == NotSet {
+            out.message_uid = Set(None);
+        }
+        if out.datasource_group_id == NotSet {
+            out.datasource_group_id = Set(None);
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_signal_message_group<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: signal_message_group::ActiveModel,
+    ) -> Result<signal_message_group::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.signal_message_id == NotSet {
+            let signal_message = mk_signal_message(
+                txn,
+                signal_message::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.signal_message_id = Set(signal_message.id);
+        }
+        if inp.group_master_key == NotSet {
+            let signal_group = mk_signal_group(
+                txn,
+                signal_group::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.group_master_key = Set(Some(signal_group.master_key));
+        }
+        if inp.datasource_group_id == NotSet {
+            let group_master_key = inp
+                .group_master_key
+                .clone()
+                .take()
+                .context(h!())?
+                .context(h!())?;
+            let datasource_group = mk_datasource_group(
+                txn,
+                datasource_group::ActiveModel {
+                    group_master_key: Set(group_master_key),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.datasource_group_id = Set(Some(datasource_group.id));
+        }
+        let out = build_signal_message_group(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
     fn build_signal_message(
         inp: signal_message::ActiveModel,
     ) -> signal_message::ActiveModel {
@@ -1270,6 +1441,735 @@ pub mod tests {
             inp.datasource_group_id = Set(Some(datasource_group.id));
         }
         let out = build_signal_message(inp).insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_network(
+        inp: sigint_network::ActiveModel,
+    ) -> sigint_network::ActiveModel {
+        let mut out = inp.clone();
+        if out.name == NotSet {
+            out.name = Set(random_word::get(random_word::Lang::En).to_string());
+        }
+        if out.location == NotSet {
+            out.location = Set(String::new());
+        }
+        if out.deleted == NotSet {
+            out.deleted = Set(false);
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.updated_by == NotSet {
+            out.updated_by = Set(None);
+        }
+        if out.updated_at == NotSet {
+            out.updated_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.radio_station == NotSet {
+            out.radio_station = Set(None);
+        }
+        if out.purpose == NotSet {
+            out.purpose = Set(None);
+        }
+        if out.operation_mode == NotSet {
+            out.operation_mode = Set(None);
+        }
+        if out.operation_type == NotSet {
+            out.operation_type = Set(None);
+        }
+        if out.operation_period == NotSet {
+            out.operation_period = Set(None);
+        }
+        if out.merged_to == NotSet {
+            out.merged_to = Set(None);
+        }
+        if out.active_from == NotSet {
+            out.active_from = Set(None);
+        }
+        if out.active_to == NotSet {
+            out.active_to = Set(None);
+        }
+        if out.sigint_origin_id == NotSet {
+            out.sigint_origin_id = Set(None);
+        }
+        if out.original_id == NotSet {
+            out.original_id = Set(None);
+        }
+        out
+    }
+
+    pub async fn mk_sigint_network<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_network::ActiveModel,
+    ) -> Result<sigint_network::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = build_sigint_network(inp).insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_network_aor(
+        inp: sigint_network_aor::ActiveModel,
+    ) -> Result<sigint_network_aor::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.network_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("network_id must be set for sigint_network_aor")
+                    .context(h!()),
+            ));
+        }
+        if out.aor_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("aor_id must be set for sigint_network_aor")
+                    .context(h!()),
+            ));
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.sigint_origin_id == NotSet {
+            out.sigint_origin_id = Set(None);
+        }
+        if out.original_id == NotSet {
+            out.original_id = Set(None);
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_network_aor<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_network_aor::ActiveModel,
+    ) -> Result<sigint_network_aor::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.network_id == NotSet {
+            let network = mk_sigint_network(
+                txn,
+                sigint_network::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.network_id = Set(network.id);
+        }
+        if inp.aor_id == NotSet {
+            let aor = mk_aor(
+                txn,
+                area_of_responsibility::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.aor_id = Set(aor.id);
+        }
+        let out = build_sigint_network_aor(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_network_freq(
+        inp: sigint_network_freq::ActiveModel,
+    ) -> Result<sigint_network_freq::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.network_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("network_id must be set for sigint_network_freq")
+                    .context(h!()),
+            ));
+        }
+        if out.freq == NotSet {
+            return Err(AppError::from(
+                anyhow!("freq must be set for sigint_network_freq")
+                    .context(h!()),
+            ));
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.kind == NotSet {
+            out.kind = Set(SigintNetworkKind::Vhf);
+        }
+        if out.modulation_id == NotSet {
+            out.modulation_id = Set(None);
+        }
+        if out.active_from == NotSet {
+            out.active_from = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.active_to == NotSet {
+            out.active_to = Set(None);
+        }
+        if out.sigint_origin_id == NotSet {
+            out.sigint_origin_id = Set(None);
+        }
+        if out.deleted == NotSet {
+            out.deleted = Set(false);
+        }
+        if out.original_id == NotSet {
+            out.original_id = Set(None);
+        }
+        if out.last_seen_dt == NotSet {
+            out.last_seen_dt = Set(None);
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_network_freq<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_network_freq::ActiveModel,
+    ) -> Result<sigint_network_freq::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.network_id == NotSet {
+            let network = mk_sigint_network(
+                txn,
+                sigint_network::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.network_id = Set(network.id);
+        }
+        let out = build_sigint_network_freq(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_inbox_item_network(
+        inp: sigint_inbox_item_network::ActiveModel,
+    ) -> Result<sigint_inbox_item_network::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.sigint_inbox_item_id == NotSet {
+            return Err(AppError::from(
+                anyhow!(
+                    "sigint_inbox_item_id must be set for sigint_inbox_item_network"
+                )
+                .context(h!()),
+            ));
+        }
+        if out.sigint_network_id == NotSet {
+            return Err(AppError::from(
+                anyhow!(
+                    "sigint_network_id must be set for sigint_inbox_item_network"
+                )
+                .context(h!()),
+            ));
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_inbox_item_network<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_inbox_item_network::ActiveModel,
+    ) -> Result<sigint_inbox_item_network::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.sigint_inbox_item_id == NotSet {
+            let inbox_item = mk_sigint_inbox_item(
+                txn,
+                sigint_inbox_item::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.sigint_inbox_item_id = Set(inbox_item.id);
+        }
+        if inp.sigint_network_id == NotSet {
+            let network = mk_sigint_network(
+                txn,
+                sigint_network::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.sigint_network_id = Set(network.id);
+        }
+        let out = build_sigint_inbox_item_network(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_peleng(
+        inp: sigint_peleng::ActiveModel,
+    ) -> Result<sigint_peleng::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.source_inbox_item_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("source_inbox_item_id must be set for sigint_peleng")
+                    .context(h!()),
+            ));
+        }
+        if out.lat == NotSet {
+            out.lat = Set(0.0);
+        }
+        if out.lng == NotSet {
+            out.lng = Set(0.0);
+        }
+        if out.settlement == NotSet {
+            out.settlement = Set(None);
+        }
+        if out.locality_direction == NotSet {
+            out.locality_direction = Set(None);
+        }
+        if out.distance_m == NotSet {
+            out.distance_m = Set(None);
+        }
+        if out.country_code == NotSet {
+            out.country_code = Set(None);
+        }
+        if out.deleted == NotSet {
+            out.deleted = Set(false);
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.updated_at == NotSet {
+            out.updated_at = Set(None);
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_peleng<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_peleng::ActiveModel,
+    ) -> Result<sigint_peleng::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.source_inbox_item_id == NotSet {
+            let inbox_item = mk_sigint_inbox_item(
+                txn,
+                sigint_inbox_item::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.source_inbox_item_id = Set(inbox_item.id);
+        }
+        let out = build_sigint_peleng(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_freq_location(
+        inp: freq_location::ActiveModel,
+    ) -> Result<freq_location::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.freq == NotSet {
+            return Err(AppError::from(
+                anyhow!("freq must be set for freq_location").context(h!()),
+            ));
+        }
+        if out.location == NotSet {
+            return Err(AppError::from(
+                anyhow!("location must be set for freq_location").context(h!()),
+            ));
+        }
+        if out.datetime == NotSet {
+            out.datetime = Set(None);
+        }
+        if out.deleted == NotSet {
+            out.deleted = Set(false);
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_freq_location<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: freq_location::ActiveModel,
+    ) -> Result<freq_location::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = build_freq_location(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_bookmark(
+        inp: sigint_bookmark::ActiveModel,
+    ) -> Result<sigint_bookmark::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.user_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("user_id must be set for sigint_bookmark")
+                    .context(h!()),
+            ));
+        }
+        if out.signal_message_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("signal_message_id must be set for sigint_bookmark")
+                    .context(h!()),
+            ));
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.deleted == NotSet {
+            out.deleted = Set(false);
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_bookmark<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_bookmark::ActiveModel,
+    ) -> Result<sigint_bookmark::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.signal_message_id == NotSet {
+            let signal_message = mk_signal_message(txn, Default::default())
+                .await
+                .context(h!())?;
+            inp.signal_message_id = Set(signal_message.id);
+        }
+        if inp.user_id == NotSet {
+            inp.user_id = Set(TEST_LOGIN.to_string());
+        }
+        let out = build_sigint_bookmark(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_important(
+        inp: sigint_important::ActiveModel,
+    ) -> Result<sigint_important::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.signal_message_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("signal_message_id must be set for sigint_important")
+                    .context(h!()),
+            ));
+        }
+        if out.user_id == NotSet {
+            out.user_id = Set(None);
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.deleted == NotSet {
+            out.deleted = Set(false);
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_important<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_important::ActiveModel,
+    ) -> Result<sigint_important::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.signal_message_id == NotSet {
+            let signal_message = mk_signal_message(txn, Default::default())
+                .await
+                .context(h!())?;
+            inp.signal_message_id = Set(signal_message.id);
+        }
+        let out = build_sigint_important(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_comment(
+        inp: sigint_comment::ActiveModel,
+    ) -> Result<sigint_comment::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.login == NotSet {
+            return Err(AppError::from(
+                anyhow!("login must be set for sigint_comment").context(h!()),
+            ));
+        }
+        if out.signal_message_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("signal_message_id must be set for sigint_comment")
+                    .context(h!()),
+            ));
+        }
+        if out.comment == NotSet {
+            out.comment = Set(String::new());
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_comment<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_comment::ActiveModel,
+    ) -> Result<sigint_comment::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.signal_message_id == NotSet {
+            let signal_message = mk_signal_message(txn, Default::default())
+                .await
+                .context(h!())?;
+            inp.signal_message_id = Set(signal_message.id);
+        }
+        if inp.login == NotSet {
+            inp.login = Set(TEST_LOGIN.to_string());
+        }
+        let out = build_sigint_comment(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_inbox_item_metadata(
+        inp: sigint_inbox_item_metadata::ActiveModel,
+    ) -> Result<sigint_inbox_item_metadata::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.sigint_inbox_item_id == NotSet {
+            return Err(AppError::from(
+                anyhow!(
+                    "sigint_inbox_item_id must be set for sigint_inbox_item_metadata"
+                )
+                .context(h!()),
+            ));
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_inbox_item_metadata<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_inbox_item_metadata::ActiveModel,
+    ) -> Result<sigint_inbox_item_metadata::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.sigint_inbox_item_id == NotSet {
+            let inbox_item = mk_sigint_inbox_item(txn, Default::default())
+                .await
+                .context(h!())?;
+            inp.sigint_inbox_item_id = Set(inbox_item.id);
+        }
+        let out = build_sigint_inbox_item_metadata(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_unit(
+        inp: sigint_unit::ActiveModel,
+    ) -> sigint_unit::ActiveModel {
+        let mut out = inp.clone();
+        if out.company == NotSet {
+            out.company = Set(String::new());
+        }
+        if out.regiment == NotSet {
+            out.regiment = Set(String::new());
+        }
+        if out.division == NotSet {
+            out.division = Set(String::new());
+        }
+        if out.army == NotSet {
+            out.army = Set(String::new());
+        }
+        if out.active == NotSet {
+            out.active = Set(true);
+        }
+        if out.deleted == NotSet {
+            out.deleted = Set(false);
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.created_by == NotSet {
+            out.created_by = Set(TEST_LOGIN.to_string());
+        }
+        if out.name == NotSet {
+            out.name = Set(random_word::get(random_word::Lang::En).to_string());
+        }
+        if out.comment == NotSet {
+            out.comment = Set(String::new());
+        }
+        if out.battalion == NotSet {
+            out.battalion = Set(String::new());
+        }
+        if out.sigint_origin_id == NotSet {
+            out.sigint_origin_id = Set(None);
+        }
+        if out.original_id == NotSet {
+            out.original_id = Set(None);
+        }
+        out
+    }
+
+    pub async fn mk_sigint_unit<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_unit::ActiveModel,
+    ) -> Result<sigint_unit::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = build_sigint_unit(inp).insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_network_unit(
+        inp: sigint_network_unit::ActiveModel,
+    ) -> Result<sigint_network_unit::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.network_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("network_id must be set for sigint_network_unit")
+                    .context(h!()),
+            ));
+        }
+        if out.unit_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("unit_id must be set for sigint_network_unit")
+                    .context(h!()),
+            ));
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        if out.sigint_origin_id == NotSet {
+            out.sigint_origin_id = Set(None);
+        }
+        if out.original_id == NotSet {
+            out.original_id = Set(None);
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_network_unit<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_network_unit::ActiveModel,
+    ) -> Result<sigint_network_unit::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.network_id == NotSet {
+            let network = mk_sigint_network(txn, Default::default())
+                .await
+                .context(h!())?;
+            inp.network_id = Set(network.id);
+        }
+        if inp.unit_id == NotSet {
+            let unit = mk_sigint_unit(txn, Default::default())
+                .await
+                .context(h!())?;
+            inp.unit_id = Set(unit.id);
+        }
+        let out = build_sigint_network_unit(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
+    fn build_sigint_inbox_item_tag(
+        inp: sigint_inbox_item_tag::ActiveModel,
+    ) -> Result<sigint_inbox_item_tag::ActiveModel, AppError> {
+        let mut out = inp.clone();
+        if out.sigint_inbox_item_id == NotSet {
+            return Err(AppError::from(
+                anyhow!(
+                    "sigint_inbox_item_id must be set for sigint_inbox_item_tag"
+                )
+                .context(h!()),
+            ));
+        }
+        if out.tag_id == NotSet {
+            return Err(AppError::from(
+                anyhow!("tag_id must be set for sigint_inbox_item_tag")
+                    .context(h!()),
+            ));
+        }
+        if out.confidence == NotSet {
+            out.confidence = Set(1.0);
+        }
+        if out.login == NotSet {
+            out.login = Set(None);
+        }
+        if out.model == NotSet {
+            out.model = Set(None);
+        }
+        Ok(out)
+    }
+
+    pub async fn mk_sigint_inbox_item_tag<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: sigint_inbox_item_tag::ActiveModel,
+    ) -> Result<sigint_inbox_item_tag::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.sigint_inbox_item_id == NotSet {
+            let inbox_item = mk_sigint_inbox_item(txn, Default::default())
+                .await
+                .context(h!())?;
+            inp.sigint_inbox_item_id = Set(inbox_item.id);
+        }
+        if inp.tag_id == NotSet {
+            let tag = mk_tag(txn, Default::default()).await.context(h!())?;
+            inp.tag_id = Set(tag.id);
+        }
+        let out = build_sigint_inbox_item_tag(inp)
+            .context(h!())?
+            .insert(txn)
+            .await
+            .context(h!())?;
         Ok(out)
     }
 

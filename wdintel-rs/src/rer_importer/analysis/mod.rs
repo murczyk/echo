@@ -33,6 +33,8 @@ pub mod geojson;
 pub mod kmz;
 pub mod search;
 pub mod stats;
+#[cfg(test)]
+mod tests;
 
 pub fn filter_selected_groups<Q>(
     q: Q,
@@ -1442,32 +1444,6 @@ where
         &req.only_with_metadata,
         &req.without_metadata,
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
-        let q = signal_message::Entity::find();
-        let q = filter_selected_metadata(
-            q,
-            &None,
-            &Some(vec!["123".to_string()]),
-            &None,
-            &None,
-            &Some(false),
-            &Some(true),
-        )
-        .unwrap();
-
-        let sql = q.build(DbBackend::Postgres).to_string();
-
-        assert!(sql.contains("NOT EXISTS"));
-        assert!(!sql.contains("sender_id"));
-        assert!(!sql.contains("sender_name"));
-    }
 }
 
 pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
@@ -3073,7 +3049,7 @@ async fn callsign_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let callsigns = stats::fetch_callsigns(&req, &env, master_keys)
+    let callsigns = stats::fetch_callsigns(&req, &user, &env, master_keys)
         .await
         .context(h!())?;
     Ok(Json(CallsignStatsRsp { callsigns }))
@@ -3113,7 +3089,7 @@ async fn tag_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let tags = stats::fetch_tags(&req, &env, master_keys)
+    let tags = stats::fetch_tags(&req, &user, &env, master_keys)
         .await
         .context(h!())?;
     Ok(Json(TagStatsRsp { tags }))
@@ -3355,7 +3331,7 @@ async fn count_stats(
             .await
             .context(h!())?;
     let callsigns_count =
-        stats::count_callsigns(&req, &env, master_keys.clone())
+        stats::count_callsigns(&req, &user, &env, master_keys.clone())
             .await
             .context(h!())?;
     let units_count =
@@ -3375,7 +3351,7 @@ async fn count_stats(
         stats::count_locations(&req, &user, &env, master_keys.clone())
             .await
             .context(h!())?;
-    let tags_count = stats::count_tags(&req, &env, master_keys.clone())
+    let tags_count = stats::count_tags(&req, &user, &env, master_keys.clone())
         .await
         .context(h!())?;
     let aors_count = stats::count_aors(&req, &user, &env, master_keys.clone())
@@ -3506,9 +3482,10 @@ async fn callsign_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let callsigns_count = stats::count_callsigns(&req, &env, master_keys)
-        .await
-        .context(h!())?;
+    let callsigns_count =
+        stats::count_callsigns(&req, &user, &env, master_keys)
+            .await
+            .context(h!())?;
     Ok(Json(callsigns_count))
 }
 
@@ -3526,7 +3503,7 @@ async fn tag_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let tags_count = stats::count_tags(&req, &env, master_keys)
+    let tags_count = stats::count_tags(&req, &user, &env, master_keys)
         .await
         .context(h!())?;
     Ok(Json(tags_count))
@@ -3675,10 +3652,11 @@ async fn stats_deprecated(
     let freqs = stats::fetch_freqs(&req, &user, &env, master_keys.clone())
         .await
         .context(h!())?;
-    let callsigns = stats::fetch_callsigns(&req, &env, master_keys.clone())
-        .await
-        .context(h!())?;
-    let tags = stats::fetch_tags(&req, &env, master_keys.clone())
+    let callsigns =
+        stats::fetch_callsigns(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+    let tags = stats::fetch_tags(&req, &user, &env, master_keys.clone())
         .await
         .context(h!())?;
     let units = stats::fetch_units(&req, &user, &env, master_keys.clone())

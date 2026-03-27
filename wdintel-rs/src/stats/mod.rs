@@ -217,6 +217,9 @@ fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
     if !is_filter_empty(&req.selected_networks) {
         return false;
     }
+    if req.without_network.unwrap_or(false) {
+        return false;
+    }
     if req.without_metadata.unwrap_or(false) {
         return false;
     }
@@ -233,6 +236,24 @@ fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
         return false;
     }
     if !is_filter_empty(&req.metadata_hash) {
+        return false;
+    }
+    if req.or_bookmarked.unwrap_or(false) {
+        return false;
+    }
+    if req.or_important.unwrap_or(false) {
+        return false;
+    }
+    if req.or_with_coords.unwrap_or(false) {
+        return false;
+    }
+    if req.or_with_extended_form.unwrap_or(false) {
+        return false;
+    }
+    if req.without_model_tags.unwrap_or(false) {
+        return false;
+    }
+    if req.report_tags_only_this_unit.unwrap_or(false) {
         return false;
     }
     match req.search.clone() {
@@ -3366,6 +3387,44 @@ mod tests {
         };
 
         assert!(!req_allows_stats_aggregated(&req));
+    }
+
+    #[test]
+    fn test_should_read_stats_aggregated_false_for_checkbox_filters() {
+        let reqs = [
+            AnalysisStatsReq {
+                without_network: Some(true),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                or_bookmarked: Some(true),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                or_important: Some(true),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                or_with_coords: Some(true),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                or_with_extended_form: Some(true),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                without_model_tags: Some(true),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                report_tags_only_this_unit: Some(true),
+                ..analysis_stats_req0()
+            },
+        ];
+
+        for req in reqs {
+            assert!(!req_allows_stats_aggregated(&req));
+        }
     }
 
     #[test]
