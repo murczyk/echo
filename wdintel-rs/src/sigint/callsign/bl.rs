@@ -1,4 +1,5 @@
 use super::types::*;
+use crate::config::SIGINT_SOURCE_RO_ID;
 use crate::entities::*;
 use crate::sigint::etalonka::types::{KnownCallsignRes, KnownCallsignShortRes};
 use crate::types::*;
@@ -7,9 +8,26 @@ use std::collections::{HashMap, HashSet};
 
 const CALLSIGN_IDENTITY_REQUIRED_MSG: &str =
     "Заповніть поле \"Позивний\" або \"ПІП\"";
+const RO_CALLSIGN_RADIO_FREQ_REQUIRED_MSG: &str =
+    "При виборі джерела 'РО' необхідно вказати частоту";
 
 fn has_callsign_identity(callsign: &str, full_name: &str) -> bool {
     !callsign.trim().is_empty() || !full_name.trim().is_empty()
+}
+
+fn validate_ro_callsign_radio_freq(
+    source_id: Option<i32>,
+    radio_freq: Option<&str>,
+) -> Result<(), AppError> {
+    if source_id == Some(SIGINT_SOURCE_RO_ID)
+        && radio_freq.is_none_or(|radio_freq| radio_freq.trim().is_empty())
+    {
+        return Err(AppError::BL {
+            msg: RO_CALLSIGN_RADIO_FREQ_REQUIRED_MSG.to_string(),
+        });
+    }
+
+    Ok(())
 }
 
 fn has_callsign_legacy_content(
@@ -45,6 +63,8 @@ fn has_callsign_create_content(
 fn validate_create_callsign_req(
     req: &CreateCallsignReq,
 ) -> Result<(), AppError> {
+    validate_ro_callsign_radio_freq(req.source_id, req.radio_freq.as_deref())?;
+
     if has_callsign_identity(&req.callsign, &req.full_name) {
         return Ok(());
     }
@@ -64,6 +84,8 @@ fn validate_create_callsign_req(
 }
 
 fn validate_update_callsign_req(req: &Callsign) -> Result<(), AppError> {
+    validate_ro_callsign_radio_freq(req.source_id, req.radio_freq.as_deref())?;
+
     if has_callsign_identity(&req.callsign, &req.full_name) {
         return Ok(());
     }
@@ -478,6 +500,25 @@ mod tests {
     }
 
     #[test]
+    fn validate_create_callsign_req_rejects_ro_callsign_without_radio_freq() {
+        let mut req = create_req();
+        req.callsign = "alpha".to_string();
+        req.source_id = Some(SIGINT_SOURCE_RO_ID);
+
+        assert!(validate_create_callsign_req(&req).is_err());
+    }
+
+    #[test]
+    fn validate_create_callsign_req_allows_ro_callsign_with_radio_freq() {
+        let mut req = create_req();
+        req.callsign = "alpha".to_string();
+        req.source_id = Some(SIGINT_SOURCE_RO_ID);
+        req.radio_freq = Some("145.500".to_string());
+
+        assert!(validate_create_callsign_req(&req).is_ok());
+    }
+
+    #[test]
     fn validate_update_callsign_req_allows_identityless_record_with_other_content(
     ) {
         let mut req = update_req();
@@ -489,5 +530,24 @@ mod tests {
     #[test]
     fn validate_update_callsign_req_rejects_empty_record() {
         assert!(validate_update_callsign_req(&update_req()).is_err());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_rejects_ro_callsign_without_radio_freq() {
+        let mut req = update_req();
+        req.callsign = "alpha".to_string();
+        req.source_id = Some(SIGINT_SOURCE_RO_ID);
+
+        assert!(validate_update_callsign_req(&req).is_err());
+    }
+
+    #[test]
+    fn validate_update_callsign_req_allows_ro_callsign_with_radio_freq() {
+        let mut req = update_req();
+        req.callsign = "alpha".to_string();
+        req.source_id = Some(SIGINT_SOURCE_RO_ID);
+        req.radio_freq = Some("145.500".to_string());
+
+        assert!(validate_update_callsign_req(&req).is_ok());
     }
 }

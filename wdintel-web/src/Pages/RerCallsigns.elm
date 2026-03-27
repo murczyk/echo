@@ -70,6 +70,8 @@ toLayout user _ =
 type alias Model =
     { callsigns : List B.Callsign
     , addState : EnumeratedList AddState
+    , addParseError : Maybe String
+    , addValidationError : Maybe String
     , inpUnitSelState : Select.State
     , inpUnit : Maybe Int
     , editState : Maybe EditCallsignState
@@ -137,6 +139,8 @@ init req _ =
         m2 =
             { callsigns = []
             , addState = EL.fromList [ initAddState mCallsignName ]
+            , addParseError = Nothing
+            , addValidationError = Nothing
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
             , inpUnit = Nothing
             , editState = Nothing
@@ -276,6 +280,56 @@ initAddState mCallsignName =
 quickPasteTsvFormatError : String
 quickPasteTsvFormatError =
     "Швидка вставка підтримує лише TSV-формат: позивний, посада, коментар або позивний, посада, ПІП, коментар"
+
+
+roSourceId : Int
+roSourceId =
+    2
+
+
+roSourceRadioFreqRequiredError : String
+roSourceRadioFreqRequiredError =
+    "При виборі джерела 'РО' необхідно вказати частоту"
+
+
+isRoSource : Maybe Int -> Bool
+isRoSource sourceId =
+    sourceId == Just roSourceId
+
+
+hasAnyAddStateInput : AddState -> Bool
+hasAnyAddStateInput addState =
+    List.any (\value -> not (String.isEmpty (String.trim value)))
+        [ addState.inpCallsign
+        , addState.inpPosition
+        , addState.inpFullName
+        , addState.inpComment
+        , addState.inpRadioFreq
+        ]
+        || addState.inpDeveloping
+
+
+getAddValidationError : Maybe Int -> EnumeratedList AddState -> Maybe String -> Maybe String
+getAddValidationError sourceId addState parseError =
+    case parseError of
+        Just err ->
+            Just err
+
+        Nothing ->
+            if isRoSource sourceId
+                && (addState
+                        |> EL.toList
+                        |> List.any
+                            (\state ->
+                                hasAnyAddStateInput state
+                                    && String.isEmpty (String.trim state.inpRadioFreq)
+                            )
+                   )
+            then
+                Just roSourceRadioFreqRequiredError
+
+            else
+                Nothing
 
 
 
@@ -563,22 +617,37 @@ update _ shared msg model =
 
                         Err _ ->
                             EL.setAtPos pos state model.addState
-            in
-            ( { model
-                | addState = addState
-                , validationError =
+
+                parseError =
                     case parseResult of
                         Err err ->
                             Just err
 
                         Ok _ ->
                             Nothing
+            in
+            ( { model
+                | addState = addState
+                , addParseError = parseError
+                , addValidationError =
+                    getAddValidationError model.inpSource addState parseError
               }
             , E.none
             )
 
         InpSource v ->
-            ( { model | inpSource = String.toInt v }, E.none )
+            let
+                updatedSourceId =
+                    String.toInt v
+            in
+            ( { model
+                | inpSource = updatedSourceId
+                , addParseError = model.addParseError
+                , addValidationError =
+                    getAddValidationError updatedSourceId model.addState model.addParseError
+              }
+            , E.none
+            )
 
         AddUnitSelMsg selMsg ->
             let
@@ -663,39 +732,43 @@ update _ shared msg model =
 
         -- adds many
         AddCallsign ->
-            case model.inpUnit of
-                Nothing ->
-                    ( model, E.none )
+            if model.addValidationError /= Nothing then
+                ( model, E.none )
 
-                Just unitId ->
-                    case model.inpSource of
-                        Nothing ->
-                            ( model, E.none )
+            else
+                case model.inpUnit of
+                    Nothing ->
+                        ( model, E.none )
 
-                        Just sourceId ->
-                            let
-                                effs =
-                                    model.addState
-                                        |> EL.toList
-                                        |> List.map
-                                            (\addState ->
-                                                E.sendCmd <|
-                                                    Api.sigint_callsign_create AddCallsignDone
-                                                        { callsign = addState.inpCallsign
-                                                        , position = addState.inpPosition
-                                                        , comment = addState.inpComment
-                                                        , fullName = addState.inpFullName
-                                                        , unitId = unitId
-                                                        , sourceId = Just sourceId
-                                                        , callsignAdditionalSources = []
-                                                        , developing = addState.inpDeveloping
-                                                        , radioFreq = Just addState.inpRadioFreq
-                                                        }
-                                            )
-                            in
-                            ( model
-                            , E.batch effs
-                            )
+                    Just unitId ->
+                        case model.inpSource of
+                            Nothing ->
+                                ( model, E.none )
+
+                            Just sourceId ->
+                                let
+                                    effs =
+                                        model.addState
+                                            |> EL.toList
+                                            |> List.map
+                                                (\addState ->
+                                                    E.sendCmd <|
+                                                        Api.sigint_callsign_create AddCallsignDone
+                                                            { callsign = addState.inpCallsign
+                                                            , position = addState.inpPosition
+                                                            , comment = addState.inpComment
+                                                            , fullName = addState.inpFullName
+                                                            , unitId = unitId
+                                                            , sourceId = Just sourceId
+                                                            , callsignAdditionalSources = []
+                                                            , developing = addState.inpDeveloping
+                                                            , radioFreq = Just addState.inpRadioFreq
+                                                            }
+                                                )
+                                in
+                                ( model
+                                , E.batch effs
+                                )
 
         AddCallsignDone (Err err) ->
             ( model
@@ -706,6 +779,8 @@ update _ shared msg model =
             ( { model
                 | callsigns = newCallsign :: model.callsigns
                 , addState = EL.fromList [ initAddState Nothing ]
+                , addParseError = Nothing
+                , addValidationError = Nothing
                 , loading = False
               }
             , E.none
@@ -766,7 +841,7 @@ update _ shared msg model =
                             let
                                 -- Validate that if РО (source ID 2) is selected, frequency must be provided
                                 isValid =
-                                    if editState.inpSourceId == Just 2 then
+                                    if isRoSource editState.inpSourceId then
                                         not (String.isEmpty (String.trim editState.inpRadioFreq))
 
                                     else
@@ -793,7 +868,7 @@ update _ shared msg model =
                                 )
 
                             else
-                                ( { model | validationError = Just "При виборі джерела 'РО' необхідно вказати частоту" }
+                                ( { model | validationError = Just roSourceRadioFreqRequiredError }
                                 , E.none
                                 )
 
@@ -864,6 +939,8 @@ update _ shared msg model =
         ClearInputs ->
             ( { model
                 | addState = EL.fromList [ initAddState Nothing ]
+                , addParseError = Nothing
+                , addValidationError = Nothing
                 , inpUnit = Nothing
               }
             , E.none
@@ -875,15 +952,20 @@ update _ shared msg model =
             )
 
         GotSources (Ok rsp) ->
-            ( { model
-                | sources = rsp.sources
-                , inpSource =
+            let
+                updatedSourceId =
                     case model.inpSource of
                         Nothing ->
                             rsp.sources |> List.head |> Maybe.map .id
 
                         Just v ->
                             Just v
+            in
+            ( { model
+                | sources = rsp.sources
+                , inpSource = updatedSourceId
+                , addValidationError =
+                    getAddValidationError updatedSourceId model.addState model.addParseError
               }
             , E.none
             )
@@ -1155,6 +1237,9 @@ update _ shared msg model =
             ( { model
                 | inpSourceSelState = imodel2
                 , inpSource = updatedSourceId
+                , addParseError = model.addParseError
+                , addValidationError =
+                    getAddValidationError updatedSourceId model.addState model.addParseError
               }
             , E.sendCmd <| Cmd.map InpSourceSelMsg icmd
             )
@@ -1276,7 +1361,7 @@ update _ shared msg model =
                             let
                                 -- Validate that if РО (source ID 2) is selected, frequency must be provided
                                 isValid =
-                                    if editState.inpSourceId == Just 2 then
+                                    if isRoSource editState.inpSourceId then
                                         not (String.isEmpty (String.trim editState.inpRadioFreq))
 
                                     else
@@ -1303,7 +1388,7 @@ update _ shared msg model =
                                 )
 
                             else
-                                ( { model | validationError = Just "При виборі джерела 'РО' необхідно вказати частоту" }
+                                ( { model | validationError = Just roSourceRadioFreqRequiredError }
                                 , E.none
                                 )
 
@@ -1590,7 +1675,7 @@ callsignsTableConfig shared model user =
                                             text "Loading..."
 
                                         Just source ->
-                                            if source.id == 2 && not (String.isEmpty (callsign.radioFreq |> def "")) then
+                                            if isRoSource (Just source.id) && not (String.isEmpty (callsign.radioFreq |> def "")) then
                                                 text (source.name ++ " (" ++ def "" callsign.radioFreq ++ ")")
 
                                             else
@@ -1767,7 +1852,7 @@ editSidebarContent model shared _ =
                                         )
                                         model.sources
                                     )
-                                , if editState.inpSourceId == Just 2 then
+                                , if isRoSource editState.inpSourceId then
                                     input
                                         [ class "form-input w-full mt-2"
                                         , type_ "text"
@@ -1994,7 +2079,7 @@ contentBlock shared model user =
                                 [ title "Зберегти"
                                 , class "icon-btn icon-btn-primary"
                                 , onClick AddCallsign
-                                , Attr.disabled (not hasEditorRole)
+                                , Attr.disabled (not hasEditorRole || model.addValidationError /= Nothing)
                                 ]
                                 [ i [ class "bi bi-check-lg" ] [] ]
                             , button
@@ -2005,7 +2090,7 @@ contentBlock shared model user =
                                 ]
                                 [ i [ class "bi bi-x-lg" ] [] ]
                             ]
-                    , if Maybe.withDefault 0 model.inpSource == 2 then
+                    , if isRoSource model.inpSource then
                         input
                             [ class "form-input w-full mt-2"
                             , type_ "text"
@@ -2017,6 +2102,14 @@ contentBlock shared model user =
 
                       else
                         text ""
+                    , HtmlX.viewIf (pos == 0 && model.addValidationError /= Nothing) <|
+                        div [ class "mt-2 p-3 bg-red-50 border border-red-200 rounded-md" ]
+                            [ div [ class "flex items-center gap-2" ]
+                                [ i [ class "bi bi-exclamation-triangle text-red-500" ] []
+                                , span [ class "text-sm text-red-700" ]
+                                    [ text (Maybe.withDefault "" model.addValidationError) ]
+                                ]
+                            ]
                     ]
                 ]
 
