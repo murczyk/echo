@@ -57,6 +57,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
+  const initialLoadInFlightRef = useRef<Set<string>>(new Set());
   const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedId, setLoadingNewerFeedId] = useState<string | null>(null);
@@ -118,6 +119,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
+      if (initialLoadInFlightRef.current.has(feedId)) return;
+      initialLoadInFlightRef.current.add(feedId);
       const effectiveFeed = overrides ? { ...feed, ...overrides } : feed;
       setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: true } : x)));
       setError(null);
@@ -152,6 +155,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
+      } finally {
+        initialLoadInFlightRef.current.delete(feedId);
       }
     },
     [messageFeeds, buildReqForFeed, setProfiles, setGroupInfos],
