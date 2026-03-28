@@ -1989,12 +1989,32 @@ mod tests {
             callsign: Set("Alpha".to_string()),
             position: Set("pos".to_string()),
             comment: Set("comment".to_string()),
+            full_name: Set(String::new()),
             unit_id: Set(unit.id),
             deleted: Set(false),
             created_at: Set(now),
             source_id: Set(None),
             developing: Set(false),
             radio_freq: Set(freq.clone()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_callsign::ActiveModel {
+            callsign: Set(String::new()),
+            position: Set("pio".to_string()),
+            comment: Set("comment".to_string()),
+            full_name: Set("Іваненко Іван Іванович".to_string()),
+            unit_id: Set(unit.id),
+            deleted: Set(false),
+            created_at: Set(now),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(String::new()),
             sigint_origin_id: Set(None),
             original_id: Set(None),
             ..Default::default()
@@ -2120,6 +2140,11 @@ mod tests {
             .expect("expected callsign Alpha");
         assert_eq!(callsign.message_count, 1);
         assert!(callsign.known_callsigns.is_some());
+        assert_eq!(callsign.known_callsigns.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            callsign.known_callsigns.as_ref().unwrap()[0].callsign,
+            "Alpha"
+        );
         assert_eq!(callsign.freqs.as_ref().unwrap(), &vec![freq.clone()]);
         assert!(callsign
             .network_names

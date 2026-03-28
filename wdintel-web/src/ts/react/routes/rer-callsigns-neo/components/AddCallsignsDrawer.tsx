@@ -23,6 +23,7 @@ import {
 
 import type { Source, Unit } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
+import { CALLSIGN_FORM_HINT, RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, hasAnyDraftValue } from '../helpers';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignDraftRow } from '../types';
 
@@ -42,6 +43,7 @@ type Props = {
     id: number;
     callsign: string;
     position: string;
+    fullName: string;
     comment: string;
     unitName: string;
   }>;
@@ -55,6 +57,60 @@ type Props = {
   onApplyPastedRows: (value: string) => void;
   onSubmit: () => void;
 };
+
+type AddCallsignRowSectionProps = {
+  row: CallsignDraftRow;
+  index: number;
+  rowsLength: number;
+  formDisabled: boolean;
+  onRowChange: (index: number, row: CallsignDraftRow) => void;
+  onRemoveRow: (index: number) => void;
+};
+
+const AddCallsignRowSection = React.memo(function AddCallsignRowSection({
+  row,
+  index,
+  rowsLength,
+  formDisabled,
+  onRowChange,
+  onRemoveRow,
+}: AddCallsignRowSectionProps) {
+  const handleRowChange = React.useCallback((next: CallsignDraftRow) => {
+    onRowChange(index, next);
+  }, [index, onRowChange]);
+
+  const handleRemoveRow = React.useCallback(() => {
+    onRemoveRow(index);
+  }, [index, onRemoveRow]);
+
+  return (
+    <Stack spacing={1.5}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="subtitle2">{`Рядок ${index + 1}`}</Typography>
+        {rowsLength > 1 ? (
+          <Tooltip title="Видалити рядок">
+            <span>
+              <IconButton
+                size="small"
+                onClick={handleRemoveRow}
+                disabled={formDisabled}
+                aria-label={`Видалити рядок ${index + 1}`}
+              >
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        ) : null}
+      </Stack>
+      <CallsignFormFields value={row} onChange={handleRowChange} disabled={formDisabled} compact />
+    </Stack>
+  );
+}, (prev, next) => (
+  prev.row === next.row
+  && prev.index === next.index
+  && prev.rowsLength === next.rowsLength
+  && prev.formDisabled === next.formDisabled
+));
 
 export function AddCallsignsDrawer({
   open,
@@ -80,14 +136,20 @@ export function AddCallsignsDrawer({
   onSubmit,
 }: Props) {
   const formDisabled = disabled || submitting;
-  const hasAtLeastOneCallsign = rows.some((row) => row.callsign.trim() !== '');
+  const hasDraftContent = rows.some((row) => hasAnyDraftValue(row));
   const drawerTitleId = 'callsigns-add-drawer-title';
   const addSourceSelectLabelId = 'callsigns-add-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
   const confirmationSources = sources.filter((source) => source.id !== addSourceId);
   const [unitSearchInput, setUnitSearchInput] = React.useState('');
+  const [pastedInput, setPastedInput] = React.useState('');
+  const handleClearRows = React.useCallback(() => {
+    setPastedInput('');
+    onClearRows();
+  }, [onClearRows]);
   const handleCloseDrawer = React.useCallback(() => {
     setUnitSearchInput('');
+    setPastedInput('');
     onClose();
   }, [onClose]);
 
@@ -106,6 +168,7 @@ export function AddCallsignsDrawer({
   React.useEffect(() => {
     if (!open) {
       setUnitSearchInput('');
+      setPastedInput('');
     }
   }, [open]);
 
@@ -146,7 +209,7 @@ export function AddCallsignsDrawer({
                 </Typography>
                 {duplicateHints.map((item) => (
                   <Typography key={item.id} variant="caption" sx={{ display: 'block' }}>
-                    {item.callsign} | {item.position || '—'} | {item.unitName} | {item.comment || '—'}
+                    {item.callsign || '—'} | {item.position || '—'} | {item.fullName || '—'} | {item.unitName} | {item.comment || '—'}
                   </Typography>
                 ))}
               </Stack>
@@ -166,6 +229,14 @@ export function AddCallsignsDrawer({
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(unit) => unit.name.trim() || `#${unit.id}`}
               filterOptions={(options, state) => filterUnits(options, state.inputValue)}
+              renderOption={(props, unit) => {
+                const { key: _ignoredKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={unit.id}>
+                    {unit.name.trim() || ("#" + unit.id)}
+                  </li>
+                );
+              }}
               clearOnBlur={false}
               noOptionsText="Нічого не знайдено"
               renderInput={(params) => (
@@ -225,59 +296,62 @@ export function AddCallsignsDrawer({
                 </MenuItem>
               ))}
             </Select>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-              Додаткові джерела підтвердження для всіх рядків цієї пачки.
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 0 }}>
+              Додаткові джерела підтвердження для всіх рядків цього набору.
             </Typography>
           </FormControl>
-
-          <Typography variant="body2" color="text.secondary">
-            Підтримується вставка табличних даних (TSV: позивний, посада, коментар)
-          </Typography>
-
           <TextField
             label="Швидка вставка TSV"
-            placeholder="Пакетно вставте рядки: позивний<TAB>посада<TAB>коментар"
+            placeholder={'TSV: "позивний<TAB>посада<TAB>коментар" або "позивний<TAB>посада<TAB>ПІП<TAB>коментар"'}
+            value={pastedInput}
+            size="small"
             multiline
-            minRows={2}
-            onChange={(event) => onApplyPastedRows(event.target.value)}
+            minRows={1}
+            maxRows={6}
+            onChange={(event) => {
+              const value = event.target.value;
+              setPastedInput(value);
+              onApplyPastedRows(value);
+            }}
             disabled={formDisabled}
             InputProps={{
               endAdornment: <UploadFileIcon fontSize="small" color="action" aria-hidden="true" focusable="false" />,
             }}
           />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1, ml: 0 }}>
+            Підтримуються лише формати: "позивний&lt;TAB&gt;посада&lt;TAB&gt;коментар" або "позивний&lt;TAB&gt;посада&lt;TAB&gt;ПІП&lt;TAB&gt;коментар".
+          </Typography>
 
-          <Stack direction="row" spacing={1}>
-            <Button size="small" startIcon={<AddIcon />} onClick={onAppendRow} disabled={formDisabled} sx={{ px: '9px' }}>
-              Рядок
-            </Button>
-            <Button size="small" startIcon={<ClearAllIcon />} onClick={onClearRows} disabled={formDisabled} sx={{ px: '9px' }}>
-              Очистити
-            </Button>
+          <Stack direction={{ xs: "column", sm: "row-reverse" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }}>
+            <Stack direction="row" spacing={1}>
+              <Button size="small" startIcon={<ClearAllIcon />} onClick={handleClearRows} disabled={formDisabled} sx={{ px: '9px' }}>
+                Очистити
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: { xs: "left", sm: "left" } }}>
+              {CALLSIGN_FORM_HINT}
+              {addSourceId === 2 ? ` ${RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}` : ''}
+            </Typography>
           </Stack>
 
           <Stack spacing={2} divider={<Divider flexItem />}>
             {rows.map((row, index) => (
-              <Stack key={index} spacing={1.5}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="subtitle2">{`Рядок ${index + 1}`}</Typography>
-                  {rows.length > 1 ? (
-                    <Tooltip title="Видалити рядок">
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => onRemoveRow(index)}
-                          disabled={formDisabled}
-                          aria-label={`Видалити рядок ${index + 1}`}
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  ) : null}
-                </Stack>
-                <CallsignFormFields value={row} onChange={(next) => onRowChange(index, next)} disabled={formDisabled} compact />
-              </Stack>
+              <AddCallsignRowSection
+                key={index}
+                row={row}
+                index={index}
+                rowsLength={rows.length}
+                formDisabled={formDisabled}
+                onRowChange={onRowChange}
+                onRemoveRow={onRemoveRow}
+              />
             ))}
+          </Stack>
+
+          <Stack direction="row" justifyContent="flex-start">
+            <Button size="small" startIcon={<AddIcon />} onClick={onAppendRow} disabled={formDisabled} sx={{ px: '9px' }}>
+              Рядок
+            </Button>
           </Stack>
         </Stack>
       </Box>
@@ -288,7 +362,7 @@ export function AddCallsignsDrawer({
         <Button
           variant="contained"
           onClick={onSubmit}
-          disabled={formDisabled || addUnitId == null || !hasAtLeastOneCallsign}
+          disabled={formDisabled || addUnitId == null || !hasDraftContent}
         >
           {submitting ? 'Збереження…' : 'Додати'}
         </Button>

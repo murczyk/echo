@@ -1732,6 +1732,7 @@ where
             callsign: Set(rec.callsign),
             position: Set(rec.position),
             comment: Set(rec.comment),
+            full_name: Set(rec.full_name),
             unit_id: Set(unit_id),
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),

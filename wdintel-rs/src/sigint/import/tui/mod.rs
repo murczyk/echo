@@ -895,6 +895,7 @@ async fn import_sigint_callsigns(
             callsign: Set(import_callsign.callsign),
             position: Set(import_callsign.position),
             comment: Set(import_callsign.comment),
+            full_name: Set(import_callsign.full_name),
             unit_id: Set(*unit_id),
             deleted: Set(import_callsign.deleted),
             created_at: Set(import_callsign.created_at),

@@ -33,7 +33,9 @@ import {
   makeUpdatePayload,
   mergeUnitStatsWithUnits,
   nextSortState,
+  normalizeDuplicateLookupValue,
   parseTabDelimitedInput,
+  QUICK_PASTE_TSV_FORMAT_ERROR,
   sortRowsClientSide,
   toUpperCaseCallsign,
   validateDraftRows,
@@ -80,6 +82,7 @@ function readInitialCallsignsFiltersFromUrl(): CallsignsFilterState {
     filterText: params.get('filter') ?? defaults.filterText,
     filterCallsign: params.get('callsign') ?? defaults.filterCallsign,
     filterPosition: params.get('position') ?? defaults.filterPosition,
+    filterFullName: params.get('full_name') ?? defaults.filterFullName,
     filterComment: params.get('comment') ?? defaults.filterComment,
     filterUnit: params.get('unit') ?? defaults.filterUnit,
     filterDeveloping:
@@ -100,6 +103,7 @@ function readInitialCallsignsSortFromUrl(): CallsignsSortState {
   const validColumn =
     column === 'callsign' ||
     column === 'position' ||
+    column === 'fullName' ||
     column === 'comment' ||
     column === 'createdAt' ||
     column === 'unit' ||
@@ -217,6 +221,7 @@ function syncCallsignsStateToUrl(
     setOrDelete('filter', filters.filterText.trim() || null);
     setOrDelete('callsign', filters.filterCallsign.trim() || null);
     setOrDelete('position', filters.filterPosition.trim() || null);
+    setOrDelete('full_name', filters.filterFullName.trim() || null);
     setOrDelete('comment', filters.filterComment.trim() || null);
     setOrDelete('unit', filters.filterUnit.trim() || null);
     setHierarchyParam(params, 'unit_army', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.army : null);
@@ -295,9 +300,19 @@ function normalizeCallsigns(callsigns: Callsign[]): Callsign[] {
   return callsigns.map(normalizeCallsign);
 }
 
-function hasAnyCallsignInput(rows: CallsignDraftRow[]): boolean {
-  return rows.some((row) => row.callsign.trim() !== '');
+function hasAnyDuplicateHintInput(rows: CallsignDraftRow[]): boolean {
+  return rows.some((row) => {
+    const callsignInput = normalizeDuplicateLookupValue(row.callsign);
+    const fullNameInput = normalizeDuplicateLookupValue(row.fullName);
+    return callsignInput.length >= 2 || fullNameInput.length >= 2;
+  });
 }
+
+type DuplicateHintInput = {
+  callsignInput: string;
+  fullNameInput: string;
+  positionInput: string;
+};
 
 function getReloadPageSize(callsignsCount: number) {
   return Math.max(getDefaultPageSize(), callsignsCount);
@@ -331,6 +346,18 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [addValidationError, setAddValidationError] = React.useState<string | null>(null);
   const [addDrawerOpen, setAddDrawerOpen] = React.useState(false);
   const [addDuplicateHintsEnabled, setAddDuplicateHintsEnabled] = React.useState(false);
+  const duplicateHintInputs = React.useMemo<DuplicateHintInput[]>(
+    () =>
+      addRows
+        .map((row) => ({
+          callsignInput: normalizeDuplicateLookupValue(row.callsign),
+          fullNameInput: normalizeDuplicateLookupValue(row.fullName),
+          positionInput: normalizeDuplicateLookupValue(row.position),
+        }))
+        .filter((row) => row.callsignInput.length >= 2 || row.fullNameInput.length >= 2),
+    [addRows],
+  );
+  const deferredDuplicateHintInputs = React.useDeferredValue(duplicateHintInputs);
 
   const [editForm, setEditForm] = React.useState<CallsignEditForm | null>(null);
   const [editSubmitting, setEditSubmitting] = React.useState(false);
@@ -373,24 +400,21 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
   const addPotentialDuplicates = React.useMemo(() => {
     if (!addDuplicateHintsEnabled || addSubmitting) return [];
-
-    const draftInputs = addRows
-      .map((row) => ({
-        callsignInput: row.callsign.trim().toLocaleLowerCase(),
-        positionInput: row.position.trim().toLocaleLowerCase(),
-      }))
-      .filter((row) => row.callsignInput !== '');
-    if (draftInputs.length === 0) return [];
+    if (deferredDuplicateHintInputs.length === 0) return [];
 
     return callsigns
       .filter((callsign) => {
-        const callsignValue = callsign.callsign.toLocaleLowerCase();
-        const positionValue = callsign.position.toLocaleLowerCase();
-        const rowMatches = draftInputs.some((draftInput) => {
-          const callsignMatches = callsignValue.includes(draftInput.callsignInput);
+        const callsignValue = normalizeDuplicateLookupValue(callsign.callsign);
+        const fullNameValue = normalizeDuplicateLookupValue(callsign.fullName);
+        const positionValue = normalizeDuplicateLookupValue(callsign.position);
+        const rowMatches = deferredDuplicateHintInputs.some((draftInput) => {
+          const callsignMatches =
+            draftInput.callsignInput.length >= 2 && callsignValue.includes(draftInput.callsignInput);
+          const fullNameMatches =
+            draftInput.fullNameInput.length >= 2 && fullNameValue.includes(draftInput.fullNameInput);
           const positionMatches =
             draftInput.positionInput === '' || positionValue.includes(draftInput.positionInput);
-          return callsignMatches && positionMatches;
+          return (callsignMatches || fullNameMatches) && positionMatches;
         });
         const unitMatches = addUnitId == null || callsign.unitId === addUnitId;
 
@@ -401,10 +425,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         id: callsign.id,
         callsign: callsign.callsign,
         position: callsign.position,
+        fullName: callsign.fullName,
         comment: callsign.comment,
         unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
       }));
-  }, [addDuplicateHintsEnabled, addSubmitting, addRows, addUnitId, callsigns, unitsById]);
+  }, [addDuplicateHintsEnabled, addSubmitting, addUnitId, callsigns, deferredDuplicateHintInputs, unitsById]);
 
   function clearListRequest() {
     activeListAbortRef.current?.abort();
@@ -605,7 +630,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onSort(
-    column: 'callsign' | 'position' | 'comment' | 'createdAt' | 'unit' | 'sourceName' | 'radioFreq',
+    column: 'callsign' | 'position' | 'fullName' | 'comment' | 'createdAt' | 'unit' | 'sourceName' | 'radioFreq',
     direction?: SortDirection,
   ) {
     setSort((prev) => nextSortState(prev, column, direction));
@@ -673,7 +698,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         return prev;
       }
       const nextRows = prev.filter((_, rowIndex) => rowIndex !== index);
-      setAddDuplicateHintsEnabled(hasAnyCallsignInput(nextRows));
+      setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
       return nextRows;
     });
   }
@@ -710,18 +735,32 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setAddValidationError(null);
     setAddRows((prev) => {
       const nextRows = prev.map((row, rowIndex) => (rowIndex === index ? next : row));
-      setAddDuplicateHintsEnabled(hasAnyCallsignInput(nextRows));
+      setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
       return nextRows;
     });
   }
 
   function onApplyPastedRows(value: string) {
-    if (!value.includes('\t') && !value.includes('\n')) return;
+    if (!value.includes('\t') && !value.includes('\n')) {
+      setAddValidationError(null);
+      return;
+    }
     const parsed = parseTabDelimitedInput(value);
-    if (parsed.length === 0) return;
-    setAddRows(parsed);
+    if (parsed.error) {
+      setAddRows([createEmptyDraftRow()]);
+      setAddDuplicateHintsEnabled(false);
+      setAddValidationError(parsed.error);
+      return;
+    }
+    if (parsed.rows.length === 0) {
+      setAddRows([createEmptyDraftRow()]);
+      setAddDuplicateHintsEnabled(false);
+      setAddValidationError(QUICK_PASTE_TSV_FORMAT_ERROR);
+      return;
+    }
+    setAddRows(parsed.rows);
     setAddValidationError(null);
-    setAddDuplicateHintsEnabled(hasAnyCallsignInput(parsed));
+    setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(parsed.rows));
   }
 
   async function onSubmitAdd() {
@@ -743,7 +782,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
     const validation = validateDraftRows(addRows, addSourceId);
     if (!validation.valid) {
-      if (validation.error === 'Заповніть хоча б один позивний') {
+      if (validation.error === 'Заповніть хоча б один рядок') {
         return;
       }
       setAddValidationError(validation.error);
@@ -788,7 +827,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
       const failedRows = failed.map((item) => item.row);
       setAddRows(failedRows);
-      setAddDuplicateHintsEnabled(hasAnyCallsignInput(failedRows));
+      setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(failedRows));
       setAddValidationError(
         failed.length === 1
           ? `Не вдалося додати 1 позивний: ${failed[0]?.error ?? 'Невідома помилка'}`

@@ -97,6 +97,10 @@ type StatusInfo = {
 };
 
 type ZoneEntry = [number, SigintZone];
+type LookupAutocompleteOption = {
+  id: number;
+  label: string;
+};
 
 type UserLookups = {
   zones: ZoneEntry[];
@@ -146,6 +150,19 @@ const EMPTY_ADD_FORM: AddUserForm = {
   organismId: null,
   useDelta: true,
 };
+
+function renderLookupAutocompleteOption(
+  props: React.HTMLAttributes<HTMLLIElement> & { key: React.Key },
+  option: LookupAutocompleteOption,
+  prefix: string,
+) {
+  const { key: _unusedKey, ...optionProps } = props;
+  return (
+    <Box component="li" {...optionProps} key={`${prefix}-${option.id}`}>
+      {option.label}
+    </Box>
+  );
+}
 
 function buildUserLoadingRows(): Login[] {
   return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
@@ -440,12 +457,12 @@ function AddUserDialog(props: {
   const organismsLoading = lookups.organismsStatus === 'loading';
   const canSubmit = zonesReady && !isSubmitting;
 
-  const zoneAutocompleteOptions = lookups.zones.map(([zoneId, zone]) => ({
+  const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(([zoneId, zone]) => ({
     id: zoneId,
     label: zone.name || `ID ${zoneId}`,
   }));
 
-  const organismAutocompleteOptions = lookups.organisms.map((organism) => ({
+  const organismAutocompleteOptions: LookupAutocompleteOption[] = lookups.organisms.map((organism) => ({
     id: organism.id,
     label: organism.name || `ID ${organism.id}`,
   }));
@@ -603,6 +620,7 @@ function AddUserDialog(props: {
             disabled={isSubmitting}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
+            renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'add-zone')}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -626,6 +644,7 @@ function AddUserDialog(props: {
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
             className="md:col-span-2"
+            renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'add-organism')}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -665,12 +684,12 @@ function EditUserDialog(props: {
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
 
-  const zoneAutocompleteOptions = lookups.zones.map(([zoneId, zone]) => ({
+  const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(([zoneId, zone]) => ({
     id: zoneId,
     label: zone.name || `ID ${zoneId}`,
   }));
 
-  const organismAutocompleteOptions = lookups.organisms.map((organism) => ({
+  const organismAutocompleteOptions: LookupAutocompleteOption[] = lookups.organisms.map((organism) => ({
     id: organism.id,
     label: organism.name || `ID ${organism.id}`,
   }));
@@ -820,6 +839,7 @@ function EditUserDialog(props: {
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(option) => option.label}
               className="xl:col-span-2"
+              renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'edit-zone')}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -843,6 +863,7 @@ function EditUserDialog(props: {
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(option) => option.label}
               className="xl:col-span-2"
+              renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'edit-organism')}
               renderInput={(params) => (
                 <TextField
                   {...params}
