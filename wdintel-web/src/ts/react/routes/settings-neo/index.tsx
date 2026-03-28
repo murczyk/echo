@@ -4,15 +4,10 @@ import {
   Box,
   Card,
   CircularProgress,
-  Dialog,
-  DialogContent,
-  DialogTitle,
   Stack,
   Tab,
   Tabs,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
@@ -40,6 +35,8 @@ import {
   USER_PREFS_RER_DUTY_NEO_KEY,
   type MessageCardLayoutVariant,
 } from '../rer-duty-neo/utils';
+
+import { SettingsDutySection } from './SettingsDutySection';
 
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
@@ -102,7 +99,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [dutySaveError, setDutySaveError] = useState<string | null>(null);
   const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
   const [dutySaveInProgress, setDutySaveInProgress] = useState(false);
-  const [dutyHelpOpen, setDutyHelpOpen] = useState(false);
 
   const zoneOptions = useMemo<ZoneOption[]>(() => zones.map(([id, zone]) => ({ id, label: zone.name })), [zones]);
 
@@ -391,192 +387,30 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           ) : null}
 
           {settingsSection === 'duty' ? (
-            <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
-              <Stack spacing={2} sx={{ maxWidth: 960 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Вигляд карток повідомлень у стрічці оперативного режиму зберігається для вашого облікового запису.
-                </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <Button variant="text" onClick={() => setDutyHelpOpen(true)} sx={{ px: 0 }}>
-                    як це виглядає
-                  </Button>
-                </Box>
-                {dutyPrefsLoadError ? <Alert severity="warning">{dutyPrefsLoadError}</Alert> : null}
-                {dutySaveError ? <Alert severity="error">{dutySaveError}</Alert> : null}
-                <Box component="form" onSubmit={handleDutySave} noValidate>
-                  <Stack spacing={2}>
-                    <Box className="flex flex-wrap items-center gap-2">
-                      <Typography variant="caption" sx={{ fontSize: 12 }}>
-                        картка повідомлення:
-                      </Typography>
-                      <ToggleButtonGroup
-                        value={messageCardLayout}
-                        exclusive
-                        onChange={(_, v: MessageCardLayoutVariant | null) => {
-                          if (v != null) {
-                            setDutySaveSuccess(null);
-                            setDutySaveError(null);
-                            setMessageCardLayout(v);
-                          }
-                        }}
-                        size="small"
-                        sx={{
-                          flexShrink: 0,
-                          borderRadius: 2,
-                          '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
-                        }}
-                      >
-                        <ToggleButton value="dividers">з роздільниками</ToggleButton>
-                        <ToggleButton value="fluid">без роздільників</ToggleButton>
-                      </ToggleButtonGroup>
-                    </Box>
-                    <Box className="flex flex-wrap items-center gap-2">
-                      <Typography variant="caption" sx={{ fontSize: 12 }}>
-                        вигляд тегів:
-                      </Typography>
-                      <ToggleButtonGroup
-                        value={tagsLayout}
-                        exclusive
-                        onChange={(_, v: TagsLayoutVariant | null) => {
-                          if (v != null) {
-                            setDutySaveSuccess(null);
-                            setDutySaveError(null);
-                            setTagsLayout(v);
-                          }
-                        }}
-                        size="small"
-                        sx={{
-                          flexShrink: 0,
-                          borderRadius: 2,
-                          '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
-                        }}
-                      >
-                        <ToggleButton value="full">повний</ToggleButton>
-                        <ToggleButton value="compact">компактний</ToggleButton>
-                        <ToggleButton value="hidden">не показувати</ToggleButton>
-                      </ToggleButtonGroup>
-                    </Box>
-                    {/* TODO: add notifications when it's implemented */}
-                    {/* <TextField
-                      select
-                      size="small"
-                      label="сповіщення"
-                      value={notifications}
-                      onChange={(e) => {
-                        setDutySaveSuccess(null);
-                        setDutySaveError(null);
-                        setNotifications(e.target.value as NotificationsVariant);
-                      }}
-                      sx={{ width: { xs: "100%", sm: 280 } }}
-                    >
-                      <MenuItem value="sound">звук</MenuItem>
-                      <MenuItem value="browser">браузер</MenuItem>
-                    </TextField> */}
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1.5, pt: 1 }}>
-                      {dutySaveSuccess ? (
-                        <Typography variant="caption" color="success.main" role="status">
-                          {dutySaveSuccess}
-                        </Typography>
-                      ) : null}
-                      <Button
-                        variant="contained"
-                        type="submit"
-                        disabled={dutySaveInProgress || !isDutyDirty || loadInProgress}
-                        startIcon={dutySaveInProgress ? <CircularProgress size={18} /> : undefined}
-                        sx={{ fontWeight: 500 }}
-                      >
-                        зберегти
-                      </Button>
-                    </Box>
-                  </Stack>
-                </Box>
-              </Stack>
-            </Box>
+            <SettingsDutySection
+              loadInProgress={loadInProgress}
+              prefsLoadError={dutyPrefsLoadError}
+              saveError={dutySaveError}
+              saveSuccess={dutySaveSuccess}
+              messageCardLayout={messageCardLayout}
+              onMessageCardLayoutChange={(layout) => {
+                setDutySaveSuccess(null);
+                setDutySaveError(null);
+                setMessageCardLayout(layout);
+              }}
+              tagsLayout={tagsLayout}
+              onTagsLayoutChange={(layout) => {
+                setDutySaveSuccess(null);
+                setDutySaveError(null);
+                setTagsLayout(layout);
+              }}
+              onSave={handleDutySave}
+              isDirty={isDutyDirty}
+              saveInProgress={dutySaveInProgress}
+            />
           ) : null}
         </Card>
       </Stack>
-
-      <Dialog open={dutyHelpOpen} onClose={() => setDutyHelpOpen(false)} fullWidth maxWidth="lg">
-        <DialogTitle>Підказка по вигляду оперативного режиму</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={3}>
-            <Typography variant="body2" color="text.secondary">
-              Скріншоти-приклади. Замініть файли за цими шляхами на актуальні зображення.
-            </Typography>
-
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Картка повідомлення
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
-                <Box>
-                  <Box
-                    component="img"
-                    src="/settings-help/message-layout-dividers.png"
-                    alt="Картка з роздільниками"
-                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    з роздільниками
-                  </Typography>
-                </Box>
-                <Box>
-                  <Box
-                    component="img"
-                    src="/settings-help/message-layout-fluid.png"
-                    alt="Картка без роздільників"
-                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    без роздільників
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Вигляд тегів
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 2 }}>
-                <Box>
-                  <Box
-                    component="img"
-                    src="/settings-help/tags-layout-full.png"
-                    alt="Теги повний вигляд"
-                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    повний
-                  </Typography>
-                </Box>
-                <Box>
-                  <Box
-                    component="img"
-                    src="/settings-help/tags-layout-compact.png"
-                    alt="Теги компактний вигляд"
-                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    компактний
-                  </Typography>
-                </Box>
-                <Box>
-                  <Box
-                    component="img"
-                    src="/settings-help/tags-layout-hidden.png"
-                    alt="Теги приховано"
-                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    не показувати
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Stack>
-        </DialogContent>
-      </Dialog>
     </Box>
   );
 }

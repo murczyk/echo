@@ -206,7 +206,7 @@ export function MessageCardHeader({
     : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 text-xs items-end';
 
   return (
-    <div className="flex items-stretch w-full">
+    <div className="flex items-stretch w-full pb-2 border-b border-border">
       <div className={colLeft}>
         <div className="flex items-center justify-left" style={{ fontSize: '.75rem' }}>
           <span className="flex items-center gap-1 pr-2">
