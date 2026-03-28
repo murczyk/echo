@@ -195,9 +195,9 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
   };
 }
 
-export async function fetchInboxMessages(req: InboxMessagesReq): Promise<InboxMessagesRsp> {
+export async function fetchInboxMessages(req: InboxMessagesReq, signal?: AbortSignal): Promise<InboxMessagesRsp> {
   const body = inboxMsgtoSnakeBody(req);
-  const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any);
+  const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any, { signal });
   return mapRsp(raw);
 }
 

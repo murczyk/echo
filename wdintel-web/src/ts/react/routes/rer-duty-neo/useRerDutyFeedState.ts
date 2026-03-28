@@ -57,7 +57,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
-  const initialLoadInFlightRef = useRef<Set<string>>(new Set());
+  /** Latest initial-load request per feed; superseded loads are aborted so stale responses are not applied. */
+  const initialLoadAbortByFeedIdRef = useRef<Record<string, AbortController>>({});
   const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedId, setLoadingNewerFeedId] = useState<string | null>(null);
@@ -119,14 +120,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
-      if (initialLoadInFlightRef.current.has(feedId)) return;
-      initialLoadInFlightRef.current.add(feedId);
+      const aborts = initialLoadAbortByFeedIdRef.current;
+      aborts[feedId]?.abort();
+      const ac = new AbortController();
+      aborts[feedId] = ac;
       const effectiveFeed = overrides ? { ...feed, ...overrides } : feed;
       setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: true } : x)));
       setError(null);
       try {
         const req = buildReqForFeed(effectiveFeed, { loadLatest: true });
-        const rsp = await fetchInboxMessages(req);
+        const rsp = await fetchInboxMessages(req, ac.signal);
+        if (aborts[feedId] !== ac) return;
         const deduped = dedupeMessageItems(rsp.inboxItems);
         const initialReadIds = new Set<number>(deduped.map(([id]) => id));
         setMessageFeeds((prev) =>
@@ -153,10 +157,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           setGroupInfos((prev) => ({ ...prev, ...map }));
         }
       } catch (e) {
+        if (ac.signal.aborted) return;
+        if (aborts[feedId] !== ac) return;
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
       } finally {
-        initialLoadInFlightRef.current.delete(feedId);
+        if (aborts[feedId] === ac) {
+          delete aborts[feedId];
+        }
       }
     },
     [messageFeeds, buildReqForFeed, setProfiles, setGroupInfos],
@@ -261,64 +269,72 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [messageFeeds, buildReqForFeed],
   );
 
+  const pollInFlightRef = useRef(false);
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
-    if (!messageFeeds.length) return;
+    if (!messageFeeds.length || pollInFlightRef.current) return;
+    pollInFlightRef.current = true;
     const nearBottom = nearBottomByFeedIdRef.current;
-    const counts = await Promise.all(
-      messageFeeds.map(async (w) => {
-        if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
-          return { feedId: w.id, quantity: null as number | null, hasItems: w.items.length > 0, skipped: true };
+    try {
+      const counts = await Promise.all(
+        messageFeeds.map(async (w) => {
+          if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
+            return { feedId: w.id, quantity: null as number | null, hasItems: w.items.length > 0, skipped: true };
+          }
+          countInFlightByFeedIdRef.current.add(w.id);
+          try {
+            const lastItem = w.items[w.items.length - 1];
+            const sinceMs =
+              lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
+                ? lastItem[1].timestamp + 1
+                : 0;
+            const hasItems = w.items.length > 0;
+            const { quantity } = await fetchInboxCount(
+              buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
+            );
+            return { feedId: w.id, quantity, hasItems, skipped: false };
+          } catch {
+            return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false };
+          } finally {
+            countInFlightByFeedIdRef.current.delete(w.id);
+          }
+        }),
+      );
+      setMessageFeeds((prev) =>
+        prev.map((f) => {
+          const entry = counts.find((c) => c.feedId === f.id);
+          if (entry?.skipped) return f;
+          const quantity = entry?.quantity ?? 0;
+          const hasItems = entry?.hasItems ?? f.items.length > 0;
+          const allItemsRead =
+            f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
+          const unreadCount = !hasItems
+            ? f.unreadCount
+            : quantity === 0 && allItemsRead
+              ? 0
+              : Math.max(f.unreadCount, quantity);
+          const requestInitialViaEffect =
+            !hasItems && !f.loading && quantity > 0;
+          return {
+            ...f,
+            unreadCount,
+            ...(requestInitialViaEffect ? { loading: true } : {}),
+          };
+        }),
+      );
+      for (const entry of counts) {
+        if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
+        if (!entry.hasItems) continue;
+        const { feedId } = entry;
+        if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
+          await loadFeedNewerMessages(feedId, {
+            scrollToEndAfterLoad: watchModeByFeedId[feedId],
+          });
         }
-        countInFlightByFeedIdRef.current.add(w.id);
-        try {
-          const lastItem = w.items[w.items.length - 1];
-          const sinceMs =
-            lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
-              ? lastItem[1].timestamp + 1
-              : 0;
-          const hasItems = w.items.length > 0;
-          const { quantity } = await fetchInboxCount(
-            buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
-          );
-          return { feedId: w.id, quantity, hasItems, skipped: false };
-        } catch {
-          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false };
-        } finally {
-          countInFlightByFeedIdRef.current.delete(w.id);
-        }
-      }),
-    );
-    setMessageFeeds((prev) =>
-      prev.map((f) => {
-        const entry = counts.find((c) => c.feedId === f.id);
-        if (entry?.skipped) return f;
-        const quantity = entry?.quantity ?? 0;
-        const hasItems = entry?.hasItems ?? f.items.length > 0;
-        const allItemsRead =
-          f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
-        const unreadCount = !hasItems
-          ? f.unreadCount
-          : quantity === 0 && allItemsRead
-            ? 0
-            : Math.max(f.unreadCount, quantity);
-        return { ...f, unreadCount };
-      }),
-    );
-    for (const entry of counts) {
-      if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
-      const { feedId } = entry;
-      const shouldBootstrapEmptyFeed = entry.hasItems === false;
-      if (shouldBootstrapEmptyFeed) {
-        await loadFeedInitialMessages(feedId);
-        continue;
       }
-      if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
-        await loadFeedNewerMessages(feedId, {
-          scrollToEndAfterLoad: watchModeByFeedId[feedId],
-        });
-      }
+    } finally {
+      pollInFlightRef.current = false;
     }
-  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, loadFeedInitialMessages, buildReqForFeed]);
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
