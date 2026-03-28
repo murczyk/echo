@@ -2083,7 +2083,7 @@ mod tests {
             palitra::ActiveModel {
                 name: Set("Login Scoped Palitra".to_string()),
                 hex_legacy: Set(Some("#abcdef".into())),
-                author: Set(Some("another-author".to_string())),
+                author: Set(None),
                 deleted: Set(false),
                 created_at: Set(now),
                 ..Default::default()
@@ -2132,7 +2132,7 @@ mod tests {
             palitra::ActiveModel {
                 name: Set("Organism Scoped Palitra".to_string()),
                 hex_legacy: Set(Some("#123abc".into())),
-                author: Set(Some("another-author".to_string())),
+                author: Set(None),
                 deleted: Set(false),
                 created_at: Set(now),
                 ..Default::default()
