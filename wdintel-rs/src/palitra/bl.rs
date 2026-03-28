@@ -95,6 +95,19 @@ enum PalitraUpdateAction {
     Update,
 }
 
+#[derive(Debug, Clone)]
+struct LoginAccessScope {
+    organism_ids: HashSet<i64>,
+    aor_ids: HashSet<i64>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PalitraAccessIndex {
+    logins: HashSet<String>,
+    organism_ids: HashSet<i64>,
+    aor_ids: HashSet<i64>,
+}
+
 pub async fn collect_palitra_access_logins<'a, 'async_trait, C>(
     txn: &'a C,
     palitra_id: i64,
@@ -1455,73 +1468,164 @@ where
     })
 }
 
-async fn collect_palitra_ids(
+pub(crate) async fn collect_palitra_ids(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
-    // only direct organism (no parents), only AOR with is_top_level = true
-    let organism_aors = organism_aor::Entity::find()
-        .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
-        .join(JoinType::InnerJoin, organism::Relation::Login.def())
-        .filter(login::Column::Login.eq(login.clone()))
+    let scope = load_login_access_scope(dbx, &login).await.c(h!())?;
+    let palitras = palitra::Entity::find()
+        .filter(palitra::Column::Deleted.eq(false))
+        .select_only()
+        .column(palitra::Column::Id)
+        .column(palitra::Column::Author)
+        .into_tuple::<(i64, Option<String>)>()
         .all(dbx)
         .await
         .c(h!())?;
-    let login_organism_ids = organism_aors
-        .iter()
-        .map(|o| o.organism_id)
-        .collect::<Vec<_>>();
-    let login_aor_ids = organism_aors
+    let access_by_palitra_id = load_palitra_access_index(dbx).await.c(h!())?;
+
+    Ok(palitras
         .into_iter()
-        .map(|x| x.aor_id)
-        .collect::<Vec<_>>();
-    let login_filter = Condition::any()
-        .add(login::Column::Login.contains(login))
-        .add(login::Column::Login.is_null());
-    let organism_filter = Condition::any()
-        .add(organism::Column::Id.eq_any(login_organism_ids))
-        .add(organism::Column::Id.is_null());
-    let aor_filter = Condition::any()
-        .add(area_of_responsibility::Column::Id.eq_any(login_aor_ids))
-        .add(area_of_responsibility::Column::Id.is_null());
-    let filter = Condition::all()
-        .add(login_filter)
-        .add(aor_filter)
-        .add(organism_filter);
-    palitra::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            palitra::Relation::PalitraAccessAor.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            palitra::Relation::PalitraAccessLogin.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            palitra::Relation::PalitraAccessOrganism.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            palitra_access_aor::Relation::AreaOfResponsibility.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            palitra_access_login::Relation::Login.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            palitra_access_organism::Relation::Organism.def(),
-        )
-        .select_only()
-        .column(palitra::Column::Id)
-        .group_by(palitra::Column::Id)
-        .filter(palitra::Column::Deleted.eq(false))
-        .filter(filter)
-        .into_tuple::<i64>()
+        .filter_map(|(palitra_id, author)| {
+            let access = access_by_palitra_id.get(&palitra_id);
+            user_can_access_palitra(&login, author.as_deref(), &scope, access)
+                .then_some(palitra_id)
+        })
+        .collect())
+}
+
+async fn load_login_access_scope(
+    dbx: &DatabaseConnection,
+    login_name: &str,
+) -> anyhow::Result<LoginAccessScope> {
+    let organism_aors = organism_aor::Entity::find()
+        .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
+        .join(JoinType::InnerJoin, organism::Relation::Login.def())
+        .filter(login::Column::Login.eq(login_name.to_string()))
         .all(dbx)
         .await
-        .c(h!())
+        .c(h!())?;
+    let organism_ids = organism_aors
+        .iter()
+        .map(|organism_aor| organism_aor.organism_id)
+        .collect::<HashSet<_>>();
+    let direct_aor_ids = organism_aors
+        .into_iter()
+        .map(|organism_aor| organism_aor.aor_id)
+        .collect_vec();
+    let aor_ids = expand_aor_ids_to_descendants(dbx, &direct_aor_ids)
+        .await
+        .c(h!())?;
+    Ok(LoginAccessScope {
+        organism_ids,
+        aor_ids,
+    })
+}
+
+pub(crate) async fn expand_aor_ids_to_descendants<'a, 'async_trait, C>(
+    dbx: &'a C,
+    direct_aor_ids: &[i64],
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if direct_aor_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let all_aors = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let user_aor_bounds = all_aors
+        .iter()
+        .filter(|aor| direct_aor_ids.contains(&aor.id))
+        .map(|aor| (aor.left_bound, aor.right_bound))
+        .collect_vec();
+    Ok(all_aors
+        .into_iter()
+        .filter(|candidate| {
+            user_aor_bounds.iter().any(|(left_bound, right_bound)| {
+                candidate.left_bound >= *left_bound
+                    && candidate.right_bound <= *right_bound
+            })
+        })
+        .map(|aor| aor.id)
+        .collect())
+}
+
+async fn load_palitra_access_index(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<HashMap<i64, PalitraAccessIndex>> {
+    let mut access_by_palitra_id: HashMap<i64, PalitraAccessIndex> =
+        HashMap::new();
+
+    for (palitra_id, login_name) in palitra_access_login::Entity::find()
+        .select_only()
+        .column(palitra_access_login::Column::PalitraId)
+        .column(palitra_access_login::Column::Login)
+        .into_tuple::<(i64, String)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+    {
+        access_by_palitra_id
+            .entry(palitra_id)
+            .or_default()
+            .logins
+            .insert(login_name);
+    }
+
+    for (palitra_id, organism_id) in palitra_access_organism::Entity::find()
+        .select_only()
+        .column(palitra_access_organism::Column::PalitraId)
+        .column(palitra_access_organism::Column::OrganismId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+    {
+        access_by_palitra_id
+            .entry(palitra_id)
+            .or_default()
+            .organism_ids
+            .insert(organism_id);
+    }
+
+    for (palitra_id, aor_id) in palitra_access_aor::Entity::find()
+        .select_only()
+        .column(palitra_access_aor::Column::PalitraId)
+        .column(palitra_access_aor::Column::AorId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+    {
+        access_by_palitra_id
+            .entry(palitra_id)
+            .or_default()
+            .aor_ids
+            .insert(aor_id);
+    }
+
+    Ok(access_by_palitra_id)
+}
+
+fn user_can_access_palitra(
+    login_name: &str,
+    author: Option<&str>,
+    scope: &LoginAccessScope,
+    access: Option<&PalitraAccessIndex>,
+) -> bool {
+    if author == Some(login_name) {
+        return true;
+    }
+    let Some(access) = access else {
+        return false;
+    };
+    access.logins.contains(login_name)
+        || !access.organism_ids.is_disjoint(&scope.organism_ids)
+        || !access.aor_ids.is_disjoint(&scope.aor_ids)
 }
 
 async fn update_palitra_from_req<'a, 'async_trait, C>(
@@ -1765,17 +1869,23 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::entities::palitra_geometry;
+    use crate::entities::{
+        area_of_responsibility, login, organism, organism_aor,
+        palitra_access_aor, palitra_access_login, palitra_geometry,
+    };
     use crate::functest::tests::{
-        cleanup, find_test_login, find_test_palitra, mk_palitra_point,
+        cleanup, find_test_login, find_test_palitra, mk_aor, mk_login,
+        mk_organism, mk_organism_aor, mk_palitra_point,
     };
     use crate::palitra::bl::{
-        search_palitra_points_by_labels, update_palitra, update_palitra_v2,
+        collect_palitra_ids, search_palitra_points_by_labels, update_palitra,
+        update_palitra_v2,
     };
     use crate::palitra::types::{
         CreatePalitraReq, PalitraAccess, PalitraSearchPointsReq,
         UpdatePalitraV2Req,
     };
+    use chrono::Utc;
     use sea_orm::{
         ActiveModelTrait, ColumnTrait, EntityTrait, NotSet, QueryFilter, Set,
         TransactionTrait,
@@ -1978,6 +2088,108 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(active_palitra_geometries.len(), 2);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_collect_palitra_ids_includes_author_without_explicit_access()
+    {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+
+        palitra_access_login::Entity::delete_many()
+            .filter(palitra_access_login::Column::PalitraId.eq(palitra.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra_ids =
+            collect_palitra_ids(login.login, &env.dbx).await.unwrap();
+
+        assert!(palitra_ids.contains(&palitra.id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_collect_palitra_ids_grants_parent_aor_access_to_child_scoped_palitra(
+    ) {
+        let env = cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let child_aor = mk_aor(
+            &env.dbx,
+            area_of_responsibility::ActiveModel {
+                name: Set("Child AOR".to_string()),
+                left_bound: Set(10.0),
+                right_bound: Set(20.0),
+                is_top_level: Set(false),
+                is_default: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let parent_organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                name: Set("Parent Organism".to_string()),
+                created_at: Set(now),
+                enabled: Set(true),
+                deleted_permanently: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let parent_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("parent-aor-login".to_string()),
+                organism_id: Set(Some(parent_organism.id)),
+                created_at: Set(now),
+                deleted: Set(false),
+                deleted_permanently: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let root_aor = crate::functest::tests::find_test_aor(&env.dbx)
+            .await
+            .unwrap();
+        mk_organism_aor(
+            &env.dbx,
+            organism_aor::ActiveModel {
+                organism_id: Set(parent_organism.id),
+                aor_id: Set(root_aor.id),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        palitra_access_login::Entity::delete_many()
+            .filter(palitra_access_login::Column::PalitraId.eq(palitra.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        palitra_access_aor::ActiveModel {
+            id: NotSet,
+            palitra_id: Set(palitra.id),
+            aor_id: Set(child_aor.id),
+            created_at: Set(now),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let palitra_ids = collect_palitra_ids(parent_login.login, &env.dbx)
+            .await
+            .unwrap();
+
+        assert!(palitra_ids.contains(&palitra.id));
     }
 
     async fn create_palitra_search_request(

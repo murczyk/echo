@@ -354,32 +354,23 @@ pub async fn upload_palitra_points(
     mut payload: Multipart,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
-    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     let palitra_id = path.into_inner();
     let palitra = palitra::Entity::find_by_id(palitra_id)
         .one(&env.dbx)
         .await
         .c(h!())?
         .c(h!())?;
-    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .is_ok();
-    if !is_admin {
-        match &palitra.author {
-            Some(author) if author == &login => {}
-            _ => {
-                return Err(AppError::Forbidden(
-                    "Only author or Admin may upload palitra points".into(),
-                ));
-            }
-        }
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, &login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Err(AppError::Forbidden(
+            "Only author or Admin may upload palitra points".into(),
+        ));
     }
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
-        .await
-        .c(h!())?;
-
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
@@ -643,10 +634,6 @@ pub async fn update_palitra(
 ) -> Result<Json<PalitraDetails>, AppError> {
     let login = user.id().c(h!())?;
     let req = req.into_inner();
-    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &req.access, &scope)
-        .await
-        .c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -654,25 +641,15 @@ pub async fn update_palitra(
         .await
         .c(h!())?
         .c(h!())?;
-    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .is_ok();
-    if !is_admin {
-        match &palitra.author {
-            Some(author) if author == &login => {}
-            _ => {
-                return Err(AppError::Forbidden(
-                    "Only author or Admin may update palitra".into(),
-                ));
-            }
-        }
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, &login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Err(AppError::Forbidden(
+            "Only author or Admin may update palitra".into(),
+        ));
     }
-
-    let existing_access =
-        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
-        .await
-        .c(h!())?;
     let result = bl::update_palitra(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
@@ -687,10 +664,6 @@ pub async fn update_palitra_v2(
 ) -> Result<Json<PalitraReadV2>, AppError> {
     let login = user.id().c(h!())?;
     let req = req.into_inner();
-    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &req.access, &scope)
-        .await
-        .c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -698,25 +671,15 @@ pub async fn update_palitra_v2(
         .await
         .c(h!())?
         .c(h!())?;
-    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .is_ok();
-    if !is_admin {
-        match &palitra.author {
-            Some(author) if author == &login => {}
-            _ => {
-                return Err(AppError::Forbidden(
-                    "Only author or Admin may update palitra".into(),
-                ));
-            }
-        }
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, &login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Err(AppError::Forbidden(
+            "Only author or Admin may update palitra".into(),
+        ));
     }
-
-    let existing_access =
-        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
-        .await
-        .c(h!())?;
     let result = bl::update_palitra_v2(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
@@ -729,7 +692,6 @@ pub async fn delete_palitra(
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
-    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -737,24 +699,17 @@ pub async fn delete_palitra(
         .await
         .c(h!())?
         .c(h!())?;
-    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .is_ok();
-    if !is_admin {
-        match &palitra.author {
-            Some(author) if author == &login => {}
-            _ => {
-                return Err(AppError::Forbidden(
-                    "Only author or Admin may delete palitra".into(),
-                ));
-            }
-        }
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, &login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Err(AppError::Forbidden(
+            "Only author or Admin may delete palitra".into(),
+        ));
     }
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
-        .await
-        .c(h!())?;
 
     bl::delete_palitra(palitra.id, &txn, existing_access, &env)
         .await
@@ -1083,11 +1038,25 @@ async fn load_user_scope(
         .c(h!())?;
     let organism_ids =
         organism_aors.iter().map(|o| o.organism_id).collect_vec();
-    let aor_ids = organism_aors.iter().map(|o| o.aor_id).collect_vec();
+    let direct_aor_ids = organism_aors.iter().map(|o| o.aor_id).collect_vec();
+    let aor_ids = bl::expand_aor_ids_to_descendants(dbx, &direct_aor_ids)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect_vec();
     Ok(UserScope {
         organism_ids,
         aor_ids,
     })
+}
+
+async fn is_palitra_author_or_admin(
+    dbx: &DatabaseConnection,
+    login: &str,
+    palitra: &palitra::Model,
+) -> anyhow::Result<bool> {
+    let is_admin = crate::users::has_role(dbx, login, "Admin").await.is_ok();
+    Ok(is_admin || palitra.author.as_deref() == Some(login))
 }
 
 async fn read_palitra_access(
