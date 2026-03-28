@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
 import {
+  DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
+  DEFAULT_DUTY_TAGS_LAYOUT,
   messageCardLayoutFromUserPrefs,
   tagsLayoutFromUserPrefs,
   type MessageCardLayoutVariant,
@@ -19,8 +21,10 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
-  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>('dividers');
-  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>('full');
+  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>(
+    DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
+  );
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   // load layout prefs from user settings
   useEffect(() => {
     let cancelled = false;
@@ -30,12 +34,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         if (cancelled) return;
         const messageLayout = messageCardLayoutFromUserPrefs(prefs);
         const tagsLayoutPref = tagsLayoutFromUserPrefs(prefs);
-        setMessageCardLayout(messageLayout ?? 'fluid');
-        setTagsLayout(tagsLayoutPref ?? 'full');
+        setMessageCardLayout(messageLayout ?? DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
+        setTagsLayout(tagsLayoutPref ?? DEFAULT_DUTY_TAGS_LAYOUT);
       } catch {
         if (cancelled) return;
-        setMessageCardLayout('fluid');
-        setTagsLayout('full');
+        setMessageCardLayout(DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
+        setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
       }
     };
     loadLayout();

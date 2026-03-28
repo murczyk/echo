@@ -25,12 +25,10 @@ import {
   saveUserSettings as saveUserPrefsSettings,
 } from '../../services/api/user-settings';
 import {
-  getStoredMessageCardLayout,
+  DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
+  DEFAULT_DUTY_TAGS_LAYOUT,
   messageCardLayoutFromUserPrefs,
-  notificationsFromUserPrefs,
-  setStoredMessageCardLayout,
   tagsLayoutFromUserPrefs,
-  type NotificationsVariant,
   type TagsLayoutVariant,
   USER_PREFS_RER_DUTY_NEO_KEY,
   type MessageCardLayoutVariant,
@@ -89,12 +87,14 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     parseSettingsSection(section ?? readSettingsSectionFromUrl()),
   );
   const [userPrefs, setUserPrefs] = useState<Record<string, unknown> | null>(null);
-  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>('dividers');
-  const [initialMessageCardLayout, setInitialMessageCardLayout] = useState<MessageCardLayoutVariant>('dividers');
-  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>('full');
-  const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>('full');
-  const [notifications, setNotifications] = useState<NotificationsVariant>('sound');
-  const [initialNotifications, setInitialNotifications] = useState<NotificationsVariant>('sound');
+  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>(
+    DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
+  );
+  const [initialMessageCardLayout, setInitialMessageCardLayout] = useState<MessageCardLayoutVariant>(
+    DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
+  );
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
+  const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
   const [dutySaveError, setDutySaveError] = useState<string | null>(null);
   const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
@@ -142,28 +142,21 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         setDutyPrefsLoadError(null);
         if (prefsRsp == null) {
           setDutyPrefsLoadError('Не вдалося завантажити налаштування.');
-          const fallback = getStoredMessageCardLayout();
-          setUserPrefs({});
-          setMessageCardLayout(fallback);
-          setInitialMessageCardLayout(fallback);
-          setTagsLayout('full');
-          setInitialTagsLayout('full');
-          setNotifications('sound');
-          setInitialNotifications('sound');
+          setUserPrefs(null);
+          setMessageCardLayout(DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
+          setInitialMessageCardLayout(DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
+          setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+          setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         } else {
           const prefs = prefsRsp;
           setUserPrefs(prefs);
           const fromServer = messageCardLayoutFromUserPrefs(prefs);
-          const tagsLayoutServer = tagsLayoutFromUserPrefs(prefs) ?? 'full';
-          const notificationsServer = notificationsFromUserPrefs(prefs) ?? 'sound';
-          const layout = fromServer ?? getStoredMessageCardLayout();
+          const tagsLayoutServer = tagsLayoutFromUserPrefs(prefs) ?? DEFAULT_DUTY_TAGS_LAYOUT;
+          const layout = fromServer ?? DEFAULT_DUTY_MESSAGE_CARD_LAYOUT;
           setMessageCardLayout(layout);
           setInitialMessageCardLayout(layout);
           setTagsLayout(tagsLayoutServer);
           setInitialTagsLayout(tagsLayoutServer);
-          setNotifications(notificationsServer);
-          setInitialNotifications(notificationsServer);
-          setStoredMessageCardLayout(layout);
         }
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
@@ -196,10 +189,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
-  const isDutyDirty =
-    messageCardLayout !== initialMessageCardLayout ||
-    tagsLayout !== initialTagsLayout ||
-    notifications !== initialNotifications;
+  const isDutyDirty = messageCardLayout !== initialMessageCardLayout || tagsLayout !== initialTagsLayout;
 
   async function handleDutySave(event?: FormEvent) {
     event?.preventDefault();
@@ -211,21 +201,34 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     setDutySaveInProgress(true);
 
     try {
-      const base = userPrefs ?? {};
+      let base: Record<string, unknown>;
+      if (userPrefs !== null) {
+        base = userPrefs;
+      } else {
+        try {
+          base = await fetchUserPrefsSettings();
+          setUserPrefs(base);
+          setDutyPrefsLoadError(null);
+        } catch (error) {
+          if (isUnauthorizedError(error)) {
+            window.location.assign('/login');
+            return;
+          }
+          setDutySaveError('Не вдалося завантажити актуальні налаштування з сервера.');
+          return;
+        }
+      }
       const prevRer = base[USER_PREFS_RER_DUTY_NEO_KEY];
       const rerMerged = {
         ...(typeof prevRer === 'object' && prevRer !== null ? (prevRer as Record<string, unknown>) : {}),
         messageCardLayout,
         tagsLayout,
-        notifications,
       };
       const nextPrefs = { ...base, [USER_PREFS_RER_DUTY_NEO_KEY]: rerMerged };
       const res = await saveUserPrefsSettings(nextPrefs);
       setUserPrefs(res);
       setInitialMessageCardLayout(messageCardLayout);
       setInitialTagsLayout(tagsLayout);
-      setInitialNotifications(notifications);
-      setStoredMessageCardLayout(messageCardLayout);
       setDutySaveSuccess('Збережено');
     } catch (error) {
       if (isUnauthorizedError(error)) {

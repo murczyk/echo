@@ -28,16 +28,15 @@ export function createMasterUnitText(network: Network, unitsMap: Record<number, 
 }
 
 export const PAGE_ID = 'rer-duty-neo';
-/** LocalStorage key for message card layout preference (dividers | fluid). */
-export const MESSAGE_CARD_LAYOUT_STORAGE_KEY = 'rer-duty-neo-message-card-layout';
-/** Dispatched on `window` after `setStoredMessageCardLayout` (same-tab sync; `storage` only fires in other tabs). */
-export const MESSAGE_CARD_LAYOUT_CHANGED_EVENT = 'echo:rer-duty-message-card-layout-changed';
 /** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
 export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
 
 export type MessageCardLayoutVariant = 'dividers' | 'fluid';
 export type TagsLayoutVariant = 'full' | 'compact' | 'hidden';
-export type NotificationsVariant = 'sound' | 'browser';
+
+/** When `rerDutyNeo` prefs omit a value or loading fails (settings + operative feed). */
+export const DEFAULT_DUTY_MESSAGE_CARD_LAYOUT: MessageCardLayoutVariant = 'fluid';
+export const DEFAULT_DUTY_TAGS_LAYOUT: TagsLayoutVariant = 'compact';
 
 /** Key under `GET/PUT /api/user/settings` JSON body for rer-duty-neo (operative feed). */
 export const USER_PREFS_RER_DUTY_NEO_KEY = 'rerDutyNeo';
@@ -61,28 +60,6 @@ export function tagsLayoutFromUserPrefs(prefs: Record<string, unknown> | undefin
     if (v === 'full' || v === 'compact' || v === 'hidden') return v;
   }
   return null;
-}
-
-export function notificationsFromUserPrefs(prefs: Record<string, unknown> | undefined | null): NotificationsVariant | null {
-  if (prefs == null) return null;
-  const block = prefs[USER_PREFS_RER_DUTY_NEO_KEY];
-  if (block && typeof block === 'object' && block !== null && 'notifications' in block) {
-    const v = (block as { notifications?: unknown }).notifications;
-    if (v === 'sound' || v === 'browser') return v;
-  }
-  return null;
-}
-
-export function getStoredMessageCardLayout(): MessageCardLayoutVariant {
-  if (typeof window === 'undefined') return 'dividers';
-  const raw = window.localStorage.getItem(MESSAGE_CARD_LAYOUT_STORAGE_KEY);
-  return raw === 'fluid' ? 'fluid' : 'dividers';
-}
-
-export function setStoredMessageCardLayout(v: MessageCardLayoutVariant): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(MESSAGE_CARD_LAYOUT_STORAGE_KEY, v);
-  window.dispatchEvent(new CustomEvent(MESSAGE_CARD_LAYOUT_CHANGED_EVENT, { detail: v }));
 }
 
 export function emptyFilter(): RerDutyFeedFilterState {
