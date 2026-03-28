@@ -9,6 +9,7 @@ import {
   buildAnalysisMapHrefWithSearch,
   etalonFallbackWhenNoNetworks,
   getPointEtalonsFromMessage,
+  type TagsLayoutVariant,
 } from './utils';
 
 export type MessageCardProps = {
@@ -19,6 +20,8 @@ export type MessageCardProps = {
   feedCount?: number;
   /** 'dividers' = sections with borders; 'fluid' = no dividers, spacing only (for A/B testing). */
   layoutVariant?: 'dividers' | 'fluid';
+  /** Tag chips section visual density mode. */
+  tagsLayout?: TagsLayoutVariant;
   /** Baseline "now" when the card is off-screen; while visible, relative time updates every minute. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
@@ -46,6 +49,7 @@ export function MessageCard({
   feedId: _feedId,
   feedCount = 1,
   layoutVariant = 'dividers',
+  tagsLayout = 'full',
   referenceTimeMs,
   authUserName,
   groupName,
@@ -105,7 +109,7 @@ export function MessageCard({
           msg={msg}
           relativeTimeMs={relativeTimeMs}
         />
-        <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
+        <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
       </div>
     </Box>
   );

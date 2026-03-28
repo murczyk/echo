@@ -1,8 +1,14 @@
 import { Box, Tooltip } from '@mui/material';
+import { useMemo, useState } from 'react';
 
 import type { ContentNode, InboxMessage, Network, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
-import { getPointEtalonsFromMessage, messageHasPalitraTag, messageRenderDistance } from './utils';
+import {
+  getPointEtalonsFromMessage,
+  messageHasPalitraTag,
+  messageRenderDistance,
+  type TagsLayoutVariant,
+} from './utils';
 import { renderMarkedText } from './MarkedText';
 
 function networkNeedsInvestigationBadge(network: Network | undefined): boolean {
@@ -152,14 +158,17 @@ function MessageCardTagChips({
   msg,
   tagsMap,
   onToggleTag,
+  tagsLayout,
 }: {
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
+  tagsLayout: TagsLayoutVariant;
 }) {
-  return (
-    <Box className="flex flex-wrap gap-1">
-      {Object.keys(tagsMap).map((tagId) => {
+  const [showCompactRest, setShowCompactRest] = useState(false);
+  const rows = useMemo(
+    () =>
+      Object.keys(tagsMap).map((tagId) => {
         const tag = tagsMap[tagId];
         const label = tag.label ?? `#${tagId}`;
         const inboxTagList = msg.inboxTags ?? [];
@@ -184,13 +193,39 @@ function MessageCardTagChips({
             ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
           ].join('\n');
         const showBadge = isSet && (humanContribs.length > 0 || botContribs.length > 0);
+        return {
+          tagId,
+          label,
+          isSet,
+          tip,
+          showBadge,
+          humanContribsLen: humanContribs.length,
+          botContribsLen: botContribs.length,
+        };
+      }),
+    [msg.inboxTags, msg.tags, tagsMap],
+  );
+  const selectedRows = rows.filter((r) => r.isSet);
+  const unselectedRows = rows.filter((r) => !r.isSet);
+  const compactOrderedRows = [...selectedRows, ...unselectedRows];
+  const compactVisibleBase = compactOrderedRows.slice(0, 5);
+  const compactRestRows = compactOrderedRows.slice(5);
+
+  const visibleRows =
+    tagsLayout === 'compact' ? [...compactVisibleBase, ...(showCompactRest ? compactRestRows : [])] : rows;
+
+  return (
+    <Box className="flex flex-wrap gap-1">
+      {visibleRows.map((row) => {
+        const botContribsLen = row.botContribsLen;
+        const humanContribsLen = row.humanContribsLen;
         return (
-          <Tooltip key={tagId} title={tip} placement="top">
+          <Tooltip key={row.tagId} title={row.tip} placement="top">
             <Box component="span" className="relative inline-flex">
               <PowerChip
-                label={label}
-                selected={isSet}
-                onClick={() => onToggleTag(Number(tagId))}
+                label={row.label}
+                selected={row.isSet}
+                onClick={() => onToggleTag(Number(row.tagId))}
                 size="small"
                 fontSize="0.875rem"
                 unselectedBackgroundColor="var(--color-background)"
@@ -200,21 +235,21 @@ function MessageCardTagChips({
                 selectedBorderColor="var(--color-border-selected)"
                 selectedTextColor="var(--neutral-900)"
               />
-              {showBadge && (
+              {row.showBadge && (
                 <span
-                  className="absolute -top-[13px] -right-1 flex items-center gap-1 text-[10px] bg-card border border-border rounded-full px-1.5 py-0.5 shadow-sm"
+                  className="absolute -top-[12px] -right-1 flex items-center gap-1 text-[10px] bg-card border border-border rounded-full px-1.5 py-0.5 shadow-sm"
                   aria-hidden
                 >
-                  {botContribs.length > 0 && (
+                  {botContribsLen > 0 && (
                     <span className="flex items-center gap-0.5" title="Боти">
                       <i className="bi bi-robot" />
-                      <span>{botContribs.length}</span>
+                      <span>{botContribsLen}</span>
                     </span>
                   )}
-                  {humanContribs.length > 0 && (
+                  {humanContribsLen > 0 && (
                     <span className="flex items-center gap-0.5" title="Користувачі">
                       <i className="bi bi-person-fill" />
-                      <span>{humanContribs.length}</span>
+                      <span>{humanContribsLen}</span>
                     </span>
                   )}
                 </span>
@@ -223,6 +258,18 @@ function MessageCardTagChips({
           </Tooltip>
         );
       })}
+      {tagsLayout === 'compact' && compactRestRows.length > 0 && (
+        <PowerChip
+          label={<i className={showCompactRest ? 'bi bi-chevron-up' : 'bi bi-chevron-down'} aria-hidden />}
+          selected={false}
+          onClick={() => setShowCompactRest((v) => !v)}
+          size="small"
+          fontSize="0.875rem"
+          unselectedBackgroundColor="var(--color-background)"
+          unselectedBorderColor="var(--text-color)"
+          unselectedTextColor="var(--text-color)"
+        />
+      )}
     </Box>
   );
 }
@@ -272,10 +319,12 @@ export function MessageCardMessageBody({
   msg,
   tagsMap,
   onToggleTag,
+  tagsLayout = 'full',
 }: {
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
+  tagsLayout?: TagsLayoutVariant;
 }) {
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const textPrimary =
@@ -286,7 +335,7 @@ export function MessageCardMessageBody({
       : msg.text || '—';
 
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-5 min-w-0">
       <span className="whitespace-pre-wrap break-words text-marked min-w-0">{textPrimary}</span>
       {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
         <span className="inline-flex items-center gap-1 shrink-0" style={{ fontSize: '.75rem' }}>
@@ -294,9 +343,11 @@ export function MessageCardMessageBody({
           <span className="font-semibold text-xs">{msg.extendedForm}</span>
         </span>
       )}
-      <span className="inline-flex flex-wrap gap-1 min-w-0">
-        <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
-      </span>
+      {tagsLayout !== 'hidden' && (
+        <span className="inline-flex flex-wrap gap-1 min-w-0">
+          <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
+        </span>
+      )}
     </div>
   );
 }

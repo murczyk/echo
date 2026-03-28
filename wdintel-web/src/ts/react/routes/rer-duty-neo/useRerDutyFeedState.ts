@@ -302,13 +302,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     for (const entry of counts) {
       if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
       const { feedId } = entry;
+      const shouldBootstrapEmptyFeed = entry.hasItems === false;
+      if (shouldBootstrapEmptyFeed) {
+        await loadFeedInitialMessages(feedId);
+        continue;
+      }
       if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
         await loadFeedNewerMessages(feedId, {
           scrollToEndAfterLoad: watchModeByFeedId[feedId],
         });
       }
     }
-  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed]);
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, loadFeedInitialMessages, buildReqForFeed]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(

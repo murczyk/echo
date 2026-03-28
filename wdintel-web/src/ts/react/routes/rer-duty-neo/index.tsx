@@ -1,10 +1,16 @@
 import { Box, Button, Paper } from '@mui/material';
-import { useCallback, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
-import { getStoredMessageCardLayout, setStoredMessageCardLayout } from './utils';
+import {
+  messageCardLayoutFromUserPrefs,
+  tagsLayoutFromUserPrefs,
+  type MessageCardLayoutVariant,
+  type TagsLayoutVariant,
+} from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
+import { fetchUserSettings } from '../../services/api/user-settings';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -13,10 +19,29 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
-  const [messageCardLayout, setMessageCardLayout] = useState(getStoredMessageCardLayout);
-  const handleMessageCardLayoutChange = useCallback((v: 'dividers' | 'fluid') => {
-    setStoredMessageCardLayout(v);
-    setMessageCardLayout(v);
+  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>('dividers');
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>('full');
+  // load layout prefs from user settings
+  useEffect(() => {
+    let cancelled = false;
+    const loadLayout = async () => {
+      try {
+        const prefs = await fetchUserSettings();
+        if (cancelled) return;
+        const messageLayout = messageCardLayoutFromUserPrefs(prefs);
+        const tagsLayoutPref = tagsLayoutFromUserPrefs(prefs);
+        setMessageCardLayout(messageLayout ?? 'fluid');
+        setTagsLayout(tagsLayoutPref ?? 'full');
+      } catch {
+        if (cancelled) return;
+        setMessageCardLayout('fluid');
+        setTagsLayout('full');
+      }
+    };
+    loadLayout();
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const {
     messageFeeds,
@@ -122,7 +147,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               highlightSignalsEnabled={w.highlightSignalsEnabled}
               onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
               messageCardLayout={messageCardLayout}
-              onMessageCardLayoutChange={handleMessageCardLayoutChange}
+              tagsLayout={tagsLayout}
               savedFilters={savedFilters}
               selectedSavedId={selectedSavedId}
               saveFilterName={saveFilterName}

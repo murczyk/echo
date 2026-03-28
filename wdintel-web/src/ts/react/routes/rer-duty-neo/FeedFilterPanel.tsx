@@ -42,9 +42,6 @@ export type FeedFilterPanelProps = {
   adjacentFreqsRange?: number;
   highlightSignalsEnabled?: boolean;
   onlyMyUnitTagsEnabled?: boolean;
-  /** 'dividers' = з роздільниками, 'fluid' = плавна без роздільників (для A/B тестування). */
-  messageCardLayout?: 'dividers' | 'fluid';
-  onMessageCardLayoutChange?: (v: 'dividers' | 'fluid') => void;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
   saveFilterName: string;
@@ -80,8 +77,6 @@ export function FeedFilterPanel({
   adjacentFreqsRange,
   highlightSignalsEnabled,
   onlyMyUnitTagsEnabled,
-  messageCardLayout = 'dividers',
-  onMessageCardLayoutChange,
   savedFilters,
   selectedSavedId,
   saveFilterName,
@@ -452,29 +447,6 @@ export function FeedFilterPanel({
               }
               label="лише теги мого підрозділу"
             />
-            {onMessageCardLayoutChange != null && (
-              <Box className="flex items-center gap-2 mt-1">
-                <Typography variant="caption" sx={{ fontSize: 12 }}>
-                  картка повідомлення:
-                </Typography>
-                <ToggleButtonGroup
-                  value={messageCardLayout}
-                  exclusive
-                  onChange={(_, v: 'dividers' | 'fluid' | null) => {
-                    if (v != null) onMessageCardLayoutChange(v);
-                  }}
-                  size="small"
-                  sx={{
-                    flexShrink: 0,
-                    borderRadius: 2,
-                    '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
-                  }}
-                >
-                  <ToggleButton value="dividers">з роздільниками</ToggleButton>
-                  <ToggleButton value="fluid">без роздільників</ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-            )}
           </Box>
         </Box>
 

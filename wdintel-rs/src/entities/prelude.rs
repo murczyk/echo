@@ -144,6 +144,7 @@ pub use super::tag_keyword::Entity as TagKeyword;
 pub use super::tag_suggestion_worker_queue::Entity as TagSuggestionWorkerQueue;
 pub use super::tags_ordering::Entity as TagsOrdering;
 pub use super::url_visit_notification::Entity as UrlVisitNotification;
+pub use super::user_settings::Entity as UserSettings;
 pub use super::whatsapp_group::Entity as WhatsappGroup;
 pub use super::whatsapp_queue::Entity as WhatsappQueue;
 pub use super::whatsapp_queue_attachment::Entity as WhatsappQueueAttachment;

@@ -4,38 +4,58 @@ import {
   Box,
   Card,
   CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Stack,
   Tab,
   Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
-} from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
-import type { FormEvent, SyntheticEvent } from "react";
+} from '@mui/material';
+import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent, SyntheticEvent } from 'react';
 
-import { SettingsSaveReq, SigintZone } from "../../../../Bindings";
-import { PageHeader } from "../../components/PageHeader";
-import { Button } from "../../components/mui-customized/button";
-import { isUnauthorizedError } from "../../services/api/client";
-import { fetchServerInfo } from "../../services/api/server-info";
-import { fetchCurrentUser, saveUserSettings } from "../../services/api/user";
-import { listSigintZones } from "../../services/api/zones";
+import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
+import { PageHeader } from '../../components/PageHeader';
+import { Button } from '../../components/mui-customized/button';
+import { isUnauthorizedError } from '../../services/api/client';
+import { fetchServerInfo } from '../../services/api/server-info';
+import { fetchCurrentUser, saveUserSettings } from '../../services/api/user';
+import { listSigintZones } from '../../services/api/zones';
+import {
+  fetchUserSettings as fetchUserPrefsSettings,
+  saveUserSettings as saveUserPrefsSettings,
+} from '../../services/api/user-settings';
+import {
+  getStoredMessageCardLayout,
+  messageCardLayoutFromUserPrefs,
+  notificationsFromUserPrefs,
+  setStoredMessageCardLayout,
+  tagsLayoutFromUserPrefs,
+  type NotificationsVariant,
+  type TagsLayoutVariant,
+  USER_PREFS_RER_DUTY_NEO_KEY,
+  type MessageCardLayoutVariant,
+} from '../rer-duty-neo/utils';
 
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
 
-export type SettingsSection = "general" | "duty";
+export type SettingsSection = 'general' | 'duty';
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
 };
 
-const SETTINGS_SECTION_QUERY_PARAM = "section";
+const SETTINGS_SECTION_QUERY_PARAM = 'section';
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
-  if (typeof error === "string" && error.trim().length > 0) return error;
-  return "Невідома помилка. Спробуйте ще раз.";
+  if (typeof error === 'string' && error.trim().length > 0) return error;
+  return 'Невідома помилка. Спробуйте ще раз.';
 }
 
 function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
@@ -43,8 +63,8 @@ function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
 }
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === "duty") return section;
-  return "general";
+  if (section === 'duty') return section;
+  return 'general';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -54,7 +74,7 @@ function readSettingsSectionFromUrl(): SettingsSection {
 function buildSettingsSectionUrl(section: SettingsSection): string {
   const url = new URL(window.location.href);
   url.searchParams.set(SETTINGS_SECTION_QUERY_PARAM, section);
-  url.hash = "";
+  url.hash = '';
   return url.pathname + url.search + url.hash;
 }
 
@@ -62,23 +82,31 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [zones, setZones] = useState<ZonePair[]>([]);
   const [zoneId, setZoneId] = useState<number | null>(null);
   const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
-  const [versionText, setVersionText] = useState<string>("невідома версія");
+  const [versionText, setVersionText] = useState<string>('невідома версія');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadInProgress, setLoadInProgress] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => parseSettingsSection(section ?? readSettingsSectionFromUrl()));
-
-  const zoneOptions = useMemo<ZoneOption[]>(
-    () => zones.map(([id, zone]) => ({ id, label: zone.name })),
-    [zones],
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
+    parseSettingsSection(section ?? readSettingsSectionFromUrl()),
   );
+  const [userPrefs, setUserPrefs] = useState<Record<string, unknown> | null>(null);
+  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>('dividers');
+  const [initialMessageCardLayout, setInitialMessageCardLayout] = useState<MessageCardLayoutVariant>('dividers');
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>('full');
+  const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>('full');
+  const [notifications, setNotifications] = useState<NotificationsVariant>('sound');
+  const [initialNotifications, setInitialNotifications] = useState<NotificationsVariant>('sound');
+  const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
+  const [dutySaveError, setDutySaveError] = useState<string | null>(null);
+  const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
+  const [dutySaveInProgress, setDutySaveInProgress] = useState(false);
+  const [dutyHelpOpen, setDutyHelpOpen] = useState(false);
 
-  const selectedZone = useMemo(
-    () => zoneOptions.find((option) => option.id === zoneId) ?? null,
-    [zoneOptions, zoneId],
-  );
+  const zoneOptions = useMemo<ZoneOption[]>(() => zones.map(([id, zone]) => ({ id, label: zone.name })), [zones]);
+
+  const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
 
   useEffect(() => {
     if (section == null) return;
@@ -90,10 +118,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       setSettingsSection(readSettingsSectionFromUrl());
     };
 
-    window.addEventListener("popstate", handlePopState);
+    window.addEventListener('popstate', handlePopState);
 
     return () => {
-      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener('popstate', handlePopState);
     };
   }, []);
 
@@ -105,28 +133,56 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       setLoadError(null);
 
       try {
-        const [zonesData, user] = await Promise.all([
+        const [zonesData, user, prefsRsp] = await Promise.all([
           listSigintZones(abortController.signal),
           fetchCurrentUser(abortController.signal),
+          fetchUserPrefsSettings(abortController.signal).catch(() => null),
         ]);
 
         setZones(zonesData);
         setZoneId(user.sigintZoneId);
         setInitialZoneId(user.sigintZoneId);
+
+        setDutyPrefsLoadError(null);
+        if (prefsRsp == null) {
+          setDutyPrefsLoadError('Не вдалося завантажити налаштування.');
+          const fallback = getStoredMessageCardLayout();
+          setUserPrefs({});
+          setMessageCardLayout(fallback);
+          setInitialMessageCardLayout(fallback);
+          setTagsLayout('full');
+          setInitialTagsLayout('full');
+          setNotifications('sound');
+          setInitialNotifications('sound');
+        } else {
+          const prefs = prefsRsp;
+          setUserPrefs(prefs);
+          const fromServer = messageCardLayoutFromUserPrefs(prefs);
+          const tagsLayoutServer = tagsLayoutFromUserPrefs(prefs) ?? 'full';
+          const notificationsServer = notificationsFromUserPrefs(prefs) ?? 'sound';
+          const layout = fromServer ?? getStoredMessageCardLayout();
+          setMessageCardLayout(layout);
+          setInitialMessageCardLayout(layout);
+          setTagsLayout(tagsLayoutServer);
+          setInitialTagsLayout(tagsLayoutServer);
+          setNotifications(notificationsServer);
+          setInitialNotifications(notificationsServer);
+          setStoredMessageCardLayout(layout);
+        }
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
           if (!abortController.signal.aborted) {
-            setVersionText(serverInfo.version || "невідома версія");
+            setVersionText(serverInfo.version || 'невідома версія');
           }
         } catch (_) {
           if (!abortController.signal.aborted) {
-            setVersionText("невідома версія");
+            setVersionText('невідома версія');
           }
         }
       } catch (error) {
         if (abortController.signal.aborted) return;
         if (isUnauthorizedError(error)) {
-          window.location.assign("/login");
+          window.location.assign('/login');
           return;
         }
         setLoadError(`Помилка завантаження налаштувань: ${formatErrorMessage(error)}`);
@@ -144,6 +200,47 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
+  const isDutyDirty =
+    messageCardLayout !== initialMessageCardLayout ||
+    tagsLayout !== initialTagsLayout ||
+    notifications !== initialNotifications;
+
+  async function handleDutySave(event?: FormEvent) {
+    event?.preventDefault();
+    if (dutySaveInProgress) return;
+    if (!isDutyDirty) return;
+
+    setDutySaveError(null);
+    setDutySaveSuccess(null);
+    setDutySaveInProgress(true);
+
+    try {
+      const base = userPrefs ?? {};
+      const prevRer = base[USER_PREFS_RER_DUTY_NEO_KEY];
+      const rerMerged = {
+        ...(typeof prevRer === 'object' && prevRer !== null ? (prevRer as Record<string, unknown>) : {}),
+        messageCardLayout,
+        tagsLayout,
+        notifications,
+      };
+      const nextPrefs = { ...base, [USER_PREFS_RER_DUTY_NEO_KEY]: rerMerged };
+      const res = await saveUserPrefsSettings(nextPrefs);
+      setUserPrefs(res);
+      setInitialMessageCardLayout(messageCardLayout);
+      setInitialTagsLayout(tagsLayout);
+      setInitialNotifications(notifications);
+      setStoredMessageCardLayout(messageCardLayout);
+      setDutySaveSuccess('Збережено');
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        window.location.assign('/login');
+        return;
+      }
+      setDutySaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
+    } finally {
+      setDutySaveInProgress(false);
+    }
+  }
 
   async function handleSave(event?: FormEvent) {
     event?.preventDefault();
@@ -157,10 +254,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     try {
       await saveUserSettings(toSettingsSaveReq(zoneId));
       setInitialZoneId(zoneId);
-      setSaveSuccess("Налаштування збережено");
+      setSaveSuccess('Налаштування збережено');
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        window.location.assign("/login");
+        window.location.assign('/login');
         return;
       }
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
@@ -173,16 +270,19 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     if (value === settingsSection) return;
 
     setSettingsSection(value);
-    window.history.pushState(window.history.state, "", buildSettingsSectionUrl(value));
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.history.pushState(window.history.state, '', buildSettingsSectionUrl(value));
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
   return (
-    <Box className="w-full" sx={{ maxWidth: 980, mx: "auto" }}>
+    <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
       <Stack spacing={2} useFlexGap>
         <PageHeader title="Налаштування" />
 
-        <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: "none", overflow: "hidden", backgroundColor: "background.paper" }}>
+        <Card
+          variant="outlined"
+          sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden', backgroundColor: 'background.paper' }}
+        >
           <Tabs
             value={settingsSection}
             onChange={handleTabChange}
@@ -191,18 +291,30 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             sx={{
               minHeight: 48,
               borderBottom: 1,
-              borderColor: "divider",
+              borderColor: 'divider',
               flexShrink: 0,
             }}
           >
-            <Tab value="general" label="ЗАГАЛЬНІ" id="settings-neo-tab-general" aria-controls="settings-neo-panel-general" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
-            <Tab value="duty" label="ОПЕРАТИВНИЙ" id="settings-neo-tab-duty" aria-controls="settings-neo-panel-duty" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
+            <Tab
+              value="general"
+              label="ЗАГАЛЬНІ"
+              id="settings-neo-tab-general"
+              aria-controls="settings-neo-panel-general"
+              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
+            />
+            <Tab
+              value="duty"
+              label="ОПЕРАТИВНИЙ"
+              id="settings-neo-tab-duty"
+              aria-controls="settings-neo-panel-duty"
+              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
+            />
           </Tabs>
 
-          {settingsSection === "general" ? (
+          {settingsSection === 'general' ? (
             <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
               <Box component="form" onSubmit={handleSave} noValidate sx={{ p: 3 }}>
-                <Stack spacing={3} sx={{ width: "100%" }}>
+                <Stack spacing={3} sx={{ width: '100%' }}>
                   {loadError ? <Alert severity="error">{loadError}</Alert> : null}
                   {saveError ? <Alert severity="error">{saveError}</Alert> : null}
                   {saveSuccess ? (
@@ -227,13 +339,13 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       loading={loadInProgress}
                       loadingText="Завантаження..."
                       sx={{
-                        width: { xs: "100%", sm: "420px" },
-                        maxWidth: "100%",
-                        "& .MuiOutlinedInput-root": {
-                          backgroundColor: "var(--bs-body-bg)",
+                        width: { xs: '100%', sm: '420px' },
+                        maxWidth: '100%',
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'var(--bs-body-bg)',
                         },
-                        "& .MuiAutocomplete-clearIndicator": {
-                          visibility: "visible",
+                        '& .MuiAutocomplete-clearIndicator': {
+                          visibility: 'visible',
                           opacity: 1,
                         },
                       }}
@@ -250,7 +362,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     />
                   </Box>
 
-                  <Box sx={{ display: "flex", alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between", gap: 2, flexWrap: "wrap", pt: 2 }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: { xs: 'flex-start', sm: 'center' },
+                      justifyContent: 'space-between',
+                      gap: 2,
+                      flexWrap: 'wrap',
+                      pt: 2,
+                    }}
+                  >
                     <Typography variant="caption" color="text.secondary">
                       Версія: {versionText}
                     </Typography>
@@ -269,15 +390,193 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             </Box>
           ) : null}
 
-          {settingsSection === "duty" ? (
+          {settingsSection === 'duty' ? (
             <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
-                Налаштування оперативного режиму з’являться тут.
-              </Typography>
+              <Stack spacing={2} sx={{ maxWidth: 960 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Вигляд карток повідомлень у стрічці оперативного режиму зберігається для вашого облікового запису.
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <Button variant="text" onClick={() => setDutyHelpOpen(true)} sx={{ px: 0 }}>
+                    як це виглядає
+                  </Button>
+                </Box>
+                {dutyPrefsLoadError ? <Alert severity="warning">{dutyPrefsLoadError}</Alert> : null}
+                {dutySaveError ? <Alert severity="error">{dutySaveError}</Alert> : null}
+                <Box component="form" onSubmit={handleDutySave} noValidate>
+                  <Stack spacing={2}>
+                    <Box className="flex flex-wrap items-center gap-2">
+                      <Typography variant="caption" sx={{ fontSize: 12 }}>
+                        картка повідомлення:
+                      </Typography>
+                      <ToggleButtonGroup
+                        value={messageCardLayout}
+                        exclusive
+                        onChange={(_, v: MessageCardLayoutVariant | null) => {
+                          if (v != null) {
+                            setDutySaveSuccess(null);
+                            setDutySaveError(null);
+                            setMessageCardLayout(v);
+                          }
+                        }}
+                        size="small"
+                        sx={{
+                          flexShrink: 0,
+                          borderRadius: 2,
+                          '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
+                        }}
+                      >
+                        <ToggleButton value="dividers">з роздільниками</ToggleButton>
+                        <ToggleButton value="fluid">без роздільників</ToggleButton>
+                      </ToggleButtonGroup>
+                    </Box>
+                    <Box className="flex flex-wrap items-center gap-2">
+                      <Typography variant="caption" sx={{ fontSize: 12 }}>
+                        вигляд тегів:
+                      </Typography>
+                      <ToggleButtonGroup
+                        value={tagsLayout}
+                        exclusive
+                        onChange={(_, v: TagsLayoutVariant | null) => {
+                          if (v != null) {
+                            setDutySaveSuccess(null);
+                            setDutySaveError(null);
+                            setTagsLayout(v);
+                          }
+                        }}
+                        size="small"
+                        sx={{
+                          flexShrink: 0,
+                          borderRadius: 2,
+                          '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
+                        }}
+                      >
+                        <ToggleButton value="full">повний</ToggleButton>
+                        <ToggleButton value="compact">компактний</ToggleButton>
+                        <ToggleButton value="hidden">не показувати</ToggleButton>
+                      </ToggleButtonGroup>
+                    </Box>
+                    {/* TODO: add notifications when it's implemented */}
+                    {/* <TextField
+                      select
+                      size="small"
+                      label="сповіщення"
+                      value={notifications}
+                      onChange={(e) => {
+                        setDutySaveSuccess(null);
+                        setDutySaveError(null);
+                        setNotifications(e.target.value as NotificationsVariant);
+                      }}
+                      sx={{ width: { xs: "100%", sm: 280 } }}
+                    >
+                      <MenuItem value="sound">звук</MenuItem>
+                      <MenuItem value="browser">браузер</MenuItem>
+                    </TextField> */}
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1.5, pt: 1 }}>
+                      {dutySaveSuccess ? (
+                        <Typography variant="caption" color="success.main" role="status">
+                          {dutySaveSuccess}
+                        </Typography>
+                      ) : null}
+                      <Button
+                        variant="contained"
+                        type="submit"
+                        disabled={dutySaveInProgress || !isDutyDirty || loadInProgress}
+                        startIcon={dutySaveInProgress ? <CircularProgress size={18} /> : undefined}
+                        sx={{ fontWeight: 500 }}
+                      >
+                        зберегти
+                      </Button>
+                    </Box>
+                  </Stack>
+                </Box>
+              </Stack>
             </Box>
           ) : null}
         </Card>
       </Stack>
+
+      <Dialog open={dutyHelpOpen} onClose={() => setDutyHelpOpen(false)} fullWidth maxWidth="lg">
+        <DialogTitle>Підказка по вигляду оперативного режиму</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={3}>
+            <Typography variant="body2" color="text.secondary">
+              Скріншоти-приклади. Замініть файли за цими шляхами на актуальні зображення.
+            </Typography>
+
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Картка повідомлення
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                <Box>
+                  <Box
+                    component="img"
+                    src="/settings-help/message-layout-dividers.png"
+                    alt="Картка з роздільниками"
+                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    з роздільниками
+                  </Typography>
+                </Box>
+                <Box>
+                  <Box
+                    component="img"
+                    src="/settings-help/message-layout-fluid.png"
+                    alt="Картка без роздільників"
+                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    без роздільників
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Вигляд тегів
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 2 }}>
+                <Box>
+                  <Box
+                    component="img"
+                    src="/settings-help/tags-layout-full.png"
+                    alt="Теги повний вигляд"
+                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    повний
+                  </Typography>
+                </Box>
+                <Box>
+                  <Box
+                    component="img"
+                    src="/settings-help/tags-layout-compact.png"
+                    alt="Теги компактний вигляд"
+                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    компактний
+                  </Typography>
+                </Box>
+                <Box>
+                  <Box
+                    component="img"
+                    src="/settings-help/tags-layout-hidden.png"
+                    alt="Теги приховано"
+                    sx={{ width: '100%', borderRadius: 1, border: 1, borderColor: 'divider' }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    не показувати
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+          </Stack>
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 }
