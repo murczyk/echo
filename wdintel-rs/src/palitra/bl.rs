@@ -11,7 +11,9 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use itertools::{Either, Itertools};
 use redis::AsyncCommands;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::IntoCondition;
 use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::SelectStatement;
 use sea_orm::sea_query::SimpleExpr;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
@@ -98,13 +100,6 @@ enum PalitraUpdateAction {
 
 #[derive(Debug, Clone)]
 struct LoginAccessScope {
-    organism_ids: HashSet<i64>,
-    aor_ids: HashSet<i64>,
-}
-
-#[derive(Debug, Clone, Default)]
-struct PalitraAccessIndex {
-    logins: HashSet<String>,
     organism_ids: HashSet<i64>,
     aor_ids: HashSet<i64>,
 }
@@ -1481,25 +1476,35 @@ pub(crate) async fn collect_accessible_palitra_ids(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
     let scope = load_login_access_scope(dbx, &login).await.c(h!())?;
-    let palitras = palitra::Entity::find()
+    let mut filter = Condition::any()
+        .add(palitra::Column::Author.eq(login.clone()))
+        .add(
+            Expr::exists(build_palitra_access_login_exists(login))
+                .into_condition(),
+        );
+    let organism_ids = scope.organism_ids.iter().copied().collect_vec();
+    if !organism_ids.is_empty() {
+        filter = filter.add(
+            Expr::exists(build_palitra_access_organism_exists(organism_ids))
+                .into_condition(),
+        );
+    }
+    let aor_ids = scope.aor_ids.iter().copied().collect_vec();
+    if !aor_ids.is_empty() {
+        filter = filter.add(
+            Expr::exists(build_palitra_access_aor_exists(aor_ids))
+                .into_condition(),
+        );
+    }
+    palitra::Entity::find()
         .filter(palitra::Column::Deleted.eq(false))
+        .filter(filter)
         .select_only()
         .column(palitra::Column::Id)
-        .column(palitra::Column::Author)
-        .into_tuple::<(i64, Option<String>)>()
+        .into_tuple::<i64>()
         .all(dbx)
         .await
-        .c(h!())?;
-    let access_by_palitra_id = load_palitra_access_index(dbx).await.c(h!())?;
-
-    Ok(palitras
-        .into_iter()
-        .filter_map(|(palitra_id, author)| {
-            let access = access_by_palitra_id.get(&palitra_id);
-            user_can_access_palitra(&login, author.as_deref(), &scope, access)
-                .then_some(palitra_id)
-        })
-        .collect())
+        .c(h!())
 }
 
 async fn load_login_access_scope(
@@ -1530,78 +1535,53 @@ async fn load_login_access_scope(
     })
 }
 
-async fn load_palitra_access_index(
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<HashMap<i64, PalitraAccessIndex>> {
-    let mut access_by_palitra_id: HashMap<i64, PalitraAccessIndex> =
-        HashMap::new();
-
-    for (palitra_id, login_name) in palitra_access_login::Entity::find()
+fn build_palitra_access_organism_exists(
+    organism_ids: Vec<i64>,
+) -> SelectStatement {
+    palitra_access_organism::Entity::find()
+        .filter(
+            palitra_access_organism::Column::OrganismId.eq_any(organism_ids),
+        )
+        .filter(
+            Expr::col((
+                palitra_access_organism::Entity,
+                palitra_access_organism::Column::PalitraId,
+            ))
+            .equals((palitra::Entity, palitra::Column::Id)),
+        )
         .select_only()
-        .column(palitra_access_login::Column::PalitraId)
-        .column(palitra_access_login::Column::Login)
-        .into_tuple::<(i64, String)>()
-        .all(dbx)
-        .await
-        .c(h!())?
-    {
-        access_by_palitra_id
-            .entry(palitra_id)
-            .or_default()
-            .logins
-            .insert(login_name);
-    }
-
-    for (palitra_id, organism_id) in palitra_access_organism::Entity::find()
-        .select_only()
-        .column(palitra_access_organism::Column::PalitraId)
-        .column(palitra_access_organism::Column::OrganismId)
-        .into_tuple::<(i64, i64)>()
-        .all(dbx)
-        .await
-        .c(h!())?
-    {
-        access_by_palitra_id
-            .entry(palitra_id)
-            .or_default()
-            .organism_ids
-            .insert(organism_id);
-    }
-
-    for (palitra_id, aor_id) in palitra_access_aor::Entity::find()
-        .select_only()
-        .column(palitra_access_aor::Column::PalitraId)
-        .column(palitra_access_aor::Column::AorId)
-        .into_tuple::<(i64, i64)>()
-        .all(dbx)
-        .await
-        .c(h!())?
-    {
-        access_by_palitra_id
-            .entry(palitra_id)
-            .or_default()
-            .aor_ids
-            .insert(aor_id);
-    }
-
-    Ok(access_by_palitra_id)
+        .expr(Expr::cust("1"))
+        .into_query()
 }
 
-fn user_can_access_palitra(
-    login_name: &str,
-    author: Option<&str>,
-    scope: &LoginAccessScope,
-    access: Option<&PalitraAccessIndex>,
-) -> bool {
-    if author == Some(login_name) {
-        return true;
-    }
-    let Some(access) = access else {
-        return false;
-    };
-    access.logins.contains(login_name)
-        || !access.organism_ids.is_disjoint(&scope.organism_ids)
-        || !access.aor_ids.is_disjoint(&scope.aor_ids)
+fn build_palitra_access_login_exists(login: String) -> SelectStatement {
+    palitra_access_login::Entity::find()
+        .filter(palitra_access_login::Column::Login.eq(login))
+        .filter(
+            Expr::col((
+                palitra_access_login::Entity,
+                palitra_access_login::Column::PalitraId,
+            ))
+            .equals((palitra::Entity, palitra::Column::Id)),
+        )
+        .select_only()
+        .expr(Expr::cust("1"))
+        .into_query()
+}
+
+fn build_palitra_access_aor_exists(aor_ids: Vec<i64>) -> SelectStatement {
+    palitra_access_aor::Entity::find()
+        .filter(palitra_access_aor::Column::AorId.eq_any(aor_ids))
+        .filter(
+            Expr::col((
+                palitra_access_aor::Entity,
+                palitra_access_aor::Column::PalitraId,
+            ))
+            .equals((palitra::Entity, palitra::Column::Id)),
+        )
+        .select_only()
+        .expr(Expr::cust("1"))
+        .into_query()
 }
 
 async fn update_palitra_from_req<'a, 'async_trait, C>(
@@ -1745,6 +1725,9 @@ async fn replace_palitra_access<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    if access.is_empty() {
+        anyhow::bail!("Palitra must have explicit access scope");
+    }
     palitra_access_login::Entity::delete_many()
         .filter(palitra_access_login::Column::PalitraId.eq(palitra_id))
         .exec(txn)
