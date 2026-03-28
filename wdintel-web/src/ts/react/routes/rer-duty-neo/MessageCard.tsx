@@ -113,7 +113,7 @@ export function MessageCard({
         pr: 0,
         pb: 1.5,
         mb: 0,
-        fontSize: 13,
+        fontSize: 12,
       }}
     >
       <Box
@@ -129,6 +129,13 @@ export function MessageCard({
           bgcolor: 'var(--color-card)',
           color: 'text.primary',
           overflow: 'hidden',
+          fontSize: 12,
+          '& .MuiTypography-root': {
+            fontSize: 12,
+          },
+          '& a': {
+            fontSize: 12,
+          },
         }}
       >
         {watermarkUserName !== '' && (

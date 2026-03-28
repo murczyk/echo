@@ -1,16 +1,20 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
+import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Alert, Backdrop, Box, CircularProgress, FormControlLabel, Paper, Skeleton, Stack, Switch, Tab, Tabs } from '@mui/material';
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { PowerChip } from '../../components/PowerChip';
+import { loadingOverlayBackdropSx } from '../../components/loadingOverlayStyles';
 import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { AnalysisSidebar } from './components/AnalysisSidebar';
+import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { AnalysisToolbar } from './components/AnalysisToolbar';
+import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 
 export type RerAnalysisNeoPageProps = {
@@ -22,16 +26,41 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
   const mapTabId = `${centerTabsId}-map-tab`;
+  const summaryTabId = `${centerTabsId}-summary-tab`;
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
+  const summaryPanelId = `${centerTabsId}-summary-panel`;
   const showLoadingSkeletons = page.loading && page.messages.length === 0 && page.counts == null;
   const rightSidebarDisabled = !Object.values(page.rightSidebarSections).some(Boolean);
-  const leftColumnWidth = page.leftPanelOpen ? '400px' : '28px';
-  const rightColumnWidth = page.rightPanelOpen ? '360px' : '28px';
+  const [mountedTabs, setMountedTabs] = useState<Record<'messages' | 'map' | 'summary', boolean>>({
+    messages: true,
+    map: false,
+    summary: false,
+  });
+  const fixedPanelWidth = '400px';
+  const collapsedPanelWidth = '28px';
+  const leftColumnWidth = page.leftPanelOpen ? fixedPanelWidth : collapsedPanelWidth;
+  const rightColumnWidth =
+    page.centerTab === 'messages'
+      ? page.rightPanelOpen
+        ? 'minmax(0,1fr)'
+        : collapsedPanelWidth
+      : page.rightPanelOpen
+        ? fixedPanelWidth
+        : collapsedPanelWidth;
+  const activeTabId = page.centerTab === 'messages' ? messagesTabId : page.centerTab === 'map' ? mapTabId : summaryTabId;
+  const centerPanelBusy = useMinDurationBusy(
+    page.centerTabPending || page.loading || page.editorSaveInFlight || page.messageActionLoading,
+    450,
+  );
   const gridTemplateColumns = {
     xs: '1fr',
     lg: [leftColumnWidth, 'minmax(0,1fr)', rightColumnWidth].join(' '),
   };
+
+  useEffect(() => {
+    setMountedTabs((current) => (current[page.centerTab] ? current : { ...current, [page.centerTab]: true }));
+  }, [page.centerTab]);
 
   return (
     <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
@@ -116,6 +145,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   {Array.from({ length: 6 }).map((_, index) => (
                     <Skeleton key={index} variant="rounded" height={72} />
                   ))}
+                  <Skeleton variant="rounded" height={72} />
                 </Stack>
               </Paper>
 
@@ -205,10 +235,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               <Paper
                 variant="outlined"
                 component="section"
-                aria-labelledby={page.centerTab === "messages" ? messagesTabId : mapTabId}
-                sx={{ pt: 1, px: 2, pb: 2, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+                aria-labelledby={activeTabId}
+                sx={{ minHeight: 0, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", position: 'relative' }}
               >
-                <Stack spacing={0.75} sx={{ mb: 0.25 }}>
+                <Stack spacing={0.75} sx={{ px: 2, pt: 1, mb: page.centerTab === 'map' ? 0 : 0.25 }}>
                   <Tabs
                     value={page.centerTab}
                     onChange={(_event, value) => page.setCenterTab(value)}
@@ -240,35 +270,45 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       iconPosition="start"
                       label="Мапа"
                     />
-                  </Tabs>
-                  <Stack
-                    direction="row"
-                    spacing={1.5}
-                    flexWrap="wrap"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    role="status"
-                    aria-live="polite"
-                    aria-label="Поточна статистика вибірки"
-                    sx={{ rowGap: 1, width: '100%' }}
-                  >
-                    <FormControlLabel
-                      control={<Switch checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
-                      label="спочатку нові"
-                      sx={{ mr: 0, '& .MuiFormControlLabel-label': { fontSize: 14, fontWeight: 500 } }}
+                    <Tab
+                      id={summaryTabId}
+                      aria-controls={summaryPanelId}
+                      value="summary"
+                      icon={<SettingsInputAntennaOutlinedIcon />}
+                      iconPosition="start"
+                      label="Частоти"
                     />
+                  </Tabs>
+                  {page.centerTab === 'map' ? null : (
                     <Stack
                       direction="row"
                       spacing={1.5}
                       flexWrap="wrap"
-                      useFlexGap
-                      justifyContent="flex-end"
-                      sx={{ ml: 'auto', width: { xs: '100%', sm: 'auto' } }}
+                      alignItems="center"
+                      justifyContent="space-between"
+                      role="status"
+                      aria-live="polite"
+                      aria-label="Поточна статистика вибірки"
+                      sx={{ rowGap: 1, width: '100%' }}
                     >
-                      <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
-                      <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
+                      <FormControlLabel
+                        control={<Switch checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
+                        label="спочатку нові"
+                        sx={{ mr: 0, '& .MuiFormControlLabel-label': { fontSize: 14, fontWeight: 500 } }}
+                      />
+                      <Stack
+                        direction="row"
+                        spacing={1.5}
+                        flexWrap="wrap"
+                        useFlexGap
+                        justifyContent="flex-end"
+                        sx={{ ml: 'auto', width: { xs: '100%', sm: 'auto' } }}
+                      >
+                        <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
+                        <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
+                      </Stack>
                     </Stack>
-                  </Stack>
+                  )}
                 </Stack>
 
                 <Box
@@ -278,7 +318,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   aria-labelledby={messagesTabId}
                   sx={{
                     flex: 1,
+                    minWidth: 0,
                     minHeight: 0,
+                    px: 2,
+                    pb: 2,
                     pt: 1,
                     display: page.centerTab === "messages" ? "flex" : "none",
                     overflow: "hidden",
@@ -303,7 +346,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     onToggleMessageBookmark={page.onToggleMessageBookmark}
                     onToggleMessageImportant={page.onToggleMessageImportant}
                     onToggleMessageTag={page.onToggleMessageTag}
-                    onUpdateEditorField={page.updateEditorField}
                     profiles={page.profiles}
                     tagsMap={page.tagsMap}
                   />
@@ -316,21 +358,64 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   aria-labelledby={mapTabId}
                   sx={{
                     flex: 1,
+                    minWidth: 0,
                     minHeight: 0,
-                    pt: 1,
                     display: page.centerTab === "map" ? "flex" : "none",
                     overflow: "hidden",
                   }}
                 >
-                  <AnalysisMapPane
-                    visible={page.centerTab === "map"}
-                    mapAttrs={page.mapAttrs}
-                    search={page.queryState.search}
-                    onDateRangeChange={page.refreshMapDateRange}
-                    onLoadMessages={page.loadMessagesForMap}
-                    onUnitClick={page.toggleUnitFromMap}
-                  />
+                  {mountedTabs.map ? (
+                    <AnalysisMapPane
+                      visible={page.centerTab === "map"}
+                      mapAttrs={page.mapAttrs}
+                      search={page.queryState.search}
+                      onDateRangeChange={page.refreshMapDateRange}
+                      onLoadMessages={page.loadMessagesForMap}
+                      onUnitClick={page.toggleUnitFromMap}
+                    />
+                  ) : null}
                 </Box>
+
+                <Box
+                  id={summaryPanelId}
+                  role="tabpanel"
+                  hidden={page.centerTab !== "summary"}
+                  aria-labelledby={summaryTabId}
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 0,
+                    px: 2,
+                    pb: 2,
+                    display: page.centerTab === "summary" ? "flex" : "none",
+                    overflow: "hidden",
+                  }}
+                >
+                  {mountedTabs.summary ? (
+                    <AnalysisSummaryTableCard
+                      callsignInfoMap={page.summaryCallsignsInfo}
+                      networkDisplayMap={page.networkDisplayMap}
+                      networks={page.networks}
+                      onDownloadGeojson={page.downloadGeojson}
+                      onDownloadKmz={page.downloadKmz}
+                      onDownloadXlsx={page.downloadSummaryXlsx}
+                      onRenameUnit={page.renameSummaryUnit}
+                      onSelectFreq={page.selectOnlyFreq}
+                      onShowFreqOnMap={page.showFreqOnMap}
+                      rows={page.summaryRows}
+                      sx={{ flex: 1, minWidth: 0 }}
+                      tableContainerSx={{ maxHeight: '100%' }}
+                      title="Таблиця частот"
+                      unitsMap={page.unitsMap}
+                    />
+                  ) : null}
+                </Box>
+
+                {centerPanelBusy && !showLoadingSkeletons ? (
+                  <Backdrop open aria-label="Завантаження" sx={(theme) => ({ ...loadingOverlayBackdropSx(theme), display: 'flex' })}>
+                    <CircularProgress color="inherit" size={30} />
+                  </Backdrop>
+                ) : null}
               </Paper>
 
               <Paper

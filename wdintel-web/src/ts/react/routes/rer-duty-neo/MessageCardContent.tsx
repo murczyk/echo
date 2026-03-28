@@ -70,7 +70,7 @@ function ResolvedNetworkEtalonRows({
                     border: '1px solid',
                     borderColor: 'divider',
                     bgcolor: 'var(--color-bg-inactive)',
-                    fontSize: 10,
+                    fontSize: 12,
                     lineHeight: 1.1,
                     opacity: 0.9,
                     whiteSpace: 'nowrap',
@@ -244,7 +244,7 @@ function MessageCardTagChips({
                 border: '1px solid',
                 borderColor: 'divider',
                 bgcolor: 'var(--color-card)',
-                fontSize: 10,
+                fontSize: 12,
                 boxShadow: 1,
               }}
               aria-hidden

@@ -1,5 +1,5 @@
 import { Alert, Box, Button } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { InboxMessage, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
@@ -21,17 +21,86 @@ type Props = {
   onDeleteMessage: (messageId: number) => void;
   onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
-  onSaveEditor: () => void;
+  onSaveEditor: (message: InboxMessage) => void;
   onSaveMessageComment: (messageId: number, comment: string | null) => void;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
-  onUpdateEditorField: <K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
 };
 
-export function AnalysisMessagesPane({
+type AnalysisMessageCardItemProps = {
+  authUserName: string | null;
+  copiedFeedbackId: string | null;
+  groupInfos: Record<string, SignalGroupEntry>;
+  id: number;
+  message: InboxMessage;
+  networkDisplayMap: Record<number, string>;
+  onCommentOpen: (id: number, message: InboxMessage) => void;
+  onCopyFeedback: (value: string) => void;
+  onDeleteOpen: (messageId: number) => void;
+  onOpenEditor: (messageId: number) => void;
+  onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
+  onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
+  onToggleMessageTag: (messageId: number, tagId: number) => void;
+  profiles: Record<string, SignalProfileEntry | null>;
+  referenceTimeMs: number | null;
+  tagsMap: Record<number, Tag>;
+};
+
+const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
+  authUserName,
+  copiedFeedbackId,
+  groupInfos,
+  id,
+  message,
+  networkDisplayMap,
+  onCommentOpen,
+  onCopyFeedback,
+  onDeleteOpen,
+  onOpenEditor,
+  onToggleMessageBookmark,
+  onToggleMessageImportant,
+  onToggleMessageTag,
+  profiles,
+  referenceTimeMs,
+  tagsMap,
+}: AnalysisMessageCardItemProps) {
+  return (
+    <MessageCard
+      id={id}
+      msg={message}
+      feedId="analysis"
+      layoutVariant="dividers"
+      referenceTimeMs={referenceTimeMs}
+      authUserName={authUserName}
+      groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
+      senderName={buildSenderLabel(message.sender ? profiles[message.sender] : null, message.sender)}
+      copiedFeedbackId={copiedFeedbackId}
+      networkDisplayMap={networkDisplayMap}
+      tagsMap={tagsMap}
+      onBookmark={() => onToggleMessageBookmark(id, message.bookmarked)}
+      onImportant={() => onToggleMessageImportant(id, message.important)}
+      onCopyText={() => {
+        void copyMessageValue(message.text).then(() => {
+          onCopyFeedback(`text-${id}`);
+        });
+      }}
+      onCopyFreq={() => {
+        void copyMessageValue(message.freq).then(() => {
+          onCopyFeedback(`freq-${id}`);
+        });
+      }}
+      onComment={() => onCommentOpen(id, message)}
+      onDelete={() => onDeleteOpen(id)}
+      onEditDetails={() => onOpenEditor(id)}
+      onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}
+    />
+  );
+});
+
+function AnalysisMessagesPaneComponent({
   authUserName,
   copiedFeedbackId: copiedFeedbackIdProp,
   editorMessage,
@@ -50,7 +119,6 @@ export function AnalysisMessagesPane({
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
-  onUpdateEditorField,
   profiles,
   tagsMap,
 }: Props) {
@@ -58,10 +126,40 @@ export function AnalysisMessagesPane({
   const [commentMessage, setCommentMessage] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
+  const referenceTimeMsRef = useRef<number | null>(Date.now());
+  const copyFeedbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setCopiedFeedbackId(copiedFeedbackIdProp);
   }, [copiedFeedbackIdProp]);
+
+  useEffect(() => {
+    referenceTimeMsRef.current = Date.now();
+  }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimerRef.current != null) {
+        window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showCopiedFeedback = useCallback((value: string) => {
+    if (copyFeedbackTimerRef.current != null) {
+      window.clearTimeout(copyFeedbackTimerRef.current);
+    }
+    setCopiedFeedbackId(value);
+    copyFeedbackTimerRef.current = window.setTimeout(() => {
+      setCopiedFeedbackId((current) => (current === value ? null : current));
+      copyFeedbackTimerRef.current = null;
+    }, 1000);
+  }, []);
+
+  const handleCommentOpen = useCallback((messageId: number, nextMessage: InboxMessage) => {
+    setCommentMessage({ id: messageId, message: nextMessage });
+    setCommentDraft(nextMessage.extendedForm ?? '');
+  }, []);
 
   if (messages.length === 0 && !loading) {
     return <Alert severity="info">Немає жодного повідомлення для аналізу.</Alert>;
@@ -71,44 +169,24 @@ export function AnalysisMessagesPane({
     <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 0 }}>
       <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
         {messages.map(([id, message]) => (
-          <MessageCard
+          <AnalysisMessageCardItem
             key={id}
-            id={id}
-            msg={message}
-            feedId="analysis"
-            layoutVariant="dividers"
-            referenceTimeMs={Date.now()}
             authUserName={authUserName}
-            groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
-            senderName={buildSenderLabel(message.sender ? profiles[message.sender] : null, message.sender)}
             copiedFeedbackId={copiedFeedbackId}
+            groupInfos={groupInfos}
+            id={id}
+            message={message}
             networkDisplayMap={networkDisplayMap}
+            onCommentOpen={handleCommentOpen}
+            onCopyFeedback={showCopiedFeedback}
+            onDeleteOpen={setDeleteMessageId}
+            onOpenEditor={onOpenEditor}
+            onToggleMessageBookmark={onToggleMessageBookmark}
+            onToggleMessageImportant={onToggleMessageImportant}
+            onToggleMessageTag={onToggleMessageTag}
+            profiles={profiles}
+            referenceTimeMs={referenceTimeMsRef.current}
             tagsMap={tagsMap}
-            onBookmark={() => onToggleMessageBookmark(id, message.bookmarked)}
-            onImportant={() => onToggleMessageImportant(id, message.important)}
-            onCopyText={() => {
-              void copyMessageValue(message.text).then(() => {
-                setCopiedFeedbackId(`text-${id}`);
-                window.setTimeout(() => {
-                  setCopiedFeedbackId((current) => (current === `text-${id}` ? null : current));
-                }, 1000);
-              });
-            }}
-            onCopyFreq={() => {
-              void copyMessageValue(message.freq).then(() => {
-                setCopiedFeedbackId(`freq-${id}`);
-                window.setTimeout(() => {
-                  setCopiedFeedbackId((current) => (current === `freq-${id}` ? null : current));
-                }, 1000);
-              });
-            }}
-            onComment={() => {
-              setCommentMessage({ id, message });
-              setCommentDraft(message.extendedForm ?? '');
-            }}
-            onDelete={() => setDeleteMessageId(id)}
-            onEditDetails={() => onOpenEditor(id)}
-            onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}
           />
         ))}
       </Box>
@@ -148,8 +226,9 @@ export function AnalysisMessagesPane({
         saveInFlight={editorSaveInFlight}
         onClose={onCloseEditor}
         onSave={onSaveEditor}
-        onUpdateField={onUpdateEditorField}
       />
     </Box>
   );
 }
+
+export const AnalysisMessagesPane = memo(AnalysisMessagesPaneComponent);

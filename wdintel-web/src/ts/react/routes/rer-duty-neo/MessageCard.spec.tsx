@@ -44,6 +44,10 @@ vi.mock('@mui/material', () => ({
       {endIcon}
     </button>
   ),
+  ButtonGroup: ({ children, component, ...props }: PrimitiveProps) => {
+    const Component = component ?? 'div';
+    return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
+  },
   Collapse: ({ children, in: open }: { children?: ReactNode; in?: boolean }) => (open ? <>{children}</> : null),
   IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <button {...omitMuiLayoutProps(props)}>{children}</button>

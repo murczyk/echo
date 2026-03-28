@@ -1,5 +1,11 @@
 import type { AnalysisStatsReq, InboxMessagesReq, SavedFilter } from '../../../../Bindings';
-import { loadRerAnalysisQueryState, saveRerAnalysisQueryState } from '../../../rer-analysis-query-state';
+import {
+  loadRerAnalysisQueryState,
+  normalizeRerAnalysisQueryState,
+  parseRerAnalysisQueryStateFromSearchParams,
+  saveRerAnalysisQueryState,
+  writeRerAnalysisQueryStateToSearchParams,
+} from '../../../rer-analysis-query-state';
 import { combineDateTimeToMs, formatLocalDateInputValue, formatLocalTimeInputValue } from '../../utils/misc';
 import type { AnalysisQueryState } from './types';
 
@@ -61,38 +67,31 @@ function parseStateParam(raw: string | null): AnalysisQueryState | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === 'object') return parsed as AnalysisQueryState;
+    return normalizeRerAnalysisQueryState(parsed) as AnalysisQueryState | null;
   } catch {
     try {
       const decoded = decodeURIComponent(raw);
       const parsed = JSON.parse(decoded) as unknown;
-      if (parsed && typeof parsed === 'object') return parsed as AnalysisQueryState;
+      return normalizeRerAnalysisQueryState(parsed) as AnalysisQueryState | null;
     } catch {
       return null;
     }
   }
-
-  return null;
 }
 
 export function parseQueryStateFromWindow(): AnalysisQueryState {
   if (typeof window === 'undefined') return emptyQueryState();
 
   const url = new URL(window.location.href);
+  const flatStateFromUrl = parseRerAnalysisQueryStateFromSearchParams(url.searchParams);
   const stateFromUrl = parseStateParam(url.searchParams.get('state'));
-  const search = url.searchParams.get('search');
   const storedState = loadRerAnalysisQueryState();
-  const state = {
+  return {
     ...emptyQueryState(),
     ...(storedState ?? {}),
     ...(stateFromUrl ?? {}),
+    ...(flatStateFromUrl ?? {}),
   };
-
-  if (search && search.trim() !== '') {
-    return { ...state, search: search.trim() };
-  }
-
-  return state;
 }
 
 export function createInitialQueryState(
@@ -120,10 +119,7 @@ export function pushQueryStateToUrl(state: AnalysisQueryState) {
   if (typeof window === 'undefined') return;
   saveRerAnalysisQueryState(state);
   const url = new URL(window.location.href);
-  url.searchParams.set('state', JSON.stringify(state));
-  if (state.search.trim() === '') {
-    url.searchParams.delete('search');
-  }
+  writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }
 

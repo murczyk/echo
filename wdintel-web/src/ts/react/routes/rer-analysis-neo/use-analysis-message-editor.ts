@@ -15,8 +15,7 @@ type Result = {
   editorSaveInFlight: boolean;
   closeEditor: () => void;
   openEditor: (messageId: number) => void;
-  saveEditor: () => Promise<void>;
-  updateEditorField: <K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => void;
+  saveEditor: (message: InboxMessage) => Promise<void>;
 };
 
 function toErrorMessage(error: unknown): string {
@@ -46,17 +45,13 @@ export function useAnalysisMessageEditor({
     setEditorMessage(null);
   }, []);
 
-  const updateEditorField = useCallback(<K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => {
-    setEditorMessage((current) => (current == null ? current : { ...current, message: { ...current.message, [field]: value } }));
-  }, []);
-
-  const saveEditor = useCallback(async () => {
+  const saveEditor = useCallback(async (message: InboxMessage) => {
     if (editorMessage == null) return;
     setEditorSaveInFlight(true);
     onError('');
     try {
-      await submitAnalysisInboxMessages({ messages: [[editorMessage.id, editorMessage.message]] });
-      onUpdateLocalMessage(editorMessage.id, () => editorMessage.message);
+      await submitAnalysisInboxMessages({ messages: [[editorMessage.id, message]] });
+      onUpdateLocalMessage(editorMessage.id, () => message);
       setEditorMessage(null);
     } catch (error) {
       if (!onUnauthorized(error)) {
@@ -73,6 +68,5 @@ export function useAnalysisMessageEditor({
     closeEditor,
     openEditor,
     saveEditor,
-    updateEditorField,
   };
 }

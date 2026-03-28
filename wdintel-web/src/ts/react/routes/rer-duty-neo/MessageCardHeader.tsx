@@ -6,6 +6,7 @@ import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
+import EditIcon from '@mui/icons-material/Edit';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
@@ -13,10 +14,10 @@ import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined
 import PriorityHighOutlinedIcon from '@mui/icons-material/PriorityHighOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import {
   Box,
-  IconButton,
+  Button,
+  ButtonGroup,
   Link,
   Stack,
   Tooltip,
@@ -24,6 +25,7 @@ import {
   type SxProps,
   type Theme,
 } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
 
 import type { InboxMessage, Network } from '../../../../Bindings';
 import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
@@ -31,6 +33,7 @@ import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance 
 type ActionIconsRowProps = {
   id: number;
   msg: InboxMessage;
+  compact?: boolean;
   copiedFeedbackId: string | null;
   onBookmark: () => void;
   onImportant: () => void;
@@ -52,27 +55,89 @@ function ActionIconButton({
 }) {
   return (
     <Tooltip title={title}>
-      <IconButton
-        size="small"
+      <Button
         aria-label={title}
         onClick={onClick}
         sx={{
-          width: 26,
-          height: 26,
+          width: 30,
+          minWidth: 30,
+          height: 30,
+          p: 0,
           color: 'var(--color-action)',
-          borderRadius: 0.75,
           '& .MuiSvgIcon-root': { fontSize: 18 },
         }}
       >
         {icon}
-      </IconButton>
+      </Button>
     </Tooltip>
+  );
+}
+
+function CenteredInfoRow({
+  icon,
+  text,
+  trailing,
+}: {
+  icon: JSX.Element;
+  text: JSX.Element;
+  trailing?: JSX.Element | null;
+}) {
+  return (
+    <Box
+      sx={{
+        width: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    >
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: '30px minmax(0, auto) 30px',
+          alignItems: 'center',
+          columnGap: 0.5,
+          minHeight: 30,
+          maxWidth: '100%',
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {icon}
+        </Box>
+        <Box sx={{ minWidth: 0, maxWidth: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {text}
+        </Box>
+        <Box sx={{ width: 30, minWidth: 30, height: 30, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {trailing ?? null}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function CenteredTextOnlyRow({
+  text,
+}: {
+  text: JSX.Element;
+}) {
+  return (
+    <Box
+      sx={{
+        width: '100%',
+        justifyContent: 'center',
+        display: 'flex',
+        alignItems: 'center',
+      }}
+    >
+      {text}
+    </Box>
   );
 }
 
 function ActionIconsRow({
   id,
   msg,
+  compact = false,
   copiedFeedbackId,
   onBookmark,
   onImportant,
@@ -82,31 +147,147 @@ function ActionIconsRow({
   onEditDetails,
   sx,
 }: ActionIconsRowProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [stackedLayout, setStackedLayout] = useState(compact);
+
+  const buttons = [
+    onEditDetails != null ? (
+      <ActionIconButton key="edit-details" title="Редагувати додаткові поля та позивні" icon={<EditIcon fontSize="inherit" />} onClick={onEditDetails} />
+    ) : null,
+    <ActionIconButton key="comment" title="Редагувати коментар" icon={<ChatBubbleOutlineOutlinedIcon fontSize="inherit" />} onClick={onComment} />,
+    <ActionIconButton
+      key="copy"
+      title="Копіювати повідомлення"
+      icon={<ContentCopyOutlinedIcon fontSize="inherit" />}
+      onClick={onCopyText}
+    />,
+    <ActionIconButton
+      key="important"
+      title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
+      icon={<PriorityHighOutlinedIcon fontSize="inherit" />}
+      onClick={onImportant}
+    />,
+    <ActionIconButton
+      key="bookmark"
+      title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
+      icon={msg.bookmarked ? <BookmarkOutlinedIcon fontSize="inherit" /> : <BookmarkBorderOutlinedIcon fontSize="inherit" />}
+      onClick={onBookmark}
+    />,
+    onDelete != null ? (
+      <ActionIconButton key="delete" title="Видалити" icon={<DeleteOutlineOutlinedIcon fontSize="inherit" />} onClick={onDelete} />
+    ) : null,
+  ].filter(Boolean);
+
+  useEffect(() => {
+    if (compact) {
+      setStackedLayout(true);
+      return;
+    }
+
+    const root = rootRef.current;
+    const header = root?.closest('[data-message-header-grid="true"]') as HTMLDivElement | null;
+    if (!root || typeof ResizeObserver === 'undefined') {
+      setStackedLayout(false);
+      return;
+    }
+
+    const minInlineWidth = 6 * 30 + 2;
+    const minHeaderWidthForInline = 760;
+    const updateLayout = () => {
+      const availableWidth = header?.clientWidth ?? root.clientWidth;
+      setStackedLayout(availableWidth < Math.max(minInlineWidth, minHeaderWidthForInline));
+    };
+
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(root);
+    if (header != null && header !== root) {
+      observer.observe(header);
+    }
+    return () => observer.disconnect();
+  }, [compact]);
+
+  if (stackedLayout) {
+    return (
+      <div ref={rootRef} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+        <Box
+          role="group"
+          aria-label="Дії повідомлення"
+          sx={[
+            {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 30px)',
+              gridAutoRows: '30px',
+              width: 'fit-content',
+              marginInline: 'auto',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              color: 'var(--color-action)',
+              overflow: 'hidden',
+              '& .MuiButton-root': {
+                color: 'var(--color-action)',
+                borderColor: 'divider',
+                borderRadius: 0,
+                borderRight: '1px solid',
+                borderBottom: '1px solid',
+                borderRightColor: 'divider',
+                borderBottomColor: 'divider',
+              },
+              '& .MuiButton-root:nth-of-type(3n)': {
+                borderRight: 'none',
+              },
+              '& .MuiButton-root:nth-last-of-type(-n+3)': {
+                borderBottom: 'none',
+              },
+              '& .MuiButton-root:hover': {
+                borderColor: 'divider',
+                backgroundColor: 'action.hover',
+              },
+            },
+            ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+          ]}
+        >
+          {buttons}
+        </Box>
+      </div>
+    );
+  }
+
   return (
-    <Stack direction="row" spacing={0.25} useFlexGap flexWrap="wrap" alignItems="center" sx={sx}>
-      <ActionIconButton
-        title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
-        icon={msg.bookmarked ? <BookmarkOutlinedIcon fontSize="inherit" /> : <BookmarkBorderOutlinedIcon fontSize="inherit" />}
-        onClick={onBookmark}
-      />
-      <ActionIconButton
-        title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
-        icon={<PriorityHighOutlinedIcon fontSize="inherit" />}
-        onClick={onImportant}
-      />
-      <ActionIconButton title="Редагувати коментар" icon={<ChatBubbleOutlineOutlinedIcon fontSize="inherit" />} onClick={onComment} />
-      <ActionIconButton
-        title="Копіювати повідомлення"
-        icon={<ContentCopyOutlinedIcon fontSize="inherit" />}
-        onClick={onCopyText}
-      />
-      {onDelete != null ? (
-        <ActionIconButton title="Видалити" icon={<DeleteOutlineOutlinedIcon fontSize="inherit" />} onClick={onDelete} />
-      ) : null}
-      {onEditDetails != null ? (
-        <ActionIconButton title="Редагувати додаткові поля" icon={<TuneOutlinedIcon fontSize="inherit" />} onClick={onEditDetails} />
-      ) : null}
-    </Stack>
+    <div ref={rootRef} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+      <ButtonGroup
+        size="small"
+        variant="outlined"
+        aria-label="Дії повідомлення"
+        sx={[
+          {
+            flexWrap: 'nowrap',
+            alignItems: 'center',
+            borderRadius: 1,
+            '& .MuiButton-root': {
+              borderColor: 'divider',
+              borderRadius: 0,
+            },
+            '& .MuiButton-root:first-of-type': {
+              borderTopLeftRadius: (theme) => `${theme.shape.borderRadius}px`,
+              borderBottomLeftRadius: (theme) => `${theme.shape.borderRadius}px`,
+            },
+            '& .MuiButton-root:last-of-type': {
+              borderTopRightRadius: (theme) => `${theme.shape.borderRadius}px`,
+              borderBottomRightRadius: (theme) => `${theme.shape.borderRadius}px`,
+            },
+            '& .MuiButton-root:hover': {
+              borderColor: 'divider',
+              backgroundColor: 'action.hover',
+            },
+          },
+          ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+        ]}
+      >
+        {buttons}
+      </ButtonGroup>
+    </div>
   );
 }
 
@@ -264,19 +445,19 @@ export function MessageCardHeader({
   );
 
   const freqBlock = msg.freq != null ? (
-    <Stack direction="row" spacing={0.25} alignItems="center" sx={{ flexShrink: 0 }}>
-      <Stack direction="row" spacing={0.5} alignItems="center">
-        <SettingsInputAntennaOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} titleAccess="Частота" />
-        <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-          {msg.freq}
-        </Typography>
-      </Stack>
-      <ActionIconButton
-        title="Копіювати частоту"
-        icon={<ContentCopyOutlinedIcon fontSize="inherit" />}
-        onClick={onCopyFreq}
-      />
-    </Stack>
+    <CenteredInfoRow
+      icon={<SettingsInputAntennaOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} titleAccess="Частота" />}
+      text={
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {msg.freq}
+          </Typography>
+        </Box>
+      }
+      trailing={
+        <ActionIconButton title="Копіювати частоту" icon={<ContentCopyOutlinedIcon fontSize="inherit" />} onClick={onCopyFreq} />
+      }
+    />
   ) : null;
 
   const analysisLink = (
@@ -351,6 +532,7 @@ export function MessageCardHeader({
           <ActionIconsRow
             id={id}
             msg={msg}
+            compact={compact}
             copiedFeedbackId={copiedFeedbackId}
             onBookmark={onBookmark}
             onImportant={onImportant}
@@ -367,9 +549,10 @@ export function MessageCardHeader({
   if (compact) {
     return (
       <Box
+        data-message-header-grid="true"
         sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
           gridTemplateRows: 'repeat(3, minmax(0, auto))',
           width: '100%',
           alignItems: 'center',
@@ -420,8 +603,8 @@ export function MessageCardHeader({
           </Stack>
         </Box>
         <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'center', gridColumn: 2, gridRow: 3 }}>
-          <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, maxWidth: '100%' }}>
-            <LocationOnOutlinedIcon sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Локація" />
+          <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center" sx={{ minWidth: 0, maxWidth: '100%' }}>
+            <LocationOnOutlinedIcon sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Локація" />
             <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, textAlign: 'center' }}>
               {msg.location ?? 'Не встановлена'}
             </Typography>
@@ -440,14 +623,15 @@ export function MessageCardHeader({
 
   return (
     <Box
+      data-message-header-grid="true"
       sx={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
         gridTemplateRows: 'repeat(3, minmax(0, auto))',
         width: '100%',
         alignItems: 'center',
         columnGap: 4,
-        rowGap: 1.25,
+        rowGap: 0.75,
       }}
     >
       <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
@@ -457,6 +641,7 @@ export function MessageCardHeader({
         <ActionIconsRow
           id={id}
           msg={msg}
+          compact={compact}
           copiedFeedbackId={copiedFeedbackId}
           onBookmark={onBookmark}
           onImportant={onImportant}
@@ -476,7 +661,7 @@ export function MessageCardHeader({
         </Stack>
       </Box>
       <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 2 }}>
-        {freqBlock ?? <Typography variant="caption" color="text.secondary">—</Typography>}
+        {freqBlock ?? <CenteredTextOnlyRow text={<Typography variant="caption" color="text.secondary">—</Typography>} />}
       </Box>
       <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gridColumn: 3, gridRow: 2 }}>
         {mapLink}
@@ -490,8 +675,8 @@ export function MessageCardHeader({
         </Stack>
       </Box>
       <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'center', gridColumn: 2, gridRow: 3 }}>
-        <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, maxWidth: '100%' }}>
-          <LocationOnOutlinedIcon sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Локація" />
+        <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center" sx={{ minWidth: 0, maxWidth: '100%' }}>
+          <LocationOnOutlinedIcon sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Локація" />
           <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, textAlign: 'center' }}>
             {msg.location ?? 'Не встановлена'}
           </Typography>

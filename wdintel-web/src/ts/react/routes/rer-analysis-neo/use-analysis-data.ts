@@ -101,6 +101,7 @@ type Result = {
   loadMoreMessages: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<void>;
   mapAttrs: AnalysisMapAttrs;
+  messageActionLoading: boolean;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
@@ -180,6 +181,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [mapPoints, setMapPoints] = useState<FreqDetailedPoint[]>([]);
   const [mapNetworkUnits, setMapNetworkUnits] = useState<NetworkUnit[]>([]);
   const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [messageActionCount, setMessageActionCount] = useState(0);
   const [correlatedFreqs, setCorrelatedFreqs] = useState<CorrelatedFreq[]>([]);
   const [correlatedFreqsLoading, setCorrelatedFreqsLoading] = useState(false);
   const [callsignGraph, setCallsignGraph] = useState<NetJsonGraphAndMeta | null>(null);
@@ -269,6 +271,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
   const onToggleMessageBookmark = useCallback(
     async (messageId: number, currentlyBookmarked: boolean) => {
+      setMessageActionCount((current) => current + 1);
       try {
         if (currentlyBookmarked) {
           await bookmarkRemove({ messageId });
@@ -281,6 +284,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
+      } finally {
+        setMessageActionCount((current) => Math.max(0, current - 1));
       }
     },
     [onError, onUnauthorized, patchMessages],
@@ -288,6 +293,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
   const onToggleMessageImportant = useCallback(
     async (messageId: number, currentlyImportant: boolean) => {
+      setMessageActionCount((current) => current + 1);
       try {
         if (currentlyImportant) {
           await importantRemove({ messageId });
@@ -300,6 +306,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
+      } finally {
+        setMessageActionCount((current) => Math.max(0, current - 1));
       }
     },
     [onError, onUnauthorized, patchMessages],
@@ -307,6 +315,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
   const onSaveMessageComment = useCallback(
     async (messageId: number, comment: string | null) => {
+      setMessageActionCount((current) => current + 1);
       try {
         await commentSave({ messageId, comment });
 
@@ -315,6 +324,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
+      } finally {
+        setMessageActionCount((current) => Math.max(0, current - 1));
       }
     },
     [onError, onUnauthorized, patchMessages],
@@ -322,6 +333,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
   const onDeleteMessage = useCallback(
     async (messageId: number) => {
+      setMessageActionCount((current) => current + 1);
       try {
         await deleteMessage({ id: messageId });
         setMessages((current) => current.filter(([id]) => id !== messageId));
@@ -330,6 +342,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
+      } finally {
+        setMessageActionCount((current) => Math.max(0, current - 1));
       }
     },
     [onError, onUnauthorized],
@@ -343,6 +357,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
       const enabled = getMessageTagEnabled(sourceMessage, tagId);
 
+      setMessageActionCount((current) => current + 1);
       try {
         if (enabled) {
           await inboxMessageTagsRm({ messageId, tagId });
@@ -380,6 +395,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
+      } finally {
+        setMessageActionCount((current) => Math.max(0, current - 1));
       }
     },
     [mapOpenMessages, messages, onError, onUnauthorized, patchMessages],
@@ -787,6 +804,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     loadMoreMessages,
     loadMessagesForMap,
     mapAttrs,
+    messageActionLoading: messageActionCount > 0,
     messages,
     networkDisplayMap,
     networks,

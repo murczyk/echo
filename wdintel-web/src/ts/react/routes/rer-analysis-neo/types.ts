@@ -63,7 +63,6 @@ export type AnalysisMapAttrs = {
 
 export type AnalysisSidebarSections = {
   stats: boolean;
-  summary: boolean;
   callsigns: boolean;
   newCallsigns: boolean;
 };
@@ -71,7 +70,8 @@ export type AnalysisSidebarSections = {
 export type AnalysisPageState = {
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];
-  centerTab: 'messages' | 'map';
+  centerTab: 'messages' | 'map' | 'summary';
+  centerTabPending: boolean;
   counts: CountStatsRsp | null;
   copiedFeedbackId: string | null;
   error: string | null;
@@ -93,6 +93,7 @@ export type AnalysisPageState = {
   groupsActivity: FreqDailyActivityCount | null;
   groupsActivityLoading: boolean;
   mapAttrs: AnalysisMapAttrs;
+  messageActionLoading: boolean;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
@@ -151,7 +152,7 @@ export type AnalysisPageActions = {
   reload: () => void;
   resetFilters: () => void;
   saveAsNew: () => void;
-  setCenterTab: (tab: 'messages' | 'map') => void;
+  setCenterTab: (tab: 'messages' | 'map' | 'summary') => void;
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
   toggleLeftPanel: () => void;
@@ -162,10 +163,9 @@ export type AnalysisPageActions = {
   showFreqOnMap: (freq: string) => void;
   toggleUnitFromMap: (unitName: string | null) => void;
   updateReport: (patch: Partial<AnalysisReportState>) => void;
-  updateEditorField: <K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => void;
   updateExisting: () => void;
   updateQueryState: (patch: Partial<AnalysisQueryState>) => void;
-  saveEditor: () => void;
+  saveEditor: (message: InboxMessage) => void;
 };
 
 export type AnalysisPageViewModel = AnalysisPageState & AnalysisPageActions;

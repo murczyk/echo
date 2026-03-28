@@ -7,7 +7,6 @@ import { AnalysisCallsignGraphCard } from './AnalysisCallsignGraphCard';
 import { AnalysisChartsPanel } from './AnalysisChartsPanel';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
 import { AnalysisOverviewCard } from './AnalysisOverviewCard';
-import { AnalysisSummaryTableCard } from './AnalysisSummaryTableCard';
 
 type Props = Pick<
   AnalysisPageState,
@@ -20,14 +19,9 @@ type Props = Pick<
   | 'groupsActivity'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
-  | 'networkDisplayMap'
-  | 'networks'
   | 'newCallsigns'
   | 'rightSidebarSections'
   | 'rightPanelOpen'
-  | 'summaryRows'
-  | 'summaryCallsignsInfo'
-  | 'unitsMap'
   | 'topCallsigns'
   | 'topFreqs'
   | 'topLocations'
@@ -35,15 +29,9 @@ type Props = Pick<
 > &
   Pick<
     AnalysisPageActions,
-    | 'downloadGeojson'
-    | 'downloadKmz'
-    | 'downloadSummaryXlsx'
     | 'loadCallsignGraph'
     | 'loadCorrelatedFreqs'
     | 'loadGroupsActivity'
-    | 'renameSummaryUnit'
-    | 'selectOnlyFreq'
-    | 'showFreqOnMap'
     | 'toggleCallsignGraphNolimit'
   >;
 
@@ -54,26 +42,15 @@ export function AnalysisSidebar({
   correlatedFreqs,
   correlatedFreqsLoading,
   counts,
-  downloadGeojson,
-  downloadKmz,
-  downloadSummaryXlsx,
   groupsActivity,
   groupsActivityPeriod,
   groupsActivityLoading,
   loadCallsignGraph,
   loadCorrelatedFreqs,
   loadGroupsActivity,
-  networkDisplayMap,
-  networks,
   newCallsigns,
-  renameSummaryUnit,
   rightPanelOpen,
   rightSidebarSections,
-  selectOnlyFreq,
-  summaryRows,
-  summaryCallsignsInfo,
-  unitsMap,
-  showFreqOnMap,
   topCallsigns,
   topFreqs,
   topLocations,
@@ -81,7 +58,6 @@ export function AnalysisSidebar({
   toggleCallsignGraphNolimit,
 }: Props) {
   const statsRef = useRef<HTMLDivElement | null>(null);
-  const summaryRef = useRef<HTMLDivElement | null>(null);
   const callsignsRef = useRef<HTMLDivElement | null>(null);
   const newCallsignsRef = useRef<HTMLDivElement | null>(null);
   const prevSectionsRef = useRef(rightSidebarSections);
@@ -98,7 +74,6 @@ export function AnalysisSidebar({
 
     const sectionRefMap = {
       stats: statsRef,
-      summary: summaryRef,
       callsigns: callsignsRef,
       newCallsigns: newCallsignsRef,
     };
@@ -146,23 +121,6 @@ export function AnalysisSidebar({
               topFreqs={topFreqs}
               topLocations={topLocations}
               topUnits={topUnits}
-            />
-          </Box>
-        ) : null}
-        {rightSidebarSections.summary ? (
-          <Box ref={summaryRef}>
-            <AnalysisSummaryTableCard
-              callsignInfoMap={summaryCallsignsInfo}
-              networkDisplayMap={networkDisplayMap}
-              networks={networks}
-              onDownloadGeojson={downloadGeojson}
-              onDownloadKmz={downloadKmz}
-              onDownloadXlsx={downloadSummaryXlsx}
-              onRenameUnit={renameSummaryUnit}
-              onSelectFreq={selectOnlyFreq}
-              onShowFreqOnMap={showFreqOnMap}
-              rows={summaryRows}
-              unitsMap={unitsMap}
             />
           </Box>
         ) : null}

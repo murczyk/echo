@@ -1,5 +1,5 @@
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField } from '@mui/material';
+import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
 
 type DeleteConfirmDialogProps = {
   open: boolean;
@@ -35,19 +35,20 @@ export function CommentDialog({ open, commentText, onCommentTextChange, onClose,
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>Коментар</DialogTitle>
       <DialogContent>
-        <TextField
-          autoFocus
-          fullWidth
-          multiline
-          minRows={4}
-          placeholder="Введіть коментар..."
-          value={commentText}
-          onChange={(e) => onCommentTextChange(e.target.value)}
-          className="mt-2 min-w-[300px]"
-        />
+        <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={4}
+            placeholder="Введіть коментар..."
+            value={commentText}
+            onChange={(e) => onCommentTextChange(e.target.value)}
+          />
+        </Stack>
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={onClose}>Відміна</Button>
+        <Button onClick={onClose}>Скасувати</Button>
         <Button variant="contained" onClick={onSave}>
           Зберегти
         </Button>

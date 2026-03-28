@@ -1,7 +1,6 @@
+import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
-import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
-import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
-import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
+import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import { Box, Button, Stack, Tooltip } from '@mui/material';
 
 import type { AnalysisSidebarSections } from '../types';
@@ -80,19 +79,13 @@ export function AnalysisToolbar({
           onClick={() => onToggleRightSidebarSection('stats')}
         />
         <SectionButton
-          icon={<TableChartOutlinedIcon sx={{ fontSize: 20 }} />}
-          label="Показати або сховати зведену таблицю"
-          pressed={rightSidebarSections.summary}
-          onClick={() => onToggleRightSidebarSection('summary')}
-        />
-        <SectionButton
-          icon={<GroupsOutlinedIcon sx={{ fontSize: 20 }} />}
+          icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />}
           label="Показати або сховати блок позивних"
           pressed={rightSidebarSections.callsigns}
           onClick={() => onToggleRightSidebarSection('callsigns')}
         />
         <SectionButton
-          icon={<PersonAddAltOutlinedIcon sx={{ fontSize: 20 }} />}
+          icon={<AccountCircleOutlinedIcon sx={{ fontSize: 20 }} />}
           label="Показати або сховати нові позивні"
           pressed={rightSidebarSections.newCallsigns}
           onClick={() => onToggleRightSidebarSection('newCallsigns')}

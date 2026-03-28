@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 
 import { isUnauthorizedError } from '../../services/api/client';
 import {
@@ -20,15 +20,15 @@ function initState(): AnalysisQueryState {
 
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initState);
-  const [centerTab, setCenterTabState] = useState<'messages' | 'map'>('messages');
+  const [centerTab, setCenterTabState] = useState<'messages' | 'map' | 'summary'>('messages');
   const [error, setError] = useState<string | null>(null);
   const [includeOnlyNewFreqs, setIncludeOnlyNewFreqsState] = useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [centerTabPending, startCenterTabTransition] = useTransition();
   const [rightSidebarSections, setRightSidebarSections] = useState<AnalysisSidebarSections>({
     stats: false,
-    summary: false,
     callsigns: false,
     newCallsigns: false,
   });
@@ -79,11 +79,16 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [queryState],
   );
 
-  const setCenterTab = useCallback((tab: 'messages' | 'map') => {
-    setCenterTabState(tab);
-    if (tab === 'map') {
-      setRightPanelOpen(false);
-    }
+  const setCenterTab = useCallback((tab: 'messages' | 'map' | 'summary') => {
+    startCenterTabTransition(() => {
+      setCenterTabState(tab);
+      if (tab === 'map') {
+        setLeftPanelOpen(false);
+        setRightPanelOpen(false);
+        return;
+      }
+      setLeftPanelOpen(true);
+    });
   }, []);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
@@ -129,9 +134,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   const showFreqOnMap = useCallback((freq: string) => {
-    setCenterTabState('map');
-    setRightPanelOpen(false);
-    setQueryState((current) => ({ ...current, freqsSelected: [freq] }));
+    startCenterTabTransition(() => {
+      setCenterTabState('map');
+      setLeftPanelOpen(false);
+      setRightPanelOpen(false);
+      setQueryState((current) => ({ ...current, freqsSelected: [freq] }));
+    });
   }, []);
 
   const toggleLeftPanel = useCallback(() => {
@@ -158,6 +166,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     callsignGraphLoading: data.callsignGraphLoading,
     callsignGraphNolimit: data.callsignGraphNolimit,
     centerTab,
+    centerTabPending,
     copiedFeedbackId: null,
     correlatedFreqs: data.correlatedFreqs,
     correlatedFreqsLoading: data.correlatedFreqsLoading,
@@ -176,6 +185,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadedSavedFilter: savedFilters.loadedSavedFilter,
     loading: data.loading,
     mapAttrs: data.mapAttrs,
+    messageActionLoading: data.messageActionLoading,
     messages: data.messages,
     networkDisplayMap: data.networkDisplayMap,
     networks: data.networks,
@@ -242,7 +252,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     toggleRightSidebarSection,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,
-    updateEditorField: editor.updateEditorField,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,
