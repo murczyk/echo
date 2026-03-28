@@ -19,6 +19,7 @@ import {
   emptyFilter,
   findAllAdjacentFreqs,
   INBOX_COUNT_POLL_INTERVAL_MS,
+  INBOX_COUNT_REQUEST_TIMEOUT_MS,
   parseStateFromUrl,
   sortMessageItemsByTime,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
@@ -269,70 +270,66 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [messageFeeds, buildReqForFeed],
   );
 
-  const pollInFlightRef = useRef(false);
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
-    if (!messageFeeds.length || pollInFlightRef.current) return;
-    pollInFlightRef.current = true;
+    if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
-    try {
-      const counts = await Promise.all(
-        messageFeeds.map(async (w) => {
-          if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
-            return { feedId: w.id, quantity: null as number | null, hasItems: w.items.length > 0, skipped: true };
-          }
-          countInFlightByFeedIdRef.current.add(w.id);
-          try {
-            const lastItem = w.items[w.items.length - 1];
-            const sinceMs =
-              lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
-                ? lastItem[1].timestamp + 1
-                : 0;
-            const hasItems = w.items.length > 0;
-            const { quantity } = await fetchInboxCount(
-              buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
-            );
-            return { feedId: w.id, quantity, hasItems, skipped: false };
-          } catch {
-            return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false };
-          } finally {
-            countInFlightByFeedIdRef.current.delete(w.id);
-          }
-        }),
-      );
-      setMessageFeeds((prev) =>
-        prev.map((f) => {
-          const entry = counts.find((c) => c.feedId === f.id);
-          if (entry?.skipped) return f;
-          const quantity = entry?.quantity ?? 0;
-          const hasItems = entry?.hasItems ?? f.items.length > 0;
-          const allItemsRead =
-            f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
-          const unreadCount = !hasItems
-            ? f.unreadCount
-            : quantity === 0 && allItemsRead
-              ? 0
-              : Math.max(f.unreadCount, quantity);
-          const requestInitialViaEffect =
-            !hasItems && !f.loading && quantity > 0;
-          return {
-            ...f,
-            unreadCount,
-            ...(requestInitialViaEffect ? { loading: true } : {}),
-          };
-        }),
-      );
-      for (const entry of counts) {
-        if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
-        if (!entry.hasItems) continue;
-        const { feedId } = entry;
-        if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
-          await loadFeedNewerMessages(feedId, {
-            scrollToEndAfterLoad: watchModeByFeedId[feedId],
-          });
+    const counts = await Promise.all(
+      messageFeeds.map(async (w) => {
+        if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
+          return { feedId: w.id, quantity: null as number | null, hasItems: w.items.length > 0, skipped: true };
         }
+        countInFlightByFeedIdRef.current.add(w.id);
+        try {
+          const lastItem = w.items[w.items.length - 1];
+          const sinceMs =
+            lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
+              ? lastItem[1].timestamp + 1
+              : 0;
+          const hasItems = w.items.length > 0;
+          const countSignal = AbortSignal.timeout(INBOX_COUNT_REQUEST_TIMEOUT_MS);
+          const { quantity } = await fetchInboxCount(
+            buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
+            countSignal,
+          );
+          return { feedId: w.id, quantity, hasItems, skipped: false };
+        } catch {
+          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false };
+        } finally {
+          countInFlightByFeedIdRef.current.delete(w.id);
+        }
+      }),
+    );
+    setMessageFeeds((prev) =>
+      prev.map((f) => {
+        const entry = counts.find((c) => c.feedId === f.id);
+        if (entry?.skipped) return f;
+        const quantity = entry?.quantity ?? 0;
+        const hasItems = entry?.hasItems ?? f.items.length > 0;
+        const allItemsRead =
+          f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
+        const unreadCount = !hasItems
+          ? f.unreadCount
+          : quantity === 0 && allItemsRead
+            ? 0
+            : Math.max(f.unreadCount, quantity);
+        const requestInitialViaEffect =
+          !hasItems && !f.loading && quantity > 0;
+        return {
+          ...f,
+          unreadCount,
+          ...(requestInitialViaEffect ? { loading: true } : {}),
+        };
+      }),
+    );
+    for (const entry of counts) {
+      if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
+      if (!entry.hasItems) continue;
+      const { feedId } = entry;
+      if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
+        await loadFeedNewerMessages(feedId, {
+          scrollToEndAfterLoad: watchModeByFeedId[feedId],
+        });
       }
-    } finally {
-      pollInFlightRef.current = false;
     }
   }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed]);
 

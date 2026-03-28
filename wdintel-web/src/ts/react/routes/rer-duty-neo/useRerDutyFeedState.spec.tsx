@@ -208,7 +208,7 @@ describe('useRerDutyFeedState', () => {
     expect(apiRef.current?.messageFeeds[0]?.items[0]?.[0]).toBe(7);
   });
 
-  it('ignores overlapping poll ticks while a poll cycle is still in flight', async () => {
+  it('starts a new poll tick even when the previous count round is still in flight (no whole-page stall)', async () => {
     hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
 
     let startedCount = 0;
@@ -239,6 +239,6 @@ describe('useRerDutyFeedState', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(startedCount).toBe(countBeforePolls + 1);
+    expect(startedCount).toBe(countBeforePolls + 2);
   });
 });

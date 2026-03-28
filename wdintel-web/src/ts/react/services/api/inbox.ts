@@ -207,12 +207,14 @@ export type InboxMessagesDigestRsp = {
 };
 
 export async function fetchInboxCount(
-  req: InboxMessagesReq
+  req: InboxMessagesReq,
+  signal?: AbortSignal,
 ): Promise<InboxMessagesDigestRsp> {
   const body = inboxMsgtoSnakeBody(req);
   const raw = await postJson<{ quantity: number; first_element_ts: number | null }>(
     '/api/rer-importer/get-inbox-count',
-    body as any
+    body as any,
+    { signal },
   );
   return {
     quantity: raw.quantity,
