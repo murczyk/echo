@@ -8,8 +8,8 @@ use actix_web::web::{Data, Json};
 use actix_web::{get, put};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    sea_query::OnConflict, ActiveValue::Set, ColumnTrait, DatabaseConnection,
+    EntityTrait, QueryFilter,
 };
 
 #[get("/api/user/settings")]
@@ -45,28 +45,22 @@ pub async fn user_settings_put(
         });
     }
     let now = Utc::now().naive_utc();
-    match user_settings::Entity::find_by_id(login_id.clone())
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-    {
-        Some(m) => {
-            let mut am: user_settings::ActiveModel = m.into();
-            am.prefs = Set(prefs.clone());
-            am.updated_at = Set(now);
-            am.update(&env.dbx).await.c(h!())?;
-        }
-        None => {
-            user_settings::ActiveModel {
-                login: Set(login_id),
-                prefs: Set(prefs.clone()),
-                updated_at: Set(now),
-            }
-            .insert(&env.dbx)
-            .await
-            .c(h!())?;
-        }
-    }
+    user_settings::Entity::insert(user_settings::ActiveModel {
+        login: Set(login_id),
+        prefs: Set(prefs.clone()),
+        updated_at: Set(now),
+    })
+    .on_conflict(
+        OnConflict::column(user_settings::Column::Login)
+            .update_columns([
+                user_settings::Column::Prefs,
+                user_settings::Column::UpdatedAt,
+            ])
+            .to_owned(),
+    )
+    .exec(&env.dbx)
+    .await
+    .c(h!())?;
     Ok(Json(prefs))
 }
 
