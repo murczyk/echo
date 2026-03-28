@@ -634,6 +634,10 @@ pub async fn update_palitra(
 ) -> Result<Json<PalitraDetails>, AppError> {
     let login = user.id().c(h!())?;
     let req = req.into_inner();
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -664,6 +668,10 @@ pub async fn update_palitra_v2(
 ) -> Result<Json<PalitraReadV2>, AppError> {
     let login = user.id().c(h!())?;
     let req = req.into_inner();
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
