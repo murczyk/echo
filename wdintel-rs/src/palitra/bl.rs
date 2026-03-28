@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::palitra::sync_delete_palitra_from_connected_organisms;
 use crate::palitra::types::*;
+use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::{h, nlp};
@@ -1520,38 +1521,6 @@ async fn load_login_access_scope(
         organism_ids,
         aor_ids,
     })
-}
-
-pub(crate) async fn expand_aor_ids_to_descendants<'a, 'async_trait, C>(
-    dbx: &'a C,
-    direct_aor_ids: &[i64],
-) -> anyhow::Result<HashSet<i64>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    if direct_aor_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
-    let all_aors = area_of_responsibility::Entity::find()
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .all(dbx)
-        .await
-        .c(h!())?;
-    let user_aor_bounds = all_aors
-        .iter()
-        .filter(|aor| direct_aor_ids.contains(&aor.id))
-        .map(|aor| (aor.left_bound, aor.right_bound))
-        .collect_vec();
-    Ok(all_aors
-        .into_iter()
-        .filter(|candidate| {
-            user_aor_bounds.iter().any(|(left_bound, right_bound)| {
-                candidate.left_bound >= *left_bound
-                    && candidate.right_bound <= *right_bound
-            })
-        })
-        .map(|aor| aor.id)
-        .collect())
 }
 
 async fn load_palitra_access_index(

@@ -1039,11 +1039,14 @@ async fn load_user_scope(
     let organism_ids =
         organism_aors.iter().map(|o| o.organism_id).collect_vec();
     let direct_aor_ids = organism_aors.iter().map(|o| o.aor_id).collect_vec();
-    let aor_ids = bl::expand_aor_ids_to_descendants(dbx, &direct_aor_ids)
-        .await
-        .c(h!())?
-        .into_iter()
-        .collect_vec();
+    let aor_ids = crate::sigint::aor::bl::expand_aor_ids_to_descendants(
+        dbx,
+        &direct_aor_ids,
+    )
+    .await
+    .c(h!())?
+    .into_iter()
+    .collect_vec();
     Ok(UserScope {
         organism_ids,
         aor_ids,
