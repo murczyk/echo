@@ -11,7 +11,7 @@ use crate::location::utils;
 use crate::location::utils::to_location_list;
 use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::{collect_groups, CollectGroupsOpts};
-use crate::palitra::bl::collect_palitra_ids;
+use crate::palitra::bl::collect_accessible_palitra_ids;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
@@ -432,7 +432,9 @@ async fn get_palitra_points_by_message(
     login: String,
     message_ids: Vec<i64>,
 ) -> Result<HashMap<i64, Vec<CNPoint>>, AppError> {
-    let palitra_ids = collect_palitra_ids(login, dbx).await.context(h!())?;
+    let palitra_ids = collect_accessible_palitra_ids(login, dbx)
+        .await
+        .context(h!())?;
     if palitra_ids.is_empty() {
         return Ok(HashMap::new());
     }

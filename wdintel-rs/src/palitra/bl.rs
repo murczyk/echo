@@ -208,7 +208,8 @@ pub async fn list_all_palitras_detailed(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraDetails>> {
-    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     let result = render_palitra_details(dbx, palitra_ids).await.c(h!())?;
     Ok(result)
 }
@@ -217,7 +218,8 @@ pub async fn list_all_palitras_v2(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
-    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     let mut result = Vec::with_capacity(palitra_ids.len());
     for palitra_id in palitra_ids {
         result.push(
@@ -234,7 +236,8 @@ pub async fn read_palitra_v2(
     palitra_id: i64,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<PalitraReadV2> {
-    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     if !palitra_ids.contains(&palitra_id) {
         anyhow::bail!(
             "Palitra {palitra_id} is not accessible for current user"
@@ -250,7 +253,8 @@ pub async fn search_palitra_points_by_labels(
     req: PalitraSearchPointsReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPoints>> {
-    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     let allowed_palitra_ids: HashSet<i64> =
         allowed_palitra_ids.into_iter().collect();
     let palitra_ids: Vec<i64> = req
@@ -376,7 +380,8 @@ pub async fn suggest_palitra_point_labels(
     req: PalitraPointLabelSuggestReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPointLabelSuggestRsp>> {
-    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     let allowed_palitra_ids: HashSet<i64> =
         allowed_palitra_ids.into_iter().collect();
     let palitra_ids: Vec<i64> = req
@@ -607,7 +612,8 @@ pub async fn list_palitra_points_by_viewport_bounds(
     req: PalitraPointsReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPoints>> {
-    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     let allowed_palitra_ids: HashSet<i64> =
         allowed_palitra_ids.into_iter().collect();
     let palitra_ids: Vec<i64> = req
@@ -695,7 +701,8 @@ pub async fn list_all_palitras(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<Palitra>> {
-    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     let mut result = vec![];
     for id in palitra_ids {
         let palitra = render_palitra(Either::Right(id), dbx).await.c(h!())?;
@@ -1469,7 +1476,7 @@ where
     })
 }
 
-pub(crate) async fn collect_palitra_ids(
+pub(crate) async fn collect_accessible_palitra_ids(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
@@ -1839,16 +1846,18 @@ where
 #[cfg(test)]
 mod tests {
     use crate::entities::{
-        area_of_responsibility, login, organism, organism_aor,
-        palitra_access_aor, palitra_access_login, palitra_geometry,
+        area_of_responsibility, login, organism, organism_aor, palitra,
+        palitra_access_aor, palitra_access_login, palitra_access_organism,
+        palitra_geometry,
     };
     use crate::functest::tests::{
         cleanup, find_test_login, find_test_palitra, mk_aor, mk_login,
-        mk_organism, mk_organism_aor, mk_palitra_point,
+        mk_organism, mk_organism_aor, mk_palitra, mk_palitra_geometry,
+        mk_palitra_point,
     };
     use crate::palitra::bl::{
-        collect_palitra_ids, search_palitra_points_by_labels, update_palitra,
-        update_palitra_v2,
+        collect_accessible_palitra_ids, search_palitra_points_by_labels,
+        update_palitra, update_palitra_v2,
     };
     use crate::palitra::types::{
         CreatePalitraReq, PalitraAccess, PalitraSearchPointsReq,
@@ -2061,8 +2070,8 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_collect_palitra_ids_includes_author_without_explicit_access()
-    {
+    async fn test_collect_accessible_palitra_ids_includes_author_without_explicit_access(
+    ) {
         let env = cleanup().await.unwrap();
         let palitra = find_test_palitra(&env.dbx).await.unwrap();
 
@@ -2073,15 +2082,112 @@ mod tests {
             .unwrap();
 
         let login = find_test_login(&env.dbx).await.unwrap();
-        let palitra_ids =
-            collect_palitra_ids(login.login, &env.dbx).await.unwrap();
+        let palitra_ids = collect_accessible_palitra_ids(login.login, &env.dbx)
+            .await
+            .unwrap();
 
         assert!(palitra_ids.contains(&palitra.id));
     }
 
     #[serial]
     #[tokio::test]
-    async fn test_collect_palitra_ids_grants_parent_aor_access_to_child_scoped_palitra(
+    async fn test_collect_accessible_palitra_ids_grants_login_scoped_access() {
+        let env = cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = mk_palitra(
+            &env.dbx,
+            palitra::ActiveModel {
+                name: Set("Login Scoped Palitra".to_string()),
+                hex_legacy: Set(Some("#abcdef".into())),
+                author: Set(Some("another-author".to_string())),
+                deleted: Set(false),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_palitra_geometry(
+            &env.dbx,
+            palitra_geometry::ActiveModel {
+                palitra_id: Set(palitra.id),
+                hex: Set("#abcdef".into()),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        palitra_access_login::ActiveModel {
+            id: NotSet,
+            palitra_id: Set(palitra.id),
+            login: Set(login.login.clone()),
+            created_at: Set(now),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let palitra_ids = collect_accessible_palitra_ids(login.login, &env.dbx)
+            .await
+            .unwrap();
+
+        assert!(palitra_ids.contains(&palitra.id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_collect_accessible_palitra_ids_grants_organism_scoped_access()
+    {
+        let env = cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let organism_id = login.organism_id.unwrap();
+        let palitra = mk_palitra(
+            &env.dbx,
+            palitra::ActiveModel {
+                name: Set("Organism Scoped Palitra".to_string()),
+                hex_legacy: Set(Some("#123abc".into())),
+                author: Set(Some("another-author".to_string())),
+                deleted: Set(false),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_palitra_geometry(
+            &env.dbx,
+            palitra_geometry::ActiveModel {
+                palitra_id: Set(palitra.id),
+                hex: Set("#123abc".into()),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        palitra_access_organism::ActiveModel {
+            id: NotSet,
+            palitra_id: Set(palitra.id),
+            organism_id: Set(organism_id),
+            created_at: Set(now),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let palitra_ids = collect_accessible_palitra_ids(login.login, &env.dbx)
+            .await
+            .unwrap();
+
+        assert!(palitra_ids.contains(&palitra.id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_collect_accessible_palitra_ids_grants_parent_aor_access_to_child_scoped_palitra(
     ) {
         let env = cleanup().await.unwrap();
         let now = Utc::now().naive_utc();
@@ -2154,9 +2260,10 @@ mod tests {
         .await
         .unwrap();
 
-        let palitra_ids = collect_palitra_ids(parent_login.login, &env.dbx)
-            .await
-            .unwrap();
+        let palitra_ids =
+            collect_accessible_palitra_ids(parent_login.login, &env.dbx)
+                .await
+                .unwrap();
 
         assert!(palitra_ids.contains(&palitra.id));
     }
