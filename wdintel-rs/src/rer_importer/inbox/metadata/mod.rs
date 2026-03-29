@@ -270,6 +270,53 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_new_sigint_optional_fields_format() {
+        let metadata = metadata_without_spans(parse_metadata(
+            "148.490
+37U CP 83574 54679
+Код кольору: 3
+id відправника: 7549484
+id отримувача: 3359939
+код групи: 1",
+        ));
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("3".to_string()),
+                id: Some("7549484".to_string()),
+                cg: Some("1".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_skips_new_sigint_optional_fields_with_no_value_markers() {
+        let metadata = metadata_without_spans(parse_metadata(
+            "Код кольору: НВ
+ID відправника: -
+ID отримувача: 3359939
+Код групи: -",
+        ));
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cg: Some("3359939".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_keeps_regular_id_when_optional_sender_marker_is_blank() {
+        let metadata = metadata_without_spans(parse_metadata(
+            "ID відправника: -; ID:123; код групи: НВ",
+        ));
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].id.as_deref(), Some("123"));
+    }
+
+    #[test]
     fn parse_metadata_line_handles_group_id_variant() {
         let metadata = working_metadata_without_spans(parse_metadata_line(
             &NormalizedLine::new("GROUP ID: 0".to_string()),

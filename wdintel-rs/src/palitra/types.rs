@@ -30,6 +30,18 @@ pub enum PalitraAccess {
     ByAor { aor_ids: Vec<i64> },
 }
 
+impl PalitraAccess {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            PalitraAccess::ByLogins { logins } => logins.is_empty(),
+            PalitraAccess::ByOrganisms { organism_ids } => {
+                organism_ids.is_empty()
+            }
+            PalitraAccess::ByAor { aor_ids } => aor_ids.is_empty(),
+        }
+    }
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

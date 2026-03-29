@@ -251,6 +251,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::callsign::types::GetCallsignsWithUnitsFromInboxReq,
             crate::sigint::callsign::types::GetCallsignsWithUnitsFromInboxRsp,
             crate::sigint::callsign::types::CreateCallsignReq,
+            crate::sigint::callsign::types::UpdateCallsignReq,
             crate::sigint::callsign::types::CreateNetworkCallsignReq,
             crate::sigint::callsign::types::CallsignUnitStatsRsp,
             crate::sigint::callsign::types::CallsignUnitStatRow,

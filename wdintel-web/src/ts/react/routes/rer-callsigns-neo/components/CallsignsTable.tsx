@@ -43,6 +43,7 @@ const STATUS_FILTER_OPTIONS = withExplicitSelectAllOption([
 export const DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY = {
   callsign: true,
   position: true,
+  fullName: true,
   comment: true,
   unit: true,
   sourceName: true,
@@ -52,7 +53,7 @@ export const DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY = {
 };
 
 export const DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'position', 'comment', 'unit', 'sourceName', 'radioFreq', 'developing', 'createdAt'],
+  dataColumnIds: ['callsign', 'position', 'fullName', 'comment', 'unit', 'sourceName', 'radioFreq', 'developing', 'createdAt'],
   withRowSelection: true,
   withRowNumbers: true,
   withRowActions: true,
@@ -69,6 +70,7 @@ type Props = {
   textFilters: {
     filterCallsign: string;
     filterPosition: string;
+    filterFullName: string;
     filterComment: string;
     filterUnit: string;
   };
@@ -82,6 +84,7 @@ type Props = {
   onTextColumnFiltersChange: (next: {
     filterCallsign: string;
     filterPosition: string;
+    filterFullName: string;
     filterComment: string;
     filterUnit: string;
   }) => void;
@@ -136,7 +139,7 @@ function resolveUpdater<T>(value: Updater<T>, current: T): T {
   return typeof value === 'function' ? (value as (prev: T) => T)(current) : value;
 }
 
-export function CallsignsTable({
+function CallsignsTableComponent({
   canEdit,
   rows,
   loading,
@@ -191,12 +194,20 @@ export function CallsignsTable({
         Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
       },
       {
+        header: 'ПІП',
+        accessorKey: 'fullName',
+        id: 'fullName',
+        enableColumnFilter: true,
+        size: 240,
+        Cell: ({ row }) => <CommentCell comment={row.original.fullName} />,
+      },
+      {
         header: 'Коментар',
-        accessorKey: 'commentForView',
+        accessorKey: 'comment',
         id: 'comment',
         enableColumnFilter: true,
         size: 240,
-        Cell: ({ row }) => <CommentCell comment={row.original.commentForView} />,
+        Cell: ({ row }) => <CommentCell comment={row.original.comment} />,
       },
       {
         header: 'Підрозділ',
@@ -307,11 +318,12 @@ export function CallsignsTable({
     () => [
       ...(textFilters.filterCallsign.trim() ? [{ id: 'callsign', value: textFilters.filterCallsign }] : []),
       ...(textFilters.filterPosition.trim() ? [{ id: 'position', value: textFilters.filterPosition }] : []),
+      ...(textFilters.filterFullName.trim() ? [{ id: 'fullName', value: textFilters.filterFullName }] : []),
       ...(textFilters.filterComment.trim() ? [{ id: 'comment', value: textFilters.filterComment }] : []),
       ...(textFilters.filterUnit.trim() ? [{ id: 'unit', value: textFilters.filterUnit }] : []),
       { id: 'developing', value: toStatusFilterValue(statusFilter) },
     ],
-    [statusFilter, textFilters.filterCallsign, textFilters.filterComment, textFilters.filterPosition, textFilters.filterUnit],
+    [statusFilter, textFilters.filterCallsign, textFilters.filterPosition, textFilters.filterFullName, textFilters.filterComment, textFilters.filterUnit],
   );
   const showTableOverlay = loading || refreshing || loadingMore;
   const isInitialLoading = loading && rows.length === 0;
@@ -369,6 +381,7 @@ export function CallsignsTable({
       const nextColumn =
         next.id === 'callsign' ||
         next.id === 'position' ||
+        next.id === 'fullName' ||
         next.id === 'comment' ||
         next.id === 'unit' ||
         next.id === 'sourceName' ||
@@ -386,6 +399,7 @@ export function CallsignsTable({
       onTextColumnFiltersChange({
         filterCallsign: getStringColumnFilterValue(nextFilters, 'callsign'),
         filterPosition: getStringColumnFilterValue(nextFilters, 'position'),
+        filterFullName: getStringColumnFilterValue(nextFilters, 'fullName'),
         filterComment: getStringColumnFilterValue(nextFilters, 'comment'),
         filterUnit: getStringColumnFilterValue(nextFilters, 'unit'),
       });
@@ -631,3 +645,33 @@ export function CallsignsTable({
     </Box>
   );
 }
+
+function areTextFiltersEqual(
+  left: Props['textFilters'],
+  right: Props['textFilters'],
+): boolean {
+  return left.filterCallsign === right.filterCallsign
+    && left.filterPosition === right.filterPosition
+    && left.filterFullName === right.filterFullName
+    && left.filterComment === right.filterComment
+    && left.filterUnit === right.filterUnit;
+}
+
+function areCallsignsTablePropsEqual(prev: Props, next: Props): boolean {
+  return prev.canEdit === next.canEdit
+    && prev.rows === next.rows
+    && prev.loading === next.loading
+    && prev.refreshing === next.refreshing
+    && prev.loadingMore === next.loadingMore
+    && prev.showLoadMore === next.showLoadMore
+    && prev.hasActiveFilters === next.hasActiveFilters
+    && areTextFiltersEqual(prev.textFilters, next.textFilters)
+    && prev.inFlightDeleteId === next.inFlightDeleteId
+    && prev.bulkDeleteInFlight === next.bulkDeleteInFlight
+    && prev.selectedCallsignIds === next.selectedCallsignIds
+    && prev.sort.column === next.sort.column
+    && prev.sort.direction === next.sort.direction
+    && prev.statusFilter === next.statusFilter;
+}
+
+export const CallsignsTable = React.memo(CallsignsTableComponent, areCallsignsTablePropsEqual);
