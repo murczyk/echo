@@ -99,11 +99,13 @@ export function useRerDutyFeedCrud(
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,
     };
-    if (messageFeeds.length >= MAX_MESSAGE_FEEDS || messageFeeds.some((w) => w.id === id)) return;
-    const next = [...messageFeeds, newFeed];
-    setMessageFeeds(next);
-    requestPersist(next);
-  }, [messageFeeds, requestPersist, setMessageFeeds]);
+    setMessageFeeds((prev) => {
+      if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
+      const next = [...prev, newFeed];
+      pendingPersistRef.current = next;
+      return next;
+    });
+  }, [setMessageFeeds]);
 
   const removeMessageFeed = useCallback(
     (feedId: string) => {
