@@ -9,7 +9,7 @@ import type {
   User,
 } from '../../../../Bindings';
 
-export type SortColumn = 'callsign' | 'position' | 'comment' | 'unit' | 'sourceName' | 'radioFreq' | 'createdAt';
+export type SortColumn = 'callsign' | 'position' | 'fullName' | 'comment' | 'unit' | 'sourceName' | 'radioFreq' | 'createdAt';
 export type SortDirection = 'asc' | 'desc';
 
 export type CallsignsSortState = {
@@ -23,6 +23,7 @@ export type CallsignsFilterState = {
   filterText: string;
   filterCallsign: string;
   filterPosition: string;
+  filterFullName: string;
   filterComment: string;
   filterUnit: string;
   filterDeveloping: DevelopingFilter;
@@ -53,6 +54,7 @@ export type SelectedSidebarUnitFilter =
 export type CallsignDraftRow = {
   callsign: string;
   position: string;
+  fullName: string;
   comment: string;
   developing: boolean;
   radioFreq: string;
@@ -62,6 +64,7 @@ export type CallsignEditForm = {
   id: number;
   callsign: string;
   position: string;
+  fullName: string;
   comment: string;
   callsignAdditionalSourceIds: number[];
   unitId: number;
@@ -80,7 +83,6 @@ export type UiStatus =
 export type CallsignRowView = Callsign & {
   unitName: string;
   sourceName: string;
-  commentForView: string;
   callsignAdditionalSourceIds: number[];
   callsignAdditionalSourceNames: string[];
 };

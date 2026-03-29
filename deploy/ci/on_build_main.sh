@@ -38,8 +38,16 @@ require_commands() {
 
 restore_local_caches() {
   ./scripts/cache/restore-npm.sh || true
+  ./scripts/cache/restore-pip.sh || true
   ./scripts/cache/restore-python.sh || true
   ./scripts/cache/restore-spacy.sh || true
+}
+
+save_local_caches() {
+  ./scripts/cache/save-npm.sh || true
+  ./scripts/cache/save-pip.sh || true
+  ./scripts/cache/save-python.sh || true
+  ./scripts/cache/save-spacy.sh || true
 }
 
 run_tests() {
@@ -47,12 +55,14 @@ run_tests() {
   restore_local_caches
   export GITHUB_ACTIONS="${GITHUB_ACTIONS:-true}"
   bash deploy/run_ci_tests.sh
+  save_local_caches
 }
 
 build_debs() {
   require_commands cargo file git node npm
   export GITHUB_ACTIONS="${GITHUB_ACTIONS:-true}"
   bash deploy/ci/build_debs.sh
+  save_local_caches
 }
 
 publish() {
