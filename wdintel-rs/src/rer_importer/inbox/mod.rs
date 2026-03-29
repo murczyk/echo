@@ -25,6 +25,34 @@ pub(crate) mod bl;
 pub mod metadata;
 pub mod query;
 
+async fn apply_test_inbox_settings(
+    env: &Env,
+    req: &mut InboxMessagesReq,
+) -> Result<Option<i64>, AppError> {
+    let settings = crate::system_settings::get_active_system_settings(&env.dbx)
+        .await
+        .c(h!())?;
+    let Some(settings) = settings else {
+        return Ok(None);
+    };
+    if !settings.rer_duty_test_enabled {
+        return Ok(None);
+    }
+    if req.since_id_noninclusive.is_none()
+        && req.before_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+        && req.till_date_inclusive_ms.is_none()
+    {
+        let since_ms = settings.rer_duty_test_since_ms.max(0);
+        let window_ms =
+            Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES).num_milliseconds();
+        req.since_date_inclusive_ms = Some(since_ms);
+        req.till_date_inclusive_ms = Some(since_ms + window_ms);
+    }
+    req.nolimit = Some(true);
+    Ok(Some(settings.rer_duty_test_limit.max(1)))
+}
+
 #[post("/api/rer-importer/get-inbox-map")]
 async fn get_inbox_map(
     user: actix_identity::Identity,
@@ -285,7 +313,7 @@ async fn inbox_messages(
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
     let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
-    let req = req.into_inner();
+    let mut req = req.into_inner();
     let skip_group_stats = req.skip_group_stats.unwrap_or(false);
 
     let payload = serde_json::to_value(&req).context(h!())?;
@@ -303,9 +331,16 @@ async fn inbox_messages(
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
-    let inbox_items = get_inbox_messages(&login, &logins, &env, &req)
-        .await
-        .context(h!())?;
+    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
+    let inbox_items = if let Some(limit) = test_limit {
+        get_inbox_messages_limited(&login, &logins, &env, &req, limit)
+            .await
+            .context(h!())?
+    } else {
+        get_inbox_messages(&login, &logins, &env, &req)
+            .await
+            .context(h!())?
+    };
     let txn = env.dbx.begin().await.context(h!())?;
     let callsigns: Vec<CallsignInfoRes> =
         load_inbox_callsigns(&inbox_items, &env).await.c(h!())?;
@@ -416,7 +451,7 @@ async fn inbox_messages_count(
 ) -> Result<Json<InboxMessagesDigestRsp>, AppError> {
     let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
-    let req = req.into_inner();
+    let mut req = req.into_inner();
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -427,6 +462,13 @@ async fn inbox_messages_count(
         .c(h!())?;
     let login = user_id;
 
+    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
+    if test_limit.is_none()
+        && req.since_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+    {
+        req.since_date_inclusive_ms = Some(0);
+    }
     let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
     let q = format!(
         "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
@@ -437,7 +479,10 @@ async fn inbox_messages_count(
         .await
         .c(h!())?;
     let query_res = query_res.unwrap();
-    let quantity: i64 = query_res.try_get("", "count")?;
+    let mut quantity: i64 = query_res.try_get("", "count")?;
+    if let Some(limit) = test_limit {
+        quantity = quantity.min(limit);
+    }
     let first_element_ts: Option<NaiveDateTime> =
         query_res.try_get("", "first_element_ts")?;
     let first_element_ts =
@@ -735,7 +780,36 @@ pub async fn get_inbox_messages_with_conn(
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let q = build_inbox_query(login, env, req).await.c(h!())?;
+    let res = fetch_inbox_messages_with_query(dbx, login, logins, env, req, &q)
+        .await
+        .context(h!())?;
+    Ok(res)
+}
 
+async fn get_inbox_messages_limited(
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    limit: i64,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let q = build_inbox_query(login, env, req).await.c(h!())?;
+    let q = format!("{q} LIMIT {limit}");
+    let res =
+        fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q)
+            .await
+            .context(h!())?;
+    Ok(res)
+}
+
+async fn fetch_inbox_messages_with_query(
+    dbx: &DatabaseConnection,
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    q: &str,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let results = dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
         .await

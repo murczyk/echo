@@ -24,6 +24,10 @@ fn map_system_settings_item(
         id: settings.id,
         rer_analysis_units_exact_match_only_default: settings
             .rer_analysis_units_exact_match_only_default,
+        rer_duty_test_enabled: settings.rer_duty_test_enabled,
+        rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
+        rer_duty_test_limit: settings.rer_duty_test_limit,
+        rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
         created_at: settings.created_at.and_utc().timestamp_millis(),
         updated_at: settings.updated_at.and_utc().timestamp_millis(),
         updated_by: settings.updated_by,
@@ -91,10 +95,18 @@ pub async fn current_system_settings(
             id: Some(settings.id),
             rer_analysis_units_exact_match_only_default: settings
                 .rer_analysis_units_exact_match_only_default,
+            rer_duty_test_enabled: settings.rer_duty_test_enabled,
+            rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
+            rer_duty_test_limit: settings.rer_duty_test_limit,
+            rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
             rer_analysis_units_exact_match_only_default: true,
+            rer_duty_test_enabled: false,
+            rer_duty_test_since_ms: 0,
+            rer_duty_test_limit: 1,
+            rer_duty_poll_interval_sec: 1,
         },
     }))
 }
@@ -140,6 +152,10 @@ pub async fn create_system_settings(
         rer_analysis_units_exact_match_only_default: Set(
             req.rer_analysis_units_exact_match_only_default
         ),
+        rer_duty_test_enabled: Set(req.rer_duty_test_enabled),
+        rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
+        rer_duty_test_limit: Set(req.rer_duty_test_limit),
+        rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
         created_at: sea_orm::ActiveValue::NotSet,
         updated_at: sea_orm::ActiveValue::NotSet,
         updated_by: Set(Some(login)),

@@ -7,6 +7,9 @@ const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER: &str = r#"|> Json.Decode.andT
 const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" Json.Decode.bool, Json.Decode.succeed False ]))"#;
 const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.bool)))"#;
 const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
+const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" Json.Decode.int"#;
+const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.int)"#;
+const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)"#;
 
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
@@ -824,5 +827,13 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER,
             RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER,
+        )
+        .replace(
+            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT,
+            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
+        )
+        .replace(
+            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW,
+            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
         )
 }

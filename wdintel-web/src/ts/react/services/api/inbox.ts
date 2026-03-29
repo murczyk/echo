@@ -23,14 +23,14 @@ import type {
   SignalProfilesRsp,
   Tag,
 } from '../../../../Bindings';
+import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
+import { emptyArrToNull } from '../../utils/misc';
+import { postJson, postVoid } from './client';
 
 const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
   activityLastWeek: 0,
 };
-import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
-import { emptyArrToNull } from '../../utils/misc';
-import { postJson, postVoid } from './client';
 
 /** Raw API response (snake_case) */
 type InboxMessagesRspRaw = {
