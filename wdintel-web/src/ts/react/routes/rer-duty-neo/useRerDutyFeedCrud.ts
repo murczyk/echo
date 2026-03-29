@@ -18,6 +18,15 @@ export function useRerDutyFeedCrud(
   onFeedRemoved?: (feedId: string) => void,
   persistStateToUrl: (next: MessageFeedState[]) => void,
 ) {
+  const pendingPersistRef = React.useRef<MessageFeedState[] | null>(null);
+
+  React.useEffect(() => {
+    if (!pendingPersistRef.current) return;
+    const next = pendingPersistRef.current;
+    pendingPersistRef.current = null;
+    requestPersist(next);
+  }, [messageFeeds, requestPersist]);
+
   const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
       let nextState: MessageFeedState[] | null = null;
       setMessageFeeds((prev) => {
@@ -45,7 +54,7 @@ export function useRerDutyFeedCrud(
             }
           : w,
       );
-      nextState = next;
+      pendingPersistRef.current = next;
       return next;
     });
     if (nextState) requestPersist(nextState);
