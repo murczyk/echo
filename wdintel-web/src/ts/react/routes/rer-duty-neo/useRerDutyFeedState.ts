@@ -19,7 +19,6 @@ import {
   emptyFilter,
   findAllAdjacentFreqs,
   INBOX_COUNT_POLL_INTERVAL_MS,
-  INBOX_COUNT_REQUEST_TIMEOUT_MS,
   parseStateFromUrl,
   sortMessageItemsByTime,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
@@ -58,8 +57,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
-  /** Latest initial-load request per feed; superseded loads are aborted so stale responses are not applied. */
-  const initialLoadAbortByFeedIdRef = useRef<Record<string, AbortController>>({});
   const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedId, setLoadingNewerFeedId] = useState<string | null>(null);
@@ -121,17 +118,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
-      const aborts = initialLoadAbortByFeedIdRef.current;
-      aborts[feedId]?.abort();
-      const ac = new AbortController();
-      aborts[feedId] = ac;
       const effectiveFeed = overrides ? { ...feed, ...overrides } : feed;
       setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: true } : x)));
       setError(null);
       try {
         const req = buildReqForFeed(effectiveFeed, { loadLatest: true });
-        const rsp = await fetchInboxMessages(req, ac.signal);
-        if (aborts[feedId] !== ac) return;
+        const rsp = await fetchInboxMessages(req);
         const deduped = dedupeMessageItems(rsp.inboxItems);
         const initialReadIds = new Set<number>(deduped.map(([id]) => id));
         setMessageFeeds((prev) =>
@@ -158,14 +150,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           setGroupInfos((prev) => ({ ...prev, ...map }));
         }
       } catch (e) {
-        if (ac.signal.aborted) return;
-        if (aborts[feedId] !== ac) return;
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
-      } finally {
-        if (aborts[feedId] === ac) {
-          delete aborts[feedId];
-        }
       }
     },
     [messageFeeds, buildReqForFeed, setProfiles, setGroupInfos],
@@ -286,10 +272,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               ? lastItem[1].timestamp + 1
               : 0;
           const hasItems = w.items.length > 0;
-          const countSignal = AbortSignal.timeout(INBOX_COUNT_REQUEST_TIMEOUT_MS);
           const { quantity } = await fetchInboxCount(
             buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
-            countSignal,
           );
           return { feedId: w.id, quantity, hasItems, skipped: false };
         } catch {
@@ -312,18 +296,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : quantity === 0 && allItemsRead
             ? 0
             : Math.max(f.unreadCount, quantity);
-        const requestInitialViaEffect =
-          !hasItems && !f.loading && quantity > 0;
-        return {
-          ...f,
-          unreadCount,
-          ...(requestInitialViaEffect ? { loading: true } : {}),
-        };
+        return { ...f, unreadCount };
       }),
     );
     for (const entry of counts) {
       if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
-      if (!entry.hasItems) continue;
       const { feedId } = entry;
       if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
         await loadFeedNewerMessages(feedId, {

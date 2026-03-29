@@ -195,9 +195,9 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
   };
 }
 
-export async function fetchInboxMessages(req: InboxMessagesReq, signal?: AbortSignal): Promise<InboxMessagesRsp> {
+export async function fetchInboxMessages(req: InboxMessagesReq): Promise<InboxMessagesRsp> {
   const body = inboxMsgtoSnakeBody(req);
-  const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any, { signal });
+  const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any);
   return mapRsp(raw);
 }
 
@@ -207,14 +207,12 @@ export type InboxMessagesDigestRsp = {
 };
 
 export async function fetchInboxCount(
-  req: InboxMessagesReq,
-  signal?: AbortSignal,
+  req: InboxMessagesReq
 ): Promise<InboxMessagesDigestRsp> {
   const body = inboxMsgtoSnakeBody(req);
   const raw = await postJson<{ quantity: number; first_element_ts: number | null }>(
     '/api/rer-importer/get-inbox-count',
-    body as any,
-    { signal },
+    body as any
   );
   return {
     quantity: raw.quantity,

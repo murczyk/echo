@@ -88,12 +88,12 @@ function TestHarness(props: {
 }
 
 async function flushMicrotasks(): Promise<void> {
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 30; i++) {
     await Promise.resolve();
   }
 }
 
-describe('useRerDutyFeedState', () => {
+describe('useRerDutyFeedState — loading', () => {
   let container: HTMLElement;
   let root: Root;
 
@@ -116,7 +116,7 @@ describe('useRerDutyFeedState', () => {
     vi.useRealTimers();
   });
 
-  it('runs a single get-inbox initial load on mount (no duplicate poll bootstrap)', async () => {
+  it('runs a single get-inbox initial load per feed on mount', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
@@ -127,62 +127,83 @@ describe('useRerDutyFeedState', () => {
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
     expect(apiRef.current?.messageFeeds[0]?.items[0]?.[0]).toBe(1);
+    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
   });
 
-  it('supersedes an in-flight initial load so stale responses are not applied', async () => {
-    let releaseFirst!: () => void;
-    const firstGate = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-
-    hoisted.fetchInboxMessages
-      .mockImplementationOnce(async (_req, signal) => {
-        await firstGate;
-        if (signal?.aborted) {
-          throw new DOMException('Aborted', 'AbortError');
-        }
-        return inboxRsp([[1, minimalMessage({ timestamp: 10, text: 'stale' })]]);
-      })
-      .mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 20, text: 'fresh' })]]))
-      .mockResolvedValue(inboxRsp([]));
+  it('sets error and clears loading when initial get-inbox fails', async () => {
+    hoisted.fetchInboxMessages.mockRejectedValueOnce(new Error('network down'));
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
     await act(async () => {
-      await Promise.resolve();
+      await flushMicrotasks();
     });
 
+    expect(apiRef.current?.error).toBe('network down');
+    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+    expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
+  });
+
+  it('updates unreadCount from poll when count > 0 and column has items', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(0);
+
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 4, firstElementTs: null });
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(4);
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls get-inbox again when poll sees new mail and column is near bottom', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[2, minimalMessage({ timestamp: 200, text: 'newer' })]]),
+    );
 
     await act(async () => {
-      apiRef.current!.loadFeedInitialMessages('mf-0');
-      await Promise.resolve();
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    });
+
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
     });
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
-
-    await act(async () => {
-      releaseFirst();
-      await flushMicrotasks();
-    });
-
-    const row = apiRef.current!.messageFeeds[0];
-    expect(row.items).toHaveLength(1);
-    expect(row.items[0][0]).toBe(2);
-    expect(row.items[0][1].text).toBe('fresh');
+    const ids = apiRef.current!.messageFeeds[0].items.map(([id]) => id).sort((a, b) => a - b);
+    expect(ids).toEqual([1, 2]);
   });
 
-  it('uses poll only to set loading; effect performs the extra get-inbox when empty column has new mail', async () => {
-    hoisted.fetchInboxMessages
-      .mockResolvedValueOnce(inboxRsp([]))
-      .mockResolvedValueOnce(inboxRsp([[7, minimalMessage({ timestamp: 50 })]]))
-      .mockResolvedValue(inboxRsp([]));
-
-    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 3, firstElementTs: null });
-
-    vi.useFakeTimers();
+  it('calls get-inbox for newer mail when watch mode is on', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
@@ -191,12 +212,46 @@ describe('useRerDutyFeedState', () => {
       await flushMicrotasks();
     });
 
-    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[3, minimalMessage({ timestamp: 300 })]]));
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+
+    await act(async () => {
+      apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
+    });
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id).sort()).toEqual([1, 3]);
+  });
+
+  it('does not call get-inbox for newer when column has no items (loadFeedNewerMessages no-op)', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
     expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
 
-    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 9, firstElementTs: null });
 
+    await act(async () => {
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    });
+
+    vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
@@ -205,10 +260,17 @@ describe('useRerDutyFeedState', () => {
     });
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
-    expect(apiRef.current?.messageFeeds[0]?.items[0]?.[0]).toBe(7);
   });
 
-  it('starts a new poll tick even when the previous count round is still in flight (no whole-page stall)', async () => {
+  it('does not start a second get-inbox-count for a feed while the first is still in flight', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
     hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
 
     let startedCount = 0;
@@ -216,29 +278,27 @@ describe('useRerDutyFeedState', () => {
       () =>
         new Promise<{ quantity: number; firstElementTs: number | null }>((resolve) => {
           startedCount++;
-          setTimeout(() => resolve({ quantity: 0, firstElementTs: null }), 2000);
+          setTimeout(() => resolve({ quantity: 0, firstElementTs: null }), 2500);
         }),
     );
 
     vi.useFakeTimers();
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} />);
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(startedCount).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(startedCount).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
     });
     await act(async () => {
       await flushMicrotasks();
     });
-
-    const countBeforePolls = startedCount;
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    expect(startedCount).toBe(countBeforePolls + 1);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    expect(startedCount).toBe(countBeforePolls + 2);
+    expect(startedCount).toBeGreaterThanOrEqual(2);
   });
 });
