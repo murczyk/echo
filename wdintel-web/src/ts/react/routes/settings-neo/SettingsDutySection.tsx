@@ -158,25 +158,28 @@ export function SettingsDutySection({
     <>
       <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
         <Stack spacing={2} sx={{ maxWidth: 960 }}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-            <Typography
-              component="h2"
-              variant="subtitle1"
-              sx={{
-                flex: 1,
-                fontWeight: 600,
-                lineHeight: 1.45,
-                color: 'text.primary',
-              }}
-            >
-              Вигляд повідомлень у стрічці Оперативного (зберігається для вашого облікового запису)
-            </Typography>
+          <Box className="flex items-center gap-1">
+            <span>
+              <Typography
+                component="h2"
+                variant="subtitle1"
+                sx={{
+                  flex: 1,
+                  fontWeight: 600,
+                  lineHeight: 1.45,
+                  color: 'text.primary',
+                }}
+              >
+                Вигляд повідомлень у стрічці Оперативного (зберігається для вашого облікового запису)
+              </Typography>
+            </span>
+
             <IconButton
               aria-label="Підказка по вигляду карток у стрічці оперативного"
               onClick={() => setHelpOpen(true)}
               size="small"
               edge="end"
-              sx={{ color: 'text.secondary', mt: -0.25 }}
+              sx={{ color: 'text.secondary' }}
             >
               <HelpOutlineIcon fontSize="small" />
             </IconButton>
@@ -195,11 +198,11 @@ export function SettingsDutySection({
                   onChange={(_, v: MessageCardLayoutVariant | null) => {
                     if (v != null) onMessageCardLayoutChange(v);
                   }}
+                  color="primary"
                   size="small"
                   sx={{
                     flexShrink: 0,
-                    borderRadius: 2,
-                    '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
+                    '& .MuiToggleButton-root': { textTransform: 'none', fontSize: 12 },
                   }}
                 >
                   <ToggleButton value="dividers">з роздільниками</ToggleButton>
@@ -212,15 +215,14 @@ export function SettingsDutySection({
                 </Typography>
                 <ToggleButtonGroup
                   value={tagsLayout}
-                  exclusive
+                  color="primary"
                   onChange={(_, v: TagsLayoutVariant | null) => {
                     if (v != null) onTagsLayoutChange(v);
                   }}
                   size="small"
                   sx={{
                     flexShrink: 0,
-                    borderRadius: 2,
-                    '& .MuiToggleButton-root': { borderRadius: 1, textTransform: 'none', fontSize: 12 },
+                    '& .MuiToggleButton-root': { textTransform: 'none', fontSize: 12 },
                   }}
                 >
                   <ToggleButton value="full">повний</ToggleButton>
