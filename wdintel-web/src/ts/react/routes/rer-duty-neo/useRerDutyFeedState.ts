@@ -613,6 +613,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         pushShortStateToUrl(cached.id);
         return;
       }
+      pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
       const requestId = shortStateRequestRef.current.requestId + 1;
       shortStateRequestRef.current = { requestId, hash: stateHash };
       rerDutyShortStateCreate(queryState)
