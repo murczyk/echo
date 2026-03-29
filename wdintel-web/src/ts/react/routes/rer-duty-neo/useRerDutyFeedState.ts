@@ -18,7 +18,6 @@ import {
   dedupeMessageItems,
   emptyFilter,
   findAllAdjacentFreqs,
-  INBOX_COUNT_POLL_INTERVAL_MS,
   parseStateFromUrl,
   sortMessageItemsByTime,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
@@ -30,6 +29,10 @@ export type FeedStateDeps = {
   freqs: string[];
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
+  testEnabled: boolean;
+  testSinceMs: number;
+  testLimit: number;
+  pollIntervalSec: number;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
@@ -53,6 +56,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     }));
   });
   const [error, setError] = useState<string | null>(null);
+  const messageFeedsRef = useRef(messageFeeds);
   const [networkMap, setNetworkMap] = useState<Record<number, Network>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -65,6 +69,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    messageFeedsRef.current = messageFeeds;
+  }, [messageFeeds]);
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -167,6 +175,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       try {
         const req = buildReqForFeed(w, { beforeIdNoninclusive: firstId });
         const rsp = await fetchInboxMessages(req);
+        if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
+        if (rsp.signalGroups?.length) {
+          const map: Record<string, SignalGroupEntry> = {};
+          rsp.signalGroups.forEach((g) => {
+            map[g.masterKey] = g;
+          });
+          setGroupInfos((prev) => ({ ...prev, ...map }));
+        }
         setMessageFeeds((prev) =>
           prev.map((x) => {
             if (x.id !== feedId) return x;
@@ -213,6 +229,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           nolimit: opts?.nolimit ?? undefined,
         });
         const rsp = await fetchInboxMessages(req);
+        if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
+        if (rsp.signalGroups?.length) {
+          const map: Record<string, SignalGroupEntry> = {};
+          rsp.signalGroups.forEach((g) => {
+            map[g.masterKey] = g;
+          });
+          setGroupInfos((prev) => ({ ...prev, ...map }));
+        }
         if (rsp.inboxItems.length > 0) {
           const feedNow = messageFeeds.find((x) => x.id === feedId);
           if (feedNow) {
@@ -340,13 +364,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [feedIds, feedsNeedingLoadKey]);
 
   useEffect(() => {
+    const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();
-    }, INBOX_COUNT_POLL_INTERVAL_MS);
+    }, intervalMs);
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [pollCountThenLoadNewerIfNeeded]);
+  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded]);
 
   useEffect(() => {
     const feedId = scrollToEndAfterNewerRef.current;

@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import {useEffect, useMemo, useState} from 'react';
 
+import { currentSystemSettings } from '../../services/api/system-settings';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -20,13 +21,81 @@ function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [numb
   return [...merged].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
+function mergeGroupsFromMessages(
+  apiGroups: string[],
+  messageFeeds: { items: [number, { groupMasterKey?: string | null }][]; filter: { groupsSelected?: string[] | null } }[],
+): string[] {
+  const fromMsgs = new Set<string>();
+  messageFeeds.forEach((feed) =>
+    feed.items.forEach(([, msg]) => {
+      if (msg.groupMasterKey && msg.groupMasterKey.trim() !== '') fromMsgs.add(msg.groupMasterKey.trim());
+    })
+  );
+  messageFeeds.forEach((feed) => {
+    (feed.filter.groupsSelected ?? []).forEach((key) => {
+      if (key.trim() !== '') fromMsgs.add(key.trim());
+    });
+  });
+  const merged = new Set<string>([...apiGroups, ...fromMsgs]);
+  return [...merged].sort((a, b) => a.localeCompare(b));
+}
+
+function mergePostsFromMessages(
+  apiPosts: string[],
+  messageFeeds: { items: [number, { post?: string | null }][]; filter: { postsSelected?: string[] | null; postsDenied?: string[] | null } }[],
+): string[] {
+  const fromMsgs = new Set<string>();
+  messageFeeds.forEach((feed) =>
+    feed.items.forEach(([, msg]) => {
+      if (msg.post && msg.post.trim() !== '') fromMsgs.add(msg.post.trim());
+    })
+  );
+  messageFeeds.forEach((feed) => {
+    (feed.filter.postsSelected ?? []).forEach((post) => {
+      if (post.trim() !== '') fromMsgs.add(post.trim());
+    });
+    (feed.filter.postsDenied ?? []).forEach((post) => {
+      if (post.trim() !== '') fromMsgs.add(post.trim());
+    });
+  });
+  const merged = new Set<string>([...apiPosts, ...fromMsgs]);
+  return [...merged].sort((a, b) => a.localeCompare(b));
+}
+
 export function useRerDutyFeeds(authUserName: string | null) {
   const filterOpts = useRerDutyFilterOptions();
+  const [testEnabled, setTestEnabled] = useState(false);
+  const [testSinceMs, setTestSinceMs] = useState(0);
+  const [testLimit, setTestLimit] = useState(1);
+  const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
+    testEnabled,
+    testSinceMs,
+    testLimit,
+    pollIntervalSec,
   });
+  const setFeedError = feedState.setError;
+  useEffect(() => {
+    let cancelled = false;
+    currentSystemSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setTestEnabled(settings.rerDutyTestEnabled);
+        setTestSinceMs(settings.rerDutyTestSinceMs);
+        setTestLimit(settings.rerDutyTestLimit);
+        setPollIntervalSec(settings.rerDutyPollIntervalSec);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setFeedError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setFeedError]);
   const actions = useRerDutyMessageActions({
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
@@ -53,6 +122,14 @@ export function useRerDutyFeeds(authUserName: string | null) {
   const freqs = useMemo(
     () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
     [filterOpts.freqs, feedState.messageFeeds]
+  );
+  const groupsList = useMemo(
+    () => mergeGroupsFromMessages(filterOpts.groupsList, feedState.messageFeeds),
+    [filterOpts.groupsList, feedState.messageFeeds]
+  );
+  const postsList = useMemo(
+    () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
+    [filterOpts.postsList, feedState.messageFeeds]
   );
 
   return {
@@ -93,8 +170,8 @@ export function useRerDutyFeeds(authUserName: string | null) {
     profiles: filterOpts.profiles,
     senderOptions: actions.senderOptions,
     freqs,
-    postsList: filterOpts.postsList,
-    groupsList: filterOpts.groupsList,
+    postsList,
+    groupsList,
     groupInfos: filterOpts.groupInfos,
     tagsMap: filterOpts.tagsMap,
     tagIdsList: actions.tagIdsList,
