@@ -583,7 +583,6 @@ function CallsignsTableComponent({
         <SectionLoadingOverlay
           open={showTableOverlay}
           ariaLabel={loading ? 'Завантаження позивних' : loadingMore ? 'Завантаження позивних' : 'Оновлення позивних'}
-          spinnerMode="center"
           sx={{
             inset: 'auto',
             top: `${overlayViewport.top}px`,

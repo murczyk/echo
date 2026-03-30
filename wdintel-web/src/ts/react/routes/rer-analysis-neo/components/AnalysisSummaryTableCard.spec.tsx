@@ -14,12 +14,14 @@ vi.mock('@mui/icons-material/FilterAltOutlined', () => ({ default: () => <span>f
 vi.mock('@mui/icons-material/MapOutlined', () => ({ default: () => <span>map</span> }));
 
 vi.mock('@mui/material', () => ({
+  Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Button: (props: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
     <button type="button" onClick={props.onClick} disabled={props.disabled}>
       {props.children}
     </button>
   ),
+  CircularProgress: () => <div>loading</div>,
   Dialog: (props: { children: ReactNode; open: boolean }) => (props.open ? <div data-testid="rename-dialog">{props.children}</div> : null),
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,

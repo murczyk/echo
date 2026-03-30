@@ -10,12 +10,14 @@ import type { InboxMessage } from '../../../../../Bindings';
 
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Button: (props: { children: ReactNode; onClick?: () => void; type?: 'button' | 'submit' | 'reset' }) => (
     <button type={props.type ?? 'button'} onClick={props.onClick}>
       {props.children}
     </button>
   ),
+  CircularProgress: () => <div>loading</div>,
 }));
 
 vi.mock('../../rer-duty-neo/MessageCard', () => ({
@@ -102,6 +104,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     copiedFeedbackId: null,
     groupInfos: {},
     loading: false,
+    paginationLoading: false,
     messages: [],
     networkDisplayMap: {},
     noMoreToLoad: true,
@@ -116,7 +119,6 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
-    onUpdateEditorField: vi.fn(),
     profiles: {},
     tagsMap: {},
     ...overrides,

@@ -85,7 +85,9 @@ type Result = {
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoading: boolean;
   counts: CountStatsRsp | null;
+  countsLoading: boolean;
   aorEntries: AnalysisAorEntry[];
+  filtersLoading: boolean;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   downloadGeojson: () => Promise<void>;
   downloadKmz: () => Promise<void>;
@@ -93,7 +95,6 @@ type Result = {
   groupsActivity: FreqDailyActivityCount | null;
   groupsActivityLoading: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
-  loading: boolean;
   loadCallsignGraph: () => Promise<void>;
   loadAllMessages: () => Promise<void>;
   toggleCallsignGraphNolimit: () => void;
@@ -103,10 +104,13 @@ type Result = {
   loadMessagesForMap: (messageIds: number[]) => Promise<void>;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
+  messagesLoading: boolean;
+  messagesPaging: boolean;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;
+  newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
   nolimitShown: boolean;
   onUpdateLocalMessage: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => void;
@@ -119,6 +123,7 @@ type Result = {
   profiles: Record<string, SignalProfileEntry | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   reload: () => Promise<void>;
+  summaryLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
@@ -164,11 +169,16 @@ const emptyNewCallsigns: NewCallsignsRes = {
 };
 
 export function useAnalysisData({ newestFirst, onError, onUnauthorized, queryState }: Props): Result {
-  const [loading, setLoading] = useState(false);
+  const [countsLoading, setCountsLoading] = useState(false);
+  const [filtersLoading, setFiltersLoading] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesPaging, setMessagesPaging] = useState(false);
   const [counts, setCounts] = useState<CountStatsRsp | null>(null);
   const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState<SummaryTableFreqRow[]>([]);
+  const [newCallsignsLoading, setNewCallsignsLoading] = useState(false);
   const [newCallsigns, setNewCallsigns] = useState<NewCallsignsRes>(emptyNewCallsigns);
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
   const [nolimitShown, setNolimitShown] = useState(false);
@@ -595,165 +605,278 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     const requestId = reloadRequestRef.current + 1;
     reloadRequestRef.current = requestId;
     const isStaleReload = () => requestId !== reloadRequestRef.current;
+    let startedSecondaryLoads = false;
 
-    setLoading(true);
     onError('');
+    setCountsLoading(true);
+    setMessagesLoading(true);
+    setFiltersLoading(true);
+    setSummaryLoading(true);
+    setNewCallsignsLoading(true);
+    setMapLoading(true);
+    setNoMoreToLoad(false);
+    setNolimitShown(false);
 
     try {
-      const loadData = async (allFrequencies: string[]): Promise<void> => {
+      const loadCriticalData = async (
+        allFrequencies: string[],
+      ): Promise<
+        | {
+            analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
+            inboxReq: NonNullable<ReturnType<typeof buildInboxReq>>;
+            inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
+            freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
+          }
+        | null
+      > => {
         const analysisReq = buildAnalysisReq(queryState, allFrequencies);
         const inboxReq = buildInboxReq(queryState, allFrequencies);
 
         if (analysisReq == null || inboxReq == null) {
-          return;
+          return null;
         }
 
-        const [
-          nextCounts,
-          inboxRsp,
-          groupsRsp,
-          sendersRsp,
-          freqsRsp,
-          callsignsRsp,
-          unitsRsp,
-          locationsRsp,
-          postsRsp,
-          networksRsp,
-          aorsRsp,
-          metadataRsp,
-          summaryRsp,
-          newCallsignsRsp,
-          mapRsp,
-          tagsRsp,
-          tagsDisplayMap,
-          senderProfilesRsp,
-        ] = await Promise.all([
+        const [nextCounts, inboxRsp, freqsRsp] = await Promise.all([
           fetchAnalysisCount(analysisReq),
           fetchInboxMessages({ ...inboxReq, newestFirst }),
-          fetchAnalysisGroups(analysisReq),
-          fetchAnalysisSenders(analysisReq),
           fetchAnalysisFreqs(analysisReq),
-          fetchAnalysisCallsigns(analysisReq),
-          fetchAnalysisUnits(analysisReq),
-          fetchAnalysisLocations(analysisReq),
-          fetchAnalysisPosts(analysisReq),
-          fetchAnalysisNetworks(analysisReq),
-          fetchAnalysisAors(analysisReq),
-          fetchAnalysisMetadata(analysisReq),
-          fetchAnalysisSummaryTable(analysisReq),
-          fetchAnalysisNewCallsigns(analysisReq),
-          fetchAnalysisMapPoints({
-            inboxItemsFilter: inboxReq,
-            mapFilter: null,
-            pageId: 'rer-analysis',
-          }),
-          fetchAnalysisTags(analysisReq),
-          getTagsMapForDisplay(),
-          getLatestSenders(),
         ]);
         if (isStaleReload()) {
-          return;
+          return null;
         }
 
         const nextFrequencies = freqsRsp.freqs.map((item) => item.freq);
         if (shouldRebuildAnalysisRequests(queryState, allFrequencies, nextFrequencies)) {
           optionsFreqsRef.current = nextFrequencies;
-          await loadData(nextFrequencies);
-          return;
-        }
-
-        const messageGroupKeys = Array.from(
-          new Set(inboxRsp.inboxItems.map(([, message]) => message.groupMasterKey).filter((value): value is string => Boolean(value))),
-        );
-        const messageNetworkIds = Array.from(
-          new Set(inboxRsp.inboxItems.flatMap(([, message]) => message.networkIds ?? [])),
-        );
-        const analysisNetworkIds = Array.from(new Set(networksRsp.networks.map((item) => item.networkId)));
-        const allNetworkIds = Array.from(new Set([...messageNetworkIds, ...analysisNetworkIds]));
-        const [groupInfosRsp, networksRspById, callsignInfosRsp] = await Promise.all([
-          messageGroupKeys.length > 0 ? getGroupInfosBatch(messageGroupKeys) : Promise.resolve([]),
-          allNetworkIds.length > 0 ? fetchNetworksByIds(allNetworkIds) : Promise.resolve([] as Network[]),
-          callsignsRsp.callsigns.length > 0
-            ? fetchAnalysisCallsignInfos(callsignsRsp.callsigns.map((item) => item.callsign))
-            : Promise.resolve([] as CallsignInfoRes[]),
-        ]);
-        if (isStaleReload()) {
-          return;
-        }
-        const unitIds = Array.from(new Set(networksRspById.flatMap((network) => network.unitIds ?? [])));
-        const unitsRspById = unitIds.length > 0 ? await fetchUnitsByIds({ ids: unitIds }) : { units: [] };
-        if (isStaleReload()) {
-          return;
-        }
-
-        const nextGroupInfos: Record<string, SignalGroupEntry> = {};
-        groupInfosRsp.forEach((item) => {
-          nextGroupInfos[item.masterKey] = item;
-        });
-        const unitsMap: Record<number, Unit> = {};
-        unitsRspById.units.forEach((unit) => {
-          unitsMap[unit.id] = unit;
-        });
-        const nextSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {};
-        callsignInfosRsp.forEach((item) => {
-          nextSummaryCallsignsInfo[item.callsign.toLowerCase()] = item;
-        });
-        if (isStaleReload()) {
-          return;
+          return loadCriticalData(nextFrequencies);
         }
 
         setCounts(nextCounts);
         setMessages(inboxRsp.inboxItems ?? []);
-        setNoMoreToLoad(false);
-        setNolimitShown(false);
         setOptions({
-          aors: aorsRsp.aors.map((item) => String(item.aorId)),
-          groups: groupsRsp.groupNames.map((item) => item.name),
-          senders: sendersRsp.senders.map((item) => item.uuid),
+          ...emptyOptions,
           freqs: nextFrequencies,
           newFreqs: freqsRsp.freqs.filter((item) => item.isNew).map((item) => item.freq),
-          callsigns: callsignsRsp.callsigns.map((item) => item.callsign),
-          units: unitsRsp.units.map((item) => item.unit),
-          locations: locationsRsp.locations.map((item) => item.location),
-          posts: postsRsp.posts.map((item) => item.post),
-          networks: networksRsp.networks.map((item) => String(item.networkId)),
-          metadataCcs: metadataRsp.ccs.map((item) => item.value),
-          metadataSenders: metadataRsp.senders.map((item) => item.value),
-          metadataReceivers: metadataRsp.receivers.map((item) => item.value),
-          metadataHashes: metadataRsp.hashes.map((item) => item.value),
         });
-        setAorEntries((aorsRsp.aorNames ?? []).map((item) => ({ id: item.id, name: item.name })));
-        setProfiles(senderProfilesRsp.data ?? {});
-        setGroupInfos(nextGroupInfos);
-        setTagsMap(
-          Object.fromEntries(
-            Object.entries(tagsDisplayMap).filter(([tagId]) =>
-              tagsRsp.tags.some((item) => String(item.tagId) === tagId),
-            ),
-          ),
-        );
-        setNetworks(networksRspById);
-        setUnitsMap(unitsMap);
-        setNetworkDisplayMap(buildNetworkDisplayMap(networksRspById, unitsMap));
-        setSummaryCallsignsInfo(nextSummaryCallsignsInfo);
         setTopFreqs(topItems(freqsRsp.freqs, (item) => item.freq, (item) => item.count));
-        setTopCallsigns(topItems(callsignsRsp.callsigns, (item) => item.callsign, (item) => item.count));
-        setTopUnits(topItems(unitsRsp.units, (item) => item.unit, (item) => item.count));
-        setTopLocations(topItems(locationsRsp.locations, (item) => item.location, (item) => item.count));
-        setSummaryRows(summaryRsp.rows ?? []);
-        setNewCallsigns(newCallsignsRsp);
         setMapDateRange({
           startDate: inboxReq.sinceDateInclusiveMs ?? 0,
           endDate: inboxReq.tillDateInclusiveMs ?? 0,
         });
-        setMapPoints(mapRsp.points ?? []);
-        setMapNetworkUnits(mapRsp.networkUnits ?? []);
-        setMapOpenMessages([]);
         invalidateCallsignGraph();
         pushQueryStateToUrl(queryState);
+
+        return {
+          analysisReq,
+          inboxReq,
+          inboxRsp,
+          freqsRsp,
+        };
       };
 
-      await loadData(optionsFreqsRef.current);
+      const criticalData = await loadCriticalData(optionsFreqsRef.current);
+      if (criticalData == null || isStaleReload()) {
+        return;
+      }
+
+      optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
+
+      setCountsLoading(false);
+      setMessagesLoading(false);
+
+      const loadFilterData = async () => {
+        try {
+          const [
+            groupsRsp,
+            sendersRsp,
+            callsignsRsp,
+            unitsRsp,
+            locationsRsp,
+            postsRsp,
+            networksRsp,
+            aorsRsp,
+            metadataRsp,
+            tagsRsp,
+            tagsDisplayMap,
+            senderProfilesRsp,
+          ] = await Promise.all([
+            fetchAnalysisGroups(criticalData.analysisReq),
+            fetchAnalysisSenders(criticalData.analysisReq),
+            fetchAnalysisCallsigns(criticalData.analysisReq),
+            fetchAnalysisUnits(criticalData.analysisReq),
+            fetchAnalysisLocations(criticalData.analysisReq),
+            fetchAnalysisPosts(criticalData.analysisReq),
+            fetchAnalysisNetworks(criticalData.analysisReq),
+            fetchAnalysisAors(criticalData.analysisReq),
+            fetchAnalysisMetadata(criticalData.analysisReq),
+            fetchAnalysisTags(criticalData.analysisReq),
+            getTagsMapForDisplay(),
+            getLatestSenders(),
+          ]);
+          if (isStaleReload()) {
+            return;
+          }
+
+          setOptions((current) => ({
+            ...current,
+            aors: aorsRsp.aors.map((item) => String(item.aorId)),
+            groups: groupsRsp.groupNames.map((item) => item.name),
+            senders: sendersRsp.senders.map((item) => item.uuid),
+            callsigns: callsignsRsp.callsigns.map((item) => item.callsign),
+            units: unitsRsp.units.map((item) => item.unit),
+            locations: locationsRsp.locations.map((item) => item.location),
+            posts: postsRsp.posts.map((item) => item.post),
+            networks: networksRsp.networks.map((item) => String(item.networkId)),
+            metadataCcs: metadataRsp.ccs.map((item) => item.value),
+            metadataSenders: metadataRsp.senders.map((item) => item.value),
+            metadataReceivers: metadataRsp.receivers.map((item) => item.value),
+            metadataHashes: metadataRsp.hashes.map((item) => item.value),
+          }));
+          setAorEntries((aorsRsp.aorNames ?? []).map((item) => ({ id: item.id, name: item.name })));
+          setProfiles(senderProfilesRsp.data ?? {});
+          setTagsMap(
+            Object.fromEntries(
+              Object.entries(tagsDisplayMap).filter(([tagId]) =>
+                tagsRsp.tags.some((item) => String(item.tagId) === tagId),
+              ),
+            ),
+          );
+          setTopCallsigns(topItems(callsignsRsp.callsigns, (item) => item.callsign, (item) => item.count));
+          setTopUnits(topItems(unitsRsp.units, (item) => item.unit, (item) => item.count));
+          setTopLocations(topItems(locationsRsp.locations, (item) => item.location, (item) => item.count));
+
+          const messageGroupKeys = Array.from(
+            new Set(
+              criticalData.inboxRsp.inboxItems
+                .map(([, message]) => message.groupMasterKey)
+                .filter((value): value is string => Boolean(value)),
+            ),
+          );
+          const messageNetworkIds = Array.from(
+            new Set(criticalData.inboxRsp.inboxItems.flatMap(([, message]) => message.networkIds ?? [])),
+          );
+          const analysisNetworkIds = Array.from(new Set(networksRsp.networks.map((item) => item.networkId)));
+          const allNetworkIds = Array.from(new Set([...messageNetworkIds, ...analysisNetworkIds]));
+          const [groupInfosRsp, networksRspById, callsignInfosRsp] = await Promise.all([
+            messageGroupKeys.length > 0 ? getGroupInfosBatch(messageGroupKeys) : Promise.resolve([]),
+            allNetworkIds.length > 0 ? fetchNetworksByIds(allNetworkIds) : Promise.resolve([] as Network[]),
+            callsignsRsp.callsigns.length > 0
+              ? fetchAnalysisCallsignInfos(callsignsRsp.callsigns.map((item) => item.callsign))
+              : Promise.resolve([] as CallsignInfoRes[]),
+          ]);
+          if (isStaleReload()) {
+            return;
+          }
+
+          const unitIds = Array.from(new Set(networksRspById.flatMap((network) => network.unitIds ?? [])));
+          const unitsRspById = unitIds.length > 0 ? await fetchUnitsByIds({ ids: unitIds }) : { units: [] };
+          if (isStaleReload()) {
+            return;
+          }
+
+          const nextGroupInfos: Record<string, SignalGroupEntry> = {};
+          groupInfosRsp.forEach((item) => {
+            nextGroupInfos[item.masterKey] = item;
+          });
+          const nextUnitsMap: Record<number, Unit> = {};
+          unitsRspById.units.forEach((unit) => {
+            nextUnitsMap[unit.id] = unit;
+          });
+          const nextSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {};
+          callsignInfosRsp.forEach((item) => {
+            nextSummaryCallsignsInfo[item.callsign.toLowerCase()] = item;
+          });
+
+          setGroupInfos(nextGroupInfos);
+          setNetworks(networksRspById);
+          setUnitsMap(nextUnitsMap);
+          setNetworkDisplayMap(buildNetworkDisplayMap(networksRspById, nextUnitsMap));
+          setSummaryCallsignsInfo(nextSummaryCallsignsInfo);
+        } catch (loadError) {
+          if (isStaleReload()) {
+            return;
+          }
+          if (!onUnauthorized(loadError)) {
+            onError(toErrorMessage(loadError));
+          }
+        } finally {
+          if (!isStaleReload()) {
+            setFiltersLoading(false);
+          }
+        }
+      };
+
+      const loadSummaryData = async () => {
+        try {
+          const summaryRsp = await fetchAnalysisSummaryTable(criticalData.analysisReq);
+          if (isStaleReload()) {
+            return;
+          }
+          setSummaryRows(summaryRsp.rows ?? []);
+        } catch (loadError) {
+          if (isStaleReload()) {
+            return;
+          }
+          if (!onUnauthorized(loadError)) {
+            onError(toErrorMessage(loadError));
+          }
+        } finally {
+          if (!isStaleReload()) {
+            setSummaryLoading(false);
+          }
+        }
+      };
+
+      const loadNewCallsignsData = async () => {
+        try {
+          const newCallsignsRsp = await fetchAnalysisNewCallsigns(criticalData.analysisReq);
+          if (isStaleReload()) {
+            return;
+          }
+          setNewCallsigns(newCallsignsRsp);
+        } catch (loadError) {
+          if (isStaleReload()) {
+            return;
+          }
+          if (!onUnauthorized(loadError)) {
+            onError(toErrorMessage(loadError));
+          }
+        } finally {
+          if (!isStaleReload()) {
+            setNewCallsignsLoading(false);
+          }
+        }
+      };
+
+      const loadMapData = async () => {
+        try {
+          const mapRsp = await fetchAnalysisMapPoints({
+            inboxItemsFilter: criticalData.inboxReq,
+            mapFilter: null,
+            pageId: 'rer-analysis',
+          });
+          if (isStaleReload()) {
+            return;
+          }
+          setMapPoints(mapRsp.points ?? []);
+          setMapNetworkUnits(mapRsp.networkUnits ?? []);
+          setMapOpenMessages([]);
+        } catch (loadError) {
+          if (isStaleReload()) {
+            return;
+          }
+          if (!onUnauthorized(loadError)) {
+            onError(toErrorMessage(loadError));
+          }
+        } finally {
+          if (!isStaleReload()) {
+            setMapLoading(false);
+          }
+        }
+      };
+
+      startedSecondaryLoads = true;
+      void Promise.all([loadFilterData(), loadSummaryData(), loadNewCallsignsData(), loadMapData()]);
     } catch (loadError) {
       if (isStaleReload()) {
         return;
@@ -763,7 +886,14 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       }
     } finally {
       if (!isStaleReload()) {
-        setLoading(false);
+        setCountsLoading(false);
+        setMessagesLoading(false);
+        if (!startedSecondaryLoads) {
+          setFiltersLoading(false);
+          setSummaryLoading(false);
+          setNewCallsignsLoading(false);
+          setMapLoading(false);
+        }
       }
     }
   }, [invalidateCallsignGraph, newestFirst, onError, onUnauthorized, queryState]);
@@ -772,7 +902,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     const inboxReq = buildInboxReq(queryState, options.freqs);
     if (inboxReq == null) return;
 
-    setLoading(true);
+    setMessagesPaging(true);
     try {
       const rsp = await fetchInboxMessages({ ...inboxReq, nolimit: true, newestFirst });
       setMessages(rsp.inboxItems ?? []);
@@ -783,7 +913,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         onError(toErrorMessage(loadError));
       }
     } finally {
-      setLoading(false);
+      setMessagesPaging(false);
     }
   }, [newestFirst, onError, onUnauthorized, options.freqs, queryState]);
 
@@ -792,7 +922,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     const lastMessage = messages.at(-1);
     if (inboxReq == null || lastMessage == null) return;
 
-    setLoading(true);
+    setMessagesPaging(true);
     try {
       const paginatedReq = newestFirst
         ? { ...inboxReq, beforeIdNoninclusive: lastMessage[0], newestFirst }
@@ -808,7 +938,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         onError(toErrorMessage(loadError));
       }
     } finally {
-      setLoading(false);
+      setMessagesPaging(false);
     }
   }, [messages, newestFirst, onError, onUnauthorized, options.freqs, queryState]);
 
@@ -837,7 +967,9 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     correlatedFreqs,
     correlatedFreqsLoading,
     counts,
+    countsLoading,
     aorEntries,
+    filtersLoading,
     groupsActivityPeriod,
     downloadGeojson,
     downloadKmz,
@@ -845,7 +977,6 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     groupsActivity,
     groupsActivityLoading,
     inboxReq: buildInboxReq(queryState, options.freqs),
-    loading,
     loadCallsignGraph,
     loadAllMessages,
     toggleCallsignGraphNolimit,
@@ -855,10 +986,13 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     loadMessagesForMap,
     mapAttrs,
     messageActionLoading: messageActionCount > 0,
+    messagesLoading,
+    messagesPaging,
     messages,
     networkDisplayMap,
     networks,
     newCallsigns,
+    newCallsignsLoading,
     noMoreToLoad,
     nolimitShown,
     onUpdateLocalMessage,
@@ -871,6 +1005,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     profiles,
     refreshMapDateRange,
     reload,
+    summaryLoading,
     summaryRows,
     summaryCallsignsInfo,
     unitsMap,

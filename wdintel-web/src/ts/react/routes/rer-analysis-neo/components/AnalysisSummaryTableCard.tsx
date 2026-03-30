@@ -32,6 +32,7 @@ import { FULL_WIDTH_TABLE_PAPER_SX, getPageScrollTableContainerSx } from '../../
 import { buildDefaultColumnOrder, getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableToolbarControls } from '../../../components/TableToolbarControls';
+import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { buildAnalysisSummaryTableRows, type AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
 
@@ -39,6 +40,7 @@ type Props = {
   callsignInfoMap: Record<string, CallsignInfoRes>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
+  loading?: boolean;
   onDownloadGeojson: () => void;
   onDownloadKmz: () => void;
   onDownloadXlsx: () => void;
@@ -118,6 +120,7 @@ function AnalysisSummaryTableCardInner({
   callsignInfoMap,
   networkDisplayMap,
   networks,
+  loading = false,
   onDownloadGeojson,
   onDownloadKmz,
   onDownloadXlsx,
@@ -449,6 +452,9 @@ function AnalysisSummaryTableCardInner({
       <Box sx={outerTableContainerSx}>
         <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <MaterialReactTable table={table} />
+          {loading ? (
+            <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} />
+          ) : null}
         </Box>
       </Box>
 

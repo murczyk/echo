@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { InboxMessage, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
+import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { MessageCard } from '../../rer-duty-neo/MessageCard';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildSenderLabel, copyMessageValue } from '../message-utils';
@@ -12,6 +13,7 @@ type Props = {
   copiedFeedbackId: string | null;
   groupInfos: Record<string, SignalGroupEntry>;
   loading: boolean;
+  paginationLoading: boolean;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   noMoreToLoad: boolean;
@@ -107,6 +109,7 @@ function AnalysisMessagesPaneComponent({
   editorSaveInFlight,
   groupInfos,
   loading,
+  paginationLoading,
   messages,
   networkDisplayMap,
   noMoreToLoad,
@@ -166,36 +169,42 @@ function AnalysisMessagesPaneComponent({
   }
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 0 }}>
-      <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
-        {messages.map(([id, message]) => (
-          <AnalysisMessageCardItem
-            key={id}
-            authUserName={authUserName}
-            copiedFeedbackId={copiedFeedbackId}
-            groupInfos={groupInfos}
-            id={id}
-            message={message}
-            networkDisplayMap={networkDisplayMap}
-            onCommentOpen={handleCommentOpen}
-            onCopyFeedback={showCopiedFeedback}
-            onDeleteOpen={setDeleteMessageId}
-            onOpenEditor={onOpenEditor}
-            onToggleMessageBookmark={onToggleMessageBookmark}
-            onToggleMessageImportant={onToggleMessageImportant}
-            onToggleMessageTag={onToggleMessageTag}
-            profiles={profiles}
-            referenceTimeMs={referenceTimeMsRef.current}
-            tagsMap={tagsMap}
-          />
-        ))}
-      </Box>
-      {!noMoreToLoad && messages.length > 0 ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-          <Button variant="outlined" onClick={onLoadMoreMessages} disabled={loading}>
-            Завантажити ще
-          </Button>
+    <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: 0, position: 'relative' }}>
+      <Box sx={{ height: '100%', overflow: 'auto' }}>
+        <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+          {messages.map(([id, message]) => (
+            <AnalysisMessageCardItem
+              key={id}
+              authUserName={authUserName}
+              copiedFeedbackId={copiedFeedbackId}
+              groupInfos={groupInfos}
+              id={id}
+              message={message}
+              networkDisplayMap={networkDisplayMap}
+              onCommentOpen={handleCommentOpen}
+              onCopyFeedback={showCopiedFeedback}
+              onDeleteOpen={setDeleteMessageId}
+              onOpenEditor={onOpenEditor}
+              onToggleMessageBookmark={onToggleMessageBookmark}
+              onToggleMessageImportant={onToggleMessageImportant}
+              onToggleMessageTag={onToggleMessageTag}
+              profiles={profiles}
+              referenceTimeMs={referenceTimeMsRef.current}
+              tagsMap={tagsMap}
+            />
+          ))}
         </Box>
+        {!noMoreToLoad && messages.length > 0 ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+            <Button variant="outlined" onClick={onLoadMoreMessages} disabled={loading || paginationLoading}>
+              {paginationLoading ? 'Завантаження...' : 'Завантажити ще'}
+            </Button>
+          </Box>
+        ) : null}
+      </Box>
+
+      {loading && messages.length > 0 ? (
+        <SectionLoadingOverlay open ariaLabel="Оновлення повідомлень" sx={{ zIndex: 2 }} />
       ) : null}
 
       <CommentDialog

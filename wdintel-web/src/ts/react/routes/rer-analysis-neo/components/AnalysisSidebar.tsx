@@ -21,6 +21,7 @@ type Props = Pick<
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
   | 'newCallsigns'
+  | 'newCallsignsLoading'
   | 'rightSidebarSections'
   | 'rightPanelOpen'
   | 'topCallsigns'
@@ -51,6 +52,7 @@ export function AnalysisSidebar({
   loadCorrelatedFreqs,
   loadGroupsActivity,
   newCallsigns,
+  newCallsignsLoading,
   rightPanelOpen,
   rightSidebarSections,
   topCallsigns,
@@ -142,7 +144,7 @@ export function AnalysisSidebar({
         ) : null}
         {rightSidebarSections.newCallsigns ? (
           <Box ref={newCallsignsRef}>
-            <AnalysisNewCallsignsCard newCallsigns={newCallsigns} />
+            <AnalysisNewCallsignsCard loading={newCallsignsLoading} newCallsigns={newCallsigns} />
           </Box>
         ) : null}
       </Stack>

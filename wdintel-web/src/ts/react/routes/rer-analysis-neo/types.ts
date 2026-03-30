@@ -79,13 +79,14 @@ export type AnalysisPageState = {
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
+  filtersLoading: boolean;
   groupInfos: Record<string, SignalGroupEntry>;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
   inboxReq: InboxMessagesReq | null;
   isDirty: boolean;
   loadedSavedFilter: SavedFilter | null;
-  loading: boolean;
+  countsLoading: boolean;
   leftPanelOpen: boolean;
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
@@ -97,10 +98,13 @@ export type AnalysisPageState = {
   groupsActivityLoading: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
+  messagesLoading: boolean;
+  messagesPaging: boolean;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;
+  newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
   nolimitShown: boolean;
   newestFirst: boolean;
@@ -114,6 +118,7 @@ export type AnalysisPageState = {
   saveInFlight: boolean;
   savedFilterName: string;
   savedFilters: SavedFilter[];
+  summaryLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;

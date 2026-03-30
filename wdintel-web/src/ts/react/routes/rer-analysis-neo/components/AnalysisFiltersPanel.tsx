@@ -30,6 +30,7 @@ type Props = Pick<
   | 'includeOnlyNewFreqs'
   | 'loadedSavedFilter'
   | 'options'
+  | 'filtersLoading'
   | 'queryState'
   | 'saveInFlight'
   | 'savedFilterName'
@@ -53,6 +54,7 @@ export function AnalysisFiltersPanel({
   isDirty,
   counts,
   canResetFilters,
+  filtersLoading,
   includeOnlyNewFreqs,
   loadedSavedFilter,
   options,
@@ -168,62 +170,70 @@ export function AnalysisFiltersPanel({
         <AnalysisFilterField
           label="Смуги"
           options={options.aors}
+          disabled={filtersLoading}
           value={queryState.aorsSelected}
           onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
         />
         <AnalysisFilterField
           label="Групи"
           options={options.groups}
+          disabled={filtersLoading}
           value={queryState.groupsSelected}
           onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
         />
         <AnalysisFilterField
           label="Відправники"
           options={options.senders}
+          disabled={filtersLoading}
           value={queryState.sendersSelected}
           onChange={(sendersSelected) => updateQueryState({ sendersSelected })}
         />
         <AnalysisFilterField
           label="Частоти"
           options={options.freqs}
-          disabled={includeOnlyNewFreqs}
+          disabled={filtersLoading || includeOnlyNewFreqs}
           value={queryState.freqsSelected}
           onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
         />
         <AnalysisFilterField
           label="Позивні"
           options={options.callsigns}
+          disabled={filtersLoading}
           value={queryState.callsignsSelected}
           onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
         />
         <AnalysisFilterField
           label="Підрозділи"
           options={options.units}
+          disabled={filtersLoading}
           value={queryState.unitsSelected}
           onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
         />
         <AnalysisFilterField
           label="Локації"
           options={options.locations}
+          disabled={filtersLoading}
           value={queryState.locationsSelected}
           onChange={(locationsSelected) => updateQueryState({ locationsSelected })}
         />
         <AnalysisFilterField
           label="Пости"
           options={options.posts}
+          disabled={filtersLoading}
           value={queryState.postsSelected}
           onChange={(postsSelected) => updateQueryState({ postsSelected })}
         />
         <AnalysisFilterField
           label="Мережі"
           options={options.networks}
-          disabled={queryState.withoutNetwork}
+          disabled={filtersLoading || queryState.withoutNetwork}
           value={queryState.networksSelected}
           onChange={(networksSelected) => updateQueryState({ networksSelected })}
         />
         <AnalysisFilterField
           label="Теги"
           options={Object.entries(tagsMap).map(([tagId, tag]) => `${tag.label}::${tagId}`)}
+          disabled={filtersLoading}
           value={queryState.tags.map((tagId) => {
             const tag = tagsMap[tagId];
             return tag ? `${tag.label}::${tagId}` : String(tagId);
@@ -237,28 +247,28 @@ export function AnalysisFiltersPanel({
         <AnalysisFilterField
           label="Метадані CC"
           options={options.metadataCcs}
-          disabled={queryState.withoutMetadata}
+          disabled={filtersLoading || queryState.withoutMetadata}
           value={queryState.metadataCc}
           onChange={(metadataCc) => updateQueryState({ metadataCc })}
         />
         <AnalysisFilterField
           label="Метадані відправника"
           options={options.metadataSenders}
-          disabled={queryState.withoutMetadata}
+          disabled={filtersLoading || queryState.withoutMetadata}
           value={queryState.metadataSender}
           onChange={(metadataSender) => updateQueryState({ metadataSender })}
         />
         <AnalysisFilterField
           label="Метадані отримувача"
           options={options.metadataReceivers}
-          disabled={queryState.withoutMetadata}
+          disabled={filtersLoading || queryState.withoutMetadata}
           value={queryState.metadataReceiver}
           onChange={(metadataReceiver) => updateQueryState({ metadataReceiver })}
         />
         <AnalysisFilterField
           label="Хеш метаданих"
           options={options.metadataHashes}
-          disabled={queryState.withoutMetadata}
+          disabled={filtersLoading || queryState.withoutMetadata}
           value={queryState.metadataHash}
           onChange={(metadataHash) => updateQueryState({ metadataHash })}
         />

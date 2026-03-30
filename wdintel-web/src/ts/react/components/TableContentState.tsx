@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { CircularProgress } from '@mui/material';
+import { Box, Skeleton, Stack } from '@mui/material';
 
 import { PageErrorState } from './PageErrorState';
 import { SectionLoadingOverlay } from './SectionLoadingOverlay';
@@ -17,18 +17,24 @@ type Props = {
 function TableLoadingSlot(props: { fillAvailableHeight: boolean }) {
   if (props.fillAvailableHeight) {
     return (
-      <div className="relative flex w-full min-w-0 flex-1 min-h-0 overflow-hidden">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <CircularProgress size={32} />
-        </div>
-      </div>
+      <Box sx={{ display: 'flex', flex: 1, minHeight: 0, width: '100%', p: 2 }}>
+        <Stack spacing={1.5} sx={{ width: '100%', minWidth: 0 }}>
+          {Array.from({ length: 8 }).map((_, index) => (
+            <Skeleton key={index} variant="rounded" height={48} />
+          ))}
+        </Stack>
+      </Box>
     );
   }
 
   return (
-    <div className="flex w-full min-w-0 items-center justify-center py-12">
-      <CircularProgress size={32} />
-    </div>
+    <Box sx={{ width: '100%', minWidth: 0, p: 2 }}>
+      <Stack spacing={1.5}>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Skeleton key={index} variant="rounded" height={48} />
+        ))}
+      </Stack>
+    </Box>
   );
 }
 
@@ -54,14 +60,9 @@ export function TableContentState({
   if (status !== 'success') {
     if (loadingContent) {
       return (
-        <div className={`${containerClassName} relative`}>
+        <div className={`${containerClassName} relative`} aria-busy="true">
           {loadingContent}
-          <SectionLoadingOverlay
-            open
-            ariaLabel="Завантаження таблиці"
-            spinnerMode="center"
-            sx={{ zIndex: 12 }}
-          />
+          <SectionLoadingOverlay open ariaLabel="Завантаження таблиці" sx={{ zIndex: 12 }} />
         </div>
       );
     }

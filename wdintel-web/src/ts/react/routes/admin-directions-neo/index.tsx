@@ -593,7 +593,6 @@ function OrphanGroupsTable(props: {
           <SectionLoadingOverlay
             open
             ariaLabel="Завантаження таблиці напрямків"
-            spinnerMode="center"
             sx={{ zIndex: 12 }}
           />
         ) : null}
@@ -942,7 +941,6 @@ function ZoneGroupsTable(props: {
           <SectionLoadingOverlay
             open
             ariaLabel="Завантаження таблиці напрямків"
-            spinnerMode="center"
             sx={{ zIndex: 12 }}
           />
         ) : null}

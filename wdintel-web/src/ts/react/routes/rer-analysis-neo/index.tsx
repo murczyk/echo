@@ -30,7 +30,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
-  const showLoadingSkeletons = page.loading && page.messages.length === 0 && page.counts == null;
+  const showLoadingSkeletons = page.messagesLoading && page.messages.length === 0 && page.counts == null;
   const rightSidebarDisabled = !Object.values(page.rightSidebarSections).some(Boolean);
   const [mountedTabs, setMountedTabs] = useState<Record<'messages' | 'map' | 'summary', boolean>>({
     messages: true,
@@ -93,7 +93,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           position: "relative",
           overflow: "hidden",
         }}
-        aria-busy={page.loading}
+        aria-busy={page.messagesLoading || page.filtersLoading || page.summaryLoading || page.newCallsignsLoading}
       >
         <Box
           sx={{
@@ -227,7 +227,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     display: { xs: 'block', lg: page.leftPanelOpen ? 'block' : 'none' },
                   }}
                 >
-                    <AnalysisFiltersPanel {...page} />
+                  <AnalysisFiltersPanel {...page} />
                 </Box>
               </Paper>
 
@@ -303,8 +303,17 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         justifyContent="flex-end"
                         sx={{ ml: 'auto', width: { xs: '100%', sm: 'auto' } }}
                       >
-                        <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
-                        <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
+                        {page.countsLoading && page.counts == null ? (
+                          <>
+                            <Skeleton variant="rounded" width={110} height={32} />
+                            <Skeleton variant="rounded" width={110} height={32} />
+                          </>
+                        ) : (
+                          <>
+                            <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
+                            <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
+                          </>
+                        )}
                       </Stack>
                     </Stack>
                   )}
@@ -332,7 +341,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     editorMessage={page.editorMessage}
                     editorSaveInFlight={page.editorSaveInFlight}
                     groupInfos={page.groupInfos}
-                    loading={page.loading}
+                    loading={page.messagesLoading}
+                    paginationLoading={page.messagesPaging}
                     messages={page.messages}
                     networkDisplayMap={page.networkDisplayMap}
                     noMoreToLoad={page.noMoreToLoad}
@@ -401,6 +411,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       onRenameUnit={page.renameSummaryUnit}
                       onSelectFreq={page.selectOnlyFreq}
                       onShowFreqOnMap={page.showFreqOnMap}
+                      loading={page.summaryLoading}
                       rows={page.summaryRows}
                       sx={{ flex: 1, minWidth: 0 }}
                       tableContainerSx={{ maxHeight: '100%' }}
@@ -410,7 +421,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   ) : null}
                 </Box>
 
-                {centerPanelBusy && !page.loading && !showLoadingSkeletons ? (
+                {centerPanelBusy && !page.messagesLoading && !showLoadingSkeletons ? (
                   <Backdrop open aria-label="Завантаження" sx={(theme) => ({ ...loadingOverlayBackdropSx(theme), display: 'flex' })}>
                     <CircularProgress color="inherit" size={30} />
                   </Backdrop>
@@ -464,7 +475,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     display: { xs: 'block', lg: page.rightPanelOpen ? 'block' : 'none' },
                   }}
                 >
-                    <AnalysisSidebar {...page} />
+                  <AnalysisSidebar {...page} />
                 </Box>
                 {!rightSidebarDisabled && !page.rightPanelOpen && showLoadingSkeletons ? (
                   <Box sx={{ flex: 1, minWidth: 0, p: 2, display: 'flex', flexDirection: 'column' }}>
@@ -476,19 +487,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           )}
         </Box>
 
-        <Backdrop
-          open={page.loading}
-          sx={{
-            position: "absolute",
-            inset: 0,
-            zIndex: (theme) => theme.zIndex.drawer - 1,
-            borderRadius: 0,
-            color: "primary.main",
-            backgroundColor: "rgba(18, 18, 18, 0.42)",
-          }}
-        >
-          <CircularProgress color="inherit" />
-        </Backdrop>
       </Box>
 
       <AnalysisReportDialog
