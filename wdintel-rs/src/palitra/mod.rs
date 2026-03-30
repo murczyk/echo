@@ -181,6 +181,8 @@ pub async fn create_palitra_basic(
             .filter(|color_hex| *color_hex != &primary_color_hex)
             .cloned(),
     );
+    let mut seen_colors = HashSet::new();
+    geometry_colors.retain(|color_hex| seen_colors.insert(color_hex.clone()));
 
     let txn = env.dbx.begin().await.c(h!())?;
     let mut created_palitra_ids = Vec::with_capacity(geometry_colors.len());
@@ -300,6 +302,8 @@ pub async fn create_palitra_basic_v2(
 
     let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
     geometry_colors.extend(line_strings_by_color.keys().cloned().collect_vec());
+    geometry_colors.sort();
+    geometry_colors.dedup();
     if geometry_colors.is_empty() {
         geometry_colors
             .push(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string());
@@ -453,6 +457,8 @@ pub async fn upload_palitra_points(
     let uploaded_at = Utc::now();
     let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
     geometry_colors.extend(line_strings_by_color.keys().cloned().collect_vec());
+    let mut seen_colors = HashSet::new();
+    geometry_colors.retain(|color_hex| seen_colors.insert(color_hex.clone()));
     if geometry_colors.is_empty() {
         geometry_colors
             .push(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string());
