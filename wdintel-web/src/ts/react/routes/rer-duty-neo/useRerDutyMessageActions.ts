@@ -25,7 +25,7 @@ import {
 } from '../../services/api/inbox';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { FeedColumnHandle } from './FeedColumn';
-import { normalizeFeed, profileLabel } from './utils';
+import { buildSenderOptions, normalizeFeed } from './utils';
 import type { MessageFeedState } from './utils';
 
 export type MessageActionsDeps = {
@@ -242,14 +242,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     }
   }, [commentMessageId, commentFeedId, commentText, setMessageFeeds, setError]);
 
-  const senderOptions = useMemo(() => {
-    const next = Object.entries(profiles).map(([uuid, entry]) => ({
-      id: uuid,
-      label: profileLabel(uuid, entry),
-    }));
-    next.sort((a, b) => a.id.localeCompare(b.id));
-    return next;
-  }, [profiles, messageFeeds]);
+  const senderOptions = useMemo(() => buildSenderOptions(profiles, messageFeeds), [profiles, messageFeeds]);
 
   const senderOptionsStableRef = useRef(senderOptions);
   const senderOptionsStable =

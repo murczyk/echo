@@ -9,6 +9,7 @@ import {
   hasMeaningfulFiltersBeyondDateRange,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
+  shouldRebuildAnalysisRequests,
 } from './helpers';
 import { combineDateTimeToMs, isValidDateInput } from '../../utils/misc';
 
@@ -52,6 +53,23 @@ describe('rer-analysis-neo helpers', () => {
       '100.0000',
       '100.0015',
     ]);
+  });
+
+  it('requests a rebuild when adjacent expansion becomes possible after frequencies load', () => {
+    const state = {
+      ...emptyQueryState(),
+      dateFromStr: '2026-03-19',
+      timeFromStr: '00:00',
+      dateToStr: '2026-03-20',
+      timeToStr: '12:00',
+      freqsSelected: ['100.0000'],
+      adjacentFreqsRange: 0.002,
+    };
+
+    expect(shouldRebuildAnalysisRequests(state, [], ['99.9975', '100.0000', '100.0015', '100.0045'])).toBe(true);
+    expect(
+      shouldRebuildAnalysisRequests(state, ['99.9975', '100.0000', '100.0015', '100.0045'], ['99.9975', '100.0000', '100.0015', '100.0045']),
+    ).toBe(false);
   });
 
   it('carries analysis-only flags into inbox request', () => {

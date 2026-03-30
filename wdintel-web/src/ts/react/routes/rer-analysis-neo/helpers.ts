@@ -271,6 +271,22 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
   };
 }
 
+export function shouldRebuildAnalysisRequests(
+  state: AnalysisQueryState,
+  currentFrequencies: string[] = [],
+  nextFrequencies: string[] = [],
+): boolean {
+  if (state.adjacentFreqsRange <= 0 || state.freqsSelected.length === 0 || nextFrequencies.length === 0) {
+    return false;
+  }
+
+  const currentReq = buildAnalysisReq(state, currentFrequencies);
+  const nextReq = buildAnalysisReq(state, nextFrequencies);
+  if (currentReq == null || nextReq == null) return false;
+
+  return JSON.stringify(currentReq.selectedFreqs ?? []) !== JSON.stringify(nextReq.selectedFreqs ?? []);
+}
+
 export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: AnalysisQueryState): AnalysisQueryState {
   const req = savedFilter.req;
   return normalizeQueryState({
