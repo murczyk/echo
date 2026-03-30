@@ -208,7 +208,7 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
     onlyWithMetadata: query.onlyWithMetadata,
     withoutMetadata: query.withoutMetadata,
     includePelengLocations: query.includePelengLocations,
-    unitsExactMatchOnly: query.unitsExactMatchOnly,
+    unitsExactMatchOnly: query.unitsExactMatchOnly ?? true,
     filterTagsOption: query.filterTagsOption,
     withoutModelTags: query.withoutModelTags,
     reportTagsOnlyThisUnit: query.reportTagsOnlyThisUnit,

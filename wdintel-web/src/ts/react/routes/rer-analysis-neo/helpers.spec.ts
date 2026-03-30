@@ -35,6 +35,25 @@ describe('rer-analysis-neo helpers', () => {
     expect(buildAnalysisReq(state)).toMatchObject({
       selectedGroups: ['g1'],
       selectedNetworks: [12],
+      unitsExactMatchOnly: true,
+    });
+  });
+
+  it('defaults units exact match to true across analysis and inbox requests', () => {
+    const state = {
+      ...emptyQueryState(),
+      dateFromStr: '2026-03-19',
+      timeFromStr: '00:00',
+      dateToStr: '2026-03-20',
+      timeToStr: '12:00',
+      unitsExactMatchOnly: null,
+    };
+
+    expect(buildAnalysisReq(state)).toMatchObject({
+      unitsExactMatchOnly: true,
+    });
+    expect(buildInboxReq(state)).toMatchObject({
+      unitsExactMatchOnly: true,
     });
   });
 
