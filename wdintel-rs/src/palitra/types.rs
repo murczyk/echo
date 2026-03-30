@@ -62,8 +62,9 @@ pub struct Palitra {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct Geometry {
-    pub center: Coords,
-    pub perimeter_linear_ring: Vec<Coords>,
+    pub center: Option<Coords>,
+    pub perimeter_linear_ring: Option<Vec<Coords>>,
+    pub line_strings: Option<Vec<Vec<Coords>>>,
 }
 
 #[derive(

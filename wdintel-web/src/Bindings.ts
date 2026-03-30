@@ -1109,8 +1109,9 @@ export type ViewportBounds = {
 };
 
 export type Geometry = {
-  center: Coords;
-  perimeterLinearRing: Array<Coords>;
+  center: Coords | null;
+  perimeterLinearRing: Array<Coords> | null;
+  lineStrings: Array<Array<Coords>> | null;
 };
 
 export type Coords = {

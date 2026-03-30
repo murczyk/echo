@@ -68,7 +68,13 @@ function groupPalitras(palitras: PalitraDetails[]): PalitraGroup[] {
 }
 
 function perimeterPointsCount(palitraDetails: PalitraDetails): number {
-  return palitraDetails.palitra.geometry?.perimeter_linear_ring.length ?? 0;
+  const geometry = palitraDetails.palitra.geometry;
+  if (!geometry) {
+    return 0;
+  }
+  const ringCount = geometry.perimeter_linear_ring?.length ?? 0;
+  const linePoints = geometry.line_strings?.reduce((acc, line) => acc + line.length, 0) ?? 0;
+  return ringCount + linePoints;
 }
 
 type PalitraGroupRowProps = {

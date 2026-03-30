@@ -5,7 +5,7 @@ import { PalitrasControl, PalitrasLoadState } from './controls';
 import { PalitraPointClusterRenderer } from './palitra-point-cluster-renderer';
 import { PalitraPointsController } from './palitra-points-controller';
 import { Palitra, PalitraDetails, PalitraManagerCallbacks, PalitraManagerOptions } from './palitra-types';
-import { createPalitraPolygon } from './utils/palitra-map-geometry';
+import { createPalitraGeometryLayer } from './utils/palitra-map-geometry';
 
 export class PalitraManager {
   private cacheManager: PalitraCacheManager;
@@ -142,14 +142,14 @@ export class PalitraManager {
       (palitraDetails) => this.visibleIds.includes(palitraDetails.palitra.id) && palitraDetails.palitra.geometry,
     );
 
-    const polygons: L.Polygon[] = [];
+    const geometryLayers: L.Layer[] = [];
     visiblePalitras.forEach((palitraDetails) => {
-      const polygon = createPalitraPolygon(palitraDetails);
-      if (!polygon) {
-        console.log('❌ Polygon creation failed');
+      const layer = createPalitraGeometryLayer(palitraDetails);
+      if (!layer) {
+        console.log('❌ Palitra geometry creation failed');
         return;
       }
-      polygon.on('mousedown', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+      layer.on('mousedown', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
         if (event.originalEvent?.button !== 2) {
           return;
         }
@@ -160,19 +160,19 @@ export class PalitraManager {
           { lat: event.latlng.lat, lng: event.latlng.lng },
         );
       });
-      polygon.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+      layer.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
         event.originalEvent?.preventDefault();
         event.originalEvent?.stopPropagation();
       });
-      this.layerGroup.addLayer(polygon);
-      polygons.push(polygon);
+      this.layerGroup.addLayer(layer);
+      geometryLayers.push(layer);
     });
 
     this.pointsController.updatePoints();
 
-    if (this.fitOnNextPolygonUpdate && polygons.length > 0) {
+    if (this.fitOnNextPolygonUpdate && geometryLayers.length > 0) {
       if (this.shouldFitAfterVisiblePalitrasChanged()) {
-        const group = L.featureGroup(polygons);
+        const group = L.featureGroup(geometryLayers);
         this.map.fitBounds(group.getBounds(), {
           padding: [50, 50],
           maxZoom: 10,

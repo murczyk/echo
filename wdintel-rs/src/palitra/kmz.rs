@@ -17,8 +17,14 @@ use tokio::task;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-pub struct LoadCoordinatesFromFileResult {
+pub struct PalitraLineString {
+    pub coords: Vec<Coords>,
+    pub color: Option<String>,
+}
+
+pub struct PalitraKmzData {
     pub points: Vec<PalitraPoint>,
+    pub line_strings: Vec<PalitraLineString>,
     pub s3_id: Option<String>,
 }
 
@@ -26,7 +32,7 @@ pub async fn load_coordinates_from_file(
     file_name: String,
     data: Vec<u8>,
     env: &Env,
-) -> anyhow::Result<LoadCoordinatesFromFileResult> {
+) -> anyhow::Result<PalitraKmzData> {
     let storage_dir = std::env::temp_dir()
         .join(PALITRA_STORAGE_DIR_NAME)
         .join(format!("{}", Utc::now().naive_utc().date()));
@@ -68,7 +74,7 @@ pub async fn load_coordinates_from_file(
         "kml" => load_coordinates_from_kml(path.as_path()).await,
         _ => anyhow::bail!("Unsupported coordinates extension: {extension}"),
     }?;
-    Ok(LoadCoordinatesFromFileResult { points, s3_id })
+    Ok(PalitraKmzData { points.points, s3_id, points.line_strings })
 }
 
 pub fn sanitize_upload_filename(filename: &str) -> String {
@@ -81,7 +87,7 @@ pub fn sanitize_upload_filename(filename: &str) -> String {
 
 pub async fn load_coordinates_from_kmz(
     kmz_path: &Path,
-) -> anyhow::Result<Vec<PalitraPoint>> {
+) -> anyhow::Result<PalitraKmzData> {
     let tmp_dir = tempdir()?;
     let extract_to = tmp_dir.path().to_path_buf();
     let walkdir = WalkDir::new(extract_to.as_path()).into_iter();
@@ -100,7 +106,10 @@ pub async fn load_coordinates_from_kmz(
     .c(h!())?
     .c(h!())?;
 
-    let mut result = vec![];
+    let mut result = PalitraKmzData {
+        points: vec![],
+        line_strings: vec![],
+    };
 
     for entry in walkdir.filter_map(|e| e.ok()) {
         if entry.file_type().is_file() {
@@ -113,9 +122,8 @@ pub async fn load_coordinates_from_kmz(
                         continue;
                     }
                 };
-                for c in coordinates {
-                    result.push(c);
-                }
+                result.points.extend(coordinates.points);
+                result.line_strings.extend(coordinates.line_strings);
             }
         }
     }
@@ -124,12 +132,15 @@ pub async fn load_coordinates_from_kmz(
 
 pub async fn load_coordinates_from_kml(
     path: &Path,
-) -> anyhow::Result<Vec<PalitraPoint>> {
+) -> anyhow::Result<PalitraKmzData> {
     let parent = path.parent().c(h!())?;
     let doc = crate::kml::read_and_fix_kml(false, path, parent)
         .await
         .c(h!())?;
+    let mut style_indexes = StyleIndexes::default();
+    collect_style_indexes_from_nodes(&doc.nodes, &mut style_indexes);
     let mut values: Vec<PalitraPoint> = Vec::new();
+    let mut line_strings: Vec<PalitraLineString> = Vec::new();
     let mut queue = doc.nodes;
     loop {
         let Some(node) = queue.pop() else {
@@ -147,7 +158,7 @@ pub async fn load_coordinates_from_kml(
                 }
             }
             Node::Placemark(p) => {
-                let m_color = get_placemark_color(&p);
+                let m_color = get_placemark_color(&p, &style_indexes);
                 let label = p.name.or(p.description);
                 let point = p.point.and_then(|p| p.coordinates);
                 m_add_coordinates(
@@ -170,43 +181,48 @@ pub async fn load_coordinates_from_kml(
                     m_color.clone(),
                 );
 
-                let mut line_strings =
+                let mut geometry_line_strings =
                     p.multi_geometry.map(|p| p.line_strings).unwrap_or(vec![]);
                 if let Some(line_string) = p.line_string {
-                    line_strings.push(line_string);
+                    geometry_line_strings.push(line_string);
                 }
 
-                for line_string in line_strings {
+                for line_string in geometry_line_strings {
                     let coordinates =
                         line_string.coordinates.and_then(|c| c.body);
-                    m_add_coordinates(
-                        &mut values,
-                        label.clone(),
-                        coordinates,
-                        m_color.clone(),
-                    );
+                    if let Some(coords) = coordinates {
+                        match Coords::list_from_kml_coordinates(&coords) {
+                            Ok(coords_list) => {
+                                if coords_list.len() >= 2 {
+                                    line_strings.push(PalitraLineString {
+                                        coords: coords_list,
+                                        color: m_color.clone().or_else(|| {
+                                            Some(PALITRA_POINT_FALLBACK_COLOR_HEX.to_string())
+                                        }),
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to parse line coordinates {coords}: {e:?}")
+                            }
+                        }
+                    }
                 }
             }
             _ => continue,
         }
     }
-    Ok(values)
+    Ok(PalitraKmzData {
+        points: values,
+        line_strings,
+    })
 }
 
-fn get_placemark_color(p: &Placemark) -> Option<String> {
-    let Some(style) = &p.style else {
-        return None;
-    };
-    if let Some(s) = &style.icon_style {
-        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
-    }
-    if let Some(s) = &style.poly_style {
-        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
-    }
-    if let Some(s) = &style.line_style {
-        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
-    }
-    None
+fn get_placemark_color(
+    placemark: &Placemark,
+    style_indexes: &StyleIndexes,
+) -> Option<String> {
+    extract_color_from_placemark(placemark, style_indexes)
 }
 
 fn m_add_coordinates(
@@ -660,11 +676,17 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    fn total_coords_count(data: &PalitraKmzData) -> usize {
+        let line_coords: usize =
+            data.line_strings.iter().map(|line| line.coords.len()).sum();
+        data.points.len() + line_coords
+    }
+
     #[tokio::test]
     async fn test_load_coordinates_from_kml() -> anyhow::Result<()> {
         let path = PathBuf::from("data/test.kml");
         let data = load_coordinates_from_kml(path.as_path()).await.c(h!())?;
-        assert_eq!(data.len(), 2247);
+        assert_eq!(total_coords_count(&data), 2247);
         Ok(())
     }
 
@@ -672,7 +694,7 @@ mod tests {
     async fn test_load_coordinates_from_kmz() -> anyhow::Result<()> {
         let path = PathBuf::from("data/test.kmz");
         let data = load_coordinates_from_kmz(path.as_path()).await.c(h!())?;
-        assert_eq!(data.len(), 6991);
+        assert_eq!(total_coords_count(&data), 6991);
         Ok(())
     }
 
@@ -683,9 +705,10 @@ mod tests {
             "data/951. Срібні - Новопідгородне Райполе 433 мсп.kmz",
         );
         let data = load_coordinates_from_kmz(path.as_path()).await.c(h!())?;
-        assert_eq!(data.len(), 991);
+        assert_eq!(total_coords_count(&data), 991);
 
         let first = data
+            .points
             .iter()
             .find(|point| point.label.as_deref() == Some("1"))
             .expect("first placemark present");
@@ -693,6 +716,7 @@ mod tests {
         assert!((first.coords.lng - 36.9258872).abs() < 1e-6);
 
         let last = data
+            .points
             .iter()
             .find(|point| point.label.as_deref() == Some("991"))
             .expect("last placemark present");
