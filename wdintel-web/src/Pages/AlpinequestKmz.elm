@@ -378,8 +378,8 @@ view _ _ _ model =
                         , warning = Just "ⓘ Формат .pgd наразі підтримується в експериментальному режимі"
                         }
                     , conversionBlock
-                        { heading = Just ".pgd в COG (cloud-optimised Geotiff)"
-                        , description = "Радимо конвертувати файли .pgd у формат COG (Cloud-Optimized GeoTIFF), щоб використовувати їх як підкладку в шарах Delta. Якщо потрібна інструкція з додавання GeoTIFF до шару Delta, зверніться до підтримки Ехо."
+                        { heading = Just ".pgd в .tif (cloud-optimised GeoTiff)"
+                        , description = "Радимо конвертувати файли .pgd у формат .tif (Cloud-Optimized GeoTIFF, відповідає вимогам Delta до ортознімків), щоб використовувати їх як підкладку в шарах Delta. Якщо потрібна інструкція з додавання ортофото в Delta, зверніться до підтримки Ехо."
                         , conversionModel = model.geotiff
                         , onUpload = UploadAlpinequestGeotiffFile
                         , showSupportedFormats = False
