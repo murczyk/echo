@@ -295,6 +295,9 @@ async fn convert_file(
     let resp = env
         .rq
         .post(format!("{host}/api/upload-task"))
+        .timeout(Duration::from_secs(
+            crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
+        ))
         .multipart(form)
         .send()
         .await
@@ -345,6 +348,9 @@ async fn check_completion_status(
     let response = env
         .rq
         .post(format!("{host}/api/task-status-batch"))
+        .timeout(Duration::from_secs(
+            crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
+        ))
         .json(&body)
         .send()
         .await
@@ -377,6 +383,9 @@ async fn download_file(
     let response = env
         .rq
         .get(format!("{host}/api/download-task/{receipt}"))
+        .timeout(Duration::from_secs(
+            crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
+        ))
         .send()
         .await
         .c(h!())?;
