@@ -55,11 +55,11 @@ evaluate:
     @just --evaluate
 
 dev-front:
-    (cd wdintel-web && PORT=1234 npx elm-land server)
+    (cd wdintel-web && npx elm-land server)
 
 # now with build!
 dev-front2:
-    (cd wdintel-web && npm ci && npx elm-land build && PORT=1234 npx elm-land server)
+    (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
 build-front:
     #!/bin/bash
