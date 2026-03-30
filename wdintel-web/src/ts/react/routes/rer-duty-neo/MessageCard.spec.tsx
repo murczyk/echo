@@ -180,7 +180,8 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain("Куп'янськ пеленг");
     expect(view.container.textContent).toContain('Dow_Jones_2');
     expect(view.container.textContent).toContain('153.6250');
-    expect(view.container.textContent).toContain('ЛИМАН ПЕРШИЙ');
+    expect(view.container.textContent).toContain('Повідомлення для перевірки вузького макета');
+    expect(view.container.textContent).toContain('Коментар');
     expect(view.container.textContent).toContain('переміщення');
     expect(view.container.querySelectorAll('a').length).toBeGreaterThanOrEqual(2);
   });
