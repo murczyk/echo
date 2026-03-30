@@ -201,6 +201,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const optionsFreqsRef = useRef<string[]>([]);
   const callsignGraphRequestRef = useRef(0);
+  const reloadRequestRef = useRef(0);
 
   useEffect(() => {
     optionsFreqsRef.current = options.freqs;
@@ -591,6 +592,10 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   );
 
   const reload = useCallback(async () => {
+    const requestId = reloadRequestRef.current + 1;
+    reloadRequestRef.current = requestId;
+    const isStaleReload = () => requestId !== reloadRequestRef.current;
+
     setLoading(true);
     onError('');
 
@@ -646,6 +651,9 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
           getTagsMapForDisplay(),
           getLatestSenders(),
         ]);
+        if (isStaleReload()) {
+          return;
+        }
 
         const nextFrequencies = freqsRsp.freqs.map((item) => item.freq);
         if (shouldRebuildAnalysisRequests(queryState, allFrequencies, nextFrequencies)) {
@@ -669,8 +677,14 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
             ? fetchAnalysisCallsignInfos(callsignsRsp.callsigns.map((item) => item.callsign))
             : Promise.resolve([] as CallsignInfoRes[]),
         ]);
+        if (isStaleReload()) {
+          return;
+        }
         const unitIds = Array.from(new Set(networksRspById.flatMap((network) => network.unitIds ?? [])));
         const unitsRspById = unitIds.length > 0 ? await fetchUnitsByIds({ ids: unitIds }) : { units: [] };
+        if (isStaleReload()) {
+          return;
+        }
 
         const nextGroupInfos: Record<string, SignalGroupEntry> = {};
         groupInfosRsp.forEach((item) => {
@@ -684,6 +698,9 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         callsignInfosRsp.forEach((item) => {
           nextSummaryCallsignsInfo[item.callsign.toLowerCase()] = item;
         });
+        if (isStaleReload()) {
+          return;
+        }
 
         setCounts(nextCounts);
         setMessages(inboxRsp.inboxItems ?? []);
@@ -738,11 +755,16 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
       await loadData(optionsFreqsRef.current);
     } catch (loadError) {
+      if (isStaleReload()) {
+        return;
+      }
       if (!onUnauthorized(loadError)) {
         onError(toErrorMessage(loadError));
       }
     } finally {
-      setLoading(false);
+      if (!isStaleReload()) {
+        setLoading(false);
+      }
     }
   }, [invalidateCallsignGraph, newestFirst, onError, onUnauthorized, queryState]);
 
