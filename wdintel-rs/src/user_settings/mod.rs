@@ -2,6 +2,10 @@ pub mod types;
 
 pub use types::{DutyMessageCardLayout, DutyTagsLayout, UserDutySettingsDto};
 
+use crate::entities::sea_orm_active_enums::{
+    UserSettingsMessageCardLayout as DbMessageCardLayout,
+    UserSettingsTagsLayout as DbTagsLayout,
+};
 use crate::entities::{login, user_settings};
 use crate::error::AppError;
 use crate::h;
@@ -16,15 +20,18 @@ use sea_orm::{
     DatabaseConnection, EntityTrait, QueryFilter,
 };
 
-fn model_to_dto(
-    m: &user_settings::Model,
-) -> Result<UserDutySettingsDto, AppError> {
-    Ok(UserDutySettingsDto {
-        message_card_layout: DutyMessageCardLayout::from_db(
-            &m.message_card_layout,
-        )?,
-        tags_layout: DutyTagsLayout::from_db(&m.tags_layout)?,
-    })
+fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
+    UserDutySettingsDto {
+        message_card_layout: match m.message_card_layout {
+            DbMessageCardLayout::Dividers => DutyMessageCardLayout::Dividers,
+            DbMessageCardLayout::Fluid => DutyMessageCardLayout::Fluid,
+        },
+        tags_layout: match m.tags_layout {
+            DbTagsLayout::Full => DutyTagsLayout::Full,
+            DbTagsLayout::Compact => DutyTagsLayout::Compact,
+            DbTagsLayout::Hidden => DutyTagsLayout::Hidden,
+        },
+    }
 }
 
 #[get("/api/user/settings")]
@@ -40,7 +47,7 @@ pub async fn user_settings_get(
         .await
         .c(h!())?;
     let dto = match row {
-        Some(m) => model_to_dto(&m)?,
+        Some(m) => model_to_dto(&m),
         None => UserDutySettingsDto::default(),
     };
     Ok(Json(dto))
@@ -59,8 +66,15 @@ pub async fn user_settings_put(
     user_settings::Entity::insert(user_settings::ActiveModel {
         id: NotSet,
         login: Set(login_id),
-        message_card_layout: Set(dto.message_card_layout.as_db().to_string()),
-        tags_layout: Set(dto.tags_layout.as_db().to_string()),
+        message_card_layout: Set(match dto.message_card_layout {
+            DutyMessageCardLayout::Dividers => DbMessageCardLayout::Dividers,
+            DutyMessageCardLayout::Fluid => DbMessageCardLayout::Fluid,
+        }),
+        tags_layout: Set(match dto.tags_layout {
+            DutyTagsLayout::Full => DbTagsLayout::Full,
+            DutyTagsLayout::Compact => DbTagsLayout::Compact,
+            DutyTagsLayout::Hidden => DbTagsLayout::Hidden,
+        }),
         updated_at: Set(now),
     })
     .on_conflict(

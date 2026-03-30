@@ -303,3 +303,47 @@ pub enum StatusEnum {
     #[sea_orm(string_value = "failed")]
     Failed,
 }
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "user_settings_message_card_layout"
+)]
+pub enum UserSettingsMessageCardLayout {
+    #[sea_orm(string_value = "dividers")]
+    Dividers,
+    #[sea_orm(string_value = "fluid")]
+    Fluid,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "user_settings_tags_layout"
+)]
+pub enum UserSettingsTagsLayout {
+    #[sea_orm(string_value = "full")]
+    Full,
+    #[sea_orm(string_value = "compact")]
+    Compact,
+    #[sea_orm(string_value = "hidden")]
+    Hidden,
+}

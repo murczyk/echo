@@ -9,13 +9,14 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             r#"
+            create type user_settings_message_card_layout as enum ('dividers', 'fluid');
+            create type user_settings_tags_layout as enum ('full', 'compact', 'hidden');
+
             create table if not exists user_settings (
                 id bigserial primary key,
                 login text not null unique references login(login) on update cascade on delete cascade,
-                message_card_layout text not null default ''
-                    check (message_card_layout in ('', 'dividers', 'fluid')),
-                tags_layout text not null default ''
-                    check (tags_layout in ('', 'full', 'compact', 'hidden')),
+                message_card_layout user_settings_message_card_layout not null default 'fluid',
+                tags_layout user_settings_tags_layout not null default 'compact',
                 updated_at timestamp without time zone not null default (now() at time zone 'utc')
             );
             "#,
@@ -26,8 +27,14 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        db.execute_unprepared(r#"drop table if exists user_settings;"#)
-            .await?;
+        db.execute_unprepared(
+            r#"
+            drop table if exists user_settings;
+            drop type if exists user_settings_tags_layout;
+            drop type if exists user_settings_message_card_layout;
+            "#,
+        )
+        .await?;
         Ok(())
     }
 }
