@@ -1,4 +1,4 @@
-import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import DownloadIcon from '@mui/icons-material/Download';
 import {
   Button,
   Checkbox,
@@ -192,7 +192,7 @@ export function AnalysisReportDialog({ aors, downloadInFlight, open, report, onC
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose}>Закрити</Button>
-        <Button variant="contained" startIcon={<DownloadOutlinedIcon />} onClick={onDownload} disabled={downloadInFlight}>
+        <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight}>
           {downloadInFlight ? 'Готуємо...' : 'Завантажити docx/xlsx'}
         </Button>
       </DialogActions>

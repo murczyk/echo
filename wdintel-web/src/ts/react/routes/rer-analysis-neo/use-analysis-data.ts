@@ -58,10 +58,11 @@ import {
   downloadAnalysisSummaryTableXlsx,
   editAnalysisFreqUnitName,
 } from '../../services/api/analysis';
+import { downloadBlob } from '../../utils/download';
+import { sortAndTakeTopAnalysisCountItems } from './count-items';
 import { buildAnalysisReq, buildInboxReq, pushQueryStateToUrl, shouldRebuildAnalysisRequests } from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { buildNetworkDisplayMap, getMessageTagEnabled } from './message-utils';
-import { downloadBlob } from '../../utils/download';
 import type {
   AnalysisAorEntry,
   AnalysisCountItem,
@@ -142,7 +143,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 function topItems<T>(list: T[], getKey: (item: T) => string, getCount: (item: T) => number): AnalysisCountItem[] {
-  return list.slice(0, 12).map((item) => ({ key: getKey(item), count: getCount(item) }));
+  return sortAndTakeTopAnalysisCountItems(list.map((item) => ({ key: getKey(item), count: getCount(item) })));
 }
 
 const emptyOptions: AnalysisFilterOptions = {

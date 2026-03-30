@@ -1,6 +1,5 @@
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
-import BookmarkBorderOutlinedIcon from '@mui/icons-material/BookmarkBorderOutlined';
 import BookmarkOutlinedIcon from '@mui/icons-material/BookmarkOutlined';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
@@ -48,10 +47,12 @@ function ActionIconButton({
   title,
   icon,
   onClick,
+  selected = false,
 }: {
   title: string;
   icon: JSX.Element;
   onClick: () => void;
+  selected?: boolean;
 }) {
   return (
     <Tooltip title={title}>
@@ -63,8 +64,12 @@ function ActionIconButton({
           minWidth: 30,
           height: 30,
           p: 0,
-          color: 'var(--color-action)',
+          color: selected ? 'primary.main' : 'var(--color-action)',
+          backgroundColor: selected ? 'action.selected' : 'transparent',
           '& .MuiSvgIcon-root': { fontSize: 18 },
+          '&:hover': {
+            backgroundColor: selected ? 'action.selected' : 'action.hover',
+          },
         }}
       >
         {icon}
@@ -163,15 +168,17 @@ function ActionIconsRow({
     />,
     <ActionIconButton
       key="important"
-      title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
+      title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
       icon={<PriorityHighOutlinedIcon fontSize="inherit" />}
       onClick={onImportant}
+      selected={msg.important}
     />,
     <ActionIconButton
       key="bookmark"
-      title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
-      icon={msg.bookmarked ? <BookmarkOutlinedIcon fontSize="inherit" /> : <BookmarkBorderOutlinedIcon fontSize="inherit" />}
+      title={msg.bookmarked ? 'Прибрати з закладок' : 'Додати в закладки'}
+      icon={<BookmarkOutlinedIcon fontSize="inherit" />}
       onClick={onBookmark}
+      selected={msg.bookmarked}
     />,
     onDelete != null ? (
       <ActionIconButton key="delete" title="Видалити" icon={<DeleteOutlineOutlinedIcon fontSize="inherit" />} onClick={onDelete} />
@@ -192,7 +199,7 @@ function ActionIconsRow({
     }
 
     const minInlineWidth = 6 * 30 + 2;
-    const minHeaderWidthForInline = 760;
+    const minHeaderWidthForInline = 680;
     const updateLayout = () => {
       const availableWidth = header?.clientWidth ?? root.clientWidth;
       setStackedLayout(availableWidth < Math.max(minInlineWidth, minHeaderWidthForInline));

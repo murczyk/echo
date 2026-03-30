@@ -1,6 +1,13 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField } from '@mui/material';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
 
+function blurActiveElement() {
+  const activeElement = document.activeElement;
+  if (activeElement instanceof HTMLElement) {
+    activeElement.blur();
+  }
+}
+
 type DeleteConfirmDialogProps = {
   open: boolean;
   onClose: () => void;
@@ -32,7 +39,15 @@ type CommentDialogProps = {
 
 export function CommentDialog({ open, commentText, onCommentTextChange, onClose, onSave }: CommentDialogProps) {
   return (
-    <Dialog open={open} onClose={onClose}>
+    <Dialog
+      open={open}
+      onClose={() => {
+        blurActiveElement();
+        onClose();
+      }}
+      fullWidth
+      maxWidth="md"
+    >
       <DialogTitle>Коментар</DialogTitle>
       <DialogContent>
         <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
@@ -48,8 +63,21 @@ export function CommentDialog({ open, commentText, onCommentTextChange, onClose,
         </Stack>
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={onClose}>Скасувати</Button>
-        <Button variant="contained" onClick={onSave}>
+        <Button
+          onClick={() => {
+            blurActiveElement();
+            onClose();
+          }}
+        >
+          Скасувати
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => {
+            blurActiveElement();
+            onSave();
+          }}
+        >
           Зберегти
         </Button>
       </DialogActions>

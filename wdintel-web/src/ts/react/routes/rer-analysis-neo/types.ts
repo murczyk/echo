@@ -62,11 +62,7 @@ export type AnalysisMapAttrs = {
   palitras: string;
 };
 
-export type AnalysisSidebarSections = {
-  stats: boolean;
-  callsigns: boolean;
-  newCallsigns: boolean;
-};
+export type AnalysisSidebarTab = 'stats' | 'callsigns' | 'newCallsigns';
 
 export type AnalysisPageState = {
   authUserName: string | null;
@@ -112,7 +108,7 @@ export type AnalysisPageState = {
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
   rightPanelOpen: boolean;
-  rightSidebarSections: AnalysisSidebarSections;
+  rightSidebarTab: AnalysisSidebarTab;
   report: AnalysisReportState;
   reportDownloadInFlight: boolean;
   saveInFlight: boolean;
@@ -163,9 +159,9 @@ export type AnalysisPageActions = {
   setCenterTab: (tab: 'messages' | 'map' | 'summary') => void;
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
+  setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
-  toggleRightSidebarSection: (section: keyof AnalysisSidebarSections) => void;
   selectOnlyFreq: (freq: string) => void;
   setSavedFilterName: (name: string) => void;
   showFreqOnMap: (freq: string) => void;

@@ -9,7 +9,7 @@ import {
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
 } from './helpers';
-import type { AnalysisPageViewModel, AnalysisQueryState, AnalysisSidebarSections } from './types';
+import type { AnalysisPageViewModel, AnalysisQueryState, AnalysisSidebarTab } from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
@@ -37,13 +37,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [error, setError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab>('stats');
   const [centerTabPending, startCenterTabTransition] = useTransition();
-  const [rightSidebarSections, setRightSidebarSections] = useState<AnalysisSidebarSections>({
-    stats: false,
-    callsigns: false,
-    newCallsigns: false,
-  });
   const setPageError = useCallback((message: string) => setError(message || null), []);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
@@ -173,15 +169,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setRightPanelOpen((current) => !current);
   }, []);
 
-  const toggleRightSidebarSection = useCallback((section: keyof AnalysisSidebarSections) => {
-    setRightSidebarSections((current) => {
-      const next = { ...current, [section]: !current[section] };
-      const anyEnabled = Object.values(next).some(Boolean);
-      setRightPanelOpen(anyEnabled);
-      return next;
-    });
-  }, []);
-
   const canResetFilters = useMemo(() => !queryStatesEqual(queryState, lastResetState), [lastResetState, queryState]);
 
   return {
@@ -234,7 +221,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     profiles: data.profiles,
     queryState,
     rightPanelOpen,
-    rightSidebarSections,
+    rightSidebarTab,
     report: report.report,
     reportDownloadInFlight: report.reportDownloadInFlight,
     saveInFlight: savedFilters.saveInFlight,
@@ -277,11 +264,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     selectOnlyFreq,
     setCenterTab,
     setNewestFirst,
+    setRightSidebarTab,
     setSavedFilterName: savedFilters.setSavedFilterName,
     showFreqOnMap,
     toggleLeftPanel,
     toggleRightPanel,
-    toggleRightSidebarSection,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,
     updateReport: report.updateReport,

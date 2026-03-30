@@ -44,7 +44,7 @@ export function AnalysisGroupsActivityCard({ groupsActivity, loading, period, on
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-        <Typography id={headingId} variant="subtitle2" component="h2">
+        <Typography id={headingId} variant="subtitle1" component="h2" sx={{ fontWeight: 600 }}>
           Активність по датах
         </Typography>
         <Button size="small" onClick={() => onLoad(period)} disabled={loading}>

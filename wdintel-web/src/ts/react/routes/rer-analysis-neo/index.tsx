@@ -1,7 +1,7 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import { Alert, Backdrop, Box, CircularProgress, FormControlLabel, Paper, Skeleton, Stack, Switch, Tab, Tabs } from '@mui/material';
+import { Alert, Backdrop, Box, Button, CircularProgress, FormControlLabel, Paper, Skeleton, Stack, Switch, Tab, Tabs } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
@@ -13,7 +13,6 @@ import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { AnalysisSidebar } from './components/AnalysisSidebar';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
-import { AnalysisToolbar } from './components/AnalysisToolbar';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 
@@ -31,7 +30,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const mapPanelId = `${centerTabsId}-map-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const showLoadingSkeletons = page.messagesLoading && page.messages.length === 0 && page.counts == null;
-  const rightSidebarDisabled = !Object.values(page.rightSidebarSections).some(Boolean);
   const [mountedTabs, setMountedTabs] = useState<Record<'messages' | 'map' | 'summary', boolean>>({
     messages: true,
     map: false,
@@ -67,11 +65,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
       <PageHeader
         title="Аналіз"
         actions={
-          <AnalysisToolbar
-            onOpenReport={page.openReport}
-            onToggleRightSidebarSection={page.toggleRightSidebarSection}
-            rightSidebarSections={page.rightSidebarSections}
-          />
+          <Button variant="contained" color="primary" onClick={page.openReport} title="Відкрити конструктор звітів" sx={{ height: 44, px: 2 }}>
+            Конструктор звітів
+          </Button>
         }
       />
 
@@ -432,13 +428,11 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 variant="outlined"
                 component="aside"
                 aria-label="Аналітична права секція"
-                aria-disabled={rightSidebarDisabled}
                 sx={{
                   minHeight: 0,
                   height: { xs: 'auto', lg: '100%' },
                   overflow: 'hidden',
-                  display: { xs: rightSidebarDisabled ? 'none' : 'block', lg: 'flex' },
-                  opacity: rightSidebarDisabled ? 0.55 : 1,
+                  display: { xs: 'block', lg: 'flex' },
                 }}
               >
                 <Box
@@ -451,14 +445,13 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     alignItems: 'center',
                     justifyContent: 'center',
                     bgcolor: 'background.paper',
-                    cursor: rightSidebarDisabled ? 'not-allowed' : 'pointer',
+                    cursor: 'pointer',
                   }}
                   role="button"
-                  tabIndex={rightSidebarDisabled ? -1 : 0}
+                  tabIndex={0}
                   aria-label={page.rightPanelOpen ? 'Згорнути праву секцію' : 'Розгорнути праву секцію'}
-                  onClick={rightSidebarDisabled ? undefined : page.toggleRightPanel}
+                  onClick={page.toggleRightPanel}
                   onKeyDown={(event) => {
-                    if (rightSidebarDisabled) return;
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       page.toggleRightPanel();
@@ -477,7 +470,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 >
                   <AnalysisSidebar {...page} />
                 </Box>
-                {!rightSidebarDisabled && !page.rightPanelOpen && showLoadingSkeletons ? (
+                {!page.rightPanelOpen && showLoadingSkeletons ? (
                   <Box sx={{ flex: 1, minWidth: 0, p: 2, display: 'flex', flexDirection: 'column' }}>
                     <Skeleton variant="rounded" sx={{ flex: 1, minHeight: 240 }} />
                   </Box>

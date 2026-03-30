@@ -1,5 +1,7 @@
-import { Box, Stack } from '@mui/material';
-import { useEffect, useRef } from 'react';
+import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
+import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
+import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
+import { Box, Tab, Tabs } from '@mui/material';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
@@ -17,12 +19,13 @@ type Props = Pick<
   | 'correlatedFreqs'
   | 'correlatedFreqsLoading'
   | 'counts'
+  | 'filtersLoading'
   | 'groupsActivity'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
   | 'newCallsigns'
   | 'newCallsignsLoading'
-  | 'rightSidebarSections'
+  | 'rightSidebarTab'
   | 'rightPanelOpen'
   | 'topCallsigns'
   | 'topFreqs'
@@ -34,6 +37,8 @@ type Props = Pick<
     | 'loadCallsignGraph'
     | 'loadCorrelatedFreqs'
     | 'loadGroupsActivity'
+    | 'selectOnlyFreq'
+    | 'setRightSidebarTab'
     | 'toggleCallsignGraphNolimit'
   >;
 
@@ -45,6 +50,7 @@ export function AnalysisSidebar({
   correlatedFreqs,
   correlatedFreqsLoading,
   counts,
+  filtersLoading,
   groupsActivity,
   groupsActivityPeriod,
   groupsActivityLoading,
@@ -54,53 +60,60 @@ export function AnalysisSidebar({
   newCallsigns,
   newCallsignsLoading,
   rightPanelOpen,
-  rightSidebarSections,
+  rightSidebarTab,
+  selectOnlyFreq,
+  setRightSidebarTab,
   topCallsigns,
   topFreqs,
   topLocations,
   topUnits,
   toggleCallsignGraphNolimit,
 }: Props) {
-  const statsRef = useRef<HTMLDivElement | null>(null);
-  const callsignsRef = useRef<HTMLDivElement | null>(null);
-  const newCallsignsRef = useRef<HTMLDivElement | null>(null);
-  const prevSectionsRef = useRef(rightSidebarSections);
-
-  useEffect(() => {
-    const prevSections = prevSectionsRef.current;
-    const activatedSection = (Object.keys(rightSidebarSections) as Array<keyof typeof rightSidebarSections>).find(
-      (section) => rightSidebarSections[section] && !prevSections[section],
-    );
-
-    prevSectionsRef.current = rightSidebarSections;
-
-    if (!activatedSection) return;
-
-    const sectionRefMap = {
-      stats: statsRef,
-      callsigns: callsignsRef,
-      newCallsigns: newCallsignsRef,
-    };
-
-    window.requestAnimationFrame(() => {
-      sectionRefMap[activatedSection].current?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-    });
-  }, [rightSidebarSections]);
-
   return (
-    <Box component="aside" aria-label="Аналітична бічна панель" sx={{ minHeight: 0, height: '100%', overflow: 'auto' }}>
-      <Stack
-        spacing={0}
+    <Box
+      component="aside"
+      aria-label="Аналітична бічна панель"
+      sx={{ minHeight: 0, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+    >
+      <Box sx={{ pt: 1 }}>
+        <Tabs
+          value={rightSidebarTab}
+          onChange={(_event, value) => setRightSidebarTab(value)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          aria-label="Вкладки правої панелі аналізу"
+          sx={{
+            minHeight: 0,
+            width: '100%',
+            px: 2,
+            '& .MuiTabs-flexContainer': { gap: 1 },
+            '& .MuiTab-root': {
+              minHeight: 40,
+              px: 1,
+              py: 0.5,
+              whiteSpace: 'nowrap',
+            },
+            '& .MuiTab-iconWrapper': {
+              mr: 0.75,
+              mb: 0,
+            },
+          }}
+        >
+          <Tab value="stats" icon={<BarChartOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Зведення" />
+          <Tab value="callsigns" icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Позивні" />
+          <Tab value="newCallsigns" icon={<AccountCircleOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Нові" />
+        </Tabs>
+      </Box>
+      <Box
         sx={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
           '& > *': {
-            pb: 2,
-            mb: 2,
             borderBottom: '1px solid',
             borderColor: 'divider',
           },
           '& > *:last-child': {
-            pb: 0,
-            mb: 0,
             borderBottom: 'none',
           },
           '& .MuiPaper-root': {
@@ -111,25 +124,31 @@ export function AnalysisSidebar({
           },
         }}
       >
-        {rightSidebarSections.stats ? <Box ref={statsRef}><AnalysisOverviewCard counts={counts} /></Box> : null}
-        {rightSidebarSections.stats ? (
-          <Box>
-            <AnalysisChartsPanel
-              correlatedFreqs={correlatedFreqs}
-              correlatedFreqsLoading={correlatedFreqsLoading}
-              groupsActivity={groupsActivity}
-              groupsActivityPeriod={groupsActivityPeriod}
-              groupsActivityLoading={groupsActivityLoading}
-              onLoadCorrelatedFreqs={loadCorrelatedFreqs}
-              onLoadGroupsActivity={loadGroupsActivity}
-              topFreqs={topFreqs}
-              topLocations={topLocations}
-              topUnits={topUnits}
-            />
-          </Box>
+        {rightSidebarTab === 'stats' ? (
+          <>
+            <Box>
+              <AnalysisOverviewCard counts={counts} />
+            </Box>
+            <Box>
+              <AnalysisChartsPanel
+                correlatedFreqs={correlatedFreqs}
+                correlatedFreqsLoading={correlatedFreqsLoading}
+                filtersLoading={filtersLoading}
+                groupsActivity={groupsActivity}
+                groupsActivityPeriod={groupsActivityPeriod}
+                groupsActivityLoading={groupsActivityLoading}
+                onLoadCorrelatedFreqs={loadCorrelatedFreqs}
+                onLoadGroupsActivity={loadGroupsActivity}
+                onSelectFreq={selectOnlyFreq}
+                topFreqs={topFreqs}
+                topLocations={topLocations}
+                topUnits={topUnits}
+              />
+            </Box>
+          </>
         ) : null}
-        {rightSidebarSections.callsigns ? (
-          <Box ref={callsignsRef}>
+        {rightSidebarTab === 'callsigns' ? (
+          <Box>
             <AnalysisCallsignsCloudCard items={topCallsigns} />
             <AnalysisCallsignGraphCard
               graph={callsignGraph}
@@ -142,12 +161,12 @@ export function AnalysisSidebar({
             />
           </Box>
         ) : null}
-        {rightSidebarSections.newCallsigns ? (
-          <Box ref={newCallsignsRef}>
+        {rightSidebarTab === 'newCallsigns' ? (
+          <Box>
             <AnalysisNewCallsignsCard loading={newCallsignsLoading} newCallsigns={newCallsigns} />
           </Box>
         ) : null}
-      </Stack>
+      </Box>
     </Box>
   );
 }
