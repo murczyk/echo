@@ -50,7 +50,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         : collapsedPanelWidth;
   const activeTabId = page.centerTab === 'messages' ? messagesTabId : page.centerTab === 'map' ? mapTabId : summaryTabId;
   const centerPanelBusy = useMinDurationBusy(
-    page.centerTabPending || page.loading || page.editorSaveInFlight || page.messageActionLoading,
+    page.centerTabPending || page.editorSaveInFlight || page.messageActionLoading,
     450,
   );
   const gridTemplateColumns = {
@@ -69,7 +69,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         actions={
           <AnalysisToolbar
             onOpenReport={page.openReport}
-            onReset={page.resetFilters}
             onToggleRightSidebarSection={page.toggleRightSidebarSection}
             rightSidebarSections={page.rightSidebarSections}
           />
@@ -411,7 +410,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   ) : null}
                 </Box>
 
-                {centerPanelBusy && !showLoadingSkeletons ? (
+                {centerPanelBusy && !page.loading && !showLoadingSkeletons ? (
                   <Backdrop open aria-label="Завантаження" sx={(theme) => ({ ...loadingOverlayBackdropSx(theme), display: 'flex' })}>
                     <CircularProgress color="inherit" size={30} />
                   </Backdrop>

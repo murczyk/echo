@@ -14,6 +14,11 @@ const analysisFilterFieldSpy = vi.fn();
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Button: (props: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
+    <button type="button" disabled={props.disabled} onClick={props.onClick}>
+      {props.children}
+    </button>
+  ),
   Checkbox: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
     <input
       type="checkbox"
@@ -103,6 +108,7 @@ function buildOptions(): AnalysisPageState['options'] {
 function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPanel>> = {}): ComponentProps<typeof AnalysisFiltersPanel> {
   return {
     isDirty: false,
+    canResetFilters: false,
     counts: null,
     includeOnlyNewFreqs: false,
     loadedSavedFilter: null,
@@ -115,6 +121,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
     applySavedFilter: vi.fn(),
     deleteLoadedSavedFilter: vi.fn(),
     renameExistingSavedFilter: vi.fn(),
+    resetFilters: vi.fn(),
     saveAsNew: vi.fn(),
     setIncludeOnlyNewFreqs: vi.fn(),
     setSavedFilterName: vi.fn(),
@@ -236,5 +243,22 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('неточних збігів: 7');
+  });
+
+  it('renders reset inside the filters panel and disables it when there is nothing to reset', async () => {
+    const resetFilters = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        canResetFilters: false,
+        resetFilters,
+      }),
+    );
+    rendered.push(view);
+
+    const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes('Скинути'));
+    expect(button).toBeTruthy();
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    button?.click();
+    expect(resetFilters).not.toHaveBeenCalled();
   });
 });

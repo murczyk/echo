@@ -80,6 +80,7 @@ type Props = {
 type Result = {
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
+  callsignGraphLoadVersion: number;
   callsignGraphNolimit: boolean;
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoading: boolean;
@@ -186,6 +187,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [correlatedFreqsLoading, setCorrelatedFreqsLoading] = useState(false);
   const [callsignGraph, setCallsignGraph] = useState<NetJsonGraphAndMeta | null>(null);
   const [callsignGraphLoading, setCallsignGraphLoading] = useState(false);
+  const [callsignGraphLoadVersion, setCallsignGraphLoadVersion] = useState(0);
   const [callsignGraphNolimit, setCallsignGraphNolimit] = useState(false);
   const [groupsActivity, setGroupsActivity] = useState<FreqDailyActivityCount | null>(null);
   const [groupsActivityLoading, setGroupsActivityLoading] = useState(false);
@@ -198,10 +200,18 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const optionsFreqsRef = useRef<string[]>([]);
+  const callsignGraphRequestRef = useRef(0);
 
   useEffect(() => {
     optionsFreqsRef.current = options.freqs;
   }, [options.freqs]);
+
+  const invalidateCallsignGraph = useCallback(() => {
+    callsignGraphRequestRef.current += 1;
+    setCallsignGraph(null);
+    setCallsignGraphLoading(false);
+    setCallsignGraphLoadVersion((current) => current + 1);
+  }, []);
 
   const patchMessages = useCallback(
     (updater: (messageId: number, message: InboxMessage) => InboxMessage) => {
@@ -428,25 +438,31 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       return;
     }
 
+    const requestId = callsignGraphRequestRef.current + 1;
+    callsignGraphRequestRef.current = requestId;
     setCallsignGraphLoading(true);
     try {
       const rsp = await fetchAnalysisCallsignGraph({
         ...analysisReq,
         nolimit: callsignGraphNolimit,
       });
+      if (requestId !== callsignGraphRequestRef.current) return;
       setCallsignGraph(rsp);
     } catch (loadError) {
+      if (requestId !== callsignGraphRequestRef.current) return;
       if (!onUnauthorized(loadError)) {
         onError(toErrorMessage(loadError));
       }
     } finally {
+      if (requestId !== callsignGraphRequestRef.current) return;
       setCallsignGraphLoading(false);
     }
   }, [callsignGraphNolimit, onError, onUnauthorized, options.freqs, queryState]);
 
   const toggleCallsignGraphNolimit = useCallback(() => {
+    invalidateCallsignGraph();
     setCallsignGraphNolimit((current) => !current);
-  }, []);
+  }, [invalidateCallsignGraph]);
 
   const loadGroupsActivity = useCallback(async (period?: AnalysisGroupsActivityPeriod) => {
     const analysisReq = buildAnalysisReq(queryState, options.freqs);
@@ -709,6 +725,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       setMapPoints(mapRsp.points ?? []);
       setMapNetworkUnits(mapRsp.networkUnits ?? []);
       setMapOpenMessages([]);
+      invalidateCallsignGraph();
       pushQueryStateToUrl(queryState);
     } catch (loadError) {
       if (!onUnauthorized(loadError)) {
@@ -717,7 +734,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     } finally {
       setLoading(false);
     }
-  }, [newestFirst, onError, onUnauthorized, queryState]);
+  }, [invalidateCallsignGraph, newestFirst, onError, onUnauthorized, queryState]);
 
   const loadAllMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, options.freqs);
@@ -783,6 +800,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   return {
     callsignGraph,
     callsignGraphLoading,
+    callsignGraphLoadVersion,
     callsignGraphNolimit,
     correlatedFreqs,
     correlatedFreqsLoading,

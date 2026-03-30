@@ -8,7 +8,7 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
-import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PriorityHighOutlinedIcon from '@mui/icons-material/PriorityHighOutlined';
@@ -312,6 +312,70 @@ function MetaLine({
   );
 }
 
+function NetworkLocationLine({
+  networkLabel,
+  location,
+}: {
+  networkLabel: string;
+  location: string | null | undefined;
+}) {
+  const hasLocationDetails = location != null && location !== '' && location !== 'Не встановлена';
+
+  return (
+    <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, width: '100%' }}>
+      <PeopleOutlineOutlinedIcon sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Еталонна прив'язка" />
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Box
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'flex-start',
+            gap: 0.5,
+            minWidth: 0,
+            maxWidth: '100%',
+            verticalAlign: 'top',
+          }}
+        >
+        <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
+          {networkLabel}
+        </Typography>
+        {hasLocationDetails ? (
+          <Tooltip title={location} placement="top">
+            <Box
+              component="button"
+              type="button"
+              aria-label={`Показати локацію: ${location}`}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 18,
+                height: 18,
+                p: 0,
+                border: 'none',
+                borderRadius: '50%',
+                bgcolor: 'transparent',
+                color: 'var(--color-icons)',
+                cursor: 'help',
+                flexShrink: 0,
+                '&:hover': {
+                  color: 'var(--message-callsign-color)',
+                },
+                '&:focus-visible': {
+                  outline: '2px solid var(--message-callsign-color)',
+                  outlineOffset: '2px',
+                },
+              }}
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+            </Box>
+          </Tooltip>
+        ) : null}
+        </Box>
+      </Box>
+    </Stack>
+  );
+}
+
 function AnalysisLinks({
   msg,
   mapHref,
@@ -331,49 +395,66 @@ function AnalysisLinks({
       flexWrap={direction === 'row' ? 'wrap' : 'nowrap'}
       alignItems={align}
     >
-      <Stack direction="row" alignItems="center" sx={{ minWidth: 0, gap: '4px' }}>
-        <Link
-          href={buildAnalysisHref(msg, false)}
-          target="_blank"
-          rel="noopener noreferrer"
-          underline="none"
-          color="inherit"
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            fontSize: 12,
-            whiteSpace: 'nowrap',
-            color: 'var(--message-callsign-color)',
-            borderBottom: '2px solid var(--message-callsign-color)',
-            lineHeight: 1.1,
-          }}
-        >
-          Аналіз
-        </Link>
-        <BarChartOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18, flexShrink: 0 }} aria-hidden />
-      </Stack>
-      <Stack direction="row" alignItems="center" sx={{ minWidth: 0, gap: '4px' }}>
-        <Link
-          href={mapHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          underline="none"
-          color="inherit"
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            fontSize: 12,
-            whiteSpace: 'nowrap',
-            color: 'var(--message-callsign-color)',
-            borderBottom: '2px solid var(--message-callsign-color)',
-            lineHeight: 1.1,
-          }}
-        >
-          Карта
-        </Link>
-        <MapOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18, flexShrink: 0 }} aria-hidden />
-      </Stack>
+      <AnalysisActionLink href={buildAnalysisHref(msg, false)} icon={<BarChartOutlinedIcon aria-hidden />} label="Аналіз" />
+      <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />
     </Stack>
+  );
+}
+
+function AnalysisActionLink({
+  href,
+  icon,
+  label,
+}: {
+  href: string;
+  icon: JSX.Element;
+  label: string;
+}) {
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      underline="none"
+      color="inherit"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 0.75,
+        minHeight: 28,
+        px: 1,
+        py: 0.5,
+        borderRadius: 999,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'color-mix(in srgb, var(--color-card) 88%, white 12%)',
+        color: 'text.primary',
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1,
+        whiteSpace: 'nowrap',
+        textDecoration: 'none',
+        transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease',
+        '& .MuiSvgIcon-root': {
+          fontSize: 16,
+          color: 'var(--color-icons)',
+          flexShrink: 0,
+        },
+        '&:hover': {
+          bgcolor: 'action.hover',
+          borderColor: 'var(--message-callsign-color)',
+          color: 'var(--message-callsign-color)',
+          textDecoration: 'none',
+        },
+        '&:focus-visible': {
+          outline: '2px solid var(--message-callsign-color)',
+          outlineOffset: '2px',
+        },
+      }}
+    >
+      {icon}
+      <Box component="span">{label}</Box>
+    </Link>
   );
 }
 
@@ -460,53 +541,9 @@ export function MessageCardHeader({
     />
   ) : null;
 
-  const analysisLink = (
-    <Stack direction="row" alignItems="center" sx={{ minWidth: 0, gap: '4px' }}>
-      <Link
-        href={buildAnalysisHref(msg, false)}
-        target="_blank"
-        rel="noopener noreferrer"
-        underline="none"
-        color="inherit"
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          fontSize: 12,
-          whiteSpace: 'nowrap',
-          color: 'var(--message-callsign-color)',
-          borderBottom: '2px solid var(--message-callsign-color)',
-          lineHeight: 1.1,
-        }}
-      >
-        Аналіз
-      </Link>
-      <BarChartOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18, flexShrink: 0 }} aria-hidden />
-    </Stack>
-  );
+  const analysisLink = <AnalysisActionLink href={buildAnalysisHref(msg, false)} icon={<BarChartOutlinedIcon aria-hidden />} label="Аналіз" />;
 
-  const mapLink = (
-    <Stack direction="row" alignItems="center" sx={{ minWidth: 0, gap: '4px' }}>
-      <Link
-        href={mapHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        underline="none"
-        color="inherit"
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          fontSize: 12,
-          whiteSpace: 'nowrap',
-          color: 'var(--message-callsign-color)',
-          borderBottom: '2px solid var(--message-callsign-color)',
-          lineHeight: 1.1,
-        }}
-      >
-        Карта
-      </Link>
-      <MapOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18, flexShrink: 0 }} aria-hidden />
-    </Stack>
-  );
+  const mapLink = <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />;
 
   const networkLabel =
     networkIds.length > 0
@@ -594,21 +631,8 @@ export function MessageCardHeader({
         <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gridColumn: 3, gridRow: 2 }}>
           {mapLink}
         </Box>
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', gridColumn: 1, gridRow: 3 }}>
-          <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0 }}>
-            <PeopleOutlineOutlinedIcon sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Еталонна прив'язка" />
-            <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-              {networkLabel}
-            </Typography>
-          </Stack>
-        </Box>
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'center', gridColumn: 2, gridRow: 3 }}>
-          <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center" sx={{ minWidth: 0, maxWidth: '100%' }}>
-            <LocationOnOutlinedIcon sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Локація" />
-            <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, textAlign: 'center' }}>
-              {msg.location ?? 'Не встановлена'}
-            </Typography>
-          </Stack>
+        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', gridColumn: '1 / span 2', gridRow: 3 }}>
+          <NetworkLocationLine networkLabel={networkLabel} location={msg.location} />
         </Box>
         <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'flex-end', gridColumn: 3, gridRow: 3 }}>
           {timeDistance != null ? (
@@ -666,21 +690,8 @@ export function MessageCardHeader({
       <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gridColumn: 3, gridRow: 2 }}>
         {mapLink}
       </Box>
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', gridColumn: 1, gridRow: 3 }}>
-        <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0 }}>
-          <PeopleOutlineOutlinedIcon sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Еталонна прив'язка" />
-          <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-            {networkLabel}
-          </Typography>
-        </Stack>
-      </Box>
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'center', gridColumn: 2, gridRow: 3 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center" sx={{ minWidth: 0, maxWidth: '100%' }}>
-          <LocationOnOutlinedIcon sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Локація" />
-          <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, textAlign: 'center' }}>
-            {msg.location ?? 'Не встановлена'}
-          </Typography>
-        </Stack>
+      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', gridColumn: '1 / span 2', gridRow: 3 }}>
+        <NetworkLocationLine networkLabel={networkLabel} location={msg.location} />
       </Box>
       <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'flex-end', gridColumn: 3, gridRow: 3 }}>
         {timeDistance != null ? (

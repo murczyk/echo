@@ -33,19 +33,19 @@ export function AnalysisChartsPanel({
 }: Props) {
   return (
     <Stack spacing={0}>
-      <Box sx={{ pb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock title="Частоти" items={topFreqs} />
       </Box>
-      <Box sx={{ py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock title="Підрозділи" items={topUnits} />
       </Box>
-      <Box sx={{ py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock title="Локації" items={topLocations} />
       </Box>
-      <Box sx={{ py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCorrelatedFreqsCard correlatedFreqs={correlatedFreqs} loading={correlatedFreqsLoading} onLoad={onLoadCorrelatedFreqs} />
       </Box>
-      <Box sx={{ pt: 2 }}>
+      <Box>
         <AnalysisGroupsActivityCard
           groupsActivity={groupsActivity}
           loading={groupsActivityLoading}

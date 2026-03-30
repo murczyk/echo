@@ -12,6 +12,7 @@ type Props = Pick<
   AnalysisPageState,
   | 'callsignGraph'
   | 'callsignGraphLoading'
+  | 'callsignGraphLoadVersion'
   | 'callsignGraphNolimit'
   | 'correlatedFreqs'
   | 'correlatedFreqsLoading'
@@ -38,6 +39,7 @@ type Props = Pick<
 export function AnalysisSidebar({
   callsignGraph,
   callsignGraphLoading,
+  callsignGraphLoadVersion,
   callsignGraphNolimit,
   correlatedFreqs,
   correlatedFreqsLoading,
@@ -130,6 +132,7 @@ export function AnalysisSidebar({
             <AnalysisCallsignGraphCard
               graph={callsignGraph}
               loading={callsignGraphLoading}
+              loadVersion={callsignGraphLoadVersion}
               nolimit={callsignGraphNolimit}
               visible={rightPanelOpen}
               onLoad={loadCallsignGraph}

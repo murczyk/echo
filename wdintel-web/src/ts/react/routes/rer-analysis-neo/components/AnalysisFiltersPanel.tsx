@@ -1,6 +1,7 @@
 import SearchIcon from '@mui/icons-material/Search';
 import {
   Box,
+  Button,
   Checkbox,
   Divider,
   FormControl,
@@ -25,6 +26,7 @@ type Props = Pick<
   AnalysisPageState,
   | 'isDirty'
   | 'counts'
+  | 'canResetFilters'
   | 'includeOnlyNewFreqs'
   | 'loadedSavedFilter'
   | 'options'
@@ -39,6 +41,7 @@ type Props = Pick<
     | 'applySavedFilter'
     | 'deleteLoadedSavedFilter'
     | 'renameExistingSavedFilter'
+    | 'resetFilters'
     | 'saveAsNew'
     | 'setIncludeOnlyNewFreqs'
     | 'setSavedFilterName'
@@ -49,6 +52,7 @@ type Props = Pick<
 export function AnalysisFiltersPanel({
   isDirty,
   counts,
+  canResetFilters,
   includeOnlyNewFreqs,
   loadedSavedFilter,
   options,
@@ -60,6 +64,7 @@ export function AnalysisFiltersPanel({
   applySavedFilter,
   deleteLoadedSavedFilter,
   renameExistingSavedFilter,
+  resetFilters,
   saveAsNew,
   setIncludeOnlyNewFreqs,
   setSavedFilterName,
@@ -90,9 +95,21 @@ export function AnalysisFiltersPanel({
       }}
     >
       <Stack spacing={2}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-          Фільтри
-        </Typography>
+        <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between">
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            Фільтри
+          </Typography>
+          <Button
+            variant="outlined"
+            color="inherit"
+            size="small"
+            onClick={resetFilters}
+            disabled={!canResetFilters}
+            sx={{ flexShrink: 0 }}
+          >
+            Скинути
+          </Button>
+        </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
           <TextField
             label="Дата від"
@@ -218,28 +235,28 @@ export function AnalysisFiltersPanel({
           }
         />
         <AnalysisFilterField
-          label="Metadata CC"
+          label="Метадані CC"
           options={options.metadataCcs}
           disabled={queryState.withoutMetadata}
           value={queryState.metadataCc}
           onChange={(metadataCc) => updateQueryState({ metadataCc })}
         />
         <AnalysisFilterField
-          label="Metadata sender"
+          label="Метадані відправника"
           options={options.metadataSenders}
           disabled={queryState.withoutMetadata}
           value={queryState.metadataSender}
           onChange={(metadataSender) => updateQueryState({ metadataSender })}
         />
         <AnalysisFilterField
-          label="Metadata receiver"
+          label="Метадані отримувача"
           options={options.metadataReceivers}
           disabled={queryState.withoutMetadata}
           value={queryState.metadataReceiver}
           onChange={(metadataReceiver) => updateQueryState({ metadataReceiver })}
         />
         <AnalysisFilterField
-          label="Metadata hash"
+          label="Хеш метаданих"
           options={options.metadataHashes}
           disabled={queryState.withoutMetadata}
           value={queryState.metadataHash}

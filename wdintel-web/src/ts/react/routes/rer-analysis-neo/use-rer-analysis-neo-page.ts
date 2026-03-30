@@ -5,6 +5,7 @@ import {
   buildAnalysisReq,
   createInitialQueryState,
   createResetQueryState,
+  hasMeaningfulFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
 } from './helpers';
@@ -18,11 +19,22 @@ function initState(): AnalysisQueryState {
   return createInitialQueryState(parseQueryStateFromWindow());
 }
 
+function stringArraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function queryStatesEqual(left: AnalysisQueryState, right: AnalysisQueryState): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
-  const [queryState, setQueryState] = useState<AnalysisQueryState>(initState);
+  const [initialQueryState] = useState<AnalysisQueryState>(initState);
+  const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
+  const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
+    hasMeaningfulFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
+  );
   const [centerTab, setCenterTabState] = useState<'messages' | 'map' | 'summary'>('messages');
   const [error, setError] = useState<string | null>(null);
-  const [includeOnlyNewFreqs, setIncludeOnlyNewFreqsState] = useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -108,29 +120,40 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const resetFilters = useCallback(() => {
     const nextState = createResetQueryState();
     setQueryState(nextState);
-    setIncludeOnlyNewFreqsState(false);
+    setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState);
   }, []);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
-      setIncludeOnlyNewFreqsState(value);
-      setQueryState((current) => ({
-        ...current,
-        freqsSelected: value ? data.options.newFreqs : [],
-      }));
+      setQueryState((current) => {
+        const freqsSelected = value ? data.options.newFreqs : [];
+        if (current.includeOnlyNewFreqs === value && stringArraysEqual(current.freqsSelected, freqsSelected)) {
+          return current;
+        }
+        return {
+          ...current,
+          includeOnlyNewFreqs: value,
+          freqsSelected,
+        };
+      });
     },
     [data.options.newFreqs],
   );
 
   useEffect(() => {
-    if (!includeOnlyNewFreqs) return;
-    setQueryState((current) => ({ ...current, freqsSelected: data.options.newFreqs }));
-  }, [data.options.newFreqs, includeOnlyNewFreqs]);
+    if (!queryState.includeOnlyNewFreqs) return;
+    setQueryState((current) => {
+      if (!current.includeOnlyNewFreqs || stringArraysEqual(current.freqsSelected, data.options.newFreqs)) {
+        return current;
+      }
+      return { ...current, freqsSelected: data.options.newFreqs };
+    });
+  }, [data.options.newFreqs, queryState.includeOnlyNewFreqs]);
 
   const selectOnlyFreq = useCallback((freq: string) => {
-    setQueryState((current) => ({ ...current, freqsSelected: [freq] }));
+    setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
   }, []);
 
   const showFreqOnMap = useCallback((freq: string) => {
@@ -138,7 +161,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       setCenterTabState('map');
       setLeftPanelOpen(false);
       setRightPanelOpen(false);
-      setQueryState((current) => ({ ...current, freqsSelected: [freq] }));
+      setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
   }, []);
 
@@ -159,11 +182,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     });
   }, []);
 
+  const canResetFilters = useMemo(() => !queryStatesEqual(queryState, lastResetState), [lastResetState, queryState]);
+
   return {
     authUserName,
     aorEntries: data.aorEntries,
+    canResetFilters,
     callsignGraph: data.callsignGraph,
     callsignGraphLoading: data.callsignGraphLoading,
+    callsignGraphLoadVersion: data.callsignGraphLoadVersion,
     callsignGraphNolimit: data.callsignGraphNolimit,
     centerTab,
     centerTabPending,
@@ -178,7 +205,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
     groupsActivityLoading: data.groupsActivityLoading,
-    includeOnlyNewFreqs,
+    includeOnlyNewFreqs: queryState.includeOnlyNewFreqs,
     inboxReq: data.inboxReq,
     isDirty: savedFilters.isDirty,
     leftPanelOpen,

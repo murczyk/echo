@@ -32,6 +32,7 @@ export type AnalysisAorEntry = {
 export type AnalysisGroupsActivityPeriod = 'selected' | 'month' | 'quarter' | 'year';
 export type AnalysisQueryState = RerAnalysisQueryState & {
   filterTagsOption: TagFilterOption;
+  includeOnlyNewFreqs: boolean;
   reportTagsOnlyThisUnit: boolean;
 };
 
@@ -70,6 +71,7 @@ export type AnalysisSidebarSections = {
 export type AnalysisPageState = {
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];
+  canResetFilters: boolean;
   centerTab: 'messages' | 'map' | 'summary';
   centerTabPending: boolean;
   counts: CountStatsRsp | null;
@@ -87,6 +89,7 @@ export type AnalysisPageState = {
   leftPanelOpen: boolean;
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
+  callsignGraphLoadVersion: number;
   callsignGraphNolimit: boolean;
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoading: boolean;

@@ -7,7 +7,6 @@ import type { AnalysisSidebarSections } from '../types';
 
 type Props = {
   onOpenReport: () => void;
-  onReset: () => void;
   onToggleRightSidebarSection: (section: keyof AnalysisSidebarSections) => void;
   rightSidebarSections: AnalysisSidebarSections;
 };
@@ -61,7 +60,6 @@ function SectionButton({ icon, pressed, label, onClick }: SectionButtonProps) {
 
 export function AnalysisToolbar({
   onOpenReport,
-  onReset,
   onToggleRightSidebarSection,
   rightSidebarSections,
 }: Props) {
@@ -93,9 +91,6 @@ export function AnalysisToolbar({
       </Box>
       <Button variant="outlined" onClick={onOpenReport} title="Відкрити конструктор звітів" sx={{ height: 44, px: 2 }}>
         Конструктор звітів
-      </Button>
-      <Button variant="outlined" color="inherit" onClick={onReset} title="Скинути всі фільтри" sx={{ height: 44, px: 2 }}>
-        Скинути фільтри
       </Button>
     </Stack>
   );

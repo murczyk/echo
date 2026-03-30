@@ -44,6 +44,7 @@ const KNOWN_QUERY_STATE_KEYS = new Set<string>([
   'timeFromStr',
   'dateToStr',
   'timeToStr',
+  'includeOnlyNewFreqs',
   'aorsSelected',
   'groupsSelected',
   'sendersSelected',
@@ -87,6 +88,7 @@ const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
   { key: 'timeFromStr', param: 'timeFrom', type: 'string' },
   { key: 'dateToStr', param: 'dateTo', type: 'string' },
   { key: 'timeToStr', param: 'timeTo', type: 'string' },
+  { key: 'includeOnlyNewFreqs', param: 'onlyNewFreqs', type: 'boolean' },
   { key: 'aorsSelected', param: 'aors', type: 'string[]' },
   { key: 'groupsSelected', param: 'groups', type: 'string[]' },
   { key: 'sendersSelected', param: 'senders', type: 'string[]' },
@@ -127,6 +129,7 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   timeFromStr: '',
   dateToStr: '',
   timeToStr: '',
+  includeOnlyNewFreqs: false,
   aorsSelected: [],
   groupsSelected: [],
   sendersSelected: [],
@@ -215,6 +218,10 @@ export function compactRerAnalysisQueryState(state: unknown): RerAnalysisQuerySt
     if (value === undefined) continue;
     if (isSameValue(value, QUERY_STATE_DEFAULTS[key])) continue;
     compacted[key] = value;
+  }
+
+  if (compacted.includeOnlyNewFreqs === true) {
+    delete compacted.freqsSelected;
   }
 
   return compacted;

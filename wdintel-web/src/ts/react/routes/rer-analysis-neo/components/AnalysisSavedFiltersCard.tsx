@@ -1,4 +1,4 @@
-import { Autocomplete, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Autocomplete, Button, Paper, Stack, TextField, Typography } from '@mui/material';
 
 import type { SavedFilter } from '../../../../../Bindings';
 
@@ -29,8 +29,12 @@ export function AnalysisSavedFiltersCard({
   onSavedFilterNameChange,
   onUpdateExisting,
 }: Props) {
+  const trimmedSavedFilterName = savedFilterName.trim();
+  const hasLoadedFilter = loadedSavedFilter != null;
+  const isRenaming = hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
+  const canUpdateExisting = !saveInFlight && hasLoadedFilter && isDirty;
   const canRenameExisting =
-    !saveInFlight && loadedSavedFilter != null && savedFilterName.trim() !== '' && savedFilterName.trim() !== loadedSavedFilter.name;
+    !saveInFlight && hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
 
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
@@ -41,6 +45,10 @@ export function AnalysisSavedFiltersCard({
           options={savedFilters}
           getOptionLabel={(option) => option.name}
           value={loadedSavedFilter}
+          openText="Відкрити"
+          closeText="Закрити"
+          clearText="Очистити"
+          noOptionsText="Немає варіантів"
           onChange={(_event, next) => onApplySavedFilter(next)}
           renderInput={(params) => <TextField {...params} label="Збережений фільтр" />}
         />
@@ -50,25 +58,34 @@ export function AnalysisSavedFiltersCard({
           value={savedFilterName}
           onChange={(event) => onSavedFilterNameChange(event.target.value)}
         />
+        {loadedSavedFilter ? (
+          <Alert severity={isDirty ? 'warning' : 'info'} sx={{ py: 0.5 }}>
+            {isRenaming
+              ? `Фільтр "${loadedSavedFilter.name}": змінено назву.`
+              : isDirty
+                ? `Фільтр "${loadedSavedFilter.name}": є незбережені зміни.`
+                : `Фільтр "${loadedSavedFilter.name}" відкрито.`}
+          </Alert>
+        ) : null}
         <Stack spacing={1.25} sx={{ width: '100%' }}>
           <Button
-            variant="contained"
-            onClick={onSaveAsNew}
-            disabled={saveInFlight || savedFilterName.trim() === ''}
+            variant={hasLoadedFilter ? 'contained' : 'outlined'}
+            onClick={onUpdateExisting}
+            disabled={!canUpdateExisting}
             fullWidth
           >
-            Зберегти як новий
+            Оновити вибраний
           </Button>
           <Button variant="outlined" onClick={onRenameExisting} disabled={!canRenameExisting} fullWidth>
             Перейменувати
           </Button>
           <Button
-            variant="outlined"
-            onClick={onUpdateExisting}
-            disabled={saveInFlight || loadedSavedFilter == null || !isDirty}
+            variant={hasLoadedFilter ? 'outlined' : 'contained'}
+            onClick={onSaveAsNew}
+            disabled={saveInFlight || trimmedSavedFilterName === ''}
             fullWidth
           >
-            Оновити існуючий
+            Зберегти як новий
           </Button>
           <Button
             variant="outlined"
@@ -82,7 +99,7 @@ export function AnalysisSavedFiltersCard({
         </Stack>
         {loadedSavedFilter ? (
           <Typography variant="caption" color={isDirty ? 'warning.main' : 'text.secondary'}>
-            {savedFilterName.trim() !== loadedSavedFilter.name
+            {trimmedSavedFilterName !== loadedSavedFilter.name
               ? 'Назва відрізняється від вибраного фільтра. Можна перейменувати окремо.'
               : isDirty
                 ? 'Є незбережені зміни відносно вибраного фільтра.'

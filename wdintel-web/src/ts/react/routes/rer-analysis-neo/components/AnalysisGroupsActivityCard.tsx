@@ -27,10 +27,11 @@ function periodLabel(period: AnalysisGroupsActivityPeriod): string {
 export function AnalysisGroupsActivityCard({ groupsActivity, loading, period, onLoad }: Props) {
   const hostRef = useRef<HTMLElement | null>(null);
   const headingId = useId().replace(/:/g, '-');
+  const hasData = Object.keys(groupsActivity?.dataPerDate ?? {}).length > 0;
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host) return;
+    if (!host || !hasData) return;
     host.setAttribute('style', 'display:block;width:100%;height:250px;');
     // use properties to match the web-component contract
     Object.assign(host, {
@@ -38,7 +39,7 @@ export function AnalysisGroupsActivityCard({ groupsActivity, loading, period, on
       period,
       isAnalysis: true,
     });
-  }, [groupsActivity, period]);
+  }, [groupsActivity, hasData, period]);
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
@@ -67,7 +68,13 @@ export function AnalysisGroupsActivityCard({ groupsActivity, loading, period, on
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
         Для графіка використовується перша обрана частота.
       </Typography>
-      {createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })}
+      {hasData ? (
+        createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })
+      ) : (
+        <Typography variant="body2" color="text.secondary">
+          Немає даних для побудови графіка.
+        </Typography>
+      )}
     </Paper>
   );
 }

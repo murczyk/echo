@@ -42,6 +42,54 @@ export function useNeoMuiTheme() {
           fontFamily: neoMuiFontFamily,
         },
         components: {
+          MuiButtonBase: {
+            styleOverrides: {
+              root: {
+                '&.Mui-disabled, &.Mui-disabled:hover': {
+                  cursor: 'not-allowed',
+                },
+                '&.Mui-disabled *': {
+                  cursor: 'not-allowed',
+                },
+              },
+            },
+          },
+          MuiInputBase: {
+            styleOverrides: {
+              root: {
+                '&.Mui-disabled, &.Mui-disabled:hover': {
+                  cursor: 'not-allowed',
+                },
+                '&.Mui-disabled *': {
+                  cursor: 'not-allowed',
+                },
+              },
+            },
+          },
+          MuiFormControl: {
+            styleOverrides: {
+              root: {
+                '&.Mui-disabled, &.Mui-disabled:hover': {
+                  cursor: 'not-allowed',
+                },
+                '&.Mui-disabled *': {
+                  cursor: 'not-allowed',
+                },
+              },
+            },
+          },
+          MuiFormControlLabel: {
+            styleOverrides: {
+              root: {
+                '&.Mui-disabled, &.Mui-disabled:hover': {
+                  cursor: 'not-allowed',
+                },
+                '&.Mui-disabled *': {
+                  cursor: 'not-allowed',
+                },
+              },
+            },
+          },
           MuiTableCell: {
             styleOverrides: {
               root: {

@@ -32,6 +32,7 @@ export function emptyQueryState(): AnalysisQueryState {
     timeFromStr: '',
     dateToStr: '',
     timeToStr: '',
+    includeOnlyNewFreqs: false,
     aorsSelected: [],
     groupsSelected: [],
     sendersSelected: [],
@@ -113,6 +114,25 @@ export function createInitialQueryState(
 
 export function createResetQueryState(now: Date = new Date()): AnalysisQueryState {
   return createInitialQueryState(emptyQueryState(), now);
+}
+
+export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): boolean {
+  const {
+    dateFromStr: _dateFromStr,
+    timeFromStr: _timeFromStr,
+    dateToStr: _dateToStr,
+    timeToStr: _timeToStr,
+    ...rest
+  } = state;
+  const {
+    dateFromStr: _defaultDateFromStr,
+    timeFromStr: _defaultTimeFromStr,
+    dateToStr: _defaultDateToStr,
+    timeToStr: _defaultTimeToStr,
+    ...defaultRest
+  } = emptyQueryState();
+
+  return JSON.stringify(rest) !== JSON.stringify(defaultRest);
 }
 
 export function pushQueryStateToUrl(state: AnalysisQueryState) {
@@ -255,6 +275,7 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
   const req = savedFilter.req;
   return normalizeQueryState({
     ...current,
+    includeOnlyNewFreqs: false,
     aorsSelected: (req.selectedAors ?? []).map(String),
     groupsSelected: req.selectedGroups ?? [],
     sendersSelected: req.selectedSenders ?? [],
@@ -285,8 +306,87 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
   });
 }
 
+function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQueryState {
+  const normalized = { ...req };
+
+  if (normalized.onlyWithMetadata == null) {
+    normalized.onlyWithMetadata = false;
+  }
+  if (normalized.withoutMetadata == null) {
+    normalized.withoutMetadata = false;
+  }
+  if (normalized.withoutNetwork == null) {
+    normalized.withoutNetwork = false;
+  }
+  if (normalized.orWithExtendedForm == null) {
+    normalized.orWithExtendedForm = false;
+  }
+  if (normalized.orBookmarked == null) {
+    normalized.orBookmarked = false;
+  }
+  if (normalized.orImportant == null) {
+    normalized.orImportant = false;
+  }
+  if (normalized.orWithCoords == null) {
+    normalized.orWithCoords = false;
+  }
+  if (normalized.includePelengLocations == null) {
+    normalized.includePelengLocations = true;
+  }
+  if (normalized.filterTagsOption == null) {
+    normalized.filterTagsOption = 'OneOfTags';
+  }
+  if (normalized.withoutModelTags == null) {
+    normalized.withoutModelTags = false;
+  }
+  if (normalized.reportTagsOnlyThisUnit == null) {
+    normalized.reportTagsOnlyThisUnit = false;
+  }
+
+  return normalizeQueryState({
+    ...emptyQueryState(),
+    includeOnlyNewFreqs: false,
+    aorsSelected: (normalized.selectedAors ?? []).map(String),
+    groupsSelected: normalized.selectedGroups ?? [],
+    sendersSelected: normalized.selectedSenders ?? [],
+    freqsSelected: normalized.selectedFreqs ?? [],
+    callsignsSelected: normalized.selectedCallsigns ?? [],
+    unitsSelected: normalized.selectedUnits ?? [],
+    locationsSelected: normalized.selectedLocations ?? [],
+    postsSelected: normalized.selectedPosts ?? [],
+    networksSelected: (normalized.selectedNetworks ?? []).map(String),
+    withoutNetwork: normalized.withoutNetwork,
+    orWithExtendedForm: normalized.orWithExtendedForm,
+    orBookmarked: normalized.orBookmarked,
+    orImportant: normalized.orImportant,
+    orWithCoords: normalized.orWithCoords,
+    search: normalized.search ?? '',
+    metadataCc: normalized.metadataCc ?? [],
+    metadataSender: normalized.metadataSender ?? [],
+    metadataReceiver: normalized.metadataReceiver ?? [],
+    metadataHash: normalized.metadataHash ?? [],
+    onlyWithMetadata: normalized.onlyWithMetadata,
+    withoutMetadata: normalized.withoutMetadata,
+    tags: normalized.selectedTags ?? [],
+    includePelengLocations: normalized.includePelengLocations,
+    unitsExactMatchOnly: normalized.unitsExactMatchOnly ?? null,
+    withoutModelTags: normalized.withoutModelTags,
+    filterTagsOption: normalized.filterTagsOption,
+    reportTagsOnlyThisUnit: normalized.reportTagsOnlyThisUnit,
+    dateFromStr: formatLocalDateInputValue(new Date(normalized.sinceDateInclusiveMs)),
+    timeFromStr: formatLocalTimeInputValue(new Date(normalized.sinceDateInclusiveMs)),
+    dateToStr: formatLocalDateInputValue(new Date(normalized.tillDateNoninclusiveMs)),
+    timeToStr: formatLocalTimeInputValue(new Date(normalized.tillDateNoninclusiveMs)),
+  });
+}
+
 export function queryStateMatchesSavedFilter(state: AnalysisQueryState, savedFilter: SavedFilter, allFrequencies: string[] = []): boolean {
-  const normalizedState = buildAnalysisReq(state, allFrequencies);
-  if (normalizedState == null) return false;
-  return JSON.stringify(normalizedState) === JSON.stringify(savedFilter.req);
+  const currentReq = buildAnalysisReq(state, allFrequencies);
+  if (currentReq == null) return false;
+
+  const normalizedState = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(currentReq), allFrequencies);
+  const normalizedSaved = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(savedFilter.req), allFrequencies);
+  if (normalizedState == null || normalizedSaved == null) return false;
+
+  return JSON.stringify(normalizedState) === JSON.stringify(normalizedSaved);
 }

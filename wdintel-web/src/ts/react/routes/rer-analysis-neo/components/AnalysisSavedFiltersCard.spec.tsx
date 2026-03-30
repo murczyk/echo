@@ -2,7 +2,6 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
-import { act } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SavedFilter } from '../../../../../Bindings';
 
 vi.mock('@mui/material', () => ({
+  Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Autocomplete: (props: {
     options: SavedFilter[];
     value: SavedFilter | null;
@@ -170,9 +170,10 @@ describe('AnalysisSavedFiltersCard', () => {
 
     expect(getButton(view.container, 'Зберегти як новий').disabled).toBe(false);
     expect(getButton(view.container, 'Перейменувати').disabled).toBe(true);
-    expect(getButton(view.container, 'Оновити існуючий').disabled).toBe(true);
+    expect(getButton(view.container, 'Оновити вибраний').disabled).toBe(true);
     expect(getButton(view.container, 'Видалити').disabled).toBe(false);
     expect(view.container.textContent).toContain('Поточний стан збігається із вибраним фільтром.');
+    expect(view.container.textContent).toContain('Зберегти як новий');
   });
 
   it('wires saved-filter selection into the apply callback', async () => {
@@ -227,7 +228,7 @@ describe('AnalysisSavedFiltersCard', () => {
     const onDeleteLoadedSavedFilter = vi.fn();
     const view = await renderComponent(
       buildProps({
-        savedFilterName: 'New name',
+        savedFilterName: 'Base filter',
         loadedSavedFilter: buildSavedFilter(1, 'Base filter'),
         isDirty: true,
         onSaveAsNew,
@@ -237,12 +238,26 @@ describe('AnalysisSavedFiltersCard', () => {
     );
     rendered.push(view);
 
+    expect(view.container.textContent).toContain('Фільтр "Base filter": є незбережені зміни.');
+
+    await click(getButton(view.container, 'Оновити вибраний'));
     await click(getButton(view.container, 'Зберегти як новий'));
-    await click(getButton(view.container, 'Оновити існуючий'));
     await click(getButton(view.container, 'Видалити'));
 
     expect(onSaveAsNew).toHaveBeenCalledTimes(1);
     expect(onUpdateExisting).toHaveBeenCalledTimes(1);
     expect(onDeleteLoadedSavedFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains the rename flow separately when only the name changed', async () => {
+    const view = await renderComponent(
+      buildProps({
+        savedFilterName: 'Changed name',
+        loadedSavedFilter: buildSavedFilter(1, 'Base filter'),
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Фільтр "Base filter": змінено назву.');
   });
 });

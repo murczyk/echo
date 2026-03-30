@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAnalysisReq, buildInboxReq, createInitialQueryState, createResetQueryState, emptyQueryState, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
+import {
+  buildAnalysisReq,
+  buildInboxReq,
+  createInitialQueryState,
+  createResetQueryState,
+  emptyQueryState,
+  hasMeaningfulFiltersBeyondDateRange,
+  queryStateFromSavedFilter,
+  queryStateMatchesSavedFilter,
+} from './helpers';
 import { combineDateTimeToMs, isValidDateInput } from '../../utils/misc';
 
 describe('rer-analysis-neo helpers', () => {
@@ -149,6 +158,40 @@ describe('rer-analysis-neo helpers', () => {
     ).toBe(false);
   });
 
+  it('treats backend nulls as equal to frontend defaults for saved filters', () => {
+    const state = {
+      ...emptyQueryState(),
+      dateFromStr: '2026-03-19',
+      timeFromStr: '00:00',
+      dateToStr: '2026-03-20',
+      timeToStr: '12:00',
+      includePelengLocations: true,
+      filterTagsOption: 'OneOfTags' as const,
+    };
+
+    const req = buildAnalysisReq(state)!;
+    const savedFilter = {
+      id: 1,
+      name: 'Saved',
+      req: {
+        ...req,
+        orWithExtendedForm: null,
+        orBookmarked: null,
+        orImportant: null,
+        orWithCoords: null,
+        withoutNetwork: null,
+        onlyWithMetadata: null,
+        withoutMetadata: null,
+        includePelengLocations: null,
+        filterTagsOption: null,
+        withoutModelTags: null,
+        reportTagsOnlyThisUnit: null,
+      },
+    };
+
+    expect(queryStateMatchesSavedFilter(state, savedFilter)).toBe(true);
+  });
+
   it('fills missing initial date range from local time defaults', () => {
     const now = new Date(2026, 2, 20, 12, 34, 56);
 
@@ -177,5 +220,28 @@ describe('rer-analysis-neo helpers', () => {
       tags: [],
       reportTagsOnlyThisUnit: false,
     });
+  });
+
+  it('treats a plain date range as not enough to enable reset by itself', () => {
+    expect(
+      hasMeaningfulFiltersBeyondDateRange({
+        ...emptyQueryState(),
+        dateFromStr: '2026-03-20',
+        timeFromStr: '00:34',
+        dateToStr: '2026-03-20',
+        timeToStr: '12:34',
+      }),
+    ).toBe(false);
+
+    expect(
+      hasMeaningfulFiltersBeyondDateRange({
+        ...emptyQueryState(),
+        dateFromStr: '2026-03-20',
+        timeFromStr: '00:34',
+        dateToStr: '2026-03-20',
+        timeToStr: '12:34',
+        groupsSelected: ['alpha'],
+      }),
+    ).toBe(true);
   });
 });
