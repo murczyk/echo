@@ -11,11 +11,10 @@ use crate::location::utils;
 use crate::location::utils::to_location_list;
 use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::{collect_groups, CollectGroupsOpts};
-use crate::palitra::types::PalitraAccess;
+use crate::palitra::bl::collect_accessible_palitra_ids;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
-use crate::rer_importer::points::build_palitra_access_filter;
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
@@ -433,11 +432,12 @@ async fn get_palitra_points_by_message(
     login: String,
     message_ids: Vec<i64>,
 ) -> Result<HashMap<i64, Vec<CNPoint>>, AppError> {
-    let access = PalitraAccess::ByLogins {
-        logins: vec![login],
-    };
-    let exact = false;
-    let palitra_cond = build_palitra_access_filter(access, exact);
+    let palitra_ids = collect_accessible_palitra_ids(login, dbx)
+        .await
+        .context(h!())?;
+    if palitra_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let palitra_points = sigint_inbox_item_point_token::Entity::find()
         .filter(
             sigint_inbox_item_point_token::Column::SigintInboxItemId
@@ -448,7 +448,7 @@ async fn get_palitra_points_by_message(
             sigint_inbox_item_point_token::Relation::Palitra.def(),
         )
         .filter(palitra::Column::Deleted.eq(false))
-        .filter(palitra_cond)
+        .filter(palitra::Column::Id.eq_any(palitra_ids))
         .select_only()
         .column(sigint_inbox_item_point_token::Column::SigintInboxItemId)
         .column(sigint_inbox_item_point_token::Column::PointTokens)

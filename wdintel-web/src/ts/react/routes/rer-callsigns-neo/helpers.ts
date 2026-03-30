@@ -77,7 +77,9 @@ export function getExportPermission(user: User | null): ExportPermission {
   const roles = new Set(user?.roles ?? []);
   return {
     canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
-    canExport: roles.has('Admin') || roles.has('UnitsEditor'),
+    canExport:
+      roles.has('Rer')
+      && (roles.has('Admin') || roles.has('UnitsEditor')),
   };
 }
 
@@ -85,7 +87,9 @@ export function getExportPermissionFromRoles(rolesList: string[]): ExportPermiss
   const roles = new Set(rolesList);
   return {
     canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
-    canExport: roles.has('Admin') || roles.has('UnitsEditor'),
+    canExport:
+      roles.has('Rer')
+      && (roles.has('Admin') || roles.has('UnitsEditor')),
   };
 }
 

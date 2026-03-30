@@ -249,7 +249,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     }));
     next.sort((a, b) => a.id.localeCompare(b.id));
     return next;
-  }, [profiles]);
+  }, [profiles, messageFeeds]);
 
   const senderOptionsStableRef = useRef(senderOptions);
   const senderOptionsStable =
