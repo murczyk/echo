@@ -71,6 +71,39 @@ function parseDateFromSearchParams(searchParams: URLSearchParams, defaultDate?: 
   return defaultDate || dayjs().startOf('D');
 }
 
+function areColumnFiltersEqual(
+  left: MRT_ColumnFiltersState,
+  right: MRT_ColumnFiltersState,
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((item, index) => {
+    const next = right[index];
+    if (!next) {
+      return false;
+    }
+
+    return item.id === next.id && JSON.stringify(item.value) === JSON.stringify(next.value);
+  });
+}
+
+function areSortingStatesEqual(left: MRT_SortingState, right: MRT_SortingState): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((item, index) => {
+    const next = right[index];
+    if (!next) {
+      return false;
+    }
+
+    return item.id === next.id && item.desc === next.desc;
+  });
+}
+
 type TableStateContextValue = {
   globalFilter: string;
   onChangeGlobalFilter: (value: Updater<string>) => void;
@@ -526,12 +559,12 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     }
 
     const nextColumnFilters = parseColumnFiltersFromSearchParams(searchParams);
-    if (!objectsEqual(columnFilters, nextColumnFilters)) {
+    if (!areColumnFiltersEqual(columnFilters, nextColumnFilters)) {
       setColumnFilters(nextColumnFilters);
     }
 
     const nextSorting = parseSortingFromSearchParams(searchParams, props.defaultSorting ?? []);
-    if (!objectsEqual(sorting, nextSorting)) {
+    if (!areSortingStatesEqual(sorting, nextSorting)) {
       setSorting(nextSorting);
     }
   }, [columnFilters, date, globalFilter, props.defaultDate, props.defaultSorting, searchParams, sorting]);

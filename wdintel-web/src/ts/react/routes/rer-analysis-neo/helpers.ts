@@ -144,9 +144,11 @@ export function pushQueryStateToUrl(state: AnalysisQueryState) {
 }
 
 export function normalizeQueryState(state: AnalysisQueryState): AnalysisQueryState {
+  let next = state;
+
   if (state.withoutMetadata) {
-    return {
-      ...state,
+    next = {
+      ...next,
       metadataCc: [],
       metadataSender: [],
       metadataReceiver: [],
@@ -155,15 +157,15 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
     };
   }
 
-  if (state.onlyWithMetadata) {
-    return { ...state, withoutMetadata: false };
+  if (next.onlyWithMetadata) {
+    next = { ...next, withoutMetadata: false };
   }
 
-  if (state.withoutNetwork) {
-    return { ...state, networksSelected: [] };
+  if (next.withoutNetwork) {
+    next = { ...next, networksSelected: [] };
   }
 
-  return state;
+  return next;
 }
 
 export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: string[] = []): AnalysisStatsReq | null {

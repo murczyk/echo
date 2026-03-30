@@ -38,6 +38,28 @@ describe('rer-analysis-neo helpers', () => {
     });
   });
 
+  it('drops selected networks when withoutNetwork is enabled together with metadata filters', () => {
+    const state = {
+      ...emptyQueryState(),
+      dateFromStr: '2026-03-19',
+      timeFromStr: '00:00',
+      dateToStr: '2026-03-20',
+      timeToStr: '12:00',
+      networksSelected: ['12'],
+      withoutNetwork: true,
+      withoutMetadata: true,
+      metadataCc: ['cc-1'],
+    };
+
+    expect(buildAnalysisReq(state)).toMatchObject({
+      selectedNetworks: null,
+      withoutNetwork: true,
+      withoutMetadata: true,
+      onlyWithMetadata: false,
+      metadataCc: null,
+    });
+  });
+
   it('expands selected freqs with adjacent frequencies in range', () => {
     const state = {
       ...emptyQueryState(),

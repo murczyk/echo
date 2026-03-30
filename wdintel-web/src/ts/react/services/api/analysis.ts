@@ -2,8 +2,6 @@ import type {
   AnalysisStatsReq,
   EditFreqUnitNameReq,
   InboxSubmitReq,
-  ListPostsReq,
-  Post,
   ReportPreviewReq,
   ReportType,
   ReoReportFileType,
@@ -74,12 +72,13 @@ type NetworkStatsRsp = { networks: AnalysisStatsNetwork[] };
 type AreaOfResponsibilityStatsRsp = { aors: AnalysisStatsAor[]; aorNames: AreaOfResponsibilityEntry[] };
 type MessageIdsRsp = { messages: Array<[number, InboxMessage]> };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
-type PostListRsp = Post[];
 
 function normalizeReq(req: AnalysisStatsReq): AnalysisStatsReq {
+  let normalized = req;
+
   if (req.withoutMetadata) {
-    return {
-      ...req,
+    normalized = {
+      ...normalized,
       metadataCc: null,
       metadataSender: null,
       metadataReceiver: null,
@@ -88,15 +87,15 @@ function normalizeReq(req: AnalysisStatsReq): AnalysisStatsReq {
     };
   }
 
-  if (req.onlyWithMetadata) {
-    return { ...req, withoutMetadata: false };
+  if (normalized.onlyWithMetadata) {
+    normalized = { ...normalized, withoutMetadata: false };
   }
 
-  if (req.withoutNetwork) {
-    return { ...req, selectedNetworks: null };
+  if (normalized.withoutNetwork) {
+    normalized = { ...normalized, selectedNetworks: null };
   }
 
-  return req;
+  return normalized;
 }
 
 function analysisStatsReqBody(req: AnalysisStatsReq) {
@@ -164,18 +163,8 @@ export async function fetchAnalysisFreqs(req: AnalysisStatsReq): Promise<FreqSta
   return postAnalysisStats<FreqStatsRsp>('/api/rer/analysis/stats/freqs', req);
 }
 
-export async function fetchAnalysisPosts(_req: AnalysisStatsReq): Promise<PostStatsRsp> {
-  const body: ListPostsReq = {
-    sortBy: 'PostNameAsc',
-  };
-  const raw = await postJson<unknown>('/api/sigint/posts', transformCamelToSnake(body));
-  const posts = transformSnakeToCamel<PostListRsp>(raw) ?? [];
-  return {
-    posts: posts.map((item) => ({
-      post: item.name,
-      count: 0,
-    })),
-  };
+export async function fetchAnalysisPosts(req: AnalysisStatsReq): Promise<PostStatsRsp> {
+  return postAnalysisStats<PostStatsRsp>('/api/rer/analysis/stats/posts', req);
 }
 
 export async function fetchAnalysisCallsigns(req: AnalysisStatsReq): Promise<CallsignStatsRsp> {
