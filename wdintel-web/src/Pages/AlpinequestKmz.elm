@@ -209,7 +209,7 @@ update msg model =
                     }
               }
             , E.sendCmd <|
-                Api.alpine_convert (UploadAlpinequestGeotiffFileDone file) file "geotiff"
+                Api.alpine_convert (UploadAlpinequestGeotiffFileDone file) file "cog"
             )
 
         UploadAlpinequestGeotiffFileDone _ (Err e) ->
@@ -251,7 +251,7 @@ update msg model =
             ( model
             , E.sendCmd <|
                 Download.bytes
-                    (ensureGeotiffName (File.name file))
+                    (ensureCogName (File.name file))
                     "image/tiff"
                     bs
             )
@@ -279,17 +279,17 @@ ensureKmzName name =
         name ++ ".kmz"
 
 
-ensureGeotiffName : String -> String
-ensureGeotiffName name =
+ensureCogName : String -> String
+ensureCogName name =
     let
         lowerName =
             String.toLower name
     in
-    if String.endsWith ".tif" lowerName || String.endsWith ".tiff" lowerName then
+    if String.endsWith ".cog" lowerName then
         name
 
     else
-        name ++ ".tif"
+        name ++ ".cog"
 
 
 subscriptions : Model -> Sub Msg
@@ -378,8 +378,8 @@ view _ _ _ model =
                         , warning = Just "ⓘ Формат .pgd наразі підтримується в експериментальному режимі"
                         }
                     , conversionBlock
-                        { heading = Just "pgd в geotiff"
-                        , description = "Радимо конвертувати файли .pgd у формат GeoTIFF, щоб використовувати їх як підкладку в шарах Delta. Якщо потрібна інструкція з додавання GeoTIFF до шару Delta, зверніться до підтримки Ехо."
+                        { heading = Just ".pgd в COG (cloud-optimised Geotiff)"
+                        , description = "Радимо конвертувати файли .pgd у формат COG (Cloud-Optimized GeoTIFF), щоб використовувати їх як підкладку в шарах Delta. Якщо потрібна інструкція з додавання GeoTIFF до шару Delta, зверніться до підтримки Ехо."
                         , conversionModel = model.geotiff
                         , onUpload = UploadAlpinequestGeotiffFile
                         , showSupportedFormats = False

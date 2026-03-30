@@ -416,6 +416,7 @@ async fn download_file(
 
 fn file_extension(output_format: &str) -> &'static str {
     match output_format {
+        "cog" => "cog",
         "geotiff" => "tif",
         _ => "kmz",
     }
