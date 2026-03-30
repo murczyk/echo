@@ -264,6 +264,23 @@ function syncCallsignsStateToUrl(
   });
 }
 
+function areCallsignFiltersEqual(left: CallsignsFilterState, right: CallsignsFilterState): boolean {
+  return left.filterText === right.filterText
+    && left.filterCallsign === right.filterCallsign
+    && left.filterPosition === right.filterPosition
+    && left.filterFullName === right.filterFullName
+    && left.filterComment === right.filterComment
+    && left.filterUnit === right.filterUnit
+    && left.filterDeveloping === right.filterDeveloping
+    && left.isIgnoringDateFilter === right.isIgnoringDateFilter
+    && left.fromDateTimeLocal === right.fromDateTimeLocal
+    && left.toDateTimeLocal === right.toDateTimeLocal;
+}
+
+function areCallsignSortStatesEqual(left: CallsignsSortState, right: CallsignsSortState): boolean {
+  return left.column === right.column && left.direction === right.direction;
+}
+
 function decodeHierarchyParam(value: string | null): string | null {
   if (value == null) return null;
   return value === EMPTY_HIERARCHY_PARAM ? '' : value;
@@ -608,6 +625,25 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   useEffect(() => {
     syncCallsignsStateToUrl(filters, sort, sidebarOpen, selectedSidebarUnitFilter);
   }, [filters, sort, sidebarOpen, selectedSidebarUnitFilter]);
+
+  useEffect(() => {
+    function onPopState() {
+      const nextFilters = readInitialCallsignsFiltersFromUrl();
+      const nextSort = readInitialCallsignsSortFromUrl();
+      const nextSidebarOpen = readInitialSidebarOpenFromUrl();
+      const nextSelectedSidebarUnitFilter = readInitialSidebarFilterFromUrl();
+
+      setFilters((prev) => (areCallsignFiltersEqual(prev, nextFilters) ? prev : nextFilters));
+      setSort((prev) => (areCallsignSortStatesEqual(prev, nextSort) ? prev : nextSort));
+      setSidebarOpen((prev) => (prev === nextSidebarOpen ? prev : nextSidebarOpen));
+      setSelectedSidebarUnitFilter((prev) =>
+        areSidebarFiltersEqual(prev, nextSelectedSidebarUnitFilter) ? prev : nextSelectedSidebarUnitFilter,
+      );
+    }
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));

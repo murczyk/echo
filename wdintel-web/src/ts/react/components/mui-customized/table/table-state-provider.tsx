@@ -25,6 +25,52 @@ function getCurrentSearchParamsObject(): SearchParams {
   return Object.fromEntries(Array.from(new URLSearchParams(window.location.search).entries()));
 }
 
+function parseColumnFiltersFromSearchParams(
+  searchParams: URLSearchParams,
+): MRT_ColumnFiltersState {
+  const columnFiltersFromParams = searchParams.get('columnFilters');
+  if (!columnFiltersFromParams) return [];
+
+  try {
+    return JSON.parse(columnFiltersFromParams).map(({ id, value }: { id: string; value: any }) => ({
+      id,
+      value,
+    }));
+  } catch (error) {
+    return [];
+  }
+}
+
+function parseSortingFromSearchParams(
+  searchParams: URLSearchParams,
+  defaultSorting: MRT_SortingState,
+): MRT_SortingState {
+  const sortByFromParams = searchParams.get('sorting');
+  if (!sortByFromParams) return defaultSorting;
+
+  try {
+    return JSON.parse(sortByFromParams).map(({ id, desc }: { id: string; desc: any }) => ({
+      id,
+      desc,
+    }));
+  } catch (error) {
+    return defaultSorting;
+  }
+}
+
+function parseGlobalFilterFromSearchParams(searchParams: URLSearchParams): string {
+  return searchParams.get('globalFilter') || '';
+}
+
+function parseDateFromSearchParams(searchParams: URLSearchParams, defaultDate?: Dayjs): Dayjs | null {
+  const dateFromParams = searchParams.get('date');
+  if (dateFromParams) {
+    return dayjs(dateFromParams);
+  }
+
+  return defaultDate || dayjs().startOf('D');
+}
+
 type TableStateContextValue = {
   globalFilter: string;
   onChangeGlobalFilter: (value: Updater<string>) => void;
@@ -138,41 +184,17 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   const [tableInstance, setTableInstance] = useState<MRT_TableInstance<any> | null>(null);
 
   const [date, setDate] = useState<Dayjs | null>(() => {
-    const dateFromParams = searchParams.get('date');
-    if (dateFromParams) {
-      return dayjs(dateFromParams);
-    }
-    return props.defaultDate || dayjs().startOf('D');
+    return parseDateFromSearchParams(searchParams, props.defaultDate);
   });
 
-  const [columnFilters, setColumnFilters] = useState<MRT_ColumnFiltersState>(() => {
-    const columnFiltersFromParams = searchParams.get('columnFilters');
-    if (!columnFiltersFromParams) return [];
-
-    try {
-      return JSON.parse(columnFiltersFromParams).map(({ id, value }: { id: string; value: any }) => ({
-        id,
-        value,
-      }));
-    } catch (error) {
-      return [];
-    }
-  });
-  const [sorting, setSorting] = useState<MRT_SortingState>(() => {
-    const sortByFromParams = searchParams.get('sorting');
-    if (!sortByFromParams) return props.defaultSorting ?? [];
-
-    try {
-      return JSON.parse(sortByFromParams).map(({ id, desc }: { id: string; desc: any }) => ({
-        id,
-        desc,
-      }));
-    } catch (error) {
-      return props.defaultSorting ?? [];
-    }
-  });
+  const [columnFilters, setColumnFilters] = useState<MRT_ColumnFiltersState>(() =>
+    parseColumnFiltersFromSearchParams(searchParams),
+  );
+  const [sorting, setSorting] = useState<MRT_SortingState>(() =>
+    parseSortingFromSearchParams(searchParams, props.defaultSorting ?? []),
+  );
   const [density, setDensity] = useState<MRT_DensityState>('compact');
-  const [globalFilter, setGlobalFilter] = useState(() => searchParams.get('globalFilter') || '');
+  const [globalFilter, setGlobalFilter] = useState(() => parseGlobalFilterFromSearchParams(searchParams));
   const [columnSizing, setColumnSizing] = useState<MRT_ColumnSizingState>(() => getInitialColumnSizing());
   const [enableColumnOrdering, setEnableColumnOrdering] = useState<boolean>(() => getInitialEnableColumnOrdering());
   const [enableColumnResizing, setEnableColumnResizing] = useState<boolean>(() => getInitialEnableColumnResizing());
@@ -487,6 +509,32 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       setDefaultColumnVisibility(defaultVisibilityValue);
     }
   }
+
+  useEffect(() => {
+    const nextDate = parseDateFromSearchParams(searchParams, props.defaultDate);
+    if (
+      (date == null && nextDate != null) ||
+      (date != null && nextDate == null) ||
+      (date != null && nextDate != null && !date.isSame(nextDate, 'date'))
+    ) {
+      setDate(nextDate);
+    }
+
+    const nextGlobalFilter = parseGlobalFilterFromSearchParams(searchParams);
+    if (globalFilter !== nextGlobalFilter) {
+      setGlobalFilter(nextGlobalFilter);
+    }
+
+    const nextColumnFilters = parseColumnFiltersFromSearchParams(searchParams);
+    if (!objectsEqual(columnFilters, nextColumnFilters)) {
+      setColumnFilters(nextColumnFilters);
+    }
+
+    const nextSorting = parseSortingFromSearchParams(searchParams, props.defaultSorting ?? []);
+    if (!objectsEqual(sorting, nextSorting)) {
+      setSorting(nextSorting);
+    }
+  }, [columnFilters, date, globalFilter, props.defaultDate, props.defaultSorting, searchParams, sorting]);
 
   return (
     <TableStateContext.Provider
