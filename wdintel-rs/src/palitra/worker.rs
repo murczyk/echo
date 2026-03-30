@@ -17,6 +17,7 @@ use tokio::sync::RwLock;
 
 const PALITRA_WORKER_MESSAGES_PER_BATCH: usize = 50;
 const PALITRA_WORKER_ERROR_COOLDOWN_SEC: u64 = 3;
+const PALITRA_WORKER_SLEEP_INTERVAL_SEC: u64 = 1;
 
 #[derive(Default)]
 pub struct PalitraPatternCache {
@@ -95,7 +96,10 @@ pub async fn palitra_highlight_worker_nofail(
         };
 
         if no_messages {
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            tokio::time::sleep(Duration::from_secs(
+                PALITRA_WORKER_SLEEP_INTERVAL_SEC,
+            ))
+            .await;
         }
     }
 }
