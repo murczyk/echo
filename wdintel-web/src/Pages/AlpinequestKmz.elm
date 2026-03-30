@@ -302,6 +302,8 @@ conversionBlock :
     , description : String
     , conversionModel : ConversionModel
     , onUpload : Msg
+    , showSupportedFormats : Bool
+    , warning : Maybe String
     }
     -> Html Msg
 conversionBlock config =
@@ -330,17 +332,28 @@ conversionBlock config =
                 text ""
         , p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
             [ text config.description ]
-        , let
-              extensions =
-                  [ ".ldk", ".trk", ".are", ".rte", ".wpt", ".set", ".kml", ".kmz", ".geojson", ".gpx" ]
+        , if config.showSupportedFormats then
+            let
+                extensions =
+                    [ ".ldk", ".trk", ".are", ".rte", ".wpt", ".set", ".kml", ".kmz", ".geojson", ".gpx" ]
 
-              renderExtension ext =
-                  code [ class "font-mono font-semibold" ] [ text ext ]
-          in
-          p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
-              ((text "Конвертує файли у форматі ")
-                  :: List.intersperse (text " ") (List.map renderExtension extensions)
-              )
+                renderExtension ext =
+                    code [ class "font-mono font-semibold" ] [ text ext ]
+            in
+            p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
+                ((text "Конвертує файли у форматі ")
+                    :: List.intersperse (text " ") (List.map renderExtension extensions)
+                )
+
+          else
+            text ""
+        , case config.warning of
+            Just warning ->
+                blockquote [ class "mb-3 text-sm text-yellow-600 border-l-4 border-yellow-600 pl-4" ]
+                    [ p [] [ text warning ] ]
+
+            Nothing ->
+                text ""
         , Button.new { label = " додати файл", onClick = config.onUpload }
             |> Button.withIcon [ buttonIcon ]
             |> Button.view
@@ -361,12 +374,16 @@ view _ _ _ model =
                         , description = "Конвертуйте AlpineQuest файли у формат .kmz, у зручному для Delta вигляді."
                         , conversionModel = model.kmz
                         , onUpload = UploadAlpinequestKmzFile
+                        , showSupportedFormats = True
+                        , warning = Just "ⓘ Формат .pgd наразі підтримується в експериментальному режимі"
                         }
                     , conversionBlock
                         { heading = Just "pgd в geotiff"
                         , description = "Радимо конвертувати файли .pgd у формат GeoTIFF, щоб використовувати їх як підкладку в шарах Delta. Якщо потрібна інструкція з додавання GeoTIFF до шару Delta, зверніться до підтримки Ехо."
                         , conversionModel = model.geotiff
                         , onUpload = UploadAlpinequestGeotiffFile
+                        , showSupportedFormats = False
+                        , warning = Nothing
                         }
                     ]
                 ]
