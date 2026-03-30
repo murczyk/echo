@@ -47,7 +47,13 @@ toLayout user _ =
 
 type alias Model =
     { formErrors : Dict String String
-    , console : Shared.Components.Console.Model
+    , kmz : ConversionModel
+    , geotiff : ConversionModel
+    }
+
+
+type alias ConversionModel =
+    { console : Shared.Components.Console.Model
     , file : Maybe File
     , taskId : Maybe Int
     , convertInProgress : Bool
@@ -57,29 +63,41 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , console = Shared.Components.Console.init
-      , file = Nothing
-      , taskId = Nothing
-      , convertInProgress = False
+      , kmz = initConversionModel
+      , geotiff = initConversionModel
       }
     , E.none
     )
 
 
+initConversionModel : ConversionModel
+initConversionModel =
+    { console = Shared.Components.Console.init
+    , file = Nothing
+    , taskId = Nothing
+    , convertInProgress = False
+    }
+
+
 type Msg
-    = UploadAlpinequestFile
-    | UploadAlpinequestFileSelected File
-    | UploadAlpinequestFileDone File (Result ApiError Int)
-    | DownloadAlpinequestResultDone File (Result ApiError Bytes)
-    | ConsoleMsg (Shared.Components.Console.Msg Msg)
+    = UploadAlpinequestKmzFile
+    | UploadAlpinequestKmzFileSelected File
+    | UploadAlpinequestKmzFileDone File (Result ApiError Int)
+    | DownloadAlpinequestKmzResultDone File (Result ApiError Bytes)
+    | KmzConsoleMsg (Shared.Components.Console.Msg Msg)
+    | UploadAlpinequestGeotiffFile
+    | UploadAlpinequestGeotiffFileSelected File
+    | UploadAlpinequestGeotiffFileDone File (Result ApiError Int)
+    | DownloadAlpinequestGeotiffResultDone File (Result ApiError Bytes)
+    | GeotiffConsoleMsg (Shared.Components.Console.Msg Msg)
 
 
-finalizer : Model -> Effect Msg
-finalizer model =
-    case ( model.file, model.taskId ) of
+finalizer : (File -> Result ApiError Bytes -> Msg) -> ConversionModel -> Effect Msg
+finalizer toMsg conversionModel =
+    case ( conversionModel.file, conversionModel.taskId ) of
         ( Just file, Just taskId ) ->
             E.sendCmd <|
-                Api.alpine_download_result (DownloadAlpinequestResultDone file)
+                Api.alpine_download_result (toMsg file)
                     { bgtaskId = taskId }
 
         _ ->
@@ -89,39 +107,66 @@ finalizer model =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        UploadAlpinequestFile ->
+        UploadAlpinequestKmzFile ->
             ( model
             , E.sendCmd <|
                 File.Select.file
                     []
-                    UploadAlpinequestFileSelected
+                    UploadAlpinequestKmzFileSelected
             )
 
-        UploadAlpinequestFileSelected file ->
+        UploadAlpinequestKmzFileSelected file ->
+            let
+                kmz =
+                    model.kmz
+            in
             ( { model
-                | convertInProgress = True
-                , file = Just file
+                | kmz =
+                    { kmz
+                        | convertInProgress = True
+                        , file = Just file
+                    }
               }
-            , E.sendCmd <| Api.alpine_convert (UploadAlpinequestFileDone file) file
+            , E.sendCmd <|
+                Api.alpine_convert (UploadAlpinequestKmzFileDone file) file "kmz"
             )
 
-        UploadAlpinequestFileDone _ (Err e) ->
-            ( { model | convertInProgress = False }
+        UploadAlpinequestKmzFileDone _ (Err e) ->
+            let
+                kmz =
+                    model.kmz
+            in
+            ( { model
+                | kmz =
+                    { kmz
+                        | convertInProgress = False
+                    }
+              }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка конвертації AlpineQuest" e
             )
 
-        UploadAlpinequestFileDone _ (Ok taskId) ->
-            ( { model | convertInProgress = False, taskId = Just taskId }
+        UploadAlpinequestKmzFileDone _ (Ok taskId) ->
+            let
+                kmz =
+                    model.kmz
+            in
+            ( { model
+                | kmz =
+                    { kmz
+                        | convertInProgress = False
+                        , taskId = Just taskId
+                    }
+              }
             , E.sendCmd <|
                 Task.perform
-                    (always (ConsoleMsg (Shared.Components.Console.TaskLaunched taskId)))
+                    (always (KmzConsoleMsg (Shared.Components.Console.TaskLaunched taskId)))
                     (Process.sleep 0)
             )
 
-        DownloadAlpinequestResultDone _ (Err e) ->
+        DownloadAlpinequestKmzResultDone _ (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження результату" e )
 
-        DownloadAlpinequestResultDone file (Ok bs) ->
+        DownloadAlpinequestKmzResultDone file (Ok bs) ->
             ( model
             , E.sendCmd <|
                 Download.bytes
@@ -130,13 +175,98 @@ update msg model =
                     bs
             )
 
-        ConsoleMsg imsg ->
+        KmzConsoleMsg imsg ->
+            let
+                kmz =
+                    model.kmz
+            in
             Shared.Components.Console.update
                 { msg = imsg
-                , model = model.console
-                , toModel = \console -> { model | console = console }
-                , toMsg = ConsoleMsg
-                , finalizer = finalizer model
+                , model = kmz.console
+                , toModel = \console -> { model | kmz = { kmz | console = console } }
+                , toMsg = KmzConsoleMsg
+                , finalizer = finalizer DownloadAlpinequestKmzResultDone model.kmz
+                }
+
+        UploadAlpinequestGeotiffFile ->
+            ( model
+            , E.sendCmd <|
+                File.Select.file
+                    []
+                    UploadAlpinequestGeotiffFileSelected
+            )
+
+        UploadAlpinequestGeotiffFileSelected file ->
+            let
+                geotiff =
+                    model.geotiff
+            in
+            ( { model
+                | geotiff =
+                    { geotiff
+                        | convertInProgress = True
+                        , file = Just file
+                    }
+              }
+            , E.sendCmd <|
+                Api.alpine_convert (UploadAlpinequestGeotiffFileDone file) file "geotiff"
+            )
+
+        UploadAlpinequestGeotiffFileDone _ (Err e) ->
+            let
+                geotiff =
+                    model.geotiff
+            in
+            ( { model
+                | geotiff =
+                    { geotiff
+                        | convertInProgress = False
+                    }
+              }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка конвертації AlpineQuest" e
+            )
+
+        UploadAlpinequestGeotiffFileDone _ (Ok taskId) ->
+            let
+                geotiff =
+                    model.geotiff
+            in
+            ( { model
+                | geotiff =
+                    { geotiff
+                        | convertInProgress = False
+                        , taskId = Just taskId
+                    }
+              }
+            , E.sendCmd <|
+                Task.perform
+                    (always (GeotiffConsoleMsg (Shared.Components.Console.TaskLaunched taskId)))
+                    (Process.sleep 0)
+            )
+
+        DownloadAlpinequestGeotiffResultDone _ (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження результату" e )
+
+        DownloadAlpinequestGeotiffResultDone file (Ok bs) ->
+            ( model
+            , E.sendCmd <|
+                Download.bytes
+                    (ensureGeotiffName (File.name file))
+                    "image/tiff"
+                    bs
+            )
+
+        GeotiffConsoleMsg imsg ->
+            let
+                geotiff =
+                    model.geotiff
+            in
+            Shared.Components.Console.update
+                { msg = imsg
+                , model = geotiff.console
+                , toModel = \console -> { model | geotiff = { geotiff | console = console } }
+                , toMsg = GeotiffConsoleMsg
+                , finalizer = finalizer DownloadAlpinequestGeotiffResultDone model.geotiff
                 }
 
 
@@ -149,17 +279,36 @@ ensureKmzName name =
         name ++ ".kmz"
 
 
+ensureGeotiffName : String -> String
+ensureGeotiffName name =
+    let
+        lowerName =
+            String.toLower name
+    in
+    if String.endsWith ".tif" lowerName || String.endsWith ".tiff" lowerName then
+        name
+
+    else
+        name ++ ".tif"
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
 
-pageBlock : Model -> Html Msg
-pageBlock model =
+conversionBlock :
+    { heading : Maybe String
+    , description : String
+    , conversionModel : ConversionModel
+    , onUpload : Msg
+    }
+    -> Html Msg
+conversionBlock config =
     let
         showSpinner =
-            model.convertInProgress
-                || Shared.Components.Console.isInProgress model.console
+            config.conversionModel.convertInProgress
+                || Shared.Components.Console.isInProgress config.conversionModel.console
 
         buttonIcon =
             if not showSpinner then
@@ -172,9 +321,15 @@ pageBlock model =
                     ]
                     [ span [ class "sr-only" ] [ text "Loading..." ] ]
     in
-    div []
-        [ p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
-            [ text "Конвертуйте AlpineQuest файли у формат .kmz, в дружній до Delta формі." ]
+    div [ class "mb-8" ]
+        [ case config.heading of
+            Just heading ->
+                h2 [ class "py-2" ] [ text heading ]
+
+            Nothing ->
+                text ""
+        , p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
+            [ text config.description ]
         , let
               extensions =
                   [ ".ldk", ".trk", ".are", ".rte", ".wpt", ".set", ".kml", ".kmz", ".geojson", ".gpx" ]
@@ -186,12 +341,10 @@ pageBlock model =
               ((text "Конвертує файли у форматі ")
                   :: List.intersperse (text " ") (List.map renderExtension extensions)
               )
-        , blockquote [ class "mb-3 text-sm text-yellow-600 border-l-4 border-yellow-600 pl-4" ]
-              [ p [] [ text "ⓘ Формат .pgd наразі підтримується в експериментальному режимі" ] ]
-        , Button.new { label = " додати файл", onClick = UploadAlpinequestFile }
+        , Button.new { label = " додати файл", onClick = config.onUpload }
             |> Button.withIcon [ buttonIcon ]
             |> Button.view
-        , Shared.Components.Console.view model.console
+        , Shared.Components.Console.view config.conversionModel.console
         ]
 
 
@@ -203,7 +356,18 @@ view _ _ _ model =
             [ div [ class "flex" ]
                 [ div [ class "w-full" ]
                     [ h1 [ class "py-4" ] [ text "alpinequest в kmz" ]
-                    , pageBlock model
+                    , conversionBlock
+                        { heading = Nothing
+                        , description = "Конвертуйте AlpineQuest файли у формат .kmz, у зручному для Delta вигляді."
+                        , conversionModel = model.kmz
+                        , onUpload = UploadAlpinequestKmzFile
+                        }
+                    , conversionBlock
+                        { heading = Just "pgd в geotiff"
+                        , description = "Радимо конвертувати файли .pgd у формат GeoTIFF, щоб використовувати їх як підкладку в шарах Delta. Якщо потрібна інструкція з додавання GeoTIFF до шару Delta, зверніться до підтримки Ехо."
+                        , conversionModel = model.geotiff
+                        , onUpload = UploadAlpinequestGeotiffFile
+                        }
                     ]
                 ]
             ]
