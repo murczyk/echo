@@ -101,6 +101,7 @@ export function buildInboxReq(opts: {
   beforeIdNoninclusive?: number | null;
   sinceIdNoninclusive?: number | null;
   sinceDateInclusiveMs?: number | null;
+  tillDateInclusiveMs?: number | null;
   nolimit?: boolean;
   filter: RerDutyFeedFilterState;
   /** Expanded freqs (selected + adjacent); if not set, filter.freqsSelected is used. */
@@ -117,7 +118,7 @@ export function buildInboxReq(opts: {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
     sinceDateInclusiveMs: opts.sinceDateInclusiveMs ?? null,
-    tillDateInclusiveMs: null,
+    tillDateInclusiveMs: opts.tillDateInclusiveMs ?? null,
     onlyShowUnprocessed: null,
     checkedOnly: null,
     selectedGroups: emptyArrToNull(f.groupsSelected),

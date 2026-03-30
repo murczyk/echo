@@ -2628,11 +2628,19 @@ export type FreqPelengsEntry = {
 export type SystemSettingsCurrentRsp = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
+  rerDutyTestEnabled: boolean;
+  rerDutyTestSinceMs: number;
+  rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
 };
 
 export type SystemSettingsItem = {
   id: number;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
+  rerDutyTestEnabled: boolean;
+  rerDutyTestSinceMs: number;
+  rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -2645,6 +2653,10 @@ export type SystemSettingsListRsp = {
 
 export type CreateSystemSettingsReq = {
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
+  rerDutyTestEnabled: boolean;
+  rerDutyTestSinceMs: number;
+  rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
 };
 
 export type ActivateSystemSettingsReq = {
