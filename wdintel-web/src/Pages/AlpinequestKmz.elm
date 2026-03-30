@@ -251,7 +251,7 @@ update msg model =
             ( model
             , E.sendCmd <|
                 Download.bytes
-                    (ensureCogName (File.name file))
+                    (ensureTifName (File.name file))
                     "image/tiff"
                     bs
             )
@@ -279,17 +279,23 @@ ensureKmzName name =
         name ++ ".kmz"
 
 
-ensureCogName : String -> String
-ensureCogName name =
+ensureTifName : String -> String
+ensureTifName name =
     let
         lowerName =
             String.toLower name
-    in
-    if String.endsWith ".cog" lowerName then
-        name
 
-    else
-        name ++ ".cog"
+        baseName =
+            if String.endsWith ".tiff" lowerName then
+                String.dropRight 5 name
+
+            else if String.endsWith ".tif" lowerName || String.endsWith ".cog" lowerName then
+                String.dropRight 4 name
+
+            else
+                name
+    in
+    baseName ++ ".tif"
 
 
 subscriptions : Model -> Sub Msg
