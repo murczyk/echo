@@ -1,4 +1,4 @@
-//! Per-account UI / client preferences (JSON object).
+//! Per-account operative-feed UI preferences.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -8,10 +8,12 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(table_name = "user_settings")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    #[sea_orm(unique)]
     pub login: String,
-    #[sea_orm(column_type = "JsonBinary")]
-    pub prefs: Json,
+    pub message_card_layout: String,
+    pub tags_layout: String,
     pub updated_at: DateTime,
 }
 

@@ -1,18 +1,17 @@
+import type { UserDutySettingsDto } from '../../../../Bindings';
+
 import { getJson, putJson } from './client';
 
-type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
-type JsonObject = { [key: string]: JsonValue };
+export type { UserDutySettingsDto };
+export type UserDutySettings = UserDutySettingsDto;
 
-/** Per-account JSON object; keys are feature-specific (e.g. rerDutyNeo). Response body is this object directly. */
-export type UserSettingsJson = JsonObject;
-
-export async function fetchUserSettings(signal?: AbortSignal): Promise<UserSettingsJson> {
-  return getJson<UserSettingsJson>('/api/user/settings', { signal });
+export async function fetchUserSettings(signal?: AbortSignal): Promise<UserDutySettingsDto> {
+  return getJson<UserDutySettingsDto>('/api/user/settings', { signal });
 }
 
 export async function saveUserSettings(
-  body: UserSettingsJson,
+  body: UserDutySettingsDto,
   signal?: AbortSignal,
-): Promise<UserSettingsJson> {
-  return putJson<UserSettingsJson>('/api/user/settings', body, { signal });
+): Promise<UserDutySettingsDto> {
+  return putJson<UserDutySettingsDto>('/api/user/settings', body, { signal });
 }

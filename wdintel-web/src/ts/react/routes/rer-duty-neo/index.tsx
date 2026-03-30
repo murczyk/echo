@@ -6,8 +6,6 @@ import { FeedColumn } from './FeedColumn';
 import {
   DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
   DEFAULT_DUTY_TAGS_LAYOUT,
-  messageCardLayoutFromUserPrefs,
-  tagsLayoutFromUserPrefs,
   type MessageCardLayoutVariant,
   type TagsLayoutVariant,
 } from './utils';
@@ -32,10 +30,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       try {
         const prefs = await fetchUserSettings();
         if (cancelled) return;
-        const messageLayout = messageCardLayoutFromUserPrefs(prefs);
-        const tagsLayoutPref = tagsLayoutFromUserPrefs(prefs);
-        setMessageCardLayout(messageLayout ?? DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
-        setTagsLayout(tagsLayoutPref ?? DEFAULT_DUTY_TAGS_LAYOUT);
+        setMessageCardLayout(prefs.messageCardLayout);
+        setTagsLayout(prefs.tagsLayout);
       } catch {
         if (cancelled) return;
         setMessageCardLayout(DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);

@@ -10,8 +10,12 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             r#"
             create table if not exists user_settings (
-                login text not null primary key references login(login) on update cascade on delete cascade,
-                prefs jsonb not null default '{}'::jsonb,
+                id bigserial primary key,
+                login text not null unique references login(login) on update cascade on delete cascade,
+                message_card_layout text not null default ''
+                    check (message_card_layout in ('', 'dividers', 'fluid')),
+                tags_layout text not null default ''
+                    check (tags_layout in ('', 'full', 'compact', 'hidden')),
                 updated_at timestamp without time zone not null default (now() at time zone 'utc')
             );
             "#,

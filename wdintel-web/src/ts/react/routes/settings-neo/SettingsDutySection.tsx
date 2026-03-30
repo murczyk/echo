@@ -215,6 +215,7 @@ export function SettingsDutySection({
                 </Typography>
                 <ToggleButtonGroup
                   value={tagsLayout}
+                  exclusive
                   color="primary"
                   onChange={(_, v: TagsLayoutVariant | null) => {
                     if (v != null) onTagsLayoutChange(v);

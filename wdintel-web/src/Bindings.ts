@@ -2843,3 +2843,19 @@ export type SigintKeySharePolicy = {
   createdAt: number;
 };
 
+export type DutyMessageCardLayout =
+  | 'Dividers'
+  | 'Fluid'
+;
+
+export type DutyTagsLayout =
+  | 'Full'
+  | 'Compact'
+  | 'Hidden'
+;
+
+export type UserDutySettingsDto = {
+  messageCardLayout: DutyMessageCardLayout;
+  tagsLayout: DutyTagsLayout;
+};
+

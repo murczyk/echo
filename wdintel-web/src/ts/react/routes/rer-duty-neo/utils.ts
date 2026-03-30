@@ -38,30 +38,6 @@ export type TagsLayoutVariant = 'full' | 'compact' | 'hidden';
 export const DEFAULT_DUTY_MESSAGE_CARD_LAYOUT: MessageCardLayoutVariant = 'fluid';
 export const DEFAULT_DUTY_TAGS_LAYOUT: TagsLayoutVariant = 'compact';
 
-/** Key under `GET/PUT /api/user/settings` JSON body for rer-duty-neo (operative feed). */
-export const USER_PREFS_RER_DUTY_NEO_KEY = 'rerDutyNeo';
-
-/** Reads saved layout from account prefs, or `null` if unset / invalid. */
-export function messageCardLayoutFromUserPrefs(prefs: Record<string, unknown> | undefined | null): MessageCardLayoutVariant | null {
-  if (prefs == null) return null;
-  const block = prefs[USER_PREFS_RER_DUTY_NEO_KEY];
-  if (block && typeof block === 'object' && block !== null && 'messageCardLayout' in block) {
-    const v = (block as { messageCardLayout?: unknown }).messageCardLayout;
-    if (v === 'fluid' || v === 'dividers') return v;
-  }
-  return null;
-}
-
-export function tagsLayoutFromUserPrefs(prefs: Record<string, unknown> | undefined | null): TagsLayoutVariant | null {
-  if (prefs == null) return null;
-  const block = prefs[USER_PREFS_RER_DUTY_NEO_KEY];
-  if (block && typeof block === 'object' && block !== null && 'tagsLayout' in block) {
-    const v = (block as { tagsLayout?: unknown }).tagsLayout;
-    if (v === 'full' || v === 'compact' || v === 'hidden') return v;
-  }
-  return null;
-}
-
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
     groupsSelected: null,

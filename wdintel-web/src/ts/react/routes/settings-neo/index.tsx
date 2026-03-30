@@ -23,14 +23,12 @@ import { listSigintZones } from '../../services/api/zones';
 import {
   fetchUserSettings as fetchUserPrefsSettings,
   saveUserSettings as saveUserPrefsSettings,
+  type UserDutySettings,
 } from '../../services/api/user-settings';
 import {
   DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
   DEFAULT_DUTY_TAGS_LAYOUT,
-  messageCardLayoutFromUserPrefs,
-  tagsLayoutFromUserPrefs,
   type TagsLayoutVariant,
-  USER_PREFS_RER_DUTY_NEO_KEY,
   type MessageCardLayoutVariant,
 } from '../rer-duty-neo/utils';
 
@@ -86,7 +84,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
     parseSettingsSection(section ?? readSettingsSectionFromUrl()),
   );
-  const [userPrefs, setUserPrefs] = useState<Record<string, unknown> | null>(null);
+  const [userPrefs, setUserPrefs] = useState<UserDutySettings | null>(null);
   const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>(
     DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
   );
@@ -148,15 +146,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
           setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         } else {
-          const prefs = prefsRsp;
-          setUserPrefs(prefs);
-          const fromServer = messageCardLayoutFromUserPrefs(prefs);
-          const tagsLayoutServer = tagsLayoutFromUserPrefs(prefs) ?? DEFAULT_DUTY_TAGS_LAYOUT;
-          const layout = fromServer ?? DEFAULT_DUTY_MESSAGE_CARD_LAYOUT;
-          setMessageCardLayout(layout);
-          setInitialMessageCardLayout(layout);
-          setTagsLayout(tagsLayoutServer);
-          setInitialTagsLayout(tagsLayoutServer);
+          setUserPrefs(prefsRsp);
+          setMessageCardLayout(prefsRsp.messageCardLayout);
+          setInitialMessageCardLayout(prefsRsp.messageCardLayout);
+          setTagsLayout(prefsRsp.tagsLayout);
+          setInitialTagsLayout(prefsRsp.tagsLayout);
         }
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
@@ -201,31 +195,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     setDutySaveInProgress(true);
 
     try {
-      let base: Record<string, unknown>;
-      if (userPrefs !== null) {
-        base = userPrefs;
-      } else {
-        try {
-          base = await fetchUserPrefsSettings();
-          setUserPrefs(base);
-          setDutyPrefsLoadError(null);
-        } catch (error) {
-          if (isUnauthorizedError(error)) {
-            window.location.assign('/login');
-            return;
-          }
-          setDutySaveError('Не вдалося завантажити актуальні налаштування з сервера.');
-          return;
-        }
-      }
-      const prevRer = base[USER_PREFS_RER_DUTY_NEO_KEY];
-      const rerMerged = {
-        ...(typeof prevRer === 'object' && prevRer !== null ? (prevRer as Record<string, unknown>) : {}),
-        messageCardLayout,
-        tagsLayout,
-      };
-      const nextPrefs = { ...base, [USER_PREFS_RER_DUTY_NEO_KEY]: rerMerged };
-      const res = await saveUserPrefsSettings(nextPrefs);
+      const res = await saveUserPrefsSettings({ messageCardLayout, tagsLayout });
       setUserPrefs(res);
       setInitialMessageCardLayout(messageCardLayout);
       setInitialTagsLayout(tagsLayout);

@@ -15,7 +15,6 @@ import {
   getPointEtalonsFromMessage,
   messageHasPalitraTag,
   uniquePointEtalonsForMapSearch,
-  messageCardLayoutFromUserPrefs,
   parseStateFromUrl,
   pushStateToUrl,
 } from './utils';
@@ -135,11 +134,4 @@ describe('rer-duty utils', () => {
     expect(getPointEtalonsFromMessage(msg, { 7: { ...tag, isPalitra: false } })).toEqual([]);
   });
 
-  it('messageCardLayoutFromUserPrefs reads rerDutyNeo block', () => {
-    expect(messageCardLayoutFromUserPrefs(null)).toBe(null);
-    expect(messageCardLayoutFromUserPrefs({})).toBe(null);
-    expect(messageCardLayoutFromUserPrefs({ rerDutyNeo: { messageCardLayout: 'fluid' } })).toBe('fluid');
-    expect(messageCardLayoutFromUserPrefs({ rerDutyNeo: { messageCardLayout: 'dividers' } })).toBe('dividers');
-    expect(messageCardLayoutFromUserPrefs({ rerDutyNeo: {} })).toBe(null);
-  });
 });
