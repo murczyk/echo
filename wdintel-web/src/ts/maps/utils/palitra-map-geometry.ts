@@ -65,35 +65,41 @@ export function createPalitraGeometryLayer(palitraDetails: PalitraDetails): L.La
   }
 
   const perimeter = geometry.perimeter_linear_ring;
+  const layers: L.Layer[] = [];
   if (perimeter && perimeter.length >= 3) {
-    return createPalitraPolygon(palitraDetails, perimeter);
+    layers.push(createPalitraPolygon(palitraDetails, perimeter));
   }
 
   const lineStrings = geometry.line_strings ?? [];
   const validLines = lineStrings.filter((line) => line.length >= 2);
-  if (validLines.length === 0) {
+  if (validLines.length > 0) {
+    const lineLayers = validLines.map((line) =>
+      L.polyline(
+        line.map((coord) => [coord.lat, coord.lng] as [number, number]),
+        {
+          color: palitra.color_hex,
+          weight: 2,
+          opacity: 0.9,
+        },
+      ),
+    );
+    const lineLayer =
+      lineLayers.length === 1 ? lineLayers[0] : L.featureGroup(lineLayers);
+    const metaLines = buildLineMetaLines(geometry, palitra, validLines);
+    bindPalitraPopup(lineLayer, palitra, metaLines);
+    lineLayer.bindTooltip(palitra.name, {
+      permanent: true,
+      direction: 'center',
+      className: 'palitra-label',
+    });
+    layers.push(lineLayer);
+  }
+
+  if (layers.length === 0) {
     return null;
   }
 
-  const lineLayers = validLines.map((line) =>
-    L.polyline(
-      line.map((coord) => [coord.lat, coord.lng] as [number, number]),
-      {
-        color: palitra.color_hex,
-        weight: 2,
-        opacity: 0.9,
-      },
-    ),
-  );
-  const layer = lineLayers.length === 1 ? lineLayers[0] : L.featureGroup(lineLayers);
-  const metaLines = buildLineMetaLines(geometry, palitra, validLines);
-  bindPalitraPopup(layer, palitra, metaLines);
-  layer.bindTooltip(palitra.name, {
-    permanent: true,
-    direction: 'center',
-    className: 'palitra-label',
-  });
-  return layer;
+  return layers.length === 1 ? layers[0] : L.featureGroup(layers);
 }
 
 function createPalitraPolygon(palitraDetails: PalitraDetails, ring: Coords[]): L.Polygon {

@@ -1259,6 +1259,15 @@ pub async fn rewrite_palitra_line_strings(
     mut line_strings: Vec<crate::palitra::kmz::PalitraLineString>,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
+    let palitra_geometry =
+        palitra_geometry::Entity::find_by_id(palitra_geometry_id)
+            .one(txn)
+            .await
+            .c(h!())?;
+    let Some(palitra_geometry) = palitra_geometry else {
+        error!("palitra_geometry not found by id {palitra_geometry_id}");
+        return Ok(());
+    };
     let reset_query = r"
         UPDATE palitra_geometry
         SET line_string = NULL,
@@ -1274,12 +1283,46 @@ pub async fn rewrite_palitra_line_strings(
     .context(h!())?;
 
     line_strings.retain(|line| line.coords.len() >= 2);
-    if line_strings.is_empty() {
+    let mut lines_with_fallback_color = 0usize;
+    let mut skipped_lines_with_unexpected_color = 0usize;
+    let mut filtered_lines = Vec::with_capacity(line_strings.len());
+    for line_string in line_strings {
+        let line_color = line_string.color.clone().unwrap_or_else(|| {
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+        });
+        let is_fallback_color =
+            line_color == crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX;
+        if is_fallback_color {
+            lines_with_fallback_color += 1;
+        }
+        if !is_fallback_color && !palitra_geometry.hex.eq(&line_color) {
+            skipped_lines_with_unexpected_color += 1;
+            continue;
+        }
+        filtered_lines.push(line_string);
+    }
+    if lines_with_fallback_color > 0 {
+        error!(
+            "palitra geometry {} received {} line strings with fallback color {} while mapping KMZ data",
+            palitra_geometry_id,
+            lines_with_fallback_color,
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX
+        );
+    }
+    if skipped_lines_with_unexpected_color > 0 {
+        warn!(
+            "skipped {} line strings in geometry {} due to color mismatch with selected geometry color {}",
+            skipped_lines_with_unexpected_color,
+            palitra_geometry_id,
+            palitra_geometry.hex
+        );
+    }
+    if filtered_lines.is_empty() {
         return Ok(());
     }
 
-    let mut line_wkts = Vec::with_capacity(line_strings.len());
-    for line_string in line_strings {
+    let mut line_wkts = Vec::with_capacity(filtered_lines.len());
+    for line_string in filtered_lines {
         let coords = line_string
             .coords
             .into_iter()
