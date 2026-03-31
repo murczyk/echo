@@ -84,6 +84,7 @@ describe('rer analysis query state', () => {
       dateToStr: '2026-03-28',
       timeToStr: '09:52',
       includeOnlyNewFreqs: true,
+      freqsSelected: ['123.4', '123.5'],
     });
   });
 
@@ -132,7 +133,7 @@ describe('rer analysis query state', () => {
     });
 
     expect(params.toString()).toBe(
-      'foo=bar&dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52&onlyNewFreqs=true&search=uid-1',
+      'foo=bar&dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&search=uid-1',
     );
   });
 

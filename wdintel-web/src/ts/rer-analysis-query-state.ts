@@ -220,10 +220,6 @@ export function compactRerAnalysisQueryState(state: unknown): RerAnalysisQuerySt
     compacted[key] = value;
   }
 
-  if (compacted.includeOnlyNewFreqs === true) {
-    delete compacted.freqsSelected;
-  }
-
   return compacted;
 }
 

@@ -60,7 +60,13 @@ import {
 } from '../../services/api/analysis';
 import { downloadBlob } from '../../utils/download';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
-import { buildAnalysisReq, buildInboxReq, pushQueryStateToUrl, shouldRebuildAnalysisRequests } from './helpers';
+import {
+  ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
+  buildAnalysisReq,
+  buildInboxReq,
+  pushQueryStateToUrl,
+  shouldRebuildAnalysisRequests,
+} from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { buildNetworkDisplayMap, getMessageTagEnabled } from './message-utils';
 import type {
@@ -266,7 +272,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
             newestFirst,
           },
           mapFilter: null,
-          pageId: 'rer-analysis',
+          pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
         });
         setMapPoints(rsp.points ?? []);
         setMapNetworkUnits(rsp.networkUnits ?? []);
@@ -862,7 +868,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
           const mapRsp = await fetchAnalysisMapPoints({
             inboxItemsFilter: criticalData.inboxReq,
             mapFilter: null,
-            pageId: 'rer-analysis',
+            pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
           });
           if (isStaleReload()) {
             return;

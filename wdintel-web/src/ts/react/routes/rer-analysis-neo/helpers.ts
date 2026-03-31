@@ -9,7 +9,9 @@ import {
 import { combineDateTimeToMs, formatLocalDateInputValue, formatLocalTimeInputValue } from '../../utils/misc';
 import type { AnalysisQueryState } from './types';
 
-export const PAGE_ID = 'rer-analysis-neo';
+export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
+// Keep old and new analysis pages grouped in session activity while both coexist.
+export const ANALYSIS_SESSION_ACTIVITY_PAGE_ID = 'rer-analysis';
 export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
 
 function findAllAdjacentFreqs(allFrequencies: string[], selectedFrequencies: string[], range: number): string[] {
@@ -257,7 +259,7 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
     calculateFreqPelengsSummary: null,
     skipGroupStats: true,
     filterTagsOption: req.filterTagsOption,
-    pageId: 'rer-analysis',
+    pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
     withoutModelTags: req.withoutModelTags,
   };
 }

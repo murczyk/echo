@@ -80,7 +80,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
 
   const validationError = useMemo(
-    () => (buildAnalysisReq(queryState) == null ? 'Перевірте дату та час. Роки раніше 1000 не допускаються.' : null),
+    () => (buildAnalysisReq(queryState) == null ? 'Перевірте дату та час. Дата раніше 2022-01-01 не допускається.' : null),
     [queryState],
   );
 
