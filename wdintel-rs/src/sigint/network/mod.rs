@@ -1716,6 +1716,12 @@ pub async fn update_network_freq(
 
     // Check if network exists
     let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let updated_freq_active_from =
+        dt_from_millis(req.active_from).unwrap_or(Utc::now().naive_utc());
+    let updated_freq_active_to =
+        req.active_to.map(dt_from_millis).transpose()?;
+    let mut invalidation_range =
+        (Some(updated_freq_active_from), updated_freq_active_to);
 
     // Find the frequency for this network
     let network_freq_model = sigint_network_freq::Entity::find()
@@ -1728,15 +1734,18 @@ pub async fn update_network_freq(
 
     if let Some(network_freq_model) = network_freq_model {
         let network_freq_id = network_freq_model.id;
-        let active_from =
-            dt_from_millis(req.active_from).unwrap_or(Utc::now().naive_utc());
-        let active_to = req.active_to.map(dt_from_millis).transpose()?;
+        invalidation_range = merge_invalidation_range(
+            Some(network_freq_model.active_from),
+            network_freq_model.active_to,
+            Some(updated_freq_active_from),
+            updated_freq_active_to,
+        );
 
         let mut model = network_freq_model.into_active_model();
         model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
         model.modulation_id = Set(req.modulation_id);
-        model.active_from = Set(active_from);
-        model.active_to = Set(active_to);
+        model.active_from = Set(updated_freq_active_from);
+        model.active_to = Set(updated_freq_active_to);
         model.update(&txn).await.context(h!())?;
 
         let organism_id = login::Entity::find_by_id(user_id.clone())
@@ -1793,8 +1802,8 @@ pub async fn update_network_freq(
 
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq,
-        network_active_from,
-        network_active_to,
+        invalidation_range.0,
+        invalidation_range.1,
         &env.dbx,
         format!(
             "edited network frequency from web UI: {}",
@@ -3133,6 +3142,23 @@ async fn save_network_aors(
     Ok(())
 }
 
+fn merge_invalidation_range(
+    old_active_from: Option<NaiveDateTime>,
+    old_active_to: Option<NaiveDateTime>,
+    new_active_from: Option<NaiveDateTime>,
+    new_active_to: Option<NaiveDateTime>,
+) -> (Option<NaiveDateTime>, Option<NaiveDateTime>) {
+    let since_ts = [old_active_from, new_active_from]
+        .into_iter()
+        .flatten()
+        .min();
+    let till_ts = match (old_active_to, new_active_to) {
+        (Some(old_ts), Some(new_ts)) => Some(old_ts.max(new_ts)),
+        _ => None,
+    };
+    (since_ts, till_ts)
+}
+
 pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
     match input {
         Some("VHF") => Ok("УКХ".to_string()),
@@ -3141,5 +3167,44 @@ pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
         _ => Err(AppError::BL {
             msg: "Unknown network type!".to_string(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn dt(day: u32) -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 1, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn merge_invalidation_range_keeps_old_upper_bound_when_window_shrinks() {
+        let old_from = Some(dt(1));
+        let old_to = None;
+        let new_from = Some(dt(1));
+        let new_to = Some(dt(10));
+
+        let merged =
+            merge_invalidation_range(old_from, old_to, new_from, new_to);
+
+        assert_eq!(merged, (Some(dt(1)), None));
+    }
+
+    #[test]
+    fn merge_invalidation_range_keeps_old_lower_bound_when_start_moves_later() {
+        let old_from = Some(dt(1));
+        let old_to = Some(dt(20));
+        let new_from = Some(dt(5));
+        let new_to = Some(dt(20));
+
+        let merged =
+            merge_invalidation_range(old_from, old_to, new_from, new_to);
+
+        assert_eq!(merged, (Some(dt(1)), Some(dt(20))));
     }
 }
