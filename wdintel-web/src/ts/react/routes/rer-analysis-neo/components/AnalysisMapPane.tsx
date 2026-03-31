@@ -10,9 +10,10 @@ type Props = {
   onDateRangeChange: (range: { startDate: number; endDate: number }) => void;
   onLoadMessages: (messageIds: number[]) => void;
   onUnitClick: (unitName: string | null) => void;
+  onExit: () => void;
 };
 
-export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, onLoadMessages, onUnitClick }: Props) {
+export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, onLoadMessages, onUnitClick, onExit }: Props) {
   const hostRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -28,17 +29,22 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
     const handleUnitClick = (event: Event) => {
       onUnitClick((event as CustomEvent<{ networkUnitName: string | null }>).detail.networkUnitName ?? null);
     };
+    const handleExit = () => {
+      onExit();
+    };
 
     host.addEventListener('date-range-changed', handleDateRangeChange as EventListener);
     host.addEventListener('load-messages-description', handleLoadMessages as EventListener);
     host.addEventListener('message-unit-clicked', handleUnitClick as EventListener);
+    host.addEventListener('exit', handleExit as EventListener);
 
     return () => {
       host.removeEventListener('date-range-changed', handleDateRangeChange as EventListener);
       host.removeEventListener('load-messages-description', handleLoadMessages as EventListener);
       host.removeEventListener('message-unit-clicked', handleUnitClick as EventListener);
+      host.removeEventListener('exit', handleExit as EventListener);
     };
-  }, [onDateRangeChange, onLoadMessages, onUnitClick]);
+  }, [onDateRangeChange, onExit, onLoadMessages, onUnitClick]);
 
   return (
     <Box
@@ -59,8 +65,8 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
         messages: mapAttrs.messages,
         'selected-units': mapAttrs.selectedUnits,
         palitras: mapAttrs.palitras,
-        'palitras-loaded': 'false',
-        'palitras-load-state': 'idle',
+        'palitras-loaded': mapAttrs.palitrasLoaded,
+        'palitras-load-state': mapAttrs.palitrasLoadState,
         visibility: visible ? 'true' : 'false',
         search,
       })}

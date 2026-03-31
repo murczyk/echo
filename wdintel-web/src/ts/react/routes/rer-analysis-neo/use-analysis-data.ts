@@ -10,6 +10,7 @@ import type {
   Network,
   NetworkUnit,
   NewCallsignsRes,
+  PalitraReadV2,
   SignalGroupEntry,
   SignalProfileEntry,
   SummaryTableFreqRow,
@@ -58,6 +59,7 @@ import {
   downloadAnalysisSummaryTableXlsx,
   editAnalysisFreqUnitName,
 } from '../../services/api/analysis';
+import { listPalitrasV2 } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
 import {
@@ -75,6 +77,7 @@ import type {
   AnalysisFilterOptions,
   AnalysisGroupsActivityPeriod,
   AnalysisMapAttrs,
+  AnalysisPalitrasLoadState,
 } from './types';
 
 type Props = {
@@ -201,6 +204,9 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [mapPoints, setMapPoints] = useState<FreqDetailedPoint[]>([]);
   const [mapNetworkUnits, setMapNetworkUnits] = useState<NetworkUnit[]>([]);
   const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [mapPalitras, setMapPalitras] = useState<PalitraReadV2[]>([]);
+  const [mapPalitrasLoaded, setMapPalitrasLoaded] = useState(false);
+  const [mapPalitrasLoadState, setMapPalitrasLoadState] = useState<AnalysisPalitrasLoadState>('idle');
   const [messageActionCount, setMessageActionCount] = useState(0);
   const [correlatedFreqs, setCorrelatedFreqs] = useState<CorrelatedFreq[]>([]);
   const [correlatedFreqsLoading, setCorrelatedFreqsLoading] = useState(false);
@@ -312,6 +318,33 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     },
     [onError, onUnauthorized],
   );
+
+  const loadMapPalitras = useCallback(async () => {
+    setMapPalitrasLoadState('loading');
+    setMapPalitrasLoaded(false);
+
+    try {
+      const palitras = await listPalitrasV2();
+      setMapPalitras(
+        palitras.map((palitraRead) => ({
+          ...palitraRead,
+          geometries: palitraRead.geometries.map((geometry) => ({
+            ...geometry,
+            points: [],
+          })),
+        })),
+      );
+      setMapPalitrasLoaded(true);
+      setMapPalitrasLoadState('success');
+    } catch (loadError) {
+      if (!onUnauthorized(loadError)) {
+        onError(`Не вдалося завантажити палітри: ${toErrorMessage(loadError)}`);
+      }
+      setMapPalitras([]);
+      setMapPalitrasLoaded(false);
+      setMapPalitrasLoadState('error');
+    }
+  }, [onError, onUnauthorized]);
 
   const onToggleMessageBookmark = useCallback(
     async (messageId: number, currentlyBookmarked: boolean) => {
@@ -973,6 +1006,10 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     void reload();
   }, [reload]);
 
+  useEffect(() => {
+    void loadMapPalitras();
+  }, [loadMapPalitras]);
+
   const mapAttrs = useMemo(
     () =>
       buildMapAttrs({
@@ -982,8 +1019,21 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         messages: mapOpenMessages,
         networkUnits: mapNetworkUnits,
         selectedUnits: queryState.unitsSelected,
+        palitras: mapPalitras,
+        palitrasLoaded: mapPalitrasLoaded,
+        palitrasLoadState: mapPalitrasLoadState,
       }),
-    [mapDateRange, mapLoading, mapNetworkUnits, mapOpenMessages, mapPoints, queryState.unitsSelected],
+    [
+      mapDateRange,
+      mapLoading,
+      mapNetworkUnits,
+      mapOpenMessages,
+      mapPalitras,
+      mapPalitrasLoaded,
+      mapPalitrasLoadState,
+      mapPoints,
+      queryState.unitsSelected,
+    ],
   );
 
   return {

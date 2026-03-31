@@ -53,6 +53,8 @@ export type AnalysisFilterOptions = {
   metadataHashes: string[];
 };
 
+export type AnalysisPalitrasLoadState = 'idle' | 'loading' | 'success' | 'error';
+
 export type AnalysisMapAttrs = {
   daterange: string;
   daterangeLoading: string;
@@ -60,6 +62,8 @@ export type AnalysisMapAttrs = {
   messages: string;
   selectedUnits: string;
   palitras: string;
+  palitrasLoaded: string;
+  palitrasLoadState: AnalysisPalitrasLoadState;
 };
 
 export type AnalysisSidebarTab = 'stats' | 'callsigns' | 'newCallsigns';
