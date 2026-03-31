@@ -238,4 +238,25 @@ describe('AnalysisGroupsActivityCard', () => {
 
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' });
   });
+
+  it('does not scroll on the initial render when the chart is already ready', async () => {
+    const view = await renderComponent({
+      groupsActivity: {
+        dataPerDate: {
+          '2026-03-31': { countByGroupName: { Alpha: 3 } },
+        },
+      },
+      groupsActivityLoadedFreq: '100.100',
+      groupsActivityLoadedPeriod: 'selected',
+      loading: false,
+      period: 'selected',
+      selectedFreq: '100.100',
+      suggestedFreqs: ['100.100'],
+      onLoad: vi.fn(),
+      onSelectFreq: vi.fn(),
+    });
+    rendered.push(view);
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
 });

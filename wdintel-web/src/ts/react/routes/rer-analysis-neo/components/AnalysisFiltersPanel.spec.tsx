@@ -13,6 +13,9 @@ import { emptyQueryState } from '../helpers';
 const analysisFilterFieldSpy = vi.fn();
 
 vi.mock('@mui/material', () => ({
+  Accordion: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  AccordionDetails: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  AccordionSummary: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Button: (props: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
     <button type="button" disabled={props.disabled} onClick={props.onClick}>
@@ -66,6 +69,10 @@ vi.mock('@mui/material', () => ({
 
 vi.mock('@mui/icons-material/Search', () => ({
   default: () => <span>search</span>,
+}));
+
+vi.mock('@mui/icons-material/ExpandMore', () => ({
+  default: () => <span>expand</span>,
 }));
 
 vi.mock('./AnalysisFilterField', () => ({

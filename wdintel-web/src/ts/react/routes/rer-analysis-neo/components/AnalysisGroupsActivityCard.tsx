@@ -66,7 +66,7 @@ export function AnalysisGroupsActivityCard({
   useEffect(() => {
     const previousChartStatus = previousChartStatusRef.current;
     previousChartStatusRef.current = chartStatus;
-    if (chartStatus !== 'ready' || previousChartStatus === 'ready') return;
+    if (previousChartStatus == null || chartStatus !== 'ready' || previousChartStatus === 'ready') return;
     const section = sectionRef.current;
     if (!section) return;
     const frameId = window.requestAnimationFrame(() => {
