@@ -27,10 +27,13 @@ type CountByGroupName = {
 	[key: string]: number; // Group names with their respective counts
 };
 
+type DataPerDateEntry = {
+	count_by_group_name?: CountByGroupName | null;
+	countByGroupName?: CountByGroupName | null;
+} | null | undefined;
+
 type DataPerDate = {
-	[key: string]: {
-		count_by_group_name: CountByGroupName; // The structure of the returned data
-	};
+	[key: string]: DataPerDateEntry;
 };
 
 type TransformedData = { date: string; group: string; count: number, groupName?: string }[]
@@ -51,6 +54,12 @@ function getStatsPerMinute(data: Data2 | Data2Camel | null | undefined): StatsPe
 	return (data as Data2).stats_per_minute ?? (data as Data2Camel).statsPerMinute ?? [];
 }
 
+function normalizeDataPerDateEntry(entry: DataPerDateEntry): { count_by_group_name: CountByGroupName } {
+	return {
+		count_by_group_name: entry?.count_by_group_name ?? entry?.countByGroupName ?? {},
+	};
+}
+
 function a(data: Data | DataCamel | null | undefined): DataPerDate {
 	const dataPerDate = getDataPerDate(data);
 	const sortedDates = Object.keys(dataPerDate)
@@ -66,7 +75,7 @@ function a(data: Data | DataCamel | null | undefined): DataPerDate {
 			const obj = {}
 			allDays.map(date => {
 				const d = dataPerDate[date.format("YYYY-MM-DD")]
-				obj[date.format("YYYY-MM-DD")] = d ? d : {}
+				obj[date.format("YYYY-MM-DD")] = normalizeDataPerDateEntry(d)
 			})
 
 			return obj
@@ -87,7 +96,7 @@ function a(data: Data | DataCamel | null | undefined): DataPerDate {
 				}
 
 				if (d) {
-					Object.entries(d.count_by_group_name).forEach(([groupName, count]) => {
+					Object.entries(normalizeDataPerDateEntry(d).count_by_group_name).forEach(([groupName, count]) => {
 						if (!groupedData[startDateKey.format("YYYY-MM-DD")].count_by_group_name[groupName]) {
 							groupedData[startDateKey.format("YYYY-MM-DD")].count_by_group_name[groupName] = 0;
 						}
@@ -116,7 +125,7 @@ function a(data: Data | DataCamel | null | undefined): DataPerDate {
 				}
 
 				if (d) {
-					Object.entries(d.count_by_group_name).forEach(([groupName, count]) => {
+					Object.entries(normalizeDataPerDateEntry(d).count_by_group_name).forEach(([groupName, count]) => {
 						if (!weeklyGroupedData[weekStartDate.format("YYYY-MM-DD")].count_by_group_name[groupName]) {
 							weeklyGroupedData[weekStartDate.format("YYYY-MM-DD")].count_by_group_name[groupName] = 0;
 						}
@@ -139,7 +148,7 @@ export function transformData(data: Data | DataCamel | null | undefined): { tran
 	const uniqueDates = Object.keys(dataPerDate);
 	const transformedData: TransformedData = [];
 	for (const date in dataPerDate) {
-		const counts = dataPerDate[date].count_by_group_name;
+		const counts = normalizeDataPerDateEntry(dataPerDate[date]).count_by_group_name;
 		for (const group in counts) {
 			transformedData.push({
 				date: date,
@@ -295,6 +304,8 @@ export class BarChart2 extends LitElement {
 	colorMap = {}
 	nextColorIndex = 0;
 	lastAssignedColor: string | null = null;
+	pendingRenderFrame: number | null = null;
+	hasRenderedChart = false;
 
 	@property()
 	isAnalysis = false;
@@ -333,6 +344,10 @@ export class BarChart2 extends LitElement {
 
 	disconnectedCallback(): void {
 		super.disconnectedCallback();
+		if (this.pendingRenderFrame != null) {
+			cancelAnimationFrame(this.pendingRenderFrame);
+			this.pendingRenderFrame = null;
+		}
 		if (this.tooltip) {
 			this.tooltip.remove();
 			this.tooltip = null as any;
@@ -341,8 +356,18 @@ export class BarChart2 extends LitElement {
 
 	updated(changedProperties: PropertyValues<this>) {
 		if (changedProperties.has('data')) {
-			this.renderChart()
+			this.scheduleRenderChart()
 		}
+	}
+
+	scheduleRenderChart() {
+		if (this.pendingRenderFrame != null) {
+			cancelAnimationFrame(this.pendingRenderFrame);
+		}
+		this.pendingRenderFrame = requestAnimationFrame(() => {
+			this.pendingRenderFrame = null;
+			this.renderChart();
+		});
 	}
 
 	getColorForGroup(group: string) {
@@ -396,6 +421,9 @@ export class BarChart2 extends LitElement {
 		this.chartWidth = Math.max(0, rect.width);
 		this.chartHeight = Math.max(0, rect.height - topLine);
 		if (this.chartWidth <= 0 || this.chartHeight <= 0 || !this.data) {
+			if (this.data && (this.chartWidth <= 0 || this.chartHeight <= 0)) {
+				this.scheduleRenderChart();
+			}
 			return;
 		}
 
@@ -424,6 +452,7 @@ export class BarChart2 extends LitElement {
 
 		const svgEl = this.renderRoot.querySelector("#chart");
 		const svg = d3.select(svgEl)
+		const shouldAnimate = !this.isAnalysis || !this.hasRenderedChart;
 		// tooltip from https://observablehq.com/@anreut/bar-chart-with-a-tooltip
 		if (!this.tooltip) {
 			this.tooltip = d3
@@ -455,7 +484,7 @@ export class BarChart2 extends LitElement {
 
 		const bandwidth = xScale.bandwidth()
 		const barWidth = this.isAnalysis ? Math.min(100, bandwidth) : bandwidth
-		groups.selectAll("rect")
+		const rects = groups.selectAll("rect")
 			.data(D => D.map(d => {
 				type DataWithKey = typeof d & { key: string }
 				const dataWithKey = d as DataWithKey;
@@ -494,18 +523,31 @@ export class BarChart2 extends LitElement {
 			.on('mouseout', function(e, a) {
 				tooltip.html(``).style('visibility', 'hidden');
 				d3.select(this).attr('stroke', 'none');
-			})
-			.transition()
+			});
+		const positionedRects = rects
 			.attr("x", d => { return (xScale(d.data[0]) ?? 0) + (bandwidth - barWidth) / 2 })
-			.attr("y", d => y(d[1]))
-			.attr("height", d => y(d[0]) - y(d[1]))
 			.attr("width", barWidth)
+		if (shouldAnimate) {
+			positionedRects
+				.transition()
+				.attr("y", d => y(d[1]))
+				.attr("height", d => y(d[0]) - y(d[1]))
+		} else {
+			positionedRects
+				.interrupt()
+				.attr("y", d => y(d[1]))
+				.attr("height", d => y(d[0]) - y(d[1]))
+		}
 
 		if (!this.xAxisGroup) {
 			this.xAxisGroup = svg.append("g")
 		}
-		this.xAxisGroup.attr("transform", `translate(0,${this.chartHeight - this.margins.bottom})`)
-			.transition().call(xAxis)
+		const xAxisGroup = this.xAxisGroup.attr("transform", `translate(0,${this.chartHeight - this.margins.bottom})`)
+		if (shouldAnimate) {
+			xAxisGroup.transition().call(xAxis)
+		} else {
+			xAxisGroup.interrupt().call(xAxis)
+		}
 
 		if (!this.yAxisGroup) {
 			this.yAxisGroup = svg.append("g")
@@ -517,8 +559,13 @@ export class BarChart2 extends LitElement {
 		if (yAxisConfig.tickFormat) {
 			yAxis.tickFormat(yAxisConfig.tickFormat)
 		}
-		this.yAxisGroup.attr("transform", `translate(${this.margins.left},0)`)
-			.transition().call(yAxis)
+		const yAxisGroup = this.yAxisGroup.attr("transform", `translate(${this.margins.left},0)`)
+		if (shouldAnimate) {
+			yAxisGroup.transition().call(yAxis)
+		} else {
+			yAxisGroup.interrupt().call(yAxis)
+		}
+		this.hasRenderedChart = true;
 
 	}
 }

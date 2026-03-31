@@ -8,6 +8,7 @@ import {
   hasMeaningfulFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
+  queryStateComparisonKey,
 } from './helpers';
 import type { AnalysisPageViewModel, AnalysisQueryState, AnalysisSidebarTab } from './types';
 import { useAnalysisData } from './use-analysis-data';
@@ -21,10 +22,6 @@ function initState(): AnalysisQueryState {
 
 function stringArraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function queryStatesEqual(left: AnalysisQueryState, right: AnalysisQueryState): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
@@ -169,7 +166,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setRightPanelOpen((current) => !current);
   }, []);
 
-  const canResetFilters = useMemo(() => !queryStatesEqual(queryState, lastResetState), [lastResetState, queryState]);
+  const canResetFilters = useMemo(() => {
+    const queryStateKey = queryStateComparisonKey(queryState);
+    const lastResetStateKey = queryStateComparisonKey(lastResetState);
+    if (queryStateKey == null || lastResetStateKey == null) return false;
+
+    return queryStateKey !== lastResetStateKey;
+  }, [lastResetState, queryState]);
 
   return {
     authUserName,
@@ -193,6 +196,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     groupInfos: data.groupInfos,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
+    groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
+    groupsActivityLoadedPeriod: data.groupsActivityLoadedPeriod,
     groupsActivityLoading: data.groupsActivityLoading,
     includeOnlyNewFreqs: queryState.includeOnlyNewFreqs,
     inboxReq: data.inboxReq,

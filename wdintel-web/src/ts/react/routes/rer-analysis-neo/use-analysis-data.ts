@@ -94,6 +94,8 @@ type Result = {
   downloadKmz: () => Promise<void>;
   downloadSummaryXlsx: () => Promise<void>;
   groupsActivity: FreqDailyActivityCount | null;
+  groupsActivityLoadedFreq: string | null;
+  groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
   loadCallsignGraph: () => Promise<void>;
@@ -201,6 +203,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [callsignGraphLoadVersion, setCallsignGraphLoadVersion] = useState(0);
   const [callsignGraphNolimit, setCallsignGraphNolimit] = useState(false);
   const [groupsActivity, setGroupsActivity] = useState<FreqDailyActivityCount | null>(null);
+  const [groupsActivityLoadedFreq, setGroupsActivityLoadedFreq] = useState<string | null>(null);
+  const [groupsActivityLoadedPeriod, setGroupsActivityLoadedPeriod] = useState<AnalysisGroupsActivityPeriod | null>(null);
   const [groupsActivityLoading, setGroupsActivityLoading] = useState(false);
   const [groupsActivityPeriod, setGroupsActivityPeriod] = useState<AnalysisGroupsActivityPeriod>('selected');
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
@@ -481,6 +485,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     const firstFreq = queryState.freqsSelected[0];
     if (analysisReq == null || !firstFreq) {
       setGroupsActivity(null);
+      setGroupsActivityLoadedFreq(null);
+      setGroupsActivityLoadedPeriod(null);
       return;
     }
 
@@ -505,6 +511,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         tillDateInclusiveMs,
       });
       setGroupsActivity(rsp);
+      setGroupsActivityLoadedFreq(firstFreq);
+      setGroupsActivityLoadedPeriod(nextPeriod);
     } catch (loadError) {
       if (!onUnauthorized(loadError)) {
         onError(toErrorMessage(loadError));
@@ -976,6 +984,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     downloadKmz,
     downloadSummaryXlsx,
     groupsActivity,
+    groupsActivityLoadedFreq,
+    groupsActivityLoadedPeriod,
     groupsActivityLoading,
     inboxReq: buildInboxReq(queryState, options.freqs),
     loadCallsignGraph,

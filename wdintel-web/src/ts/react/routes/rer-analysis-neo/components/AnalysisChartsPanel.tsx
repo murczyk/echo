@@ -11,11 +11,14 @@ type Props = {
   correlatedFreqsLoading: boolean;
   filtersLoading: boolean;
   groupsActivity: FreqDailyActivityCount | null;
+  groupsActivityLoadedFreq: string | null;
+  groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   onLoadCorrelatedFreqs: () => void;
   onLoadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
   onSelectFreq: (freq: string) => void;
+  selectedFreq: string | null;
   topFreqs: AnalysisCountItem[];
   topLocations: AnalysisCountItem[];
   topUnits: AnalysisCountItem[];
@@ -26,15 +29,23 @@ export function AnalysisChartsPanel({
   correlatedFreqsLoading,
   filtersLoading,
   groupsActivity,
+  groupsActivityLoadedFreq,
+  groupsActivityLoadedPeriod,
   groupsActivityLoading,
   groupsActivityPeriod,
   onLoadCorrelatedFreqs,
   onLoadGroupsActivity,
   onSelectFreq,
+  selectedFreq,
   topFreqs,
   topLocations,
   topUnits,
 }: Props) {
+  const suggestedFreqs = topFreqs
+    .filter((item) => item.key.trim().length > 0)
+    .map((item) => item.key)
+    .slice(0, 6);
+
   return (
     <Stack spacing={0}>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -52,9 +63,14 @@ export function AnalysisChartsPanel({
       <Box>
         <AnalysisGroupsActivityCard
           groupsActivity={groupsActivity}
+          groupsActivityLoadedFreq={groupsActivityLoadedFreq}
+          groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
           loading={groupsActivityLoading}
           period={groupsActivityPeriod}
           onLoad={onLoadGroupsActivity}
+          onSelectFreq={onSelectFreq}
+          selectedFreq={selectedFreq}
+          suggestedFreqs={suggestedFreqs}
         />
       </Box>
     </Stack>

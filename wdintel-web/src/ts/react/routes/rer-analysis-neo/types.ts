@@ -91,6 +91,8 @@ export type AnalysisPageState = {
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoading: boolean;
   groupsActivity: FreqDailyActivityCount | null;
+  groupsActivityLoadedFreq: string | null;
+  groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;

@@ -13,6 +13,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  CircularProgress: () => <div>loading-spinner</div>,
   List: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ListItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
@@ -127,6 +128,15 @@ describe('AnalysisCountBlock', () => {
 
     expect(view.container.textContent).toContain('loading-skeleton');
     expect(view.container.textContent).not.toContain('Немає даних');
+  });
+
+  it('keeps existing items visible during background refresh and shows a spinner instead of skeletons', async () => {
+    const view = await renderComponent([{ key: '147.3750', count: 51 }], true);
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('147.3750');
+    expect(view.container.textContent).toContain('loading-spinner');
+    expect(view.container.textContent).not.toContain('loading-skeleton');
   });
 
   it('renders an item action and wires it to the clicked metric', async () => {

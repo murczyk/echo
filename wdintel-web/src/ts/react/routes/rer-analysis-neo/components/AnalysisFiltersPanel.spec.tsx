@@ -185,14 +185,34 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const frequencyField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; disabled?: boolean })
+      .map(([callProps]) => callProps as { label: string; disabled?: boolean; loading?: boolean })
       .find((callProps) => callProps.label === 'Частоти');
     const networkField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; disabled?: boolean })
+      .map(([callProps]) => callProps as { label: string; disabled?: boolean; loading?: boolean })
       .find((callProps) => callProps.label === 'Мережі');
 
     expect(frequencyField?.disabled).toBe(true);
     expect(networkField?.disabled).toBe(true);
+  });
+
+  it('keeps server-backed filter fields interactive while their options refresh', async () => {
+    const props = buildProps({
+      filtersLoading: true,
+    });
+
+    rendered.push(await renderComponent(props));
+
+    const frequencyField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; disabled?: boolean; loading?: boolean })
+      .find((callProps) => callProps.label === 'Частоти');
+    const groupsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; disabled?: boolean; loading?: boolean })
+      .find((callProps) => callProps.label === 'Групи');
+
+    expect(frequencyField?.disabled ?? false).toBe(false);
+    expect(frequencyField?.loading).toBe(true);
+    expect(groupsField?.disabled ?? false).toBe(false);
+    expect(groupsField?.loading).toBe(true);
   });
 
   it('wires checkbox and switch changes into the analysis callbacks', async () => {

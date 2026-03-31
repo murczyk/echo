@@ -117,22 +117,11 @@ export function createResetQueryState(now: Date = new Date()): AnalysisQueryStat
 }
 
 export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): boolean {
-  const {
-    dateFromStr: _dateFromStr,
-    timeFromStr: _timeFromStr,
-    dateToStr: _dateToStr,
-    timeToStr: _timeToStr,
-    ...rest
-  } = state;
-  const {
-    dateFromStr: _defaultDateFromStr,
-    timeFromStr: _defaultTimeFromStr,
-    dateToStr: _defaultDateToStr,
-    timeToStr: _defaultTimeToStr,
-    ...defaultRest
-  } = emptyQueryState();
+  const stateKey = queryStateComparisonKey(state);
+  const defaultKey = queryStateComparisonKey(createResetQueryState());
+  if (stateKey == null || defaultKey == null) return false;
 
-  return JSON.stringify(rest) !== JSON.stringify(defaultRest);
+  return stateKey !== defaultKey;
 }
 
 export function pushQueryStateToUrl(state: AnalysisQueryState) {
@@ -398,13 +387,25 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
   });
 }
 
+function analysisReqComparisonKey(req: AnalysisStatsReq, allFrequencies: string[] = []): string | null {
+  const normalized = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(req), allFrequencies);
+  if (normalized == null) return null;
+
+  const { sinceDateInclusiveMs: _sinceDateInclusiveMs, tillDateNoninclusiveMs: _tillDateNoninclusiveMs, ...rest } = normalized;
+  return JSON.stringify(rest);
+}
+
+export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
+  const req = buildAnalysisReq(state, allFrequencies);
+  if (req == null) return null;
+
+  return analysisReqComparisonKey(req, allFrequencies);
+}
+
 export function queryStateMatchesSavedFilter(state: AnalysisQueryState, savedFilter: SavedFilter, allFrequencies: string[] = []): boolean {
-  const currentReq = buildAnalysisReq(state, allFrequencies);
-  if (currentReq == null) return false;
+  const stateKey = queryStateComparisonKey(state, allFrequencies);
+  const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
+  if (stateKey == null || savedFilterKey == null) return false;
 
-  const normalizedState = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(currentReq), allFrequencies);
-  const normalizedSaved = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(savedFilter.req), allFrequencies);
-  if (normalizedState == null || normalizedSaved == null) return false;
-
-  return JSON.stringify(normalizedState) === JSON.stringify(normalizedSaved);
+  return stateKey === savedFilterKey;
 }

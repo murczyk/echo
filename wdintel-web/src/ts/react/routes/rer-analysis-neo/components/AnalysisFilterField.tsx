@@ -5,10 +5,11 @@ type Props = {
   options: string[];
   value: string[];
   disabled?: boolean;
+  loading?: boolean;
   onChange: (next: string[]) => void;
 };
 
-export function AnalysisFilterField({ label, options, value, disabled, onChange }: Props) {
+export function AnalysisFilterField({ label, options, value, disabled, loading, onChange }: Props) {
   return (
     <Autocomplete
       multiple
@@ -16,6 +17,7 @@ export function AnalysisFilterField({ label, options, value, disabled, onChange 
       options={options}
       value={value}
       disabled={disabled}
+      loading={loading}
       openText="Відкрити"
       closeText="Закрити"
       clearText="Очистити"

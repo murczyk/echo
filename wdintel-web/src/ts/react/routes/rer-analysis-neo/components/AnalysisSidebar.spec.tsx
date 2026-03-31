@@ -74,6 +74,8 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     counts: null,
     filtersLoading: false,
     groupsActivity: null,
+    groupsActivityLoadedFreq: null,
+    groupsActivityLoadedPeriod: null,
     groupsActivityPeriod: 'selected',
     groupsActivityLoading: false,
     loadCallsignGraph: vi.fn(),
@@ -81,6 +83,9 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     loadGroupsActivity: vi.fn(),
     newCallsigns: [],
     newCallsignsLoading: false,
+    queryState: {
+      freqsSelected: [],
+    } as ComponentProps<typeof AnalysisSidebar>['queryState'],
     rightPanelOpen: true,
     rightSidebarTab: 'stats',
     selectOnlyFreq: vi.fn(),

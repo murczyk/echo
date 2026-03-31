@@ -21,10 +21,13 @@ type Props = Pick<
   | 'counts'
   | 'filtersLoading'
   | 'groupsActivity'
+  | 'groupsActivityLoadedFreq'
+  | 'groupsActivityLoadedPeriod'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
   | 'newCallsigns'
   | 'newCallsignsLoading'
+  | 'queryState'
   | 'rightSidebarTab'
   | 'rightPanelOpen'
   | 'topCallsigns'
@@ -52,6 +55,8 @@ export function AnalysisSidebar({
   counts,
   filtersLoading,
   groupsActivity,
+  groupsActivityLoadedFreq,
+  groupsActivityLoadedPeriod,
   groupsActivityPeriod,
   groupsActivityLoading,
   loadCallsignGraph,
@@ -59,6 +64,7 @@ export function AnalysisSidebar({
   loadGroupsActivity,
   newCallsigns,
   newCallsignsLoading,
+  queryState,
   rightPanelOpen,
   rightSidebarTab,
   selectOnlyFreq,
@@ -135,11 +141,14 @@ export function AnalysisSidebar({
                 correlatedFreqsLoading={correlatedFreqsLoading}
                 filtersLoading={filtersLoading}
                 groupsActivity={groupsActivity}
+                groupsActivityLoadedFreq={groupsActivityLoadedFreq}
+                groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
                 groupsActivityPeriod={groupsActivityPeriod}
                 groupsActivityLoading={groupsActivityLoading}
                 onLoadCorrelatedFreqs={loadCorrelatedFreqs}
                 onLoadGroupsActivity={loadGroupsActivity}
                 onSelectFreq={selectOnlyFreq}
+                selectedFreq={queryState.freqsSelected[0] ?? null}
                 topFreqs={topFreqs}
                 topLocations={topLocations}
                 topUnits={topUnits}
