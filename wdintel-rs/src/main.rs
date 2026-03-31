@@ -645,6 +645,7 @@ enum Cmd {
     OneoffFillSigintInboxItemTags,
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
     OneoffHighlightInboxMessagePalitra(OneoffHighlightInboxMessagePalitraPs),
+    OneoffBackupPalitras,
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
@@ -1137,6 +1138,9 @@ async fn async_main(
         Cmd::OneoffHighlightInboxMessagePalitra(ps) => {
             palitra::oneoff::oneoff_highlight_inbox_message_palitra_points(mode, &ps).await
         },
+        Cmd::OneoffBackupPalitras => {
+            palitra::oneoff::oneoff_backup_palitras(mode).await
+        }
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
     }
 }

@@ -775,6 +775,25 @@ where
     render_palitra(Either::Left(palitra), dbx).await
 }
 
+pub async fn update_palitra_s3_id<'a, 'async_trait, C>(
+    txn: &'a C,
+    palitra_id: i64,
+    s3_id: Option<String>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let mut palitra = palitra.into_active_model();
+    palitra.s3_id = Set(s3_id);
+    palitra.update(txn).await.c(h!())?;
+    Ok(())
+}
+
 async fn render_palitra_details<'a, 'async_trait, C>(
     txn: &'a C,
     palitra_ids: Vec<i64>,

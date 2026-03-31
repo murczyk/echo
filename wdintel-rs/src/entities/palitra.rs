@@ -18,6 +18,8 @@ pub struct Model {
     pub author: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub source_file_name_legacy: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub s3_id: Option<String>,
     pub deleted: bool,
     pub deleted_at: Option<DateTime>,
     pub created_at: DateTime,

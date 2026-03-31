@@ -1,17 +1,21 @@
-use crate::config::PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE;
+use crate::config::{
+    mk_s3, mk_s3_config, read_config, PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE,
+};
 use crate::entities::{
-    palitra_point, palitra_point_lexeme, sigint_inbox_item,
-    sigint_inbox_item_point_token,
+    palitra, palitra_geometry, palitra_point, palitra_point_lexeme,
+    sigint_inbox_item, sigint_inbox_item_point_token,
 };
 use crate::error::AppError;
 use crate::palitra::worker::{do_palitra_highlight, PalitraWorkerContext};
-use crate::types::{Mode, ShortContext};
+use crate::storage;
+use crate::types::{Kyiv, Mode, ShortContext, Utc};
 use crate::utils::parse_local_datetime;
-use crate::{h, new_pg_pool_from_mode};
+use crate::{h, new_pg_pool_from_config, new_pg_pool_from_mode};
 use futures_util::TryStreamExt;
 use sea_orm::*;
 use sea_query::{Expr, OnConflict};
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 
 pub async fn oneoff_backfill_palitra_point_lexemes(
@@ -119,6 +123,89 @@ pub async fn oneoff_highlight_inbox_message_palitra_points(
     Ok(())
 }
 
+pub async fn oneoff_backup_palitras(mode: Mode) -> Result<(), AppError> {
+    let started_at = std::time::Instant::now();
+    println!("> starting oneoff_backup_palitras");
+    let config = read_config(mode).c(h!())?;
+    let dbx = new_pg_pool_from_config(&config).await.c(h!())?;
+    let s3 = mk_s3(&config).c(h!())?;
+    let s3_config = mk_s3_config(&config).c(h!())?.ok_or(AppError::BL {
+        msg: "S3 is not configured".to_string(),
+    })?;
+    let s3_config_for_download = Some(s3_config);
+    let strongbox_key = config
+        .s3_config
+        .as_ref()
+        .ok_or(AppError::BL {
+            msg: "S3 is not configured".to_string(),
+        })?
+        .strongbox_key
+        .clone();
+    let date = Utc::now()
+        .with_timezone(&Kyiv)
+        .date_naive()
+        .format("%Y-%m-%d");
+    let output_dir =
+        std::path::PathBuf::from(format!("/var/tmp/palitras_bkp_{date}"));
+    if output_dir.exists() {
+        return Err(AppError::BL {
+            msg: format!(
+                "backup directory already exists: {}",
+                output_dir.display()
+            ),
+        });
+    }
+    std::fs::create_dir_all(&output_dir).c(h!())?;
+
+    let palitras = palitra::Entity::find()
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra::Column::S3Id.is_not_null())
+        .order_by_asc(palitra::Column::Id)
+        .all(&dbx)
+        .await
+        .c(h!())?;
+    println!("loaded {} palitras with s3_id", palitras.len());
+
+    let mut restored = 0usize;
+    for palitra in palitras {
+        let geometry = palitra_geometry::Entity::find()
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .order_by_desc(palitra_geometry::Column::UpdatedAt)
+            .order_by_desc(palitra_geometry::Column::Id)
+            .one(&dbx)
+            .await
+            .c(h!())?;
+        let s3_id = palitra.s3_id.clone().c(h!())?;
+        let bytes = storage::download_and_decrypt_from_s3_with_operator(
+            &s3,
+            &s3_config_for_download,
+            &strongbox_key,
+            &s3_id,
+        )
+        .await
+        .c(h!())?;
+        let filename = build_backup_file_name(&palitra, geometry.as_ref());
+        let target_path = output_dir.join(filename);
+        tokio::fs::write(&target_path, bytes).await.c(h!())?;
+        restored += 1;
+        println!(
+            "restored palitra_id={} s3_id={} -> {}",
+            palitra.id,
+            s3_id,
+            target_path.display()
+        );
+    }
+
+    println!(
+        "> backup done: palitras={} dir={} elapsed={:?}",
+        restored,
+        output_dir.display(),
+        started_at.elapsed()
+    );
+    Ok(())
+}
+
 async fn insert_lexeme_batch(
     rq: &reqwest::Client,
     dbx: &DatabaseConnection,
@@ -173,4 +260,28 @@ async fn insert_lexeme_batch(
         })
         .c(h!())?;
     Ok(lexemes_inserted)
+}
+
+fn build_backup_file_name(
+    palitra: &palitra::Model,
+    geometry: Option<&palitra_geometry::Model>,
+) -> String {
+    let source_file_name = geometry
+        .and_then(|geometry| geometry.source_file_name.as_deref())
+        .map(crate::palitra::kmz::sanitize_upload_filename);
+    let timestamp = geometry
+        .and_then(|geometry| geometry.last_uploaded_at)
+        .map(|ts| ts.and_utc().format("%Y%m%dT%H%M%SZ").to_string())
+        .unwrap_or_else(|| "unknown-ts".to_string());
+    let fallback_extension = palitra
+        .s3_id
+        .as_deref()
+        .and_then(|s3_id| Path::new(s3_id).extension())
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .unwrap_or("kmz");
+    let fallback_name =
+        format!("palitra_{}.{}", palitra.id, fallback_extension);
+    let source_file_name = source_file_name.unwrap_or(fallback_name);
+    format!("{:06}_{}_{}", palitra.id, timestamp, source_file_name)
 }
