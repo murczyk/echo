@@ -16,9 +16,6 @@ pub struct Model {
     pub position: String,
     #[sea_orm(column_type = "Text")]
     pub comment: String,
-    #[sea_orm(column_type = "Text")]
-    #[serde(default)]
-    pub full_name: String,
     pub unit_id: i64,
     pub deleted: bool,
     pub created_at: DateTime,
@@ -28,6 +25,8 @@ pub struct Model {
     pub radio_freq: String,
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
+    #[sea_orm(column_type = "Text")]
+    pub full_name: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
