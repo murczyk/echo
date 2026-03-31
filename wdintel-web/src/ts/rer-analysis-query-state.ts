@@ -153,7 +153,7 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   withoutMetadata: false,
   tags: [],
   includePelengLocations: true,
-  unitsExactMatchOnly: null,
+  unitsExactMatchOnly: true,
   adjacentFreqsRange: 0,
   withoutModelTags: false,
   filterTagsOption: 'OneOfTags',
@@ -204,6 +204,10 @@ export function normalizeRerAnalysisQueryState(state: unknown): RerAnalysisQuery
     if (mappedKey && normalized[mappedKey] === undefined) {
       normalized[mappedKey] = value;
     }
+  }
+
+  if (normalized.unitsExactMatchOnly == null) {
+    normalized.unitsExactMatchOnly = true;
   }
 
   return normalized;

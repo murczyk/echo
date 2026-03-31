@@ -436,7 +436,12 @@ export function AnalysisFiltersPanel({
             />
             <Box>
               <FormControlLabel
-                control={<Checkbox checked={queryState.unitsExactMatchOnly ?? true} onChange={(_e, value) => updateQueryState({ unitsExactMatchOnly: value })} />}
+                control={
+                  <Checkbox
+                    checked={queryState.unitsExactMatchOnly !== false}
+                    onChange={(_e, value) => updateQueryState({ unitsExactMatchOnly: value })}
+                  />
+                }
                 label="Точний збіг за еталонкою"
                 sx={compactCheckboxLabelSx}
               />

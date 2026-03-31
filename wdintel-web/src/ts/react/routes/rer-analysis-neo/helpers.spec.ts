@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SavedFilter } from '../../../../Bindings';
-import { buildAnalysisReq, emptyQueryState, queryStateComparisonKey, queryStateMatchesSavedFilter } from './helpers';
+import { buildAnalysisReq, buildInboxReq, emptyQueryState, queryStateComparisonKey, queryStateMatchesSavedFilter } from './helpers';
 import type { AnalysisQueryState } from './types';
 
 function createQueryState(overrides: Partial<AnalysisQueryState> = {}): AnalysisQueryState {
@@ -50,5 +50,14 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(queryStateMatchesSavedFilter(changedState, savedFilter)).toBe(false);
     expect(queryStateComparisonKey(changedState)).not.toBe(queryStateComparisonKey(createQueryState()));
+  });
+
+  it('normalizes null unitsExactMatchOnly to exact-match requests', () => {
+    const state = createQueryState({ unitsExactMatchOnly: null, unitsSelected: ['Unit A'] });
+    const analysisReq = buildAnalysisReq(state);
+    const inboxReq = buildInboxReq(state);
+
+    expect(analysisReq?.unitsExactMatchOnly).toBe(true);
+    expect(inboxReq?.unitsExactMatchOnly).toBe(true);
   });
 });

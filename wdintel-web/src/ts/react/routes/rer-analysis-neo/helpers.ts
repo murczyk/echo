@@ -58,7 +58,7 @@ export function emptyQueryState(): AnalysisQueryState {
     withoutMetadata: false,
     tags: [],
     includePelengLocations: true,
-    unitsExactMatchOnly: null,
+    unitsExactMatchOnly: true,
     adjacentFreqsRange: 0,
     withoutModelTags: false,
     filterTagsOption: 'OneOfTags',
@@ -156,6 +156,10 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
     next = { ...next, networksSelected: [] };
   }
 
+  if (next.unitsExactMatchOnly == null) {
+    next = { ...next, unitsExactMatchOnly: true };
+  }
+
   return next;
 }
 
@@ -199,7 +203,7 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
     onlyWithMetadata: query.onlyWithMetadata,
     withoutMetadata: query.withoutMetadata,
     includePelengLocations: query.includePelengLocations,
-    unitsExactMatchOnly: query.unitsExactMatchOnly ?? true,
+    unitsExactMatchOnly: query.unitsExactMatchOnly,
     filterTagsOption: query.filterTagsOption,
     withoutModelTags: query.withoutModelTags,
     reportTagsOnlyThisUnit: query.reportTagsOnlyThisUnit,
@@ -308,7 +312,7 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
     withoutMetadata: req.withoutMetadata ?? false,
     tags: req.selectedTags ?? [],
     includePelengLocations: req.includePelengLocations ?? true,
-    unitsExactMatchOnly: req.unitsExactMatchOnly ?? null,
+    unitsExactMatchOnly: req.unitsExactMatchOnly,
     withoutModelTags: req.withoutModelTags ?? false,
     filterTagsOption: req.filterTagsOption ?? 'OneOfTags',
     reportTagsOnlyThisUnit: req.reportTagsOnlyThisUnit ?? false,
@@ -378,7 +382,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     withoutMetadata: normalized.withoutMetadata,
     tags: normalized.selectedTags ?? [],
     includePelengLocations: normalized.includePelengLocations,
-    unitsExactMatchOnly: normalized.unitsExactMatchOnly ?? null,
+    unitsExactMatchOnly: normalized.unitsExactMatchOnly ?? true,
     withoutModelTags: normalized.withoutModelTags,
     filterTagsOption: normalized.filterTagsOption,
     reportTagsOnlyThisUnit: normalized.reportTagsOnlyThisUnit,

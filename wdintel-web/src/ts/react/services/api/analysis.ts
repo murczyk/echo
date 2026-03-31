@@ -245,7 +245,7 @@ export async function submitAnalysisInboxMessages(req: InboxSubmitReq): Promise<
 }
 
 export async function editAnalysisFreqUnitName(req: EditFreqUnitNameReq): Promise<void> {
-  await postVoid('/api/rer/analysis/edit-freq-unit-name', transformCamelToSnake(req));
+  await postVoid('/api/rer/analysis/freq-edit-unit-name', transformCamelToSnake(req));
 }
 
 export async function downloadAnalysisSummaryTableXlsx(req: AnalysisStatsReq): Promise<Blob> {

@@ -218,6 +218,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
   const [networks, setNetworks] = useState<Network[]>([]);
+  const mapMessagesLoadVersionRef = useRef(0);
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const optionsFreqsRef = useRef<string[]>([]);
@@ -289,10 +290,21 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
+      const loadVersion = mapMessagesLoadVersionRef.current + 1;
+      mapMessagesLoadVersionRef.current = loadVersion;
+
       try {
         const nextMessages = await fetchMessagesByIds(messageIds);
+        if (mapMessagesLoadVersionRef.current !== loadVersion) {
+          return;
+        }
+
         setMapOpenMessages(nextMessages);
       } catch (loadError) {
+        if (mapMessagesLoadVersionRef.current !== loadVersion) {
+          return;
+        }
+
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }

@@ -473,7 +473,7 @@ function CallsignsTableComponent({
           ...(baseProps as { sx?: object })?.sx,
           ...FULL_WIDTH_TABLE_PAPER_SX,
           height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? '100%' : undefined,
+          minHeight: isInitialLoading ? '100%' : 0,
           overflowX: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
           overflowY: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
           overflow: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
@@ -492,7 +492,7 @@ function CallsignsTableComponent({
           ...getPageScrollTableContainerSx({
             loading: showTableOverlay,
             height: isInitialLoading ? '100%' : 'auto',
-            minHeight: isInitialLoading ? '100%' : undefined,
+            minHeight: isInitialLoading ? '100%' : 0,
             maxHeight: isFullScreen ? '100%' : 'none',
             idleOverflowX: isFullScreen ? 'auto' : 'visible',
             idleOverflowY: isFullScreen ? 'auto' : 'visible',

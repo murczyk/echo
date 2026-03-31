@@ -56,6 +56,7 @@ describe('rer analysis query state', () => {
       withoutNetwork: true,
       metadataCc: ['cc-1'],
       includePelengLocations: false,
+      unitsExactMatchOnly: true,
       adjacentFreqsRange: 0.002,
       reportTagsOnlyThisUnit: true,
     });
@@ -101,6 +102,7 @@ describe('rer analysis query state', () => {
     expect(loadRerAnalysisQueryState()).toEqual({
       search: 'abc',
       metadataSender: ['sigint'],
+      unitsExactMatchOnly: true,
       withoutModelTags: true,
     });
   });

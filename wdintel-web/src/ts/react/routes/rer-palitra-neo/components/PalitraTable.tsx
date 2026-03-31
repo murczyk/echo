@@ -286,7 +286,7 @@ export function PalitraTable({
           ...(baseProps as { sx?: object })?.sx,
           ...FULL_WIDTH_TABLE_PAPER_SX,
           height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? '100%' : undefined,
+          minHeight: isInitialLoading ? '100%' : 0,
           overflow: table.getState().isFullScreen ? 'auto' : 'hidden',
         },
         style: {
@@ -301,7 +301,7 @@ export function PalitraTable({
         ...getPageScrollTableContainerSx({
           loading: showTableOverlay,
           height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? '100%' : undefined,
+          minHeight: isInitialLoading ? '100%' : 0,
           maxHeight: table.getState().isFullScreen ? '100%' : 'none',
           idleOverflow: 'auto',
         }),
