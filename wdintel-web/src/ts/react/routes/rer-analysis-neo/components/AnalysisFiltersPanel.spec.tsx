@@ -2,7 +2,6 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
-import { act } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -156,11 +155,32 @@ function findLabelInput(container: HTMLElement, labelText: string): HTMLInputEle
   return input;
 }
 
+function findLabelSelect(container: HTMLElement, labelText: string): HTMLSelectElement {
+  const wrapper = Array.from(container.querySelectorAll('div,label')).find((item) => {
+    if (!item.textContent?.includes(labelText)) return false;
+    const select = item.querySelector('select');
+    if (!(select instanceof HTMLSelectElement)) return false;
+    const optionValues = Array.from(select.options).map((option) => option.value);
+    return optionValues.includes('default') && optionValues.includes('exact') && optionValues.includes('non-exact');
+  });
+  if (!wrapper) throw new Error(`Select label not found: ${labelText}`);
+  const select = wrapper.querySelector('select');
+  if (!(select instanceof HTMLSelectElement)) throw new Error(`Select not found for label: ${labelText}`);
+  return select;
+}
+
 async function setChecked(input: HTMLInputElement, checked: boolean): Promise<void> {
   await act(async () => {
     if (input.checked !== checked) {
       input.click();
     }
+  });
+}
+
+async function setSelectValue(select: HTMLSelectElement, value: string): Promise<void> {
+  await act(async () => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
 
@@ -242,6 +262,36 @@ describe('AnalysisFiltersPanel', () => {
     expect(updateQueryState).toHaveBeenCalledWith({ withoutNetwork: true });
   });
 
+  it('shows the explicit server-default hint chip when the tri-state filter is unset', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 3,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
+        queryState: {
+          ...emptyQueryState(),
+          unitsExactMatchOnly: null,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('режим: серверний дефолт');
+  });
+
   it('shows the Elm-style exact-match hint chip when count stats are available', async () => {
     const view = await renderComponent(
       buildProps({
@@ -270,6 +320,29 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('неточних збігів: 7');
+  });
+
+  it('updates the tri-state units match filter explicitly', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+        queryState: {
+          ...emptyQueryState(),
+          unitsExactMatchOnly: null,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    const select = findLabelSelect(view.container, 'Збіг за еталонкою');
+    await setSelectValue(select, 'exact');
+    await setSelectValue(select, 'non-exact');
+    await setSelectValue(select, 'default');
+
+    expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: true });
+    expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: null });
   });
 
   it('renders reset inside the filters panel and disables it when there is nothing to reset', async () => {

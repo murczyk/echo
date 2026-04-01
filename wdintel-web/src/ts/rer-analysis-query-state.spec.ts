@@ -10,6 +10,12 @@ import {
   saveRerAnalysisQueryState,
   writeRerAnalysisQueryStateToSearchParams,
 } from './rer-analysis-query-state';
+import {
+  loadLegacyRerAnalysisQueryState,
+  parseRerAnalysisLegacyState,
+  RER_ANALYSIS_LEGACY_QUERY_STATE_KEY,
+  saveLegacyRerAnalysisQueryState,
+} from './rer-analysis-query-state-legacy';
 
 describe('rer analysis query state', () => {
   beforeEach(() => {
@@ -37,18 +43,21 @@ describe('rer analysis query state', () => {
     delete (globalThis as { localStorage?: Storage }).localStorage;
   });
 
-  it('normalizes legacy snake_case keys into canonical camelCase fields', () => {
+  it('normalizes legacy snake_case keys through the legacy adapter', () => {
     expect(
-      normalizeRerAnalysisQueryState({
-        date_from_str: '2026-03-27',
-        time_from_str: '21:52',
-        freqs_selected: ['123.4'],
-        without_network: true,
-        metadata_cc: ['cc-1'],
-        include_peleng_locations: false,
-        adjacent_freqs_range: 0.002,
-        report_tags_only_this_unit: true,
-      }),
+      parseRerAnalysisLegacyState(
+        JSON.stringify({
+          date_from_str: '2026-03-27',
+          time_from_str: '21:52',
+          freqs_selected: ['123.4'],
+          without_network: true,
+          metadata_cc: ['cc-1'],
+          include_peleng_locations: false,
+          adjacent_freqs_range: 0.002,
+          filter_tags_option: 'AllOfTags',
+          report_tags_only_this_unit: true,
+        }),
+      ),
     ).toEqual({
       dateFromStr: '2026-03-27',
       timeFromStr: '21:52',
@@ -56,9 +65,28 @@ describe('rer analysis query state', () => {
       withoutNetwork: true,
       metadataCc: ['cc-1'],
       includePelengLocations: false,
-      unitsExactMatchOnly: true,
+      unitsExactMatchOnly: null,
       adjacentFreqsRange: 0.002,
+      filterTagsOption: 'AllTags',
       reportTagsOnlyThisUnit: true,
+    });
+  });
+
+  it('keeps canonical normalization limited to canonical keys', () => {
+    expect(
+      normalizeRerAnalysisQueryState({
+        date_from_str: '2026-03-27',
+        search: 'abc',
+      }),
+    ).toEqual({
+      search: 'abc',
+    });
+  });
+
+  it('preserves an unset unitsExactMatchOnly state for legacy state payloads', () => {
+    expect(parseRerAnalysisLegacyState(JSON.stringify({ search: 'abc' }))).toEqual({
+      search: 'abc',
+      unitsExactMatchOnly: null,
     });
   });
 
@@ -86,12 +114,30 @@ describe('rer analysis query state', () => {
       timeToStr: '09:52',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
+      unitsExactMatchOnly: null,
     });
   });
 
-  it('loads stored legacy state in normalized form', () => {
+  it('loads stored canonical state in normalized form', () => {
     globalThis.localStorage.setItem(
       RER_ANALYSIS_QUERY_STATE_KEY,
+      JSON.stringify({
+        search: 'abc',
+        metadataSender: ['sigint'],
+        withoutModelTags: true,
+      }),
+    );
+
+    expect(loadRerAnalysisQueryState()).toEqual({
+      search: 'abc',
+      metadataSender: ['sigint'],
+      withoutModelTags: true,
+    });
+  });
+
+  it('loads stored legacy state through the legacy storage key', () => {
+    globalThis.localStorage.setItem(
+      RER_ANALYSIS_LEGACY_QUERY_STATE_KEY,
       JSON.stringify({
         search: 'abc',
         metadata_sender: ['sigint'],
@@ -99,10 +145,10 @@ describe('rer analysis query state', () => {
       }),
     );
 
-    expect(loadRerAnalysisQueryState()).toEqual({
+    expect(loadLegacyRerAnalysisQueryState()).toEqual({
       search: 'abc',
       metadataSender: ['sigint'],
-      unitsExactMatchOnly: true,
+      unitsExactMatchOnly: null,
       withoutModelTags: true,
     });
   });
@@ -117,6 +163,17 @@ describe('rer analysis query state', () => {
     });
 
     expect(globalThis.localStorage.getItem(RER_ANALYSIS_QUERY_STATE_KEY)).toBe(JSON.stringify({ search: 'uid-1' }));
+  });
+
+  it('saves legacy state without canonical compaction on the legacy storage key', () => {
+    saveLegacyRerAnalysisQueryState({
+      search: 'uid-1',
+      metadata_sender: ['sigint'],
+    });
+
+    expect(globalThis.localStorage.getItem(RER_ANALYSIS_LEGACY_QUERY_STATE_KEY)).toBe(
+      JSON.stringify({ search: 'uid-1', metadata_sender: ['sigint'] }),
+    );
   });
 
   it('writes flat query params instead of legacy state json', () => {
@@ -139,9 +196,22 @@ describe('rer analysis query state', () => {
     );
   });
 
+  it('round-trips nullable canonical booleans through flat query params', () => {
+    const params = new URLSearchParams();
+
+    writeRerAnalysisQueryStateToSearchParams(params, {
+      unitsExactMatchOnly: null,
+    });
+
+    expect(params.toString()).toBe('unitsExactMatchOnly=null');
+    expect(parseRerAnalysisQueryStateFromSearchParams(params)).toEqual({
+      unitsExactMatchOnly: null,
+    });
+  });
+
   it('parses flat query params into canonical query state', () => {
     const params = new URLSearchParams(
-      'dateFrom=2026-03-27&timeFrom=21%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&withoutNetwork=true&tags=7&tags=11',
+      'dateFrom=2026-03-27&timeFrom=21%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&withoutNetwork=true&tags=7&tags=11&filterTagsOption=AllTags',
     );
 
     expect(parseRerAnalysisQueryStateFromSearchParams(params)).toEqual({
@@ -151,6 +221,7 @@ describe('rer analysis query state', () => {
       freqsSelected: ['123.4', '123.5'],
       withoutNetwork: true,
       tags: [7, 11],
+      filterTagsOption: 'AllTags',
     });
     expect(hasRerAnalysisQueryStateParams(params)).toBe(true);
   });

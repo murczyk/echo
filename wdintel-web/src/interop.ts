@@ -51,7 +51,7 @@ import './ts/react/rer-duty-neo-element'
 import './ts/react/rer-analysis-neo-element'
 import './ts/react/rer-palitra-neo-element'
 import './ts/react/rer-callsigns-neo-element'
-import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
+import { saveLegacyRerAnalysisQueryState } from "./ts/rer-analysis-query-state-legacy"
 import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
 
 import dayjs from 'dayjs';
@@ -783,7 +783,7 @@ export const onReady = ({ app, env }) => {
 
     if (app.ports && app.ports.rer_analysis_saveQueryState) {
         app.ports.rer_analysis_saveQueryState.subscribe((queryState: unknown) => {
-            saveRerAnalysisQueryState(queryState);
+            saveLegacyRerAnalysisQueryState(queryState);
         });
     }
 

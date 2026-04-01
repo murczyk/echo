@@ -3,77 +3,8 @@ export type RerAnalysisQueryState = {
   [key: string]: unknown;
 };
 
-export const RER_ANALYSIS_QUERY_STATE_KEY = 'rer-analysis-query-state';
+export const RER_ANALYSIS_QUERY_STATE_KEY = 'rer-analysis-neo-query-state';
 export const RER_ANALYSIS_LEGACY_STATE_PARAM = 'state';
-
-const LEGACY_QUERY_STATE_KEY_MAP = {
-  date_from_str: 'dateFromStr',
-  time_from_str: 'timeFromStr',
-  date_to_str: 'dateToStr',
-  time_to_str: 'timeToStr',
-  aors_selected: 'aorsSelected',
-  groups_selected: 'groupsSelected',
-  senders_selected: 'sendersSelected',
-  freqs_selected: 'freqsSelected',
-  callsigns_selected: 'callsignsSelected',
-  units_selected: 'unitsSelected',
-  locations_selected: 'locationsSelected',
-  posts_selected: 'postsSelected',
-  networks_selected: 'networksSelected',
-  without_network: 'withoutNetwork',
-  or_with_extended_form: 'orWithExtendedForm',
-  or_bookmarked: 'orBookmarked',
-  or_important: 'orImportant',
-  or_with_coords: 'orWithCoords',
-  metadata_cc: 'metadataCc',
-  metadata_sender: 'metadataSender',
-  metadata_receiver: 'metadataReceiver',
-  metadata_hash: 'metadataHash',
-  only_with_metadata: 'onlyWithMetadata',
-  without_metadata: 'withoutMetadata',
-  include_peleng_locations: 'includePelengLocations',
-  units_exact_match_only: 'unitsExactMatchOnly',
-  adjacent_freqs_range: 'adjacentFreqsRange',
-  without_model_tags: 'withoutModelTags',
-  filter_tags_option: 'filterTagsOption',
-  report_tags_only_this_unit: 'reportTagsOnlyThisUnit',
-} as const satisfies Record<string, string>;
-
-const KNOWN_QUERY_STATE_KEYS = new Set<string>([
-  'dateFromStr',
-  'timeFromStr',
-  'dateToStr',
-  'timeToStr',
-  'includeOnlyNewFreqs',
-  'aorsSelected',
-  'groupsSelected',
-  'sendersSelected',
-  'freqsSelected',
-  'callsignsSelected',
-  'unitsSelected',
-  'locationsSelected',
-  'postsSelected',
-  'networksSelected',
-  'withoutNetwork',
-  'orWithExtendedForm',
-  'orBookmarked',
-  'orImportant',
-  'orWithCoords',
-  'search',
-  'metadataCc',
-  'metadataSender',
-  'metadataReceiver',
-  'metadataHash',
-  'onlyWithMetadata',
-  'withoutMetadata',
-  'tags',
-  'includePelengLocations',
-  'unitsExactMatchOnly',
-  'adjacentFreqsRange',
-  'withoutModelTags',
-  'filterTagsOption',
-  'reportTagsOnlyThisUnit',
-]);
 
 type QueryStateFieldType = 'string' | 'string[]' | 'boolean' | 'boolean?' | 'number' | 'number[]';
 
@@ -118,6 +49,8 @@ const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
   { key: 'filterTagsOption', param: 'filterTagsOption', type: 'string' },
   { key: 'reportTagsOnlyThisUnit', param: 'reportTagsOnlyThisUnit', type: 'boolean' },
 ];
+
+const QUERY_STATE_KEYS = QUERY_STATE_FIELD_CONFIGS.map((field) => field.key);
 
 const MANAGED_QUERY_PARAM_NAMES = new Set<string>([
   RER_ANALYSIS_LEGACY_STATE_PARAM,
@@ -175,6 +108,12 @@ function parseBooleanParam(value: string | null): boolean | null {
   return null;
 }
 
+function parseNullableBooleanParam(value: string | null): boolean | null | undefined {
+  if (value == null) return undefined;
+  if (value === 'null') return null;
+  return parseBooleanParam(value);
+}
+
 function parseNumberParam(value: string | null): number | null {
   if (value == null || value.trim() === '') return null;
   const parsed = Number(value);
@@ -194,20 +133,11 @@ export function normalizeRerAnalysisQueryState(state: unknown): RerAnalysisQuery
 
   const normalized: RerAnalysisQueryState = {};
 
-  for (const [key, value] of Object.entries(state)) {
-    if (KNOWN_QUERY_STATE_KEYS.has(key)) {
+  for (const key of QUERY_STATE_KEYS) {
+    const value = state[key];
+    if (value !== undefined) {
       normalized[key] = value;
-      continue;
     }
-
-    const mappedKey = LEGACY_QUERY_STATE_KEY_MAP[key as keyof typeof LEGACY_QUERY_STATE_KEY_MAP];
-    if (mappedKey && normalized[mappedKey] === undefined) {
-      normalized[mappedKey] = value;
-    }
-  }
-
-  if (normalized.unitsExactMatchOnly == null) {
-    normalized.unitsExactMatchOnly = true;
   }
 
   return normalized;
@@ -217,7 +147,7 @@ export function compactRerAnalysisQueryState(state: unknown): RerAnalysisQuerySt
   const normalized = normalizeRerAnalysisQueryState(state) ?? {};
   const compacted: RerAnalysisQueryState = {};
 
-  for (const key of KNOWN_QUERY_STATE_KEYS) {
+  for (const key of QUERY_STATE_KEYS) {
     const value = normalized[key];
     if (value === undefined) continue;
     if (isSameValue(value, QUERY_STATE_DEFAULTS[key])) continue;
@@ -250,8 +180,8 @@ export function parseRerAnalysisQueryStateFromSearchParams(params: URLSearchPara
     }
 
     if (field.type === 'boolean?') {
-      const value = parseBooleanParam(params.get(field.param));
-      if (value != null) parsed[field.key] = value;
+      const value = parseNullableBooleanParam(params.get(field.param));
+      if (value !== undefined) parsed[field.key] = value;
       continue;
     }
 
@@ -300,8 +230,13 @@ export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams
       continue;
     }
 
-    if (field.type === 'boolean' || field.type === 'boolean?') {
+    if (field.type === 'boolean') {
       params.set(field.param, String(value));
+      continue;
+    }
+
+    if (field.type === 'boolean?') {
+      params.set(field.param, value === null ? 'null' : String(value));
       continue;
     }
 
@@ -340,7 +275,7 @@ export function loadRerAnalysisQueryState(): RerAnalysisQueryState | null {
     return normalizeRerAnalysisQueryState(parsed);
   } catch (error) {
     console.error('Failed to load rer analysis query state', error);
-    }
+  }
 
   return null;
 }

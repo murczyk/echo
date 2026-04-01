@@ -2243,6 +2243,8 @@ type alias RerAnalysisQueryState =
     , unitsExactMatchOnly : Maybe Bool
     , adjacentFreqsRange : Float
     , withoutModelTags : Bool
+    , filterTagsOption : Maybe TagFilterOption
+    , reportTagsOnlyThisUnit : Maybe Bool
     }
 
 
@@ -2279,6 +2281,8 @@ rerAnalysisQueryStateEncoder struct =
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "adjacent_freqs_range", Json.Encode.float struct.adjacentFreqsRange )
         , ( "without_model_tags", Json.Encode.bool struct.withoutModelTags )
+        , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
+        , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         ]
 
 
@@ -8667,6 +8671,8 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
 editFreqUnitNameReqDecoder : Json.Decode.Decoder EditFreqUnitNameReq

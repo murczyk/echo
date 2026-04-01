@@ -39,6 +39,8 @@ emptyQueryState =
     , unitsExactMatchOnly = Nothing
     , adjacentFreqsRange = 0
     , withoutModelTags = False
+    , filterTagsOption = Nothing
+    , reportTagsOnlyThisUnit = Nothing
     }
 
 
@@ -126,6 +128,8 @@ modelQueryState model =
                     Nothing
             , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
             , withoutModelTags = model.withoutModelTags
+            , filterTagsOption = Just model.filterTagsOption
+            , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
             }
 
 
@@ -165,6 +169,12 @@ updModelFromQueryState model ms =
                 , metadataHash = queryState.metadataHash
                 , onlyWithMetadata = queryState.onlyWithMetadata
                 , withoutMetadata = queryState.withoutMetadata
+                , filterTagsOption =
+                    queryState.filterTagsOption
+                        |> Maybe.withDefault B.OneOfTags
+                , reportTagsOnlyThisUnit =
+                    queryState.reportTagsOnlyThisUnit
+                        |> Maybe.withDefault False
                 , unitsExactMatchOnlyExplicit =
                     case queryState.unitsExactMatchOnly of
                         Just _ ->

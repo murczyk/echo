@@ -100,6 +100,20 @@ type FilterSectionProps = {
   children: ReactNode;
 };
 
+type UnitsExactMatchMode = 'default' | 'exact' | 'non-exact';
+
+function unitsExactMatchModeFromState(value: boolean | null): UnitsExactMatchMode {
+  if (value === true) return 'exact';
+  if (value === false) return 'non-exact';
+  return 'default';
+}
+
+function unitsExactMatchStateFromMode(value: UnitsExactMatchMode): boolean | null {
+  if (value === 'exact') return true;
+  if (value === 'non-exact') return false;
+  return null;
+}
+
 function getInitialExpandedSections(queryState: AnalysisPageState['queryState']): Record<FilterSectionId, boolean> {
   return {
     ...defaultExpandedSections,
@@ -123,7 +137,7 @@ function getInitialExpandedSections(queryState: AnalysisPageState['queryState'])
       queryState.adjacentFreqsRange > 0 ||
       queryState.includeOnlyNewFreqs,
     callsigns: queryState.callsignsSelected.length > 0,
-    units: queryState.unitsSelected.length > 0 || queryState.unitsExactMatchOnly === false,
+    units: queryState.unitsSelected.length > 0 || queryState.unitsExactMatchOnly !== null,
     locations: queryState.locationsSelected.length > 0 || queryState.includePelengLocations === false,
     posts: queryState.postsSelected.length > 0,
     metadata:
@@ -213,7 +227,9 @@ export function AnalysisFiltersPanel({
   const unitsExactMatchHint =
     counts == null
       ? null
-      : queryState.unitsExactMatchOnly
+      : queryState.unitsExactMatchOnly == null
+        ? 'режим: серверний дефолт'
+        : queryState.unitsExactMatchOnly
         ? `неточних збігів: ${counts.unitsNonExactMatchesCount}`
         : `точних збігів: ${counts.unitsExactMatchesCount}`;
 
@@ -472,18 +488,25 @@ export function AnalysisFiltersPanel({
               onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
             />
             <Box>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={queryState.unitsExactMatchOnly !== false}
-                    onChange={(_e, value) => updateQueryState({ unitsExactMatchOnly: value })}
-                  />
-                }
-                label="Точний збіг за еталонкою"
-                sx={compactCheckboxLabelSx}
-              />
+              <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>
+                <InputLabel id="units-exact-match-mode-label">Збіг за еталонкою</InputLabel>
+                <Select
+                  labelId="units-exact-match-mode-label"
+                  label="Збіг за еталонкою"
+                  value={unitsExactMatchModeFromState(queryState.unitsExactMatchOnly)}
+                  onChange={(event) =>
+                    updateQueryState({
+                      unitsExactMatchOnly: unitsExactMatchStateFromMode(event.target.value as UnitsExactMatchMode),
+                    })
+                  }
+                >
+                  <MenuItem value="default">Серверний дефолт</MenuItem>
+                  <MenuItem value="exact">Точний збіг</MenuItem>
+                  <MenuItem value="non-exact">Неточний збіг</MenuItem>
+                </Select>
+              </FormControl>
               {unitsExactMatchHint ? (
-                <Box sx={{ pl: '42px', pt: 0.25 }}>
+                <Box sx={{ pl: 0.5, pt: 0.5 }}>
                   <span
                     style={{
                       display: 'inline-flex',

@@ -254,6 +254,38 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [],
   );
 
+  const clearAnalysisResults = useCallback(() => {
+    setCounts(null);
+    setMessages([]);
+    setSummaryRows([]);
+    setNewCallsigns(emptyNewCallsigns);
+    setOptions(emptyOptions);
+    setTopFreqs([]);
+    setTopCallsigns([]);
+    setTopUnits([]);
+    setTopLocations([]);
+    setAorEntries([]);
+    setProfiles({});
+    setGroupInfos({});
+    setTagsMap({});
+    setNetworks([]);
+    setUnitsMap({});
+    setNetworkDisplayMap({});
+    setSummaryCallsignsInfo({});
+    setMapDateRange({ startDate: 0, endDate: 0 });
+    setMapPoints([]);
+    setMapNetworkUnits([]);
+    setMapOpenMessages([]);
+    setCorrelatedFreqs([]);
+    setGroupsActivity(null);
+    setGroupsActivityLoadedFreq(null);
+    setGroupsActivityLoadedPeriod(null);
+    setNoMoreToLoad(false);
+    setNolimitShown(false);
+    optionsFreqsRef.current = [];
+    invalidateCallsignGraph();
+  }, [invalidateCallsignGraph]);
+
   const onUpdateLocalMessage = useCallback(
     (messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
       patchMessages((id, message) => (id === messageId ? updater(message) : message));
@@ -689,6 +721,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         const inboxReq = buildInboxReq(queryState, allFrequencies);
 
         if (analysisReq == null || inboxReq == null) {
+          clearAnalysisResults();
           return null;
         }
 
@@ -950,7 +983,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         }
       }
     }
-  }, [invalidateCallsignGraph, newestFirst, onError, onUnauthorized, queryState]);
+  }, [clearAnalysisResults, invalidateCallsignGraph, newestFirst, onError, onUnauthorized, queryState]);
 
   const loadAllMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, options.freqs);

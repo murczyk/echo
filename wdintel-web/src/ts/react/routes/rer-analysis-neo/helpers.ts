@@ -1,7 +1,7 @@
 import type { AnalysisStatsReq, InboxMessagesReq, SavedFilter } from '../../../../Bindings';
 import {
+  hasRerAnalysisQueryStateParams,
   loadRerAnalysisQueryState,
-  normalizeRerAnalysisQueryState,
   parseRerAnalysisQueryStateFromSearchParams,
   saveRerAnalysisQueryState,
   writeRerAnalysisQueryStateToSearchParams,
@@ -58,7 +58,9 @@ export function emptyQueryState(): AnalysisQueryState {
     withoutMetadata: false,
     tags: [],
     includePelengLocations: true,
-    unitsExactMatchOnly: true,
+    // Important: `null` means "use the server-side default".
+    // Neo must preserve this tri-state instead of hard-coding exact-match mode.
+    unitsExactMatchOnly: null,
     adjacentFreqsRange: 0,
     withoutModelTags: false,
     filterTagsOption: 'OneOfTags',
@@ -66,33 +68,17 @@ export function emptyQueryState(): AnalysisQueryState {
   };
 }
 
-function parseStateParam(raw: string | null): AnalysisQueryState | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return normalizeRerAnalysisQueryState(parsed) as AnalysisQueryState | null;
-  } catch {
-    try {
-      const decoded = decodeURIComponent(raw);
-      const parsed = JSON.parse(decoded) as unknown;
-      return normalizeRerAnalysisQueryState(parsed) as AnalysisQueryState | null;
-    } catch {
-      return null;
-    }
-  }
-}
-
 export function parseQueryStateFromWindow(): AnalysisQueryState {
   if (typeof window === 'undefined') return emptyQueryState();
 
   const url = new URL(window.location.href);
   const flatStateFromUrl = parseRerAnalysisQueryStateFromSearchParams(url.searchParams);
-  const stateFromUrl = parseStateParam(url.searchParams.get('state'));
   const storedState = loadRerAnalysisQueryState();
+  const hasManagedStateInUrl = hasRerAnalysisQueryStateParams(url.searchParams);
+
   return {
     ...emptyQueryState(),
-    ...(storedState ?? {}),
-    ...(stateFromUrl ?? {}),
+    ...(hasManagedStateInUrl ? {} : (storedState ?? {})),
     ...(flatStateFromUrl ?? {}),
   };
 }
@@ -154,10 +140,6 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
   if (next.withoutNetwork) {
     next = { ...next, networksSelected: [] };
-  }
-
-  if (next.unitsExactMatchOnly == null) {
-    next = { ...next, unitsExactMatchOnly: true };
   }
 
   return next;
@@ -259,7 +241,7 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
     reportTagsOnlyThisUnit: req.reportTagsOnlyThisUnit,
     ignoreImportedCoords: null,
     includePelengLocations: req.includePelengLocations,
-    unitsExactMatchOnly: req.unitsExactMatchOnly ?? true,
+    unitsExactMatchOnly: req.unitsExactMatchOnly,
     calculateFreqPelengsSummary: null,
     skipGroupStats: true,
     filterTagsOption: req.filterTagsOption,
@@ -383,7 +365,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     withoutMetadata: normalized.withoutMetadata,
     tags: normalized.selectedTags ?? [],
     includePelengLocations: normalized.includePelengLocations,
-    unitsExactMatchOnly: normalized.unitsExactMatchOnly ?? true,
+    unitsExactMatchOnly: normalized.unitsExactMatchOnly ?? null,
     withoutModelTags: normalized.withoutModelTags,
     filterTagsOption: normalized.filterTagsOption,
     reportTagsOnlyThisUnit: normalized.reportTagsOnlyThisUnit,
