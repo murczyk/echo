@@ -54,6 +54,7 @@ const ROLE_OPTIONS = [
   'Basic',
   'UnitsEditor',
   'CallsignsEditor',
+  'AdvancedReports',
   'DeleteMsg',
   'NoAutoLogout',
 ];

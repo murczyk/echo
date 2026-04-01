@@ -17,11 +17,16 @@ use tokio::task;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+pub struct LoadCoordinatesFromFileResult {
+    pub points: Vec<PalitraPoint>,
+    pub s3_id: Option<String>,
+}
+
 pub async fn load_coordinates_from_file(
     file_name: String,
     data: Vec<u8>,
     env: &Env,
-) -> anyhow::Result<Vec<PalitraPoint>> {
+) -> anyhow::Result<LoadCoordinatesFromFileResult> {
     let storage_dir = std::env::temp_dir()
         .join(PALITRA_STORAGE_DIR_NAME)
         .join(format!("{}", Utc::now().naive_utc().date()));
@@ -30,7 +35,7 @@ pub async fn load_coordinates_from_file(
         .c(h!())?;
     let safe_file_name = sanitize_upload_filename(&file_name);
     // store original palitra file in s3. update in config in order to disable
-    if env
+    let s3_id = if env
         .config
         .store_palitra_in_s3
         .unwrap_or(crate::config::DEFAULT_STORE_PALITRA_IN_S3)
@@ -44,7 +49,10 @@ pub async fn load_coordinates_from_file(
         .await
         .c(h!())?;
         info!("uploaded {safe_file_name} to b2, available at {file_s3_id}");
-    }
+        Some(file_s3_id)
+    } else {
+        None
+    };
 
     let tmp_dir = tempdir()?;
     let path = tmp_dir.path().join(&safe_file_name);
@@ -55,11 +63,12 @@ pub async fn load_coordinates_from_file(
         .to_string_lossy()
         .to_string()
         .to_ascii_lowercase();
-    match extension.as_str() {
+    let points = match extension.as_str() {
         "kmz" => load_coordinates_from_kmz(path.as_path()).await,
         "kml" => load_coordinates_from_kml(path.as_path()).await,
         _ => anyhow::bail!("Unsupported coordinates extension: {extension}"),
-    }
+    }?;
+    Ok(LoadCoordinatesFromFileResult { points, s3_id })
 }
 
 pub fn sanitize_upload_filename(filename: &str) -> String {

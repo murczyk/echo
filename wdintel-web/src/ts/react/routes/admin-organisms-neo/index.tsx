@@ -51,7 +51,17 @@ type OrganismLookup = {
   computedGroupsById: Map<number, SignalGroupFull[]>;
 };
 
-const ROLE_OPTIONS = ['Admin', 'ApiAgent', 'Rer', 'Bpla', 'Full', 'Basic', 'UnitsEditor', 'CallsignsEditor'];
+const ROLE_OPTIONS = [
+  'Admin',
+  'ApiAgent',
+  'Rer',
+  'Bpla',
+  'Full',
+  'Basic',
+  'UnitsEditor',
+  'CallsignsEditor',
+  'AdvancedReports',
+];
 const ENABLED_FILTER_OPTIONS = withExplicitSelectAllOption([
   { text: 'так', value: 'так' },
   { text: 'ні', value: 'ні' },
