@@ -2,6 +2,7 @@ use super::*;
 use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
+use chrono_tz::Tz;
 use std::collections::HashMap;
 use tempfile::TempDir;
 
@@ -32,6 +33,7 @@ pub async fn rer_analysis_download_geojson(
         lng: Option<f64>,
         datetime: NaiveDateTime,
         group_name: String,
+        body: Option<String>,
     }
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -61,6 +63,7 @@ pub async fn rer_analysis_download_geojson(
         .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+        .column_as(Expr::col(signal_message::Column::Body), "body")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey
@@ -186,7 +189,10 @@ pub async fn rer_analysis_download_geojson(
                 acc
             });
 
-    let mut features = HashMap::new();
+    let mut features: HashMap<
+        (String, DateTime<Tz>, String, String),
+        crate::delta::types::Feature,
+    > = HashMap::new();
 
     for item in items.iter() {
         let Some(freq) = item.freq.clone() else {
@@ -213,6 +219,9 @@ pub async fn rer_analysis_download_geojson(
 
         let mut comments_one: String = comments.join("\n");
         comments_one.push_str(&format!("\n\nГрупа: {}", &item.group_name));
+        if let Some(body) = item.body.as_ref().filter(|body| !body.is_empty()) {
+            comments_one.push_str(&format!("\n\nПовідомлення: {body}"));
+        }
 
         let tz = crate::config::get_tz();
         // convert NaiveDateTime in UTC to NaiveDateTime in local timezone
@@ -220,29 +229,36 @@ pub async fn rer_analysis_download_geojson(
         let properties = crate::delta::types::Properties {
             name: Some(freq.clone()),
             sidc: "10061500002001000000".to_string(),
-            comments: vec![comments_one],
+            comments: vec![comments_one.clone()],
             // like "2023-06-06T13:20:12"
             observation_datetime: Some(
                 datetime_utc.format("%Y-%m-%dT%H:%M:%S").to_string(),
             ),
         };
-        let feature = crate::delta::types::Feature {
-            type_: "Feature".to_string(),
-            geometry: crate::delta::types::Geometry {
-                type_: "Point".to_string(),
-                coordinates: serde_json::to_value(vec![lng, lat])
-                    .context(h!())?,
-            },
-            properties: Some(properties),
-        };
-
         let key = (
             freq.clone(),
             datetime_utc,
             format!("{lng:.6}"),
             format!("{lat:.6}"),
         );
-        features.entry(key).or_insert(feature);
+        match features.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if let Some(properties) = entry.get_mut().properties.as_mut() {
+                    properties.comments.push(comments_one);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(crate::delta::types::Feature {
+                    type_: "Feature".to_string(),
+                    geometry: crate::delta::types::Geometry {
+                        type_: "Point".to_string(),
+                        coordinates: serde_json::to_value(vec![lng, lat])
+                            .context(h!())?,
+                    },
+                    properties: Some(properties),
+                });
+            }
+        }
     }
 
     let geojson = GeoJson {
