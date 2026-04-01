@@ -422,24 +422,6 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     [onError, onUnauthorized, patchMessages],
   );
 
-  const onDeleteMessage = useCallback(
-    async (messageId: number) => {
-      setMessageActionCount((current) => current + 1);
-      try {
-        await deleteMessage({ id: messageId });
-        setMessages((current) => current.filter(([id]) => id !== messageId));
-        setMapOpenMessages((current) => current.filter(([id]) => id !== messageId));
-      } catch (loadError) {
-        if (!onUnauthorized(loadError)) {
-          onError(toErrorMessage(loadError));
-        }
-      } finally {
-        setMessageActionCount((current) => Math.max(0, current - 1));
-      }
-    },
-    [onError, onUnauthorized],
-  );
-
   const onToggleMessageTag = useCallback(
     async (messageId: number, tagId: number) => {
       const sourceMessage =
@@ -988,6 +970,25 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       setMessagesPaging(false);
     }
   }, [newestFirst, onError, onUnauthorized, options.freqs, queryState]);
+
+  const onDeleteMessage = useCallback(
+    async (messageId: number) => {
+      setMessageActionCount((current) => current + 1);
+      try {
+        await deleteMessage({ id: messageId });
+        setMessages((current) => current.filter(([id]) => id !== messageId));
+        setMapOpenMessages((current) => current.filter(([id]) => id !== messageId));
+        await reload();
+      } catch (loadError) {
+        if (!onUnauthorized(loadError)) {
+          onError(toErrorMessage(loadError));
+        }
+      } finally {
+        setMessageActionCount((current) => Math.max(0, current - 1));
+      }
+    },
+    [onError, onUnauthorized, reload],
+  );
 
   const loadMoreMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, options.freqs);

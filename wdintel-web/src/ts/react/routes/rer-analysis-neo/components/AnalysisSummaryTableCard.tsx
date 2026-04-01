@@ -21,7 +21,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MRT_ColumnDef, type MRT_SortingState, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { Fragment, memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
@@ -76,6 +76,8 @@ export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_ORDER = buildDefaultColumnOrd
   withRowNumbers: true,
   withRowActions: true,
 });
+
+const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [{ id: 'count', desc: true }] satisfies MRT_SortingState;
 
 function mergeSx(sx?: SxProps<Theme>): SxProps<Theme>[] {
   if (Array.isArray(sx)) return sx;
@@ -384,7 +386,7 @@ function AnalysisSummaryTableCardInner({
     },
     initialState: {
       density: 'compact',
-      sorting: [{ id: 'count', desc: true }],
+      sorting: DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING,
       showGlobalFilter: true,
     },
     displayColumnDefOptions: {
@@ -517,6 +519,7 @@ export const AnalysisSummaryTableCard = memo(function AnalysisSummaryTableCard(p
       defaultColumnVisibility={DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY}
       defaultColumnOrder={DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_ORDER}
       defaultEnableColumnOrdering={false}
+      defaultSorting={DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING}
     >
       <AnalysisSummaryTableCardInner {...props} />
     </TableStateProvider>
