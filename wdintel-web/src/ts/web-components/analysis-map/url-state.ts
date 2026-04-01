@@ -144,7 +144,7 @@ export function updateStateUrl(currentUrl: string, messageUid: string): string {
     if (url.pathname === CLASSIC_RER_ANALYSIS_PATH) {
       const legacyState = rawStateFromUrl != null ? { ...rawStateFromUrl, search: messageUid } : toLegacyState(stateObject);
       clearRerAnalysisQueryStateSearchParams(url.searchParams);
-      url.searchParams.set(RER_ANALYSIS_LEGACY_STATE_PARAM, encodeURIComponent(JSON.stringify(legacyState)));
+      url.searchParams.set(RER_ANALYSIS_LEGACY_STATE_PARAM, JSON.stringify(legacyState));
     } else {
       writeRerAnalysisQueryStateToSearchParams(url.searchParams, stateObject);
     }

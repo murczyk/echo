@@ -34,8 +34,10 @@ describe('analysis map url state', () => {
     const nextUrl = new URL(updateStateUrl(currentUrl, 'uid-1'));
     const stateParam = nextUrl.searchParams.get('state');
     expect(stateParam).not.toBeNull();
+    expect(stateParam).toContain('{');
+    expect(stateParam).not.toContain('%7B');
 
-    const nextState = JSON.parse(decodeURIComponent(stateParam ?? ''));
+    const nextState = JSON.parse(stateParam ?? '');
     expect(nextState.filter_tags_option).toBe('AllOfTags');
     expect(nextState.report_tags_only_this_unit).toBe(true);
     expect(nextState.search).toBe('uid-1');
