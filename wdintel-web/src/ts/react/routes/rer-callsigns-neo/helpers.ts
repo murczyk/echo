@@ -79,7 +79,7 @@ export function getExportPermission(user: User | null): ExportPermission {
     canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
     canExport:
       roles.has('Rer')
-      && (roles.has('Admin') || roles.has('UnitsEditor')),
+      && (roles.has('Admin') || roles.has('UnitsEditor') || roles.has('AdvancedReports')),
   };
 }
 
@@ -89,7 +89,7 @@ export function getExportPermissionFromRoles(rolesList: string[]): ExportPermiss
     canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
     canExport:
       roles.has('Rer')
-      && (roles.has('Admin') || roles.has('UnitsEditor')),
+      && (roles.has('Admin') || roles.has('UnitsEditor') || roles.has('AdvancedReports')),
   };
 }
 
