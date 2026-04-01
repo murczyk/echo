@@ -244,6 +244,20 @@ async fn bl_restore_network(
     Ok(result)
 }
 
+fn apply_network_status(
+    network: &mut sigint_network::ActiveModel,
+    status: NetworkStatus,
+) {
+    match status {
+        NetworkStatus::NetworkActive => {
+            network.active_to = Set(None);
+        }
+        NetworkStatus::NetworkInactive => {
+            network.active_to = Set(Some(Utc::now().naive_utc()));
+        }
+    }
+}
+
 #[post("/api/sigint/network-info-batch-freq")]
 pub async fn network_info_batch_freq(
     user: actix_identity::Identity,
@@ -557,6 +571,7 @@ pub async fn update_network(
     network_model.operation_period = Set(req.operation_period.clone());
     network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
     network_model.updated_at = Set(Utc::now().naive_utc());
+    apply_network_status(&mut network_model, req.status.clone());
 
     let network = network_model.update(&txn).await.context(h!())?;
 

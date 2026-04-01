@@ -568,6 +568,7 @@ update shared msg model =
                                 , descriptions = Nothing --TODO
                                 , restoreNetwork = Nothing
                                 , areaOfResponsibilityIds = Nothing
+                                , status = network.status
                                 }
                         , editAorSelect =
                             let
