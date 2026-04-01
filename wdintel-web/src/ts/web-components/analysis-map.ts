@@ -272,8 +272,21 @@ class AnalysisMap extends HTMLElement {
     }
   }
 
-  /** Get search query from URL only */
+  private _getSearchQueryFromAttribute(): string | null {
+    if (!this.hasAttribute('search')) {
+      return null;
+    }
+
+    return (this.getAttribute('search') ?? '').trim();
+  }
+
+  /** Prefer explicit attribute state; fall back to URL only when attribute is absent. */
   private _getEffectiveSearchQuery(): string {
+    const attributeQuery = this._getSearchQueryFromAttribute();
+    if (attributeQuery !== null) {
+      return attributeQuery;
+    }
+
     return (getSearchQueryFromCurrentUrl() ?? '').trim();
   }
 
