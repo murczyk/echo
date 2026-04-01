@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SavedFilter } from '../../../../Bindings';
-import { buildAnalysisReq, buildInboxReq, emptyQueryState, queryStateComparisonKey, queryStateMatchesSavedFilter } from './helpers';
+import {
+  buildAnalysisReq,
+  buildInboxReq,
+  emptyQueryState,
+  queryStateComparisonKey,
+  queryStateFromSavedFilter,
+  queryStateMatchesSavedFilter,
+} from './helpers';
 import type { AnalysisQueryState } from './types';
 
 function createQueryState(overrides: Partial<AnalysisQueryState> = {}): AnalysisQueryState {
@@ -59,5 +66,18 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(analysisReq?.unitsExactMatchOnly).toBe(true);
     expect(inboxReq?.unitsExactMatchOnly).toBe(true);
+  });
+
+  it('resets adjacent frequency expansion when applying a saved filter', () => {
+    const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
+    const currentState = createQueryState({
+      adjacentFreqsRange: 0.002,
+      freqsSelected: ['999.9'],
+    });
+
+    const nextState = queryStateFromSavedFilter(savedFilter, currentState);
+
+    expect(nextState.freqsSelected).toEqual(['123.4']);
+    expect(nextState.adjacentFreqsRange).toBe(0);
   });
 });

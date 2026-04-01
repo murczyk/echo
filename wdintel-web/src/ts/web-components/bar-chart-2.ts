@@ -305,12 +305,16 @@ export class BarChart2 extends LitElement {
 	nextColorIndex = 0;
 	lastAssignedColor: string | null = null;
 	pendingRenderFrame: number | null = null;
+	resizeObserver: ResizeObserver | null = null;
 	hasRenderedChart = false;
 
 	@property()
 	isAnalysis = false;
 
+	@state()
 	chartWidth = 0;
+
+	@state()
 	chartHeight = 0;
 	margins = {
 		right: 10,
@@ -334,6 +338,14 @@ export class BarChart2 extends LitElement {
 
 	connectedCallback(): void {
 		super.connectedCallback();
+		if (this.resizeObserver == null) {
+			this.resizeObserver = new ResizeObserver(() => {
+				if (this.data) {
+					this.scheduleRenderChart();
+				}
+			});
+		}
+		this.resizeObserver.observe(this);
 		this.chartWidth = Math.max(0, this.getBoundingClientRect().width);
 		this.chartHeight = Math.max(0, this.getBoundingClientRect().height);
 		const topLine = this.renderRoot.querySelector("#top-line")?.getBoundingClientRect().height ?? 30
@@ -347,6 +359,10 @@ export class BarChart2 extends LitElement {
 		if (this.pendingRenderFrame != null) {
 			cancelAnimationFrame(this.pendingRenderFrame);
 			this.pendingRenderFrame = null;
+		}
+		if (this.resizeObserver != null) {
+			this.resizeObserver.disconnect();
+			this.resizeObserver = null;
 		}
 		if (this.tooltip) {
 			this.tooltip.remove();
@@ -421,9 +437,6 @@ export class BarChart2 extends LitElement {
 		this.chartWidth = Math.max(0, rect.width);
 		this.chartHeight = Math.max(0, rect.height - topLine);
 		if (this.chartWidth <= 0 || this.chartHeight <= 0 || !this.data) {
-			if (this.data && (this.chartWidth <= 0 || this.chartHeight <= 0)) {
-				this.scheduleRenderChart();
-			}
 			return;
 		}
 

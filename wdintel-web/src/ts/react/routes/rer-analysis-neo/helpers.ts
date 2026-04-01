@@ -289,6 +289,7 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
   return normalizeQueryState({
     ...current,
     includeOnlyNewFreqs: false,
+    adjacentFreqsRange: 0,
     aorsSelected: (req.selectedAors ?? []).map(String),
     groupsSelected: req.selectedGroups ?? [],
     sendersSelected: req.selectedSenders ?? [],

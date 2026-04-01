@@ -89,7 +89,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     startCenterTabTransition(() => {
       setCenterTabState(tab);
       if (tab === 'map') {
-        panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
+        if (centerTab !== 'map') {
+          panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
+        }
         setLeftPanelOpen(false);
         setRightPanelOpen(false);
         return;
@@ -104,7 +106,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       setLeftPanelOpen(true);
       setRightPanelOpen(true);
     });
-  }, [leftPanelOpen, rightPanelOpen]);
+  }, [centerTab, leftPanelOpen, rightPanelOpen]);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
     setQueryState((current) => ({ ...current, ...patch }));
@@ -162,12 +164,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
       setCenterTabState('map');
-      panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
+      if (centerTab !== 'map') {
+        panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
+      }
       setLeftPanelOpen(false);
       setRightPanelOpen(false);
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
-  }, [leftPanelOpen, rightPanelOpen]);
+  }, [centerTab, leftPanelOpen, rightPanelOpen]);
 
   const toggleLeftPanel = useCallback(() => {
     setLeftPanelOpen((current) => !current);

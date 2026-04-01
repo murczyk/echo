@@ -225,6 +225,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
   const [networks, setNetworks] = useState<Network[]>([]);
   const mapMessagesLoadVersionRef = useRef(0);
+  const mapDateRangeLoadVersionRef = useRef(0);
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const optionsFreqsRef = useRef<string[]>([]);
@@ -267,6 +268,9 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         return;
       }
 
+      const loadVersion = mapDateRangeLoadVersionRef.current + 1;
+      mapDateRangeLoadVersionRef.current = loadVersion;
+
       setMapLoading(true);
       setMapDateRange(range);
 
@@ -281,14 +285,24 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
           mapFilter: null,
           pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
         });
+        if (mapDateRangeLoadVersionRef.current !== loadVersion) {
+          return;
+        }
+
         setMapPoints(rsp.points ?? []);
         setMapNetworkUnits(rsp.networkUnits ?? []);
       } catch (loadError) {
+        if (mapDateRangeLoadVersionRef.current !== loadVersion) {
+          return;
+        }
+
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
       } finally {
-        setMapLoading(false);
+        if (mapDateRangeLoadVersionRef.current === loadVersion) {
+          setMapLoading(false);
+        }
       }
     },
     [newestFirst, onError, onUnauthorized, options.freqs, queryState],
@@ -745,6 +759,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       setMessagesLoading(false);
 
       const loadFilterData = async () => {
+        const inboxItems = criticalData.inboxRsp.inboxItems ?? [];
+
         try {
           const [
             groupsRsp,
@@ -807,14 +823,10 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
           const messageGroupKeys = Array.from(
             new Set(
-              criticalData.inboxRsp.inboxItems
-                .map(([, message]) => message.groupMasterKey)
-                .filter((value): value is string => Boolean(value)),
+              inboxItems.map(([, message]) => message.groupMasterKey).filter((value): value is string => Boolean(value)),
             ),
           );
-          const messageNetworkIds = Array.from(
-            new Set(criticalData.inboxRsp.inboxItems.flatMap(([, message]) => message.networkIds ?? [])),
-          );
+          const messageNetworkIds = Array.from(new Set(inboxItems.flatMap(([, message]) => message.networkIds ?? [])));
           const analysisNetworkIds = Array.from(new Set(networksRsp.networks.map((item) => item.networkId)));
           const allNetworkIds = Array.from(new Set([...messageNetworkIds, ...analysisNetworkIds]));
           const [groupInfosRsp, networksRspById, callsignInfosRsp] = await Promise.all([

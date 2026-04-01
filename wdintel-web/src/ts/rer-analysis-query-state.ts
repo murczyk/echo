@@ -273,12 +273,16 @@ export function hasRerAnalysisQueryStateParams(params: URLSearchParams): boolean
   return QUERY_STATE_FIELD_CONFIGS.some((field) => params.has(field.param));
 }
 
-export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams, state: unknown): void {
-  const compactState = compactRerAnalysisQueryState(state);
-
+export function clearRerAnalysisQueryStateSearchParams(params: URLSearchParams): void {
   for (const paramName of MANAGED_QUERY_PARAM_NAMES) {
     params.delete(paramName);
   }
+}
+
+export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams, state: unknown): void {
+  const compactState = compactRerAnalysisQueryState(state);
+
+  clearRerAnalysisQueryStateSearchParams(params);
 
   for (const field of QUERY_STATE_FIELD_CONFIGS) {
     const value = compactState[field.key];
