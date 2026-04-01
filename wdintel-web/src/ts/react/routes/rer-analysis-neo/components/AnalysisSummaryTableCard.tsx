@@ -261,6 +261,7 @@ function AnalysisSummaryTableCardInner({
       },
       {
         header: 'Підрозділи',
+        accessorFn: (row) => row.unitLabels.join(' '),
         id: 'unitSearchText',
         size: 320,
         Cell: ({ row }) => <CompactListCell items={row.original.unitLabels} maxVisible={4} />,
