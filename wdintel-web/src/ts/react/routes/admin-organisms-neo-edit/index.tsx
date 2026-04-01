@@ -69,7 +69,17 @@ const GOI_SSH_PORT_DEFAULT = 22;
 const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
 
-const ROLE_OPTIONS = ['Admin', 'ApiAgent', 'Rer', 'Bpla', 'Full', 'Basic', 'UnitsEditor', 'CallsignsEditor'];
+const ROLE_OPTIONS = [
+  'Admin',
+  'ApiAgent',
+  'Rer',
+  'Bpla',
+  'Full',
+  'Basic',
+  'UnitsEditor',
+  'CallsignsEditor',
+  'AdvancedReports',
+];
 
 const emptyFormState: OrganismFormState = {
   name: '',
