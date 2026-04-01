@@ -74,7 +74,11 @@ pub async fn load_coordinates_from_file(
         "kml" => load_coordinates_from_kml(path.as_path()).await,
         _ => anyhow::bail!("Unsupported coordinates extension: {extension}"),
     }?;
-    Ok(PalitraKmzData { points.points, s3_id, points.line_strings })
+    Ok(PalitraKmzData {
+        points: points.points,
+        line_strings: points.line_strings,
+        s3_id,
+    })
 }
 
 pub fn sanitize_upload_filename(filename: &str) -> String {
@@ -109,6 +113,7 @@ pub async fn load_coordinates_from_kmz(
     let mut result = PalitraKmzData {
         points: vec![],
         line_strings: vec![],
+        s3_id: None,
     };
 
     for entry in walkdir.filter_map(|e| e.ok()) {
@@ -215,6 +220,7 @@ pub async fn load_coordinates_from_kml(
     Ok(PalitraKmzData {
         points: values,
         line_strings,
+        s3_id: None,
     })
 }
 

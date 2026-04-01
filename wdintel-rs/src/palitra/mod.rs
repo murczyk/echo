@@ -101,17 +101,12 @@ pub async fn create_palitra_with_kmz(
             .await
             .c(h!())?;
 
-    bl::rewrite_palitra_points(
-        palitra_geometry.id,
-        points,
-        &txn,
-        &env.rq
-    )
+    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn, &env.rq)
         .await
         .c(h!())?;
     bl::rewrite_palitra_line_strings(
         palitra_geometry.id,
-        kmz_data.line_strings,
+        upload.line_strings,
         &txn,
     )
     .await
@@ -166,8 +161,9 @@ pub async fn create_palitra_basic(
     .c(h!())?;
     let mut points_by_color = group_palitra_points_by_color(upload.points);
     let mut line_strings_by_color =
-        group_palitra_lines_by_color(kmz_data.line_strings);
-    let primary_color_hex = pick_primary_color_hex(&points_by_color, &line_strings_by_color);
+        group_palitra_lines_by_color(upload.line_strings);
+    let primary_color_hex =
+        pick_primary_color_hex(&points_by_color, &line_strings_by_color);
     let mut geometry_colors = vec![primary_color_hex.clone()];
     geometry_colors.extend(
         points_by_color
@@ -272,7 +268,7 @@ pub async fn create_palitra_basic_v2(
     .c(h!())?;
     let mut points_by_color = group_palitra_points_by_color(upload.points);
     let mut line_strings_by_color =
-        group_palitra_lines_by_color(kmz_data.line_strings);
+        group_palitra_lines_by_color(upload.line_strings);
     let uploaded_at = Utc::now();
     let selected_color_hex = multipart_payload
         .color_hex
@@ -453,7 +449,7 @@ pub async fn upload_palitra_points(
     .c(h!())?;
     let mut points_by_color = group_palitra_points_by_color(upload.points);
     let mut line_strings_by_color =
-        group_palitra_lines_by_color(kmz_data.line_strings);
+        group_palitra_lines_by_color(upload.line_strings);
     let uploaded_at = Utc::now();
     let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
     geometry_colors.extend(line_strings_by_color.keys().cloned().collect_vec());

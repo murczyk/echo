@@ -1546,10 +1546,7 @@ where
         }
         None => (None, None, None),
     };
-    let geometry = if center.is_some()
-        || convex_hull.is_some()
-        || line_strings.is_some()
-    {
+    let geometry = if convex_hull.is_some() || line_strings.is_some() {
         Some(Geometry {
             center,
             perimeter_linear_ring: convex_hull,
@@ -1678,10 +1675,7 @@ where
         let line_strings = read_palitra_line_strings(dbx, palitra_geometry_id)
             .await
             .c(h!())?;
-        let geometry = if center.is_some()
-            || convex_hull.is_some()
-            || line_strings.is_some()
-        {
+        let geometry = if convex_hull.is_some() || line_strings.is_some() {
             Some(Geometry {
                 center,
                 perimeter_linear_ring: convex_hull,
