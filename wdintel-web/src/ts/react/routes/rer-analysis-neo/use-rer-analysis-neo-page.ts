@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
 import { isUnauthorizedError } from '../../services/api/client';
 import {
@@ -37,6 +37,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab>('stats');
   const [centerTabPending, startCenterTabTransition] = useTransition();
+  const panelStateBeforeMapRef = useRef<{ leftPanelOpen: boolean; rightPanelOpen: boolean } | null>(null);
   const setPageError = useCallback((message: string) => setError(message || null), []);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
@@ -88,13 +89,22 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     startCenterTabTransition(() => {
       setCenterTabState(tab);
       if (tab === 'map') {
+        panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
         setLeftPanelOpen(false);
         setRightPanelOpen(false);
         return;
       }
+      const panelStateBeforeMap = panelStateBeforeMapRef.current;
+      if (panelStateBeforeMap) {
+        setLeftPanelOpen(panelStateBeforeMap.leftPanelOpen);
+        setRightPanelOpen(panelStateBeforeMap.rightPanelOpen);
+        panelStateBeforeMapRef.current = null;
+        return;
+      }
       setLeftPanelOpen(true);
+      setRightPanelOpen(true);
     });
-  }, []);
+  }, [leftPanelOpen, rightPanelOpen]);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
     setQueryState((current) => ({ ...current, ...patch }));
@@ -152,11 +162,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
       setCenterTabState('map');
+      panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
       setLeftPanelOpen(false);
       setRightPanelOpen(false);
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
-  }, []);
+  }, [leftPanelOpen, rightPanelOpen]);
 
   const toggleLeftPanel = useCallback(() => {
     setLeftPanelOpen((current) => !current);
