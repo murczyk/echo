@@ -6,7 +6,12 @@ import {
   saveRerAnalysisQueryState,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
-import { combineDateTimeToMs, formatLocalDateInputValue, formatLocalTimeInputValue } from '../../utils/misc';
+import {
+  APP_TIME_ZONE,
+  combineDateTimeToMs,
+  formatDateInputValueInTimeZone,
+  formatTimeInputValueInTimeZone,
+} from '../../utils/misc';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -93,10 +98,10 @@ export function createInitialQueryState(
   return {
     ...emptyQueryState(),
     ...parsed,
-    dateFromStr: parsed.dateFromStr || formatLocalDateInputValue(start),
-    timeFromStr: parsed.timeFromStr || formatLocalTimeInputValue(start),
-    dateToStr: parsed.dateToStr || formatLocalDateInputValue(now),
-    timeToStr: parsed.timeToStr || formatLocalTimeInputValue(now),
+    dateFromStr: parsed.dateFromStr || formatDateInputValueInTimeZone(start, APP_TIME_ZONE),
+    timeFromStr: parsed.timeFromStr || formatTimeInputValueInTimeZone(start, APP_TIME_ZONE),
+    dateToStr: parsed.dateToStr || formatDateInputValueInTimeZone(now, APP_TIME_ZONE),
+    timeToStr: parsed.timeToStr || formatTimeInputValueInTimeZone(now, APP_TIME_ZONE),
   };
 }
 
@@ -147,8 +152,8 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
 export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: string[] = []): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
-  const sinceDateInclusiveMs = combineDateTimeToMs(query.dateFromStr, query.timeFromStr);
-  const tillDateNoninclusiveMs = combineDateTimeToMs(query.dateToStr, query.timeToStr);
+  const sinceDateInclusiveMs = combineDateTimeToMs(query.dateFromStr, query.timeFromStr, APP_TIME_ZONE);
+  const tillDateNoninclusiveMs = combineDateTimeToMs(query.dateToStr, query.timeToStr, APP_TIME_ZONE);
 
   if (sinceDateInclusiveMs == null || tillDateNoninclusiveMs == null) {
     return null;
@@ -369,10 +374,10 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     withoutModelTags: normalized.withoutModelTags,
     filterTagsOption: normalized.filterTagsOption,
     reportTagsOnlyThisUnit: normalized.reportTagsOnlyThisUnit,
-    dateFromStr: formatLocalDateInputValue(new Date(normalized.sinceDateInclusiveMs)),
-    timeFromStr: formatLocalTimeInputValue(new Date(normalized.sinceDateInclusiveMs)),
-    dateToStr: formatLocalDateInputValue(new Date(normalized.tillDateNoninclusiveMs)),
-    timeToStr: formatLocalTimeInputValue(new Date(normalized.tillDateNoninclusiveMs)),
+    dateFromStr: formatDateInputValueInTimeZone(new Date(normalized.sinceDateInclusiveMs), APP_TIME_ZONE),
+    timeFromStr: formatTimeInputValueInTimeZone(new Date(normalized.sinceDateInclusiveMs), APP_TIME_ZONE),
+    dateToStr: formatDateInputValueInTimeZone(new Date(normalized.tillDateNoninclusiveMs), APP_TIME_ZONE),
+    timeToStr: formatTimeInputValueInTimeZone(new Date(normalized.tillDateNoninclusiveMs), APP_TIME_ZONE),
   });
 }
 

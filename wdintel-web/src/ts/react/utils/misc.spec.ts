@@ -6,10 +6,13 @@ import { describe, expect, it } from 'vitest';
 import {
   APP_DATE_INPUT_MIN,
   APP_DATE_INPUT_MIN_YEAR,
+  APP_TIME_ZONE,
   combineDateTimeToMs,
   formatDate,
   formatDateTime24,
+  formatDateInputValueInTimeZone,
   formatLocalDateInputValue,
+  formatTimeInputValueInTimeZone,
   isValidDateInput,
   objectsEqual,
   strArraysEqual,
@@ -47,5 +50,13 @@ describe('misc utils', () => {
     expect(isValidDateInput('2022-01-01')).toBe(true);
     expect(combineDateTimeToMs('2021-12-31', '12:00')).toBeNull();
     expect(combineDateTimeToMs('2022-01-01', '12:00')).not.toBeNull();
+  });
+
+  it('parses and formats analysis date-times in the app timezone', () => {
+    const millis = combineDateTimeToMs('2026-01-15', '12:00', APP_TIME_ZONE);
+
+    expect(millis).toBe(Date.UTC(2026, 0, 15, 10, 0, 0));
+    expect(formatDateInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('2026-01-15');
+    expect(formatTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('12:00');
   });
 });

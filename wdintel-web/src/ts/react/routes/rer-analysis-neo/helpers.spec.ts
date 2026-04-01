@@ -4,6 +4,7 @@ import type { SavedFilter } from '../../../../Bindings';
 import { RER_ANALYSIS_QUERY_STATE_KEY } from '../../../rer-analysis-query-state';
 import {
   buildAnalysisReq,
+  createInitialQueryState,
   buildInboxReq,
   parseQueryStateFromWindow,
   emptyQueryState,
@@ -155,6 +156,15 @@ describe('rer-analysis-neo helpers', () => {
 
   it('starts neo query state with unitsExactMatchOnly unset', () => {
     expect(emptyQueryState().unitsExactMatchOnly).toBeNull();
+  });
+
+  it('derives default analysis dates in the app timezone', () => {
+    const state = createInitialQueryState(emptyQueryState(), new Date(Date.UTC(2026, 0, 15, 22, 30, 0)));
+
+    expect(state.dateToStr).toBe('2026-01-16');
+    expect(state.timeToStr).toBe('00:30');
+    expect(state.dateFromStr).toBe('2026-01-15');
+    expect(state.timeFromStr).toBe('12:30');
   });
 
   it('resets adjacent frequency expansion when applying a saved filter', () => {

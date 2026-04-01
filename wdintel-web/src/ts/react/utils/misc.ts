@@ -1,3 +1,10 @@
+import dayjs from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 export function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
   if (arr == null) return null;
   if (Array.isArray(arr) && arr.length === 0) return null;
@@ -46,6 +53,7 @@ export function formatDateTime24(value: number | null | undefined): string {
 
 export const APP_DATE_INPUT_MIN = '2022-01-01';
 export const APP_DATE_INPUT_MIN_YEAR = 2022;
+export const APP_TIME_ZONE = 'Europe/Kiev';
 
 export function formatLocalDateInputValue(date: Date): string {
   const year = date.getFullYear();
@@ -58,6 +66,14 @@ export function formatLocalTimeInputValue(date: Date): string {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
+}
+
+export function formatDateInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
+  return dayjs(date).tz(timeZone).format('YYYY-MM-DD');
+}
+
+export function formatTimeInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
+  return dayjs(date).tz(timeZone).format('HH:mm');
 }
 
 export function isValidDateInput(dateStr: string): boolean {
@@ -77,9 +93,9 @@ export function isValidTimeInput(timeStr: string): boolean {
   return /^\d{2}:\d{2}$/.test(timeStr);
 }
 
-export function combineDateTimeToMs(dateStr: string, timeStr: string): number | null {
+export function combineDateTimeToMs(dateStr: string, timeStr: string, timeZone: string = APP_TIME_ZONE): number | null {
   if (!isValidDateInput(dateStr) || !isValidTimeInput(timeStr)) return null;
-  const iso = `${dateStr}T${timeStr}:00`;
-  const millis = new Date(iso).getTime();
+  const parsed = dayjs.tz(`${dateStr}T${timeStr}:00`, timeZone);
+  const millis = parsed.valueOf();
   return Number.isFinite(millis) ? millis : null;
 }
