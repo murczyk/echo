@@ -114,7 +114,6 @@ describe('rer analysis query state', () => {
       timeToStr: '09:52',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
-      unitsExactMatchOnly: null,
     });
   });
 
@@ -160,9 +159,21 @@ describe('rer analysis query state', () => {
       without_network: false,
       include_peleng_locations: true,
       metadata_hash: [],
+      unitsExactMatchOnly: null,
     });
 
     expect(globalThis.localStorage.getItem(RER_ANALYSIS_QUERY_STATE_KEY)).toBe(JSON.stringify({ search: 'uid-1' }));
+  });
+
+  it('persists explicit exact-match mode in canonical state', () => {
+    saveRerAnalysisQueryState({
+      search: 'uid-1',
+      unitsExactMatchOnly: true,
+    });
+
+    expect(globalThis.localStorage.getItem(RER_ANALYSIS_QUERY_STATE_KEY)).toBe(
+      JSON.stringify({ search: 'uid-1', unitsExactMatchOnly: true }),
+    );
   });
 
   it('saves legacy state without canonical compaction on the legacy storage key', () => {
@@ -196,17 +207,15 @@ describe('rer analysis query state', () => {
     );
   });
 
-  it('round-trips nullable canonical booleans through flat query params', () => {
+  it('omits nullable canonical booleans when they match the neo default', () => {
     const params = new URLSearchParams();
 
     writeRerAnalysisQueryStateToSearchParams(params, {
       unitsExactMatchOnly: null,
     });
 
-    expect(params.toString()).toBe('unitsExactMatchOnly=null');
-    expect(parseRerAnalysisQueryStateFromSearchParams(params)).toEqual({
-      unitsExactMatchOnly: null,
-    });
+    expect(params.toString()).toBe('');
+    expect(parseRerAnalysisQueryStateFromSearchParams(params)).toBeNull();
   });
 
   it('parses flat query params into canonical query state', () => {

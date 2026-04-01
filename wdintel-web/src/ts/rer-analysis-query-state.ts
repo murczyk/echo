@@ -86,7 +86,7 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   withoutMetadata: false,
   tags: [],
   includePelengLocations: true,
-  unitsExactMatchOnly: true,
+  unitsExactMatchOnly: null,
   adjacentFreqsRange: 0,
   withoutModelTags: false,
   filterTagsOption: 'OneOfTags',

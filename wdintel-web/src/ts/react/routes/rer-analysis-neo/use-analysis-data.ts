@@ -231,6 +231,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const optionsFreqsRef = useRef<string[]>([]);
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
+  const loadMoreMessagesRequestRef = useRef(0);
 
   useEffect(() => {
     optionsFreqsRef.current = options.freqs;
@@ -241,6 +242,11 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     setCallsignGraph(null);
     setCallsignGraphLoading(false);
     setCallsignGraphLoadVersion((current) => current + 1);
+  }, []);
+
+  const invalidateMessagePaging = useCallback(() => {
+    loadMoreMessagesRequestRef.current += 1;
+    setMessagesPaging(false);
   }, []);
 
   const patchMessages = useCallback(
@@ -696,6 +702,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     let startedSecondaryLoads = false;
 
     onError('');
+    invalidateMessagePaging();
     setCountsLoading(true);
     setMessagesLoading(true);
     setFiltersLoading(true);
@@ -983,7 +990,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         }
       }
     }
-  }, [clearAnalysisResults, invalidateCallsignGraph, newestFirst, onError, onUnauthorized, queryState]);
+  }, [clearAnalysisResults, invalidateCallsignGraph, invalidateMessagePaging, newestFirst, onError, onUnauthorized, queryState]);
 
   const loadAllMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, options.freqs);
@@ -1028,23 +1035,35 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     const lastMessage = messages.at(-1);
     if (inboxReq == null || lastMessage == null) return;
 
+    const requestId = loadMoreMessagesRequestRef.current + 1;
+    loadMoreMessagesRequestRef.current = requestId;
+    const isStaleLoadMore = () => requestId !== loadMoreMessagesRequestRef.current;
+
     setMessagesPaging(true);
     try {
       const paginatedReq = newestFirst
         ? { ...inboxReq, beforeIdNoninclusive: lastMessage[0], newestFirst }
         : { ...inboxReq, sinceIdNoninclusive: lastMessage[0], newestFirst };
       const rsp = await fetchInboxMessages(paginatedReq);
+      if (isStaleLoadMore()) {
+        return;
+      }
       const nextMessages = rsp.inboxItems ?? [];
       setMessages((current) => [...current, ...nextMessages]);
       if (nextMessages.length === 0) {
         setNoMoreToLoad(true);
       }
     } catch (loadError) {
+      if (isStaleLoadMore()) {
+        return;
+      }
       if (!onUnauthorized(loadError)) {
         onError(toErrorMessage(loadError));
       }
     } finally {
-      setMessagesPaging(false);
+      if (!isStaleLoadMore()) {
+        setMessagesPaging(false);
+      }
     }
   }, [messages, newestFirst, onError, onUnauthorized, options.freqs, queryState]);
 
