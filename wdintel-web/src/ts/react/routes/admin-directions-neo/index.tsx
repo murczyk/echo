@@ -326,9 +326,18 @@ function TableTabControls<TData extends MRT_RowData>(props: {
         />
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-        <MRT_ShowHideColumnsButton table={props.table} disabled={props.disabled} />
-        <MRT_ToggleDensePaddingButton table={props.table} disabled={props.disabled} />
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flexShrink: 0,
+          pointerEvents: props.disabled ? 'none' : undefined,
+          opacity: props.disabled ? 0.5 : undefined,
+        }}
+        aria-disabled={props.disabled ? 'true' : undefined}
+      >
+        <MRT_ShowHideColumnsButton table={props.table} />
+        <MRT_ToggleDensePaddingButton table={props.table} />
       </Box>
     </Box>
   );
@@ -593,6 +602,7 @@ function OrphanGroupsTable(props: {
           <SectionLoadingOverlay
             open
             ariaLabel="Завантаження таблиці напрямків"
+            showSpinner={false}
             sx={{ zIndex: 12 }}
           />
         ) : null}
@@ -941,6 +951,7 @@ function ZoneGroupsTable(props: {
           <SectionLoadingOverlay
             open
             ariaLabel="Завантаження таблиці напрямків"
+            showSpinner={false}
             sx={{ zIndex: 12 }}
           />
         ) : null}

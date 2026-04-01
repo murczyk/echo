@@ -60,7 +60,7 @@ import {
   editAnalysisFreqUnitName,
 } from '../../services/api/analysis';
 import { listPalitrasV2 } from '../../services/api/palitra';
-import { downloadBlob } from '../../utils/download';
+import { downloadBlob } from '../../utils/download-blob';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
@@ -639,8 +639,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
           unit,
           unitNew,
           search: queryState.search.trim() || null,
-          filterTagsOption: null,
-          reportTagsOnlyThisUnit: false,
+          filterTagsOption: queryState.filterTagsOption,
+          reportTagsOnlyThisUnit: queryState.reportTagsOnlyThisUnit,
         });
         setSummaryRows((current) =>
           current.map((row) =>

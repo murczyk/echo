@@ -2,7 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 
 import type { Callsign, CallsignUnitStatRow, Source, Unit, User } from '../../../../Bindings';
 import { isUnauthorizedError } from '../../services/api/client';
-import { downloadBlob } from '../../utils/download';
+import { downloadBlob } from '../../utils/download-blob';
 import {
   createCallsign,
   deleteCallsign,

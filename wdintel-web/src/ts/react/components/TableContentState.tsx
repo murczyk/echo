@@ -62,7 +62,7 @@ export function TableContentState({
       return (
         <div className={`${containerClassName} relative`} aria-busy="true">
           {loadingContent}
-          <SectionLoadingOverlay open ariaLabel="Завантаження таблиці" sx={{ zIndex: 12 }} />
+          <SectionLoadingOverlay open ariaLabel="Завантаження таблиці" showSpinner={false} sx={{ zIndex: 12 }} />
         </div>
       );
     }

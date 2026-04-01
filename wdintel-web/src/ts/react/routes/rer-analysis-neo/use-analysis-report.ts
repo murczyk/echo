@@ -2,7 +2,7 @@ import type { InboxMessagesReq } from '../../../../Bindings';
 import { useCallback, useState } from 'react';
 
 import { downloadAnalysisReport } from '../../services/api/analysis';
-import { downloadBlob } from '../../utils/download';
+import { downloadBlob } from '../../utils/download-blob';
 import {
   buildReportFilename,
   buildReportRequest,

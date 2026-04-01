@@ -29,6 +29,7 @@ export function AnalysisSavedFiltersCard({
   onSavedFilterNameChange,
   onUpdateExisting,
 }: Props) {
+  const hasSavedFilters = savedFilters.length > 0;
   const trimmedSavedFilterName = savedFilterName.trim();
   const hasLoadedFilter = loadedSavedFilter != null;
   const isRenaming = hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
@@ -40,18 +41,20 @@ export function AnalysisSavedFiltersCard({
     <Paper variant="outlined" sx={{ p: 2 }}>
       <Stack spacing={1.5}>
         <Typography variant="subtitle2">Збережені фільтри</Typography>
-        <Autocomplete
-          size="small"
-          options={savedFilters}
-          getOptionLabel={(option) => option.name}
-          value={loadedSavedFilter}
-          openText="Відкрити"
-          closeText="Закрити"
-          clearText="Очистити"
-          noOptionsText="Немає варіантів"
-          onChange={(_event, next) => onApplySavedFilter(next)}
-          renderInput={(params) => <TextField {...params} label="Збережений фільтр" />}
-        />
+        {hasSavedFilters ? (
+          <Autocomplete
+            size="small"
+            options={savedFilters}
+            getOptionLabel={(option) => option.name}
+            value={loadedSavedFilter}
+            openText="Відкрити"
+            closeText="Закрити"
+            clearText="Очистити"
+            noOptionsText="Немає варіантів"
+            onChange={(_event, next) => onApplySavedFilter(next)}
+            renderInput={(params) => <TextField {...params} label="Збережений фільтр" />}
+          />
+        ) : null}
         <TextField
           size="small"
           label="Назва фільтра"
@@ -64,7 +67,7 @@ export function AnalysisSavedFiltersCard({
               ? `Фільтр "${loadedSavedFilter.name}": змінено назву.`
               : isDirty
                 ? `Фільтр "${loadedSavedFilter.name}": є незбережені зміни.`
-                : `Фільтр "${loadedSavedFilter.name}" відкрито.`}
+                : `Вибрано фільтр "${loadedSavedFilter.name}".`}
           </Alert>
         ) : null}
         <Stack spacing={1.25} sx={{ width: '100%' }}>

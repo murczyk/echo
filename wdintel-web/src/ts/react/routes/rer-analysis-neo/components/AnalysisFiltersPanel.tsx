@@ -20,6 +20,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { APP_DATE_INPUT_MIN } from '../../../utils/misc';
@@ -96,8 +97,44 @@ type FilterSectionProps = {
   title: string;
   expanded: boolean;
   onToggle: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 };
+
+function getInitialExpandedSections(queryState: AnalysisPageState['queryState']): Record<FilterSectionId, boolean> {
+  return {
+    ...defaultExpandedSections,
+    important:
+      defaultExpandedSections.important ||
+      queryState.orWithExtendedForm ||
+      queryState.orBookmarked ||
+      queryState.orImportant ||
+      queryState.orWithCoords,
+    tags:
+      queryState.tags.length > 0 ||
+      queryState.filterTagsOption !== 'OneOfTags' ||
+      queryState.withoutModelTags ||
+      queryState.reportTagsOnlyThisUnit,
+    networks: queryState.networksSelected.length > 0 || queryState.withoutNetwork,
+    aors: queryState.aorsSelected.length > 0,
+    groups: queryState.groupsSelected.length > 0,
+    senders: queryState.sendersSelected.length > 0,
+    freqs:
+      queryState.freqsSelected.length > 0 ||
+      queryState.adjacentFreqsRange > 0 ||
+      queryState.includeOnlyNewFreqs,
+    callsigns: queryState.callsignsSelected.length > 0,
+    units: queryState.unitsSelected.length > 0 || queryState.unitsExactMatchOnly === false,
+    locations: queryState.locationsSelected.length > 0 || queryState.includePelengLocations === false,
+    posts: queryState.postsSelected.length > 0,
+    metadata:
+      queryState.metadataCc.length > 0 ||
+      queryState.metadataSender.length > 0 ||
+      queryState.metadataReceiver.length > 0 ||
+      queryState.metadataHash.length > 0 ||
+      queryState.onlyWithMetadata ||
+      queryState.withoutMetadata,
+  };
+}
 
 function FilterSection({ title, expanded, onToggle, children }: FilterSectionProps) {
   return (
@@ -171,7 +208,7 @@ export function AnalysisFiltersPanel({
   updateExisting,
   updateQueryState,
 }: Props) {
-  const [expandedSections, setExpandedSections] = useState(defaultExpandedSections);
+  const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections(queryState));
 
   const unitsExactMatchHint =
     counts == null

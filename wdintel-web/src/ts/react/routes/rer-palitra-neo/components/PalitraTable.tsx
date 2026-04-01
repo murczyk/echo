@@ -315,6 +315,7 @@ export function PalitraTable({
     }),
     state: {
       showAlertBanner: false,
+      showLoadingOverlay: false,
       density: tableStateContext.density,
       columnVisibility: tableStateContext.columnVisibility,
       columnOrder: tableStateContext.columnOrder,
