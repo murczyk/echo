@@ -87,13 +87,14 @@ pub async fn create_palitra_with_kmz(
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
     let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
-    let points = kmz::load_coordinates_from_file(
+    let upload = kmz::load_coordinates_from_file(
         multipart_payload.filename.clone(),
         multipart_payload.kmz_data.clone(),
         &env,
     )
     .await
     .c(h!())?;
+    let points = upload.points;
 
     let palitra_geometry =
         read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
@@ -101,6 +102,9 @@ pub async fn create_palitra_with_kmz(
             .c(h!())?;
 
     bl::rewrite_palitra_points(palitra_geometry.id, points, &txn, &env.rq)
+        .await
+        .c(h!())?;
+    bl::update_palitra_s3_id(&txn, palitra.id, upload.s3_id)
         .await
         .c(h!())?;
 
@@ -141,15 +145,14 @@ pub async fn create_palitra_basic(
         .c(h!())?;
 
     let uploaded_at = Utc::now();
-    let mut points_by_color = group_palitra_points_by_color(
-        kmz::load_coordinates_from_file(
-            multipart_payload.filename.clone(),
-            multipart_payload.kmz_data.clone(),
-            &env,
-        )
-        .await
-        .c(h!())?,
-    );
+    let upload = kmz::load_coordinates_from_file(
+        multipart_payload.filename.clone(),
+        multipart_payload.kmz_data.clone(),
+        &env,
+    )
+    .await
+    .c(h!())?;
+    let mut points_by_color = group_palitra_points_by_color(upload.points);
     let primary_color_hex = pick_primary_color_hex(&points_by_color);
     let mut geometry_colors = vec![primary_color_hex.clone()];
     geometry_colors.extend(
@@ -186,6 +189,9 @@ pub async fn create_palitra_basic(
         )
         .await
         .c(h!())?;
+        bl::update_palitra_s3_id(&txn, palitra.id, upload.s3_id.clone())
+            .await
+            .c(h!())?;
     }
 
     let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
@@ -226,15 +232,14 @@ pub async fn create_palitra_basic_v2(
         .await
         .c(h!())?;
 
-    let mut points_by_color = group_palitra_points_by_color(
-        kmz::load_coordinates_from_file(
-            multipart_payload.filename.clone(),
-            multipart_payload.kmz_data.clone(),
-            &env,
-        )
-        .await
-        .c(h!())?,
-    );
+    let upload = kmz::load_coordinates_from_file(
+        multipart_payload.filename.clone(),
+        multipart_payload.kmz_data.clone(),
+        &env,
+    )
+    .await
+    .c(h!())?;
+    let mut points_by_color = group_palitra_points_by_color(upload.points);
     let uploaded_at = Utc::now();
     let primary_color_hex = pick_primary_color_hex(&points_by_color);
     let req = CreatePalitraReq {
@@ -274,6 +279,9 @@ pub async fn create_palitra_basic_v2(
         .await
         .c(h!())?;
     }
+    bl::update_palitra_s3_id(&txn, palitra.id, upload.s3_id)
+        .await
+        .c(h!())?;
 
     let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
     sync_upload_palitra_to_connected_organisms(
@@ -375,15 +383,14 @@ pub async fn upload_palitra_points(
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
     let raw_kmz_data = val;
-    let mut points_by_color = group_palitra_points_by_color(
-        kmz::load_coordinates_from_file(
-            filename.clone(),
-            raw_kmz_data.clone(),
-            &env,
-        )
-        .await
-        .c(h!())?,
-    );
+    let upload = kmz::load_coordinates_from_file(
+        filename.clone(),
+        raw_kmz_data.clone(),
+        &env,
+    )
+    .await
+    .c(h!())?;
+    let mut points_by_color = group_palitra_points_by_color(upload.points);
     let uploaded_at = Utc::now();
     let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
     if geometry_colors.is_empty() {
@@ -448,6 +455,9 @@ pub async fn upload_palitra_points(
             retained_geometry_ids.len()
         );
     }
+    bl::update_palitra_s3_id(&txn, palitra.id, upload.s3_id)
+        .await
+        .c(h!())?;
 
     let remote_filename = kmz_file_name_as_kmz(&filename);
     sync_upload_palitra_to_connected_organisms(

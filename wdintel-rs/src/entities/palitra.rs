@@ -26,6 +26,8 @@ pub struct Model {
     //     pub convex_hull: Option<String>,
     //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
     //     pub center: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub s3_id: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
