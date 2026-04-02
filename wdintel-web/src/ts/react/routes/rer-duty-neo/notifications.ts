@@ -24,7 +24,11 @@ export function getStoredDutyNotificationSettings(): DutyNotificationSettings {
 
 export function setStoredDutyNotificationSettings(value: DutyNotificationSettings): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_KEY, JSON.stringify(value));
+  try {
+    window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_KEY, JSON.stringify(value));
+  } catch (error) {
+    console.warn('Failed to save notification settings', error);
+  }
 }
 
 export function getBrowserNotificationPermission(): NotificationPermission | 'unsupported' {
