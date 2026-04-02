@@ -5847,32 +5847,49 @@ type alias Network =
     , postIds : List (Int)
     , descriptions : List (NetworkDescription)
     , deleted : Bool
+    , status : NetworkStatus
     }
 
 
 networkEncoder : Network -> Json.Encode.Value
 networkEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.int) struct.id )
-        , ( "freqs", (Json.Encode.list (networkFreqEncoder)) struct.freqs )
-        , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.unitIds )
-        , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
-        , ( "name", (Json.Encode.string) struct.name )
-        , ( "location", (Json.Encode.string) struct.location )
-        , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.radioStation )
-        , ( "created_at", (Json.Encode.int) struct.createdAt )
-        , ( "purpose", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.purpose )
-        , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationMode )
-        , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationType )
-        , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
-        , ( "last_updated_at", (Json.Encode.int) struct.lastUpdatedAt )
-        , ( "last_updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastUpdatedBy )
-        , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeFrom )
-        , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeTo )
-        , ( "post_ids", (Json.Encode.list (Json.Encode.int)) struct.postIds )
-        , ( "descriptions", (Json.Encode.list (networkDescriptionEncoder)) struct.descriptions )
-        , ( "deleted", (Json.Encode.bool) struct.deleted )
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "freqs", Json.Encode.list networkFreqEncoder struct.freqs )
+        , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.unitIds )
+        , ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "location", Json.Encode.string struct.location )
+        , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioStation )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        , ( "purpose", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.purpose )
+        , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationMode )
+        , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationType )
+        , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
+        , ( "last_updated_at", Json.Encode.int struct.lastUpdatedAt )
+        , ( "last_updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.lastUpdatedBy )
+        , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeFrom )
+        , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
+        , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
+        , ( "descriptions", Json.Encode.list networkDescriptionEncoder struct.descriptions )
+        , ( "deleted", Json.Encode.bool struct.deleted )
+        , ( "status", networkStatusEncoder struct.status )
         ]
+
+
+type NetworkStatus
+    = NetworkActive
+    | NetworkInactive
+
+
+networkStatusEncoder : NetworkStatus -> Json.Encode.Value
+networkStatusEncoder enum =
+    case enum of
+        NetworkActive ->
+            Json.Encode.string "NetworkActive"
+
+        NetworkInactive ->
+            Json.Encode.string "NetworkInactive"
 
 
 type alias UpdateFreqNetworksReq =
@@ -5941,29 +5958,31 @@ type alias UpdateNetworkReq =
     , areaOfResponsibilityIds : Maybe (List (Int))
     , name : String
     , location : String
-    , radioStation : Maybe (String)
-    , purpose : Maybe (String)
-    , operationMode : Maybe (String)
-    , operationType : Maybe (String)
-    , operationPeriod : Maybe (String)
-    , descriptions : Maybe (List (UpdateNetworkDescriptionReq))
+    , radioStation : Maybe String
+    , purpose : Maybe String
+    , operationMode : Maybe String
+    , operationType : Maybe String
+    , operationPeriod : Maybe String
+    , descriptions : Maybe (List UpdateNetworkDescriptionReq)
+    , status : NetworkStatus
     }
 
 
 updateNetworkReqEncoder : UpdateNetworkReq -> Json.Encode.Value
 updateNetworkReqEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.int) struct.id )
-        , ( "restore_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.restoreNetwork )
-        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.areaOfResponsibilityIds )
-        , ( "name", (Json.Encode.string) struct.name )
-        , ( "location", (Json.Encode.string) struct.location )
-        , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.radioStation )
-        , ( "purpose", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.purpose )
-        , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationMode )
-        , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationType )
-        , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
-        , ( "descriptions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (updateNetworkDescriptionReqEncoder))) struct.descriptions )
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "restore_network", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.restoreNetwork )
+        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.areaOfResponsibilityIds )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "location", Json.Encode.string struct.location )
+        , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioStation )
+        , ( "purpose", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.purpose )
+        , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationMode )
+        , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationType )
+        , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
+        , ( "descriptions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list updateNetworkDescriptionReqEncoder)) struct.descriptions )
+        , ( "status", networkStatusEncoder struct.status )
         ]
 
 
@@ -10964,25 +10983,52 @@ freqStatsReqDecoder =
 networkDecoder : Json.Decode.Decoder Network
 networkDecoder =
     Json.Decode.succeed Network
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list (networkFreqDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_at" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_by" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list (networkDescriptionDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list networkFreqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_at" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_by" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list networkDescriptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" networkStatusDecoder))
+
+
+networkStatusDecoder : Json.Decode.Decoder NetworkStatus
+networkStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkActive" ->
+                            Json.Decode.succeed NetworkActive
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkInactive" ->
+                            Json.Decode.succeed NetworkInactive
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 
 updateFreqNetworksReqDecoder : Json.Decode.Decoder UpdateFreqNetworksReq
@@ -11018,17 +11064,18 @@ deleteNetworkReqDecoder =
 updateNetworkReqDecoder : Json.Decode.Decoder UpdateNetworkReq
 updateNetworkReqDecoder =
     Json.Decode.succeed UpdateNetworkReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restore_network" (Json.Decode.nullable (Json.Decode.bool))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.nullable (Json.Decode.list (updateNetworkDescriptionReqDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restore_network" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Jsosn.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.nullable (Json.Decode.list updateNetworkDescriptionReqDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" networkStatusDecoder))
 
 
 networkCallsignsReqDecoder : Json.Decode.Decoder NetworkCallsignsReq
