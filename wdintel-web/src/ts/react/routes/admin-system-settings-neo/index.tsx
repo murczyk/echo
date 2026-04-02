@@ -11,7 +11,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { Button } from '../../components/mui-customized/button';
@@ -33,24 +34,24 @@ function formatErrorMessage(error: unknown): string {
 
 export function AdminSystemSettingsNeoPage() {
   const [draftExactMatchOnlyDefault, setDraftExactMatchOnlyDefault] =
-    React.useState(true);
+    useState(true);
   const [initialExactMatchOnlyDefault, setInitialExactMatchOnlyDefault] =
-    React.useState(true);
-  const [draftDutyTestEnabled, setDraftDutyTestEnabled] = React.useState(false);
-  const [draftDutyTestSinceMs, setDraftDutyTestSinceMs] = React.useState(0);
-  const [draftDutyTestLimit, setDraftDutyTestLimit] = React.useState(1);
-  const [draftDutyPollIntervalSec, setDraftDutyPollIntervalSec] = React.useState(1);
-  const [initialDutyTestEnabled, setInitialDutyTestEnabled] = React.useState(false);
-  const [initialDutyTestSinceMs, setInitialDutyTestSinceMs] = React.useState(0);
-  const [initialDutyTestLimit, setInitialDutyTestLimit] = React.useState(1);
-  const [initialDutyPollIntervalSec, setInitialDutyPollIntervalSec] = React.useState(1);
-  const [loadInProgress, setLoadInProgress] = React.useState(true);
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = React.useState<string | null>(null);
-  const [saveInProgress, setSaveInProgress] = React.useState(false);
+    useState(true);
+  const [draftDutyTestEnabled, setDraftDutyTestEnabled] = useState(false);
+  const [draftDutyTestSinceMs, setDraftDutyTestSinceMs] = useState(0);
+  const [draftDutyTestLimit, setDraftDutyTestLimit] = useState(1);
+  const [draftDutyPollIntervalSec, setDraftDutyPollIntervalSec] = useState(1);
+  const [initialDutyTestEnabled, setInitialDutyTestEnabled] = useState(false);
+  const [initialDutyTestSinceMs, setInitialDutyTestSinceMs] = useState(0);
+  const [initialDutyTestLimit, setInitialDutyTestLimit] = useState(1);
+  const [initialDutyPollIntervalSec, setInitialDutyPollIntervalSec] = useState(1);
+  const [loadInProgress, setLoadInProgress] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveInProgress, setSaveInProgress] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     async function loadSystemSettings() {
       setLoadInProgress(true);
       setLoadError(null);
@@ -98,7 +99,7 @@ export function AdminSystemSettingsNeoPage() {
     setDraftExactMatchOnlyDefault(checked);
   }
 
-  async function handleSaveSystemSettings(event?: React.FormEvent) {
+  async function handleSaveSystemSettings(event?: FormEvent) {
     event?.preventDefault();
     if (saveInProgress) return;
     if (!isDirty) return;

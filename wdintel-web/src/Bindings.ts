@@ -867,6 +867,8 @@ export type RerAnalysisQueryState = {
   unitsExactMatchOnly: boolean | null;
   adjacentFreqsRange: number;
   withoutModelTags: boolean;
+  filterTagsOption: TagFilterOption | null;
+  reportTagsOnlyThisUnit: boolean | null;
 };
 
 export type EditFreqUnitNameReq = {

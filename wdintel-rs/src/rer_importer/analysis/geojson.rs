@@ -2,8 +2,52 @@ use super::*;
 use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
+use chrono_tz::Tz;
 use std::collections::HashMap;
 use tempfile::TempDir;
+
+const GEOJSON_COMMENT_MAX_LEN: usize = 2000;
+
+fn split_geojson_comment(comment: &str) -> Vec<String> {
+    if comment.chars().count() <= GEOJSON_COMMENT_MAX_LEN {
+        return vec![comment.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut remaining = comment;
+
+    while remaining.chars().count() > GEOJSON_COMMENT_MAX_LEN {
+        let split_at = split_geojson_comment_index(remaining);
+        let (head, tail) = remaining.split_at(split_at);
+        chunks.push(head.to_string());
+        remaining = trim_leading_newline(tail);
+    }
+
+    if !remaining.is_empty() {
+        chunks.push(remaining.to_string());
+    }
+
+    chunks
+}
+
+fn split_geojson_comment_index(comment: &str) -> usize {
+    let mut last_newline_idx = None;
+
+    for (char_count, (byte_idx, ch)) in comment.char_indices().enumerate() {
+        if char_count == GEOJSON_COMMENT_MAX_LEN {
+            return last_newline_idx.unwrap_or(byte_idx);
+        }
+        if ch == '\n' {
+            last_newline_idx = Some(byte_idx);
+        }
+    }
+
+    comment.len()
+}
+
+fn trim_leading_newline(comment: &str) -> &str {
+    comment.strip_prefix('\n').unwrap_or(comment)
+}
 
 /// Summary table showing row-per-frequency
 #[post("/api/rer/analysis/download-geojson")]
@@ -32,6 +76,7 @@ pub async fn rer_analysis_download_geojson(
         lng: Option<f64>,
         datetime: NaiveDateTime,
         group_name: String,
+        body: Option<String>,
     }
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -61,6 +106,7 @@ pub async fn rer_analysis_download_geojson(
         .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+        .column_as(Expr::col(signal_message::Column::Body), "body")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey
@@ -186,7 +232,10 @@ pub async fn rer_analysis_download_geojson(
                 acc
             });
 
-    let mut features = HashMap::new();
+    let mut features: HashMap<
+        (String, DateTime<Tz>, String, String),
+        crate::delta::types::Feature,
+    > = HashMap::new();
 
     for item in items.iter() {
         let Some(freq) = item.freq.clone() else {
@@ -213,6 +262,9 @@ pub async fn rer_analysis_download_geojson(
 
         let mut comments_one: String = comments.join("\n");
         comments_one.push_str(&format!("\n\nГрупа: {}", &item.group_name));
+        if let Some(body) = item.body.as_ref().filter(|body| !body.is_empty()) {
+            comments_one.push_str(&format!("\n\nПовідомлення: {body}"));
+        }
 
         let tz = crate::config::get_tz();
         // convert NaiveDateTime in UTC to NaiveDateTime in local timezone
@@ -220,29 +272,38 @@ pub async fn rer_analysis_download_geojson(
         let properties = crate::delta::types::Properties {
             name: Some(freq.clone()),
             sidc: "10061500002001000000".to_string(),
-            comments: vec![comments_one],
+            comments: split_geojson_comment(&comments_one),
             // like "2023-06-06T13:20:12"
             observation_datetime: Some(
                 datetime_utc.format("%Y-%m-%dT%H:%M:%S").to_string(),
             ),
         };
-        let feature = crate::delta::types::Feature {
-            type_: "Feature".to_string(),
-            geometry: crate::delta::types::Geometry {
-                type_: "Point".to_string(),
-                coordinates: serde_json::to_value(vec![lng, lat])
-                    .context(h!())?,
-            },
-            properties: Some(properties),
-        };
-
         let key = (
             freq.clone(),
             datetime_utc,
             format!("{lng:.6}"),
             format!("{lat:.6}"),
         );
-        features.entry(key).or_insert(feature);
+        match features.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if let Some(properties) = entry.get_mut().properties.as_mut() {
+                    properties
+                        .comments
+                        .extend(split_geojson_comment(&comments_one));
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(crate::delta::types::Feature {
+                    type_: "Feature".to_string(),
+                    geometry: crate::delta::types::Geometry {
+                        type_: "Point".to_string(),
+                        coordinates: serde_json::to_value(vec![lng, lat])
+                            .context(h!())?,
+                    },
+                    properties: Some(properties),
+                });
+            }
+        }
     }
 
     let geojson = GeoJson {
@@ -254,4 +315,36 @@ pub async fn rer_analysis_download_geojson(
 
     let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
     Ok(file.into_response(&http_req))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_geojson_comment_keeps_short_comment() {
+        assert_eq!(
+            split_geojson_comment("short comment"),
+            vec!["short comment".to_string()]
+        );
+    }
+
+    #[test]
+    fn split_geojson_comment_splits_on_last_newline_before_limit() {
+        let first = "a".repeat(1500);
+        let second = "b".repeat(700);
+        let comment = format!("{first}\n{second}");
+
+        assert_eq!(split_geojson_comment(&comment), vec![first, second]);
+    }
+
+    #[test]
+    fn split_geojson_comment_splits_long_line_at_limit() {
+        let comment = "x".repeat(GEOJSON_COMMENT_MAX_LEN + 10);
+        let chunks = split_geojson_comment(&comment);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].chars().count(), GEOJSON_COMMENT_MAX_LEN);
+        assert_eq!(chunks[1].chars().count(), 10);
+    }
 }

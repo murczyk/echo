@@ -12,6 +12,14 @@ export type Data2 = {
 	stats_per_minute: StatsPerPeriod
 }
 
+type DataCamel = {
+	dataPerDate?: DataPerDate | null
+}
+
+type Data2Camel = {
+	statsPerMinute?: StatsPerPeriod | null
+}
+
 type StatsPerPeriod = { timestamp: string, stats: Stats }[]
 type Stats = { [key: string]: { count: number, group_name: string } }
 
@@ -19,17 +27,41 @@ type CountByGroupName = {
 	[key: string]: number; // Group names with their respective counts
 };
 
+type DataPerDateEntry = {
+	count_by_group_name?: CountByGroupName | null;
+	countByGroupName?: CountByGroupName | null;
+} | null | undefined;
+
 type DataPerDate = {
-	[key: string]: {
-		count_by_group_name: CountByGroupName; // The structure of the returned data
-	};
+	[key: string]: DataPerDateEntry;
 };
 
 type TransformedData = { date: string; group: string; count: number, groupName?: string }[]
 
-function a(data: Data): DataPerDate {
+type YAxisConfig = {
+	domainMax: number;
+	tickValues?: number[];
+	tickFormat?: (value: d3.NumberValue) => string;
+}
 
-	const dataPerDate = data.data_per_date;
+function getDataPerDate(data: Data | DataCamel | null | undefined): DataPerDate {
+	if (!data) return {};
+	return (data as Data).data_per_date ?? (data as DataCamel).dataPerDate ?? {};
+}
+
+function getStatsPerMinute(data: Data2 | Data2Camel | null | undefined): StatsPerPeriod {
+	if (!data) return [];
+	return (data as Data2).stats_per_minute ?? (data as Data2Camel).statsPerMinute ?? [];
+}
+
+function normalizeDataPerDateEntry(entry: DataPerDateEntry): { count_by_group_name: CountByGroupName } {
+	return {
+		count_by_group_name: entry?.count_by_group_name ?? entry?.countByGroupName ?? {},
+	};
+}
+
+function a(data: Data | DataCamel | null | undefined): DataPerDate {
+	const dataPerDate = getDataPerDate(data);
 	const sortedDates = Object.keys(dataPerDate)
 		.map(dateString => dayjs(dateString))
 		.filter(date => date.isValid())
@@ -43,7 +75,7 @@ function a(data: Data): DataPerDate {
 			const obj = {}
 			allDays.map(date => {
 				const d = dataPerDate[date.format("YYYY-MM-DD")]
-				obj[date.format("YYYY-MM-DD")] = d ? d : {}
+				obj[date.format("YYYY-MM-DD")] = normalizeDataPerDateEntry(d)
 			})
 
 			return obj
@@ -64,7 +96,7 @@ function a(data: Data): DataPerDate {
 				}
 
 				if (d) {
-					Object.entries(d.count_by_group_name).forEach(([groupName, count]) => {
+					Object.entries(normalizeDataPerDateEntry(d).count_by_group_name).forEach(([groupName, count]) => {
 						if (!groupedData[startDateKey.format("YYYY-MM-DD")].count_by_group_name[groupName]) {
 							groupedData[startDateKey.format("YYYY-MM-DD")].count_by_group_name[groupName] = 0;
 						}
@@ -93,7 +125,7 @@ function a(data: Data): DataPerDate {
 				}
 
 				if (d) {
-					Object.entries(d.count_by_group_name).forEach(([groupName, count]) => {
+					Object.entries(normalizeDataPerDateEntry(d).count_by_group_name).forEach(([groupName, count]) => {
 						if (!weeklyGroupedData[weekStartDate.format("YYYY-MM-DD")].count_by_group_name[groupName]) {
 							weeklyGroupedData[weekStartDate.format("YYYY-MM-DD")].count_by_group_name[groupName] = 0;
 						}
@@ -111,12 +143,12 @@ function a(data: Data): DataPerDate {
 	}
 	return {}
 }
-export function transformData(data: Data): { transformedData: TransformedData, uniqueDates: string[] } {
+export function transformData(data: Data | DataCamel | null | undefined): { transformedData: TransformedData, uniqueDates: string[] } {
 	const dataPerDate = a(data)
 	const uniqueDates = Object.keys(dataPerDate);
 	const transformedData: TransformedData = [];
 	for (const date in dataPerDate) {
-		const counts = dataPerDate[date].count_by_group_name;
+		const counts = normalizeDataPerDateEntry(dataPerDate[date]).count_by_group_name;
 		for (const group in counts) {
 			transformedData.push({
 				date: date,
@@ -150,11 +182,12 @@ function mergeStats(stats1: Stats, stats2: Stats): Stats {
 	return mergedStats;
 }
 
-function transformData2(data: Data2): { transformedData: TransformedData, uniqueDates: string[] } {
+function transformData2(data: Data2 | Data2Camel | null | undefined): { transformedData: TransformedData, uniqueDates: string[] } {
 	const transformedData: TransformedData = [];
 	const uniqueDates: string[] = []
 
-	const a = data.stats_per_minute.reduce<StatsPerPeriod>((acc, current, index) => {
+	const statsPerMinute = getStatsPerMinute(data);
+	const a = statsPerMinute.reduce<StatsPerPeriod>((acc, current, index) => {
 		if (index % 5 === 0) {
 			acc.push(current)
 		} else {
@@ -209,6 +242,20 @@ function fillMissingDates(dates: dayjs.Dayjs[]) {
 
 }
 
+export function createYAxisConfig(maxStackedValue: number | undefined): YAxisConfig {
+	if (!maxStackedValue || maxStackedValue <= 0) {
+		return {
+			domainMax: 1,
+			tickValues: [ 0 ],
+			tickFormat: () => "0",
+		};
+	}
+
+	return {
+		domainMax: maxStackedValue,
+	};
+}
+
 
 const BARS_COLORSCHEME = ["#FFD454", "#FF9A3B", "#49A4FF", "#87D6F6", "#F087E9", "#AF54FF", "#FF5E63", "#E90008", "#82CE4B", "#499810"
 ]
@@ -257,11 +304,17 @@ export class BarChart2 extends LitElement {
 	colorMap = {}
 	nextColorIndex = 0;
 	lastAssignedColor: string | null = null;
+	pendingRenderFrame: number | null = null;
+	resizeObserver: ResizeObserver | null = null;
+	hasRenderedChart = false;
 
 	@property()
 	isAnalysis = false;
 
+	@state()
 	chartWidth = 0;
+
+	@state()
 	chartHeight = 0;
 	margins = {
 		right: 10,
@@ -285,16 +338,32 @@ export class BarChart2 extends LitElement {
 
 	connectedCallback(): void {
 		super.connectedCallback();
-		this.chartWidth = this.getBoundingClientRect().width;
-		this.chartHeight = this.getBoundingClientRect().height;
+		if (this.resizeObserver == null) {
+			this.resizeObserver = new ResizeObserver(() => {
+				if (this.data) {
+					this.scheduleRenderChart();
+				}
+			});
+		}
+		this.resizeObserver.observe(this);
+		this.chartWidth = Math.max(0, this.getBoundingClientRect().width);
+		this.chartHeight = Math.max(0, this.getBoundingClientRect().height);
 		const topLine = this.renderRoot.querySelector("#top-line")?.getBoundingClientRect().height ?? 30
 		const rect = this.getBoundingClientRect();
-		this.chartWidth = rect.width
-		this.chartHeight = rect.height - topLine
+		this.chartWidth = Math.max(0, rect.width)
+		this.chartHeight = Math.max(0, rect.height - topLine)
 	}
 
 	disconnectedCallback(): void {
 		super.disconnectedCallback();
+		if (this.pendingRenderFrame != null) {
+			cancelAnimationFrame(this.pendingRenderFrame);
+			this.pendingRenderFrame = null;
+		}
+		if (this.resizeObserver != null) {
+			this.resizeObserver.disconnect();
+			this.resizeObserver = null;
+		}
 		if (this.tooltip) {
 			this.tooltip.remove();
 			this.tooltip = null as any;
@@ -303,8 +372,18 @@ export class BarChart2 extends LitElement {
 
 	updated(changedProperties: PropertyValues<this>) {
 		if (changedProperties.has('data')) {
-			this.renderChart()
+			this.scheduleRenderChart()
 		}
+	}
+
+	scheduleRenderChart() {
+		if (this.pendingRenderFrame != null) {
+			cancelAnimationFrame(this.pendingRenderFrame);
+		}
+		this.pendingRenderFrame = requestAnimationFrame(() => {
+			this.pendingRenderFrame = null;
+			this.renderChart();
+		});
 	}
 
 	getColorForGroup(group: string) {
@@ -338,27 +417,37 @@ export class BarChart2 extends LitElement {
 	}
 
 	render() {
+		const safeChartWidth = Math.max(0, this.chartWidth);
+		const safeChartHeight = Math.max(0, this.chartHeight);
 		return html`
 		    <div>
 			<section id="top-line" style="display:flex; justify-content: space-between"> 
 			    <div style="flex-grow: 1;"></div>
 			    <slot name="period"></slot>
 			</section>
-			<svg id="chart"  width="${this.chartWidth}" height="${this.chartHeight}" viewBox="0 0 ${this.chartWidth} ${this.chartHeight}"></svg>
+			<svg id="chart"  width="${safeChartWidth}" height="${safeChartHeight}" viewBox="0 0 ${safeChartWidth} ${safeChartHeight}"></svg>
 		    </div>
 
 		    `
 	}
 
 	renderChart() {
+		const topLine = this.renderRoot.querySelector("#top-line")?.getBoundingClientRect().height ?? 30;
+		const rect = this.getBoundingClientRect();
+		this.chartWidth = Math.max(0, rect.width);
+		this.chartHeight = Math.max(0, rect.height - topLine);
+		if (this.chartWidth <= 0 || this.chartHeight <= 0 || !this.data) {
+			return;
+		}
+
 		let uniqueDates: string[] = []
 		let tickFormatFn: (x: string) => string = (x) => x;
-		if ("stats_per_minute" in this.data) {
-			const result = transformData2(this.data)
+		if ("stats_per_minute" in this.data || "statsPerMinute" in this.data) {
+			const result = transformData2(this.data as Data2 | Data2Camel)
 			this.transformedData = result.transformedData
 			uniqueDates = result.uniqueDates;
 		} else {
-			const result = transformData(this.data)
+			const result = transformData(this.data as Data | DataCamel)
 			this.transformedData = result.transformedData
 			uniqueDates = result.uniqueDates
 			tickFormatFn = (x: string) => dayjs(x).format("DD/MM")
@@ -376,6 +465,7 @@ export class BarChart2 extends LitElement {
 
 		const svgEl = this.renderRoot.querySelector("#chart");
 		const svg = d3.select(svgEl)
+		const shouldAnimate = !this.isAnalysis || !this.hasRenderedChart;
 		// tooltip from https://observablehq.com/@anreut/bar-chart-with-a-tooltip
 		if (!this.tooltip) {
 			this.tooltip = d3
@@ -392,9 +482,11 @@ export class BarChart2 extends LitElement {
 		}
 		const tooltip = this.tooltip;
 		const { xScale, xAxis } = createBandScale(uniqueDates, [this.margins.left, this.chartWidth - this.margins.right], tickFormatFn)
+		const maxStackedValue = d3.max(s, d => d3.max(d, d => d[1]))
+		const yAxisConfig = createYAxisConfig(maxStackedValue)
 
 		const y = d3.scaleLinear()
-			.domain([0, d3.max(s, d => d3.max(d, d => d[1])) || 0])
+			.domain([0, yAxisConfig.domainMax])
 			.rangeRound([this.chartHeight - this.margins.bottom, this.margins.top]);
 		const groups = svg
 			.selectAll(".data-group")
@@ -405,7 +497,7 @@ export class BarChart2 extends LitElement {
 
 		const bandwidth = xScale.bandwidth()
 		const barWidth = this.isAnalysis ? Math.min(100, bandwidth) : bandwidth
-		groups.selectAll("rect")
+		const rects = groups.selectAll("rect")
 			.data(D => D.map(d => {
 				type DataWithKey = typeof d & { key: string }
 				const dataWithKey = d as DataWithKey;
@@ -444,24 +536,49 @@ export class BarChart2 extends LitElement {
 			.on('mouseout', function(e, a) {
 				tooltip.html(``).style('visibility', 'hidden');
 				d3.select(this).attr('stroke', 'none');
-			})
-			.transition()
+			});
+		const positionedRects = rects
 			.attr("x", d => { return (xScale(d.data[0]) ?? 0) + (bandwidth - barWidth) / 2 })
-			.attr("y", d => y(d[1]))
-			.attr("height", d => y(d[0]) - y(d[1]))
 			.attr("width", barWidth)
+		if (shouldAnimate) {
+			positionedRects
+				.transition()
+				.attr("y", d => y(d[1]))
+				.attr("height", d => y(d[0]) - y(d[1]))
+		} else {
+			positionedRects
+				.interrupt()
+				.attr("y", d => y(d[1]))
+				.attr("height", d => y(d[0]) - y(d[1]))
+		}
 
 		if (!this.xAxisGroup) {
 			this.xAxisGroup = svg.append("g")
 		}
-		this.xAxisGroup.attr("transform", `translate(0,${this.chartHeight - this.margins.bottom})`)
-			.transition().call(xAxis)
+		const xAxisGroup = this.xAxisGroup.attr("transform", `translate(0,${this.chartHeight - this.margins.bottom})`)
+		if (shouldAnimate) {
+			xAxisGroup.transition().call(xAxis)
+		} else {
+			xAxisGroup.interrupt().call(xAxis)
+		}
 
 		if (!this.yAxisGroup) {
 			this.yAxisGroup = svg.append("g")
 		}
-		this.yAxisGroup.attr("transform", `translate(${this.margins.left},0)`)
-			.transition().call(d3.axisLeft(y).ticks(null, "s"))
+		const yAxis = d3.axisLeft(y).ticks(null, "s")
+		if (yAxisConfig.tickValues) {
+			yAxis.tickValues(yAxisConfig.tickValues)
+		}
+		if (yAxisConfig.tickFormat) {
+			yAxis.tickFormat(yAxisConfig.tickFormat)
+		}
+		const yAxisGroup = this.yAxisGroup.attr("transform", `translate(${this.margins.left},0)`)
+		if (shouldAnimate) {
+			yAxisGroup.transition().call(yAxis)
+		} else {
+			yAxisGroup.interrupt().call(yAxis)
+		}
+		this.hasRenderedChart = true;
 
 	}
 }
@@ -486,5 +603,3 @@ function createBandScale(domain: string[], rangeValue: [number, number], tickFor
 function _gapBetweenTicks(totalTicks: number) {
 	return Math.max(1, Math.ceil(totalTicks / 8));
 }
-
-

@@ -10,7 +10,7 @@ import {
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { TableEmptyState } from '../../components/TableEmptyState';
 import {
@@ -104,7 +104,7 @@ export function GoiAssociationsTable(props: Props) {
       ? basePaperProps
       : () => basePaperProps || {};
 
-  const columns = React.useMemo<MRT_ColumnDef<GoiAssociationRowView>[]>(
+  const columns = useMemo<MRT_ColumnDef<GoiAssociationRowView>[]>(
     () => [
       {
         header: 'ID ГОІ',
@@ -284,7 +284,7 @@ export function GoiAssociationsTable(props: Props) {
     },
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table, tableStateContext]);
 

@@ -1,7 +1,7 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LayersIcon from '@mui/icons-material/Layers';
 import { Box, Checkbox, IconButton, Radio, ThemeProvider, Typography } from '@mui/material';
-import React from 'react';
+import { useCallback, useState } from 'react';
 
 import type { FeatureToggleState } from '../maps/control-modules';
 import { useNeoMuiTheme } from './mui-theme';
@@ -18,7 +18,7 @@ type AnalysisMapLayerSwitchControlProps = {
 const STORAGE_KEY = 'layer-control-collapsed';
 
 function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControlProps) {
-  const [isCollapsed, setCollapsed] = React.useState<boolean>(() => {
+  const [isCollapsed, setCollapsed] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       return saved === null ? true : saved === 'true';
@@ -27,7 +27,7 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
     }
   });
 
-  const toggleCollapsed = React.useCallback(() => {
+  const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;
       try {

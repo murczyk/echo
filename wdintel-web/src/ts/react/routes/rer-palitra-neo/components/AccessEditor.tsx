@@ -9,7 +9,7 @@ import {
   Stack,
   TextField,
 } from '@mui/material';
-import React from 'react';
+import { memo, useMemo } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import {
@@ -47,20 +47,20 @@ function AccessEditorComponent({
   const restrictedByRole = isAccessRestricted(user);
   const restricted = restrictedByRole || readOnly;
   const disableAccessTypeSelection = Boolean(readOnly);
-  const loginOptions = React.useMemo(() => Array.from(new Set([...allLogins, ...form.logins])), [allLogins, form.logins]);
-  const organismOptions = React.useMemo(
+  const loginOptions = useMemo(() => Array.from(new Set([...allLogins, ...form.logins])), [allLogins, form.logins]);
+  const organismOptions = useMemo(
     () => (restrictedByRole ? (myScope?.organism ? [myScope.organism] : []) : organisms),
     [restrictedByRole, myScope, organisms],
   );
-  const aorOptions = React.useMemo(
+  const aorOptions = useMemo(
     () => (restrictedByRole ? myScope?.aors ?? [] : aors),
     [restrictedByRole, myScope, aors],
   );
-  const selectedOrganisms = React.useMemo(
+  const selectedOrganisms = useMemo(
     () => organismOptions.filter((option) => form.organismIds.includes(option.id)),
     [organismOptions, form.organismIds],
   );
-  const selectedAors = React.useMemo(
+  const selectedAors = useMemo(
     () => aorOptions.filter((option) => form.aorIds.includes(option.id)),
     [aorOptions, form.aorIds],
   );
@@ -173,4 +173,4 @@ function AccessEditorComponent({
   );
 }
 
-export const AccessEditor = React.memo(AccessEditorComponent);
+export const AccessEditor = memo(AccessEditorComponent);

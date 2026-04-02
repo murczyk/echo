@@ -79,7 +79,7 @@ export function getExportPermission(user: User | null): ExportPermission {
     canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
     canExport:
       roles.has('Rer')
-      && (roles.has('Admin') || roles.has('UnitsEditor')),
+      && (roles.has('Admin') || roles.has('UnitsEditor') || roles.has('AdvancedReports')),
   };
 }
 
@@ -89,7 +89,7 @@ export function getExportPermissionFromRoles(rolesList: string[]): ExportPermiss
     canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
     canExport:
       roles.has('Rer')
-      && (roles.has('Admin') || roles.has('UnitsEditor')),
+      && (roles.has('Admin') || roles.has('UnitsEditor') || roles.has('AdvancedReports')),
   };
 }
 
@@ -235,17 +235,6 @@ export function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   if (typeof error === 'string' && error.trim()) return error;
   return 'Невідома помилка';
-}
-
-export function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
 }
 
 export function createEmptyDraftRow(): CallsignDraftRow {

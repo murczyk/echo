@@ -1,7 +1,8 @@
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import { CircularProgress, IconButton, InputAdornment, TextField } from '@mui/material';
-import React, { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react';
 
 import { NeoMuiThemeProvider } from '../mui-theme';
 
@@ -20,7 +21,7 @@ export type SearchInputProps = {
   debounceMs?: number;
   minWidth?: number;
   clearOnEscape?: boolean;
-  emptyEndAdornment?: React.ReactNode;
+  emptyEndAdornment?: ReactNode;
 };
 
 export function SearchInput(props: SearchInputProps) {
@@ -60,7 +61,7 @@ export function SearchInput(props: SearchInputProps) {
   );
 
   const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
+    (event: ChangeEvent<HTMLInputElement>) => {
       const next = event.target.value;
       setValue(next);
       searchWithDebounce(next);
@@ -78,7 +79,7 @@ export function SearchInput(props: SearchInputProps) {
   }, [onSearch]);
 
   const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
+    (event: KeyboardEvent<HTMLInputElement>) => {
       if (!clearOnEscape || event.key !== 'Escape') {
         return;
       }
@@ -92,7 +93,7 @@ export function SearchInput(props: SearchInputProps) {
     [clearOnEscape, handleClear, value],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current);
@@ -100,7 +101,7 @@ export function SearchInput(props: SearchInputProps) {
     };
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (initialValue === undefined) {
       return;
     }

@@ -6,13 +6,13 @@ import { TextFieldProps } from '@mui/material/TextField';
 import { TableRowProps } from '@mui/material/TableRow';
 import { MRT_Column, MRT_ColumnDef, MRT_ColumnOrderState, MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
 import { MRT_Localization_UK } from 'material-react-table/locales/uk';
-import type React from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 import { TableEmptyState } from '../../TableEmptyState';
 import { CUSTOM_STYLES } from './custom-styles';
 import { windowWidth } from '../../../utils/browser';
 
-function onSharedSelectFilterMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+function onSharedSelectFilterMouseDown(event: MouseEvent<HTMLDivElement>) {
   const target = event.target as HTMLElement | null;
   if (!target) return;
 
@@ -224,7 +224,7 @@ export function buildDefaultColumnOrder({
 export function renderColumnActionsMenuItems({
   internalColumnMenuItems,
 }: {
-  internalColumnMenuItems: React.ReactNode[];
+  internalColumnMenuItems: ReactNode[];
 }) {
   return (internalColumnMenuItems || []).filter((i) => !((i as any).props?.label || '').includes('Показати всі'));
 }

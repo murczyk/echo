@@ -8,6 +8,8 @@ import {
   Palitra,
   PalitraAccess,
   PalitraDetails,
+  PalitraGeometryDetails,
+  PalitraReadV2,
   User,
 } from '../../../../Bindings';
 
@@ -55,12 +57,23 @@ type PalitraDetailsLike = {
 
 type PalitraGeometryDetailsLike = {
   id?: number | string;
+  colorHex?: string;
+  color_hex?: string;
+  sourceFileName?: string | null;
+  source_file_name?: string | null;
   lastUploadedAtTs?: number | string | null;
   last_uploaded_at_ts?: number | string | null;
+  geometry?: PalitraGeometryDetails['geometry'];
+  points?: PalitraGeometryDetails['points'] | null;
 };
 
 type PalitraReadWithGeometriesLike = {
   palitra: PalitraLike;
+  geometries?: PalitraGeometryDetailsLike[] | null;
+};
+
+type PalitraReadV2Like = {
+  palitra?: PalitraLike;
   geometries?: PalitraGeometryDetailsLike[] | null;
 };
 
@@ -180,6 +193,24 @@ function normalizePalitraDetails(raw: PalitraDetailsLike | null | undefined): Pa
   };
 }
 
+function normalizePalitraGeometryDetails(raw: PalitraGeometryDetailsLike | null | undefined): PalitraGeometryDetails {
+  return {
+    id: normalizeNumber(raw?.id),
+    colorHex: raw?.colorHex ?? raw?.color_hex ?? '#00bcd4',
+    sourceFileName: raw?.sourceFileName ?? raw?.source_file_name ?? null,
+    lastUploadedAtTs: normalizeOptionalNumber(raw?.lastUploadedAtTs ?? raw?.last_uploaded_at_ts),
+    geometry: raw?.geometry ?? null,
+    points: raw?.points ?? [],
+  };
+}
+
+function normalizePalitraReadV2(raw: PalitraReadV2Like | null | undefined): PalitraReadV2 {
+  return {
+    palitra: normalizePalitra(raw?.palitra),
+    geometries: (raw?.geometries ?? []).map(normalizePalitraGeometryDetails),
+  };
+}
+
 function normalizeKmzColor(raw: KmzColorInfoLike | null | undefined): KmzColorInfo {
   return {
     colorHex: raw?.colorHex ?? raw?.color_hex ?? '#00bcd4',
@@ -252,6 +283,13 @@ export async function listPalitras(): Promise<Palitra[]> {
   primaryGeometryIdByPalitraId.clear();
 
   return (data ?? []).map((entry) => normalizePalitra(entry));
+}
+
+export async function listPalitrasV2(): Promise<PalitraReadV2[]> {
+  const data = await postJson<PalitraReadV2Like[]>('/api/palitra/v2/list');
+  primaryGeometryIdByPalitraId.clear();
+
+  return (data ?? []).map((entry) => normalizePalitraReadV2(entry));
 }
 
 async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number | null> {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../Bindings';
 import {

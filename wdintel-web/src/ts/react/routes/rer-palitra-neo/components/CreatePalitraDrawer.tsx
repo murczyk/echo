@@ -17,7 +17,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
@@ -81,10 +81,10 @@ function CreatePalitraDrawerComponent({
   onSetCreateForm,
   onCreate,
 }: Props) {
-  const [activeStep, setActiveStep] = React.useState(0);
-  const prevCanContinueFromKmzStepRef = React.useRef(false);
+  const [activeStep, setActiveStep] = useState(0);
+  const prevCanContinueFromKmzStepRef = useRef(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setActiveStep(0);
     prevCanContinueFromKmzStepRef.current = false;
     if (!open) return;
@@ -106,7 +106,7 @@ function CreatePalitraDrawerComponent({
     (requiresKmzSelection && !hasSelectedKmzColor);
   const selectedKmzColorsCount = kmzColorOptions.filter((option) => option.selected).length;
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) return;
     const wasReady = prevCanContinueFromKmzStepRef.current;
     prevCanContinueFromKmzStepRef.current = canContinueFromKmzStep;
@@ -117,7 +117,7 @@ function CreatePalitraDrawerComponent({
     }
   }, [open, activeStep, canContinueFromKmzStep]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) return;
 
     function onKeyDown(event: KeyboardEvent) {
@@ -387,4 +387,4 @@ function CreatePalitraDrawerComponent({
   );
 }
 
-export const CreatePalitraDrawer = React.memo(CreatePalitraDrawerComponent);
+export const CreatePalitraDrawer = memo(CreatePalitraDrawerComponent);

@@ -28,7 +28,8 @@ import {
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import {
   AreaOfResponsibility,
@@ -45,6 +46,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { Button } from '../../components/mui-customized/button';
@@ -324,9 +326,18 @@ function TableTabControls<TData extends MRT_RowData>(props: {
         />
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-        <MRT_ShowHideColumnsButton table={props.table} disabled={props.disabled} />
-        <MRT_ToggleDensePaddingButton table={props.table} disabled={props.disabled} />
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flexShrink: 0,
+          pointerEvents: props.disabled ? 'none' : undefined,
+          opacity: props.disabled ? 0.5 : undefined,
+        }}
+        aria-disabled={props.disabled ? 'true' : undefined}
+      >
+        <MRT_ShowHideColumnsButton table={props.table} />
+        <MRT_ToggleDensePaddingButton table={props.table} />
       </Box>
     </Box>
   );
@@ -343,7 +354,7 @@ function OrphanGroupsTable(props: {
   const tableStateContext = useTableStateContext();
   const isLoading = Boolean(props.loading);
 
-  const columns = React.useMemo<MRT_ColumnDef<OrphanSignalGroupEntry>[]>(
+  const columns = useMemo<MRT_ColumnDef<OrphanSignalGroupEntry>[]>(
     () => [
       {
         header: 'Група',
@@ -551,7 +562,7 @@ function OrphanGroupsTable(props: {
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -591,7 +602,7 @@ function OrphanGroupsTable(props: {
           <SectionLoadingOverlay
             open
             ariaLabel="Завантаження таблиці напрямків"
-            spinnerMode="center"
+            showSpinner={false}
             sx={{ zIndex: 12 }}
           />
         ) : null}
@@ -621,7 +632,7 @@ function ZoneGroupsTable(props: {
   const tableStateContext = useTableStateContext();
   const isLoading = Boolean(props.loading);
 
-  const columns = React.useMemo<MRT_ColumnDef<ZoneGroupRow>[]>(
+  const columns = useMemo<MRT_ColumnDef<ZoneGroupRow>[]>(
     () => [
       {
         header: 'Група',
@@ -900,7 +911,7 @@ function ZoneGroupsTable(props: {
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -940,7 +951,7 @@ function ZoneGroupsTable(props: {
           <SectionLoadingOverlay
             open
             ariaLabel="Завантаження таблиці напрямків"
-            spinnerMode="center"
+            showSpinner={false}
             sx={{ zIndex: 12 }}
           />
         ) : null}
@@ -1025,58 +1036,58 @@ type DirectionsTab =
   | {
       key: 'orphans';
       label: string;
-      content: React.ReactNode;
+      content: ReactNode;
     }
   | {
       key: `zone-${number}`;
       label: string;
-      content: React.ReactNode;
+      content: ReactNode;
     };
 
 function AdminDirectionsNeoPageBody() {
-  const [status, setStatus] = React.useState<LoadingStatus>('idle');
-  const [error, setError] = React.useState<string | null>(null);
-  const [datasources, setDatasources] = React.useState<DatasourceEntry[]>([]);
-  const [zones, setZones] = React.useState<ZoneEntry[]>([]);
-  const [zoneDatasourceIds, setZoneDatasourceIds] = React.useState<
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [datasources, setDatasources] = useState<DatasourceEntry[]>([]);
+  const [zones, setZones] = useState<ZoneEntry[]>([]);
+  const [zoneDatasourceIds, setZoneDatasourceIds] = useState<
     Map<number, number[]>
   >(new Map());
-  const [zoneGroups, setZoneGroups] = React.useState<
+  const [zoneGroups, setZoneGroups] = useState<
     Map<string, ZoneDatasourceGroup[]>
   >(new Map());
-  const [groupInfos, setGroupInfos] = React.useState<
+  const [groupInfos, setGroupInfos] = useState<
     Map<string, SignalGroupEntry>
   >(new Map());
-  const [orphanGroups, setOrphanGroups] = React.useState<
+  const [orphanGroups, setOrphanGroups] = useState<
     OrphanSignalGroupEntry[]
   >([]);
-  const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
 
-  const [editDialog, setEditDialog] = React.useState<GroupEditState | null>(
+  const [editDialog, setEditDialog] = useState<GroupEditState | null>(
     null
   );
   const [orphanEditDialog, setOrphanEditDialog] =
-    React.useState<OrphanEditState | null>(null);
+    useState<OrphanEditState | null>(null);
   const [assignDialog, setAssignDialog] =
-    React.useState<OrphanAssignState | null>(null);
-  const [deleteDialog, setDeleteDialog] = React.useState<DeleteState | null>(
+    useState<OrphanAssignState | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<DeleteState | null>(
     null
   );
-  const [activeTab, setActiveTab] = React.useState(0);
+  const [activeTab, setActiveTab] = useState(0);
 
-  const [logins, setLogins] = React.useState<string[]>([]);
-  const [loginsStatus, setLoginsStatus] = React.useState<LoadingStatus>('idle');
+  const [logins, setLogins] = useState<string[]>([]);
+  const [loginsStatus, setLoginsStatus] = useState<LoadingStatus>('idle');
 
-  const datasourceById = React.useMemo(
+  const datasourceById = useMemo(
     () => new Map(datasources),
     [datasources]
   );
-  const aorOptions = React.useMemo(() => aors, [aors]);
-  const aorFilterOptions = React.useMemo(
+  const aorOptions = useMemo(() => aors, [aors]);
+  const aorFilterOptions = useMemo(
     () => buildAorFilterOptions(aors),
     [aors]
   );
-  const directionTabs = React.useMemo<DirectionsTab[]>(() => {
+  const directionTabs = useMemo<DirectionsTab[]>(() => {
     if (status === 'loading' || status === 'idle') {
       return [
         {
@@ -1173,7 +1184,7 @@ function AdminDirectionsNeoPageBody() {
     zones,
   ]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setActiveTab((current) => Math.min(current, Math.max(directionTabs.length - 1, 0)));
   }, [directionTabs.length]);
 
@@ -1263,7 +1274,7 @@ function AdminDirectionsNeoPageBody() {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -1739,7 +1750,7 @@ function AdminDirectionsNeoPageBody() {
             }
           />
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
           <Button
             variant="outlined"
             onClick={() => setEditDialog(null)}
@@ -1819,7 +1830,7 @@ function AdminDirectionsNeoPageBody() {
             }
           />
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
           <Button
             variant="outlined"
             onClick={() => setOrphanEditDialog(null)}
@@ -1895,7 +1906,7 @@ function AdminDirectionsNeoPageBody() {
             />
           ) : null}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
           <Button
             variant="outlined"
             onClick={() => setAssignDialog(null)}

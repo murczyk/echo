@@ -1,5 +1,5 @@
 import { MRT_RowData, MRT_TableInstance, MRT_ToggleFullScreenButton } from 'material-react-table';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 import { ClearFiltersButton } from './components/clear-filters-button';
 import { ColumnsVisibilityButton } from './components/columns-visibility-button';
@@ -8,7 +8,7 @@ import { useTableStateContext } from '../../../../table-state-provider';
 
 type IntrernalTableActionsProps<T extends MRT_RowData> = {
   table?: MRT_TableInstance<T> | null;
-  children?: React.ReactNode;
+  children?: ReactNode;
   densityDisabled?: boolean;
   densityHidden?: boolean;
   filtersHidden?: boolean;

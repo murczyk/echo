@@ -966,6 +966,8 @@ pub struct RerAnalysisQueryState {
     pub units_exact_match_only: Option<bool>,
     pub adjacent_freqs_range: f64,
     pub without_model_tags: bool,
+    pub filter_tags_option: Option<TagFilterOption>,
+    pub report_tags_only_this_unit: Option<bool>,
 }
 
 #[derive(

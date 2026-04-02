@@ -102,7 +102,7 @@ async fn ensure_editor_report_permissions(
     match crate::users::has_any_role(
         &env.dbx,
         user_login,
-        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+        vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
     )
     .await
     {

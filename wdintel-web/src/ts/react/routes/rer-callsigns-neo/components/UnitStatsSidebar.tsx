@@ -5,7 +5,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
 import { Box, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
@@ -137,9 +137,9 @@ function matchesUnitSearch(row: UnitStatView, normalizedQuery: string): boolean 
 }
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debouncedValue, setDebouncedValue] = React.useState(value);
+  const [debouncedValue, setDebouncedValue] = useState(value);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setDebouncedValue(value);
     }, delayMs);
@@ -299,19 +299,19 @@ export function UnitStatsSidebar({
   onToggleOpen,
   selectedUnitFilter,
 }: Props) {
-  const [searchInput, setSearchInput] = React.useState('');
+  const [searchInput, setSearchInput] = useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
-  const normalizedSearchQuery = React.useMemo(() => normalizeSearchQuery(debouncedSearchInput), [debouncedSearchInput]);
-  const filteredStats = React.useMemo(
+  const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(debouncedSearchInput), [debouncedSearchInput]);
+  const filteredStats = useMemo(
     () => stats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
     [stats, normalizedSearchQuery],
   );
-  const tree = React.useMemo(() => buildUnitTree(filteredStats), [filteredStats]);
-  const [expandedIds, setExpandedIds] = React.useState<Set<string>>(() => new Set());
+  const tree = useMemo(() => buildUnitTree(filteredStats), [filteredStats]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const total = filteredStats.reduce((sum, row) => sum + row.count, 0);
   const totalOverall = stats.reduce((sum, row) => sum + row.count, 0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) return;
     if (normalizedSearchQuery !== '') {
       setExpandedIds(new Set(collectGroupIds(tree)));

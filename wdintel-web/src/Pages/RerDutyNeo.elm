@@ -57,7 +57,7 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "РЕР-оперативний (neo)"
+    { title = "РЕР-оперативний"
     , body =
         [ div [ class "bg-background flex rer-duty flex-1 px-2 w-full" ]
             [ node "rer-duty-neo" [] [] ]

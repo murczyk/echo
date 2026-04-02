@@ -115,3 +115,5 @@ ssh "$MACHINE"
 sudo systemctl restart goi
 sudo journalctl -u goi -n 100 --no-pager
 ```
+
+11) Перший деплой: виконайте команду `just deploy-first --server $MACHINE`

@@ -161,6 +161,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         <Stack
           direction={isDesktopLayout ? 'row' : 'column'}
           spacing={2}
+          useFlexGap
           sx={{
             flex: 1,
             minHeight: isDesktopLayout ? 0 : 'auto',

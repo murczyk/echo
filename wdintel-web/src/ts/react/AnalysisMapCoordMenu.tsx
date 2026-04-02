@@ -1,7 +1,7 @@
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { Box, IconButton, MenuItem, Select, SelectChangeEvent, ThemeProvider, Typography } from '@mui/material';
-import React from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { copyTextToClipboard } from '../copy-to-clipboard';
 import { CoordFormat, getCoordinateText } from '../maps/coordinate-format';
@@ -16,18 +16,18 @@ type AnalysisMapCoordMenuProps = {
 
 function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
   const { lat, lng, mgrsCoords, onClose } = props;
-  const [format, setFormat] = React.useState<CoordFormat>('mgrs');
+  const [format, setFormat] = useState<CoordFormat>('mgrs');
 
-  const value = React.useMemo(
+  const value = useMemo(
     () => getCoordinateText(format, { lat, lng }, mgrsCoords),
     [format, lat, lng, mgrsCoords],
   );
 
-  const handleCopy = React.useCallback(() => {
+  const handleCopy = useCallback(() => {
     void copyTextToClipboard(value);
   }, [value]);
 
-  const handleFormatChange = React.useCallback((event: SelectChangeEvent<CoordFormat>) => {
+  const handleFormatChange = useCallback((event: SelectChangeEvent<CoordFormat>) => {
     const nextFormat = event.target.value as CoordFormat;
     setFormat(nextFormat);
     void copyTextToClipboard(getCoordinateText(nextFormat, { lat, lng }, mgrsCoords));

@@ -1,5 +1,6 @@
-import { Box, Button, Tooltip } from '@mui/material';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { Box, Button, Collapse, Link, Stack, Tooltip, Typography } from '@mui/material';
 
 import type { ContentNode, InboxMessage, Network, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
@@ -28,50 +29,81 @@ function ResolvedNetworkEtalonRows({
   networkMap: Record<number, Network>;
 }) {
   return (
-    <span className="flex flex-col gap-1 items-start w-full min-w-0">
+    <Stack spacing={0.5} sx={{ width: '100%', minWidth: 0 }}>
       {networkIds.map((networkId) => {
         const network = networkMap[networkId];
         const label = networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : 'Невідома мережа');
         const badge = networkNeedsInvestigationBadge(network);
         const hasNetworkLink = network != null;
-        return (
-          <span key={networkId} className="flex items-center gap-1 group w-full min-w-0">
-            <span className="min-w-0">
-              <span className="inline-grid shrink-0 mr-1 place-items-start" title="Еталонна прив'язка">
-                <i className="bi bi-people text-icons col-start-1 row-start-1 group-hover:hidden" aria-hidden />
-                <i
-                  className="bi bi-people-fill text-icons col-start-1 row-start-1 hidden group-hover:inline"
-                  aria-hidden
-                />
-              </span>
 
-              {badge ? (
-                <span className="ml-1 shrink-0 rounded border border-border bg-[var(--color-bg-inactive)] px-1.5 py-0.5 text-[10px] leading-none opacity-90">
-                  в дорозвідці
-                </span>
-              ) : null}
+        return (
+          <Stack
+            key={networkId}
+            direction="row"
+            spacing={0.75}
+            alignItems="flex-start"
+            sx={{ width: '100%', minWidth: 0 }}
+          >
+            <Box
+              component="i"
+              className="bi bi-people"
+              sx={{ mt: '2px', fontSize: 14, color: 'var(--color-icons)', flexShrink: 0 }}
+              title="Еталонна прив'язка"
+            />
+            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
               {hasNetworkLink ? (
-                <a
+                <Link
                   href={`/rer-networks/${networkId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="items-baseline gap-1 min-w-0 cursor-pointer shrink-0"
+                  underline="hover"
+                  color="inherit"
+                  sx={{
+                    display: 'inline-flex',
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    fontWeight: 700,
+                    textDecorationThickness: 'from-font',
+                  }}
                   title="Відкрити мережу в новій вкладці"
                 >
-                  <span className="min-w-0 break-words font-bold">{label}</span>
-                  <i
-                    className="bi bi-box-arrow-up-right text-sm ml-1 shrink-0 text-icons/60 transition-[color,transform] duration-150 group-hover:text-action group-hover:scale-110"
-                    aria-hidden
-                  />
-                </a>
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    sx={{ minWidth: 0, fontWeight: 700, lineHeight: 1.2, overflowWrap: 'anywhere' }}
+                  >
+                    {label}
+                  </Typography>
+                </Link>
               ) : (
-                <span className="min-w-0 break-words font-normal">{label}</span>
+                <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                  {label}
+                </Typography>
               )}
-            </span>
-          </span>
+              {badge ? (
+                <Box
+                  component="span"
+                  sx={{
+                    px: 0.75,
+                    py: 0.25,
+                    borderRadius: 0.75,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: 'var(--color-bg-inactive)',
+                    fontSize: 12,
+                    lineHeight: 1.1,
+                    opacity: 0.9,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  в дорозвідці
+                </Box>
+              ) : null}
+            </Stack>
+          </Stack>
         );
       })}
-    </span>
+    </Stack>
   );
 }
 
@@ -86,26 +118,28 @@ function NetworkSection({
   networkMap: Record<number, Network>;
   etalonNoNetworkLabel: string | null;
 }) {
+  if (networkIds.length > 0) {
+    return (
+      <ResolvedNetworkEtalonRows
+        networkIds={networkIds}
+        networkDisplayMap={networkDisplayMap}
+        networkMap={networkMap}
+      />
+    );
+  }
+
   return (
-    <>
-      {networkIds.length > 0 ? (
-        <ResolvedNetworkEtalonRows
-          networkIds={networkIds}
-          networkDisplayMap={networkDisplayMap}
-          networkMap={networkMap}
-        />
-      ) : etalonNoNetworkLabel != null ? (
-        <span className="inline-flex items-center gap-1">
-          <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
-          <span className="ml-1">{etalonNoNetworkLabel}</span>
-        </span>
-      ) : (
-        <span className="flex items-center gap-1" aria-hidden>
-          <i className="bi bi-people text-icons shrink-0 mt-0.5" title="Еталонна прив'язка" />
-          <span aria-hidden>{' '}</span>
-        </span>
-      )}
-    </>
+    <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0 }}>
+      <Box
+        component="i"
+        className="bi bi-people"
+        sx={{ mt: '2px', fontSize: 14, color: 'var(--color-icons)', flexShrink: 0 }}
+        title="Еталонна прив'язка"
+      />
+      <Typography variant="body2" sx={{ color: etalonNoNetworkLabel != null ? 'text.primary' : 'text.disabled' }}>
+        {etalonNoNetworkLabel ?? ' '}
+      </Typography>
+    </Stack>
   );
 }
 
@@ -163,11 +197,13 @@ function estimateTagChipWidthPx(label: string): number {
 }
 
 function MessageCardTagChips({
+  compact = false,
   msg,
   tagsMap,
   onToggleTag,
   tagsLayout,
 }: {
+  compact?: boolean;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
@@ -382,6 +418,7 @@ function MessageCardTagChips({
 }
 
 export function MessageCardEtalonLocationTime({
+  compact = false,
   networkIds,
   networkDisplayMap,
   networkMap,
@@ -389,6 +426,7 @@ export function MessageCardEtalonLocationTime({
   msg,
   relativeTimeMs,
 }: {
+  compact?: boolean;
   networkIds: number[];
   networkDisplayMap: Record<number, string>;
   networkMap: Record<number, Network>;
@@ -396,38 +434,105 @@ export function MessageCardEtalonLocationTime({
   msg: InboxMessage;
   relativeTimeMs: number | null;
 }) {
-  return (
-    <div className="inline-flex gap-x-3">
-      <div className="flex flex-col items-baseline gap-x-2 gap-y-1">
-        <span className="inline-flex shrink-1 items-start gap-1 w-full min-w-0">
-          <NetworkSection
-            networkIds={networkIds}
-            networkDisplayMap={networkDisplayMap}
-            networkMap={networkMap}
-            etalonNoNetworkLabel={etalonNoNetworkLabel}
-          />
-        </span>
-      </div>
+  const timeDistance =
+    msg.timestamp != null && relativeTimeMs != null ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
 
-      <span className="inline-flex break-words items-baseline gap-1 font-medium shrink-2">
-        <i className="bi bi-geo text-icons shrink-0" title="Локація" />
-        {msg.location ?? 'Не встановлена'}
-      </span>
-      {msg.timestamp != null && relativeTimeMs != null && (
-        <div className="shrink-0 mr-0 ml-auto" style={{ color: 'var(--bs-secondary-color)' }}>
-          {messageRenderDistance(msg.timestamp, relativeTimeMs)}
-        </div>
-      )}
-    </div>
+  if (compact) {
+    return (
+      <Stack spacing={1.25} sx={{ minWidth: 0 }}>
+        <NetworkSection
+          networkIds={networkIds}
+          networkDisplayMap={networkDisplayMap}
+          networkMap={networkMap}
+          etalonNoNetworkLabel={etalonNoNetworkLabel}
+        />
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="flex-start"
+          spacing={1}
+          useFlexGap
+          flexWrap="wrap"
+          sx={{ minWidth: 0 }}
+        >
+          <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
+            <Box
+              component="i"
+              className="bi bi-geo"
+              sx={{ mt: '2px', fontSize: 14, color: 'var(--color-icons)', flexShrink: 0 }}
+              title="Локація"
+            />
+            <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 600 }}>
+              {msg.location ?? 'Не встановлена'}
+            </Typography>
+          </Stack>
+          {timeDistance != null ? (
+            <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap', flexShrink: 0 }}>
+              {timeDistance}
+            </Typography>
+          ) : null}
+        </Stack>
+      </Stack>
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+        width: '100%',
+        minWidth: 0,
+        alignItems: 'start',
+      }}
+    >
+      <Box sx={{ minWidth: 0, pl: 0, pr: 2 }}>
+        <NetworkSection
+          networkIds={networkIds}
+          networkDisplayMap={networkDisplayMap}
+          networkMap={networkMap}
+          etalonNoNetworkLabel={etalonNoNetworkLabel}
+        />
+      </Box>
+      <Stack
+        direction="row"
+        spacing={0.75}
+        alignItems="flex-start"
+        justifyContent="center"
+        sx={{ minWidth: 0, px: 2, justifySelf: 'stretch' }}
+      >
+        <Box
+          component="i"
+          className="bi bi-geo"
+          sx={{ mt: '2px', fontSize: 14, color: 'var(--color-icons)', flexShrink: 0 }}
+          title="Локація"
+        />
+        <Typography
+          variant="body2"
+          sx={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere', fontWeight: 600, textAlign: 'center' }}
+        >
+          {msg.location ?? 'Не встановлена'}
+        </Typography>
+      </Stack>
+      <Box sx={{ minWidth: 0, pl: 2, pr: 2, textAlign: 'right' }}>
+        {timeDistance != null ? (
+          <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+            {timeDistance}
+          </Typography>
+        ) : null}
+      </Box>
+    </Box>
   );
 }
 
 export function MessageCardMessageBody({
+  compact = false,
   msg,
   tagsMap,
   onToggleTag,
   tagsLayout = 'full',
 }: {
+  compact?: boolean;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
@@ -442,19 +547,35 @@ export function MessageCardMessageBody({
       : msg.text || '—';
 
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-5 min-w-0">
-      <span className="whitespace-pre-wrap break-words text-marked min-w-0">{textPrimary}</span>
-      {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
-        <span className="inline-flex items-center gap-1 shrink-0" style={{ fontSize: '.75rem' }}>
-          <i className="bi bi-chat-text text-icons shrink-0" title="Коментар" />
-          <span className="font-semibold text-xs">{msg.extendedForm}</span>
-        </span>
-      )}
-      {tagsLayout !== 'hidden' && (
-        <span className="inline-flex flex-wrap gap-1 min-w-0 w-full">
-          <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
-        </span>
-      )}
-    </div>
+    <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
+      <Typography
+        component="div"
+        variant="body2"
+        className={msg.textMarked && msg.textMarked.length > 0 ? 'text-marked' : undefined}
+        sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.35 }}
+      >
+        {textPrimary}
+      </Typography>
+      {msg.extendedForm != null && msg.extendedForm.trim() !== '' ? (
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+          <Box
+            component="i"
+            className="bi bi-chat-text"
+            sx={{ fontSize: 13, color: 'var(--color-icons)', flexShrink: 0 }}
+            title="Коментар"
+          />
+          <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
+            {msg.extendedForm}
+          </Typography>
+        </Stack>
+      ) : null}
+      <Box sx={{ pt: 0.25, minWidth: 0 }}>
+        {tagsLayout !== 'hidden' && (
+          <span className="inline-flex flex-wrap gap-1 min-w-0 w-full">
+            <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
+          </span>
+        )}{' '}
+      </Box>
+    </Stack>
   );
 }

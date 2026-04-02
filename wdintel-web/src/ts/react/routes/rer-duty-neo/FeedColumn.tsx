@@ -31,7 +31,7 @@ const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function 
     <div
       ref={ref}
       data-virtuoso-scroller
-      style={style}
+      style={{ ...style, paddingLeft: 12 }}
       className={[className, 'rer-duty-feed-scroll'].filter(Boolean).join(' ')}
       {...props}
     />
@@ -424,7 +424,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 </Typography>
               ),
             }}
-            className="m-0 px-0 list-none rer-duty pt-2"
+            className="m-0 pl-3 pr-0 list-none rer-duty pt-2"
             itemContent={(_index, [id, msg]) => {
               const senderName = msg.sender != null ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
               const groupName = msg.groupMasterKey != null ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
@@ -451,6 +451,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
                   onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
                   onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
+                  rightHeaderInsetPx={12}
                 />
               );
               return card;

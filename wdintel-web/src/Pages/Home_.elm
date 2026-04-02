@@ -121,7 +121,7 @@ view _ user model =
                         [ i [ class "bi bi-book text-white text-2xl" ] []
                         ]
                     , div [ class "text-center" ]
-                        [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1" ] [ text "Алгоритм Роботи" ]
+                        [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1" ] [ text "Алгоритм роботи" ]
                         , p [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "Документація та інструкції" ]
                         ]
                     , div [ class "flex items-center gap-2 text-[var(--action-color)] group-hover:text-[var(--action-hovered-color)] transition-colors duration-300" ]

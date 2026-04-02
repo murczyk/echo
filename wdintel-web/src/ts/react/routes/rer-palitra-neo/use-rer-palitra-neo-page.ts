@@ -1,4 +1,5 @@
-import React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../Bindings';
 import { isUnauthorizedError } from '../../services/api/client';
@@ -30,47 +31,47 @@ import {
 import { KmzColorOption, PalitraCreateMode, PalitraFormState, UiError } from './types';
 
 export function useRerPalitraNeoPage() {
-  const [user, setUser] = React.useState<User | null>(null);
-  const [palitras, setPalitras] = React.useState<Palitra[]>([]);
-  const [myScope, setMyScope] = React.useState<MyScope | null>(null);
-  const [organisms, setOrganisms] = React.useState<Organism[]>([]);
-  const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
-  const [allLogins, setAllLogins] = React.useState<string[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [palitras, setPalitras] = useState<Palitra[]>([]);
+  const [myScope, setMyScope] = useState<MyScope | null>(null);
+  const [organisms, setOrganisms] = useState<Organism[]>([]);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [allLogins, setAllLogins] = useState<string[]>([]);
 
-  const [loading, setLoading] = React.useState(true);
-  const [referenceDataReady, setReferenceDataReady] = React.useState(false);
-  const [inFlightDeleteId, setInFlightDeleteId] = React.useState<number | null>(null);
-  const [inFlightUploadId, setInFlightUploadId] = React.useState<number | null>(null);
-  const [deleteDialogPalitra, setDeleteDialogPalitra] = React.useState<Palitra | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
-  const [selectedPalitraIds, setSelectedPalitraIds] = React.useState<number[]>([]);
-  const [bulkDeleteDialogPalitras, setBulkDeleteDialogPalitras] = React.useState<Palitra[]>([]);
-  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false);
-  const [bulkDeleteInFlight, setBulkDeleteInFlight] = React.useState(false);
-  const [error, setError] = React.useState<UiError | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [referenceDataReady, setReferenceDataReady] = useState(false);
+  const [inFlightDeleteId, setInFlightDeleteId] = useState<number | null>(null);
+  const [inFlightUploadId, setInFlightUploadId] = useState<number | null>(null);
+  const [deleteDialogPalitra, setDeleteDialogPalitra] = useState<Palitra | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedPalitraIds, setSelectedPalitraIds] = useState<number[]>([]);
+  const [bulkDeleteDialogPalitras, setBulkDeleteDialogPalitras] = useState<Palitra[]>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleteInFlight, setBulkDeleteInFlight] = useState(false);
+  const [error, setError] = useState<UiError | null>(null);
 
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [createMode, setCreateMode] = React.useState<PalitraCreateMode>('basic');
-  const [createForm, setCreateForm] = React.useState<PalitraFormState>(getInitialCreateForm(null, null));
-  const [createInFlight, setCreateInFlight] = React.useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<PalitraCreateMode>('basic');
+  const [createForm, setCreateForm] = useState<PalitraFormState>(getInitialCreateForm(null, null));
+  const [createInFlight, setCreateInFlight] = useState(false);
 
-  const [kmzFile, setKmzFile] = React.useState<File | null>(null);
-  const [kmzAnalysis, setKmzAnalysis] = React.useState<AnalyzeKmzResponse | null>(null);
-  const [kmzAnalyzing, setKmzAnalyzing] = React.useState(false);
-  const [kmzColorOptions, setKmzColorOptions] = React.useState<KmzColorOption[]>([]);
-  const [selectedColorFromKmz, setSelectedColorFromKmz] = React.useState<string>(DEFAULT_COLOR_HEX);
+  const [kmzFile, setKmzFile] = useState<File | null>(null);
+  const [kmzAnalysis, setKmzAnalysis] = useState<AnalyzeKmzResponse | null>(null);
+  const [kmzAnalyzing, setKmzAnalyzing] = useState(false);
+  const [kmzColorOptions, setKmzColorOptions] = useState<KmzColorOption[]>([]);
+  const [selectedColorFromKmz, setSelectedColorFromKmz] = useState<string>(DEFAULT_COLOR_HEX);
 
-  const [editPalitraId, setEditPalitraId] = React.useState<number | null>(null);
-  const [editForm, setEditForm] = React.useState<PalitraFormState | null>(null);
-  const [editInFlight, setEditInFlight] = React.useState(false);
-  const createCloseClearErrorRef = React.useRef(true);
+  const [editPalitraId, setEditPalitraId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<PalitraFormState | null>(null);
+  const [editInFlight, setEditInFlight] = useState(false);
+  const createCloseClearErrorRef = useRef(true);
 
-  const uploadPointsInputRef = React.useRef<HTMLInputElement | null>(null);
-  const uploadKmzInputRef = React.useRef<HTMLInputElement | null>(null);
-  const pendingUploadPalitraIdRef = React.useRef<number | null>(null);
+  const uploadPointsInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadKmzInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingUploadPalitraIdRef = useRef<number | null>(null);
 
-  const availableAccessTypes = React.useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
-  const rows = React.useMemo(() => {
+  const availableAccessTypes = useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
+  const rows = useMemo(() => {
     const sortedPalitras = [...palitras].sort((left, right) => {
       const leftTs = left.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
       const rightTs = right.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
@@ -89,26 +90,26 @@ export function useRerPalitraNeoPage() {
       }),
     );
   }, [palitras, user, myScope, organisms, aors, inFlightDeleteId, inFlightUploadId]);
-  const updateCreateForm = React.useCallback(
+  const updateCreateForm = useCallback(
     (updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)),
     [],
   );
-  const updateKmzColorOptions = React.useCallback(
+  const updateKmzColorOptions = useCallback(
     (updater: (prev: KmzColorOption[]) => KmzColorOption[]) => setKmzColorOptions((prev) => updater(prev)),
     [],
   );
-  const updateEditForm = React.useCallback(
+  const updateEditForm = useCallback(
     (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => setEditForm((prev) => updater(prev)),
     [],
   );
 
-  const reloadPalitras = React.useCallback(async () => {
+  const reloadPalitras = useCallback(async () => {
     const list = await listPalitras();
     setPalitras(list);
     setSelectedPalitraIds((prev) => (prev.length === 0 ? prev : []));
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
 
     async function loadData() {
@@ -348,7 +349,7 @@ export function useRerPalitraNeoPage() {
     uploadPointsInputRef.current.click();
   }
 
-  async function handleUploadPointsSelected(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleUploadPointsSelected(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     const palitraId = pendingUploadPalitraIdRef.current;
     if (!file || palitraId === null) return;
@@ -378,7 +379,7 @@ export function useRerPalitraNeoPage() {
     uploadKmzInputRef.current.click();
   }
 
-  async function handleKmzSelected(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleKmzSelected(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
