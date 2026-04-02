@@ -71,6 +71,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const lastServerCountByFeedIdRef = useRef<Record<string, number>>({});
+  const lastFilterSignatureByFeedIdRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -285,6 +286,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
+    messageFeeds.forEach((feed) => {
+      const signature = JSON.stringify(feed.filter ?? null);
+      if (lastFilterSignatureByFeedIdRef.current[feed.id] !== signature) {
+        lastFilterSignatureByFeedIdRef.current[feed.id] = signature;
+        delete lastServerCountByFeedIdRef.current[feed.id];
+      }
+    });
     const counts = await Promise.all(
       messageFeeds.map(async (w) => {
         if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
