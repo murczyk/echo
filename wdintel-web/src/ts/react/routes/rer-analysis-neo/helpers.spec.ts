@@ -185,6 +185,24 @@ describe('rer-analysis-neo helpers', () => {
     expect(buildAnalysisReq(state)).not.toBeNull();
   });
 
+  it('rejects malformed time bounds instead of building a date range', () => {
+    expect(
+      buildAnalysisReq(
+        createQueryState({
+          timeFromStr: '24:99',
+        }),
+      ),
+    ).toBeNull();
+
+    expect(
+      buildAnalysisReq(
+        createQueryState({
+          timeToStr: '99:99',
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('resets adjacent frequency expansion when applying a saved filter', () => {
     const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
     const currentState = createQueryState({

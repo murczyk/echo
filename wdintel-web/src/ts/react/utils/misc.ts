@@ -90,7 +90,13 @@ export function isValidDateInput(dateStr: string): boolean {
 }
 
 export function isValidTimeInput(timeStr: string): boolean {
-  return /^\d{2}:\d{2}$/.test(timeStr);
+  if (!/^\d{2}:\d{2}$/.test(timeStr)) return false;
+  const [hoursRaw, minutesRaw] = timeStr.split(':');
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (!Number.isInteger(hours) || hours < 0 || hours > 23) return false;
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 59) return false;
+  return true;
 }
 
 export function combineDateTimeToMs(dateStr: string, timeStr: string, timeZone: string = APP_TIME_ZONE): number | null {
