@@ -326,8 +326,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       }),
     );
     for (const entry of counts) {
-      if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
+      if (entry.skipped || entry.quantity == null) continue;
       const { feedId } = entry;
+      if (entry.quantity <= 0) {
+        delete lastServerCountByFeedIdRef.current[feedId];
+        continue;
+      }
       const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
       if (entry.hasItems) {
         const nextCount = entry.quantity;
