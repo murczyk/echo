@@ -70,6 +70,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  const lastServerCountByFeedIdRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -243,7 +244,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           if (feedNow) {
             const newItems = rsp.inboxItems.filter(([id]) => !new Set(feedNow.items.map(([i]) => i)).has(id));
             if (newItems.length > 0) {
-              const newCount = newItems.length;
               setMessageFeeds((prev) =>
                 prev.map((x) => {
                   if (x.id !== feedId) return x;
@@ -269,7 +269,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                 ...nearBottomByFeedIdRef.current,
                 [feedId]: true,
               };
-              notifyDutyNewMessages(newCount);
             }
           }
         }
@@ -329,7 +328,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     for (const entry of counts) {
       if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
       const { feedId } = entry;
-      if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
+      const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
+      if (entry.hasItems) {
+        const nextCount = entry.quantity;
+        const newCount = prevServerCount == null ? nextCount : Math.max(0, nextCount - prevServerCount);
+        if (newCount > 0) {
+          notifyDutyNewMessages(newCount);
+        }
+        lastServerCountByFeedIdRef.current[feedId] = nextCount;
+      } else {
+        delete lastServerCountByFeedIdRef.current[feedId];
+      }
+      const shouldAutoLoad = watchModeByFeedId[feedId] || nearBottom[feedId];
+      if (shouldAutoLoad) {
         await loadFeedNewerMessages(feedId, {
           scrollToEndAfterLoad: watchModeByFeedId[feedId],
         });
