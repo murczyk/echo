@@ -6,6 +6,49 @@ use chrono_tz::Tz;
 use std::collections::HashMap;
 use tempfile::TempDir;
 
+const GEOJSON_COMMENT_MAX_LEN: usize = 2000;
+
+fn split_geojson_comment(comment: &str) -> Vec<String> {
+    if comment.chars().count() <= GEOJSON_COMMENT_MAX_LEN {
+        return vec![comment.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut remaining = comment;
+
+    while remaining.chars().count() > GEOJSON_COMMENT_MAX_LEN {
+        let split_at = split_geojson_comment_index(remaining);
+        let (head, tail) = remaining.split_at(split_at);
+        chunks.push(head.to_string());
+        remaining = trim_leading_newline(tail);
+    }
+
+    if !remaining.is_empty() {
+        chunks.push(remaining.to_string());
+    }
+
+    chunks
+}
+
+fn split_geojson_comment_index(comment: &str) -> usize {
+    let mut last_newline_idx = None;
+
+    for (char_count, (byte_idx, ch)) in comment.char_indices().enumerate() {
+        if char_count == GEOJSON_COMMENT_MAX_LEN {
+            return last_newline_idx.unwrap_or(byte_idx);
+        }
+        if ch == '\n' {
+            last_newline_idx = Some(byte_idx);
+        }
+    }
+
+    comment.len()
+}
+
+fn trim_leading_newline(comment: &str) -> &str {
+    comment.strip_prefix('\n').unwrap_or(comment)
+}
+
 /// Summary table showing row-per-frequency
 #[post("/api/rer/analysis/download-geojson")]
 pub async fn rer_analysis_download_geojson(
@@ -229,7 +272,7 @@ pub async fn rer_analysis_download_geojson(
         let properties = crate::delta::types::Properties {
             name: Some(freq.clone()),
             sidc: "10061500002001000000".to_string(),
-            comments: vec![comments_one.clone()],
+            comments: split_geojson_comment(&comments_one),
             // like "2023-06-06T13:20:12"
             observation_datetime: Some(
                 datetime_utc.format("%Y-%m-%dT%H:%M:%S").to_string(),
@@ -244,7 +287,9 @@ pub async fn rer_analysis_download_geojson(
         match features.entry(key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 if let Some(properties) = entry.get_mut().properties.as_mut() {
-                    properties.comments.push(comments_one);
+                    properties
+                        .comments
+                        .extend(split_geojson_comment(&comments_one));
                 }
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -270,4 +315,36 @@ pub async fn rer_analysis_download_geojson(
 
     let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
     Ok(file.into_response(&http_req))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_geojson_comment_keeps_short_comment() {
+        assert_eq!(
+            split_geojson_comment("short comment"),
+            vec!["short comment".to_string()]
+        );
+    }
+
+    #[test]
+    fn split_geojson_comment_splits_on_last_newline_before_limit() {
+        let first = "a".repeat(1500);
+        let second = "b".repeat(700);
+        let comment = format!("{first}\n{second}");
+
+        assert_eq!(split_geojson_comment(&comment), vec![first, second]);
+    }
+
+    #[test]
+    fn split_geojson_comment_splits_long_line_at_limit() {
+        let comment = "x".repeat(GEOJSON_COMMENT_MAX_LEN + 10);
+        let chunks = split_geojson_comment(&comment);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].chars().count(), GEOJSON_COMMENT_MAX_LEN);
+        assert_eq!(chunks[1].chars().count(), 10);
+    }
 }
