@@ -62,13 +62,20 @@ function parseGlobalFilterFromSearchParams(searchParams: URLSearchParams): strin
   return searchParams.get('globalFilter') || '';
 }
 
+function getFallbackDate(defaultDate?: Dayjs): Dayjs {
+  return defaultDate || dayjs().startOf('D');
+}
+
 function parseDateFromSearchParams(searchParams: URLSearchParams, defaultDate?: Dayjs): Dayjs | null {
   const dateFromParams = searchParams.get('date');
   if (dateFromParams) {
-    return dayjs(dateFromParams);
+    const parsedDate = dayjs(dateFromParams);
+    if (parsedDate.isValid()) {
+      return parsedDate;
+    }
   }
 
-  return defaultDate || dayjs().startOf('D');
+  return getFallbackDate(defaultDate);
 }
 
 function areColumnFiltersEqual(
