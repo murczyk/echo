@@ -29,6 +29,7 @@ import Task
 import TimeZone
 import Url
 import Utils.Api.Temp exposing (leExpectJson)
+import Utils.Api.ErrorHandling
 import Utils.RemoteData exposing (RemoteData(..))
 
 
@@ -82,6 +83,8 @@ init flagsResult _ =
                 Shared.Model.Light
       , location = Nothing
       , serverInfo = Nothing
+      , changelogPreview = Nothing
+      , changelogLastSeen = Nothing
       , masterUnits = NotAsked
       , now = flags.now
       , timeZone = TimeZone.europe__kyiv ()
@@ -96,6 +99,7 @@ init flagsResult _ =
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
         , E.sendCmd <| Api.server_info GotServerInfo
+        , E.sendCmd <| Api.changelog_preview GotChangelogPreview
         , E.getUnits MasterUnitsLoadedByApi
             { sortBy = Nothing
             , afterUnitId = Nothing
@@ -103,6 +107,7 @@ init flagsResult _ =
             }
         , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         , E.sendCmd <| Ports.shared_loadThemeMode ()
+        , E.sendCmd <| Ports.shared_loadLastSeenChangelog ()
         ]
     )
 
@@ -184,6 +189,27 @@ update req msg model =
             , E.none
             )
 
+        LastSeenChangelogLoaded value ->
+            let
+                trimmedValue =
+                    String.trim value
+            in
+            ( { model
+                | changelogLastSeen =
+                    if String.isEmpty trimmedValue then
+                        Nothing
+
+                    else
+                        Just trimmedValue
+              }
+            , E.none
+            )
+
+        SaveChangelogLastSeen version ->
+            ( { model | changelogLastSeen = Just version }
+            , E.sendCmd <| Ports.shared_saveLastSeenChangelog version
+            )
+
         TriggerResize ->
             ( model
             , E.sendCmd <| Ports.shared_triggerResize ()
@@ -207,6 +233,16 @@ update req msg model =
 
         GotServerInfo (Ok v) ->
             ( { model | serverInfo = Just v }, E.none )
+
+        GotChangelogPreview (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails
+                "Помилка завантаження ченджлогу"
+                err
+            )
+
+        GotChangelogPreview (Ok preview) ->
+            ( { model | changelogPreview = Just preview }, E.none )
 
         MasterUnitsLoadedByApi (Err err) ->
             ( { model | masterUnits = Failure err }, E.none )
@@ -458,6 +494,7 @@ subscriptions _ _ =
     Sub.batch
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
+        , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
         ]
 
 

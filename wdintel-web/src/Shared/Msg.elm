@@ -13,9 +13,12 @@ type Msg
     | SignOutDone (Result ApiError ())
     | GotUser (Result ApiError B.User)
     | GotServerInfo (Result ApiError B.ServerInfo)
+    | GotChangelogPreview (Result ApiError B.ChangelogPreview)
     | SetThemeMode ThemeMode
     | ThemeModeLoaded String
     | ToggleDarkMode
+    | LastSeenChangelogLoaded String
+    | SaveChangelogLastSeen String
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)
     | NetworksLoadedByApi (Result ApiError (List B.Network))

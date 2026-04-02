@@ -547,6 +547,8 @@ pub async fn main_server(
             .service(self::monitoring::ping)
             .service(self::monitoring::public_ping)
             .service(self::monitoring::server_info)
+            .service(self::monitoring::changelog_preview)
+            .service(self::monitoring::changelog_raw)
             .service(self::monitoring::monitoring)
             // .service(api_logout)
             .service(crate::server::admin::restart_echo)

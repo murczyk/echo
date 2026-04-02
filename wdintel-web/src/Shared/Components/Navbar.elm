@@ -44,6 +44,7 @@ type alias Props msg =
     , isNavbarVisible : Bool
     , openDropdown : Maybe String
     , onDropdownToggle : Maybe String -> msg
+    , onChangelogSeen : String -> msg
     , onCloseDropdownOnly : msg
     , mobileNavOpen : Bool
     , onToggleMobileNav : msg
@@ -254,6 +255,32 @@ navBar user shared activeName props =
                     [ menuWithSubs "admin" "Адмін" adminSubs ]
                 ]
 
+        changelogData =
+            case shared.changelogPreview of
+                Just preview ->
+                    if List.isEmpty preview.preview then
+                        Nothing
+
+                    else
+                        let
+                            unseen =
+                                case shared.changelogLastSeen of
+                                    Just lastSeen ->
+                                        lastSeen /= preview.version
+
+                                    Nothing ->
+                                        True
+                        in
+                        Just
+                            { preview = preview.preview
+                            , version = preview.version
+                            , fullUrl = preview.fullUrl
+                            , unseen = unseen
+                            }
+
+                Nothing ->
+                    Nothing
+
         navbarStyles =
             [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
             , class "border-b border-black/15 py-2"
@@ -392,8 +419,88 @@ navBar user shared activeName props =
                         ]
                     ]
                 ]
+
             ]
         ]
+
+
+
+changelogDropdown : Props msg -> Maybe { preview : List String, version : String, fullUrl : String, unseen : Bool } -> Html msg
+changelogDropdown props maybeData =
+    case maybeData of
+        Nothing ->
+            text ""
+
+        Just data ->
+            let
+                dropdownKey =
+                    "changelog"
+
+                isOpen =
+                    props.openDropdown == Just dropdownKey
+
+                toggleMsg =
+                    if isOpen then
+                        props.onDropdownToggle Nothing
+
+                    else
+                        props.onDropdownToggle (Just dropdownKey)
+
+                badge =
+                    if data.unseen then
+                        span
+                            [ class "ml-1 inline-flex items-center rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-900" ]
+                            [ text "нове" ]
+
+                    else
+                        text ""
+            in
+            div [ class "relative" ]
+                [ button
+                    [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center gap-1"
+                    , onClick toggleMsg
+                    , onDropdownTriggerKey toggleMsg
+                    , attribute "aria-haspopup" "true"
+                    , attribute "aria-expanded" (if isOpen then "true" else "false")
+                    , type_ "button"
+                    ]
+                    [ i [ class "bi bi-stars text-lg" ] []
+                    , span [ class "hidden md:inline" ] [ text "що нового" ]
+                    , badge
+                    ]
+                , div [ class "absolute right-0 pt-2 z-[3001]" ]
+                    [ ul
+                        [ class "w-72 p-3 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
+                        , classList
+                            [ ( "hidden", not isOpen )
+                            , ( "block", isOpen )
+                            ]
+                        ]
+                        ([ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ] [ text "Останні зміни" ]
+                         , ul [ class "space-y-2 text-sm text-[var(--color-text)]" ]
+                            (List.map (\line -> li [ class "leading-snug" ] [ text line ]) data.preview)
+                         , div [ class "mt-3 flex items-center justify-between" ]
+                            [ a
+                                [ href data.fullUrl
+                                , target "_blank"
+                                , rel "noopener noreferrer"
+                                , class "text-sm font-semibold text-amber-600 hover:text-amber-500"
+                                , onClick (props.onChangelogSeen data.version)
+                                ]
+                                [ text "Читати повністю" ]
+                            , button
+                                [ class "text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                , onClick (props.onChangelogSeen data.version)
+                                , type_ "button"
+                                ]
+                                [ text "Позначити прочитаним" ]
+                            ]
+                         ]
+                        )
+                    ]
+                ]
+
+
 
 
 
@@ -578,6 +685,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                 (List.map dropdownItem subs)
             ]
         ]
+
 
 
 onDropdownTriggerKey : msg -> Attribute msg

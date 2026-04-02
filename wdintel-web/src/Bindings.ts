@@ -298,6 +298,12 @@ export type UploadPdfRes = {
   rows: Array<RowInfo>;
 };
 
+export type ChangelogPreview = {
+  version: string;
+  preview: Array<string>;
+  fullUrl: string;
+};
+
 export type BgtaskErrorCode =
   | 'no_default_aor'
 ;

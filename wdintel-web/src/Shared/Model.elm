@@ -76,6 +76,8 @@ type alias Model =
     , themeMode : ThemeMode
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
+    , changelogPreview : Maybe B.ChangelogPreview
+    , changelogLastSeen : Maybe String
     , masterUnits : RemoteData ApiError (Dict Int B.Unit)
     , networks : RemoteData ApiError (Dict Int B.Network)
     , now : Int
