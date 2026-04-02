@@ -92,7 +92,7 @@ export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),
 ): AnalysisQueryState {
-  if (parsed.dateFromStr !== '' && parsed.dateToStr !== '') return parsed;
+  if (parsed.dateFromStr !== '' && parsed.timeFromStr !== '' && parsed.dateToStr !== '' && parsed.timeToStr !== '') return parsed;
 
   const start = new Date(now.getTime() - 12 * 60 * 60 * 1000);
   return {

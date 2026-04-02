@@ -167,6 +167,24 @@ describe('rer-analysis-neo helpers', () => {
     expect(state.timeFromStr).toBe('12:30');
   });
 
+  it('fills missing times when only analysis dates are restored', () => {
+    const state = createInitialQueryState(
+      createQueryState({
+        dateFromStr: '2026-01-15',
+        timeFromStr: '',
+        dateToStr: '2026-01-16',
+        timeToStr: '',
+      }),
+      new Date(Date.UTC(2026, 0, 16, 10, 30, 0)),
+    );
+
+    expect(state.dateFromStr).toBe('2026-01-15');
+    expect(state.timeFromStr).toBe('00:30');
+    expect(state.dateToStr).toBe('2026-01-16');
+    expect(state.timeToStr).toBe('12:30');
+    expect(buildAnalysisReq(state)).not.toBeNull();
+  });
+
   it('resets adjacent frequency expansion when applying a saved filter', () => {
     const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
     const currentState = createQueryState({
