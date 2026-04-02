@@ -287,7 +287,20 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
     messageFeeds.forEach((feed) => {
-      const signature = JSON.stringify(feed.filter ?? null);
+      const signature = JSON.stringify({
+        filter: {
+          groupsSelected: feed.filter.groupsSelected ?? null,
+          sendersSelected: feed.filter.sendersSelected ?? null,
+          deniedSenders: feed.filter.deniedSenders ?? null,
+          freqsSelected: feed.filter.freqsSelected ?? null,
+          freqsDenied: feed.filter.freqsDenied ?? null,
+          postsSelected: feed.filter.postsSelected ?? null,
+          postsDenied: feed.filter.postsDenied ?? null,
+        },
+        adjacentFreqsRange: feed.adjacentFreqsRange ?? 0,
+        highlightSignalsEnabled: feed.highlightSignalsEnabled ?? false,
+        onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled ?? false,
+      });
       if (lastFilterSignatureByFeedIdRef.current[feed.id] !== signature) {
         lastFilterSignatureByFeedIdRef.current[feed.id] = signature;
         delete lastServerCountByFeedIdRef.current[feed.id];
@@ -296,7 +309,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     const counts = await Promise.all(
       messageFeeds.map(async (w) => {
         if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
-          return { feedId: w.id, quantity: null as number | null, hasItems: w.items.length > 0, skipped: true };
+          return {
+            feedId: w.id,
+            quantity: null as number | null,
+            hasItems: w.items.length > 0,
+            skipped: true,
+            failed: false,
+          };
         }
         countInFlightByFeedIdRef.current.add(w.id);
         try {
@@ -309,9 +328,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           const { quantity } = await fetchInboxCount(
             buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
           );
-          return { feedId: w.id, quantity, hasItems, skipped: false };
+          return { feedId: w.id, quantity, hasItems, skipped: false, failed: false };
         } catch {
-          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false };
+          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false, failed: true };
         } finally {
           countInFlightByFeedIdRef.current.delete(w.id);
         }
@@ -333,30 +352,33 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         return { ...f, unreadCount };
       }),
     );
+    let totalNewCount = 0;
     for (const entry of counts) {
       if (entry.skipped || entry.quantity == null) continue;
       const { feedId } = entry;
-      if (entry.quantity <= 0) {
-        delete lastServerCountByFeedIdRef.current[feedId];
+      if (entry.failed) {
         continue;
       }
-      const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
-      if (entry.hasItems) {
-        const nextCount = entry.quantity;
-        const newCount = prevServerCount == null ? nextCount : Math.max(0, nextCount - prevServerCount);
-        if (newCount > 0) {
-          notifyDutyNewMessages(newCount);
-        }
-        lastServerCountByFeedIdRef.current[feedId] = nextCount;
-      } else {
-        delete lastServerCountByFeedIdRef.current[feedId];
+      if (entry.quantity <= 0) {
+        lastServerCountByFeedIdRef.current[feedId] = 0;
+        continue;
       }
+      const prevServerCount = lastServerCountByFeedIdRef.current[feedId] ?? (entry.hasItems ? 0 : null);
+      const nextCount = entry.quantity;
+      if (prevServerCount != null) {
+        const newCount = Math.max(0, nextCount - prevServerCount);
+        totalNewCount += newCount;
+      }
+      lastServerCountByFeedIdRef.current[feedId] = nextCount;
       const shouldAutoLoad = watchModeByFeedId[feedId] || nearBottom[feedId];
       if (shouldAutoLoad) {
         await loadFeedNewerMessages(feedId, {
           scrollToEndAfterLoad: watchModeByFeedId[feedId],
         });
       }
+    }
+    if (totalNewCount > 0) {
+      notifyDutyNewMessages(totalNewCount);
     }
   }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed]);
 
