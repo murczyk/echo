@@ -96,10 +96,10 @@ networkStatusLabel : B.NetworkStatus -> String
 networkStatusLabel status =
     case status of
         B.NetworkActive ->
-            "active"
+            "Активна"
 
         B.NetworkInactive ->
-            "inactive"
+            "Неактивна"
 
 
 networkStatusFromValue : String -> B.NetworkStatus
@@ -519,8 +519,8 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                     [ class "form-input w-full"
                     , onInput <| \value -> NetworkEditingMsg { updNetworkReq | status = networkStatusFromValue value }
                     ]
-                    [ option [ value "active", selected (updNetworkReq.status == B.NetworkActive) ] [ text "active" ]
-                    , option [ value "inactive", selected (updNetworkReq.status == B.NetworkInactive) ] [ text "inactive" ]
+                    [ option [ value "active", selected (updNetworkReq.status == B.NetworkActive) ] [ text "Активна" ]
+                    , option [ value "inactive", selected (updNetworkReq.status == B.NetworkInactive) ] [ text "Неактивна" ]
                     ]
                 ]
             ]
