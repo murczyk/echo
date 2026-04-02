@@ -92,6 +92,25 @@ view network model user shared =
     ]
 
 
+networkStatusLabel : B.NetworkStatus -> String
+networkStatusLabel status =
+    case status of
+        B.NetworkActive ->
+            "Активна"
+
+        B.NetworkInactive ->
+            "Неактивна"
+
+
+networkStatusFromValue : String -> B.NetworkStatus
+networkStatusFromValue value =
+    if value == "inactive" then
+        B.NetworkInactive
+
+    else
+        B.NetworkActive
+
+
 activityBlock : Shared.Model -> Model -> List (Html Msg)
 activityBlock shared model =
     [ div [ class "flex justify-between items-center" ]
@@ -265,6 +284,11 @@ viewNetworkInfoReadonly user network shared model =
             [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ text (Maybe.withDefault "" network.radioStation) ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Статус:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text (networkStatusLabel network.status) ]
             ]
         ]
     ]
@@ -486,6 +510,18 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                     , placeholder "введіть радіостанцію"
                     ]
                     []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Статус:" ]
+            , div [ class "col-span-2" ]
+                [ select
+                    [ class "form-input w-full"
+                    , onInput <| \value -> NetworkEditingMsg { updNetworkReq | status = networkStatusFromValue value }
+                    ]
+                    [ option [ value "active", selected (updNetworkReq.status == B.NetworkActive) ] [ text "Активна" ]
+                    , option [ value "inactive", selected (updNetworkReq.status == B.NetworkInactive) ] [ text "Неактивна" ]
+                    ]
                 ]
             ]
         ]
