@@ -14,6 +14,7 @@ import type { MRT_SortingState } from 'material-react-table';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
@@ -90,7 +91,7 @@ function RerPalitraNeoPageBody() {
             {'Видалити палітру «' + (page.deleteDialogPalitra?.name ?? '') + '»?'}
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3, pt: 3 }}>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
           <Button onClick={page.cancelDelete} disabled={page.inFlightDeleteId !== null}>
             Скасувати
           </Button>

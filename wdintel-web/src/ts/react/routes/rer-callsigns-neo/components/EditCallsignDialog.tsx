@@ -1,4 +1,4 @@
-import React from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Alert, Box, Button, Drawer, Stack, Typography } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
@@ -21,13 +21,13 @@ type Props = {
 
 export function EditCallsignDrawer({ open, form, units, sources, submitting, error, onClose, onChange, onSave }: Props) {
   const titleId = 'callsigns-edit-drawer-title';
-  const latestFormRef = React.useRef<CallsignEditForm | null>(form);
+  const latestFormRef = useRef<CallsignEditForm | null>(form);
 
-  React.useEffect(() => {
+  useEffect(() => {
     latestFormRef.current = form;
   }, [form]);
 
-  const handleFormChange = React.useCallback(
+  const handleFormChange = useCallback(
     (next: CallsignEditForm) => {
       latestFormRef.current = next;
       onChange(next);
@@ -35,7 +35,7 @@ export function EditCallsignDrawer({ open, form, units, sources, submitting, err
     [onChange],
   );
 
-  const handleCallsignAdditionalSourceIdsChange = React.useCallback(
+  const handleCallsignAdditionalSourceIdsChange = useCallback(
     (callsignAdditionalSourceIds: number[]) => {
       const current = latestFormRef.current;
       if (!current) return;
@@ -77,27 +77,27 @@ export function EditCallsignDrawer({ open, form, units, sources, submitting, err
           {error ? <Alert severity='error'>{error}</Alert> : null}
           {form ? (
             <CallsignFormFields
-                value={form}
-                onChange={handleFormChange}
-                units={units}
-                sources={sources}
-                includeUnitSelect
-                includeSourceSelect
-                includeConfirmationSources
-                compact
-                controlsFirst
-                hintContent={
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>   
-                    <Typography variant='caption' color='text.secondary' sx={{ textAlign: 'left' }}>
-                      {CALLSIGN_FORM_HINT}
-                      {form.sourceId === 2 ? ` ${RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}` : ''}
-                    </Typography>
-                  </Box>
-                }
-                callsignAdditionalSourceIds={form.callsignAdditionalSourceIds}
-                onCallsignAdditionalSourceIdsChange={handleCallsignAdditionalSourceIdsChange}
-                disabled={submitting}
-              />
+              value={form}
+              onChange={handleFormChange}
+              units={units}
+              sources={sources}
+              includeUnitSelect
+              includeSourceSelect
+              includeConfirmationSources
+              compact
+              controlsFirst
+              hintContent={
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <Typography variant='caption' color='text.secondary' sx={{ textAlign: 'left' }}>
+                    {CALLSIGN_FORM_HINT}
+                    {form.sourceId === 2 ? ` ${RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}` : ''}
+                  </Typography>
+                </Box>
+              }
+              callsignAdditionalSourceIds={form.callsignAdditionalSourceIds}
+              onCallsignAdditionalSourceIdsChange={handleCallsignAdditionalSourceIdsChange}
+              disabled={submitting}
+            />
           ) : null}
         </Stack>
       </Box>

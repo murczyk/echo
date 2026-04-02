@@ -1,5 +1,4 @@
 import { Alert, Box, Button, Stack } from '@mui/material';
-import React from 'react';
 
 type Props = {
   message: string;

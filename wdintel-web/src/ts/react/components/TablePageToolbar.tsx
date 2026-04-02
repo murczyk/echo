@@ -1,5 +1,5 @@
 import { Stack } from '@mui/material';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 import { PageHeader } from './PageHeader';
 import { TableToolbarControls } from './TableToolbarControls';
@@ -7,13 +7,13 @@ import { InternalTableActions } from './mui-customized/table/components/table-to
 import { useTableStateContext } from './mui-customized/table/table-state-provider';
 
 type Props = {
-  title: React.ReactNode;
-  titleInfo?: React.ReactNode;
-  actions?: React.ReactNode;
+  title: ReactNode;
+  titleInfo?: ReactNode;
+  actions?: ReactNode;
   withGlobalTextFilter?: boolean;
-  filter?: React.ReactNode;
+  filter?: ReactNode;
   hideGlobalTextFilter?: boolean;
-  trailingActionsBeforeInternal?: React.ReactNode;
+  trailingActionsBeforeInternal?: ReactNode;
   internalActionsHidden?: boolean;
   internalActionsDisabled?: boolean;
   densityDisabled?: boolean;
@@ -23,7 +23,7 @@ type Props = {
   colOrderDisabled?: boolean;
   filtersDisabled?: boolean;
   columnsVisibilityDisabled?: boolean;
-  additionalInternalActions?: React.ReactNode;
+  additionalInternalActions?: ReactNode;
   rowNumberAppearanceControl?: boolean;
 };
 

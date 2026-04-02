@@ -1,4 +1,4 @@
-import React from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -67,7 +67,7 @@ type AddCallsignRowSectionProps = {
   onRemoveRow: (index: number) => void;
 };
 
-const AddCallsignRowSection = React.memo(function AddCallsignRowSection({
+const AddCallsignRowSection = memo(function AddCallsignRowSection({
   row,
   index,
   rowsLength,
@@ -75,11 +75,11 @@ const AddCallsignRowSection = React.memo(function AddCallsignRowSection({
   onRowChange,
   onRemoveRow,
 }: AddCallsignRowSectionProps) {
-  const handleRowChange = React.useCallback((next: CallsignDraftRow) => {
+  const handleRowChange = useCallback((next: CallsignDraftRow) => {
     onRowChange(index, next);
   }, [index, onRowChange]);
 
-  const handleRemoveRow = React.useCallback(() => {
+  const handleRemoveRow = useCallback(() => {
     onRemoveRow(index);
   }, [index, onRemoveRow]);
 
@@ -141,19 +141,19 @@ export function AddCallsignsDrawer({
   const addSourceSelectLabelId = 'callsigns-add-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
   const confirmationSources = sources.filter((source) => source.id !== addSourceId);
-  const [unitSearchInput, setUnitSearchInput] = React.useState('');
-  const [pastedInput, setPastedInput] = React.useState('');
-  const handleClearRows = React.useCallback(() => {
+  const [unitSearchInput, setUnitSearchInput] = useState('');
+  const [pastedInput, setPastedInput] = useState('');
+  const handleClearRows = useCallback(() => {
     setPastedInput('');
     onClearRows();
   }, [onClearRows]);
-  const handleCloseDrawer = React.useCallback(() => {
+  const handleCloseDrawer = useCallback(() => {
     setUnitSearchInput('');
     setPastedInput('');
     onClose();
   }, [onClose]);
 
-  const filterUnits = React.useCallback((options: Unit[], inputValue: string) => {
+  const filterUnits = useCallback((options: Unit[], inputValue: string) => {
     const normalizedInput = inputValue.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
     if (normalizedInput === '') return options;
 
@@ -165,7 +165,7 @@ export function AddCallsignsDrawer({
     });
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) {
       setUnitSearchInput('');
       setPastedInput('');

@@ -9,7 +9,8 @@ import {
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import React from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import type { DevelopingFilter } from '../../../../../Bindings';
@@ -163,15 +164,15 @@ function CallsignsTableComponent({
   onDelete,
 }: Props) {
   const tableStateContext = useTableStateContext();
-  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const [overlayViewport, setOverlayViewport] = React.useState({
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [overlayViewport, setOverlayViewport] = useState({
     top: 0,
     left: 0,
     width: 0,
     height: 0,
   });
 
-  const columns = React.useMemo<MRT_ColumnDef<CallsignRowView>[]>(
+  const columns = useMemo<MRT_ColumnDef<CallsignRowView>[]>(
     () => [
       {
         header: 'Позивний',
@@ -304,7 +305,7 @@ function CallsignsTableComponent({
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-  const rowSelection = React.useMemo(
+  const rowSelection = useMemo(
     () =>
       rows.reduce<Record<string, boolean>>((acc, row) => {
         if (selectedCallsignIds.includes(row.id)) {
@@ -314,7 +315,7 @@ function CallsignsTableComponent({
       }, {}),
     [rows, selectedCallsignIds],
   );
-  const columnFilters = React.useMemo<MRT_ColumnFiltersState>(
+  const columnFilters = useMemo<MRT_ColumnFiltersState>(
     () => [
       ...(textFilters.filterCallsign.trim() ? [{ id: 'callsign', value: textFilters.filterCallsign }] : []),
       ...(textFilters.filterPosition.trim() ? [{ id: 'position', value: textFilters.filterPosition }] : []),
@@ -328,7 +329,7 @@ function CallsignsTableComponent({
   const showTableOverlay = loading || refreshing || loadingMore;
   const isInitialLoading = loading && rows.length === 0;
 
-  const syncOverlayViewport = React.useCallback(() => {
+  const syncOverlayViewport = useCallback(() => {
     const element = scrollContainerRef.current;
     if (!element) return;
 
@@ -340,7 +341,7 @@ function CallsignsTableComponent({
     });
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     syncOverlayViewport();
   }, [syncOverlayViewport, showTableOverlay]);
 
@@ -472,13 +473,13 @@ function CallsignsTableComponent({
           ...(baseProps as { sx?: object })?.sx,
           ...FULL_WIDTH_TABLE_PAPER_SX,
           height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? '100%' : undefined,
+          minHeight: isInitialLoading ? '100%' : 0,
           overflowX: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
           overflowY: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
           overflow: showTableOverlay ? 'hidden' : isFullScreen ? 'auto' : 'visible',
         },
         style: {
-          ...(baseProps as { style?: React.CSSProperties })?.style,
+          ...(baseProps as { style?: CSSProperties })?.style,
           padding: 0,
         },
       };
@@ -491,7 +492,7 @@ function CallsignsTableComponent({
           ...getPageScrollTableContainerSx({
             loading: showTableOverlay,
             height: isInitialLoading ? '100%' : 'auto',
-            minHeight: isInitialLoading ? '100%' : undefined,
+            minHeight: isInitialLoading ? '100%' : 0,
             maxHeight: isFullScreen ? '100%' : 'none',
             idleOverflowX: isFullScreen ? 'auto' : 'visible',
             idleOverflowY: isFullScreen ? 'auto' : 'visible',
@@ -536,7 +537,7 @@ function CallsignsTableComponent({
     },
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table, tableStateContext]);
 
@@ -582,7 +583,7 @@ function CallsignsTableComponent({
         <SectionLoadingOverlay
           open={showTableOverlay}
           ariaLabel={loading ? 'Завантаження позивних' : loadingMore ? 'Завантаження позивних' : 'Оновлення позивних'}
-          spinnerMode="center"
+          showSpinner={!isInitialLoading}
           sx={{
             inset: 'auto',
             top: `${overlayViewport.top}px`,
@@ -674,4 +675,4 @@ function areCallsignsTablePropsEqual(prev: Props, next: Props): boolean {
     && prev.statusFilter === next.statusFilter;
 }
 
-export const CallsignsTable = React.memo(CallsignsTableComponent, areCallsignsTablePropsEqual);
+export const CallsignsTable = memo(CallsignsTableComponent, areCallsignsTablePropsEqual);

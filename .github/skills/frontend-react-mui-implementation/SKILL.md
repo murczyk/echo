@@ -33,6 +33,12 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Prefer existing styling mix:
 - MUI `sx` for component-level styles.
 - Existing utility classes (`className`) where already used.
+- Use modern React imports consistently:
+- Do not keep a default `React` import just for JSX.
+- Import hooks and runtime helpers directly from `react` (for example `useState`, `useEffect`, `memo`, `forwardRef`, `createElement`, `Fragment`).
+- Import React-only types via `import type` (for example `ReactNode`, `ChangeEvent`, `MouseEvent`, `ComponentProps`, `PropsWithChildren`).
+- Prefer `ReactNode` over `React.ReactNode` and avoid `React.*` namespace access when a direct import is available.
+- If you touch a React file and see mixed import styles, normalize that file to the direct-import style as part of the change.
 - Keep functions focused; split large handlers/helpers.
 - Run frontend verification:
 - `just build-front`
@@ -58,6 +64,7 @@ if (isUnauthorizedError(error)) {
 - Inspect diff for endpoint/method/path changes in `services/api/*`.
 - Verify request and response shape transforms stayed compatible.
 - Verify loading/empty/error states and disabled-in-flight behavior.
+- Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
 - Check keyboard access and focus trapping for dialogs/drawers.
 - Confirm mobile/tablet/desktop layout still works for touched route.
 

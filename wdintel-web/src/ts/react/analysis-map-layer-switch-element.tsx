@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { createRoot, Root } from 'react-dom/client';
 
 import type { FeatureToggleState } from '../maps/control-modules';

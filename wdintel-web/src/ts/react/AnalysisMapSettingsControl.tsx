@@ -1,7 +1,7 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { Box, Checkbox, IconButton, ThemeProvider, Typography } from '@mui/material';
-import React from 'react';
+import { useCallback, useState } from 'react';
 
 import { useNeoMuiTheme } from './mui-theme';
 
@@ -11,13 +11,13 @@ type AnalysisMapSettingsControlProps = {
 };
 
 function AnalysisMapSettingsControlInner(props: AnalysisMapSettingsControlProps) {
-  const [isCollapsed, setCollapsed] = React.useState(true);
+  const [isCollapsed, setCollapsed] = useState(true);
 
-  const toggleCollapsed = React.useCallback(() => {
+  const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => !prev);
   }, []);
 
-  const toggleVisible = React.useCallback(() => {
+  const toggleVisible = useCallback(() => {
     props.onVisibleChange(!props.visible);
   }, [props]);
 

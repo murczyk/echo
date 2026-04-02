@@ -54,6 +54,9 @@ toLayout user route _ =
                 "duty" ->
                     "settings-neo-duty"
 
+                "analysis" ->
+                    "settings-neo-analysis"
+
                 _ ->
                     "settings-neo"
         }

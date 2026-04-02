@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   AorCoordinates,
@@ -20,7 +20,7 @@ import {
   DeleteAreaOfResponsibilityReq,
   UpdateAreaOfResponsibilityReq,
 } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { FormPageHeader } from '../../components/FormPageHeader';
 import { FormPageLayout } from '../../components/FormPageLayout';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -306,15 +306,15 @@ type AdminAorNeoFormPageProps = {
 
 function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
   const isNew = props.aorId === 'new' || !props.aorId;
-  const [loadStatus, setLoadStatus] = React.useState<LoadingStatus>(isNew ? 'success' : 'idle');
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [form, setForm] = React.useState<AorFormState>(emptyForm);
-  const [editId, setEditId] = React.useState<number | null>(null);
-  const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
-  const [isMutating, setIsMutating] = React.useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [loadStatus, setLoadStatus] = useState<LoadingStatus>(isNew ? 'success' : 'idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [form, setForm] = useState<AorFormState>(emptyForm);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [actionStatus, setActionStatus] = useState<StatusMessage>(null);
+  const [isMutating, setIsMutating] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  const backToPath = React.useMemo(getBackToPath, []);
+  const backToPath = useMemo(getBackToPath, []);
 
   async function loadAor(id: number) {
     setLoadStatus('loading');
@@ -336,7 +336,7 @@ function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isNew) {
       setLoadStatus('success');
       setLoadError(null);

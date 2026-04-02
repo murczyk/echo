@@ -11,6 +11,7 @@ export const CUSTOM_CELL_STYLES = {
 };
 
 export const FULL_WIDTH_TABLE_PAPER_SX = {
+  boxSizing: 'border-box',
   minWidth: 0,
   maxWidth: '100%',
   width: '100%',
@@ -24,6 +25,7 @@ export const PAGE_SCROLL_TABLE_CONTAINER_SX = {
   minHeight: 0,
   height: '100%',
   minWidth: 0,
+  boxSizing: 'border-box',
   maxWidth: '100%',
   width: '100%',
   maxHeight: '100%',
@@ -52,7 +54,7 @@ export function getPageScrollTableContainerSx({
   return {
     ...PAGE_SCROLL_TABLE_CONTAINER_SX,
     height,
-    minHeight,
+    minHeight: minHeight ?? 0,
     maxHeight,
     overflowX: loading ? 'hidden' : idleOverflowX,
     overflowY: loading ? 'hidden' : idleOverflowY,
@@ -221,6 +223,13 @@ export const CUSTOM_STYLES = {
     sx: {
       ...(table.getState().showSkeletons
         ? {
+            '& .MuiTableBody-root .MuiTableRow-root, & .MuiTableBody-root .MuiTableCell-root, & .MuiSkeleton-root': {
+              cursor: 'progress',
+            },
+          }
+        : {}),
+      ...(table.getState().showSkeletons
+        ? {
             backgroundImage:
               'repeating-linear-gradient(to bottom, transparent 0, transparent 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 55px)',
             backgroundSize: '100% 56px',
@@ -270,6 +279,7 @@ export const CUSTOM_STYLES = {
     sx: {
       flex: 1,
       minHeight: 0,
+      boxSizing: 'border-box',
       border: '1px solid',
       borderColor: 'var(--bs-border-color)',
       '& .MuiTableBody-root .MuiTableRow-root:last-of-type > .MuiTableCell-root': {

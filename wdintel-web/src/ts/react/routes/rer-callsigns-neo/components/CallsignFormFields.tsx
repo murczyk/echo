@@ -1,4 +1,4 @@
-import React from 'react';
+import { useId } from 'react';
 import {
   Checkbox,
   FormControl,
@@ -52,7 +52,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
   hintContent,
 }: Props<T>) {
   const spacing = compact ? 1.5 : 2;
-  const reactId = React.useId();
+  const reactId = useId();
   const unitLabelId = `${reactId}-unit-label`;
   const sourceLabelId = `${reactId}-source-label`;
   const confirmationSources = sources.filter((source) => source.id !== value.sourceId);

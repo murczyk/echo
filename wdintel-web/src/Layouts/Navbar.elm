@@ -164,7 +164,9 @@ view user activeName shared route { toContentMsg, model, content } =
                 || route.url.path == "/rer-callsigns-neo"
 
         usesFixedViewportLayout =
-            usesShellContentGap || supportsFullscreenToggle
+            usesShellContentGap
+                || supportsFullscreenToggle
+                || route.url.path == "/rer-analysis-neo"
 
         navbarProps =
             { onToggleTheme = ToggleDarkTheme

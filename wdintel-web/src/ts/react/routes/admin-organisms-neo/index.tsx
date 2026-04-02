@@ -4,11 +4,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import { Alert, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import React from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
@@ -177,7 +177,7 @@ function buildComputedGroupFilterOptions(
 }
 
 function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: LoadingStatus) {
-  return React.useMemo<MRT_ColumnDef<Organism>[]>(
+  return useMemo<MRT_ColumnDef<Organism>[]>(
     () => {
       const groupFilterOptions = buildGroupFilterOptions(lookup.groupByKey.values());
       const computedGroupFilterOptions = buildComputedGroupFilterOptions(lookup.computedGroupsById);
@@ -473,7 +473,7 @@ function OrganismsTable(props: {
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -486,14 +486,14 @@ function DeleteOrganismDialog(props: {
   onClose: () => void;
   onReload: () => Promise<void>;
 }) {
-  const [status, setStatus] = React.useState<StatusMessage>(null);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [activeLogins, setActiveLogins] = React.useState<string[] | null>(null);
-  const [isLoadingLogins, setIsLoadingLogins] = React.useState(false);
+  const [status, setStatus] = useState<StatusMessage>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeLogins, setActiveLogins] = useState<string[] | null>(null);
+  const [isLoadingLogins, setIsLoadingLogins] = useState(false);
 
   const hasMultipleActiveUsers = Boolean(props.organism && props.organism.loginsCount > 1);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!props.open || !props.organism) return;
     setStatus(null);
     setActiveLogins(null);
@@ -608,20 +608,20 @@ function DeleteOrganismDialog(props: {
 }
 
 function AdminOrganismsNeoPageBody() {
-  const [organisms, setOrganisms] = React.useState<Organism[]>([]);
-  const [organismsStatus, setOrganismsStatus] = React.useState<LoadingStatus>('idle');
-  const [organismsError, setOrganismsError] = React.useState<string | null>(null);
-  const [groups, setGroups] = React.useState<SignalGroupFull[]>([]);
-  const [organismGroups, setOrganismGroups] = React.useState<OrganismGroup[]>([]);
-  const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
-  const [referenceStatus, setReferenceStatus] = React.useState<LoadingStatus>('idle');
-  const [referenceError, setReferenceError] = React.useState<string | null>(null);
-  const [computedGroupsById, setComputedGroupsById] = React.useState<Map<number, SignalGroupFull[]>>(new Map());
-  const [computedGroupsStatus, setComputedGroupsStatus] = React.useState<LoadingStatus>('idle');
+  const [organisms, setOrganisms] = useState<Organism[]>([]);
+  const [organismsStatus, setOrganismsStatus] = useState<LoadingStatus>('idle');
+  const [organismsError, setOrganismsError] = useState<string | null>(null);
+  const [groups, setGroups] = useState<SignalGroupFull[]>([]);
+  const [organismGroups, setOrganismGroups] = useState<OrganismGroup[]>([]);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [referenceStatus, setReferenceStatus] = useState<LoadingStatus>('idle');
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [computedGroupsById, setComputedGroupsById] = useState<Map<number, SignalGroupFull[]>>(new Map());
+  const [computedGroupsStatus, setComputedGroupsStatus] = useState<LoadingStatus>('idle');
 
-  const [deleteTarget, setDeleteTarget] = React.useState<Organism | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Organism | null>(null);
 
-  const lookup = React.useMemo<OrganismLookup>(() => {
+  const lookup = useMemo<OrganismLookup>(() => {
     const parentById = new Map<number, string>();
     organisms.forEach((org) => parentById.set(org.id, org.name));
 
@@ -640,7 +640,7 @@ function AdminOrganismsNeoPageBody() {
     return { parentById, aorById, groupByKey, organismGroupKeysById, computedGroupsById };
   }, [organisms, aors, groups, organismGroups, computedGroupsById]);
 
-  const loadComputedGroups = React.useCallback(async (data: Organism[]) => {
+  const loadComputedGroups = useCallback(async (data: Organism[]) => {
     if (data.length === 0) {
       setComputedGroupsById(new Map());
       setComputedGroupsStatus('success');
@@ -658,7 +658,7 @@ function AdminOrganismsNeoPageBody() {
     }
   }, []);
 
-  const loadOrganisms = React.useCallback(async () => {
+  const loadOrganisms = useCallback(async () => {
     setOrganismsStatus('loading');
     setOrganismsError(null);
     try {
@@ -674,7 +674,7 @@ function AdminOrganismsNeoPageBody() {
     }
   }, [loadComputedGroups]);
 
-  const loadReferenceData = React.useCallback(async () => {
+  const loadReferenceData = useCallback(async () => {
     setReferenceStatus('loading');
     setReferenceError(null);
     try {
@@ -693,11 +693,11 @@ function AdminOrganismsNeoPageBody() {
     }
   }, []);
 
-  const reloadAll = React.useCallback(async () => {
+  const reloadAll = useCallback(async () => {
     await Promise.all([loadOrganisms(), loadReferenceData()]);
   }, [loadOrganisms, loadReferenceData]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadOrganisms();
     loadReferenceData();
   }, [loadOrganisms, loadReferenceData]);

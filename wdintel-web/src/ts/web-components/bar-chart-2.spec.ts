@@ -1,7 +1,41 @@
 import { describe, it, expect } from 'vitest';
-import { transformData, Data } from './bar-chart-zoomable.ts';
+import { transformData as transformZoomableData, Data } from './bar-chart-zoomable.ts';
+import { createYAxisConfig, transformData } from './bar-chart-2.ts';
 
 describe('transformData', () => {
+    it('should read camelCase nested counts from react payloads', () => {
+        const stubData = {
+            dataPerDate: {
+                "2025-01-01": { countByGroupName: { groupA: 10, groupB: 3 } },
+            }
+        } as unknown as Data;
+
+        const result = transformData(stubData);
+
+        expect(result.transformedData).toEqual([
+            { date: '2025-01-01', group: 'groupA', count: 10 },
+            { date: '2025-01-01', group: 'groupB', count: 3 },
+        ]);
+        expect(result.uniqueDates).toEqual(['2025-01-01']);
+    });
+
+    it('should tolerate empty date entries without crashing', () => {
+        const stubData = {
+            dataPerDate: {
+                "2025-01-01": { count_by_group_name: { groupA: 10 } },
+                "2025-01-02": {},
+                "2025-01-03": null,
+            }
+        } as unknown as Data;
+
+        const result = transformData(stubData);
+
+        expect(result.transformedData).toEqual([
+            { date: '2025-01-01', group: 'groupA', count: 10 },
+        ]);
+        expect(result.uniqueDates).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
+    });
+
     it('should return daily data for less than 28 days', () => {
         const stubData: Data = {
             data_per_date: {
@@ -11,7 +45,7 @@ describe('transformData', () => {
             }
         };
 
-        const result = transformData(stubData);
+        const result = transformZoomableData(stubData);
         expect(result).toEqual({
             "2025-01-01": { count_by_group_name: { groupA: 10, groupB: 20 } },
             "2025-01-02": { count_by_group_name: { groupA: 5, groupB: 15 } },
@@ -43,7 +77,7 @@ const stubData28To120Days: Data = {
     }
 };
 
-        const result = transformData(stubData28To120Days);
+        const result = transformZoomableData(stubData28To120Days);
 
         // Known dates are shifted to their period start (1st/4th/7th/etc day of month)
         expect(result["2025-01-01"]).toEqual({ count_by_group_name: { groupA: 10, groupB: 20 } });
@@ -67,11 +101,29 @@ const stubData28To120Days: Data = {
             }
         };
 
-        const result = transformData(stubData);
+        const result = transformZoomableData(stubData);
 
         expect(result["2024-12-29"]).toEqual({ count_by_group_name: { groupA: 10, groupB: 20 } });
         expect(result["2025-01-05"]).toEqual({ count_by_group_name: { groupA: 2, groupB: 3 } });
         expect(result["2025-03-02"]).toEqual({ count_by_group_name: { groupA: 5, groupB: 15 } });
         expect(result["2025-05-18"]).toEqual({ count_by_group_name: { groupA: 7, groupB: 11 } });
+    });
+});
+
+describe('createYAxisConfig', () => {
+    it('should use a stable zero tick for empty data', () => {
+        const config = createYAxisConfig(undefined);
+
+        expect(config.domainMax).toBe(1);
+        expect(config.tickValues).toEqual([0]);
+        expect(config.tickFormat?.(0)).toBe('0');
+    });
+
+    it('should preserve the real domain for non-empty data', () => {
+        const config = createYAxisConfig(7);
+
+        expect(config.domainMax).toBe(7);
+        expect(config.tickValues).toBeUndefined();
+        expect(config.tickFormat).toBeUndefined();
     });
 });

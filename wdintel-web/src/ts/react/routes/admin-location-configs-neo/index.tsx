@@ -14,7 +14,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useState } from 'react';
 
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { Button } from '../../components/mui-customized/button';
@@ -47,10 +47,10 @@ function formatErrorMessage(error: unknown): string {
 }
 
 export function AdminLocationConfigsNeoPage() {
-  const [loadStatus, setLoadStatus] = React.useState<LoadingStatus>('idle');
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [availableConfigs, setAvailableConfigs] = React.useState<string[]>([]);
-  const [rows, setRows] = React.useState<RowState[]>([]);
+  const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [availableConfigs, setAvailableConfigs] = useState<string[]>([]);
+  const [rows, setRows] = useState<RowState[]>([]);
 
   async function load() {
     setLoadStatus('loading');
@@ -73,7 +73,7 @@ export function AdminLocationConfigsNeoPage() {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     load();
   }, []);
 

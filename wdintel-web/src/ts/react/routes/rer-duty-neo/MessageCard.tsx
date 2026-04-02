@@ -1,7 +1,7 @@
 import { Box } from '@mui/material';
 
 import type { InboxMessage, Network, Tag } from '../../../../Bindings';
-import { MessageCardEtalonLocationTime, MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
+import { MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import {
@@ -28,16 +28,19 @@ export type MessageCardProps = {
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
   /** Loaded network models (for «в дорозвідці» badge); keys match `msg.networkIds`. */
-  networkMap: Record<number, Network>;
+  networkMap?: Record<number, Network>;
   /** When false, show `msg.unit` if network ids are empty (and freq present). */
-  featureStrictNetworks: boolean;
+  featureStrictNetworks?: boolean;
   tagsMap: Record<number, Tag>;
   onBookmark: () => void;
   onImportant: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
   onComment: () => void;
+  onDelete?: () => void;
+  onEditDetails?: () => void;
   onToggleTag: (tagId: number) => void;
+  rightHeaderInsetPx?: number;
 };
 
 export function MessageCard({
@@ -52,24 +55,30 @@ export function MessageCard({
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
-  networkMap,
-  featureStrictNetworks,
+  networkMap = {},
+  featureStrictNetworks = false,
   tagsMap,
   onBookmark,
   onImportant,
   onCopyText,
   onCopyFreq,
   onComment,
+  onDelete,
+  onEditDetails,
   onToggleTag,
+  rightHeaderInsetPx = 0,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
+  const compactLayout = layoutVariant === 'dividers' && feedCount >= 3;
   const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
   const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
+  const watermarkUserName = authUserName?.trim() ?? '';
 
   const headerProps: MessageCardHeaderProps = {
     layout: layoutVariant === 'fluid' ? 'fluid' : 'dividers',
+    compact: compactLayout,
     feedCount,
     id,
     msg,
@@ -77,36 +86,66 @@ export function MessageCard({
     copiedFeedbackId,
     groupName,
     senderName,
+    networkIds,
+    networkDisplayMap,
+    networkMap,
+    etalonNoNetworkLabel,
+    relativeTimeMs,
+    rightInsetPx: rightHeaderInsetPx,
     onBookmark,
     onImportant,
     onComment,
     onCopyText,
     onCopyFreq,
+    onDelete,
+    onEditDetails,
   };
 
   return (
     <Box
       ref={messageRootRef}
       component="li"
-      className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2"
+      sx={{
+        listStyle: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        pl: 0,
+        pr: 0,
+        pb: 1.5,
+        mb: 0,
+        fontSize: 12,
+      }}
     >
-      <div className="flex flex-col w-full bg-card rounded-sm p-2 gap-2 relative">
-        {(authUserName ?? '').trim() !== '' && (
-          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-            <MessageCardWatermark authUserName={authUserName!} />
-          </div>
+      <Box
+        sx={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: compactLayout ? 1.25 : 1.5,
+          width: '100%',
+          px: 1.5,
+          py: 1.25,
+          borderRadius: 1,
+          bgcolor: 'var(--color-card)',
+          color: 'text.primary',
+          overflow: 'hidden',
+          fontSize: 12,
+          '& .MuiTypography-root': {
+            fontSize: 12,
+          },
+          '& a': {
+            fontSize: 12,
+          },
+        }}
+      >
+        {watermarkUserName !== '' && (
+          <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden>
+            <MessageCardWatermark authUserName={watermarkUserName} />
+          </Box>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardEtalonLocationTime
-          networkIds={networkIds}
-          networkDisplayMap={networkDisplayMap}
-          networkMap={networkMap}
-          etalonNoNetworkLabel={etalonNoNetworkLabel}
-          msg={msg}
-          relativeTimeMs={relativeTimeMs}
-        />
-        <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
-      </div>
+        <MessageCardMessageBody compact={compactLayout} msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} />
+      </Box>
     </Box>
   );
 }
