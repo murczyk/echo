@@ -24,6 +24,7 @@ import {
 } from './utils';
 import type { MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
+import { notifyDutyNewMessages } from './notifications';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -242,6 +243,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           if (feedNow) {
             const newItems = rsp.inboxItems.filter(([id]) => !new Set(feedNow.items.map(([i]) => i)).has(id));
             if (newItems.length > 0) {
+              const newCount = newItems.length;
               setMessageFeeds((prev) =>
                 prev.map((x) => {
                   if (x.id !== feedId) return x;
@@ -267,6 +269,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                 ...nearBottomByFeedIdRef.current,
                 [feedId]: true,
               };
+              notifyDutyNewMessages(newCount);
             }
           }
         }

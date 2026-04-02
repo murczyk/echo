@@ -4,7 +4,9 @@ import {
   Box,
   Card,
   CircularProgress,
+  FormControlLabel,
   Stack,
+  Switch,
   Tab,
   Tabs,
   TextField,
@@ -20,11 +22,18 @@ import { isUnauthorizedError } from "../../services/api/client";
 import { fetchServerInfo } from "../../services/api/server-info";
 import { fetchCurrentUser, saveUserSettings } from "../../services/api/user";
 import { listSigintZones } from "../../services/api/zones";
+import {
+  getBrowserNotificationPermission,
+  getStoredDutyNotificationSettings,
+  requestBrowserNotificationPermission,
+  setStoredDutyNotificationSettings,
+  type DutyNotificationSettings,
+} from "../rer-duty-neo/notifications";
 
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
 
-export type SettingsSection = "general" | "duty" | "analysis";
+export type SettingsSection = "general" | "duty" | "analysis" | "notification";
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
@@ -43,7 +52,7 @@ function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
 }
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === "duty" || section === "analysis") return section;
+  if (section === "duty" || section === "analysis" || section === "notification") return section;
   return "general";
 }
 
@@ -69,6 +78,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => parseSettingsSection(section ?? readSettingsSectionFromUrl()));
+  const [dutyNotificationSettings, setDutyNotificationSettings] = useState<DutyNotificationSettings>(
+    getStoredDutyNotificationSettings,
+  );
+  const [browserPermission, setBrowserPermission] = useState<NotificationPermission | "unsupported">(() =>
+    getBrowserNotificationPermission(),
+  );
 
   const zoneOptions = useMemo<ZoneOption[]>(
     () => zones.map(([id, zone]) => ({ id, label: zone.name })),
@@ -96,6 +111,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       window.removeEventListener("popstate", handlePopState);
     };
   }, []);
+
+  useEffect(() => {
+    setStoredDutyNotificationSettings(dutyNotificationSettings);
+  }, [dutyNotificationSettings]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -198,6 +217,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             <Tab value="general" label="ЗАГАЛЬНІ" id="settings-neo-tab-general" aria-controls="settings-neo-panel-general" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
             <Tab value="duty" label="ОПЕРАТИВНИЙ" id="settings-neo-tab-duty" aria-controls="settings-neo-panel-duty" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
             <Tab value="analysis" label="АНАЛІЗ" id="settings-neo-tab-analysis" aria-controls="settings-neo-panel-analysis" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
+            <Tab value="notification" label="Сповіщення" id="settings-neo-tab-notification" aria-controls="settings-neo-panel-notification" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
           </Tabs>
 
           {settingsSection === "general" ? (
@@ -283,6 +303,56 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
                 Налаштування аналізу з’являться тут
               </Typography>
+            </Box>
+          ) : null}
+
+          {settingsSection === "notification" ? (
+            <Box id="settings-neo-panel-notification" role="tabpanel" aria-labelledby="settings-neo-tab-notification" sx={{ p: 3 }}>
+              <Stack spacing={2} sx={{ maxWidth: 560 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  Нотифікації про нові повідомлення
+                </Typography>
+                <FormControlLabel
+                    control={
+                      <Switch
+                          checked={dutyNotificationSettings.soundEnabled}
+                          onChange={(_, checked) =>
+                              setDutyNotificationSettings((prev) => ({ ...prev, soundEnabled: checked }))
+                          }
+                      />
+                    }
+                    label="Звукова нотифікація"
+                />
+                <FormControlLabel
+                    control={
+                      <Switch
+                          checked={dutyNotificationSettings.browserEnabled}
+                          onChange={async (_, checked) => {
+                            if (checked) {
+                              const permission = await requestBrowserNotificationPermission();
+                              setBrowserPermission(permission);
+                              if (permission !== "granted") {
+                                setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: false }));
+                                return;
+                              }
+                            }
+                            setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: checked }));
+                          }}
+                      />
+                    }
+                    label="Браузерна нотифікація"
+                />
+                {browserPermission === "denied" ? (
+                    <Typography variant="caption" color="error">
+                      Браузерні нотифікації вимкнені у налаштуваннях браузера.
+                    </Typography>
+                ) : null}
+                {browserPermission === "unsupported" ? (
+                    <Typography variant="caption" color="text.secondary">
+                      Ваш браузер не підтримує browser-нотифікації.
+                    </Typography>
+                ) : null}
+              </Stack>
             </Box>
           ) : null}
         </Card>
