@@ -425,26 +425,28 @@ export function UnitStatsSidebar({
           placeholder="Пошук"
           disabled={loading}
           inputProps={{ 'aria-label': 'Пошук підрозділу у дереві статистики' }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
-            endAdornment:
-              searchInput.trim() !== '' ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    size="small"
-                    onClick={() => setSearchInput('')}
-                    aria-label="Очистити пошук підрозділу"
-                    edge="end"
-                    disabled={loading}
-                  >
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
                 </InputAdornment>
-              ) : undefined,
+              ),
+              endAdornment:
+                searchInput.trim() !== '' ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => setSearchInput('')}
+                      aria-label="Очистити пошук підрозділу"
+                      edge="end"
+                      disabled={loading}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : undefined,
+            },
           }}
         />
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>

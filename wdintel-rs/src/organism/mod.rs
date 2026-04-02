@@ -156,9 +156,25 @@ pub async fn organism_logins(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
         .await
-        .c(h!())?;
+        .is_ok();
+    let has_palitra_access = crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .is_ok();
+    let has_editor_access = crate::users::has_any_role(
+        &env.dbx,
+        &login,
+        vec!["UnitsEditor", "CallsignsEditor"],
+    )
+    .await
+    .is_ok();
+    if is_admin || !has_palitra_access || !has_editor_access {
+        return Err(AppError::Forbidden(
+            "organism logins are only available to non-admin palette editors"
+                .into(),
+        ));
+    }
 
     let login = login::Entity::find()
         .filter(login::Column::Login.eq(login))

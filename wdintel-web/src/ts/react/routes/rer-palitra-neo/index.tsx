@@ -177,6 +177,7 @@ function RerPalitraNeoPageBody() {
         aors={page.aors}
         allLogins={page.allLogins}
         availableAccessTypes={page.availableAccessTypes}
+        referenceDataReady={page.referenceDataReady}
         onSetEditForm={page.updateEditForm}
         onSave={page.handleEditSave}
       />

@@ -779,7 +779,7 @@ function EditUserDialog(props: {
         {submitError ? <Alert severity="error">{submitError}</Alert> : null}
 
         {form ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
             <TextField
               label="Логін"
               value={form.login}
@@ -901,7 +901,7 @@ function EditUserDialog(props: {
         ) : null}
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button variant="outlined" onClick={handleClose} disabled={isSubmitting}>
+        <Button onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </Button>
         <Button variant="contained" onClick={handleSave} disabled={isSubmitting || !form}>

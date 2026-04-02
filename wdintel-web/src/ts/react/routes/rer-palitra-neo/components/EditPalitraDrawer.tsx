@@ -1,10 +1,10 @@
-import { Box, Button, CircularProgress, Drawer, Stack, TextField, Typography } from '@mui/material';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { Box, Button, CircularProgress, Drawer, Typography } from '@mui/material';
+import { memo } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { applyRestrictedAccess, isFormValid } from '../helpers';
 import { AccessType, PalitraFormState } from '../types';
-import { AccessEditor } from './AccessEditor';
+import { PalitraFormFields } from './PalitraFormFields';
 
 type Props = {
   open: boolean;
@@ -18,6 +18,7 @@ type Props = {
   aors: AreaOfResponsibility[];
   allLogins: string[];
   availableAccessTypes: AccessType[];
+  referenceDataReady: boolean;
   onSetEditForm: (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => void;
   onSave: () => void;
 };
@@ -34,52 +35,36 @@ function EditPalitraDrawerComponent({
   aors,
   allLogins,
   availableAccessTypes,
+  referenceDataReady,
   onSetEditForm,
   onSave,
 }: Props) {
+  const formBlocked = editInFlight || !referenceDataReady;
+
   return (
     <Drawer
       anchor="right"
       open={open}
       onClose={editInFlight ? undefined : onClose}
-      PaperProps={{ sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100vw', display: 'flex' } }}
+      slotProps={{ paper: { sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100vw', display: 'flex' } } }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Typography variant="h6">Редагувати палітру</Typography>
       </Box>
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         {editForm ? (
-          <Stack spacing={2}>
-            <TextField
-              label="Назва"
-              size="small"
-              value={editForm.name}
-              onChange={(event) => onSetEditForm((prev) => (prev ? { ...prev, name: event.target.value } : prev))}
-              disabled={editInFlight}
-              fullWidth
-            />
-
-            <TextField
-              label="Колір"
-              type="color"
-              size="small"
-              value={editForm.colorHex}
-              onChange={(event) => onSetEditForm((prev) => (prev ? { ...prev, colorHex: event.target.value } : prev))}
-              disabled={editInFlight}
-              sx={{ width: '140px' }}
-            />
-
-            <AccessEditor
-              form={editForm}
-              onChange={(next) => onSetEditForm(() => next)}
-              user={user}
-              myScope={myScope}
-              organisms={organisms}
-              aors={aors}
-              allLogins={allLogins}
-              availableAccessTypes={availableAccessTypes}
-            />
-          </Stack>
+          <PalitraFormFields
+            form={editForm}
+            onChange={(updater) => onSetEditForm((prev) => (prev ? updater(prev) : prev))}
+            user={user}
+            myScope={myScope}
+            organisms={organisms}
+            aors={aors}
+            allLogins={allLogins}
+            availableAccessTypes={availableAccessTypes}
+            loading={!referenceDataReady}
+            disabled={formBlocked}
+          />
         ) : null}
       </Box>
       <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
@@ -90,10 +75,10 @@ function EditPalitraDrawerComponent({
           onClick={onSave}
           variant="contained"
           disabled={
-            editInFlight ||
+            formBlocked ||
             !editForm ||
             editPalitraId === null ||
-            !isFormValid(applyRestrictedAccess(editForm, user, myScope))
+            !isFormValid(applyRestrictedAccess(editForm, user, myScope, allLogins))
           }
         >
           {editInFlight ? <CircularProgress size={16} /> : 'Зберегти'}

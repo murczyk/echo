@@ -28,6 +28,10 @@ export function isEditor(user: User | null): boolean {
   return user.roles.includes('UnitsEditor') || user.roles.includes('CallsignsEditor');
 }
 
+export function canEditScopedLogins(user: User | null): boolean {
+  return isEditor(user);
+}
+
 export function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
   return isAdmin(user) || palitra.author === user?.name;
 }
@@ -267,10 +271,26 @@ export function mapPalitraToRowView({
   };
 }
 
-export function applyRestrictedAccess(form: PalitraFormState, user: User | null, myScope: MyScope | null): PalitraFormState {
+export function applyRestrictedAccess(
+  form: PalitraFormState,
+  user: User | null,
+  myScope: MyScope | null,
+  allowedLogins: string[] = [],
+): PalitraFormState {
   if (!isAccessRestricted(user)) return form;
 
   if (form.accessType === 'logins') {
+    if (canEditScopedLogins(user)) {
+      const fallbackLogin = user?.name?.trim() ?? '';
+      const allowedSet = new Set(normalizeLogins([fallbackLogin, ...allowedLogins]));
+      const filteredLogins = normalizeLogins(form.logins.filter((login) => allowedSet.has(login)));
+
+      return {
+        ...form,
+        logins: filteredLogins.length > 0 ? filteredLogins : (fallbackLogin ? [fallbackLogin] : []),
+      };
+    }
+
     return {
       ...form,
       logins: user?.name ? [user.name] : [],

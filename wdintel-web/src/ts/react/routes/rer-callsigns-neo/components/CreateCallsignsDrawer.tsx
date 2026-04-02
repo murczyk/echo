@@ -58,7 +58,7 @@ type Props = {
   onSubmit: () => void;
 };
 
-type AddCallsignRowSectionProps = {
+type CreateCallsignRowSectionProps = {
   row: CallsignDraftRow;
   index: number;
   rowsLength: number;
@@ -67,14 +67,14 @@ type AddCallsignRowSectionProps = {
   onRemoveRow: (index: number) => void;
 };
 
-const AddCallsignRowSection = memo(function AddCallsignRowSection({
+const CreateCallsignRowSection = memo(function CreateCallsignRowSection({
   row,
   index,
   rowsLength,
   formDisabled,
   onRowChange,
   onRemoveRow,
-}: AddCallsignRowSectionProps) {
+}: CreateCallsignRowSectionProps) {
   const handleRowChange = useCallback((next: CallsignDraftRow) => {
     onRowChange(index, next);
   }, [index, onRowChange]);
@@ -112,7 +112,7 @@ const AddCallsignRowSection = memo(function AddCallsignRowSection({
   && prev.formDisabled === next.formDisabled
 ));
 
-export function AddCallsignsDrawer({
+export function CreateCallsignsDrawer({
   open,
   onClose,
   units,
@@ -137,8 +137,8 @@ export function AddCallsignsDrawer({
 }: Props) {
   const formDisabled = disabled || submitting;
   const hasDraftContent = rows.some((row) => hasAnyDraftValue(row));
-  const drawerTitleId = 'callsigns-add-drawer-title';
-  const addSourceSelectLabelId = 'callsigns-add-source-label';
+  const drawerTitleId = 'callsigns-create-drawer-title';
+  const sourceSelectLabelId = 'callsigns-create-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
   const confirmationSources = sources.filter((source) => source.id !== addSourceId);
   const [unitSearchInput, setUnitSearchInput] = useState('');
@@ -182,14 +182,16 @@ export function AddCallsignsDrawer({
           sx: (theme) => pageDrawerBackdropSx(theme),
         },
       }}
-      PaperProps={{
-        'aria-labelledby': drawerTitleId,
-        sx: {
-          width: { xs: '100vw', sm: 640 },
-          maxWidth: '100vw',
-          display: 'flex',
-          backgroundColor: 'background.default',
-          backgroundImage: 'none',
+      slotProps={{
+        paper: {
+          'aria-labelledby': drawerTitleId,
+          sx: {
+            width: { xs: '100vw', sm: 640 },
+            maxWidth: '100vw',
+            display: 'flex',
+            backgroundColor: 'background.default',
+            backgroundImage: 'none',
+          },
         },
       }}
     >
@@ -245,11 +247,11 @@ export function AddCallsignsDrawer({
             />
 
             <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
-              <InputLabel id={addSourceSelectLabelId} shrink>
+              <InputLabel id={sourceSelectLabelId} shrink>
                 Основне джерело
               </InputLabel>
               <Select
-                labelId={addSourceSelectLabelId}
+                labelId={sourceSelectLabelId}
                 label="Основне джерело"
                 fullWidth
                 displayEmpty
@@ -274,9 +276,9 @@ export function AddCallsignsDrawer({
           </Stack>
 
           <FormControl fullWidth size="small" disabled={formDisabled}>
-            <InputLabel id="callsigns-add-confirmation-sources-label">Підтвердження</InputLabel>
+            <InputLabel id="callsigns-create-confirmation-sources-label">Підтвердження</InputLabel>
             <Select
-              labelId="callsigns-add-confirmation-sources-label"
+              labelId="callsigns-create-confirmation-sources-label"
               label="Підтвердження"
               multiple
               value={addCallsignAdditionalSourceIds}
@@ -314,8 +316,10 @@ export function AddCallsignsDrawer({
               onApplyPastedRows(value);
             }}
             disabled={formDisabled}
-            InputProps={{
-              endAdornment: <UploadFileIcon fontSize="small" color="action" aria-hidden="true" focusable="false" />,
+            slotProps={{
+              input: {
+                endAdornment: <UploadFileIcon fontSize="small" color="action" aria-hidden="true" focusable="false" />,
+              },
             }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1, ml: 0 }}>
@@ -336,7 +340,7 @@ export function AddCallsignsDrawer({
 
           <Stack spacing={2} divider={<Divider flexItem />}>
             {rows.map((row, index) => (
-              <AddCallsignRowSection
+              <CreateCallsignRowSection
                 key={index}
                 row={row}
                 index={index}

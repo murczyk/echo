@@ -87,15 +87,19 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
 }
 
 export function MrtRowActionButton({ label, onClick, icon, disabled = false, tone = 'default' }: Props) {
-  return (
-    <Tooltip title={label}>
-      <span>
-        <IconButton size="small" onClick={onClick} disabled={disabled} aria-label={label} sx={(theme) => actionButtonSx(theme, tone)}>
-          {icon}
-        </IconButton>
-      </span>
-    </Tooltip>
+  const button = (
+    <span style={{ display: 'inline-flex', cursor: disabled ? 'not-allowed' : undefined }}>
+      <IconButton size="small" onClick={onClick} disabled={disabled} aria-label={label} sx={(theme) => actionButtonSx(theme, tone)}>
+        {icon}
+      </IconButton>
+    </span>
   );
+
+  if (disabled) {
+    return button;
+  }
+
+  return <Tooltip title={label}>{button}</Tooltip>;
 }
 
 export function mrtRowActionsColumnSize(actionCount: number, layout: Layout = 'row') {
