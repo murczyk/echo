@@ -48,13 +48,14 @@ createNetwork id freqs unitIds =
     , postIds = []
     , descriptions = []
     , deleted = False
+    , status = B.NetworkActive
     }
 
 
 {-| Створює тестову інформацію про позивний
 -}
-createCallsignInfo : Int -> String -> String -> String -> String -> Maybe Int -> B.CallsignInfo
-createCallsignInfo id callsign position unit1 unit2 unitId =
+createCallsignInfo : Int -> String -> String -> String -> String -> Maybe Int -> List Int -> B.CallsignInfo
+createCallsignInfo id callsign position unit1 unit2 unitId networkIdsReportedIn =
     { id = id
     , callsign = callsign
     , position = position
@@ -62,7 +63,7 @@ createCallsignInfo id callsign position unit1 unit2 unitId =
     , unit1 = unit1
     , unit2 = unit2
     , unitId = unitId
-    , networkIdsReportedIn = []
+    , networkIdsReportedIn = networkIdsReportedIn
     }
 
 
@@ -109,7 +110,7 @@ suite =
 
                         -- Додаємо позивний який реально пов'язаний з мережевим юнітом
                         callsignsInfo =
-                            Dict.fromList [ ( "test", [ createCallsignInfo 1 "TEST" "Командир" unit1.name "" (Just unit1.id) ] ) ]
+                            Dict.fromList [ ( "test", [ createCallsignInfo 1 "TEST" "Командир" unit1.name "" (Just unit1.id) [] ] ) ]
 
                         context =
                             createContext networks masterUnits callsignsInfo
@@ -208,7 +209,7 @@ suite =
 
                         callsignsInfo =
                             Dict.fromList
-                                [ ( "test", [ createCallsignInfo 1 "TEST" "Підказка" "1-ша армія" "" (Just 1) ] ) ]
+                                [ ( "test", [ createCallsignInfo 1 "TEST" "Підказка" "1-ша армія" "" (Just 1) [] ] ) ]
 
                         context =
                             createContext networks masterUnits callsignsInfo
@@ -255,8 +256,8 @@ suite =
                         -- Позивні для обох юнітів
                         callsignsInfo =
                             Dict.fromList
-                                [ ( "parent", [ createCallsignInfo 1 "PARENT" "Батьківський" "2 мсб" "" (Just 1) ] )
-                                , ( "child", [ createCallsignInfo 2 "CHILD" "Дитячий" "мінбат" "" (Just 2) ] )
+                                [ ( "parent", [ createCallsignInfo 1 "PARENT" "Батьківський" "2 мсб" "" (Just 1) [] ] )
+                                , ( "child", [ createCallsignInfo 2 "CHILD" "Дитячий" "мінбат" "" (Just 2) [] ] )
                                 ]
 
                         context =
@@ -316,8 +317,8 @@ suite =
                         -- В базі позивних є тільки 2 позивні
                         callsignsInfo =
                             Dict.fromList
-                                [ ( "apple", [ createCallsignInfo 1 "APPLE" "Позиція 1" "1-ша армія" "" (Just 1) ] )
-                                , ( "banana", [ createCallsignInfo 2 "BANANA" "Позиція 2" "2-га армія" "" (Just 2) ] )
+                                [ ( "apple", [ createCallsignInfo 1 "APPLE" "Позиція 1" "1-ша армія" "" (Just 1) [] ] )
+                                , ( "banana", [ createCallsignInfo 2 "BANANA" "Позиція 2" "2-га армія" "" (Just 2) [] ] )
                                 ]
 
                         context =
@@ -379,9 +380,9 @@ suite =
                         -- 3 різні позивні в мережі
                         callsignsInfo =
                             Dict.fromList
-                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир" "2 мсб" "122 мсп" (Just 1) ] )
-                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Заступник" "3 мсб" "122 мсп" (Just 2) ] )
-                                , ( "бета", [ createCallsignInfo 3 "БЕТА" "Начальник штабу" "2 мсб" "122 мсп" (Just 1) ] )
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир" "2 мсб" "122 мсп" (Just 1) [] ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Заступник" "3 мсб" "122 мсп" (Just 2) [] ] )
+                                , ( "бета", [ createCallsignInfo 3 "БЕТА" "Начальник штабу" "2 мсб" "122 мсп" (Just 1) [] ] )
                                 ]
 
                         context =
@@ -454,8 +455,8 @@ suite =
                         -- Позивні для РІЗНИХ батальйонів
                         callsignsInfo =
                             Dict.fromList
-                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) ] )
-                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) ] )
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) [] ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) [] ] )
                                 ]
 
                         message =
@@ -528,8 +529,8 @@ suite =
 
                         callsignsInfo =
                             Dict.fromList
-                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) ] )
-                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) ] )
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) [ 1 ] ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) [] ] )
                                 ]
 
                         context =
@@ -593,8 +594,8 @@ suite =
 
                         callsignsInfo =
                             Dict.fromList
-                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) ] )
-                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) ] )
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) [] ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) [] ] )
                                 ]
 
                         context =

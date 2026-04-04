@@ -316,10 +316,8 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
                             , units = networkUnits
                             }
 
-                    else if hasCatalogMatch then
-                        SystemWide
-
                     else
+                        -- Повідомлення прив'язане до мереж: позивні поза цими мережами не показують каталог
                         NoHints
 
                 Nothing ->

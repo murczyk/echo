@@ -51,6 +51,7 @@
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^9.8.8",
     "elm-land": "^0.20.1",
+    "elm-test": "^0.19.1-revision12",
     "postcss": "^7.0.39",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.3",
@@ -62,5 +63,9 @@
     "elm-land": {
       "typescript": "^5.6.3"
     }
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "4.58.0",
+    "@rollup/rollup-darwin-x64": "4.58.0"
   }
 }

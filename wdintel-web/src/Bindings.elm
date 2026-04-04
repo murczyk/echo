@@ -8557,6 +8557,8 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
 editFreqUnitNameReqDecoder : Json.Decode.Decoder EditFreqUnitNameReq
@@ -11069,7 +11071,7 @@ updateNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Jsosn.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable Json.Decode.string)))
