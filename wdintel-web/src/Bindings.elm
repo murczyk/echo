@@ -11952,34 +11952,6 @@ groupEntryF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
 
 
-type DutyMessageCardLayout
-    = Dividers
-    | Fluid
-
-
-dutyMessageCardLayoutDecoder : Json.Decode.Decoder DutyMessageCardLayout
-dutyMessageCardLayoutDecoder = 
-    Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "dividers" ->
-                            Json.Decode.succeed Dividers
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "fluid" ->
-                            Json.Decode.succeed Fluid
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        ]
-
 type DutyTagsLayout
     = Full
     | Compact
@@ -12019,15 +11991,15 @@ dutyTagsLayoutDecoder =
         ]
 
 type alias UserDutySettingsDto =
-    { messageCardLayout : DutyMessageCardLayout
-    , tagsLayout : DutyTagsLayout
+    { tagsLayout : DutyTagsLayout
+    , disableAutoScroll : Bool
     }
 
 
 userDutySettingsDtoDecoder : Json.Decode.Decoder UserDutySettingsDto
 userDutySettingsDtoDecoder =
     Json.Decode.succeed UserDutySettingsDto
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageCardLayout" (dutyMessageCardLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" Json.Decode.bool))
 
 

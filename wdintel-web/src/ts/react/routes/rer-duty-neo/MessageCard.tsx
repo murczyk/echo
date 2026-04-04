@@ -2,7 +2,11 @@ import { Box } from '@mui/material';
 
 import type { InboxMessage, Network, Tag } from '../../../../Bindings';
 import { MessageCardEtalonLocationTime, MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
-import { MessageCardHeader, type MessageCardHeaderProps } from './MessageCardHeader';
+import {
+  MessageCardHeader,
+  type MessageCardDisplayMode,
+  type MessageCardHeaderProps,
+} from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import {
   buildAnalysisHref,
@@ -15,11 +19,10 @@ import {
 export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
-  feedId: string;
   /** Number of feeds (columns). When >= 3, header columns use differential shrink (left 3, center 2, right 0). When 1 or 2, all columns shrink equally. */
   feedCount?: number;
-  /** 'dividers' = sections with borders; 'fluid' = no dividers, spacing only (for A/B testing). */
-  layoutVariant?: 'dividers' | 'fluid';
+  /** Duty vs analysis: controls stacked action icon grid width (4 vs 3 columns). */
+  displayMode?: MessageCardDisplayMode;
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
   /** Baseline "now" when the card is off-screen; while visible, relative time updates every minute. */
@@ -49,9 +52,8 @@ export type MessageCardProps = {
 export function MessageCard({
   id,
   msg,
-  feedId: _feedId,
   feedCount = 1,
-  layoutVariant = 'dividers',
+  displayMode = 'duty',
   tagsLayout = 'full',
   referenceTimeMs,
   authUserName,
@@ -74,16 +76,15 @@ export function MessageCard({
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
-  const compactLayout = layoutVariant === 'dividers' && feedCount >= 3;
+  const compactLayout = feedCount >= 3;
   const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
   const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
   const watermarkUserName = authUserName?.trim() ?? '';
 
   const headerProps: MessageCardHeaderProps = {
-    layout: layoutVariant === 'fluid' ? 'fluid' : 'dividers',
     compact: compactLayout,
-    feedCount,
+    displayMode,
     id,
     msg,
     mapHref,
@@ -148,14 +149,6 @@ export function MessageCard({
           </Box>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardEtalonLocationTime
-          networkIds={networkIds}
-          networkDisplayMap={networkDisplayMap}
-          networkMap={networkMap}
-          etalonNoNetworkLabel={etalonNoNetworkLabel}
-          msg={msg}
-          relativeTimeMs={relativeTimeMs}
-        />
         <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
       </Box>
     </Box>

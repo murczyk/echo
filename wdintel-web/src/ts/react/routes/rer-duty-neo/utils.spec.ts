@@ -135,23 +135,6 @@ describe('rer-duty utils', () => {
     expect(getPointEtalonsFromMessage(msg, { 7: { ...tag, isPalitra: false } })).toEqual([]);
   });
 
-  it('stores message card layout preference in localStorage', () => {
-    const storage = new Map<string, string>();
-    Object.defineProperty(window, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: vi.fn((key: string) => storage.get(key) ?? null),
-        setItem: vi.fn((key: string, value: string) => {
-          storage.set(key, value);
-        }),
-      },
-    });
-
-    expect(getStoredMessageCardLayout()).toBe('dividers');
-    setStoredMessageCardLayout('fluid');
-    expect(getStoredMessageCardLayout()).toBe('fluid');
-  });
-
   it('keeps sender options from loaded messages and selected filters when profiles are missing', () => {
     expect(
       buildSenderOptions(

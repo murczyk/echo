@@ -3,12 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
-import {
-  DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
-  DEFAULT_DUTY_TAGS_LAYOUT,
-  type MessageCardLayoutVariant,
-  type TagsLayoutVariant,
-} from './utils';
+import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
 import { fetchUserSettings } from '../../services/api/user-settings';
 
@@ -19,22 +14,16 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
-  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>(
-    DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
-  );
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
-  // load layout prefs from user settings
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
       try {
         const prefs = await fetchUserSettings();
         if (cancelled) return;
-        setMessageCardLayout(prefs.messageCardLayout);
         setTagsLayout(prefs.tagsLayout);
       } catch {
         if (cancelled) return;
-        setMessageCardLayout(DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
       }
     };
@@ -146,7 +135,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               adjacentFreqsRange={w.adjacentFreqsRange}
               highlightSignalsEnabled={w.highlightSignalsEnabled}
               onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
-              messageCardLayout={messageCardLayout}
               tagsLayout={tagsLayout}
               savedFilters={savedFilters}
               selectedSavedId={selectedSavedId}

@@ -1,24 +1,14 @@
-import {
-  Alert,
-  Box,
-  CircularProgress,
-  Stack,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from '@mui/material';
+import { Alert, Box, CircularProgress, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import type { FormEvent } from 'react';
 
 import { Button } from '../../components/mui-customized/button';
-import type { MessageCardLayoutVariant, TagsLayoutVariant } from '../rer-duty-neo/utils';
+import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 export type SettingsDutySectionProps = {
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
   saveSuccess: string | null;
-  messageCardLayout: MessageCardLayoutVariant;
-  onMessageCardLayoutChange: (layout: MessageCardLayoutVariant) => void;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   onSave: (event?: FormEvent) => void | Promise<void>;
@@ -31,8 +21,6 @@ export function SettingsDutySection({
   prefsLoadError,
   saveError,
   saveSuccess,
-  messageCardLayout,
-  onMessageCardLayoutChange,
   tagsLayout,
   onTagsLayoutChange,
   onSave,
@@ -51,33 +39,12 @@ export function SettingsDutySection({
             color: 'text.primary',
           }}
         >
-          Вигляд повідомлень у стрічці Оперативного (зберігається для вашого облікового запису)
+          Вигляд тегів у стрічці Оперативного (зберігається для вашого облікового запису)
         </Typography>
         {prefsLoadError ? <Alert severity="warning">{prefsLoadError}</Alert> : null}
         {saveError ? <Alert severity="error">{saveError}</Alert> : null}
         <Box component="form" onSubmit={onSave} noValidate>
           <Stack spacing={2}>
-            <Box className="flex flex-wrap items-center gap-2">
-              <Typography variant="caption" sx={{ fontSize: 12 }}>
-                картка повідомлення:
-              </Typography>
-              <ToggleButtonGroup
-                value={messageCardLayout}
-                exclusive
-                onChange={(_, v: MessageCardLayoutVariant | null) => {
-                  if (v != null) onMessageCardLayoutChange(v);
-                }}
-                color="primary"
-                size="small"
-                sx={{
-                  flexShrink: 0,
-                  '& .MuiToggleButton-root': { textTransform: 'none', fontSize: 12 },
-                }}
-              >
-                <ToggleButton value="dividers">з роздільниками</ToggleButton>
-                <ToggleButton value="fluid">без роздільників</ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
             <Box className="flex flex-wrap items-center gap-2">
               <Typography variant="caption" sx={{ fontSize: 12 }}>
                 вигляд тегів:

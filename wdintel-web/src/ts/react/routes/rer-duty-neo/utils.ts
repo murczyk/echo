@@ -31,11 +31,9 @@ export const PAGE_ID = 'rer-duty-neo';
 /** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
 export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
 
-export type MessageCardLayoutVariant = 'dividers' | 'fluid';
 export type TagsLayoutVariant = 'full' | 'compact' | 'hidden';
 
 /** When `rerDutyNeo` prefs omit a value or loading fails (settings + operative feed). */
-export const DEFAULT_DUTY_MESSAGE_CARD_LAYOUT: MessageCardLayoutVariant = 'fluid';
 export const DEFAULT_DUTY_TAGS_LAYOUT: TagsLayoutVariant = 'compact';
 
 export function emptyFilter(): RerDutyFeedFilterState {

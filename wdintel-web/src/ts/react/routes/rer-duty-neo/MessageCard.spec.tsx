@@ -122,9 +122,7 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
   const props: ComponentProps<typeof MessageCard> = {
     id: 42,
     msg: buildMessage(),
-    feedId: 'feed-1',
     feedCount: 3,
-    layoutVariant: 'dividers',
     referenceTimeMs: 1_710_000_000_000,
     authUserName: 'tester',
     groupName: "Куп'янськ пеленг",

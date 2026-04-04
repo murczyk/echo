@@ -60,7 +60,6 @@ export type FeedColumnProps = {
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
-  messageCardLayout: 'dividers' | 'fluid';
   tagsLayout: TagsLayoutVariant;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
@@ -136,7 +135,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     adjacentFreqsRange,
     highlightSignalsEnabled,
     onlyMyUnitTagsEnabled,
-    messageCardLayout,
     tagsLayout,
     savedFilters,
     selectedSavedId,
@@ -432,9 +430,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 <MessageCard
                   id={id}
                   msg={msg}
-                  feedId={feedId}
                   feedCount={feedCount}
-                  layoutVariant={messageCardLayout}
                   tagsLayout={tagsLayout}
                   referenceTimeMs={feed.referenceTimeMs}
                   authUserName={authUserName}

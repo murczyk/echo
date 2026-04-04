@@ -1,16 +1,12 @@
 pub mod types;
 
-pub use types::{DutyMessageCardLayout, DutyTagsLayout, UserDutySettingsDto};
+pub use types::{DutyTagsLayout, UserDutySettingsDto};
 
-use crate::entities::sea_orm_active_enums::{
-    UserSettingsMessageCardLayout as DbMessageCardLayout,
-    UserSettingsTagsLayout as DbTagsLayout,
-};
+use crate::entities::sea_orm_active_enums::UserSettingsTagsLayout as DbTagsLayout;
 use crate::entities::{login, user_settings};
 use crate::error::AppError;
 use crate::h;
-use crate::types::Env;
-use crate::types::ShortContext;
+use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::web::{Data, Json};
 use actix_web::{get, put};
@@ -22,15 +18,12 @@ use sea_orm::{
 
 fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
     UserDutySettingsDto {
-        message_card_layout: match m.message_card_layout {
-            DbMessageCardLayout::Dividers => DutyMessageCardLayout::Dividers,
-            DbMessageCardLayout::Fluid => DutyMessageCardLayout::Fluid,
-        },
         tags_layout: match m.tags_layout {
             DbTagsLayout::Full => DutyTagsLayout::Full,
             DbTagsLayout::Compact => DutyTagsLayout::Compact,
             DbTagsLayout::Hidden => DutyTagsLayout::Hidden,
         },
+        disable_auto_scroll: m.disable_auto_scroll,
     }
 }
 
@@ -66,22 +59,19 @@ pub async fn user_settings_put(
     user_settings::Entity::insert(user_settings::ActiveModel {
         id: NotSet,
         login: Set(login_id),
-        message_card_layout: Set(match dto.message_card_layout {
-            DutyMessageCardLayout::Dividers => DbMessageCardLayout::Dividers,
-            DutyMessageCardLayout::Fluid => DbMessageCardLayout::Fluid,
-        }),
         tags_layout: Set(match dto.tags_layout {
             DutyTagsLayout::Full => DbTagsLayout::Full,
             DutyTagsLayout::Compact => DbTagsLayout::Compact,
             DutyTagsLayout::Hidden => DbTagsLayout::Hidden,
         }),
+        disable_auto_scroll: Set(dto.disable_auto_scroll),
         updated_at: Set(now),
     })
     .on_conflict(
         OnConflict::column(user_settings::Column::Login)
             .update_columns([
-                user_settings::Column::MessageCardLayout,
                 user_settings::Column::TagsLayout,
+                user_settings::Column::DisableAutoScroll,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),

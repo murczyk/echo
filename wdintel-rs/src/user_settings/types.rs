@@ -14,24 +14,6 @@ use serde::{Deserialize, Serialize};
     Copy,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum DutyMessageCardLayout {
-    Dividers,
-    Fluid,
-}
-
-#[derive(
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    Clone,
-    Copy,
-)]
-#[serde(rename_all = "lowercase")]
 pub enum DutyTagsLayout {
     Full,
     Compact,
@@ -51,15 +33,16 @@ pub enum DutyTagsLayout {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct UserDutySettingsDto {
-    pub message_card_layout: DutyMessageCardLayout,
     pub tags_layout: DutyTagsLayout,
+    #[serde(default)]
+    pub disable_auto_scroll: bool,
 }
 
 impl Default for UserDutySettingsDto {
     fn default() -> Self {
         Self {
-            message_card_layout: DutyMessageCardLayout::Fluid,
             tags_layout: DutyTagsLayout::Compact,
+            disable_auto_scroll: false,
         }
     }
 }

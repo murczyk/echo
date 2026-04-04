@@ -19,10 +19,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { InboxMessage, Network } from '../../../../Bindings';
 import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
 
+/** Where the card is shown: duty columns use a 4-wide action grid when stacked; analysis uses 3. */
+export type MessageCardDisplayMode = 'duty' | 'analysis';
+
 type ActionIconsRowProps = {
   id: number;
   msg: InboxMessage;
   compact?: boolean;
+  displayMode: MessageCardDisplayMode;
   copiedFeedbackId: string | null;
   onBookmark: () => void;
   onImportant: () => void;
@@ -129,6 +133,7 @@ function ActionIconsRow({
   id,
   msg,
   compact = false,
+  displayMode,
   copiedFeedbackId,
   onBookmark,
   onImportant,
@@ -186,6 +191,14 @@ function ActionIconsRow({
     ) : null,
   ].filter(Boolean);
 
+  const actionGridColumns = displayMode === 'duty' ? 4 : 3;
+  const lastRowButtonCount =
+    buttons.length === 0
+      ? 0
+      : buttons.length % actionGridColumns === 0
+        ? actionGridColumns
+        : buttons.length % actionGridColumns;
+
   useEffect(() => {
     if (compact) {
       setStackedLayout(true);
@@ -216,6 +229,8 @@ function ActionIconsRow({
   }, [compact]);
 
   if (stackedLayout) {
+    const col = actionGridColumns;
+    const lastRow = lastRowButtonCount;
     return (
       <div ref={rootRef} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
         <Box
@@ -224,7 +239,7 @@ function ActionIconsRow({
           sx={[
             {
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 30px)',
+              gridTemplateColumns: `repeat(${col}, 30px)`,
               gridAutoRows: '30px',
               width: 'fit-content',
               marginInline: 'auto',
@@ -242,12 +257,16 @@ function ActionIconsRow({
                 borderRightColor: 'divider',
                 borderBottomColor: 'divider',
               },
-              '& .MuiButton-root:nth-of-type(3n)': {
+              [`& .MuiButton-root:nth-of-type(${col}n)`]: {
                 borderRight: 'none',
               },
-              '& .MuiButton-root:nth-last-of-type(-n+3)': {
-                borderBottom: 'none',
-              },
+              ...(lastRow > 0
+                ? {
+                    [`& .MuiButton-root:nth-last-of-type(-n+${lastRow})`]: {
+                      borderBottom: 'none',
+                    },
+                  }
+                : {}),
               '& .MuiButton-root:hover': {
                 borderColor: 'divider',
                 backgroundColor: 'action.hover',
@@ -379,35 +398,6 @@ function NetworkLocationLine({
   );
 }
 
-function AnalysisLinks({
-  msg,
-  mapHref,
-  direction = 'row',
-  align = 'flex-start',
-}: {
-  msg: InboxMessage;
-  mapHref: string;
-  direction?: 'row' | 'column';
-  align?: 'flex-start' | 'flex-end';
-}) {
-  return (
-    <Stack
-      direction={direction}
-      spacing={direction === 'row' ? 1.5 : 0.75}
-      useFlexGap
-      flexWrap={direction === 'row' ? 'wrap' : 'nowrap'}
-      alignItems={align}
-    >
-      <AnalysisActionLink
-        href={buildAnalysisHref(msg, false)}
-        icon={<BarChartOutlinedIcon aria-hidden />}
-        label="Аналіз"
-      />
-      <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />
-    </Stack>
-  );
-}
-
 function AnalysisActionLink({ href, icon, label }: { href: string; icon: JSX.Element; label: string }) {
   return (
     <Link
@@ -458,9 +448,8 @@ function AnalysisActionLink({ href, icon, label }: { href: string; icon: JSX.Ele
 }
 
 export type MessageCardHeaderProps = {
-  layout: 'fluid' | 'dividers';
   compact?: boolean;
-  feedCount: number;
+  displayMode: MessageCardDisplayMode;
   id: number;
   msg: InboxMessage;
   mapHref: string;
@@ -483,9 +472,8 @@ export type MessageCardHeaderProps = {
 };
 
 export function MessageCardHeader({
-  layout,
   compact = false,
-  feedCount,
+  displayMode,
   id,
   msg,
   mapHref,
@@ -567,52 +555,6 @@ export function MessageCardHeader({
           .join(', ')
       : (etalonNoNetworkLabel ?? '—');
 
-  if (layout === 'fluid') {
-    return (
-      <Stack spacing={1}>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="flex-start"
-          spacing={1.5}
-          useFlexGap
-          flexWrap="wrap"
-        >
-          {dateTimeBlock}
-          {groupName != null ? (
-            <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} />
-          ) : null}
-          {senderName != null ? (
-            <MetaLine icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />} title="Відправник" text={senderName} />
-          ) : null}
-          {freqBlock}
-        </Stack>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-          spacing={1.5}
-          useFlexGap
-          flexWrap="wrap"
-        >
-          <AnalysisLinks msg={msg} mapHref={mapHref} />
-          <ActionIconsRow
-            id={id}
-            msg={msg}
-            compact={compact}
-            copiedFeedbackId={copiedFeedbackId}
-            onBookmark={onBookmark}
-            onImportant={onImportant}
-            onComment={onComment}
-            onCopyText={onCopyText}
-            onDelete={onDelete}
-            onEditDetails={onEditDetails}
-          />
-        </Stack>
-      </Stack>
-    );
-  }
-
   if (compact) {
     return (
       <Box
@@ -646,6 +588,8 @@ export function MessageCardHeader({
           <ActionIconsRow
             id={id}
             msg={msg}
+            compact
+            displayMode={displayMode}
             copiedFeedbackId={copiedFeedbackId}
             onBookmark={onBookmark}
             onImportant={onImportant}
@@ -774,6 +718,7 @@ export function MessageCardHeader({
           id={id}
           msg={msg}
           compact={compact}
+          displayMode={displayMode}
           copiedFeedbackId={copiedFeedbackId}
           onBookmark={onBookmark}
           onImportant={onImportant}

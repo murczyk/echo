@@ -1,8 +1,6 @@
 //! Per-account operative-feed UI preferences.
 
-use super::sea_orm_active_enums::{
-    UserSettingsMessageCardLayout, UserSettingsTagsLayout,
-};
+use super::sea_orm_active_enums::UserSettingsTagsLayout;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +13,8 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique)]
     pub login: String,
-    pub message_card_layout: UserSettingsMessageCardLayout,
     pub tags_layout: UserSettingsTagsLayout,
+    pub disable_auto_scroll: bool,
     pub updated_at: DateTime,
 }
 

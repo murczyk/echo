@@ -762,7 +762,6 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::types::LinkEchoOperatorReq,
             crate::messenger::types::GroupUpdateReq,
             crate::messenger::types::GroupEntryF1,
-            crate::user_settings::types::DutyMessageCardLayout,
             crate::user_settings::types::DutyTagsLayout,
             crate::user_settings::types::UserDutySettingsDto,
         ],

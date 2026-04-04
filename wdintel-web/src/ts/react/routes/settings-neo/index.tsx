@@ -23,14 +23,8 @@ import { listSigintZones } from '../../services/api/zones';
 import {
   fetchUserSettings as fetchUserPrefsSettings,
   saveUserSettings as saveUserPrefsSettings,
-  type UserDutySettings,
 } from '../../services/api/user-settings';
-import {
-  DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
-  DEFAULT_DUTY_TAGS_LAYOUT,
-  type TagsLayoutVariant,
-  type MessageCardLayoutVariant,
-} from '../rer-duty-neo/utils';
+import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 import { SettingsDutySection } from './SettingsDutySection';
 
@@ -84,15 +78,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
     parseSettingsSection(section ?? readSettingsSectionFromUrl()),
   );
-  const [userPrefs, setUserPrefs] = useState<UserDutySettings | null>(null);
-  const [messageCardLayout, setMessageCardLayout] = useState<MessageCardLayoutVariant>(
-    DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
-  );
-  const [initialMessageCardLayout, setInitialMessageCardLayout] = useState<MessageCardLayoutVariant>(
-    DEFAULT_DUTY_MESSAGE_CARD_LAYOUT,
-  );
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
+  /** ToDo implement in next task. */
+  const [dutyDisableAutoScrollFromServer, setDutyDisableAutoScrollFromServer] = useState(false);
   const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
   const [dutySaveError, setDutySaveError] = useState<string | null>(null);
   const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
@@ -140,17 +129,13 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         setDutyPrefsLoadError(null);
         if (prefsRsp == null) {
           setDutyPrefsLoadError('Не вдалося завантажити налаштування.');
-          setUserPrefs(null);
-          setMessageCardLayout(DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
-          setInitialMessageCardLayout(DEFAULT_DUTY_MESSAGE_CARD_LAYOUT);
           setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
           setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+          setDutyDisableAutoScrollFromServer(false);
         } else {
-          setUserPrefs(prefsRsp);
-          setMessageCardLayout(prefsRsp.messageCardLayout);
-          setInitialMessageCardLayout(prefsRsp.messageCardLayout);
           setTagsLayout(prefsRsp.tagsLayout);
           setInitialTagsLayout(prefsRsp.tagsLayout);
+          setDutyDisableAutoScrollFromServer(prefsRsp.disableAutoScroll);
         }
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
@@ -183,7 +168,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
-  const isDutyDirty = messageCardLayout !== initialMessageCardLayout || tagsLayout !== initialTagsLayout;
+  const isDutyDirty = tagsLayout !== initialTagsLayout;
 
   async function handleDutySave(event?: FormEvent) {
     event?.preventDefault();
@@ -195,9 +180,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     setDutySaveInProgress(true);
 
     try {
-      const res = await saveUserPrefsSettings({ messageCardLayout, tagsLayout });
-      setUserPrefs(res);
-      setInitialMessageCardLayout(messageCardLayout);
+      await saveUserPrefsSettings({ tagsLayout, disableAutoScroll: dutyDisableAutoScrollFromServer });
       setInitialTagsLayout(tagsLayout);
       setDutySaveSuccess('Збережено');
     } catch (error) {
@@ -367,29 +350,21 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           ) : null}
 
           {settingsSection === 'duty' ? (
-            <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
-              <SettingsDutySection
-                loadInProgress={loadInProgress}
-                prefsLoadError={dutyPrefsLoadError}
-                saveError={dutySaveError}
-                saveSuccess={dutySaveSuccess}
-                messageCardLayout={messageCardLayout}
-                onMessageCardLayoutChange={(layout) => {
-                  setDutySaveSuccess(null);
-                  setDutySaveError(null);
-                  setMessageCardLayout(layout);
-                }}
-                tagsLayout={tagsLayout}
-                onTagsLayoutChange={(layout) => {
-                  setDutySaveSuccess(null);
-                  setDutySaveError(null);
-                  setTagsLayout(layout);
-                }}
-                onSave={handleDutySave}
-                isDirty={isDutyDirty}
-                saveInProgress={dutySaveInProgress}
-              />
-            </Box>
+            <SettingsDutySection
+              loadInProgress={loadInProgress}
+              prefsLoadError={dutyPrefsLoadError}
+              saveError={dutySaveError}
+              saveSuccess={dutySaveSuccess}
+              tagsLayout={tagsLayout}
+              onTagsLayoutChange={(layout) => {
+                setDutySaveSuccess(null);
+                setDutySaveError(null);
+                setTagsLayout(layout);
+              }}
+              onSave={handleDutySave}
+              isDirty={isDutyDirty}
+              saveInProgress={dutySaveInProgress}
+            />
           ) : null}
 
           {settingsSection === 'analysis' ? (
