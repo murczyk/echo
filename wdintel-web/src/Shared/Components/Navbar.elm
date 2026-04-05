@@ -137,6 +137,12 @@ navBar user shared activeName props =
             , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "duty" ) ], hash = Nothing } "settings-neo-duty" "налаштування"
             ]
 
+        analysisSubs =
+            [ internalMenu Route.Path.RerAnalysis "analysis" "класичний"
+            , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "новий"
+            , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "analysis" ) ], hash = Nothing } "settings-neo-analysis" "налаштування"
+            ]
+
         adminSubs =
             [ internalMenu Route.Path.Admin_DirectionsNeo "zones" "напрямки"
             , internalMenu Route.Path.Admin_UsersNeo "users-neo" "користувачі"
@@ -207,7 +213,7 @@ navBar user shared activeName props =
                 :: ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "operational" "оперативний" operationalSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menu Route.Path.RerAnalysis "analysis" "аналіз" ]
+                    [ menuWithSubs "analysis" "аналіз" analysisSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "etalonka" "еталонка" etalonkaSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
@@ -489,7 +495,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                         else
                             []
                        )
-                    ++ (if item.activeName == "callsigns-neo" then
+                    ++ (if item.activeName == "callsigns-neo" || item.activeName == "rer-analysis-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]

@@ -81,8 +81,41 @@ async function requestJson<T>(
   }
 }
 
+async function requestBytes(
+  method: HttpMethod,
+  url: string,
+  body?: JsonValue | JsonObject,
+  options?: RequestOptions,
+) {
+  const init: RequestInit = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    signal: options?.signal,
+  };
+
+  if (method !== 'GET') {
+    init.body = body === undefined ? undefined : JSON.stringify(body);
+  }
+
+  const response = await fetch(url, init);
+
+  if (!response.ok) {
+    const message = await parseErrorMessage(response);
+    throw new HttpRequestError(response.status, message);
+  }
+
+  return response.blob();
+}
+
 export async function postJson<T>(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
   return requestJson<T>('POST', url, body, options);
+}
+
+export async function postBytes(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+  return requestBytes('POST', url, body, options);
 }
 
 export async function getJson<T>(url: string, options?: RequestOptions) {

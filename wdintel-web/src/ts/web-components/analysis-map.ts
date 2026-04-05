@@ -184,7 +184,7 @@ class AnalysisMap extends HTMLElement {
         this._handlePalitrasLoadedAttributeChanged(newValue);
         break;
       case 'search':
-        this._applySearchQueryFromUrl();
+        this._handleSearchAttributeChanged(newValue);
         break;
       case 'palitras-load-state':
         this._handlePalitrasLoadStateAttributeChanged(newValue);
@@ -195,7 +195,14 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _handleVisibilityAttributeChanged(newValue: string): void {
-    if (this._initialized || newValue !== 'true') {
+    if (newValue !== 'true') {
+      return;
+    }
+
+    if (this._initialized) {
+      setTimeout(() => {
+        this._map?.invalidateSize();
+      }, 0);
       return;
     }
 
@@ -265,18 +272,47 @@ class AnalysisMap extends HTMLElement {
     }
   }
 
-  /** Get search query from URL only */
+  private _getSearchQueryFromAttribute(): string | null {
+    if (!this.hasAttribute('search')) {
+      return null;
+    }
+
+    return (this.getAttribute('search') ?? '').trim();
+  }
+
+  /** Prefer explicit attribute state; fall back to URL only when attribute is absent. */
   private _getEffectiveSearchQuery(): string {
+    const attributeQuery = this._getSearchQueryFromAttribute();
+    if (attributeQuery !== null) {
+      return attributeQuery;
+    }
+
     return (getSearchQueryFromCurrentUrl() ?? '').trim();
   }
 
-  /** Set search input value from URL. Does not trigger search (search runs once when palitras are ready). */
-  private _applySearchQueryFromUrl() {
-    const query = this._getEffectiveSearchQuery();
-    if (!query) return;
+  /** Set search input value from the current query source. Does not trigger search directly. */
+  private _applySearchQuery(queryValue?: string | null) {
+    const query = (queryValue ?? this._getEffectiveSearchQuery() ?? '').trim();
     const searchEl = this.querySelector('analysis-map-search');
     if (searchEl) {
       searchEl.setAttribute('initial-query', query);
+    }
+  }
+
+  private _handleSearchAttributeChanged(newValue: string): void {
+    const query = newValue.trim();
+    this._applySearchQuery(query);
+    if (!this._palitraManager) {
+      return;
+    }
+
+    if (!query) {
+      this._palitraManager.setSearchQuery('');
+      return;
+    }
+
+    if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
+      this._palitraManager.setSearchQuery(query);
     }
   }
 
@@ -390,7 +426,7 @@ class AnalysisMap extends HTMLElement {
      // Get-inbox-map points are always visible; no need to re-apply on zoom.
 
     // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
-    this._applySearchQueryFromUrl();
+    this._applySearchQuery();
     if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
       this._runSearchQueryIfSet();
     }

@@ -1,7 +1,8 @@
-import React from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Callsign, CallsignUnitStatRow, Source, Unit, User } from '../../../../Bindings';
 import { isUnauthorizedError } from '../../services/api/client';
+import { downloadBlob } from '../../utils/download-blob';
 import {
   createCallsign,
   deleteCallsign,
@@ -22,7 +23,6 @@ import {
   createSourcesById,
   createUnitsById,
   DEFAULT_SORT,
-  downloadBlob,
   formatErrorMessage,
   getDefaultPageSize,
   getExportPermission,
@@ -264,6 +264,23 @@ function syncCallsignsStateToUrl(
   });
 }
 
+function areCallsignFiltersEqual(left: CallsignsFilterState, right: CallsignsFilterState): boolean {
+  return left.filterText === right.filterText
+    && left.filterCallsign === right.filterCallsign
+    && left.filterPosition === right.filterPosition
+    && left.filterFullName === right.filterFullName
+    && left.filterComment === right.filterComment
+    && left.filterUnit === right.filterUnit
+    && left.filterDeveloping === right.filterDeveloping
+    && left.isIgnoringDateFilter === right.isIgnoringDateFilter
+    && left.fromDateTimeLocal === right.fromDateTimeLocal
+    && left.toDateTimeLocal === right.toDateTimeLocal;
+}
+
+function areCallsignSortStatesEqual(left: CallsignsSortState, right: CallsignsSortState): boolean {
+  return left.column === right.column && left.direction === right.direction;
+}
+
 function decodeHierarchyParam(value: string | null): string | null {
   if (value == null) return null;
   return value === EMPTY_HIERARCHY_PARAM ? '' : value;
@@ -319,34 +336,34 @@ function getReloadPageSize(callsignsCount: number) {
 }
 
 export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
-  const [user, setUser] = React.useState<User | null>(null);
-  const [units, setUnits] = React.useState<Unit[]>([]);
-  const [sources, setSources] = React.useState<Source[]>([]);
-  const [unitStats, setUnitStats] = React.useState<CallsignUnitStatRow[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [unitStats, setUnitStats] = useState<CallsignUnitStatRow[]>([]);
 
-  const [callsigns, setCallsigns] = React.useState<Callsign[]>([]);
-  const [showLoadMore, setShowLoadMore] = React.useState(false);
-  const [loading, setLoading] = React.useState(true);
-  const [loadingMore, setLoadingMore] = React.useState(false);
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [status, setStatus] = React.useState<UiStatus>(null);
+  const [callsigns, setCallsigns] = useState<Callsign[]>([]);
+  const [showLoadMore, setShowLoadMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [status, setStatus] = useState<UiStatus>(null);
 
-  const [filters, setFilters] = React.useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
-  const [sort, setSort] = React.useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
-  const [sidebarOpen, setSidebarOpen] = React.useState<boolean>(() => readInitialSidebarOpenFromUrl());
-  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] = React.useState<SelectedSidebarUnitFilter | null>(() =>
+  const [filters, setFilters] = useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
+  const [sort, setSort] = useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => readInitialSidebarOpenFromUrl());
+  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] = useState<SelectedSidebarUnitFilter | null>(() =>
     readInitialSidebarFilterFromUrl(),
   );
 
-  const [addUnitId, setAddUnitId] = React.useState<number | null>(null);
-  const [addSourceId, setAddSourceId] = React.useState<number | null>(null);
-  const [addCallsignAdditionalSourceIds, setAddCallsignAdditionalSourceIds] = React.useState<number[]>([]);
-  const [addRows, setAddRows] = React.useState<CallsignDraftRow[]>([createEmptyDraftRow()]);
-  const [addSubmitting, setAddSubmitting] = React.useState(false);
-  const [addValidationError, setAddValidationError] = React.useState<string | null>(null);
-  const [addDrawerOpen, setAddDrawerOpen] = React.useState(false);
-  const [addDuplicateHintsEnabled, setAddDuplicateHintsEnabled] = React.useState(false);
-  const duplicateHintInputs = React.useMemo<DuplicateHintInput[]>(
+  const [addUnitId, setAddUnitId] = useState<number | null>(null);
+  const [addSourceId, setAddSourceId] = useState<number | null>(null);
+  const [addCallsignAdditionalSourceIds, setAddCallsignAdditionalSourceIds] = useState<number[]>([]);
+  const [addRows, setAddRows] = useState<CallsignDraftRow[]>([createEmptyDraftRow()]);
+  const [addSubmitting, setAddSubmitting] = useState(false);
+  const [addValidationError, setAddValidationError] = useState<string | null>(null);
+  const [addDrawerOpen, setAddDrawerOpen] = useState(false);
+  const [addDuplicateHintsEnabled, setAddDuplicateHintsEnabled] = useState(false);
+  const duplicateHintInputs = useMemo<DuplicateHintInput[]>(
     () =>
       addRows
         .map((row) => ({
@@ -357,30 +374,30 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         .filter((row) => row.callsignInput.length >= 2 || row.fullNameInput.length >= 2),
     [addRows],
   );
-  const deferredDuplicateHintInputs = React.useDeferredValue(duplicateHintInputs);
+  const deferredDuplicateHintInputs = useDeferredValue(duplicateHintInputs);
 
-  const [editForm, setEditForm] = React.useState<CallsignEditForm | null>(null);
-  const [editSubmitting, setEditSubmitting] = React.useState(false);
-  const [editValidationError, setEditValidationError] = React.useState<string | null>(null);
+  const [editForm, setEditForm] = useState<CallsignEditForm | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editValidationError, setEditValidationError] = useState<string | null>(null);
 
-  const [deleteTarget, setDeleteTarget] = React.useState<Callsign | null>(null);
-  const [deleteInFlightId, setDeleteInFlightId] = React.useState<number | null>(null);
-  const [deleteSubmitting, setDeleteSubmitting] = React.useState(false);
-  const [selectedCallsignIds, setSelectedCallsignIds] = React.useState<number[]>([]);
-  const [bulkDeleteDialogCallsigns, setBulkDeleteDialogCallsigns] = React.useState<Callsign[]>([]);
-  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false);
-  const [bulkDeleteInFlight, setBulkDeleteInFlight] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Callsign | null>(null);
+  const [deleteInFlightId, setDeleteInFlightId] = useState<number | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [selectedCallsignIds, setSelectedCallsignIds] = useState<number[]>([]);
+  const [bulkDeleteDialogCallsigns, setBulkDeleteDialogCallsigns] = useState<Callsign[]>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleteInFlight, setBulkDeleteInFlight] = useState(false);
 
-  const [downloadInProgress, setDownloadInProgress] = React.useState<DownloadKind | null>(null);
+  const [downloadInProgress, setDownloadInProgress] = useState<DownloadKind | null>(null);
 
-  const initializedRef = React.useRef(false);
-  const listRequestSeqRef = React.useRef(0);
-  const debounceTimerRef = React.useRef<number | null>(null);
-  const activeListAbortRef = React.useRef<AbortController | null>(null);
+  const initializedRef = useRef(false);
+  const listRequestSeqRef = useRef(0);
+  const debounceTimerRef = useRef<number | null>(null);
+  const activeListAbortRef = useRef<AbortController | null>(null);
 
-  const unitsById = React.useMemo(() => createUnitsById(units), [units]);
-  const sourcesById = React.useMemo(() => createSourcesById(sources), [sources]);
-  const permissions = React.useMemo(() => {
+  const unitsById = useMemo(() => createUnitsById(units), [units]);
+  const sourcesById = useMemo(() => createSourcesById(sources), [sources]);
+  const permissions = useMemo(() => {
     const apiPermissions = getExportPermission(user);
     const shellPermissions = getExportPermissionFromRoles(authUserRoles);
     return {
@@ -389,16 +406,16 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     };
   }, [user, authUserRoles]);
 
-  const sortedCallsigns = React.useMemo(
+  const sortedCallsigns = useMemo(
     () => sortRowsClientSide(callsigns, sort, unitsById, sourcesById),
     [callsigns, sort, unitsById, sourcesById],
   );
-  const rows = React.useMemo(
+  const rows = useMemo(
     () => buildRowViews(sortedCallsigns, unitsById, sourcesById).rows,
     [sortedCallsigns, unitsById, sourcesById],
   );
-  const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
-  const addPotentialDuplicates = React.useMemo(() => {
+  const unitStatsView = useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
+  const addPotentialDuplicates = useMemo(() => {
     if (!addDuplicateHintsEnabled || addSubmitting) return [];
     if (deferredDuplicateHintInputs.length === 0) return [];
 
@@ -532,7 +549,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
 
     async function loadBootstrap() {
@@ -584,7 +601,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     };
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!initializedRef.current) return;
 
     if (debounceTimerRef.current !== null) {
@@ -605,11 +622,30 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     };
   }, [filters, sort, selectedSidebarUnitFilter]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     syncCallsignsStateToUrl(filters, sort, sidebarOpen, selectedSidebarUnitFilter);
   }, [filters, sort, sidebarOpen, selectedSidebarUnitFilter]);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    function onPopState() {
+      const nextFilters = readInitialCallsignsFiltersFromUrl();
+      const nextSort = readInitialCallsignsSortFromUrl();
+      const nextSidebarOpen = readInitialSidebarOpenFromUrl();
+      const nextSelectedSidebarUnitFilter = readInitialSidebarFilterFromUrl();
+
+      setFilters((prev) => (areCallsignFiltersEqual(prev, nextFilters) ? prev : nextFilters));
+      setSort((prev) => (areCallsignSortStatesEqual(prev, nextSort) ? prev : nextSort));
+      setSidebarOpen((prev) => (prev === nextSidebarOpen ? prev : nextSidebarOpen));
+      setSelectedSidebarUnitFilter((prev) =>
+        areSidebarFiltersEqual(prev, nextSelectedSidebarUnitFilter) ? prev : nextSelectedSidebarUnitFilter,
+      );
+    }
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
     setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
   }, [callsigns]);
 
@@ -678,11 +714,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     });
   }
 
-  const clearSelectedCallsigns = React.useCallback(() => {
+  const clearSelectedCallsigns = useCallback(() => {
     setSelectedCallsignIds((prev) => (prev.length === 0 ? prev : []));
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     clearSelectedCallsigns();
   }, [clearSelectedCallsigns, filters, sort]);
 

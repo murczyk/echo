@@ -229,6 +229,35 @@ export function profileLabel(uuid: string, entry: SignalProfileEntry | null): st
   return parts.length > 0 ? parts.join(' ') : 'Невідомий';
 }
 
+export function buildSenderOptions(
+  profiles: Record<string, SignalProfileEntry | null>,
+  messageFeeds: MessageFeedState[],
+): Array<{ id: string; label: string }> {
+  const senderIds = new Set(Object.keys(profiles));
+
+  messageFeeds.forEach((feed) => {
+    feed.items.forEach(([, message]) => {
+      const sender = message.sender?.trim();
+      if (sender) senderIds.add(sender);
+    });
+    (feed.filter.sendersSelected ?? []).forEach((sender) => {
+      const senderTrimmed = sender.trim();
+      if (senderTrimmed) senderIds.add(senderTrimmed);
+    });
+    (feed.filter.deniedSenders ?? []).forEach((sender) => {
+      const senderTrimmed = sender.trim();
+      if (senderTrimmed) senderIds.add(senderTrimmed);
+    });
+  });
+
+  return [...senderIds]
+    .map((uuid) => ({
+      id: uuid,
+      label: profileLabel(uuid, profiles[uuid] ?? null),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export function formatTime(time: string | null): string {
   if (time == null || time === '') return '—';
   const parts = time.trim().split(':');

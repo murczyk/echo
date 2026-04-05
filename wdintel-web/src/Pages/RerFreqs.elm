@@ -1626,6 +1626,8 @@ freqsTableConfig shared model user =
                                     , unitsExactMatchOnly = Nothing
                                     , adjacentFreqsRange = 0
                                     , withoutModelTags = False
+                                    , filterTagsOption = Nothing
+                                    , reportTagsOnlyThisUnit = Nothing
                                     }
                                 )
 

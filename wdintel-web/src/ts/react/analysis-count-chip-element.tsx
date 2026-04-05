@@ -1,6 +1,6 @@
 import Chip from '@mui/material/Chip';
 import { ThemeProvider } from '@mui/material/styles';
-import React from 'react';
+
 import { createRoot, Root } from 'react-dom/client';
 
 import { useNeoMuiTheme } from './mui-theme';

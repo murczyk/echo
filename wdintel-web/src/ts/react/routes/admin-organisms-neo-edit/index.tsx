@@ -9,7 +9,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, CreateOrganismReq, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
 import { FormPageHeader } from '../../components/FormPageHeader';
@@ -587,39 +587,39 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
 
 function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   const isNew = !props.organismId;
-  const [loadStatus, setLoadStatus] = React.useState<LoadingStatus>('idle');
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [status, setStatus] = React.useState<StatusMessage>(null);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatusMessage>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [organisms, setOrganisms] = React.useState<Organism[]>([]);
-  const [groups, setGroups] = React.useState<SignalGroupFull[]>([]);
-  const [organismGroups, setOrganismGroups] = React.useState<OrganismGroup[]>([]);
-  const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
+  const [organisms, setOrganisms] = useState<Organism[]>([]);
+  const [groups, setGroups] = useState<SignalGroupFull[]>([]);
+  const [organismGroups, setOrganismGroups] = useState<OrganismGroup[]>([]);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
 
-  const [form, setForm] = React.useState<OrganismFormState>(emptyFormState);
-  const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
-  const [originalGroupKeys, setOriginalGroupKeys] = React.useState<string[]>([]);
-  const [computedGroups, setComputedGroups] = React.useState<SignalGroupFull[] | null>(null);
-  const [computeError, setComputeError] = React.useState<string | null>(null);
-  const [isComputing, setIsComputing] = React.useState(false);
-  const [goiConnectionStatus, setGoiConnectionStatus] = React.useState<StatusMessage>(null);
-  const [isCheckingGoiConnection, setIsCheckingGoiConnection] = React.useState(false);
-  const [isSettingUpGoiWorker, setIsSettingUpGoiWorker] = React.useState(false);
+  const [form, setForm] = useState<OrganismFormState>(emptyFormState);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [originalGroupKeys, setOriginalGroupKeys] = useState<string[]>([]);
+  const [computedGroups, setComputedGroups] = useState<SignalGroupFull[] | null>(null);
+  const [computeError, setComputeError] = useState<string | null>(null);
+  const [isComputing, setIsComputing] = useState(false);
+  const [goiConnectionStatus, setGoiConnectionStatus] = useState<StatusMessage>(null);
+  const [isCheckingGoiConnection, setIsCheckingGoiConnection] = useState(false);
+  const [isSettingUpGoiWorker, setIsSettingUpGoiWorker] = useState(false);
 
-  const backToPath = React.useMemo(getBackToPath, []);
+  const backToPath = useMemo(getBackToPath, []);
 
-  const availableGroups = React.useMemo(
+  const availableGroups = useMemo(
     () => buildAvailableGroups(form.parentId, groups, organismGroups),
     [form.parentId, groups, organismGroups],
   );
 
-  const groupsValidation = React.useMemo(
+  const groupsValidation = useMemo(
     () => validateGroupsForParent(organismGroups, groups, form.groupIds, form.parentId),
     [organismGroups, groups, form.groupIds, form.parentId],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     let isCancelled = false;
 
     async function loadAll() {
@@ -706,7 +706,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     };
   }, [props.organismId, isNew]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (loadStatus !== 'success') return;
     if (form.aorIds.length === 0) {
       setComputedGroups(null);

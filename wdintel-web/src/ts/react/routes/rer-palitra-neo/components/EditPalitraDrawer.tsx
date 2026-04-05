@@ -1,5 +1,5 @@
 import { Box, Button, CircularProgress, Drawer, Stack, TextField, Typography } from '@mui/material';
-import React from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { applyRestrictedAccess, isFormValid } from '../helpers';
@@ -103,4 +103,4 @@ function EditPalitraDrawerComponent({
   );
 }
 
-export const EditPalitraDrawer = React.memo(EditPalitraDrawerComponent);
+export const EditPalitraDrawer = memo(EditPalitraDrawerComponent);

@@ -1,9 +1,9 @@
 import Chip, { ChipProps } from '@mui/material/Chip';
 import { SxProps, Theme, getContrastRatio } from '@mui/material/styles';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 type PowerChipProps = {
-  label: React.ReactNode;
+  label: ReactNode;
   color?: ChipProps['color'];
   selected?: boolean;
   onClick?: () => void;

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   PAGE_ID,
   buildAnalysisMapHrefWithSearch,
+  buildSenderOptions,
   buildInboxReq,
   createMasterUnitText,
   emptyFilter,
@@ -20,7 +21,7 @@ import {
   pushStateToUrl,
   setStoredMessageCardLayout,
 } from './utils';
-import type { InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
+import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
 
 describe('rer-duty utils', () => {
   it('etalon fallback when no networks: unit vs strict', () => {
@@ -151,5 +152,40 @@ describe('rer-duty utils', () => {
     expect(getStoredMessageCardLayout()).toBe('dividers');
     setStoredMessageCardLayout('fluid');
     expect(getStoredMessageCardLayout()).toBe('fluid');
+  });
+
+  it('keeps sender options from loaded messages and selected filters when profiles are missing', () => {
+    expect(
+      buildSenderOptions(
+        {
+          known: { givenName: 'Known', familyName: 'Sender' } as SignalProfileEntry,
+        },
+        [
+          {
+            id: 'mf-1',
+            filter: { ...emptyFilter(), sendersSelected: ['selected-only'], deniedSenders: ['denied-only'] },
+            items: [
+              [1, { sender: 'feed-only' } as InboxMessage],
+              [2, { sender: ' known ' } as InboxMessage],
+            ],
+            loading: false,
+            loadingOlder: false,
+            hasReachedStart: false,
+            firstItemIndex: 0,
+            referenceTimeMs: null,
+            readIds: new Set<number>(),
+            unreadCount: 0,
+            adjacentFreqsRange: 0,
+            highlightSignalsEnabled: false,
+            onlyMyUnitTagsEnabled: false,
+          },
+        ],
+      ),
+    ).toEqual([
+      { id: 'denied-only', label: 'Невідомий' },
+      { id: 'feed-only', label: 'Невідомий' },
+      { id: 'known', label: 'Known Sender' },
+      { id: 'selected-only', label: 'Невідомий' },
+    ]);
   });
 });

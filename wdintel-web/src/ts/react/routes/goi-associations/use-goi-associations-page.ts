@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   GoiAssociation,
   ListGoiAssociationsReq,
@@ -115,14 +115,14 @@ function toRowView(association: GoiAssociation): GoiAssociationRowView {
 
 export function useGoiAssociationsPage() {
   const tableStateContext = useTableStateContext();
-  const [rows, setRows] = React.useState<GoiAssociationRowView[]>([]);
-  const [status, setStatus] = React.useState<LoadingStatus>('idle');
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-  const [notice, setNotice] = React.useState<UiStatus>(null);
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
-  const [hasMore, setHasMore] = React.useState(false);
-  const queryKey = React.useMemo(
+  const [rows, setRows] = useState<GoiAssociationRowView[]>([]);
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<UiStatus>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const queryKey = useMemo(
     () =>
       JSON.stringify({
         globalFilter: tableStateContext.globalFilter,
@@ -135,9 +135,9 @@ export function useGoiAssociationsPage() {
       tableStateContext.sorting,
     ],
   );
-  const latestQueryKeyRef = React.useRef(queryKey);
+  const latestQueryKeyRef = useRef(queryKey);
   const loadMoreAbortControllerRef =
-    React.useRef<AbortController | null>(null);
+    useRef<AbortController | null>(null);
 
   latestQueryKeyRef.current = queryKey;
 
@@ -169,13 +169,13 @@ export function useGoiAssociationsPage() {
     filterDeleted: false,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadMoreAbortControllerRef.current?.abort();
     loadMoreAbortControllerRef.current = null;
     setLoadingMore(false);
   }, [queryKey]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const abortController = new AbortController();
     const hasExistingRows = rows.length > 0;
     const timeout = window.setTimeout(async () => {

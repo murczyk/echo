@@ -24,7 +24,7 @@ import { listSigintZones } from "../../services/api/zones";
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
 
-export type SettingsSection = "general" | "duty";
+export type SettingsSection = "general" | "duty" | "analysis";
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
@@ -43,7 +43,7 @@ function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
 }
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === "duty") return section;
+  if (section === "duty" || section === "analysis") return section;
   return "general";
 }
 
@@ -197,6 +197,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           >
             <Tab value="general" label="ЗАГАЛЬНІ" id="settings-neo-tab-general" aria-controls="settings-neo-panel-general" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
             <Tab value="duty" label="ОПЕРАТИВНИЙ" id="settings-neo-tab-duty" aria-controls="settings-neo-panel-duty" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
+            <Tab value="analysis" label="АНАЛІЗ" id="settings-neo-tab-analysis" aria-controls="settings-neo-panel-analysis" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
           </Tabs>
 
           {settingsSection === "general" ? (
@@ -272,7 +273,15 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           {settingsSection === "duty" ? (
             <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
               <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
-                Налаштування оперативного режиму з’являться тут.
+                Налаштування оперативного режиму з’являться тут
+              </Typography>
+            </Box>
+          ) : null}
+
+          {settingsSection === "analysis" ? (
+            <Box id="settings-neo-panel-analysis" role="tabpanel" aria-labelledby="settings-neo-tab-analysis" sx={{ p: 3 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
+                Налаштування аналізу з’являться тут
               </Typography>
             </Box>
           ) : null}

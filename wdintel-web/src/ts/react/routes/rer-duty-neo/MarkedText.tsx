@@ -1,5 +1,6 @@
 import { IconButton, Menu, MenuItem } from '@mui/material';
-import React, { useId, useState } from 'react';
+import { useId, useState } from 'react';
+import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 
 import type { ContentNode } from '../../../../Bindings';
 import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
@@ -18,7 +19,7 @@ function collectPointEtalons(nodes: ContentNode[]): string[] {
   return etalons;
 }
 
-function tokenPillBaseStyle(isInteractive: boolean): React.CSSProperties {
+function tokenPillBaseStyle(isInteractive: boolean): CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
@@ -34,11 +35,19 @@ function tokenPillBaseStyle(isInteractive: boolean): React.CSSProperties {
   };
 }
 
-function tokenInteractiveResetStyle(cursor: React.CSSProperties['cursor']): React.CSSProperties {
+function tokenInteractiveResetStyle(cursor: CSSProperties['cursor']): CSSProperties {
   return {
     color: 'inherit',
     textDecoration: 'none',
     cursor,
+  };
+}
+
+function callsignLinkStyle(): CSSProperties {
+  return {
+    color: 'var(--message-callsign-color)',
+    borderBottom: '2px solid var(--message-callsign-color)',
+    textDecoration: 'none',
   };
 }
 
@@ -58,7 +67,7 @@ function PointToken({
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const menuId = useId();
 
-  function openMenu(event: React.SyntheticEvent<HTMLElement>) {
+  function openMenu(event: SyntheticEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
     setMenuAnchorEl(event.currentTarget);
@@ -161,7 +170,7 @@ export function renderMarkedText(
   bodyText: string,
   messagePointEtalons?: string[],
   options?: { showPointLinks?: boolean },
-): React.ReactNode[] {
+): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
   const fromNodes = collectPointEtalons(nodes);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
@@ -186,6 +195,7 @@ export function renderMarkedText(
           target="_blank"
           rel="noopener noreferrer"
           className="content-token--ADP hover:cursor-pointer"
+          style={callsignLinkStyle()}
         >
           {displayText}
         </a>
@@ -216,7 +226,16 @@ export function renderMarkedText(
         allPointEtalons.length > 1
           ? `Відкрити на мапі аналізу: ${allPointEtalons.join(', ')}`
           : `Відкрити на мапі аналізу: ${etalon}`;
-      return <PointToken key={i} text={sliceText} hrefAll={hrefAll} hrefSingle={hrefSingle} title={title} hasMultiplePoints={allPointEtalons.length > 1} />;
+      return (
+        <PointToken
+          key={i}
+          text={sliceText}
+          hrefAll={hrefAll}
+          hrefSingle={hrefSingle}
+          title={title}
+          hasMultiplePoints={allPointEtalons.length > 1}
+        />
+      );
     }
     return null;
   });

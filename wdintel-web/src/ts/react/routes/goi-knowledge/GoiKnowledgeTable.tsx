@@ -10,7 +10,7 @@ import {
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { TableEmptyState } from '../../components/TableEmptyState';
 import {
@@ -102,7 +102,7 @@ export function GoiKnowledgeTable(props: Props) {
       ? basePaperProps
       : () => basePaperProps || {};
 
-  const columns = React.useMemo<MRT_ColumnDef<GoiKnowledgeRowView>[]>(
+  const columns = useMemo<MRT_ColumnDef<GoiKnowledgeRowView>[]>(
     () => [
       {
         header: 'ID ГОІ',
@@ -266,7 +266,7 @@ export function GoiKnowledgeTable(props: Props) {
     },
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table, tableStateContext]);
 

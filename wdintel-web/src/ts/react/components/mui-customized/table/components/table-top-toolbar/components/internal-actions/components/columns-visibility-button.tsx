@@ -1,7 +1,8 @@
 import ViewColumnIcon from '@mui/icons-material/ViewColumn';
 import { Divider, FormControlLabel, Switch, Tooltip } from '@mui/material';
 import clsx from 'clsx';
-import React from 'react';
+import { useCallback, useState } from 'react';
+import type { ChangeEvent, MouseEvent } from 'react';
 
 import { Button } from '../../../../../../button';
 import { IconButton } from '../../../../../../icon-button';
@@ -22,9 +23,9 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
     ? internalColumns.filter((c) => c !== 'mrt-row-numbers')
     : internalColumns;
 
-  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-  function onOpen(event: React.MouseEvent<HTMLButtonElement>) {
+  function onOpen(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     setAnchorEl(event.currentTarget);
   }
@@ -33,35 +34,35 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
     setAnchorEl(null);
   }
 
-  function onToggleColumn(event: React.ChangeEvent<HTMLInputElement>, columnKey: string) {
+  function onToggleColumn(event: ChangeEvent<HTMLInputElement>, columnKey: string) {
     event.stopPropagation();
     tableStateContext.onChangeColumnVisibility(columnKey, event.target.checked);
   }
 
-  function onClickReset(event: React.MouseEvent) {
+  function onClickReset(event: MouseEvent) {
     event.stopPropagation();
     tableStateContext.onResetColumnsVisibility();
   }
 
-  function onToggleColumnOrdering(event: React.ChangeEvent<HTMLInputElement>) {
+  function onToggleColumnOrdering(event: ChangeEvent<HTMLInputElement>) {
     event.stopPropagation();
     tableStateContext.setEnableColumnOrdering(event.target.checked);
   }
 
-  function onResetLayoutSettings(event: React.MouseEvent) {
+  function onResetLayoutSettings(event: MouseEvent) {
     event.stopPropagation();
     tableStateContext.onColumnOrderChange([]);
     tableStateContext.onColumnSizingChange({});
   }
 
-  function onToggleColumnResizing(event: React.ChangeEvent<HTMLInputElement>) {
+  function onToggleColumnResizing(event: ChangeEvent<HTMLInputElement>) {
     event.stopPropagation();
     tableStateContext.setEnableColumnResizing(event.target.checked);
   }
 
   const allColumns = tableStateContext.tableInstance?.getAllColumns?.() || [];
   const hasLayoutChanges = tableStateContext.columnOrderTouched || tableStateContext.columnSizeTouched;
-  const getColumnIdentifier = React.useCallback(
+  const getColumnIdentifier = useCallback(
     (column: { id: string; columnDef: { accessorKey?: string; id?: string } }) => column.id || column.columnDef.id || column.columnDef.accessorKey || '',
     [],
   );

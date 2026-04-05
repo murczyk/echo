@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import type { ReactNode } from 'react';
 
-import { STANDARD_DIALOG_ACTIONS_SX } from './ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from './dialogStyles';
 
 export type BulkDeleteDialogItem = {
   id: string | number;

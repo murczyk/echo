@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { createRoot, Root } from 'react-dom/client';
 
 import { MapSearchInput } from './components/MapSearchInput';
@@ -58,7 +58,7 @@ class AnalysisMapSearchElement extends HTMLElement {
         isInputLoading={this.isDisabled}
         disabled={this.isDisabled}
         minWidth={320}
-        initialValue={this.initialQuery || undefined}
+        initialValue={this.initialQuery}
       />,
     );
   }

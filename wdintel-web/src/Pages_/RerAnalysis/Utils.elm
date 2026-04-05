@@ -306,6 +306,8 @@ metadataHref dateFromStr dateToStr metadataFilter =
             , unitsExactMatchOnly = Nothing
             , adjacentFreqsRange = 0
             , withoutModelTags = False
+            , filterTagsOption = Nothing
+            , reportTagsOnlyThisUnit = Nothing
             }
 
         baseState =

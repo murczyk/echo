@@ -1,13 +1,14 @@
 import { IconButton as MuiIconButton, IconButtonProps } from '@mui/material';
-import React from 'react';
+import { forwardRef, useRef } from 'react';
+import type { ForwardedRef, MouseEvent } from 'react';
 
-export const IconButton = React.forwardRef(function IconButton(
+export const IconButton = forwardRef(function IconButton(
   props: IconButtonProps,
-  ref: React.ForwardedRef<HTMLButtonElement>,
+  ref: ForwardedRef<HTMLButtonElement>,
 ) {
-  const isSubmitting = React.useRef(false);
+  const isSubmitting = useRef(false);
 
-  function onClick(event: React.MouseEvent<HTMLButtonElement>) {
+  function onClick(event: MouseEvent<HTMLButtonElement>) {
     if (isSubmitting.current) return;
     isSubmitting.current = true;
 

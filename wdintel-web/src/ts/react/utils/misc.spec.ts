@@ -3,7 +3,20 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatDateTime24, objectsEqual, strArraysEqual } from './misc';
+import {
+  APP_DATE_INPUT_MIN,
+  APP_DATE_INPUT_MIN_YEAR,
+  APP_TIME_ZONE,
+  combineDateTimeToMs,
+  formatDate,
+  formatDateTime24,
+  formatDateInputValueInTimeZone,
+  formatLocalDateInputValue,
+  formatTimeInputValueInTimeZone,
+  isValidDateInput,
+  objectsEqual,
+  strArraysEqual,
+} from './misc';
 
 describe('misc utils', () => {
   it('compares string arrays by value and order', () => {
@@ -27,5 +40,23 @@ describe('misc utils', () => {
     expect(formatDateTime24(null)).toBe('—');
     expect(formatDateTime24(Number.NaN)).toBe('—');
     expect(formatDateTime24(Date.UTC(2026, 2, 18, 14, 5))).toContain('14:05');
+  });
+
+  it('shares native date input bounds and parsing helpers', () => {
+    expect(APP_DATE_INPUT_MIN).toBe('2022-01-01');
+    expect(APP_DATE_INPUT_MIN_YEAR).toBe(2022);
+    expect(formatLocalDateInputValue(new Date(2026, 2, 23))).toBe('2026-03-23');
+    expect(isValidDateInput('2021-12-31')).toBe(false);
+    expect(isValidDateInput('2022-01-01')).toBe(true);
+    expect(combineDateTimeToMs('2021-12-31', '12:00')).toBeNull();
+    expect(combineDateTimeToMs('2022-01-01', '12:00')).not.toBeNull();
+  });
+
+  it('parses and formats analysis date-times in the app timezone', () => {
+    const millis = combineDateTimeToMs('2026-01-15', '12:00', APP_TIME_ZONE);
+
+    expect(millis).toBe(Date.UTC(2026, 0, 15, 10, 0, 0));
+    expect(formatDateInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('2026-01-15');
+    expect(formatTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('12:00');
   });
 });

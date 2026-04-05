@@ -8,7 +8,7 @@ import {
   Typography,
   ThemeProvider,
 } from '@mui/material';
-import React from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 
 import { PalitraDetails } from '../maps/palitra-types';
@@ -95,11 +95,11 @@ function isGroupSelectionEqual(group: PalitraGroup, prevSet: Set<number>, nextSe
   return true;
 }
 
-const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupRowProps) {
+const PalitraGroupRow = memo(function PalitraGroupRow(props: PalitraGroupRowProps) {
   const { group, visibleIdsSet, onToggleGroup, onToggleColor } = props;
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = useState(false);
 
-  const groupIds = React.useMemo(
+  const groupIds = useMemo(
     () => group.colors.map((palitraDetails) => palitraDetails.palitra.id),
     [group.colors],
   );
@@ -202,27 +202,27 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
 
 function PalitrasOverlay(props: PalitrasOverlayProps) {
   const { palitras, visibleIds, loadState, interactionDisabled, onVisibleIdsChange } = props;
-  const controlRef = React.useRef<HTMLDivElement | null>(null);
-  const [isCollapsed, setCollapsed] = React.useState<boolean>(() => {
+  const controlRef = useRef<HTMLDivElement | null>(null);
+  const [isCollapsed, setCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(COLLAPSE_STORAGE_KEY) === 'true';
     } catch (_error) {
       return false;
     }
   });
-  const [filterValue, setFilterValue] = React.useState('');
-  const [localVisibleIds, setLocalVisibleIds] = React.useState<number[]>(visibleIds);
-  const [controlMaxHeight, setControlMaxHeight] = React.useState<number | null>(null);
-  const localVisibleIdsRef = React.useRef<number[]>(visibleIds);
+  const [filterValue, setFilterValue] = useState('');
+  const [localVisibleIds, setLocalVisibleIds] = useState<number[]>(visibleIds);
+  const [controlMaxHeight, setControlMaxHeight] = useState<number | null>(null);
+  const localVisibleIdsRef = useRef<number[]>(visibleIds);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setLocalVisibleIds(visibleIds);
     localVisibleIdsRef.current = visibleIds;
   }, [visibleIds]);
 
-  const visibleIdsSet = React.useMemo(() => new Set(localVisibleIds), [localVisibleIds]);
+  const visibleIdsSet = useMemo(() => new Set(localVisibleIds), [localVisibleIds]);
 
-  const applyVisibleIdsChange = React.useCallback(
+  const applyVisibleIdsChange = useCallback(
     (nextVisibleIds: number[]) => {
       const normalized = Array.from(new Set(nextVisibleIds));
       localVisibleIdsRef.current = normalized;
@@ -232,15 +232,15 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     [onVisibleIdsChange],
   );
 
-  const groups = React.useMemo(() => groupPalitras(palitras), [palitras]);
+  const groups = useMemo(() => groupPalitras(palitras), [palitras]);
 
-  const allColorIds = React.useMemo(() => {
+  const allColorIds = useMemo(() => {
     const ids = groups.flatMap((group) => group.colors.map((palitraDetails) => palitraDetails.palitra.id));
     return Array.from(new Set(ids));
   }, [groups]);
 
   const normalizedFilter = normalizeText(filterValue);
-  const filteredGroups = React.useMemo(
+  const filteredGroups = useMemo(
     () =>
       normalizedFilter === ''
         ? groups
@@ -251,7 +251,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   const allSelected = allColorIds.length > 0 && allColorIds.every((id) => visibleIdsSet.has(id));
   const someSelected = allColorIds.some((id) => visibleIdsSet.has(id));
 
-  const toggleCollapsed = React.useCallback(() => {
+  const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;
       try {
@@ -263,7 +263,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     });
   }, []);
 
-  const toggleSelectAll = React.useCallback(() => {
+  const toggleSelectAll = useCallback(() => {
     if (interactionDisabled) {
       return;
     }
@@ -274,7 +274,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     applyVisibleIdsChange(allColorIds);
   }, [allColorIds, allSelected, applyVisibleIdsChange, interactionDisabled]);
 
-  const toggleGroup = React.useCallback(
+  const toggleGroup = useCallback(
     (group: PalitraGroup) => {
       if (interactionDisabled) {
         return;
@@ -295,7 +295,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     [applyVisibleIdsChange, interactionDisabled],
   );
 
-  const toggleColor = React.useCallback(
+  const toggleColor = useCallback(
     (palitraId: number) => {
       if (interactionDisabled) {
         return;
@@ -314,7 +314,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   const hasPalitras = palitras.length > 0;
   const canInteract = loadState === 'success' && hasPalitras;
 
-  React.useLayoutEffect(() => {
+  useLayoutEffect(() => {
     if (isCollapsed || !canInteract) {
       setControlMaxHeight(null);
       return undefined;

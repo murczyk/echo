@@ -415,6 +415,8 @@ buildAnalysisMapUrlWithSearch ps message etalons =
                         , unitsExactMatchOnly = Nothing
                         , adjacentFreqsRange = 0
                         , withoutModelTags = False
+                        , filterTagsOption = Nothing
+                        , reportTagsOnlyThisUnit = Nothing
                         }
                     )
         in
@@ -938,6 +940,8 @@ leftColumn ( messageId, message ) ps model =
                                         , unitsExactMatchOnly = Nothing
                                         , adjacentFreqsRange = 0
                                         , withoutModelTags = False
+                                        , filterTagsOption = Nothing
+                                        , reportTagsOnlyThisUnit = Nothing
                                         }
                                     )
 

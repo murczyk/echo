@@ -1,13 +1,13 @@
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Stack, Tooltip, Typography } from '@mui/material';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 import { IconButton } from './mui-customized/icon-button';
 
 type Props = {
-  title: React.ReactNode;
-  titleInfo?: React.ReactNode;
-  actions?: React.ReactNode;
+  title: ReactNode;
+  titleInfo?: ReactNode;
+  actions?: ReactNode;
   className?: string;
   titleClassName?: string;
 };

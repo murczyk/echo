@@ -1,6 +1,6 @@
 import { Stack, Theme, Tooltip, alpha } from '@mui/material';
 import { SystemStyleObject } from '@mui/system';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 import { IconButton } from './mui-customized/icon-button';
 
@@ -10,13 +10,13 @@ type Layout = 'row' | 'grid';
 type Props = {
   label: string;
   onClick: () => void;
-  icon: React.ReactNode;
+  icon: ReactNode;
   disabled?: boolean;
   tone?: Tone;
 };
 
 type GroupProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   layout?: Layout;
 };
 

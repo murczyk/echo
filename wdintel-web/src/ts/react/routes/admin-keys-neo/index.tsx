@@ -14,10 +14,10 @@ import {
   Typography,
 } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ListOrganismsReq, Organism } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/ConfirmDangerDialog';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -101,7 +101,7 @@ function buildKeyPolicyLoadingRows(): SigintKeySharePolicy[] {
 }
 
 function usePolicyColumns(organismNames: Map<number, string>): MRT_ColumnDef<SigintKeySharePolicy>[] {
-  return React.useMemo(
+  return useMemo(
     () => [
       {
         header: 'Власник ключів шифрування',
@@ -235,7 +235,7 @@ function KeyPoliciesTable(props: {
     state,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
@@ -243,28 +243,28 @@ function KeyPoliciesTable(props: {
 }
 
 function AdminKeysNeoPageBody() {
-  const [status, setStatus] = React.useState<LoadingStatus>('idle');
-  const [error, setError] = React.useState<string | null>(null);
-  const [policies, setPolicies] = React.useState<SigintKeySharePolicy[]>([]);
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [policies, setPolicies] = useState<SigintKeySharePolicy[]>([]);
 
-  const [organisms, setOrganisms] = React.useState<Organism[]>([]);
-  const [organismsStatus, setOrganismsStatus] = React.useState<LoadingStatus>('idle');
-  const [organismsError, setOrganismsError] = React.useState<string | null>(null);
+  const [organisms, setOrganisms] = useState<Organism[]>([]);
+  const [organismsStatus, setOrganismsStatus] = useState<LoadingStatus>('idle');
+  const [organismsError, setOrganismsError] = useState<string | null>(null);
 
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [createFrom, setCreateFrom] = React.useState<Organism | null>(null);
-  const [createTo, setCreateTo] = React.useState<Organism | null>(null);
-  const [createErrors, setCreateErrors] = React.useState<CreateFieldErrors>({});
-  const [createError, setCreateError] = React.useState<string | null>(null);
-  const [createSaving, setCreateSaving] = React.useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createFrom, setCreateFrom] = useState<Organism | null>(null);
+  const [createTo, setCreateTo] = useState<Organism | null>(null);
+  const [createErrors, setCreateErrors] = useState<CreateFieldErrors>({});
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSaving, setCreateSaving] = useState(false);
 
-  const [deleteState, setDeleteState] = React.useState<DeleteState>(null);
+  const [deleteState, setDeleteState] = useState<DeleteState>(null);
 
-  const organismNames = React.useMemo(() => new Map(organisms.map((organism) => [organism.id, organism.name])), [organisms]);
+  const organismNames = useMemo(() => new Map(organisms.map((organism) => [organism.id, organism.name])), [organisms]);
 
-  const organismOptions = React.useMemo(() => organisms, [organisms]);
+  const organismOptions = useMemo(() => organisms, [organisms]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     void loadPolicies();
     void loadOrganisms();
   }, []);
@@ -457,12 +457,7 @@ function AdminKeysNeoPageBody() {
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
         </DialogContent>
-        <DialogActions
-          sx={{
-            ...STANDARD_DIALOG_ACTIONS_SX,
-            pt: 2,
-          }}
-        >
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
           <Button onClick={closeCreateDialog} disabled={createSaving}>
             Скасувати
           </Button>

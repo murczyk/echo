@@ -2243,6 +2243,8 @@ type alias RerAnalysisQueryState =
     , unitsExactMatchOnly : Maybe Bool
     , adjacentFreqsRange : Float
     , withoutModelTags : Bool
+    , filterTagsOption : Maybe TagFilterOption
+    , reportTagsOnlyThisUnit : Maybe Bool
     }
 
 
@@ -2279,6 +2281,8 @@ rerAnalysisQueryStateEncoder struct =
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "adjacent_freqs_range", Json.Encode.float struct.adjacentFreqsRange )
         , ( "without_model_tags", Json.Encode.bool struct.withoutModelTags )
+        , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
+        , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         ]
 
 
@@ -5957,6 +5961,7 @@ type alias Network =
     , postIds : List Int
     , descriptions : List NetworkDescription
     , deleted : Bool
+    , status : NetworkStatus
     }
 
 
@@ -5982,7 +5987,23 @@ networkEncoder struct =
         , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
         , ( "descriptions", Json.Encode.list networkDescriptionEncoder struct.descriptions )
         , ( "deleted", Json.Encode.bool struct.deleted )
+        , ( "status", networkStatusEncoder struct.status )
         ]
+
+
+type NetworkStatus
+    = NetworkActive
+    | NetworkInactive
+
+
+networkStatusEncoder : NetworkStatus -> Json.Encode.Value
+networkStatusEncoder enum =
+    case enum of
+        NetworkActive ->
+            Json.Encode.string "NetworkActive"
+
+        NetworkInactive ->
+            Json.Encode.string "NetworkInactive"
 
 
 type alias UpdateFreqNetworksReq =
@@ -6057,6 +6078,7 @@ type alias UpdateNetworkReq =
     , operationType : Maybe String
     , operationPeriod : Maybe String
     , descriptions : Maybe (List UpdateNetworkDescriptionReq)
+    , status : NetworkStatus
     }
 
 
@@ -6074,6 +6096,7 @@ updateNetworkReqEncoder struct =
         , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationType )
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
         , ( "descriptions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list updateNetworkDescriptionReqEncoder)) struct.descriptions )
+        , ( "status", networkStatusEncoder struct.status )
         ]
 
 
@@ -8669,6 +8692,8 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool), Json.Decode.succeed Nothing ]))
 
 
 editFreqUnitNameReqDecoder : Json.Decode.Decoder EditFreqUnitNameReq
@@ -11217,6 +11242,33 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list networkDescriptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" networkStatusDecoder))
+
+
+networkStatusDecoder : Json.Decode.Decoder NetworkStatus
+networkStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkActive" ->
+                            Json.Decode.succeed NetworkActive
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkInactive" ->
+                            Json.Decode.succeed NetworkInactive
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 
 updateFreqNetworksReqDecoder : Json.Decode.Decoder UpdateFreqNetworksReq
@@ -11263,6 +11315,7 @@ updateNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.nullable (Json.Decode.list updateNetworkDescriptionReqDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" networkStatusDecoder))
 
 
 networkCallsignsReqDecoder : Json.Decode.Decoder NetworkCallsignsReq

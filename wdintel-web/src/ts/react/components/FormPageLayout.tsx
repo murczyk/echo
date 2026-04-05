@@ -1,8 +1,8 @@
 import { Box } from '@mui/material';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 type Props = {
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 export function FormPageLayout({ children }: Props) {

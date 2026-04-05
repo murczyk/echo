@@ -5,7 +5,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { TagKeyword, TagKeywordAddReq } from '../../../../Bindings';
 import { FormPageHeader } from '../../components/FormPageHeader';
@@ -197,18 +197,18 @@ type AdminTagsNeoKeywordEditPageProps = {
 };
 
 function AdminTagsNeoKeywordEditPageBody(props: AdminTagsNeoKeywordEditPageProps) {
-  const [form, setForm] = React.useState<KeywordFormState>(emptyForm);
-  const [status, setStatus] = React.useState<LoadingStatus>('idle');
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [saving, setSaving] = React.useState(false);
-  const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
-  const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
-  const [tagLabel, setTagLabel] = React.useState<string | null>(null);
-  const [tagId, setTagId] = React.useState<number | null>(null);
-  const [keywordId, setKeywordId] = React.useState<number | null>(null);
+  const [form, setForm] = useState<KeywordFormState>(emptyForm);
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [actionStatus, setActionStatus] = useState<StatusMessage>(null);
+  const [tagLabel, setTagLabel] = useState<string | null>(null);
+  const [tagId, setTagId] = useState<number | null>(null);
+  const [keywordId, setKeywordId] = useState<number | null>(null);
 
-  const resolvedTagId = React.useMemo(() => parseId(props.tagId) ?? parseId(getQueryParam('tagId')), [props.tagId]);
-  const resolvedKeywordId = React.useMemo(
+  const resolvedTagId = useMemo(() => parseId(props.tagId) ?? parseId(getQueryParam('tagId')), [props.tagId]);
+  const resolvedKeywordId = useMemo(
     () => parseId(props.keywordId) ?? parseId(getQueryParam('keywordId')),
     [props.keywordId],
   );
@@ -255,7 +255,7 @@ function AdminTagsNeoKeywordEditPageBody(props: AdminTagsNeoKeywordEditPageProps
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!resolvedTagId) {
       setStatus('error');
       setLoadError('Некоректний id тегу');

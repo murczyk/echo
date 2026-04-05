@@ -1,16 +1,16 @@
 import { Box, Stack } from '@mui/material';
-import React from 'react';
+import type { ReactNode } from 'react';
 
 import { GlobalFilterTextField } from './mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { useTableStateContext } from './mui-customized/table/table-state-provider';
 
 type Props = {
   withGlobalTextFilter?: boolean;
-  filter?: React.ReactNode;
+  filter?: ReactNode;
   hideGlobalTextFilter?: boolean;
-  trailingActionsBeforeInternal?: React.ReactNode;
-  trailingActions?: React.ReactNode;
-  trailingActionsAfterInternal?: React.ReactNode;
+  trailingActionsBeforeInternal?: ReactNode;
+  trailingActions?: ReactNode;
+  trailingActionsAfterInternal?: ReactNode;
   desktopBreakpoint?: 'sm' | 'md' | 'lg' | 'xl';
   leadingDesktopBreakpoint?: 'sm' | 'md' | 'lg' | 'xl';
 };

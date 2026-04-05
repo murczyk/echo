@@ -867,6 +867,8 @@ export type RerAnalysisQueryState = {
   unitsExactMatchOnly: boolean | null;
   adjacentFreqsRange: number;
   withoutModelTags: boolean;
+  filterTagsOption: TagFilterOption | null;
+  reportTagsOnlyThisUnit: boolean | null;
 };
 
 export type EditFreqUnitNameReq = {
@@ -2251,7 +2253,13 @@ export type Network = {
   postIds: Array<number>;
   descriptions: Array<NetworkDescription>;
   deleted: boolean;
+  status: NetworkStatus;
 };
+
+export type NetworkStatus =
+  | 'NetworkActive'
+  | 'NetworkInactive'
+;
 
 export type UpdateFreqNetworksReq = {
   freq: string;
@@ -2289,6 +2297,7 @@ export type UpdateNetworkReq = {
   operationType: string | null;
   operationPeriod: string | null;
   descriptions: Array<UpdateNetworkDescriptionReq> | null;
+  status: NetworkStatus;
 };
 
 export type NetworkCallsignsReq = {
