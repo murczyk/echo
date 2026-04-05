@@ -287,6 +287,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
+    const signatureByFeedId: Record<string, string> = {};
     messageFeeds.forEach((feed) => {
       const signature = JSON.stringify({
         filter: {
@@ -303,6 +304,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         highlightSignalsEnabled: feed.highlightSignalsEnabled ?? false,
         onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled ?? false,
       });
+      signatureByFeedId[feed.id] = signature;
       if (lastFilterSignatureByFeedIdRef.current[feed.id] !== signature) {
         lastFilterSignatureByFeedIdRef.current[feed.id] = signature;
         delete lastServerCountByFeedIdRef.current[feed.id];
@@ -354,7 +356,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         return { ...f, unreadCount };
       }),
     );
-    let totalNewCount = 0;
+    const newCountBySignature: Record<string, number> = {};
     for (const entry of counts) {
       if (entry.skipped || entry.quantity == null) continue;
       const { feedId } = entry;
@@ -369,7 +371,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const nextCount = entry.quantity;
       if (prevServerCount != null) {
         const newCount = Math.max(0, nextCount - prevServerCount);
-        totalNewCount += newCount;
+        const signatureKey = signatureByFeedId[feedId] ?? feedId;
+        const prevCount = newCountBySignature[signatureKey] ?? 0;
+        newCountBySignature[signatureKey] = Math.max(prevCount, newCount);
       }
       lastServerCountByFeedIdRef.current[feedId] = nextCount;
       const shouldAutoLoad = watchModeByFeedId[feedId] || nearBottom[feedId];
@@ -379,6 +383,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         });
       }
     }
+    const totalNewCount = Object.values(newCountBySignature).reduce((sum, count) => sum + count, 0);
     if (totalNewCount > 0) {
       notifyDutyNewMessages(totalNewCount);
     }
