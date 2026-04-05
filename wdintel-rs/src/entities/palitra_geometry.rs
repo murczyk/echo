@@ -23,6 +23,10 @@ pub struct Model {
     //     pub convex_hull: Option<String>,
     //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
     //     pub center: Option<String>,
+    //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
+    //     pub line_string: Option<String>,
+    //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
+    //     pub multi_line_string: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
