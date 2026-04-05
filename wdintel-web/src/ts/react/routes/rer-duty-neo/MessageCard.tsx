@@ -1,12 +1,8 @@
 import { Box } from '@mui/material';
 
 import type { InboxMessage, Network, Tag } from '../../../../Bindings';
-import { MessageCardEtalonLocationTime, MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
-import {
-  MessageCardHeader,
-  type MessageCardDisplayMode,
-  type MessageCardHeaderProps,
-} from './MessageCardHeader';
+import { MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
+import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import {
   buildAnalysisHref,

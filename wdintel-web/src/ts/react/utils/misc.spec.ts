@@ -39,7 +39,11 @@ describe('misc utils', () => {
   it('formats date-times in 24-hour mode', () => {
     expect(formatDateTime24(null)).toBe('—');
     expect(formatDateTime24(Number.NaN)).toBe('—');
-    expect(formatDateTime24(Date.UTC(2026, 2, 18, 14, 5))).toContain('14:05');
+    const ms = Date.UTC(2026, 2, 18, 14, 5);
+    const d = new Date(ms);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    expect(formatDateTime24(ms)).toContain(`${hh}:${mm}`);
   });
 
   it('shares native date input bounds and parsing helpers', () => {

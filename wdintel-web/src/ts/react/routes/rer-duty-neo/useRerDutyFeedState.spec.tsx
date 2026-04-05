@@ -82,6 +82,10 @@ function TestHarness(props: {
     freqs: [],
     setProfiles: vi.fn(),
     setGroupInfos: vi.fn(),
+    testEnabled: false,
+    testSinceMs: 0,
+    testLimit: 1,
+    pollIntervalSec: 1,
   });
   props.apiRef.current = api;
   return null;
@@ -98,7 +102,10 @@ describe('useRerDutyFeedState — loading', () => {
   let root: Root;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
+    hoisted.fetchInboxMessages.mockReset();
+    hoisted.fetchInboxCount.mockReset();
     window.history.replaceState({}, '', '/');
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([[1, minimalMessage({ timestamp: 100 })]]));
@@ -159,7 +166,6 @@ describe('useRerDutyFeedState — loading', () => {
 
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 4, firstElementTs: null });
 
-    vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
@@ -190,7 +196,6 @@ describe('useRerDutyFeedState — loading', () => {
 
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
-    vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
@@ -219,7 +224,6 @@ describe('useRerDutyFeedState — loading', () => {
       apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
     });
 
-    vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
@@ -232,7 +236,7 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('does not call get-inbox for newer when column has no items (loadFeedNewerMessages no-op)', async () => {
-    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
     await act(async () => {
@@ -251,7 +255,6 @@ describe('useRerDutyFeedState — loading', () => {
       apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
     });
 
-    vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
@@ -282,7 +285,6 @@ describe('useRerDutyFeedState — loading', () => {
         }),
     );
 
-    vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });

@@ -1,8 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import type { ComponentProps, ReactNode } from 'react';
-import { act } from 'react';
+import type { ComponentProps, ElementType, ReactNode } from 'react';
+import React, { act, forwardRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,12 +33,23 @@ vi.mock('@mui/icons-material/ExpandMore', () => ({
   default: () => <span>expand</span>,
 }));
 
+/** Narrow width for tag-row measurement in compact layout (MessageCardTagChips `useLayoutEffect`). */
+const TAG_ROW_MEASURE_WIDTH_PX = 200;
+
 vi.mock('@mui/material', () => ({
-  Box: ({ children, component, ...props }: PrimitiveProps) => {
-    const Component = component ?? 'div';
-    return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
-  },
-  Button: ({ children, endIcon, ...props }: { children?: ReactNode; endIcon?: ReactNode } & Record<string, unknown>) => (
+  Box: forwardRef<HTMLElement, PrimitiveProps>(({ children, component, ...props }, ref) => {
+    const Comp = (component ?? 'div') as ElementType;
+    return (
+      <Comp ref={ref} {...omitMuiLayoutProps(props)}>
+        {children}
+      </Comp>
+    );
+  }),
+  Button: ({
+    children,
+    endIcon,
+    ...props
+  }: { children?: ReactNode; endIcon?: ReactNode } & Record<string, unknown>) => (
     <button {...omitMuiLayoutProps(props)}>
       <span>{children}</span>
       {endIcon}
@@ -53,7 +64,9 @@ vi.mock('@mui/material', () => ({
     <button {...omitMuiLayoutProps(props)}>{children}</button>
   ),
   Link: ({ children, href, ...props }: { children?: ReactNode; href?: string } & Record<string, unknown>) => (
-    <a href={href} {...omitMuiLayoutProps(props)}>{children}</a>
+    <a href={href} {...omitMuiLayoutProps(props)}>
+      {children}
+    </a>
   ),
   Stack: ({ children, component, ...props }: PrimitiveProps) => {
     const Component = component ?? 'div';
@@ -67,7 +80,9 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('../../components/PowerChip', () => ({
-  PowerChip: ({ label, onClick }: { label: ReactNode; onClick?: () => void }) => <button onClick={onClick}>{label}</button>,
+  PowerChip: ({ label, onClick }: { label: ReactNode; onClick?: () => void }) => (
+    <button onClick={onClick}>{label}</button>
+  ),
 }));
 
 vi.mock('./useRelativeTimeDisplayMs', () => ({
@@ -185,22 +200,39 @@ describe('MessageCard', () => {
   });
 
   it('shows selected tags first and can reveal the rest on demand', async () => {
-    const view = await renderCard();
-    rendered.push(view);
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: TAG_ROW_MEASURE_WIDTH_PX,
+      height: 32,
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: TAG_ROW_MEASURE_WIDTH_PX,
+      bottom: 32,
+      toJSON: () => ({}),
+    } as DOMRect);
 
-    expect(view.container.textContent).toContain('переміщення');
-    expect(view.container.textContent).toContain('зв’язок');
-    expect(view.container.textContent).toContain('РЕБ');
-    expect(view.container.textContent).toContain('арта');
-    expect(view.container.textContent).toContain('палітра');
-    expect(view.container.textContent).toContain('Ще 2 теги');
-    expect(view.container.textContent).not.toContain('іфо');
-    expect(view.container.textContent).not.toContain('розвідка');
+    try {
+      const view = await renderCard({ tagsLayout: 'compact' });
+      rendered.push(view);
 
-    await click(getButton(view.container, 'Ще 2 теги'));
+      // Compact layout: selected (inbox) tag first, then the rest; row packs until width + «розгорнути» reserve.
+      expect(view.container.textContent).toContain('переміщення');
+      expect(view.container.textContent).toContain('розгорнути');
+      expect(view.container.textContent).not.toContain('іфо');
+      expect(view.container.textContent).not.toContain('розвідка');
 
-    expect(view.container.textContent).toContain('Сховати інші теги');
-    expect(view.container.textContent).toContain('іфо');
-    expect(view.container.textContent).toContain('розвідка');
+      await click(getButton(view.container, 'розгорнути'));
+
+      expect(view.container.textContent).toContain('згорнути');
+      expect(view.container.textContent).toContain('зв’язок');
+      expect(view.container.textContent).toContain('РЕБ');
+      expect(view.container.textContent).toContain('арта');
+      expect(view.container.textContent).toContain('палітра');
+      expect(view.container.textContent).toContain('іфо');
+      expect(view.container.textContent).toContain('розвідка');
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 });
