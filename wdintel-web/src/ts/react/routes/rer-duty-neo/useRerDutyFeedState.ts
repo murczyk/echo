@@ -255,6 +255,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                   const markAllRead = opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
                   const readIds = markAllRead ? new Set(combined.map(([id]) => id)) : x.readIds;
                   const unreadCount = markAllRead ? 0 : combined.length - x.readIds.size;
+                  delete lastServerCountByFeedIdRef.current[feedId];
                   return {
                     ...x,
                     items: sortMessageItemsByTime(combined),
@@ -297,6 +298,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           postsSelected: feed.filter.postsSelected ?? null,
           postsDenied: feed.filter.postsDenied ?? null,
         },
+        freqUniverse: feed.adjacentFreqsRange > 0 ? freqs : null,
         adjacentFreqsRange: feed.adjacentFreqsRange ?? 0,
         highlightSignalsEnabled: feed.highlightSignalsEnabled ?? false,
         onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled ?? false,
@@ -380,7 +382,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     if (totalNewCount > 0) {
       notifyDutyNewMessages(totalNewCount);
     }
-  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed]);
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, freqs]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
