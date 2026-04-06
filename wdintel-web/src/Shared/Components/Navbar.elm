@@ -178,9 +178,9 @@ navBar user shared activeName props =
                 |> Maybe.withDefault []
             )
                 ++ (if user.goiFullAccessForOrganism then
-                        [ internalMenu Route.Path.GoiSettings "goi-settings" "налаштування"
-                        , internalMenu Route.Path.GoiAssociations "goi-associations" "висновки"
+                        [ internalMenu Route.Path.GoiAssociations "goi-associations" "висновки"
                         , internalMenu Route.Path.GoiKnowledge "goi-knowledge" "інформованість"
+                        , internalMenu Route.Path.GoiSettings "goi-settings" "налаштування"
                         ]
 
                     else

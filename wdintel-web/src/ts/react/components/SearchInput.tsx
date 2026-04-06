@@ -146,54 +146,50 @@ export function SearchInput(props: SearchInputProps) {
                 },
               },
             }}
-            InputProps={{
-              sx: {
-                height: 48,
-                '& .MuiInputBase-input': {
-                  fontSize: 14,
-                  lineHeight: '20px',
-                  boxSizing: 'border-box',
-                  padding: '13px 8px 13px 0 !important',
+            slotProps={{
+              input: {
+                sx: {
+                  height: 48,
+                  '& .MuiInputBase-input': {
+                    fontSize: 14,
+                    lineHeight: '20px',
+                    boxSizing: 'border-box',
+                    padding: '13px 8px 13px 0 !important',
+                  },
+                  '& .MuiInputAdornment-root': {
+                    maxHeight: 48,
+                  },
                 },
-                '& .MuiInputAdornment-root': {
-                  maxHeight: 48,
-                },
-              },
-              startAdornment: (
-                <InputAdornment position="start">
-                  {isInputLoading ? (
+                startAdornment: (
+                  <InputAdornment position="start">
+                    {isInputLoading ? (
+                      <CircularProgress size={16} thickness={5} />
+                    ) : (
+                      <SearchIcon sx={{ color: value ? 'text.primary' : 'text.secondary' }} />
+                    )}
+                  </InputAdornment>
+                ),
+                endAdornment: value ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      edge="end"
+                      onClick={handleClear}
+                      aria-label="Очистити"
+                      size="small"
+                      disabled={disabled}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : isSearchLoading ? (
+                  <InputAdornment position="end">
                     <CircularProgress size={16} thickness={5} />
-                  ) : (
-                    <SearchIcon sx={{ color: value ? 'text.primary' : 'text.secondary' }} />
-                  )}
-                </InputAdornment>
-              ),
-              ...(value
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          edge="end"
-                          onClick={handleClear}
-                          aria-label="Очистити"
-                          size="small"
-                          disabled={disabled}
-                          sx={{ color: 'text.secondary' }}
-                        >
-                          <CloseIcon fontSize="small" />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : {
-                    endAdornment: isSearchLoading ? (
-                      <InputAdornment position="end">
-                        <CircularProgress size={16} thickness={5} />
-                      </InputAdornment>
-                    ) : emptyEndAdornment ? (
-                      <InputAdornment position="end">{emptyEndAdornment}</InputAdornment>
-                    ) : undefined,
-                  }),
+                  </InputAdornment>
+                ) : emptyEndAdornment ? (
+                  <InputAdornment position="end">{emptyEndAdornment}</InputAdornment>
+                ) : undefined,
+              },
             }}
           />
         </div>

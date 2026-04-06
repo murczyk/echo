@@ -393,6 +393,10 @@ export async function listActiveLogins(organismId: number): Promise<string[]> {
   return postJson<string[]>('/api/organism/active-logins', organismId);
 }
 
+export async function listOrganismLogins(): Promise<string[]> {
+  return postJson<string[]>('/api/organism/list-logins');
+}
+
 export async function addGroupToOrganism(req: AddGroupToOrganismReq): Promise<void> {
   await postVoid('/api/organism/add-group', toAddGroupReqBody(req));
 }
