@@ -111,13 +111,13 @@ view : Shared.Model -> B.User -> Model -> View Msg
 view _ user model =
     { title = "головна"
     , body =
-        [ div [ class "box-border w-full px-6 py-6" ]
-            [ div [ class "w-full max-w-[1400px]" ]
+        [ div [ class "box-border container mx-auto px-4 py-6" ]
+            [ div [ class "w-full" ]
                 [ section [ class "mb-6" ]
                     [ h1 [ class "m-0 font-semibold", Attr.style "font-size" "21px", Attr.style "line-height" "1.2" ] [ text "Головна" ]
                     ]
-                , section [ class "flex gap-4 h-[50vh]" ]
-                    [ a [ target "_blank", href "/docs", class "basis-[35%] bg-card border border-border rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
+                , section [ class "flex flex-col lg:flex-row gap-4 min-w-0 min-h-[50vh] lg:h-[50vh]" ]
+                    [ a [ target "_blank", href "/docs", class "w-full lg:basis-[clamp(280px,32%,360px)] xl:basis-[420px] lg:shrink min-h-[240px] lg:min-h-0 bg-card border border-border rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
                         [ div [ class "w-16 h-16 bg-gradient-to-br from-[var(--ochre-normal)] to-[var(--ochre-normal-hover)] rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300" ]
                             [ i [ class "bi bi-book text-white text-2xl" ] []
                             ]
@@ -131,16 +131,17 @@ view _ user model =
                             ]
                         ]
                     , HtmlX.viewIf (Core.Auth.hasRole "Rer" user) <|
-                        div [ class "flex-1 bg-card border border-border rounded-sm relative flex flex-col h-[50vh]" ]
+                        div [ class "flex-1 min-w-0 overflow-hidden bg-card border border-border rounded-sm relative flex flex-col h-[50vh]" ]
                             [ h4
                                 [ class "m-0 font-semibold"
                                 , Attr.style "padding-top" "30px"
                                 , Attr.style "padding-left" "30px"
                                 ]
                                 [ text "Активність груп" ]
-                            , div [ class "flex-1 min-h-0", Attr.style "margin-top" "20px" ]
+                            , div [ class "flex-1 min-h-0 min-w-0 overflow-hidden", Attr.style "margin-top" "20px" ]
                                 [ Html.node "bar-chart-2"
-                                    [ Attr.property "data" <|
+                                    [ class "min-w-0"
+                                    , Attr.property "data" <|
                                         B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
                                     , Attr.attribute "margin-left" "30"
                                     , Attr.attribute "margin-bottom" "30"
