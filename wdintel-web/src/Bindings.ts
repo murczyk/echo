@@ -1111,8 +1111,9 @@ export type ViewportBounds = {
 };
 
 export type Geometry = {
-  center: Coords;
-  perimeterLinearRing: Array<Coords>;
+  center: Coords | null;
+  perimeterLinearRing: Array<Coords> | null;
+  lineStrings: Array<Array<Coords>> | null;
 };
 
 export type Coords = {
@@ -2252,7 +2253,13 @@ export type Network = {
   postIds: Array<number>;
   descriptions: Array<NetworkDescription>;
   deleted: boolean;
+  status: NetworkStatus;
 };
+
+export type NetworkStatus =
+  | 'NetworkActive'
+  | 'NetworkInactive'
+;
 
 export type UpdateFreqNetworksReq = {
   freq: string;
@@ -2290,6 +2297,7 @@ export type UpdateNetworkReq = {
   operationType: string | null;
   operationPeriod: string | null;
   descriptions: Array<UpdateNetworkDescriptionReq> | null;
+  status: NetworkStatus;
 };
 
 export type NetworkCallsignsReq = {

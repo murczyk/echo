@@ -1038,6 +1038,102 @@ where
         .collect())
 }
 
+async fn read_palitra_line_strings<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_geometry_id: i64,
+) -> anyhow::Result<Option<Vec<Vec<Coords>>>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    #[derive(Debug, FromQueryResult)]
+    pub struct LinePoint {
+        sequence_index: i32,
+        lat: f64,
+        lon: f64,
+    }
+    #[derive(Debug, FromQueryResult)]
+    pub struct MultiLinePoint {
+        line_index: i32,
+        sequence_index: i32,
+        lat: f64,
+        lon: f64,
+    }
+    let single_query = r"
+        SELECT
+            (dp.path[1] - 1)::int4 AS sequence_index,
+            ST_X(dp.geom) AS lon,
+            ST_Y(dp.geom) AS lat
+        FROM
+            palitra_geometry,
+            ST_DumpPoints(palitra_geometry.line_string) AS dp
+        WHERE
+            palitra_geometry.id = $1
+            and palitra_geometry.line_string is not null
+        ORDER BY
+            sequence_index;
+    ";
+    let mut single_points: Vec<LinePoint> =
+        LinePoint::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            single_query,
+            [palitra_geometry_id.into()],
+        ))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    if !single_points.is_empty() {
+        single_points.sort_by_key(|p| p.sequence_index);
+        let line = single_points
+            .into_iter()
+            .map(|p| Coords {
+                lat: p.lat,
+                lng: p.lon,
+            })
+            .collect::<Vec<Coords>>();
+        return Ok(Some(vec![line]));
+    }
+
+    let multi_query = r"
+        SELECT
+            (dp.path[1] - 1)::int4 AS line_index,
+            (dp.path[2] - 1)::int4 AS sequence_index,
+            ST_X(dp.geom) AS lon,
+            ST_Y(dp.geom) AS lat
+        FROM
+            palitra_geometry,
+            ST_DumpPoints(palitra_geometry.multi_line_string) AS dp
+        WHERE
+            palitra_geometry.id = $1
+            and palitra_geometry.multi_line_string is not null
+        ORDER BY
+            line_index,
+            sequence_index;
+    ";
+    let mut multi_points: Vec<MultiLinePoint> =
+        MultiLinePoint::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            multi_query,
+            [palitra_geometry_id.into()],
+        ))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    if multi_points.is_empty() {
+        return Ok(None);
+    }
+    multi_points.sort_by_key(|p| (p.line_index, p.sequence_index));
+    let mut grouped: HashMap<i32, Vec<Coords>> = HashMap::new();
+    for point in multi_points {
+        grouped.entry(point.line_index).or_default().push(Coords {
+            lat: point.lat,
+            lng: point.lon,
+        });
+    }
+    let mut lines = grouped.into_iter().collect_vec();
+    lines.sort_by_key(|(index, _)| *index);
+    Ok(Some(lines.into_iter().map(|(_, coords)| coords).collect()))
+}
+
 async fn read_palitra_center<'a, 'async_trait, C>(
     dbx: &'a C,
     palitra_geometry_id: i64,
@@ -1155,6 +1251,116 @@ pub async fn rewrite_palitra_points(
     recalculate_convex_hull(txn, palitra_geometry_id)
         .await
         .c(h!())?;
+    Ok(())
+}
+
+pub async fn rewrite_palitra_line_strings(
+    palitra_geometry_id: i64,
+    mut line_strings: Vec<crate::palitra::kmz::PalitraLineString>,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    let palitra_geometry =
+        palitra_geometry::Entity::find_by_id(palitra_geometry_id)
+            .one(txn)
+            .await
+            .c(h!())?;
+    let Some(palitra_geometry) = palitra_geometry else {
+        error!("palitra_geometry not found by id {palitra_geometry_id}");
+        return Ok(());
+    };
+    let reset_query = r"
+        UPDATE palitra_geometry
+        SET line_string = NULL,
+            multi_line_string = NULL
+        WHERE id = $1;
+    ";
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        reset_query,
+        [palitra_geometry_id.into()],
+    ))
+    .await
+    .context(h!())?;
+
+    line_strings.retain(|line| line.coords.len() >= 2);
+    let mut lines_with_fallback_color = 0usize;
+    let mut skipped_lines_with_unexpected_color = 0usize;
+    let mut filtered_lines = Vec::with_capacity(line_strings.len());
+    for line_string in line_strings {
+        let line_color = line_string.color.clone().unwrap_or_else(|| {
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+        });
+        let is_fallback_color =
+            line_color == crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX;
+        if is_fallback_color {
+            lines_with_fallback_color += 1;
+        }
+        if !is_fallback_color && !palitra_geometry.hex.eq(&line_color) {
+            skipped_lines_with_unexpected_color += 1;
+            continue;
+        }
+        filtered_lines.push(line_string);
+    }
+    if lines_with_fallback_color > 0 {
+        error!(
+            "palitra geometry {} received {} line strings with fallback color {} while mapping KMZ data",
+            palitra_geometry_id,
+            lines_with_fallback_color,
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX
+        );
+    }
+    if skipped_lines_with_unexpected_color > 0 {
+        warn!(
+            "skipped {} line strings in geometry {} due to color mismatch with selected geometry color {}",
+            skipped_lines_with_unexpected_color,
+            palitra_geometry_id,
+            palitra_geometry.hex
+        );
+    }
+    if filtered_lines.is_empty() {
+        return Ok(());
+    }
+
+    let mut line_wkts = Vec::with_capacity(filtered_lines.len());
+    for line_string in filtered_lines {
+        let coords = line_string
+            .coords
+            .into_iter()
+            .map(|coords| format!("{} {}", coords.lng, coords.lat))
+            .collect_vec();
+        line_wkts.push(format!("({})", coords.join(", ")));
+    }
+    let (geometry_kind, wkt) = if line_wkts.len() == 1 {
+        ("LineString", format!("LINESTRING{}", line_wkts[0]))
+    } else {
+        (
+            "MultiLineString",
+            format!("MULTILINESTRING({})", line_wkts.join(", ")),
+        )
+    };
+    let update_query = match geometry_kind {
+        "LineString" => {
+            r"
+            UPDATE palitra_geometry
+            SET line_string = ST_GeomFromText($2, 4326)
+            WHERE id = $1;
+            "
+        }
+        _ => {
+            r"
+            UPDATE palitra_geometry
+            SET multi_line_string = ST_GeomFromText($2, 4326)
+            WHERE id = $1;
+            "
+        }
+    };
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        update_query,
+        [palitra_geometry_id.into(), wkt.into()],
+    ))
+    .await
+    .context(h!())?;
     Ok(())
 }
 
@@ -1315,7 +1521,7 @@ where
             Some(pg.id),
         ),
     };
-    let (center, convex_hull) = match m_palitra_geometry_id {
+    let (center, convex_hull, line_strings) = match m_palitra_geometry_id {
         Some(palitra_geometry_id) => {
             let center = read_palitra_center(dbx, palitra_geometry_id)
                 .await
@@ -1332,16 +1538,22 @@ where
                     None
                 }
             };
-            (center, convex_hull)
+            let line_strings =
+                read_palitra_line_strings(dbx, palitra_geometry_id)
+                    .await
+                    .c(h!())?;
+            (center, convex_hull, line_strings)
         }
-        None => (None, None),
+        None => (None, None, None),
     };
-    let geometry = match (center, convex_hull) {
-        (Some(center), Some(perimeter_linear_ring)) => Some(Geometry {
+    let geometry = if convex_hull.is_some() || line_strings.is_some() {
+        Some(Geometry {
             center,
-            perimeter_linear_ring,
-        }),
-        _ => None,
+            perimeter_linear_ring: convex_hull,
+            line_strings,
+        })
+    } else {
+        None
     };
     let access_aor_ids =
         collect_palitra_access_aors(dbx, palitra_id).await.c(h!())?;
@@ -1460,12 +1672,17 @@ where
                 None
             }
         };
-        let geometry = match (center, convex_hull) {
-            (Some(center), Some(perimeter_linear_ring)) => Some(Geometry {
+        let line_strings = read_palitra_line_strings(dbx, palitra_geometry_id)
+            .await
+            .c(h!())?;
+        let geometry = if convex_hull.is_some() || line_strings.is_some() {
+            Some(Geometry {
                 center,
-                perimeter_linear_ring,
-            }),
-            _ => None,
+                perimeter_linear_ring: convex_hull,
+                line_strings,
+            })
+        } else {
+            None
         };
         let mut points = points_by_palitra_geometry_id
             .remove(&palitra_geometry_id)

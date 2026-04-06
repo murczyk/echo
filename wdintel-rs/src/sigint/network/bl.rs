@@ -75,6 +75,11 @@ where
                 .active_to
                 .map(|d| d.and_utc().timestamp_millis()),
             deleted: network.deleted,
+            status: if network.active_to.is_some() {
+                NetworkStatus::NetworkInactive
+            } else {
+                NetworkStatus::NetworkActive
+            },
         });
     }
     trace!(

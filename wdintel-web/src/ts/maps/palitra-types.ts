@@ -1,8 +1,9 @@
 export type Coords = { lat: number; lng: number };
 
-export type Geometry = { 
-  center: Coords; 
-  perimeter_linear_ring: Coords[] 
+export type Geometry = {
+  center?: Coords | null;
+  perimeter_linear_ring?: Coords[] | null;
+  line_strings?: Coords[][] | null;
 };
 
 export type Palitra = {

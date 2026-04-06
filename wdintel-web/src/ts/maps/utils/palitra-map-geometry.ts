@@ -1,7 +1,7 @@
 import * as L from 'leaflet';
 
 import { buildPalitraPopupContent } from '../palitra-popup-content';
-import { Coords, Palitra, PalitraDetails, PalitraPoint } from '../palitra-types';
+import { Coords, Geometry, Palitra, PalitraDetails, PalitraPoint } from '../palitra-types';
 
 export function boundsOfSearchResults(
   data: { palitra_id: number; points: PalitraPoint[] }[],
@@ -37,56 +37,142 @@ export function filterPalitraApiIdsByBounds(
         .filter((palitraDetails) => {
           const geometry = palitraDetails.palitra.geometry;
           // Palitras without geometry cannot be spatially filtered, keep them in request.
-          if (!geometry || !geometry.perimeter_linear_ring) {
+          if (!geometry) {
             return true;
           }
           const ring = geometry.perimeter_linear_ring;
-          if (ring.length === 0) {
+          if (ring && ring.length > 0) {
+            const palitraBounds = buildBounds(ring);
+            return bounds.intersects(palitraBounds);
+          }
+          const lineBounds = buildLineStringsBounds(geometry.line_strings);
+          if (!lineBounds) {
             return true;
           }
-          const palitraBounds = buildBounds(ring);
-          return bounds.intersects(palitraBounds);
+          return bounds.intersects(lineBounds);
         })
         .map((palitraDetails) => toApiId(palitraDetails.palitra)),
     ),
   );
 }
 
-export function createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon | null {
+export function createPalitraGeometryLayer(palitraDetails: PalitraDetails): L.Layer | null {
   const palitra = palitraDetails.palitra;
+  const geometry = palitra.geometry;
 
-  if (!palitra.geometry || !palitra.geometry.perimeter_linear_ring) {
+  if (!geometry) {
     return null;
   }
 
-  const latlngs: [number, number][] = palitra.geometry.perimeter_linear_ring.map(
+  const perimeter = geometry.perimeter_linear_ring;
+  const layers: L.Layer[] = [];
+  if (perimeter && perimeter.length >= 3) {
+    layers.push(createPalitraPolygon(palitraDetails, perimeter));
+  }
+
+  const lineStrings = geometry.line_strings ?? [];
+  const validLines = lineStrings.filter((line) => line.length >= 2);
+  if (validLines.length > 0) {
+    const lineLayers = validLines.map((line) =>
+      L.polyline(
+        line.map((coord) => [coord.lat, coord.lng] as [number, number]),
+        {
+          color: palitra.color_hex,
+          weight: 2,
+          opacity: 0.9,
+        },
+      ),
+    );
+    const lineLayer =
+      lineLayers.length === 1 ? lineLayers[0] : L.featureGroup(lineLayers);
+    const metaLines = buildLineMetaLines(geometry, palitra, validLines);
+    bindPalitraPopup(lineLayer, palitra, metaLines);
+    lineLayer.bindTooltip(palitra.name, {
+      permanent: true,
+      direction: 'center',
+      className: 'palitra-label',
+    });
+    layers.push(lineLayer);
+  }
+
+  if (layers.length === 0) {
+    return null;
+  }
+
+  return layers.length === 1 ? layers[0] : L.featureGroup(layers);
+}
+
+function createPalitraPolygon(palitraDetails: PalitraDetails, ring: Coords[]): L.Polygon {
+  const palitra = palitraDetails.palitra;
+  const geometry = palitra.geometry as Geometry;
+  const latlngs: [number, number][] = ring.map(
     (coord: Coords) => [coord.lat, coord.lng] as [number, number],
   );
-
-  if (latlngs.length < 3) {
-    return null;
-  }
 
   const polygon = L.polygon(latlngs, {
     color: palitra.color_hex,
     fillColor: palitra.color_hex,
     fillOpacity: 0.2,
     weight: 2,
-    opacity: 0.8
+    opacity: 0.8,
   });
+  const metaLines = buildPolygonMetaLines(geometry, palitra, ring.length);
+  bindPalitraPopup(polygon, palitra, metaLines);
+  polygon.bindTooltip(palitra.name, {
+    permanent: true,
+    direction: 'center',
+    className: 'palitra-label',
+  });
+  return polygon;
+}
 
-  const pointsCount = palitra.geometry.perimeter_linear_ring.length;
-  const centerLat = palitra.geometry.center.lat.toFixed(4);
-  const centerLng = palitra.geometry.center.lng.toFixed(4);
-
-  const metaLines = [
-    `Центр: ${centerLat}, ${centerLng}`,
+function buildPolygonMetaLines(
+  geometry: Geometry,
+  palitra: Palitra,
+  pointsCount: number,
+): string[] {
+  const metaLines: Array<string | null> = [
+    formatCenterLine(geometry),
     `Точок периметру: ${pointsCount}`,
     palitra.source_file_name ? `Файл: ${palitra.source_file_name}` : null,
-  ].filter((value): value is string => value !== null);
+  ];
+  return metaLines.filter((value): value is string => value !== null);
+}
 
-  polygon.bindPopup(
-    buildPalitraPopupContent(polygon as L.Polygon & L.Layer & { closePopup: () => void }, palitra, {
+function buildLineMetaLines(
+  geometry: Geometry,
+  palitra: Palitra,
+  lineStrings: Coords[][],
+): string[] {
+  const totalPoints = lineStrings.reduce(
+    (acc, line) => acc + line.length,
+    0,
+  );
+  const metaLines: Array<string | null> = [
+    formatCenterLine(geometry),
+    `Ліній: ${lineStrings.length}`,
+    `Точок лінії: ${totalPoints}`,
+    palitra.source_file_name ? `Файл: ${palitra.source_file_name}` : null,
+  ];
+  return metaLines.filter((value): value is string => value !== null);
+}
+
+function formatCenterLine(geometry: Geometry): string | null {
+  if (!geometry.center) {
+    return null;
+  }
+  const centerLat = geometry.center.lat.toFixed(4);
+  const centerLng = geometry.center.lng.toFixed(4);
+  return `Центр: ${centerLat}, ${centerLng}`;
+}
+
+function bindPalitraPopup(
+  layer: L.Layer & { bindPopup: L.Layer['bindPopup'] },
+  palitra: Palitra,
+  metaLines: string[],
+): void {
+  layer.bindPopup(
+    buildPalitraPopupContent(layer as L.Polygon & L.Layer & { closePopup: () => void }, palitra, {
       emphasisLine: null,
       metaLines,
     }),
@@ -95,13 +181,19 @@ export function createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon 
       closeButton: false,
     },
   );
-  polygon.bindTooltip(palitra.name, {
-    permanent: true,
-    direction: 'center',
-    className: 'palitra-label'
-  });
+}
 
-  return polygon;
+function buildLineStringsBounds(
+  lineStrings?: Coords[][] | null,
+): L.LatLngBounds | null {
+  if (!lineStrings || lineStrings.length === 0) {
+    return null;
+  }
+  const flattened = lineStrings.flat();
+  if (flattened.length === 0) {
+    return null;
+  }
+  return buildBounds(flattened);
 }
 
 function buildBounds(coords: Coords[]): L.LatLngBounds {

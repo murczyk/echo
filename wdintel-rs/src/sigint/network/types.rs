@@ -26,6 +26,14 @@ pub struct NetworkDetails {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum NetworkStatus {
+    NetworkActive,
+    NetworkInactive,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct Network {
     pub id: i64,
     pub freqs: Vec<NetworkFreq>,
@@ -46,6 +54,7 @@ pub struct Network {
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<NetworkDescription>,
     pub deleted: bool,
+    pub status: NetworkStatus,
 }
 
 #[derive(
@@ -108,6 +117,7 @@ pub struct UpdateNetworkReq {
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
     pub descriptions: Option<Vec<UpdateNetworkDescriptionReq>>,
+    pub status: NetworkStatus,
 }
 
 #[derive(

@@ -104,6 +104,13 @@ pub async fn create_palitra_with_kmz(
     bl::rewrite_palitra_points(palitra_geometry.id, points, &txn, &env.rq)
         .await
         .c(h!())?;
+    bl::rewrite_palitra_line_strings(
+        palitra_geometry.id,
+        upload.line_strings,
+        &txn,
+    )
+    .await
+    .c(h!())?;
     bl::update_palitra_s3_id(&txn, palitra.id, upload.s3_id)
         .await
         .c(h!())?;
@@ -153,7 +160,10 @@ pub async fn create_palitra_basic(
     .await
     .c(h!())?;
     let mut points_by_color = group_palitra_points_by_color(upload.points);
-    let primary_color_hex = pick_primary_color_hex(&points_by_color);
+    let mut line_strings_by_color =
+        group_palitra_lines_by_color(upload.line_strings);
+    let primary_color_hex =
+        pick_primary_color_hex(&points_by_color, &line_strings_by_color);
     let mut geometry_colors = vec![primary_color_hex.clone()];
     geometry_colors.extend(
         points_by_color
@@ -161,6 +171,14 @@ pub async fn create_palitra_basic(
             .filter(|color_hex| *color_hex != &primary_color_hex)
             .cloned(),
     );
+    geometry_colors.extend(
+        line_strings_by_color
+            .keys()
+            .filter(|color_hex| *color_hex != &primary_color_hex)
+            .cloned(),
+    );
+    let mut seen_colors = HashSet::new();
+    geometry_colors.retain(|color_hex| seen_colors.insert(color_hex.clone()));
 
     let txn = env.dbx.begin().await.c(h!())?;
     let mut created_palitra_ids = Vec::with_capacity(geometry_colors.len());
@@ -181,11 +199,20 @@ pub async fn create_palitra_basic(
                 .c(h!())?;
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
+        let color_line_strings =
+            line_strings_by_color.remove(&color_hex).unwrap_or_default();
         bl::rewrite_palitra_points(
             palitra_geometry.id,
             color_points,
             &txn,
             &env.rq,
+        )
+        .await
+        .c(h!())?;
+        bl::rewrite_palitra_line_strings(
+            palitra_geometry.id,
+            color_line_strings,
+            &txn,
         )
         .await
         .c(h!())?;
@@ -240,8 +267,26 @@ pub async fn create_palitra_basic_v2(
     .await
     .c(h!())?;
     let mut points_by_color = group_palitra_points_by_color(upload.points);
+    let mut line_strings_by_color =
+        group_palitra_lines_by_color(upload.line_strings);
     let uploaded_at = Utc::now();
-    let primary_color_hex = pick_primary_color_hex(&points_by_color);
+    let selected_color_hex = multipart_payload
+        .color_hex
+        .map(|color_hex| normalize_color_hex_or_fallback(Some(color_hex)));
+    if let Some(selected_color_hex) = &selected_color_hex {
+        remap_fallback_color(
+            &mut points_by_color,
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX,
+            selected_color_hex,
+        );
+        remap_fallback_color(
+            &mut line_strings_by_color,
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX,
+            selected_color_hex,
+        );
+    }
+    let primary_color_hex =
+        pick_primary_color_hex(&points_by_color, &line_strings_by_color);
     let req = CreatePalitraReq {
         name: multipart_payload.name,
         color_hex: primary_color_hex,
@@ -252,6 +297,9 @@ pub async fn create_palitra_basic_v2(
     let palitra = bl::create_palitra(login, req, &env.dbx).await.c(h!())?;
 
     let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
+    geometry_colors.extend(line_strings_by_color.keys().cloned().collect_vec());
+    geometry_colors.sort();
+    geometry_colors.dedup();
     if geometry_colors.is_empty() {
         geometry_colors
             .push(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string());
@@ -270,11 +318,20 @@ pub async fn create_palitra_basic_v2(
         .c(h!())?;
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
+        let color_line_strings =
+            line_strings_by_color.remove(&color_hex).unwrap_or_default();
         bl::rewrite_palitra_points(
             palitra_geometry.id,
             color_points,
             &txn,
             &env.rq,
+        )
+        .await
+        .c(h!())?;
+        bl::rewrite_palitra_line_strings(
+            palitra_geometry.id,
+            color_line_strings,
+            &txn,
         )
         .await
         .c(h!())?;
@@ -391,8 +448,13 @@ pub async fn upload_palitra_points(
     .await
     .c(h!())?;
     let mut points_by_color = group_palitra_points_by_color(upload.points);
+    let mut line_strings_by_color =
+        group_palitra_lines_by_color(upload.line_strings);
     let uploaded_at = Utc::now();
     let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
+    geometry_colors.extend(line_strings_by_color.keys().cloned().collect_vec());
+    let mut seen_colors = HashSet::new();
+    geometry_colors.retain(|color_hex| seen_colors.insert(color_hex.clone()));
     if geometry_colors.is_empty() {
         geometry_colors
             .push(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string());
@@ -420,11 +482,20 @@ pub async fn upload_palitra_points(
         retained_geometry_ids.insert(palitra_geometry.id);
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
+        let color_line_strings =
+            line_strings_by_color.remove(&color_hex).unwrap_or_default();
         bl::rewrite_palitra_points(
             palitra_geometry.id,
             color_points,
             &txn,
             &env.rq,
+        )
+        .await
+        .c(h!())?;
+        bl::rewrite_palitra_line_strings(
+            palitra_geometry.id,
+            color_line_strings,
+            &txn,
         )
         .await
         .c(h!())?;
@@ -838,8 +909,27 @@ fn group_palitra_points_by_color(
     grouped
 }
 
+fn remap_fallback_color<T>(
+    grouped: &mut BTreeMap<String, Vec<T>>,
+    fallback_color_hex: &str,
+    replacement_color_hex: &str,
+) {
+    if fallback_color_hex == replacement_color_hex {
+        return;
+    }
+    let mut values = match grouped.remove(fallback_color_hex) {
+        Some(values) => values,
+        None => return,
+    };
+    grouped
+        .entry(replacement_color_hex.to_string())
+        .or_default()
+        .append(&mut values);
+}
+
 fn pick_primary_color_hex(
     points_by_color: &BTreeMap<String, Vec<PalitraPoint>>,
+    line_strings_by_color: &BTreeMap<String, Vec<kmz::PalitraLineString>>,
 ) -> String {
     let mut selected_color_hex: Option<String> = None;
     let mut selected_count = 0usize;
@@ -850,9 +940,30 @@ fn pick_primary_color_hex(
             selected_color_hex = Some(color_hex.clone());
         }
     }
+    for (color_hex, line_strings) in line_strings_by_color {
+        let line_strings_count = line_strings.len();
+        if line_strings_count > selected_count {
+            selected_count = line_strings_count;
+            selected_color_hex = Some(color_hex.clone());
+        }
+    }
     selected_color_hex.unwrap_or_else(|| {
         crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
     })
+}
+
+fn group_palitra_lines_by_color(
+    line_strings: Vec<kmz::PalitraLineString>,
+) -> BTreeMap<String, Vec<kmz::PalitraLineString>> {
+    let mut grouped: BTreeMap<String, Vec<kmz::PalitraLineString>> =
+        BTreeMap::new();
+    for mut line_string in line_strings {
+        let color_hex =
+            normalize_color_hex_or_fallback(line_string.color.take());
+        line_string.color = Some(color_hex.clone());
+        grouped.entry(color_hex).or_default().push(line_string);
+    }
+    grouped
 }
 
 async fn upsert_palitra_geometry_by_color(
@@ -1395,6 +1506,10 @@ mod tests {
                 ],
             ),
         ]);
-        assert_eq!(pick_primary_color_hex(&grouped), "#222222".to_string());
+        let line_strings = BTreeMap::new();
+        assert_eq!(
+            pick_primary_color_hex(&grouped, &line_strings),
+            "#222222".to_string()
+        );
     }
 }

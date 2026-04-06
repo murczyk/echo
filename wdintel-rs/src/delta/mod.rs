@@ -61,6 +61,8 @@ pub fn kmz_to_geojson_1(
     let input: String = std::fs::read_to_string(input_path)?;
     let kml: Kml = quick_xml::de::from_str(&input[..]).c(h!())?;
     let style_map = crate::kml::extract_style_maps(&kml.nodes)?;
+    let style_map_highlight =
+        crate::kml::extract_style_maps_hightlight(&kml.nodes)?;
 
     let mut features: Vec<Feature> = vec![];
     let mut per_icon_counter: BTreeMap<String, i64> = BTreeMap::new();
@@ -144,7 +146,11 @@ pub fn kmz_to_geojson_1(
                     };
                     let style_url_stripped: String =
                         style_url.body.chars().skip(1).collect();
-                    let Some(icon) = style_map.get(&style_url_stripped) else {
+                    let Some(icon) =
+                        style_map.get(&style_url_stripped).or_else(|| {
+                            style_map_highlight.get(&style_url_stripped)
+                        })
+                    else {
                         break '_if;
                     };
                     let icon_stripped: String = match icon.rfind('/') {
@@ -191,6 +197,17 @@ pub fn kmz_to_geojson_1(
                     }
                 }
             }
+        } else if let Some(polygon) = &placemark.polygon {
+            if let Some(coordinates) = polygon
+                .outer_boundary_is
+                .as_ref()
+                .and_then(|outer| outer.linear_ring.as_ref())
+                .and_then(|ring| ring.coordinates.as_ref())
+                .and_then(|coords| coords.body.as_ref())
+            {
+                let feature = feature_from_polygon(coordinates)?;
+                features.push(feature);
+            }
         }
     }
 
@@ -230,6 +247,26 @@ fn feature_from_line_string(coord_s: &str) -> Result<Feature, AppError> {
         properties: None,
         geometry: Geometry {
             type_: "LineString".to_string(),
+            coordinates: coords_val,
+        },
+    };
+    Ok(feature)
+}
+
+fn feature_from_polygon(coord_s: &str) -> Result<Feature, AppError> {
+    let coords = milgeo_rs::coordinates::parse_linestring_coordinates(coord_s)?;
+    let coords_val: serde_json::Value =
+        serde_json::Value::Array(vec![serde_json::Value::Array(
+            coords
+                .iter()
+                .map(|(lng, lat)| serde_json::to_value((lng, lat)).unwrap())
+                .collect(),
+        )]);
+    let feature = Feature {
+        type_: "Feature".to_string(),
+        properties: None,
+        geometry: Geometry {
+            type_: "Polygon".to_string(),
             coordinates: coords_val,
         },
     };
@@ -1286,7 +1323,7 @@ pub fn delta_objs_to_kmz(
                     description: Some(description),
                     style: None,
                     style_url: Some(StyleUrl {
-                        body: format!("map-{}", symbol.app6d.sidc),
+                        body: format!("#map-{}", symbol.app6d.sidc),
                     }),
                     point: Some(Point {
                         draw_order: None,
@@ -1354,11 +1391,13 @@ pub fn delta_objs_to_kmz(
                         description: Some(description),
                         style: None,
                         style_url: Some(StyleUrl {
-                            body: style_url.to_string(),
+                            body: format!("#{style_url}"),
                         }),
                         point: None,
                         line_string: Some(LineString {
-                            tessellate: None,
+                            tessellate: Some(Tessellate {
+                                body: Some("1".to_string()),
+                            }),
                             coordinates: Some(Coordinates {
                                 body: Some(coords_s),
                             }),
