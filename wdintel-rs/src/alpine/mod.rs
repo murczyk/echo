@@ -4,10 +4,10 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use actix_multipart::Multipart;
+use actix_web::HttpResponse;
 use actix_web::http::header;
 use actix_web::post;
 use actix_web::web::Json;
-use actix_web::HttpResponse;
 use bytes::Bytes;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use futures_util::StreamExt;
@@ -218,6 +218,25 @@ async fn read_payload(payload: &mut Multipart) -> Result<UploadData, AppError> {
             continue;
         }
 
+        if field_name == "output_format" {
+            let mut value = Vec::new();
+            while let Some(chunk) = field.next().await {
+                value.extend(
+                    chunk
+                        .map_err(|e| -> AppError {
+                            format!("Multipart error: {e:?}").into()
+                        })?
+                        .to_vec(),
+                );
+            }
+            if let Ok(output_format) = String::from_utf8(value) {
+                if !output_format.is_empty() {
+                    data.output_format = output_format;
+                }
+            }
+            continue;
+        }
+
         let mut val_curr: Vec<u8> = vec![];
         while let Some(chunk) = field.next().await {
             val_curr.extend(
@@ -276,6 +295,9 @@ async fn convert_file(
     let resp = env
         .rq
         .post(format!("{host}/api/upload-task"))
+        .timeout(Duration::from_secs(
+            crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
+        ))
         .multipart(form)
         .send()
         .await
@@ -286,10 +308,14 @@ async fn convert_file(
     }
     let response_text = resp.text().await.c(h!())?;
     let receipt = response_text.replace('"', "");
-    info!("✅ Upload successful, status: {status}, receipt: {receipt}. Waiting for conversion...");
+    info!(
+        "✅ Upload successful, status: {status}, receipt: {receipt}. Waiting for conversion..."
+    );
 
     wait_for_completion(env, &receipt, host).await.c(h!())?;
-    let result = download_file(env, &receipt, host).await.c(h!())?;
+    let result = download_file(env, &receipt, host, &upload.output_format)
+        .await
+        .c(h!())?;
     info!("✅ Conversion successful, receipt: {receipt}");
     Ok(result)
 }
@@ -322,6 +348,9 @@ async fn check_completion_status(
     let response = env
         .rq
         .post(format!("{host}/api/task-status-batch"))
+        .timeout(Duration::from_secs(
+            crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
+        ))
         .json(&body)
         .send()
         .await
@@ -349,10 +378,14 @@ async fn download_file(
     env: &Env,
     receipt: &str,
     host: &str,
+    output_format: &str,
 ) -> anyhow::Result<ConversionResult> {
     let response = env
         .rq
         .get(format!("{host}/api/download-task/{receipt}"))
+        .timeout(Duration::from_secs(
+            crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
+        ))
         .send()
         .await
         .c(h!())?;
@@ -368,8 +401,10 @@ async fn download_file(
         content_disposition::parse_content_disposition(disposition_header);
     let filename = disposition
         .filename()
-        .map(|(stem, _)| format!("{stem}.kmz"))
-        .unwrap_or_else(|| format!("{receipt}.kmz")); // Provide a default
+        .map(|(stem, _)| format!("{stem}.{}", file_extension(output_format)))
+        .unwrap_or_else(|| {
+            format!("{receipt}.{}", file_extension(output_format))
+        });
 
     let download_ct = response
         .headers()
@@ -377,11 +412,21 @@ async fn download_file(
         .and_then(|v| v.to_str().ok())
         .map(|v| v.to_string());
     let file_bytes = response.bytes().await.c(h!())?;
-    info!("result of converting #{receipt}: filename={filename} file_bytes={file_bytes:?}");
+    info!(
+        "result of converting #{receipt}: filename={filename} file_bytes={file_bytes:?}"
+    );
 
     Ok(ConversionResult {
         body: file_bytes,
         content_type: download_ct,
         name: Some(filename),
     })
+}
+
+fn file_extension(output_format: &str) -> &'static str {
+    match output_format {
+        "cog" => "tif",
+        "geotiff" => "tif",
+        _ => "kmz",
+    }
 }
