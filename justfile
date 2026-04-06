@@ -161,7 +161,7 @@ test-fe:
         echo "npm dependencies already up to date, skipping installation"
     fi
 
-    npm run build && npm test
+    npm test
 
 test-be:
     #!/bin/bash

@@ -10,7 +10,8 @@
     "build": "elm-land build",
     "postinstall": "node scripts/strip-use-client.mjs",
     "strip-use-client": "node scripts/strip-use-client.mjs",
-    "test": "npm run test:elm && npm run test:ts",
+    "test": "npm run test:prepare && npm run test:elm && npm run test:ts",
+    "test:prepare": "elm-land generate",
     "test:elm": "elm-test",
     "test:ts": "vitest run"
   },
