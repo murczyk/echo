@@ -56,14 +56,16 @@ export function EditCallsignDrawer({ open, form, units, sources, submitting, err
           sx: (theme) => pageDrawerBackdropSx(theme),
         },
       }}
-      PaperProps={{
-        'aria-labelledby': titleId,
-        sx: {
-          width: { xs: '100vw', sm: 640 },
-          maxWidth: '100vw',
-          display: 'flex',
-          backgroundColor: 'background.default',
-          backgroundImage: 'none',
+      slotProps={{
+        paper: {
+          'aria-labelledby': titleId,
+          sx: {
+            width: { xs: '100vw', sm: 640 },
+            maxWidth: '100vw',
+            display: 'flex',
+            backgroundColor: 'background.default',
+            backgroundImage: 'none',
+          },
         },
       }}
     >

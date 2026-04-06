@@ -111,37 +111,47 @@ view : Shared.Model -> B.User -> Model -> View Msg
 view _ user model =
     { title = "головна"
     , body =
-        [ div [ class "my-4 w-4/5 mx-auto" ]
-            [ section [ class "mb-2" ]
-                [ h1 [ class "" ] [ text "Головна" ]
-                ]
-            , section [ class "flex gap-4 h-[50vh]" ]
-                [ a [ target "_blank", href "/docs", class "basis-[35%] bg-card border border-border rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
-                    [ div [ class "w-16 h-16 bg-gradient-to-br from-[var(--ochre-normal)] to-[var(--ochre-normal-hover)] rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300" ]
-                        [ i [ class "bi bi-book text-white text-2xl" ] []
-                        ]
-                    , div [ class "text-center" ]
-                        [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1" ] [ text "Алгоритм роботи" ]
-                        , p [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "Документація та інструкції" ]
-                        ]
-                    , div [ class "flex items-center gap-2 text-[var(--action-color)] group-hover:text-[var(--action-hovered-color)] transition-colors duration-300" ]
-                        [ span [ class "text-sm font-medium" ] [ text "Переглянути" ]
-                        , i [ class "bi bi-arrow-up-right text-lg group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform duration-300" ] []
-                        ]
+        [ div [ class "box-border container mx-auto px-4 py-6" ]
+            [ div [ class "w-full" ]
+                [ section [ class "mb-6" ]
+                    [ h1 [ class "m-0 font-semibold", Attr.style "font-size" "21px", Attr.style "line-height" "1.2" ] [ text "Головна" ]
                     ]
-                , HtmlX.viewIf (Core.Auth.hasRole "Rer" user) <|
-                    div [ class "flex-1 bg-card border border-border rounded-sm relative" ]
-                        [ h4 [ class "pl-2 pt-2" ] [ text "Активність груп" ]
-                        , div [ class "h-[45vh]" ]
-                            [ Html.node "bar-chart-2"
-                                [ Attr.property "data" <|
-                                    B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
-                                ]
-                                []
+                , section [ class "flex flex-col lg:flex-row gap-4 min-w-0 min-h-[50vh] lg:h-[50vh]" ]
+                    [ a [ target "_blank", href "/docs", class "w-full lg:basis-[clamp(280px,32%,360px)] xl:basis-[420px] lg:shrink min-h-[240px] lg:min-h-0 bg-card border border-border rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
+                        [ div [ class "w-16 h-16 bg-gradient-to-br from-[var(--ochre-normal)] to-[var(--ochre-normal-hover)] rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300" ]
+                            [ i [ class "bi bi-book text-white text-2xl" ] []
                             ]
-                        , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
-                            span [ class "absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2" ] [ Shared.Components.Spinner.loadingSpinner ]
+                        , div [ class "text-center" ]
+                            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1" ] [ text "Алгоритм роботи" ]
+                            , p [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "Документація та інструкції" ]
+                            ]
+                        , div [ class "flex items-center gap-2 text-[var(--action-color)] group-hover:text-[var(--action-hovered-color)] transition-colors duration-300" ]
+                            [ span [ class "text-sm font-medium" ] [ text "Переглянути" ]
+                            , i [ class "bi bi-arrow-up-right text-lg group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform duration-300" ] []
+                            ]
                         ]
+                    , HtmlX.viewIf (Core.Auth.hasRole "Rer" user) <|
+                        div [ class "flex-1 min-w-0 overflow-hidden bg-card border border-border rounded-sm relative flex flex-col h-[50vh]" ]
+                            [ h4
+                                [ class "m-0 font-semibold"
+                                , Attr.style "padding-top" "30px"
+                                , Attr.style "padding-left" "30px"
+                                ]
+                                [ text "Активність груп" ]
+                            , div [ class "flex-1 min-h-0 min-w-0 overflow-hidden", Attr.style "margin-top" "20px" ]
+                                [ Html.node "bar-chart-2"
+                                    [ class "min-w-0"
+                                    , Attr.property "data" <|
+                                        B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
+                                    , Attr.attribute "margin-left" "30"
+                                    , Attr.attribute "margin-bottom" "30"
+                                    ]
+                                    []
+                                ]
+                            , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
+                                span [ class "absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2" ] [ Shared.Components.Spinner.loadingSpinner ]
+                            ]
+                    ]
                 ]
             ]
         ]

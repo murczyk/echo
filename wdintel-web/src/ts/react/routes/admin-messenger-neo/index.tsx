@@ -1235,7 +1235,7 @@ function AdminMessengerNeoPageBody() {
       anchor="right"
       open={linkSidebarOpen}
       onClose={closeLinkSidebar}
-      PaperProps={{ sx: { width: { xs: '100%', sm: 420 } } }}
+      slotProps={{ paper: { sx: { width: { xs: '100%', sm: 420 } } } }}
     >
       <Box className="flex flex-col h-full">
         <Box className="p-6 border-b border-border">
@@ -1453,7 +1453,7 @@ function AdminMessengerNeoPageBody() {
               <Info text={linkStatus.message} color="error" />
             ) : null}
             <div className="flex items-center justify-center gap-2">
-              <Button variant="outlined" onClick={closeLinkSidebar}>
+              <Button onClick={closeLinkSidebar}>
                 Скасувати
               </Button>
               <Button
@@ -1515,7 +1515,7 @@ function AdminMessengerNeoPageBody() {
       anchor="right"
       open={editSidebarOpen}
       onClose={closeEditSidebar}
-      PaperProps={{ sx: { width: { xs: '100%', sm: 420 } } }}
+      slotProps={{ paper: { sx: { width: { xs: '100%', sm: 420 } } } }}
     >
       <Box className="flex flex-col h-full">
         <Box className="p-6 border-b border-border">
@@ -1580,7 +1580,7 @@ function AdminMessengerNeoPageBody() {
           </Box>
         ) : null}
         <Box className="p-6 border-t border-border flex gap-3">
-          <Button variant="outlined" onClick={closeEditSidebar}>
+          <Button onClick={closeEditSidebar}>
             Скасувати
           </Button>
           <Button

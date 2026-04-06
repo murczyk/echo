@@ -318,7 +318,7 @@ function KeywordDeleteDialog(props: { open: boolean; onClose: () => void; onConf
       <DialogTitle>Підтвердження видалення</DialogTitle>
       <DialogContent>Видалити ключове слово?</DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button variant="outlined" onClick={props.onClose}>
+        <Button onClick={props.onClose}>
           Скасувати
         </Button>
         <Button variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>

@@ -1078,10 +1078,16 @@ async fn ensure_palitra_permissions(
                 return Ok(());
             }
             if is_editor {
-                // Editor can only manage palitra scoped to own login
-                let all_self = logins.iter().all(|l| l == login);
-                if !all_self {
-                    bail!("Editor may only manage palitra scoped to own login");
+                let permitted_logins =
+                    crate::users::get_organism_logins_by_login(&env.dbx, login)
+                        .await
+                        .c(h!())?;
+                let all_known =
+                    logins.iter().all(|value| permitted_logins.contains(value));
+                if !all_known {
+                    bail!(
+                        "Editor may only manage palitra scoped to own organism logins"
+                    );
                 }
                 return Ok(());
             }

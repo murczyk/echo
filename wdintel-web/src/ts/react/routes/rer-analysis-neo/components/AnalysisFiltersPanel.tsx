@@ -322,12 +322,14 @@ export function AnalysisFiltersPanel({
           size="small"
           value={queryState.search}
           onChange={(event) => updateQueryState({ search: event.target.value })}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            },
           }}
         />
         <Box>

@@ -16,7 +16,7 @@ import {
 import { listAors } from './aor';
 import { HttpRequestError, isUnauthorizedError, postJson, postVoid } from './client';
 import { listLogins } from './logins';
-import { listOrganisms } from './organisms';
+import { listOrganismLogins, listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
 
 type CreatePalitraReqBody = {
@@ -435,15 +435,21 @@ async function fetchAdminReferenceOptional<T>(fetchReference: () => Promise<T>):
 export async function fetchPalitraReferenceData(user: User): Promise<{
   myScope: MyScope | null;
   logins: ListLoginsRsp | null;
+  organismLogins: string[] | null;
   organisms: Organism[] | null;
   aors: Awaited<ReturnType<typeof listAors>> | null;
 }> {
   const isAdmin = user.roles.includes('Admin');
+  const isEditor = user.roles.includes('UnitsEditor') || user.roles.includes('CallsignsEditor');
+  const hasPalitraAccess = user.roles.includes('Admin') || user.roles.includes('Full') || user.roles.includes('Rer');
 
-  const [myScope, logins, organisms, aors] = await Promise.all([
+  const [myScope, logins, organismLogins, organisms, aors] = await Promise.all([
     fetchMyScopeOptional(),
     isAdmin
       ? fetchAdminReferenceOptional(() => listLogins({ sortBy: null, filterByRoles: null }))
+      : Promise.resolve(null),
+    !isAdmin && hasPalitraAccess && isEditor
+      ? fetchAdminReferenceOptional(() => listOrganismLogins())
       : Promise.resolve(null),
     isAdmin
       ? fetchAdminReferenceOptional(() => listOrganisms({ sortBy: null }))
@@ -451,7 +457,7 @@ export async function fetchPalitraReferenceData(user: User): Promise<{
     isAdmin ? fetchAdminReferenceOptional(() => listAors({ sortBy: null })) : Promise.resolve(null),
   ]);
 
-  return { myScope, logins, organisms, aors };
+  return { myScope, logins, organismLogins, organisms, aors };
 }
 
 export async function fetchPalitraBootstrapData(): Promise<{
@@ -459,6 +465,7 @@ export async function fetchPalitraBootstrapData(): Promise<{
   palitras: Palitra[];
   myScope: MyScope | null;
   logins: ListLoginsRsp | null;
+  organismLogins: string[] | null;
   organisms: Organism[] | null;
   aors: Awaited<ReturnType<typeof listAors>> | null;
 }> {

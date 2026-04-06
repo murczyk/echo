@@ -14,7 +14,7 @@ import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialo
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
-import { AddCallsignsDrawer } from './components/AddCallsignsDrawer';
+import { CreateCallsignsDrawer } from './components/CreateCallsignsDrawer';
 import { CallsignsDateInputs, CallsignsFiltersTopRow } from './components/CallsignsFilters';
 import {
   CallsignsTable,
@@ -22,7 +22,7 @@ import {
   DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY,
 } from './components/CallsignsTable';
 import { DeleteCallsignDialog } from './components/DeleteCallsignDialog';
-import { EditCallsignDrawer } from './components/EditCallsignDialog';
+import { EditCallsignDrawer } from './components/EditCallsignDrawer';
 import { UnitStatsSidebar } from './components/UnitStatsSidebar';
 import { DESKTOP_LAYOUT_MIN_WIDTH_PX, getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
@@ -328,7 +328,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         </Stack>
       </Stack>
 
-      <AddCallsignsDrawer
+      <CreateCallsignsDrawer
         open={page.addDrawerOpen}
         onClose={page.onCloseAddDrawer}
         units={page.units}

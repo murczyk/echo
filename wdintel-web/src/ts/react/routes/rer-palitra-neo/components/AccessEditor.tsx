@@ -1,5 +1,6 @@
 import {
   Autocomplete,
+  CircularProgress,
   Chip,
   FormControl,
   FormControlLabel,
@@ -15,6 +16,7 @@ import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bi
 import {
   accessTypeLabel,
   applyRestrictedAccess,
+  canEditScopedLogins,
   isAccessRestricted,
   normalizeLogins,
   withDefaultOrganismAccess,
@@ -31,6 +33,7 @@ type Props = {
   aors: AreaOfResponsibility[];
   allLogins: string[];
   availableAccessTypes: AccessType[];
+  loading?: boolean;
 };
 
 function AccessEditorComponent({
@@ -43,10 +46,13 @@ function AccessEditorComponent({
   aors,
   allLogins,
   availableAccessTypes,
+  loading = false,
 }: Props) {
   const restrictedByRole = isAccessRestricted(user);
-  const restricted = restrictedByRole || readOnly;
-  const disableAccessTypeSelection = Boolean(readOnly);
+  const loginSelectionAllowed = canEditScopedLogins(user);
+  const restricted = restrictedByRole || readOnly || loading;
+  const restrictLogins = (restrictedByRole && !loginSelectionAllowed) || readOnly || loading;
+  const disableAccessTypeSelection = Boolean(readOnly || loading);
   const loginOptions = useMemo(() => Array.from(new Set([...allLogins, ...form.logins])), [allLogins, form.logins]);
   const organismOptions = useMemo(
     () => (restrictedByRole ? (myScope?.organism ? [myScope.organism] : []) : organisms),
@@ -75,7 +81,7 @@ function AccessEditorComponent({
           onChange={(event) => {
             if (disableAccessTypeSelection) return;
             const nextType = event.target.value as AccessType;
-            onChange(applyRestrictedAccess(withDefaultOrganismAccess(form, nextType, myScope), user, myScope));
+            onChange(applyRestrictedAccess(withDefaultOrganismAccess(form, nextType, myScope), user, myScope, allLogins));
           }}
         >
           {availableAccessTypes.map((accessType) => (
@@ -97,14 +103,32 @@ function AccessEditorComponent({
           options={loginOptions}
           value={form.logins}
           onChange={(_, selected) => onChange({ ...form, logins: normalizeLogins(selected) })}
-          freeSolo={!restricted}
+          freeSolo={!restrictLogins}
           forcePopupIcon
-          disabled={restricted}
+          disabled={restrictLogins}
+          loading={loading}
           renderInput={(params) => (
             <TextField
               {...params}
-              label={restricted ? 'Ваш логін' : 'Логіни'}
-              helperText={restricted ? 'Автоматично заповнюється вашим логіном' : 'Оберіть логіни'}
+              label={restrictLogins && !loginSelectionAllowed ? 'Ваш логін' : 'Логіни'}
+              helperText={
+                loading
+                  ? 'Завантажуємо логіни вашого підрозділу…'
+                  : restrictLogins && !loginSelectionAllowed
+                    ? 'Автоматично заповнюється вашим логіном'
+                    : 'Оберіть логіни'
+              }
+              slotProps={{
+                input: {
+                  ...params.InputProps,
+                  endAdornment: (
+                    <>
+                      {loading ? <CircularProgress color='inherit' size={16} sx={{ mr: 1 }} /> : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  ),
+                },
+              }}
             />
           )}
         />
