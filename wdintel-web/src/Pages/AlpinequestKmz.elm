@@ -174,7 +174,7 @@ pageBlock model =
     in
     div []
         [ p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
-            [ text "Конвертуйте AlpineQuest файли у формат .kmz, в дружній до Delta формі." ]
+            [ text "Конвертуйте AlpineQuest файли у формат KMZ, в дружній до Delta формі." ]
         , let
               extensions =
                   [ ".ldk", ".trk", ".are", ".rte", ".wpt", ".set", ".kml", ".kmz", ".geojson", ".gpx" ]
@@ -197,12 +197,12 @@ pageBlock model =
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ _ _ model =
-    { title = "alpinequest в kmz"
+    { title = "AlpineQuest в KMZ"
     , body =
         [ div [ class "w-4/5 mx-auto px-4" ]
             [ div [ class "flex" ]
                 [ div [ class "w-full" ]
-                    [ h1 [ class "py-4" ] [ text "alpinequest в kmz" ]
+                    [ h1 [ class "py-4" ] [ text "AlpineQuest в KMZ" ]
                     , pageBlock model
                     ]
                 ]

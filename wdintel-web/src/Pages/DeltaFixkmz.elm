@@ -137,19 +137,19 @@ contentBlockFixKmz model =
                     , attribute "role" "status"
                     ]
                     [ span [ class "visually-hidden" ] [ text "Loading..." ] ]
-            , text " додати kmz"
+            , text " додати KMZ"
             ]
         ]
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ _ _ model =
-    { title = "очисник kmz"
+    { title = "Очисник KMZ"
     , body =
         [ div [ class "w-4/5 mx-auto bd-gutter" ]
             [ div [ class "row" ]
                 [ div [ class "col-12" ]
-                    [ h1 [ class "py-4" ] [ text "очисник kmz" ]
+                    [ h1 [ class "py-4" ] [ text "Очисник KMZ" ]
                     , div [ class "page-delta-fixkmz" ] <|
                         [ div [ class "row" ]
                             [ div [ class "col-sm-12" ]
