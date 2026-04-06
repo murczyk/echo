@@ -57,6 +57,7 @@ pub mod tests;
 pub mod ts;
 pub mod types;
 pub mod unit;
+pub mod user_settings;
 pub mod users;
 pub mod utils;
 pub mod whatsapp;

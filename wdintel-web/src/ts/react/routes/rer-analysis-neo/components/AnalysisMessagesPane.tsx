@@ -73,8 +73,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
     <MessageCard
       id={id}
       msg={message}
-      feedId="analysis"
-      layoutVariant="dividers"
+      displayMode="analysis"
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
       groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}

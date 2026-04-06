@@ -484,8 +484,8 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                         item.label
             in
             span [ class "inline-flex items-center gap-2" ]
-                ([ text baseLabel ]
-                    ++ (if hasOldBadge then
+                (text baseLabel
+                    :: (if hasOldBadge then
                             [ span
                                 [ class "rounded-full border border-slate-500/40 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-slate-600"
                                 ]
@@ -495,13 +495,13 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                         else
                             []
                        )
-                    ++ (if item.activeName == "callsigns-neo" || item.activeName == "rer-analysis-neo" then
+                    ++ (if item.activeName == "callsigns-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]
                             ]
 
-                        else if item.activeName == "rer-duty-neo" then
+                        else if item.activeName == "rer-duty-neo" || item.activeName == "rer-analysis-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Alpha" ]

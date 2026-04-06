@@ -11,6 +11,7 @@ import type {
   SignalProfileEntry,
   Tag,
 } from '../../../../Bindings';
+import type { TagsLayoutVariant } from './utils';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
 import { FeedFilterPanel } from './FeedFilterPanel';
@@ -59,8 +60,7 @@ export type FeedColumnProps = {
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
-  messageCardLayout: 'dividers' | 'fluid';
-  onMessageCardLayoutChange?: (v: 'dividers' | 'fluid') => void;
+  tagsLayout: TagsLayoutVariant;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
   saveFilterName: string;
@@ -135,8 +135,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     adjacentFreqsRange,
     highlightSignalsEnabled,
     onlyMyUnitTagsEnabled,
-    messageCardLayout,
-    onMessageCardLayoutChange,
+    tagsLayout,
     savedFilters,
     selectedSavedId,
     saveFilterName,
@@ -335,8 +334,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           adjacentFreqsRange={adjacentFreqsRange}
           highlightSignalsEnabled={highlightSignalsEnabled}
           onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
-          messageCardLayout={messageCardLayout}
-          onMessageCardLayoutChange={onMessageCardLayoutChange}
           savedFilters={savedFilters}
           selectedSavedId={selectedSavedId}
           saveFilterName={saveFilterName}
@@ -433,9 +430,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 <MessageCard
                   id={id}
                   msg={msg}
-                  feedId={feedId}
                   feedCount={feedCount}
-                  layoutVariant={messageCardLayout}
+                  tagsLayout={tagsLayout}
                   referenceTimeMs={feed.referenceTimeMs}
                   authUserName={authUserName}
                   groupName={groupName}

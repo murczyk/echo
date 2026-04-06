@@ -14,14 +14,14 @@ import View exposing (View)
 
 
 type alias Model =
-    { showBetaBanner : Maybe Bool
+    { showAlphaBanner : Maybe Bool
     }
 
 
 type Msg
     = NoOp
-    | CloseBetaBanner
-    | BetaBannerDismissedLoaded Bool
+    | CloseAlphaBanner
+    | AlphaBannerDismissedLoaded Bool
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -45,8 +45,8 @@ toLayout user _ =
 
 init : () -> ( Model, Effect Msg )
 init () =
-    ( { showBetaBanner = Nothing }
-    , E.sendCmd <| Ports.rer_analysis_neo_loadBetaBannerDismissed ()
+    ( { showAlphaBanner = Nothing }
+    , E.sendCmd <| Ports.rer_analysis_neo_loadAlphaBannerDismissed ()
     )
 
 
@@ -56,29 +56,29 @@ update msg model =
         NoOp ->
             ( model, E.none )
 
-        CloseBetaBanner ->
-            ( { model | showBetaBanner = Just False }
-            , E.sendCmd <| Ports.rer_analysis_neo_saveBetaBannerDismissed True
+        CloseAlphaBanner ->
+            ( { model | showAlphaBanner = Just False }
+            , E.sendCmd <| Ports.rer_analysis_neo_saveAlphaBannerDismissed True
             )
 
-        BetaBannerDismissedLoaded isDismissed ->
-            ( { model | showBetaBanner = Just (not isDismissed) }
+        AlphaBannerDismissedLoaded isDismissed ->
+            ( { model | showAlphaBanner = Just (not isDismissed) }
             , E.none
             )
 
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Ports.rer_analysis_neo_loadBetaBannerDismissedRes BetaBannerDismissedLoaded
+    Ports.rer_analysis_neo_loadAlphaBannerDismissedRes AlphaBannerDismissedLoaded
 
 
 view : Model -> View Msg
 view model =
     let
-        betaBannerNode =
+        alphaBannerNode =
             div
                 [ class <|
-                    if model.showBetaBanner == Just True then
+                    if model.showAlphaBanner == Just True then
                         "shrink-0"
 
                     else
@@ -88,7 +88,7 @@ view model =
                     [ class "rounded-lg border border-amber-500/40 bg-amber-100 px-4 py-3 text-amber-900" ]
                     [ div [ class "flex items-start justify-between gap-4" ]
                         [ div [ class "min-w-0" ]
-                            [ span [ class "font-semibold" ] [ text "Бета-версія: " ]
+                            [ span [ class "font-semibold" ] [ text "Альфа-версія: " ]
                             , text "ця сторінка перебуває у тестовому режимі. "
                             , a
                                 [ class "inline-flex items-center gap-1 font-semibold underline decoration-2 underline-offset-2 text-[var(--color-warning-dark)] hover:text-[var(--color-warning-darker)] hover:decoration-[var(--color-warning-darker)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)] focus-visible:ring-offset-1 focus-visible:ring-offset-amber-100 rounded-sm"
@@ -103,8 +103,8 @@ view model =
                         , button
                             [ class "shrink-0 inline-flex items-center justify-center rounded-sm p-1 text-amber-900/80 hover:text-amber-900 hover:bg-amber-200/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)]"
                             , type_ "button"
-                            , onClick CloseBetaBanner
-                            , attribute "aria-label" "Закрити бета-банер"
+                            , onClick CloseAlphaBanner
+                            , attribute "aria-label" "Закрити альфа-банер"
                             ]
                             [ i [ class "bi bi-x-lg text-sm" ] [] ]
                         ]
@@ -114,7 +114,7 @@ view model =
     { title = "РЕР-аналіз"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 px-6 py-4 w-full flex flex-col gap-6 overflow-visible lg:overflow-hidden" ]
-            [ betaBannerNode
+            [ alphaBannerNode
             , div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-analysis-neo"
                     [ class "block w-full h-full" ]

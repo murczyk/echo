@@ -2865,3 +2865,14 @@ export type SigintKeySharePolicy = {
   createdAt: number;
 };
 
+export type DutyTagsLayout =
+  | 'full'
+  | 'compact'
+  | 'hidden'
+;
+
+export type UserDutySettingsDto = {
+  tagsLayout: DutyTagsLayout;
+  disableAutoScroll: boolean;
+};
+

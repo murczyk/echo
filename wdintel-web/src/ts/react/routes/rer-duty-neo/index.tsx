@@ -1,10 +1,11 @@
 import { Box, Button, Paper } from '@mui/material';
-import { useCallback, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
-import { getStoredMessageCardLayout, setStoredMessageCardLayout } from './utils';
+import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
+import { fetchUserSettings } from '../../services/api/user-settings';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -13,10 +14,23 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
-  const [messageCardLayout, setMessageCardLayout] = useState(getStoredMessageCardLayout);
-  const handleMessageCardLayoutChange = useCallback((v: 'dividers' | 'fluid') => {
-    setStoredMessageCardLayout(v);
-    setMessageCardLayout(v);
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
+  useEffect(() => {
+    let cancelled = false;
+    const loadLayout = async () => {
+      try {
+        const prefs = await fetchUserSettings();
+        if (cancelled) return;
+        setTagsLayout(prefs.tagsLayout);
+      } catch {
+        if (cancelled) return;
+        setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+      }
+    };
+    loadLayout();
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const {
     messageFeeds,
@@ -121,8 +135,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               adjacentFreqsRange={w.adjacentFreqsRange}
               highlightSignalsEnabled={w.highlightSignalsEnabled}
               onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
-              messageCardLayout={messageCardLayout}
-              onMessageCardLayoutChange={handleMessageCardLayoutChange}
+              tagsLayout={tagsLayout}
               savedFilters={savedFilters}
               selectedSavedId={selectedSavedId}
               saveFilterName={saveFilterName}

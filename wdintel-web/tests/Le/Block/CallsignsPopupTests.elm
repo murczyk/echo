@@ -57,6 +57,7 @@ createNetwork id freqs unitIds =
     , postIds = []
     , descriptions = []
     , deleted = False
+    , status = B.NetworkActive
     }
 
 
