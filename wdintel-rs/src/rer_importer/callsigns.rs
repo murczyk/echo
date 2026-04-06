@@ -495,10 +495,13 @@ fn extract_kharkiv_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     const CALLSIGN_REGEX_STR: &str =
         r"(?P<callsign>[\p{Cyrillic}0-9A-Z-]+([0-9]{1,3})?)(\s?\([^\s]+\))?";
+    const TRAILING_FREQ_REGEX_STR: &str = r"\s+\d{3,4}\.$";
 
     lazy_static! {
         // Regex for matching a single callsign
         static ref CALLSIGN_REGEX: Regex = Regex::new(CALLSIGN_REGEX_STR).unwrap();
+        static ref TRAILING_FREQ_REGEX: Regex =
+            Regex::new(TRAILING_FREQ_REGEX_STR).unwrap();
 
         // Regex for validating an entire line of callsigns separated by commas
         static ref LINE_REGEX: Regex = Regex::new(&format!(
@@ -512,9 +515,9 @@ fn extract_kharkiv_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     for line in lines.iter() {
         if let Some(line_match) = LINE_REGEX.find(line) {
-            // Extract the matched part of the line
-            let matched_text = line_match.as_str();
-            for capture in CALLSIGN_REGEX.captures_iter(matched_text) {
+            let matched_text =
+                TRAILING_FREQ_REGEX.replace(line_match.as_str(), "");
+            for capture in CALLSIGN_REGEX.captures_iter(&matched_text) {
                 if capture.name("callsign").is_some() {
                     add_callsign(
                         &capture, "callsign", line, msg_pos, true, &mut res,
@@ -2901,6 +2904,17 @@ mod tests {
 (3)"#;
         let res = extract_kharkiv_callsigns(body).unwrap();
         let expected: Vec<String> = vec!["7-Й".to_string(), "УРАЛ".to_string()];
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_kharkiv_skips_dot_separated_frequency() {
+        let body = r#"12:45 ПАТРИОТ ГЮРЗА 452.366
+1. Ты из какого хазяйства"#;
+        let res = extract_kharkiv_callsigns(body).unwrap();
+        let expected: Vec<String> =
+            vec!["ПАТРИОТ".to_string(), "ГЮРЗА".to_string()];
         let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
