@@ -201,10 +201,14 @@ navBar user shared activeName props =
                 ]
 
         importSubs =
-            [ internalMenu Route.Path.RerCsvImport "rer-csv-import" "Імпорт CSV"
-            , internalMenu Route.Path.RerDeltaImport "rer-delta-import" "Імпорт Delta"
-            , internalMenu Route.Path.Importer "importer" "Імпортер"
-            ]
+            List.concat
+                [ ifOrEmpty (hasRole "Rer" user)
+                    [ internalMenu Route.Path.RerCsvImport "rer-csv-import" "Імпорт CSV"
+                    , internalMenu Route.Path.RerDeltaImport "rer-delta-import" "Імпорт Delta"
+                    ]
+                , ifOrEmpty (hasRole "Basic" user)
+                    [ internalMenu Route.Path.Importer "importer" "Імпортер" ]
+                ]
 
         converterSubs =
             [ internalMenu Route.Path.AlpinequestKmz "alpinequest-kmz" "AlpineQuest в KMZ"
@@ -233,7 +237,7 @@ navBar user shared activeName props =
                     [ menuWithSubs "etalonka" "Еталонка" etalonkaSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
                     [ menuWithSubs "goi" "ГОІ" goiSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "import" "Імпорт" importSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "Конвертери" converterSubs ]
