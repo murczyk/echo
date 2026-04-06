@@ -23,7 +23,8 @@ import {
   setupGoiIntegrationWorker,
   upsertGoiAdminIntegration,
 } from '../../services/api/goi-admin';
-import { listOrganisms, listOrganismLogins } from '../../services/api/organisms';
+import { listLogins } from '../../services/api/logins';
+import { listOrganisms } from '../../services/api/organisms';
 import {
   GOI_INTEGRATION_TYPE_FULL,
   GOI_INTEGRATION_TYPE_SIMPLE,
@@ -152,11 +153,11 @@ export function AdminGoiIntegrationsNeoPage() {
         const [nextIntegrations, nextOrganisms, nextLogins] = await Promise.all([
           listGoiAdminIntegrations(),
           listOrganisms({ sortBy: 'OrganismNameAsc' }),
-          listOrganismLogins(),
+          listLogins({ sortBy: null, filterByRoles: null }),
         ]);
         setIntegrations(nextIntegrations);
         setOrganisms(nextOrganisms);
-        setLogins(nextLogins);
+        setLogins(nextLogins.users.map((user) => user.login));
         if (nextIntegrations.length > 0) {
           setSelectedId(nextIntegrations[0].id);
           setForm(toForm(nextIntegrations[0]));
