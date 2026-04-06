@@ -2,6 +2,7 @@ import LaunchIcon from '@mui/icons-material/Launch';
 import {
   Alert,
   Card,
+  CardActions,
   CardContent,
   CircularProgress,
   Stack,
@@ -11,45 +12,19 @@ import React from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { Button } from '../../components/mui-customized/button';
+import { isUnauthorizedError } from '../../services/api/client';
 import {
-  isUnauthorizedError,
-} from '../../services/api/client';
-import {
-  CurrentUserGoiControlState,
   GoiRestartService,
-  fetchCurrentUserGoiControlState,
+  GoiUserIntegration,
+  fetchCurrentUserGoiIntegrations,
   restartCurrentUserGoiService,
 } from '../../services/api/goi-settings';
 
-type GoiSettingsPageProps = {
-  goiHost: string | null;
-};
-
-type ActionStatus =
-  | {
-      kind: 'success' | 'error';
-      message: string;
-    }
-  | null;
-
-function buildSwappUrl(rawHost: string | null): string | null {
-  const host = rawHost?.trim();
-  if (!host) return null;
-
-  const normalizedHost = host.startsWith('http://') || host.startsWith('https://') ? host : `http://${host}`;
-
-  try {
-    const url = new URL(normalizedHost);
-    url.protocol = 'http:';
-    url.port = '4002';
-    url.pathname = '/';
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch (_) {
-    return null;
-  }
-}
+type ActionStatus = {
+  kind: 'success' | 'error';
+  integrationId: number;
+  message: string;
+} | null;
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
@@ -65,53 +40,104 @@ function redirectToLogin() {
 }
 
 function restartServiceLabel(service: GoiRestartService): string {
-  switch (service) {
-    case 'swapp':
-      return 'SWAPP';
-    case 'goi':
-      return 'GOI';
-  }
+  return service === 'swapp' ? 'SWAPP' : 'GOI';
 }
 
-type RestartActionCardProps = {
-  title: string;
-  description: string;
-  buttonLabel: string;
-  disabled: boolean;
-  loading: boolean;
-  onClick: () => void;
+type IntegrationCardProps = {
+  integration: GoiUserIntegration;
+  actionStatus: ActionStatus;
+  pendingKey: string | null;
+  onRestart: (integrationId: number, service: GoiRestartService) => void;
 };
 
-function RestartActionCard(props: RestartActionCardProps) {
+function IntegrationCard(props: IntegrationCardProps) {
+  const { integration } = props;
+  const goiKey = `${integration.id}:goi`;
+  const swappKey = `${integration.id}:swapp`;
+
   return (
     <Card variant="outlined">
       <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-        <Stack spacing={2.5}>
+        <Stack spacing={2}>
           <div>
             <Typography variant="h6" component="h2" className="!text-lg !font-semibold">
-              {props.title}
+              {integration.serverLabel || 'ГОІ сервер'}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {props.description}
+              Власник: {integration.ownerOrganismName}
             </Typography>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="contained" color="error" disabled={props.disabled} onClick={props.onClick}>
-              {props.buttonLabel}
-            </Button>
-            {props.loading ? <CircularProgress size={18} /> : null}
-          </div>
+
+          {integration.goiUrl ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outlined"
+                endIcon={<LaunchIcon />}
+                onClick={() => window.open(integration.goiUrl!, '_blank', 'noopener,noreferrer')}
+              >
+                Відкрити ГОІ
+              </Button>
+              <Typography variant="body2" color="text.secondary">
+                {integration.goiUrl}
+              </Typography>
+            </div>
+          ) : (
+            <Alert severity="warning">Для цієї інтеграції не вказано URL / host ГОІ.</Alert>
+          )}
+
+          {integration.swappUrl ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outlined"
+                endIcon={<LaunchIcon />}
+                onClick={() => window.open(integration.swappUrl!, '_blank', 'noopener,noreferrer')}
+              >
+                Відкрити SWAPP
+              </Button>
+              <Typography variant="body2" color="text.secondary">
+                {integration.swappUrl}
+              </Typography>
+            </div>
+          ) : null}
+
+          {!integration.canRestart && integration.restartUnavailableReason ? (
+            <Alert severity="info">{integration.restartUnavailableReason}</Alert>
+          ) : null}
+
+          {props.actionStatus?.integrationId === integration.id ? (
+            <Alert severity={props.actionStatus.kind}>{props.actionStatus.message}</Alert>
+          ) : null}
         </Stack>
       </CardContent>
+      <CardActions sx={{ px: 3, pb: 3, pt: 0, gap: 1, flexWrap: 'wrap' }}>
+        <Button
+          variant="contained"
+          color="error"
+          disabled={!integration.canRestart || props.pendingKey !== null}
+          onClick={() => props.onRestart(integration.id, 'swapp')}
+        >
+          Перезапуск SWAPP
+        </Button>
+        {props.pendingKey === swappKey ? <CircularProgress size={18} /> : null}
+        <Button
+          variant="contained"
+          color="error"
+          disabled={!integration.canRestart || props.pendingKey !== null}
+          onClick={() => props.onRestart(integration.id, 'goi')}
+        >
+          Перезапуск GOI
+        </Button>
+        {props.pendingKey === goiKey ? <CircularProgress size={18} /> : null}
+      </CardActions>
     </Card>
   );
 }
 
-export function GoiSettingsPage(props: GoiSettingsPageProps) {
-  const swappUrl = buildSwappUrl(props.goiHost);
-  const [controlState, setControlState] = React.useState<CurrentUserGoiControlState | null>(null);
-  const [controlStateError, setControlStateError] = React.useState<string | null>(null);
-  const [pendingService, setPendingService] = React.useState<GoiRestartService | null>(null);
+export function GoiSettingsPage() {
+  const [integrations, setIntegrations] = React.useState<GoiUserIntegration[]>([]);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [pendingKey, setPendingKey] = React.useState<string | null>(null);
   const [actionStatus, setActionStatus] = React.useState<ActionStatus>(null);
 
   React.useEffect(() => {
@@ -119,36 +145,39 @@ export function GoiSettingsPage(props: GoiSettingsPageProps) {
 
     void (async () => {
       try {
-        const nextControlState = await fetchCurrentUserGoiControlState(abortController.signal);
+        const nextIntegrations = await fetchCurrentUserGoiIntegrations(abortController.signal);
         if (abortController.signal.aborted) return;
-        setControlState(nextControlState);
-        setControlStateError(null);
+        setIntegrations(nextIntegrations);
+        setLoadError(null);
       } catch (error) {
         if (abortController.signal.aborted || isAbortError(error)) return;
         if (isUnauthorizedError(error)) {
           redirectToLogin();
           return;
         }
-        setControlState(null);
-        setControlStateError(formatErrorMessage(error));
+        setLoadError(formatErrorMessage(error));
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     })();
 
-    return () => {
-      abortController.abort();
-    };
+    return () => abortController.abort();
   }, []);
 
-  async function handleRestart(service: GoiRestartService) {
-    if (pendingService) return;
+  async function handleRestart(integrationId: number, service: GoiRestartService) {
+    const nextPendingKey = `${integrationId}:${service}`;
+    if (pendingKey) return;
 
-    setPendingService(service);
+    setPendingKey(nextPendingKey);
     setActionStatus(null);
 
     try {
-      await restartCurrentUserGoiService(service);
+      await restartCurrentUserGoiService(integrationId, service);
       setActionStatus({
         kind: 'success',
+        integrationId,
         message: `${restartServiceLabel(service)} успішно перезапущено`,
       });
     } catch (error) {
@@ -158,10 +187,11 @@ export function GoiSettingsPage(props: GoiSettingsPageProps) {
       }
       setActionStatus({
         kind: 'error',
+        integrationId,
         message: formatErrorMessage(error),
       });
     } finally {
-      setPendingService(null);
+      setPendingKey(null);
     }
   }
 
@@ -169,64 +199,24 @@ export function GoiSettingsPage(props: GoiSettingsPageProps) {
     <Stack spacing={3}>
       <PageHeader
         title="ГОІ: налаштування"
-        titleInfo="Перезапуск сервісів для GOI інстансу організму поточного користувача."
+        titleInfo="Доступні для поточного користувача інтеграції ГОІ, посилання та перезапуск сервісів."
       />
 
-      {actionStatus ? <Alert severity={actionStatus.kind}>{actionStatus.message}</Alert> : null}
-      {controlStateError ? <Alert severity="error">{controlStateError}</Alert> : null}
-      {!controlState && !controlStateError ? <Alert severity="info">Перевіряю доступність перезапуску GOI...</Alert> : null}
-      {controlState && !controlState.canRestart && controlState.restartUnavailableReason ? (
-        <Alert severity="info">{controlState.restartUnavailableReason}</Alert>
+      {loading ? <Alert severity="info">Завантажую інтеграції ГОІ...</Alert> : null}
+      {loadError ? <Alert severity="error">{loadError}</Alert> : null}
+      {!loading && !loadError && integrations.length === 0 ? (
+        <Alert severity="info">Для поточного користувача немає доступних інтеграцій ГОІ.</Alert>
       ) : null}
 
-      <Card variant="outlined">
-        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-          <Stack spacing={2}>
-            <div>
-              <Typography variant="h6" component="h2" className="!text-lg !font-semibold">
-                SWAPP
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Відкриває SWAPP на порту 4002 поточного інстансу ГОІ.
-              </Typography>
-            </div>
-            {swappUrl ? (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outlined"
-                  endIcon={<LaunchIcon />}
-                  onClick={() => window.open(swappUrl, '_blank', 'noopener,noreferrer')}
-                >
-                  Відкрити SWAPP
-                </Button>
-                <Typography variant="body2" color="text.secondary">
-                  {swappUrl}
-                </Typography>
-              </div>
-            ) : (
-              <Alert severity="warning">Для організму не вказано GOI host, тому посилання на SWAPP недоступне.</Alert>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <RestartActionCard
-        title="Перезапуск SWAPP"
-        description="Виконує на GOI інстансі команду sudo systemctl restart swapp."
-        buttonLabel="Перезапуск SWAPP"
-        disabled={!controlState?.canRestart || pendingService !== null}
-        loading={pendingService === 'swapp'}
-        onClick={() => handleRestart('swapp')}
-      />
-
-      <RestartActionCard
-        title="Перезапуск GOI"
-        description="Виконує на GOI інстансі команду sudo systemctl restart goi."
-        buttonLabel="Перезапуск GOI"
-        disabled={!controlState?.canRestart || pendingService !== null}
-        loading={pendingService === 'goi'}
-        onClick={() => handleRestart('goi')}
-      />
+      {integrations.map((integration) => (
+        <IntegrationCard
+          key={integration.id}
+          integration={integration}
+          actionStatus={actionStatus}
+          pendingKey={pendingKey}
+          onRestart={handleRestart}
+        />
+      ))}
     </Stack>
   );
 }

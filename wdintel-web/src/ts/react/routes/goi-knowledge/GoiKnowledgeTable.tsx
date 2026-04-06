@@ -32,6 +32,7 @@ const defaultMRTOptions = getDefaultMRTOptions<GoiKnowledgeRowView>();
 export const DEFAULT_GOI_KNOWLEDGE_COLUMN_VISIBILITY = {
   sourceKnowledgeId: true,
   sourceCreatedAt: true,
+  server: true,
   name: true,
   key: true,
   knowledgeType: true,
@@ -46,6 +47,7 @@ export const DEFAULT_GOI_KNOWLEDGE_COLUMN_ORDER = buildDefaultColumnOrder({
   dataColumnIds: [
     'sourceKnowledgeId',
     'sourceCreatedAt',
+    'server',
     'name',
     'key',
     'knowledgeType',
@@ -118,6 +120,17 @@ export function GoiKnowledgeTable(props: Props) {
         enableColumnFilter: false,
         size: 170,
         Cell: ({ row }) => row.original.sourceCreatedAtLabel,
+      },
+      {
+        header: 'Сервер',
+        accessorKey: 'serverLabel',
+        id: 'server',
+        enableColumnFilter: true,
+        enableSorting: false,
+        size: 220,
+        Cell: ({ row }) => (
+          <LongTextCell value={row.original.serverLabel} maxWidth={220} />
+        ),
       },
       {
         header: 'Назва',

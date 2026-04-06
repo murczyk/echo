@@ -41,6 +41,9 @@ pub use super::echo_whatsapp_queue_attachment::Entity as EchoWhatsappQueueAttach
 pub use super::enemy_units_geojson::Entity as EnemyUnitsGeojson;
 pub use super::freq_location::Entity as FreqLocation;
 pub use super::goi_association::Entity as GoiAssociation;
+pub use super::goi_integration::Entity as GoiIntegration;
+pub use super::goi_integration_access_login::Entity as GoiIntegrationAccessLogin;
+pub use super::goi_integration_access_organism::Entity as GoiIntegrationAccessOrganism;
 pub use super::goi_knowledge::Entity as GoiKnowledge;
 pub use super::group_admin_data::Entity as GroupAdminData;
 pub use super::log_users_report_generation::Entity as LogUsersReportGeneration;

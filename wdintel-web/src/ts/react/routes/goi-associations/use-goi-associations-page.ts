@@ -147,6 +147,9 @@ export function useGoiAssociationsPage() {
     sortBy: goiAssociationsSortBy(tableStateContext.sorting),
     filterText:
       tableStateContext.globalFilter.trim() || null,
+    filterServer:
+      getStringColumnFilterValue(tableStateContext.columnFilters, 'server') ||
+      null,
     filterFrequency:
       getStringColumnFilterValue(tableStateContext.columnFilters, 'frequency') ||
       null,
