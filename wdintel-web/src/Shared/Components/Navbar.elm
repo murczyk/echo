@@ -179,7 +179,7 @@ navBar user shared activeName props =
                                     [ externalMenu
                                         url
                                         ("goi-external-" ++ String.fromInt integration.id)
-                                        (integration.ownerOrganismName ++ " / " ++ integration.serverLabel)
+                                        ("Сервер " ++ integration.ownerOrganismName)
                                     ]
                                 )
                             |> Maybe.withDefault []
