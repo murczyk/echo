@@ -19,10 +19,8 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn is_numeric_callsign(callsign: &String) -> bool {
-    let Ok(num) = callsign.trim().parse::<i64>() else {
-        return false;
-    };
-    num > 999
+    let callsign = callsign.trim();
+    callsign.len() >= 3 && callsign.chars().all(|char_| char_.is_ascii_digit())
 }
 
 // /// Callsigns which we don't auto-guess
@@ -497,10 +495,13 @@ fn extract_kharkiv_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     const CALLSIGN_REGEX_STR: &str =
         r"(?P<callsign>[\p{Cyrillic}0-9A-Z-]+([0-9]{1,3})?)(\s?\([^\s]+\))?";
+    const TRAILING_FREQ_REGEX_STR: &str = r"\s+\d{3,4}\.$";
 
     lazy_static! {
         // Regex for matching a single callsign
         static ref CALLSIGN_REGEX: Regex = Regex::new(CALLSIGN_REGEX_STR).unwrap();
+        static ref TRAILING_FREQ_REGEX: Regex =
+            Regex::new(TRAILING_FREQ_REGEX_STR).unwrap();
 
         // Regex for validating an entire line of callsigns separated by commas
         static ref LINE_REGEX: Regex = Regex::new(&format!(
@@ -514,9 +515,9 @@ fn extract_kharkiv_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     for line in lines.iter() {
         if let Some(line_match) = LINE_REGEX.find(line) {
-            // Extract the matched part of the line
-            let matched_text = line_match.as_str();
-            for capture in CALLSIGN_REGEX.captures_iter(matched_text) {
+            let matched_text =
+                TRAILING_FREQ_REGEX.replace(line_match.as_str(), "");
+            for capture in CALLSIGN_REGEX.captures_iter(&matched_text) {
                 if capture.name("callsign").is_some() {
                     add_callsign(
                         &capture, "callsign", line, msg_pos, true, &mut res,
@@ -1077,7 +1078,7 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     const LITERAL_CALLSIGN_STR: &str =
         r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
-    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{4,5})";
+    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{3,})";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -2908,6 +2909,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_extract_callsigns_kharkiv_skips_dot_separated_frequency() {
+        let body = r#"12:45 ПАТРИОТ ГЮРЗА 452.366
+1. Ты из какого хазяйства"#;
+        let res = extract_kharkiv_callsigns(body).unwrap();
+        let expected: Vec<String> =
+            vec!["ПАТРИОТ".to_string(), "ГЮРЗА".to_string()];
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
     async fn extract_callsigns_without_freq_01() {
         let rq = reqwest::Client::new();
         let body = r#"УКХ р/м 25 омсбр 6 А (ЛИМАН-1 — ТАВІЛЬЖАНКА)
@@ -3498,4 +3510,30 @@ async fn test_extract_callsigns_avia_format_spaces_in_separator() {
             .collect::<Vec<_>>(),
         vec!["06969", "КРЕМНИЙ"]
     )
+}
+
+#[test]
+fn test_is_numeric_callsign_accepts_three_digits() {
+    assert!(is_numeric_callsign(&"123".to_string()));
+    assert!(is_numeric_callsign(&"001".to_string()));
+    assert!(!is_numeric_callsign(&"12".to_string()));
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_catch_three_digits() {
+    let body = r#"Отримано з поста "31/1"
+--------------------------------------
+19.09.2025, 17:51:53
+118.900
+🟠УКХ р/м НВ підрозділу 118.900 МГц
+
+ДВОР
+549
+
+
+— Двор, 549, работу закончил, разрешите по обратному ..."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["ДВОР".to_string(), "549".to_string()];
+    let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
 }

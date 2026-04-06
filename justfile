@@ -91,6 +91,7 @@ dev-py:
     #!/bin/bash
     set -euxo pipefail
     echo "Setting up Python environment..."
+    PYTHON_BIN=""
     # check if wdintel-rs/wdintel-py/.venv doesn't exist and create it
     if ! test -d "wdintel-rs/wdintel-py/.venv"; then
         echo "Creating wdintel-rs/wdintel-py/.venv"
@@ -99,11 +100,13 @@ dev-py:
           if command -v $PY >/dev/null 2>&1; then
             echo "Using $PY to create venv"
             $PY -m venv wdintel-rs/wdintel-py/.venv
+            PYTHON_BIN="$PY"
             break
           fi
         done
     fi
     source wdintel-rs/wdintel-py/.venv/bin/activate
+    PYTHON_BIN="${PYTHON_BIN:-$PWD/wdintel-rs/wdintel-py/.venv/bin/python3}"
 
     # Check if requirements are already installed by comparing timestamps
     REQUIREMENTS_FILE="wdintel-rs/wdintel-py/requirements.txt"
@@ -111,7 +114,12 @@ dev-py:
 
     if [ ! -f "$INSTALLED_MARKER" ] || [ "$REQUIREMENTS_FILE" -nt "$INSTALLED_MARKER" ]; then
         echo "Installing Python dependencies..."
-        pip install -r "$REQUIREMENTS_FILE"
+        # Keep packaging tooling current so requirements install does not depend
+        # on whatever bootstrap modules happened to be bundled with the
+        # selected Python.
+        "$PYTHON_BIN" -m ensurepip --upgrade
+        "$PYTHON_BIN" -m pip install --upgrade pip setuptools wheel
+        "$PYTHON_BIN" -m pip install -r "$REQUIREMENTS_FILE"
         touch "$INSTALLED_MARKER"
     else
         echo "Python dependencies already up to date, skipping installation"
