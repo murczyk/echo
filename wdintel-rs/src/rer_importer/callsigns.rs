@@ -19,10 +19,8 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn is_numeric_callsign(callsign: &String) -> bool {
-    let Ok(num) = callsign.trim().parse::<i64>() else {
-        return false;
-    };
-    num > 999
+    let callsign = callsign.trim();
+    callsign.len() >= 3 && callsign.chars().all(|char_| char_.is_ascii_digit())
 }
 
 // /// Callsigns which we don't auto-guess
@@ -1077,7 +1075,7 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     const LITERAL_CALLSIGN_STR: &str =
         r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
-    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{4,5})";
+    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{3,})";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -3498,4 +3496,30 @@ async fn test_extract_callsigns_avia_format_spaces_in_separator() {
             .collect::<Vec<_>>(),
         vec!["06969", "КРЕМНИЙ"]
     )
+}
+
+#[test]
+fn test_is_numeric_callsign_accepts_three_digits() {
+    assert!(is_numeric_callsign(&"123".to_string()));
+    assert!(is_numeric_callsign(&"001".to_string()));
+    assert!(!is_numeric_callsign(&"12".to_string()));
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_catch_three_digits() {
+    let body = r#"Отримано з поста "31/1"
+--------------------------------------
+19.09.2025, 17:51:53
+118.900
+🟠УКХ р/м НВ підрозділу 118.900 МГц
+
+ДВОР
+549
+
+
+— Двор, 549, работу закончил, разрешите по обратному ..."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["ДВОР".to_string(), "549".to_string()];
+    let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
 }
