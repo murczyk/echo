@@ -2908,16 +2908,18 @@ viewportBoundsEncoder struct =
 
 
 type alias Geometry =
-    { center : Coords
-    , perimeterLinearRing : List (Coords)
+    { center : Maybe Coords
+    , perimeterLinearRing : Maybe (List Coords)
+    , lineStrings : Maybe (List (List Coords))
     }
 
 
 geometryEncoder : Geometry -> Json.Encode.Value
 geometryEncoder struct =
     Json.Encode.object
-        [ ( "center", (coordsEncoder) struct.center )
-        , ( "perimeter_linear_ring", (Json.Encode.list (coordsEncoder)) struct.perimeterLinearRing )
+        [ ( "center", (Maybe.withDefault Json.Encode.null << Maybe.map coordsEncoder) struct.center )
+        , ( "perimeter_linear_ring", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list coordsEncoder)) struct.perimeterLinearRing )
+        , ( "line_strings", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.list coordsEncoder))) struct.lineStrings )
         ]
 
 
@@ -8935,8 +8937,9 @@ viewportBoundsDecoder =
 geometryDecoder : Json.Decode.Decoder Geometry
 geometryDecoder =
     Json.Decode.succeed Geometry
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "center" (coordsDecoder)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "perimeter_linear_ring" (Json.Decode.list (coordsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "center" (Json.Decode.nullable coordsDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "perimeter_linear_ring" (Json.Decode.nullable (Json.Decode.list coordsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "line_strings" (Json.Decode.nullable (Json.Decode.list (Json.Decode.list coordsDecoder)))))
 
 
 coordsDecoder : Json.Decode.Decoder Coords
