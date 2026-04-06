@@ -1,6 +1,7 @@
 import {useEffect, useMemo, useState} from 'react';
 
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -78,6 +79,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     pollIntervalSec,
   });
   const setFeedError = feedState.setError;
+  useEffect(() => attachDutyNotificationAudioPrimingListeners(), []);
   useEffect(() => {
     let cancelled = false;
     currentSystemSettings()

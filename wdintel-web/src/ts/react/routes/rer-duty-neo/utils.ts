@@ -459,6 +459,13 @@ export type MessageFeedState = {
   onlyMyUnitTagsEnabled: boolean;
 };
 
+/** Unread count on the column “new messages” FAB chip — keep in sync anywhere else we show the same number (e.g. tab title). */
+export function feedColumnUnreadDisplayed(feed: MessageFeedState): number {
+  return feed.items.length > 0
+    ? Math.max(feed.unreadCount, feed.items.filter(([id]) => !feed.readIds.has(id)).length)
+    : feed.unreadCount;
+}
+
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
   return {
     messageFeeds: messageFeeds.map((f) => [f.id, f.filter]),

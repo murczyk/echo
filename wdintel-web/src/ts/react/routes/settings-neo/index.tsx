@@ -26,6 +26,7 @@ import {
   getBrowserNotificationPermission,
   getStoredDutyNotificationSettings,
   requestBrowserNotificationPermission,
+  resumeDutyNotificationAudioFromUserGesture,
   setStoredDutyNotificationSettings,
   type DutyNotificationSettings,
 } from "../rer-duty-neo/notifications";
@@ -299,9 +300,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     control={
                       <Switch
                           checked={dutyNotificationSettings.soundEnabled}
-                          onChange={(_, checked) =>
-                              setDutyNotificationSettings((prev) => ({ ...prev, soundEnabled: checked }))
-                          }
+                          onChange={(_, checked) => {
+                            if (checked) {
+                              resumeDutyNotificationAudioFromUserGesture();
+                            }
+                            setDutyNotificationSettings((prev) => ({ ...prev, soundEnabled: checked }));
+                          }}
                       />
                     }
                     label="Звукова нотифікація"
