@@ -122,9 +122,6 @@ navBar user shared activeName props =
             else
                 "Звичайний режим"
 
-        menu =
-            menuItem props activeName
-
         menuWithSubs =
             menuItemWithSubs props activeName
 
