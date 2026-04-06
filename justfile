@@ -161,7 +161,7 @@ test-fe:
         echo "npm dependencies already up to date, skipping installation"
     fi
 
-    npx elm-land build && npx elm-test && npx vitest run
+    npm run build && npm test
 
 test-be:
     #!/bin/bash
