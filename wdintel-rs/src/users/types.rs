@@ -23,6 +23,7 @@ pub struct User {
     pub goi_configured_for_organism: bool,
     pub goi_full_access_for_organism: bool,
     pub goi_host: Option<String>,
+    pub goi_integrations: Vec<crate::organism::goi::types::GoiUserIntegration>,
 }
 
 #[derive(

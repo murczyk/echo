@@ -71,6 +71,7 @@ init flagsResult _ =
                 , goiConfiguredForOrganism = False
                 , goiFullAccessForOrganism = False
                 , goiHost = Nothing
+                , goiIntegrations = []
                 }
       , themeMode =
             if flags.isDark then

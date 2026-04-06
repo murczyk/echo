@@ -2,6 +2,7 @@ use crate::config::{ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::organism::goi::shared::goi_integration_web_host;
 use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::palitra::bl::{
     palitra_search_cache_key, palitra_suggest_cache_key, read_cached_json,
@@ -1326,24 +1327,26 @@ async fn collect_connected_goi_targets(
         return Ok(vec![]);
     }
 
-    let organisms = organism::Entity::find()
-        .filter(organism::Column::Id.is_in(organism_ids.to_vec()))
-        .filter(organism::Column::DeletedPermanently.eq(false))
+    let integrations = goi_integration::Entity::find()
+        .filter(
+            goi_integration::Column::OwnerOrganismId
+                .is_in(organism_ids.to_vec()),
+        )
         .all(dbx)
         .await
         .c(h!())?;
 
-    let mut goi_targets = Vec::with_capacity(organisms.len());
-    for organism in organisms {
-        let organism_id = organism.id;
-        let ssh_host = organism
-            .goi_ssh_host
+    let mut goi_targets = Vec::with_capacity(integrations.len());
+    for integration in integrations {
+        let integration_id = integration.id;
+        let ssh_host = integration
+            .ssh_host
             .as_ref()
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        let ssh_user = organism
-            .goi_ssh_user
+        let ssh_user = integration
+            .ssh_user
             .as_ref()
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
@@ -1353,15 +1356,15 @@ async fn collect_connected_goi_targets(
         let Some(ssh_user) = ssh_user else { continue };
 
         let path = normalize_trimmed_or_default(
-            organism.goi_path,
+            integration.path.clone(),
             ORGANISM_GOI_PATH_DEFAULT,
         );
         if path.trim().is_empty() {
             continue;
         }
 
-        let ssh_port = if organism.goi_ssh_port > 0 {
-            organism.goi_ssh_port
+        let ssh_port = if integration.ssh_port > 0 {
+            integration.ssh_port
         } else {
             ORGANISM_GOI_SSH_PORT_DEFAULT
         };
@@ -1376,7 +1379,9 @@ async fn collect_connected_goi_targets(
             Ok(()) => goi_targets.push(req),
             Err(err) => {
                 log::warn!(
-                    "Skipping GOI sync target for organism {organism_id}: {err:#}"
+                    "Skipping GOI sync target for integration {} ({}): {err:#}",
+                    integration_id,
+                    goi_integration_web_host(&integration).unwrap_or_default()
                 );
             }
         }

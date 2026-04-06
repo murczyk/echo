@@ -1,0 +1,87 @@
+//! `SeaORM` Entity
+
+use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(
+    Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize,
+)]
+#[sea_orm(table_name = "goi_integration")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    pub owner_organism_id: i64,
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_type = "Text")]
+    pub integration_type: String,
+    #[sea_orm(column_type = "Text")]
+    pub server_key: String,
+    #[sea_orm(column_type = "Text")]
+    pub server_label: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub ssh_host: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub ssh_user: Option<String>,
+    pub ssh_port: i32,
+    #[sea_orm(column_type = "Text")]
+    pub path: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub api_host: Option<String>,
+    pub api_port: i32,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub api_login: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub api_password: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {
+    #[sea_orm(has_many = "super::goi_association::Entity")]
+    GoiAssociation,
+    #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
+    GoiIntegrationAccessLogin,
+    #[sea_orm(has_many = "super::goi_integration_access_organism::Entity")]
+    GoiIntegrationAccessOrganism,
+    #[sea_orm(has_many = "super::goi_knowledge::Entity")]
+    GoiKnowledge,
+    #[sea_orm(
+        belongs_to = "super::organism::Entity",
+        from = "Column::OwnerOrganismId",
+        to = "super::organism::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Organism,
+}
+
+impl Related<super::goi_association::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiAssociation.def()
+    }
+}
+
+impl Related<super::goi_integration_access_login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiIntegrationAccessLogin.def()
+    }
+}
+
+impl Related<super::goi_integration_access_organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiIntegrationAccessOrganism.def()
+    }
+}
+
+impl Related<super::goi_knowledge::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiKnowledge.def()
+    }
+}
+
+impl Related<super::organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Organism.def()
+    }
+}
+
+impl ActiveModelBehavior for ActiveModel {}

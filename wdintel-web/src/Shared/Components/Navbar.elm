@@ -147,6 +147,7 @@ navBar user shared activeName props =
             [ internalMenu Route.Path.Admin_DirectionsNeo "zones" "напрямки"
             , internalMenu Route.Path.Admin_UsersNeo "users-neo" "користувачі"
             , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "організми"
+            , internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "гоі"
             , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "теги"
             , internalMenu Route.Path.Admin_AorNeo "aor-neo" "смуги"
             , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "ключі"
@@ -168,14 +169,21 @@ navBar user shared activeName props =
             ]
 
         goiSubs =
-            (user.goiHost
-                |> Maybe.andThen goiExternalUrl
-                |> Maybe.map
-                    (\url ->
-                        [ externalMenu url "goi-external" "відкрити ГОІ"
-                        ]
+            (user.goiIntegrations
+                |> List.concatMap
+                    (\integration ->
+                        integration.goiUrl
+                            |> Maybe.andThen goiExternalUrl
+                            |> Maybe.map
+                                (\url ->
+                                    [ externalMenu
+                                        url
+                                        ("goi-external-" ++ String.fromInt integration.id)
+                                        (integration.ownerOrganismName ++ " / " ++ integration.serverLabel)
+                                    ]
+                                )
+                            |> Maybe.withDefault []
                     )
-                |> Maybe.withDefault []
             )
                 ++ (if user.goiFullAccessForOrganism then
                         [ internalMenu Route.Path.GoiAssociations "goi-associations" "висновки"

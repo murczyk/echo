@@ -229,6 +229,7 @@ mod m20260325_123200_add_rer_duty_test_settings;
 mod m20260326_120000_add_full_name_to_sigint_callsign;
 mod m20260329_184900_add_palitra_line_strings;
 mod m20260331_230927_add_palitra_s3_id;
+mod m20260406_210334_add_goi_integrations;
 
 pub struct Migrator;
 
@@ -465,6 +466,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260326_120000_add_full_name_to_sigint_callsign::Migration),
             Box::new(m20260325_123200_add_rer_duty_test_settings::Migration),
             Box::new(m20260331_230927_add_palitra_s3_id::Migration),
+            Box::new(m20260406_210334_add_goi_integrations::Migration),
             Box::new(m20260325_120000_add_user_settings::Migration),
             Box::new(m20260329_184900_add_palitra_line_strings::Migration),
         ]

@@ -525,7 +525,7 @@ async fn api_user(
             .c(h!())?
             .map(|x| x.login),
     };
-    let goi = user_goi_state(&env.dbx, login_obj.organism_id)
+    let goi = user_goi_state(&env.dbx, login_obj.organism_id, &username)
         .await
         .c(h!())?;
     Ok(Json(User {
@@ -537,6 +537,7 @@ async fn api_user(
         goi_configured_for_organism: goi.configured,
         goi_full_access_for_organism: goi.full_access,
         goi_host: goi.host,
+        goi_integrations: goi.integrations,
     }))
 }
 
@@ -569,7 +570,7 @@ async fn api_user_info(
             .c(h!())?
             .map(|x| x.login),
     };
-    let goi = user_goi_state(&env.dbx, login_obj.organism_id)
+    let goi = user_goi_state(&env.dbx, login_obj.organism_id, &username)
         .await
         .c(h!())?;
     Ok(Json(User {
@@ -581,6 +582,7 @@ async fn api_user_info(
         goi_configured_for_organism: goi.configured,
         goi_full_access_for_organism: goi.full_access,
         goi_host: goi.host,
+        goi_integrations: goi.integrations,
     }))
 }
 
@@ -588,41 +590,42 @@ struct UserGoiState {
     configured: bool,
     full_access: bool,
     host: Option<String>,
+    integrations: Vec<crate::organism::goi::types::GoiUserIntegration>,
 }
 
 async fn user_goi_state(
     dbx: &DatabaseConnection,
     organism_id: Option<i64>,
+    user_id: &str,
 ) -> Result<UserGoiState, AppError> {
     let Some(organism_id) = organism_id else {
         return Ok(UserGoiState {
             configured: false,
             full_access: false,
             host: None,
+            integrations: Vec::new(),
         });
     };
 
-    let organism = organism::Entity::find_by_id(organism_id)
-        .filter(organism::Column::DeletedPermanently.eq(false))
-        .one(dbx)
+    let integrations =
+        crate::organism::goi::integrations::load_user_goi_integrations(
+            dbx,
+            Some(organism_id),
+            user_id,
+        )
         .await
         .c(h!())?;
-    let Some(organism) = organism else {
-        return Ok(UserGoiState {
-            configured: false,
-            full_access: false,
-            host: None,
-        });
-    };
 
     Ok(UserGoiState {
-        configured: crate::organism::goi::shared::organism_has_goi_config(
-            &organism,
-        ),
-        full_access: crate::organism::goi::shared::organism_has_goi_api_config(
-            &organism,
-        ),
-        host: crate::organism::goi::shared::goi_web_host(&organism),
+        configured: !integrations.is_empty(),
+        full_access: integrations.iter().any(|item| item.has_data_access),
+        host: integrations
+            .iter()
+            .find_map(|item| item.goi_url.clone())
+            .or_else(|| {
+                integrations.iter().find_map(|item| item.swapp_url.clone())
+            }),
+        integrations,
     })
 }
 

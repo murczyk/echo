@@ -154,6 +154,9 @@ export function useGoiKnowledgePage() {
     offset,
     sortBy: goiKnowledgeSortBy(tableStateContext.sorting),
     filterText: tableStateContext.globalFilter.trim() || null,
+    filterServer:
+      getStringColumnFilterValue(tableStateContext.columnFilters, 'server') ||
+      null,
     filterName:
       getStringColumnFilterValue(tableStateContext.columnFilters, 'name') ||
       null,
