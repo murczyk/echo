@@ -54,12 +54,11 @@ export class PalitraPointsController {
     this.pointsLoader = new PalitraPointsLoader(
       map,
       options,
-      callbacks,
       cacheManager,
       stateAccessor,
       {
         getBufferedBounds: () => this.mapAccessor.getBufferedBounds(),
-        shouldRenderPointsAtCurrentZoom: () => this.shouldRenderPointsAtCurrentZoom(),
+        shouldLoadViewportPointsAtCurrentZoom: () => this.shouldUseViewportPointsAtCurrentZoom(),
       },
       apiAccessor,
       () => this.updatePoints(),
@@ -229,12 +228,12 @@ export class PalitraPointsController {
     this.pointClustersRenderer.updatePointLabelVisibility();
   }
 
-  private shouldRenderPointsAtCurrentZoom(): boolean {
+  private shouldUseViewportPointsAtCurrentZoom(): boolean {
     const currentZoom = this.map.getZoom();
-    return currentZoom >= this.getPointsVisibleFromZoom();
+    return currentZoom >= this.getViewportPointsMinZoom();
   }
 
-  private getPointsVisibleFromZoom(): number {
+  private getViewportPointsMinZoom(): number {
     const maxZoom = this.map.getMaxZoom();
     if (Number.isFinite(maxZoom)) {
       return Math.max(0, maxZoom - 1);
@@ -248,7 +247,7 @@ export class PalitraPointsController {
       return;
     }
 
-    if (!this.shouldRenderPointsAtCurrentZoom()) {
+    if (!this.shouldUseViewportPointsAtCurrentZoom()) {
       this.pointClustersRenderer.clear();
       return;
     }
