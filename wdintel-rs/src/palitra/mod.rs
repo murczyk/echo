@@ -723,7 +723,7 @@ pub async fn archive_palitra(
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
     let palitra = bl::update_accessible_palitra_archive_flag(
-        login, palitra_id, true, &txn,
+        login, palitra_id, true, &env.dbx, &txn,
     )
     .await
     .c(h!())?
@@ -749,7 +749,7 @@ pub async fn unarchive_palitra(
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
     let palitra = bl::update_accessible_palitra_archive_flag(
-        login, palitra_id, false, &txn,
+        login, palitra_id, false, &env.dbx, &txn,
     )
     .await
     .c(h!())?
@@ -778,6 +778,7 @@ pub async fn assign_palitra_folder(
         login,
         req.palitra_ids,
         req.folder,
+        &env.dbx,
         &txn,
     )
     .await
@@ -802,6 +803,7 @@ pub async fn rename_palitra_folder(
         login,
         req.from_folder,
         req.to_folder,
+        &env.dbx,
         &txn,
     )
     .await
@@ -825,6 +827,7 @@ pub async fn archive_palitra_folder(
         login,
         req.into_inner().folder,
         true,
+        &env.dbx,
         &txn,
     )
     .await

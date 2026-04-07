@@ -839,18 +839,17 @@ pub async fn update_accessible_palitra_archive_flag(
     login: String,
     palitra_id: i64,
     is_archived: bool,
+    dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Option<Palitra>> {
-    let accessible_ids =
-        collect_accessible_palitra_ids(login, txn).await.c(h!())?;
-    if !accessible_ids.contains(&palitra_id) {
-        return Ok(None);
-    }
-    let palitra = palitra::Entity::find_by_id(palitra_id)
-        .one(txn)
+    let palitra = collect_mutable_palitra_models(login, vec![palitra_id], dbx)
         .await
         .c(h!())?
-        .c(h!())?;
+        .into_iter()
+        .next();
+    let Some(palitra) = palitra else {
+        return Ok(None);
+    };
     let mut palitra = palitra.into_active_model();
     palitra.is_archived = Set(is_archived);
     let palitra = palitra.update(txn).await.c(h!())?;
@@ -864,16 +863,15 @@ pub async fn assign_folder_to_accessible_palitras(
     login: String,
     palitra_ids: Vec<i64>,
     folder: String,
+    dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let folder = normalize_palitra_folder(&folder).c(h!())?;
-    let accessible_ids =
-        collect_accessible_palitra_ids(login, txn).await.c(h!())?;
-    let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
-    let palitra_ids = palitra_ids
+    let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
+        .await
+        .c(h!())?
         .into_iter()
-        .filter(|palitra_id| accessible_ids.contains(palitra_id))
-        .unique()
+        .map(|palitra| palitra.id)
         .collect_vec();
     if palitra_ids.is_empty() {
         return Ok(vec![]);
@@ -892,23 +890,20 @@ pub async fn rename_accessible_palitra_folder(
     login: String,
     from_folder: String,
     to_folder: String,
+    dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let from_folder = normalize_palitra_folder(&from_folder).c(h!())?;
     let to_folder = normalize_palitra_folder(&to_folder).c(h!())?;
-    let accessible_ids =
-        collect_accessible_palitra_ids(login, txn).await.c(h!())?;
-    if accessible_ids.is_empty() {
+    let mutable_palitras =
+        collect_mutable_palitra_models_for_accessible_login(login, dbx)
+            .await
+            .c(h!())?;
+    if mutable_palitras.is_empty() {
         return Ok(vec![]);
     }
-    let palitras = palitra::Entity::find()
-        .filter(palitra::Column::Id.is_in(accessible_ids))
-        .filter(palitra::Column::Deleted.eq(false))
-        .all(txn)
-        .await
-        .c(h!())?;
     let mut updated_ids = Vec::new();
-    for palitra in palitras {
+    for palitra in mutable_palitras {
         let old_folder =
             normalize_palitra_folder_from_db(palitra.folder.clone());
         let Some(new_folder) = replace_folder_prefix(
@@ -930,12 +925,19 @@ pub async fn archive_accessible_palitra_folder(
     login: String,
     folder: String,
     is_archived: bool,
+    dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let palitra_ids =
-        collect_accessible_palitra_ids_in_folder(login, folder, txn)
+        collect_accessible_palitra_ids_in_folder(login.clone(), folder, txn)
             .await
             .c(h!())?;
+    let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|palitra| palitra.id)
+        .collect_vec();
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -947,6 +949,53 @@ pub async fn archive_accessible_palitra_folder(
         .await
         .c(h!())?;
     Ok(palitra_ids)
+}
+
+async fn collect_mutable_palitra_models_for_accessible_login(
+    login: String,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<palitra::Model>> {
+    let accessible_ids = collect_accessible_palitra_ids(login.clone(), dbx)
+        .await
+        .c(h!())?;
+    collect_mutable_palitra_models(login, accessible_ids, dbx)
+        .await
+        .c(h!())
+}
+
+async fn collect_mutable_palitra_models(
+    login: String,
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<palitra::Model>> {
+    let palitra_ids = palitra_ids.into_iter().unique().collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let accessible_ids = collect_accessible_palitra_ids(login.clone(), dbx)
+        .await
+        .c(h!())?;
+    let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
+    let palitra_ids = palitra_ids
+        .into_iter()
+        .filter(|palitra_id| accessible_ids.contains(palitra_id))
+        .collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut palitras = palitra::Entity::find()
+        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let is_admin = crate::users::has_role(dbx, &login, "Admin").await.is_ok();
+    if is_admin {
+        return Ok(palitras);
+    }
+    palitras
+        .retain(|palitra| palitra.author.as_deref() == Some(login.as_str()));
+    Ok(palitras)
 }
 
 pub async fn collect_accessible_palitra_ids_in_folder<'a, 'async_trait, C>(
