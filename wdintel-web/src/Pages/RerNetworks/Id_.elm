@@ -201,6 +201,7 @@ init route _ () =
             , selected = []
             }
       , freqEditSaving = False
+      , freqReactivateLoading = False
       , freqEditShowActiveTo = False
       , freqEditNewKeyInput = ""
       , freqEditNewKeySaving = False

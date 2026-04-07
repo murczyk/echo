@@ -2073,6 +2073,7 @@ export type NetworkFreqsRes = {
   messageCount: number;
   callsigns: Array<string> | null;
   lastDatetime: number | null;
+  lastDatetimeInAor: number | null;
   createdAt: number;
   isActive: boolean;
   activeFrom: number;
@@ -2343,6 +2344,11 @@ export type NetworkGroupsActivityReq = {
 export type AddNetworkFreqReq = {
   networkId: number;
   freqRec: AddNetworkFreq;
+};
+
+export type ReactivateNetworkFreqReq = {
+  networkId: number;
+  networkFreqId: number;
 };
 
 export type AddNetworkFrequencyDescription = {

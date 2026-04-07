@@ -5494,6 +5494,7 @@ type alias NetworkFreqsRes =
     , messageCount : Int
     , callsigns : Maybe (List String)
     , lastDatetime : Maybe Int
+    , lastDatetimeInAor : Maybe Int
     , createdAt : Int
     , isActive : Bool
     , activeFrom : Int
@@ -5514,6 +5515,7 @@ networkFreqsResEncoder struct =
         , ( "message_count", Json.Encode.int struct.messageCount )
         , ( "callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.callsigns )
         , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
+        , ( "last_datetime_in_aor", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetimeInAor )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "is_active", Json.Encode.bool struct.isActive )
         , ( "active_from", Json.Encode.int struct.activeFrom )
@@ -6211,6 +6213,20 @@ addNetworkFreqReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
         , ( "freq_rec", addNetworkFreqEncoder struct.freqRec )
+        ]
+
+
+type alias ReactivateNetworkFreqReq =
+    { networkId : Int
+    , networkFreqId : Int
+    }
+
+
+reactivateNetworkFreqReqEncoder : ReactivateNetworkFreqReq -> Json.Encode.Value
+reactivateNetworkFreqReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "network_freq_id", Json.Encode.int struct.networkFreqId )
         ]
 
 
@@ -11017,6 +11033,7 @@ networkFreqsResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime_in_aor" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" Json.Decode.int))
@@ -11401,6 +11418,13 @@ addNetworkFreqReqDecoder =
     Json.Decode.succeed AddNetworkFreqReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_rec" addNetworkFreqDecoder))
+
+
+reactivateNetworkFreqReqDecoder : Json.Decode.Decoder ReactivateNetworkFreqReq
+reactivateNetworkFreqReqDecoder =
+    Json.Decode.succeed ReactivateNetworkFreqReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" Json.Decode.int))
 
 
 updateNetworkFreqReqDecoder : Json.Decode.Decoder UpdateNetworkFreqReq
