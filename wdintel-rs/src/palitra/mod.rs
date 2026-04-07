@@ -15,14 +15,17 @@ use crate::utils::string::normalize_trimmed_or_default;
 use actix_multipart::{Field, Multipart};
 use actix_web::post;
 use actix_web::web::{Data, Json};
+use actix_web::HttpResponse;
 use anyhow::{bail, Context};
 use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashSet};
+use std::io::Write;
 use std::path::Path;
 use tempfile::tempdir;
+use zip::write::FileOptions;
 
 pub(crate) mod bl;
 mod kmz;
@@ -707,6 +710,227 @@ pub async fn create_palitra(
     Ok(Json(palitra))
 }
 
+#[post("/api/palitra/archive/{palitra_id}")]
+pub async fn archive_palitra(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = bl::update_accessible_palitra_archive_flag(
+        login, palitra_id, true, &txn,
+    )
+    .await
+    .c(h!())?
+    .ok_or_else(|| {
+        AppError::Forbidden(format!(
+            "Palitra {palitra_id} is not accessible for archiving"
+        ))
+    })?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/unarchive/{palitra_id}")]
+pub async fn unarchive_palitra(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = bl::update_accessible_palitra_archive_flag(
+        login, palitra_id, false, &txn,
+    )
+    .await
+    .c(h!())?
+    .ok_or_else(|| {
+        AppError::Forbidden(format!(
+            "Palitra {palitra_id} is not accessible for unarchiving"
+        ))
+    })?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/folder/assign")]
+pub async fn assign_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderAssignReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let req = req.into_inner();
+    let palitra_ids = bl::assign_folder_to_accessible_palitras(
+        login,
+        req.palitra_ids,
+        req.folder,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(PalitraBulkActionRsp { palitra_ids }))
+}
+
+#[post("/api/palitra/folder/rename")]
+pub async fn rename_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderRenameReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let req = req.into_inner();
+    let palitra_ids = bl::rename_accessible_palitra_folder(
+        login,
+        req.from_folder,
+        req.to_folder,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(PalitraBulkActionRsp { palitra_ids }))
+}
+
+#[post("/api/palitra/folder/archive")]
+pub async fn archive_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra_ids = bl::archive_accessible_palitra_folder(
+        login,
+        req.into_inner().folder,
+        true,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(PalitraBulkActionRsp { palitra_ids }))
+}
+
+#[post("/api/palitra/folder/delete")]
+pub async fn delete_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
+        login,
+        req.into_inner().folder,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    for palitra_id in &palitra_ids {
+        let existing_access =
+            read_palitra_access(&env.dbx, *palitra_id).await.c(h!())?;
+        bl::delete_palitra(*palitra_id, &txn, existing_access, &env)
+            .await
+            .c(h!())?;
+    }
+    txn.commit().await.c(h!())?;
+    for palitra_id in &palitra_ids {
+        env.palitra_worker_context.flush_cache(*palitra_id).await;
+    }
+    Ok(Json(PalitraBulkActionRsp { palitra_ids }))
+}
+
+#[post("/api/palitra/download")]
+pub async fn download_palitras(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraDownloadReq>,
+) -> Result<HttpResponse, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitras = bl::collect_downloadable_palitra_files(
+        login,
+        req.into_inner().palitra_ids,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+
+    let strongbox_key = env
+        .config
+        .s3_config
+        .as_ref()
+        .map(|config| config.strongbox_key.clone())
+        .unwrap_or_default();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options: FileOptions<zip::write::ExtendedFileOptions> =
+        FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+    let mut used_file_names = HashSet::new();
+
+    for (palitra, geometry) in palitras {
+        let Some(s3_id) = palitra.s3_id.as_deref() else {
+            continue;
+        };
+        let bytes = crate::storage::download_and_decrypt_from_s3_with_operator(
+            &env.s3,
+            &env.s3_config,
+            &strongbox_key,
+            s3_id,
+        )
+        .await
+        .c(h!())?;
+        if bytes.is_empty() {
+            continue;
+        }
+        let file_name = ensure_unique_zip_entry_name(
+            &mut used_file_names,
+            bl::build_palitra_download_file_name(&palitra, geometry.as_ref()),
+        );
+        zip.start_file(file_name, options.clone()).c(h!())?;
+        zip.write_all(&bytes).c(h!())?;
+    }
+
+    let body = zip.finish().c(h!())?.into_inner();
+    let archive_name =
+        format!("palitras_{}.zip", Utc::now().format("%Y%m%dT%H%M%SZ"));
+    Ok(HttpResponse::Ok()
+        .content_type("application/zip")
+        .insert_header((
+            "Content-Disposition",
+            format!("attachment; filename=\"{archive_name}\""),
+        ))
+        .body(body))
+}
+
 #[post("/api/palitra/update/{palitra_id}")]
 pub async fn update_palitra(
     user: actix_identity::Identity,
@@ -1024,6 +1248,8 @@ async fn render_created_palitra_response(
     Ok(Palitra {
         id: palitra.id,
         name: palitra.name,
+        folder: bl::normalize_palitra_folder_from_db(palitra.folder),
+        is_archived: palitra.is_archived,
         color_hex: palitra_geometry.hex,
         author: palitra.author,
         source_file_name: palitra_geometry.source_file_name,
@@ -1422,6 +1648,35 @@ fn compose_goi_palette_remote_path(path: &str, file_name: &str) -> String {
     } else {
         format!("{trimmed_path}/{trimmed_file}")
     }
+}
+
+fn ensure_unique_zip_entry_name(
+    used_file_names: &mut HashSet<String>,
+    file_name: String,
+) -> String {
+    if used_file_names.insert(file_name.clone()) {
+        return file_name;
+    }
+    let path = Path::new(&file_name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("palitra");
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    for index in 1.. {
+        let candidate = if extension.is_empty() {
+            format!("{stem}_{index}")
+        } else {
+            format!("{stem}_{index}.{extension}")
+        };
+        if used_file_names.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!("zip entry deduplication loop must terminate");
 }
 
 fn goi_validate_connection_req(

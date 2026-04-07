@@ -34,8 +34,11 @@ type CreatePalitraReqBody = {
 type PalitraLike = {
   id?: number | string;
   name?: string;
+  folder?: string | null;
   colorHex?: string;
   color_hex?: string;
+  isArchived?: boolean;
+  is_archived?: boolean;
   author?: string | null;
   sourceFileName?: string | null;
   source_file_name?: string | null;
@@ -172,9 +175,12 @@ function toAccessBody(access: PalitraAccess): CreatePalitraReqBody['access'] {
 }
 
 function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
+  const folder = raw?.folder?.trim() ?? '';
   return {
     id: normalizeNumber(raw?.id),
     name: raw?.name ?? '',
+    folder: folder.length > 0 ? folder : null,
+    isArchived: raw?.isArchived ?? raw?.is_archived ?? false,
     colorHex: raw?.colorHex ?? raw?.color_hex ?? '#00bcd4',
     author: raw?.author ?? null,
     sourceFileName: raw?.sourceFileName ?? raw?.source_file_name ?? null,

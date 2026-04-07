@@ -144,6 +144,11 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::Coords,
             crate::palitra::types::KmzColorInfo,
             crate::palitra::types::AnalyzeKmzResponse,
+            crate::palitra::types::PalitraFolderAssignReq,
+            crate::palitra::types::PalitraFolderRenameReq,
+            crate::palitra::types::PalitraFolderReq,
+            crate::palitra::types::PalitraDownloadReq,
+            crate::palitra::types::PalitraBulkActionRsp,
 
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,
@@ -520,6 +525,11 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::Coords,
             crate::palitra::types::KmzColorInfo,
             crate::palitra::types::AnalyzeKmzResponse,
+            crate::palitra::types::PalitraFolderAssignReq,
+            crate::palitra::types::PalitraFolderRenameReq,
+            crate::palitra::types::PalitraFolderReq,
+            crate::palitra::types::PalitraDownloadReq,
+            crate::palitra::types::PalitraBulkActionRsp,
 
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,
