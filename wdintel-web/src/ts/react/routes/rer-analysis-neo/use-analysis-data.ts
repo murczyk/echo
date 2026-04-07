@@ -61,7 +61,7 @@ import {
 } from '../../services/api/analysis';
 import { listPalitrasV2 } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
-import { sortFrequenciesNumerically } from '../../utils/misc';
+import { sortFrequenciesNumerically, sortStringsAlphabetically } from '../../utils/misc';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
@@ -823,18 +823,18 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
           setOptions((current) => ({
             ...current,
-            aors: aorsRsp.aors.map((item) => String(item.aorId)),
+            aors: sortStringsAlphabetically(aorsRsp.aors.map((item) => String(item.aorId))),
             groups: groupsRsp.groups.map((item) => item.masterKey),
-            senders: sendersRsp.senders.map((item) => item.uuid),
-            callsigns: callsignsRsp.callsigns.map((item) => item.callsign),
-            units: unitsRsp.units.map((item) => item.unit),
-            locations: locationsRsp.locations.map((item) => item.location),
-            posts: postsRsp.posts.map((item) => item.post),
-            networks: networksRsp.networks.map((item) => String(item.networkId)),
-            metadataCcs: metadataRsp.ccs.map((item) => item.value),
-            metadataSenders: metadataRsp.senders.map((item) => item.value),
-            metadataReceivers: metadataRsp.receivers.map((item) => item.value),
-            metadataHashes: metadataRsp.hashes.map((item) => item.value),
+            senders: sortStringsAlphabetically(sendersRsp.senders.map((item) => item.uuid)),
+            callsigns: sortStringsAlphabetically(callsignsRsp.callsigns.map((item) => item.callsign)),
+            units: sortStringsAlphabetically(unitsRsp.units.map((item) => item.unit)),
+            locations: sortStringsAlphabetically(locationsRsp.locations.map((item) => item.location)),
+            posts: sortStringsAlphabetically(postsRsp.posts.map((item) => item.post)),
+            networks: sortStringsAlphabetically(networksRsp.networks.map((item) => String(item.networkId))),
+            metadataCcs: sortStringsAlphabetically(metadataRsp.ccs.map((item) => item.value)),
+            metadataSenders: sortStringsAlphabetically(metadataRsp.senders.map((item) => item.value)),
+            metadataReceivers: sortStringsAlphabetically(metadataRsp.receivers.map((item) => item.value)),
+            metadataHashes: sortStringsAlphabetically(metadataRsp.hashes.map((item) => item.value)),
           }));
           setGroupInfos((current) => ({ ...current, ...groupInfosByKey }));
           setAorEntries((aorsRsp.aorNames ?? []).map((item) => ({ id: item.id, name: item.name })));

@@ -245,6 +245,9 @@ export function AnalysisFiltersPanel({
     value: callsign,
     label: callsignLabels[index] ?? callsign,
   }));
+  const groupOptions = options.groups
+    .map((masterKey) => ({ value: masterKey, label: groupInfos[masterKey]?.name ?? masterKey }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   return (
     <Paper
@@ -433,7 +436,7 @@ export function AnalysisFiltersPanel({
           <FilterSection title="Групи" expanded={expandedSections.groups} onToggle={() => toggleSection('groups')}>
             <AnalysisFilterField
               label="Групи"
-              options={options.groups.map((masterKey) => ({ value: masterKey, label: groupInfos[masterKey]?.name ?? masterKey }))}
+              options={groupOptions}
               loading={filtersLoading}
               value={queryState.groupsSelected}
               onChange={(groupsSelected) => updateQueryState({ groupsSelected })}

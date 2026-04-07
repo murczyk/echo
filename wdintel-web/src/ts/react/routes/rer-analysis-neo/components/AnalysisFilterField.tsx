@@ -25,7 +25,7 @@ function toAutocompleteOption(option: AnalysisFilterOption, index: number): Auto
 }
 
 export function AnalysisFilterField({ label, options, value, disabled, loading, onChange }: Props) {
-  const autocompleteOptions = options.map(toAutocompleteOption).sort((a, b) => a.label.localeCompare(b.label));
+  const autocompleteOptions = options.map(toAutocompleteOption);
   const autocompleteValue = value.map(
     (selected) => autocompleteOptions.find((option) => option.value === selected) ?? { key: selected, label: selected, value: selected },
   );
