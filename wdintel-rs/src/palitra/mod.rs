@@ -928,12 +928,48 @@ pub async fn download_palitras(
             .compression_method(zip::CompressionMethod::Deflated)
             .unix_permissions(0o644);
     let mut used_file_names = HashSet::new();
+    let mut total_encrypted_bytes = 0u64;
     let mut total_bytes = 0u64;
 
     for (palitra, geometry) in palitras {
         let Some(s3_id) = palitra.s3_id.as_deref() else {
             continue;
         };
+        let Some(encrypted_file_bytes) =
+            crate::storage::stat_s3_object_size_with_operator(
+                &env.s3,
+                &env.s3_config,
+                s3_id,
+            )
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        if encrypted_file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+        {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
+                    palitra.id,
+                    encrypted_file_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+                ),
+            });
+        }
+        total_encrypted_bytes =
+            total_encrypted_bytes.saturating_add(encrypted_file_bytes);
+        if total_encrypted_bytes
+            > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+        {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Requested palitra download is too large: bytes={}, max={}",
+                    total_encrypted_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+                ),
+            });
+        }
         let bytes = crate::storage::download_and_decrypt_from_s3_with_operator(
             &env.s3,
             &env.s3_config,
