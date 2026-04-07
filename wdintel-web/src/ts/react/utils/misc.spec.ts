@@ -15,13 +15,37 @@ import {
   formatTimeInputValueInTimeZone,
   isValidDateInput,
   objectsEqual,
+  sortFrequenciesNumerically,
+  sortStringsAlphabetically,
   strArraysEqual,
+  uppercaseStrings,
 } from './misc';
 
 describe('misc utils', () => {
   it('compares string arrays by value and order', () => {
     expect(strArraysEqual(['a', 'b'], ['a', 'b'])).toBe(true);
     expect(strArraysEqual(['a', 'b'], ['b', 'a'])).toBe(false);
+  });
+
+  it('sorts strings alphabetically without mutating the input', () => {
+    const values = ['9.000', '10.000', '1.000', '2.000'];
+
+    expect(sortStringsAlphabetically(values)).toEqual(['1.000', '10.000', '2.000', '9.000']);
+    expect(values).toEqual(['9.000', '10.000', '1.000', '2.000']);
+  });
+
+  it('sorts frequencies numerically without mutating the input', () => {
+    const values = ['9.000', '10.000', '1.000', '2.000', '1.2', '1.02', 'not-a-freq'];
+
+    expect(sortFrequenciesNumerically(values)).toEqual(['1.000', '1.02', '1.2', '2.000', '9.000', '10.000', 'not-a-freq']);
+    expect(values).toEqual(['9.000', '10.000', '1.000', '2.000', '1.2', '1.02', 'not-a-freq']);
+  });
+
+  it('uppercases strings without mutating the input', () => {
+    const values = ['alpha', 'Bravo'];
+
+    expect(uppercaseStrings(values)).toEqual(['ALPHA', 'BRAVO']);
+    expect(values).toEqual(['alpha', 'Bravo']);
   });
 
   it('compares shallow objects by keys and primitive values', () => {

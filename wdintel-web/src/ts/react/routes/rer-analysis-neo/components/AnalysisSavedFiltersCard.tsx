@@ -36,6 +36,7 @@ export function AnalysisSavedFiltersCard({
   const canUpdateExisting = !saveInFlight && hasLoadedFilter && isDirty;
   const canRenameExisting =
     !saveInFlight && hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
+  const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
@@ -44,7 +45,7 @@ export function AnalysisSavedFiltersCard({
         {hasSavedFilters ? (
           <Autocomplete
             size="small"
-            options={savedFilters}
+            options={sortedSavedFilters}
             getOptionLabel={(option) => option.name}
             value={loadedSavedFilter}
             openText="Відкрити"
@@ -52,6 +53,14 @@ export function AnalysisSavedFiltersCard({
             clearText="Очистити"
             noOptionsText="Немає варіантів"
             onChange={(_event, next) => onApplySavedFilter(next)}
+            renderOption={(props, option) => {
+              const { key: _unusedKey, ...optionProps } = props;
+              return (
+                <li {...optionProps} key={option.id}>
+                  {option.name}
+                </li>
+              );
+            }}
             renderInput={(params) => <TextField {...params} label="Збережений фільтр" />}
           />
         ) : null}

@@ -1,6 +1,7 @@
-import {useEffect, useMemo, useState} from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { sortFrequenciesNumerically } from '../../utils/misc';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -18,7 +19,7 @@ function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [numb
     })
   );
   const merged = new Set<string>([...apiFreqs, ...fromMsgs]);
-  return [...merged].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return sortFrequenciesNumerically([...merged]);
 }
 
 function mergeGroupsFromMessages(

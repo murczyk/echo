@@ -817,6 +817,16 @@ clearFocusedFilterSnapshot model =
     { model | focusedFilterItemsBeforeChange = Nothing }
 
 
+freqSortKey : String -> ( Int, Float, String )
+freqSortKey freq =
+    case String.toFloat freq of
+        Just value ->
+            ( 0, value, freq )
+
+        Nothing ->
+            ( 1, 0, freq )
+
+
 menuItemWithCount : String -> Int -> Html msg
 menuItemWithCount itemName count =
     div
@@ -1264,7 +1274,7 @@ update user shared route msg model =
                                 , view = Html.Styled.fromUnstyled (menuItemWithCount freq.freq freq.count)
                                 }
                         )
-                        rsp.freqs
+                        (List.sortBy (\freq -> freqSortKey freq.freq) rsp.freqs)
               }
             , eff1
             )
@@ -1285,7 +1295,7 @@ update user shared route msg model =
                                 , label = callsign.callsign
                                 }
                         )
-                        rsp.callsigns
+                        (List.sortBy .callsign rsp.callsigns)
               }
             , E.none
             )
@@ -1306,7 +1316,7 @@ update user shared route msg model =
                                 , label = location.location
                                 }
                         )
-                        rsp.locations
+                        (List.sortBy .location rsp.locations)
               }
             , E.none
             )
@@ -1328,7 +1338,7 @@ update user shared route msg model =
                                 , view = Html.Styled.fromUnstyled (menuItemWithCount post.post post.count)
                                 }
                         )
-                        rsp.posts
+                        (List.sortBy (\post -> getLabelOrDefault post.post) rsp.posts)
               }
             , E.none
             )
@@ -1362,7 +1372,7 @@ update user shared route msg model =
                                 , view = Html.Styled.fromUnstyled (menuItemWithCount unit.unit unit.count)
                                 }
                         )
-                        rsp.units
+                        (List.sortBy .unit rsp.units)
               }
             , E.none
             )
@@ -1394,7 +1404,7 @@ update user shared route msg model =
                     model.reportActiveNetworksAorsSelect
 
                 topLevelAors =
-                    vs |> List.filter .isTopLevel
+                    vs |> List.filter .isTopLevel |> List.sortBy .name
 
                 reportAorItems =
                     topLevelAors
@@ -1428,6 +1438,7 @@ update user shared route msg model =
 
                 menuItems =
                     rsp.aors
+                        |> List.sortBy (\aor -> findAorName aor.aorId)
                         |> List.map
                             (\aor ->
                                 Select.basicMenuItem
@@ -1450,27 +1461,32 @@ update user shared route msg model =
             )
 
         GotStatsNetworks (Ok rsp) ->
+            let
+                findNetworkName networkId =
+                    rsp.networkNames
+                        |> List.filter (\name -> name.id == networkId)
+                        |> List.head
+                        |> Maybe.map .name
+                        |> Maybe.withDefault ("Network " ++ String.fromInt networkId)
+            in
             ( { model
                 | networksStats = Success rsp.networks
                 , networkNames = rsp.networkNames
                 , selNetworkMenu =
-                    List.map
-                        (\network ->
-                            let
-                                networkName =
-                                    rsp.networkNames
-                                        |> List.filter (\name -> name.id == network.networkId)
-                                        |> List.head
-                                        |> Maybe.map .name
-                                        |> Maybe.withDefault ("Network " ++ String.fromInt network.networkId)
-                            in
-                            Select.customMenuItem
-                                { item = String.fromInt network.networkId
-                                , label = networkName
-                                , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
-                                }
-                        )
-                        rsp.networks
+                    rsp.networks
+                        |> List.sortBy (\network -> findNetworkName network.networkId)
+                        |> List.map
+                            (\network ->
+                                let
+                                    networkName =
+                                        findNetworkName network.networkId
+                                in
+                                Select.customMenuItem
+                                    { item = String.fromInt network.networkId
+                                    , label = networkName
+                                    , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
+                                    }
+                            )
               }
             , E.none
             )
@@ -1491,7 +1507,7 @@ update user shared route msg model =
                                 , label = entry.value
                                 }
                         )
-                        rsp.ccs
+                        (List.sortBy .value rsp.ccs)
                 , selMetadataSenderMenu =
                     List.map
                         (\entry ->
@@ -1500,7 +1516,7 @@ update user shared route msg model =
                                 , label = entry.value
                                 }
                         )
-                        rsp.senders
+                        (List.sortBy .value rsp.senders)
                 , selMetadataReceiverMenu =
                     List.map
                         (\entry ->
@@ -1509,7 +1525,7 @@ update user shared route msg model =
                                 , label = entry.value
                                 }
                         )
-                        rsp.receivers
+                        (List.sortBy .value rsp.receivers)
                 , selMetadataHashMenu =
                     List.map
                         (\entry ->
@@ -1518,7 +1534,7 @@ update user shared route msg model =
                                 , label = entry.value
                                 }
                         )
-                        rsp.hashes
+                        (List.sortBy .value rsp.hashes)
               }
             , E.none
             )
@@ -1547,7 +1563,7 @@ update user shared route msg model =
                                 , label = Shared.Components.RerMessage.groupName x.masterKey m1.groupInfos
                                 }
                         )
-                        rsp.groups
+                        (List.sortBy (\x -> Shared.Components.RerMessage.groupName x.masterKey m1.groupInfos) rsp.groups)
               }
             , E.none
             )
@@ -2521,7 +2537,7 @@ update user shared route msg model =
         SaveFilterDone (Ok filters) ->
             ( { model
                 | saveFilterInProgress = False
-                , savedFilters = List.map (\x -> ( x.id, x )) filters
+                , savedFilters = filters |> List.sortBy .name |> List.map (\x -> ( x.id, x ))
                 , saveFilterExpanded = False
                 , saveFilterInp = ""
               }
@@ -2536,7 +2552,7 @@ update user shared route msg model =
         SavedFiltersGot (Ok filters) ->
             ( { model
                 | savedFiltersLoading = False
-                , savedFilters = List.map (\x -> ( x.id, x )) filters
+                , savedFilters = filters |> List.sortBy .name |> List.map (\x -> ( x.id, x ))
               }
             , E.none
             )

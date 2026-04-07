@@ -163,9 +163,9 @@ describe('rer-duty utils', () => {
         ],
       ),
     ).toEqual([
+      { id: 'known', label: 'Known Sender' },
       { id: 'denied-only', label: 'Невідомий' },
       { id: 'feed-only', label: 'Невідомий' },
-      { id: 'known', label: 'Known Sender' },
       { id: 'selected-only', label: 'Невідомий' },
     ]);
   });

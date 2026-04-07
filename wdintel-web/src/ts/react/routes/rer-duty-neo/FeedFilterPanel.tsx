@@ -164,6 +164,8 @@ export function FeedFilterPanel({
   const freqEmptyLabel = freqMode === 'include' ? 'всі' : 'ніяка';
   const [localFreqValue, setLocalFreqValue] = useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = useState<string[]>(() => postValue);
+  const sortedGroupKeys = [...groupsList].sort((a, b) => (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b));
+  const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
 
   // Resync local selections when *parent* filter changes. Do not depend on local* state: if local
   // is in deps, this runs after user picks an option but before the parent applies it, and would
@@ -241,7 +243,7 @@ export function FeedFilterPanel({
               selected={filterStable.groupsSelected.length === 0}
               onClick={onSelectAllGroups}
             />
-            {groupsList.map((key) => {
+            {sortedGroupKeys.map((key) => {
               const name = groupInfos[key]?.name ?? key;
               const selected = filterStable.groupsSelected.includes(key);
               return (
@@ -287,6 +289,14 @@ export function FeedFilterPanel({
               isOptionEqualToValue={(option, val) => option.id === val.id}
               filterSelectedOptions
               clearOnEscape
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={option.id}>
+                    {option.label}
+                  </li>
+                );
+              }}
               renderInput={(params) => (
                 <TextField {...params} placeholder={localSenderValue.length === 0 ? senderEmptyLabel : undefined} />
               )}
@@ -348,6 +358,14 @@ export function FeedFilterPanel({
               onChange={(_, value) => setLocalFreqValue(value)}
               filterSelectedOptions
               clearOnEscape
+              renderOption={(props, option, state) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={`${option}-${state.index}`}>
+                    {option}
+                  </li>
+                );
+              }}
               renderInput={(params) => (
                 <TextField {...params} placeholder={localFreqValue.length === 0 ? freqEmptyLabel : undefined} />
               )}
@@ -414,6 +432,14 @@ export function FeedFilterPanel({
               onChange={(_, value) => setLocalPostValue(value)}
               filterSelectedOptions
               clearOnEscape
+              renderOption={(props, option, state) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={`${option}-${state.index}`}>
+                    {option}
+                  </li>
+                );
+              }}
               renderInput={(params) => (
                 <TextField {...params} placeholder={localPostValue.length === 0 ? postEmptyLabel : undefined} />
               )}
@@ -471,7 +497,7 @@ export function FeedFilterPanel({
                 }}
               >
                 <MenuItem value="">—</MenuItem>
-                {savedFilters.map((s) => (
+                {sortedSavedFilters.map((s) => (
                   <MenuItem key={s.id} value={s.id}>
                     {s.name}
                   </MenuItem>

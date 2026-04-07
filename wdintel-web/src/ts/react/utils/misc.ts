@@ -19,6 +19,27 @@ export function strArraysEqual(arr1: string[], arr2: string[]) {
   return arr1.every((value, index) => value === arr2[index]);
 }
 
+export function sortStringsAlphabetically(values: string[]): string[] {
+  return [...values].sort((a, b) => a.localeCompare(b));
+}
+
+export function sortFrequenciesNumerically(values: string[]): string[] {
+  return [...values].sort((a, b) => {
+    const aFreq = Number(a);
+    const bFreq = Number(b);
+    const aIsFreq = Number.isFinite(aFreq);
+    const bIsFreq = Number.isFinite(bFreq);
+
+    if (aIsFreq && bIsFreq && aFreq !== bFreq) return aFreq - bFreq;
+    if (aIsFreq !== bIsFreq) return aIsFreq ? -1 : 1;
+    return a.localeCompare(b);
+  });
+}
+
+export function uppercaseStrings(values: string[]): string[] {
+  return values.map((value) => value.toUpperCase());
+}
+
 export function objectsEqual(obj1: { [key: string]: any }, obj2: { [key: string]: any }) {
   const keys1 = Object.keys(obj1);
   const keys2 = Object.keys(obj2);

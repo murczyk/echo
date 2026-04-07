@@ -265,6 +265,14 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
         isOptionEqualToValue={(option, value) => option.id === value.id}
         clearOnEscape
         disabled={props.isSubmitting}
+        renderOption={(props, option) => {
+          const { key: _unusedKey, ...optionProps } = props;
+          return (
+            <Box component="li" {...optionProps} key={option.id}>
+              {option.name || `ID ${option.id}`}
+            </Box>
+          );
+        }}
         renderInput={(params) => (
           <TextField {...params} label="Батьківський організм" placeholder="Без батька" fullWidth />
         )}

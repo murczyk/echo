@@ -245,7 +245,7 @@ export function buildSenderOptions(
       id: uuid,
       label: profileLabel(uuid, profiles[uuid] ?? null),
     }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
 }
 
 export function formatTime(time: string | null): string {
