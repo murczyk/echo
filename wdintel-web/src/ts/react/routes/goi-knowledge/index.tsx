@@ -35,7 +35,7 @@ function GoiKnowledgePageBody() {
       >
         <TablePageToolbar
           title="ГОІ: інформованість"
-          titleInfo="Імпортовані з ГОІ записи інформованості для організму поточного користувача."
+          titleInfo="Імпортовані з усіх доступних серверів ГОІ записи інформованості для поточного користувача."
           withGlobalTextFilter
           hideGlobalTextFilter={page.status !== 'success' && page.rows.length === 0}
           internalActionsDisabled={page.status !== 'success' && page.rows.length === 0}

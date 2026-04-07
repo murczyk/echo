@@ -31,6 +31,7 @@ type Menu
         { label : String
         , subs : List Menu
         }
+    | MenuSeparator
 
 
 type alias Props msg =
@@ -105,6 +106,9 @@ menuIsActive activeName menu =
         MenuGroup group ->
             List.any (menuIsActive activeName) group.subs
 
+        MenuSeparator ->
+            False
+
 
 isActiveName : String -> String -> Bool
 isActiveName itemActiveName activeName =
@@ -131,17 +135,20 @@ navBar user shared activeName props =
         operationalSubs =
             [ internalMenu Route.Path.RerDuty "rer-duty" "Класичний"
             , internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "Новий"
+            , MenuSeparator
             , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "duty" ) ], hash = Nothing } "settings-neo-duty" "Налаштування"
             ]
 
         analysisSubs =
             [ internalMenu Route.Path.RerAnalysis "analysis" "Класичний"
             , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "Новий"
+            , MenuSeparator
             , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "analysis" ) ], hash = Nothing } "settings-neo-analysis" "Налаштування"
             ]
 
         adminSubs =
-            [ internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
+            [ internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
+            , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
             , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
             , internalMenu Route.Path.Admin_Messenger "messenger" "Месенджери"
             , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
@@ -150,6 +157,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "Панель керування"
             , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
             , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "Теги"
+            , MenuSeparator
             , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
             ]
 
@@ -158,23 +166,30 @@ navBar user shared activeName props =
             , internalMenu Route.Path.RerPalitra "palitra" "Палітри"
             , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
             , internalMenu Route.Path.RerUnits "rer-units" "Підрозділи"
-            , internalMenu Route.Path.RerSignals "signals" "Сигнали"
-            , internalMenu Route.Path.RerFreqs "freqs" "Частоти"
             , internalMenu Route.Path.RerCallsigns "callsigns" "Позивні"
             , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "Позивні"
+            , internalMenu Route.Path.RerSignals "signals" "Сигнали"
+            , internalMenu Route.Path.RerFreqs "freqs" "Частоти"
             ]
 
         goiSubs =
             let
                 openGoiSubs =
-                    user.goiHost
-                        |> Maybe.andThen goiExternalUrl
-                        |> Maybe.map
-                            (\url ->
-                                [ externalMenu url "goi-external" "Відкрити ГОІ"
-                                ]
+                    user.goiIntegrations
+                        |> List.concatMap
+                            (\integration ->
+                                integration.goiUrl
+                                    |> Maybe.andThen goiExternalUrl
+                                    |> Maybe.map
+                                        (\url ->
+                                            [ externalMenu
+                                                url
+                                                ("goi-external-" ++ String.fromInt integration.id)
+                                                ("Сервер " ++ integration.ownerOrganismName)
+                                            ]
+                                        )
+                                    |> Maybe.withDefault []
                             )
-                        |> Maybe.withDefault []
 
                 goiAssociations =
                     internalMenu Route.Path.GoiAssociations "goi-associations" "Висновки"
@@ -187,24 +202,21 @@ navBar user shared activeName props =
             in
             List.concat
                 [ ifOrEmpty user.goiFullAccessForOrganism [ goiAssociations ]
+                , ifOrEmpty user.goiFullAccessForOrganism [ goiKnowledge ]
                 , openGoiSubs
-                , if user.goiFullAccessForOrganism then
-                    [ goiKnowledge
-                    , goiSettings
-                    ]
-
-                  else
-                    [ goiSettings ]
+                , [ MenuSeparator
+                  , goiSettings
+                  ]
                 ]
 
         importSubs =
             List.concat
-                [ ifOrEmpty (hasRole "Rer" user)
+                [ ifOrEmpty (hasRole "Basic" user)
+                    [ internalMenu Route.Path.Importer "importer" "Імпортер" ]
+                , ifOrEmpty (hasRole "Rer" user)
                     [ internalMenu Route.Path.RerCsvImport "rer-csv-import" "Імпорт CSV"
                     , internalMenu Route.Path.RerDeltaImport "rer-delta-import" "Імпорт Delta"
                     ]
-                , ifOrEmpty (hasRole "Basic" user)
-                    [ internalMenu Route.Path.Importer "importer" "Імпортер" ]
                 ]
 
         converterSubs =
@@ -479,6 +491,13 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                             (List.map dropdownItem group.subs)
                         ]
 
+                MenuSeparator ->
+                    li
+                        [ class "mx-2 my-2 border-t border-white/10"
+                        , attribute "role" "separator"
+                        ]
+                        []
+
         menuItemLabel :
             { a
                 | activeName : String
@@ -488,7 +507,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         menuItemLabel item =
             span [ class "inline-flex items-center gap-2" ]
                 (text item.label
-                    :: (if item.activeName == "callsigns-neo" || item.activeName == "palitra-neo" || item.activeName == "messenger-neo" then
+                    :: (if item.activeName == "callsigns-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]

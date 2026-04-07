@@ -1,3 +1,4 @@
+use crate::organism::types::GoiIntegrationType;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 
@@ -55,6 +56,7 @@ pub struct ListGoiAssociationsReq {
     pub offset: Option<u64>,
     pub sort_by: Option<ListGoiAssociationsSortBy>,
     pub filter_text: Option<String>,
+    pub filter_server: Option<String>,
     pub filter_frequency: Option<String>,
     pub filter_coordinates: Option<String>,
     pub filter_note: Option<String>,
@@ -71,6 +73,7 @@ pub struct ListGoiKnowledgeReq {
     pub offset: Option<u64>,
     pub sort_by: Option<ListGoiKnowledgeSortBy>,
     pub filter_text: Option<String>,
+    pub filter_server: Option<String>,
     pub filter_name: Option<String>,
     pub filter_key: Option<String>,
     pub filter_knowledge_type: Option<String>,
@@ -85,6 +88,9 @@ pub struct ListGoiKnowledgeReq {
 )]
 pub struct GoiAssociation {
     pub id: i64,
+    pub integration_id: i64,
+    pub server_label: String,
+    pub owner_organism_name: String,
     pub source_association_id: i64,
     pub source_created_at_ms: i64,
     pub created_at_ms: i64,
@@ -108,6 +114,9 @@ pub struct GoiAssociation {
 )]
 pub struct GoiKnowledge {
     pub id: i64,
+    pub integration_id: i64,
+    pub server_label: String,
+    pub owner_organism_name: String,
     pub source_knowledge_id: i64,
     pub source_created_at_ms: i64,
     pub created_at_ms: i64,
@@ -136,4 +145,89 @@ pub struct ListGoiAssociationsRsp {
 pub struct ListGoiKnowledgeRsp {
     pub items: Vec<GoiKnowledge>,
     pub has_more: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct GoiUserIntegration {
+    pub id: i64,
+    pub owner_organism_id: i64,
+    pub owner_organism_name: String,
+    pub integration_type: String,
+    pub server_label: String,
+    pub goi_url: Option<String>,
+    pub swapp_url: Option<String>,
+    pub has_data_access: bool,
+    pub can_restart: bool,
+    pub restart_unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct GoiAdminIntegration {
+    pub id: i64,
+    pub owner_organism_id: i64,
+    pub owner_organism_name: String,
+    pub created_at_ms: i64,
+    pub integration_type: GoiIntegrationType,
+    pub server_label: String,
+    pub ssh_host: Option<String>,
+    pub ssh_user: Option<String>,
+    pub ssh_port: i32,
+    pub path: String,
+    pub api_host: Option<String>,
+    pub api_port: i32,
+    pub api_login: Option<String>,
+    pub api_password: Option<String>,
+    pub access_organism_ids: Vec<i64>,
+    pub access_logins: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ListGoiAdminIntegrationsRsp {
+    pub items: Vec<GoiAdminIntegration>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct GetGoiAdminIntegrationReq {
+    pub id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct UpsertGoiAdminIntegrationReq {
+    pub id: Option<i64>,
+    pub owner_organism_id: i64,
+    pub integration_type: GoiIntegrationType,
+    pub ssh_host: Option<String>,
+    pub ssh_user: Option<String>,
+    pub ssh_port: i32,
+    pub path: String,
+    pub api_host: Option<String>,
+    pub api_port: i32,
+    pub api_login: Option<String>,
+    pub api_password: Option<String>,
+    pub access_organism_ids: Vec<i64>,
+    pub access_logins: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DeleteGoiAdminIntegrationReq {
+    pub id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct SetupGoiIntegrationWorkerReq {
+    pub id: i64,
+    pub ssh_host: String,
+    pub ssh_user: String,
+    pub ssh_port: i32,
+    pub path: String,
+    pub api_host: Option<String>,
+    pub api_port: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct RestartGoiIntegrationServiceReq {
+    pub integration_id: i64,
+    pub service: String,
 }

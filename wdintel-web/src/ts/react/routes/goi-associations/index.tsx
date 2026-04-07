@@ -35,7 +35,7 @@ function GoiAssociationsPageBody() {
       >
         <TablePageToolbar
           title="ГОІ: висновки"
-          titleInfo="Імпортовані з ГОІ висновки для організму поточного користувача."
+          titleInfo="Імпортовані з усіх доступних серверів ГОІ висновки для поточного користувача."
           withGlobalTextFilter
           hideGlobalTextFilter={page.status !== 'success' && page.rows.length === 0}
           internalActionsDisabled={page.status !== 'success' && page.rows.length === 0}

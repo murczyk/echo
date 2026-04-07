@@ -1225,6 +1225,20 @@ export type User = {
   goiConfiguredForOrganism: boolean;
   goiFullAccessForOrganism: boolean;
   goiHost: string | null;
+  goiIntegrations: Array<GoiUserIntegration>;
+};
+
+export type GoiUserIntegration = {
+  id: number;
+  ownerOrganismId: number;
+  ownerOrganismName: string;
+  integrationType: string;
+  serverLabel: string;
+  goiUrl: string | null;
+  swappUrl: string | null;
+  hasDataAccess: boolean;
+  canRestart: boolean;
+  restartUnavailableReason: string | null;
 };
 
 export type SettingsSaveReq = {
@@ -1393,6 +1407,7 @@ export type ListGoiAssociationsReq = {
   offset: number | null;
   sortBy: ListGoiAssociationsSortBy | null;
   filterText: string | null;
+  filterServer: string | null;
   filterFrequency: string | null;
   filterCoordinates: string | null;
   filterNote: string | null;
@@ -1403,6 +1418,9 @@ export type ListGoiAssociationsReq = {
 
 export type GoiAssociation = {
   id: number;
+  integrationId: number;
+  serverLabel: string;
+  ownerOrganismName: string;
   sourceAssociationId: number;
   sourceCreatedAtMs: number;
   createdAtMs: number;
@@ -1454,6 +1472,7 @@ export type ListGoiKnowledgeReq = {
   offset: number | null;
   sortBy: ListGoiKnowledgeSortBy | null;
   filterText: string | null;
+  filterServer: string | null;
   filterName: string | null;
   filterKey: string | null;
   filterKnowledgeType: string | null;
@@ -1465,6 +1484,9 @@ export type ListGoiKnowledgeReq = {
 
 export type GoiKnowledge = {
   id: number;
+  integrationId: number;
+  serverLabel: string;
+  ownerOrganismName: string;
   sourceKnowledgeId: number;
   sourceCreatedAtMs: number;
   createdAtMs: number;
@@ -2866,9 +2888,9 @@ export type SigintKeySharePolicy = {
 };
 
 export type DutyTagsLayout =
-  | 'full'
-  | 'compact'
-  | 'hidden'
+  | 'Full'
+  | 'Compact'
+  | 'Hidden'
 ;
 
 export type UserDutySettingsDto = {

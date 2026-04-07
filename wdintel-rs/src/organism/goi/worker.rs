@@ -4,10 +4,11 @@ use crate::config::{
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
     ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC,
 };
-use crate::entities::{goi_association, goi_knowledge, organism};
+use crate::entities::{goi_association, goi_integration, goi_knowledge};
 use crate::error::AppError;
 use crate::organism::goi::shared::{
-    goi_api_host, goi_api_port, organism_has_goi_api_config,
+    goi_integration_api_host, goi_integration_api_port,
+    goi_integration_has_api_config,
 };
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
@@ -46,24 +47,26 @@ async fn goi_association_worker_step(
     env: &Env,
     state: &mut GoiWorkerState,
 ) -> Result<(), AppError> {
-    let organisms = load_goi_api_organisms(&env.dbx).await.c(h!())?;
-    if organisms.is_empty() {
+    let integrations = load_goi_api_integrations(&env.dbx).await.c(h!())?;
+    if integrations.is_empty() {
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
     }
 
-    for organism in organisms {
-        if let Err(err) = sync_goi_associations(env, &organism).await {
-            let label = organism.name.clone();
+    for integration in integrations {
+        if let Err(err) = sync_goi_associations(env, &integration).await {
+            let label = integration.server_label.clone();
             log::warn!("Skipping GOI association sync for {label}: {err:#}");
         }
-        if let Err(err) = sync_goi_knowledge_if_due(env, &organism, state).await
+        if let Err(err) =
+            sync_goi_knowledge_if_due(env, &integration, state).await
         {
-            let label = organism.name.clone();
+            let label = integration.server_label.clone();
             log::warn!("Skipping GOI knowledge sync for {label}: {err:#}");
         }
-        if let Err(err) = push_goi_report_if_due(env, &organism, state).await {
-            let label = organism.name.clone();
+        if let Err(err) = push_goi_report_if_due(env, &integration, state).await
+        {
+            let label = integration.server_label.clone();
             log::warn!("Skipping GOI report push for {label}: {err:#}");
         }
         tokio::time::sleep(goi_worker_sleep_duration()).await;
@@ -71,83 +74,92 @@ async fn goi_association_worker_step(
     Ok(())
 }
 
-async fn load_goi_api_organisms(
+async fn load_goi_api_integrations(
     db: &DatabaseConnection,
-) -> Result<Vec<organism::Model>, AppError> {
+) -> Result<Vec<goi_integration::Model>, AppError> {
     let has_api_host = Condition::all()
-        .add(organism::Column::GoiApiHost.is_not_null())
-        .add(organism::Column::GoiApiHost.ne(""));
+        .add(goi_integration::Column::ApiHost.is_not_null())
+        .add(goi_integration::Column::ApiHost.ne(""));
     let has_ssh_host = Condition::all()
-        .add(organism::Column::GoiSshHost.is_not_null())
-        .add(organism::Column::GoiSshHost.ne(""));
+        .add(goi_integration::Column::SshHost.is_not_null())
+        .add(goi_integration::Column::SshHost.ne(""));
     let has_api_login = Condition::all()
-        .add(organism::Column::GoiApiLogin.is_not_null())
-        .add(organism::Column::GoiApiLogin.ne(""));
+        .add(goi_integration::Column::ApiLogin.is_not_null())
+        .add(goi_integration::Column::ApiLogin.ne(""));
     let has_api_password = Condition::all()
-        .add(organism::Column::GoiApiPassword.is_not_null())
-        .add(organism::Column::GoiApiPassword.ne(""));
-    let organisms = organism::Entity::find()
-        .filter(organism::Column::DeletedPermanently.eq(false))
+        .add(goi_integration::Column::ApiPassword.is_not_null())
+        .add(goi_integration::Column::ApiPassword.ne(""));
+    let integrations = goi_integration::Entity::find()
         .filter(Condition::any().add(has_api_host).add(has_ssh_host))
         .filter(has_api_login)
         .filter(has_api_password)
         .all(db)
         .await
         .c(h!())?;
-    Ok(organisms
+    Ok(integrations
         .into_iter()
-        .filter(organism_has_goi_api_config)
+        .filter(goi_integration_has_api_config)
         .collect())
 }
 
 async fn sync_goi_associations(
     env: &Env,
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
 ) -> Result<(), AppError> {
-    let since_id = last_source_association_id(&env.dbx, organism.id)
+    let since_id = last_source_association_id(&env.dbx, integration.id)
         .await
         .c(h!())?;
-    let items = fetch_goi_associations(env, organism, since_id)
+    let items = fetch_goi_associations(env, integration, since_id)
         .await
         .c(h!())?;
     if items.is_empty() {
         return Ok(());
     }
-    insert_goi_associations(&env.dbx, organism.id, items)
-        .await
-        .c(h!())?;
+    insert_goi_associations(
+        &env.dbx,
+        integration.id,
+        integration.owner_organism_id,
+        items,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
 async fn sync_goi_knowledge_if_due(
     env: &Env,
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
     state: &mut GoiWorkerState,
 ) -> Result<(), AppError> {
-    if !goi_knowledge_sync_is_due(state, organism.id) {
+    if !goi_knowledge_sync_is_due(state, integration.id) {
         return Ok(());
     }
 
     state
         .last_knowledge_sync_attempt_at
-        .insert(organism.id, Instant::now());
+        .insert(integration.id, Instant::now());
 
-    prune_old_deleted_goi_knowledge(&env.dbx, organism.id)
+    prune_old_deleted_goi_knowledge(&env.dbx, integration.id)
         .await
         .c(h!())?;
-    let items = fetch_goi_knowledge(env, organism).await.c(h!())?;
-    upsert_goi_knowledge_snapshot(&env.dbx, organism.id, items)
-        .await
-        .c(h!())?;
+    let items = fetch_goi_knowledge(env, integration).await.c(h!())?;
+    upsert_goi_knowledge_snapshot(
+        &env.dbx,
+        integration.id,
+        integration.owner_organism_id,
+        items,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
 async fn last_source_association_id(
     db: &DatabaseConnection,
-    organism_id: i64,
+    integration_id: i64,
 ) -> Result<Option<i64>, AppError> {
     Ok(goi_association::Entity::find()
-        .filter(goi_association::Column::OrganismId.eq(organism_id))
+        .filter(goi_association::Column::IntegrationId.eq(integration_id))
         .order_by_desc(goi_association::Column::SourceAssociationId)
         .one(db)
         .await
@@ -157,11 +169,11 @@ async fn last_source_association_id(
 
 async fn fetch_goi_associations(
     env: &Env,
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
     since_id: Option<i64>,
 ) -> Result<Vec<AssociationApiItem>, AppError> {
-    let url = goi_associations_url(organism)?;
-    let (login, password) = goi_api_credentials(organism)?;
+    let url = goi_associations_url(integration)?;
+    let (login, password) = goi_api_credentials(integration)?;
 
     let response = env
         .rq
@@ -180,10 +192,10 @@ async fn fetch_goi_associations(
 
 async fn fetch_goi_knowledge(
     env: &Env,
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
 ) -> Result<Vec<KnowledgeApiItem>, AppError> {
-    let url = goi_knowledge_url(organism)?;
-    let (login, password) = goi_api_credentials(organism)?;
+    let url = goi_knowledge_url(integration)?;
+    let (login, password) = goi_api_credentials(integration)?;
 
     let response = env
         .rq
@@ -199,25 +211,27 @@ async fn fetch_goi_knowledge(
 
 async fn push_goi_report_if_due(
     env: &Env,
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
     state: &mut GoiWorkerState,
 ) -> Result<(), AppError> {
-    if !goi_report_push_is_due(state, organism.id) {
+    if !goi_report_push_is_due(state, integration.id) {
         return Ok(());
     }
 
     state
         .last_report_push_attempt_at
-        .insert(organism.id, Instant::now());
+        .insert(integration.id, Instant::now());
 
     let report_xlsx =
         crate::sigint::network::goi::report_xlsx_networks_goi_to_buffer(env)
             .await
             .c(h!())?;
-    let response = post_goi_report(env, organism, report_xlsx).await.c(h!())?;
+    let response = post_goi_report(env, integration, report_xlsx)
+        .await
+        .c(h!())?;
     log::info!(
         "Pushed GOI signed frequencies report for {} to {} ({} bytes)",
-        organism.name,
+        integration.server_label,
         response.path,
         response.bytes_written
     );
@@ -244,11 +258,11 @@ fn goi_knowledge_sync_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
 
 async fn post_goi_report(
     env: &Env,
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
     report_xlsx: Vec<u8>,
 ) -> Result<ImportSignedFrequenciesRsp, AppError> {
-    let url = goi_api_url(organism, GOI_FREQUENCIES_IMPORT_PATH)?;
-    let (login, password) = goi_api_credentials(organism)?;
+    let url = goi_api_url(integration, GOI_FREQUENCIES_IMPORT_PATH)?;
+    let (login, password) = goi_api_credentials(integration)?;
     let response = env
         .rq
         .post(url)
@@ -267,23 +281,29 @@ async fn post_goi_report(
 }
 
 fn goi_associations_url(
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
 ) -> Result<String, AppError> {
-    goi_api_url(organism, "/api/associations")
+    goi_api_url(integration, "/api/associations")
 }
 
-fn goi_knowledge_url(organism: &organism::Model) -> Result<String, AppError> {
-    goi_api_url(organism, "/api/knowledge")
+fn goi_knowledge_url(
+    integration: &goi_integration::Model,
+) -> Result<String, AppError> {
+    goi_api_url(integration, "/api/knowledge")
 }
 
 fn goi_api_url(
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
     path: &str,
 ) -> Result<String, AppError> {
-    let host = goi_api_host(organism).ok_or_else(|| AppError::BL {
-        msg: format!("GOI API host is missing for organism {}", organism.id),
-    })?;
-    let port = goi_api_port(organism);
+    let host =
+        goi_integration_api_host(integration).ok_or_else(|| AppError::BL {
+            msg: format!(
+                "GOI API host is missing for integration {}",
+                integration.id
+            ),
+        })?;
+    let port = goi_integration_api_port(integration);
     let mut url = if host.starts_with("http://") || host.starts_with("https://")
     {
         Url::parse(&host).c(h!())?
@@ -301,33 +321,35 @@ fn goi_api_url(
 }
 
 fn goi_api_credentials(
-    organism: &organism::Model,
+    integration: &goi_integration::Model,
 ) -> Result<(String, String), AppError> {
-    let login = normalize_optional_trimmed(organism.goi_api_login.clone())
+    let login = normalize_optional_trimmed(integration.api_login.clone())
         .ok_or_else(|| AppError::BL {
             msg: format!(
-                "GOI API login is missing for organism {}",
-                organism.id
+                "GOI API login is missing for integration {}",
+                integration.id
             ),
         })?;
-    let password =
-        normalize_optional_trimmed(organism.goi_api_password.clone())
-            .ok_or_else(|| AppError::BL {
-                msg: format!(
-                    "GOI API password is missing for organism {}",
-                    organism.id
-                ),
-            })?;
+    let password = normalize_optional_trimmed(integration.api_password.clone())
+        .ok_or_else(|| AppError::BL {
+            msg: format!(
+                "GOI API password is missing for integration {}",
+                integration.id
+            ),
+        })?;
     Ok((login, password))
 }
 async fn insert_goi_associations(
     db: &DatabaseConnection,
+    integration_id: i64,
     organism_id: i64,
     items: Vec<AssociationApiItem>,
 ) -> Result<(), AppError> {
     let associations = items
         .into_iter()
-        .map(|item| goi_association_active_model(organism_id, item))
+        .map(|item| {
+            goi_association_active_model(integration_id, organism_id, item)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if associations.is_empty() {
         return Ok(());
@@ -336,7 +358,7 @@ async fn insert_goi_associations(
     goi_association::Entity::insert_many(associations)
         .on_conflict(
             OnConflict::columns([
-                goi_association::Column::OrganismId,
+                goi_association::Column::IntegrationId,
                 goi_association::Column::SourceAssociationId,
             ])
             .do_nothing()
@@ -350,18 +372,21 @@ async fn insert_goi_associations(
 
 async fn upsert_goi_knowledge_snapshot(
     db: &DatabaseConnection,
+    integration_id: i64,
     organism_id: i64,
     items: Vec<KnowledgeApiItem>,
 ) -> Result<(), AppError> {
     let source_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let tx = db.begin().await.c(h!())?;
-    mark_missing_goi_knowledge_deleted(&tx, organism_id, &source_ids)
+    mark_missing_goi_knowledge_deleted(&tx, integration_id, &source_ids)
         .await
         .c(h!())?;
 
     let knowledge_items = items
         .into_iter()
-        .map(|item| goi_knowledge_active_model(organism_id, item))
+        .map(|item| {
+            goi_knowledge_active_model(integration_id, organism_id, item)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if knowledge_items.is_empty() {
         tx.commit().await.c(h!())?;
@@ -371,7 +396,7 @@ async fn upsert_goi_knowledge_snapshot(
     goi_knowledge::Entity::insert_many(knowledge_items)
         .on_conflict(
             OnConflict::columns([
-                goi_knowledge::Column::OrganismId,
+                goi_knowledge::Column::IntegrationId,
                 goi_knowledge::Column::SourceKnowledgeId,
             ])
             .update_columns([
@@ -399,7 +424,7 @@ async fn upsert_goi_knowledge_snapshot(
 
 async fn mark_missing_goi_knowledge_deleted(
     db: &DatabaseTransaction,
-    organism_id: i64,
+    integration_id: i64,
     source_ids: &[i64],
 ) -> Result<(), AppError> {
     let mut query = goi_knowledge::Entity::update_many()
@@ -408,7 +433,7 @@ async fn mark_missing_goi_knowledge_deleted(
             goi_knowledge::Column::DeletedAt,
             Expr::value(chrono::Utc::now().fixed_offset()),
         )
-        .filter(goi_knowledge::Column::OrganismId.eq(organism_id))
+        .filter(goi_knowledge::Column::IntegrationId.eq(integration_id))
         .filter(goi_knowledge::Column::Deleted.eq(false));
     if !source_ids.is_empty() {
         query = query.filter(
@@ -422,11 +447,11 @@ async fn mark_missing_goi_knowledge_deleted(
 
 async fn prune_old_deleted_goi_knowledge(
     db: &DatabaseConnection,
-    organism_id: i64,
+    integration_id: i64,
 ) -> Result<(), AppError> {
     let cutoff = goi_knowledge_sync_cutoff();
     goi_knowledge::Entity::delete_many()
-        .filter(goi_knowledge::Column::OrganismId.eq(organism_id))
+        .filter(goi_knowledge::Column::IntegrationId.eq(integration_id))
         .filter(goi_knowledge::Column::Deleted.eq(true))
         .filter(goi_knowledge::Column::DeletedAt.is_not_null())
         .filter(goi_knowledge::Column::DeletedAt.lt(cutoff))
@@ -437,6 +462,7 @@ async fn prune_old_deleted_goi_knowledge(
 }
 
 fn goi_association_active_model(
+    integration_id: i64,
     organism_id: i64,
     item: AssociationApiItem,
 ) -> Result<goi_association::ActiveModel, AppError> {
@@ -464,6 +490,7 @@ fn goi_association_active_model(
     let call_signs = serde_json::to_value(call_signs).c(h!())?;
     Ok(goi_association::ActiveModel {
         id: NotSet,
+        integration_id: Set(integration_id),
         organism_id: Set(organism_id),
         source_association_id: Set(item.id),
         source_created_at: Set(source_created_at),
@@ -488,6 +515,7 @@ fn goi_association_active_model(
 }
 
 fn goi_knowledge_active_model(
+    integration_id: i64,
     organism_id: i64,
     item: KnowledgeApiItem,
 ) -> Result<goi_knowledge::ActiveModel, AppError> {
@@ -508,6 +536,7 @@ fn goi_knowledge_active_model(
     } = item.row;
     Ok(goi_knowledge::ActiveModel {
         id: NotSet,
+        integration_id: Set(integration_id),
         organism_id: Set(organism_id),
         source_knowledge_id: Set(item.id),
         source_created_at: Set(source_created_at),
