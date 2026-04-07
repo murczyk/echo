@@ -1,4 +1,14 @@
-import { Alert, Box, CircularProgress, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  CircularProgress,
+  FormControlLabel,
+  Stack,
+  Switch,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from '@mui/material';
 import type { FormEvent } from 'react';
 
 import { Button } from '../../components/mui-customized/button';
@@ -11,6 +21,9 @@ export type SettingsDutySectionProps = {
   saveSuccess: string | null;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
+  /** When true, duty feed does not auto-scroll / follow new messages. */
+  disableAutoScroll: boolean;
+  onDisableAutoScrollChange: (value: boolean) => void;
   onSave: (event?: FormEvent) => void | Promise<void>;
   isDirty: boolean;
   saveInProgress: boolean;
@@ -23,6 +36,8 @@ export function SettingsDutySection({
   saveSuccess,
   tagsLayout,
   onTagsLayoutChange,
+  disableAutoScroll,
+  onDisableAutoScrollChange,
   onSave,
   isDirty,
   saveInProgress,
@@ -39,34 +54,58 @@ export function SettingsDutySection({
             color: 'text.primary',
           }}
         >
-          Вигляд тегів у стрічці Оперативного (зберігається для вашого облікового запису)
+          Оперативний (зберігається для вашого облікового запису)
         </Typography>
         {prefsLoadError ? <Alert severity="warning">{prefsLoadError}</Alert> : null}
         {saveError ? <Alert severity="error">{saveError}</Alert> : null}
         <Box component="form" onSubmit={onSave} noValidate>
           <Stack spacing={2}>
-            <Box className="flex flex-wrap items-center gap-2">
-              <Typography variant="caption" sx={{ fontSize: 12 }}>
-                вигляд тегів:
+            <Box className="flex flex-col gap-0.5">
+              <Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>
+                вигляд тегів у стрічці
               </Typography>
-              <ToggleButtonGroup
-                value={tagsLayout}
-                exclusive
-                color="primary"
-                onChange={(_, v: TagsLayoutVariant | null) => {
-                  if (v != null) onTagsLayoutChange(v);
-                }}
-                size="small"
-                sx={{
-                  flexShrink: 0,
-                  '& .MuiToggleButton-root': { textTransform: 'none', fontSize: 12 },
-                }}
-              >
-                <ToggleButton value="full">повний</ToggleButton>
-                <ToggleButton value="compact">компактний</ToggleButton>
-                <ToggleButton value="hidden">не показувати</ToggleButton>
-              </ToggleButtonGroup>
+              <Box className="flex flex-wrap items-center gap-2">
+                <ToggleButtonGroup
+                  value={tagsLayout}
+                  exclusive
+                  color="primary"
+                  onChange={(_, v: TagsLayoutVariant | null) => {
+                    if (v != null) onTagsLayoutChange(v);
+                  }}
+                  size="small"
+                  disabled={loadInProgress}
+                  sx={{
+                    flexShrink: 0,
+                    '& .MuiToggleButton-root': { textTransform: 'none', fontSize: 12 },
+                  }}
+                >
+                  <ToggleButton value="full">повний</ToggleButton>
+                  <ToggleButton value="compact">компактний</ToggleButton>
+                  <ToggleButton value="hidden">не показувати</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
             </Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  // inverted switch to not start option name with Disable (avoid on = disable, off = enable)
+                  checked={!disableAutoScroll}
+                  onChange={(_, checked) => onDisableAutoScrollChange(!checked)}
+                  disabled={loadInProgress}
+                />
+              }
+              label={
+                <Typography variant="body2" component="span" display="block">
+                  Автоматична прокрутка стрічки Оперативного{' '}
+                </Typography>
+              }
+            />
+
+            <Typography variant="caption" className="mt-0">
+              Якщо перемикач увімкнено: автоматична прокрутка до нових повідомлень працює лише коли стрічка прокручена
+              до самого низу + невеликий зазор від кінця. Якщо трохи прокрутити вгору — автопрокрутка припиняється, доки
+              знову не дійдете до низу.
+            </Typography>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1.5, pt: 1 }}>
               {saveSuccess ? (
                 <Typography variant="caption" color="success.main" role="status">

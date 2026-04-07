@@ -55,6 +55,8 @@ export type MessageActionsDeps = {
   setSelectedSavedId: Dispatch<SetStateAction<number | null>>;
   saveFilterName: string;
   setSaveFilterName: Dispatch<SetStateAction<string>>;
+  /** User pref: do not auto-scroll / stay in watch mode on duty. */
+  dutyDisableAutoScroll: boolean;
 };
 
 export function useRerDutyMessageActions(deps: MessageActionsDeps) {
@@ -79,6 +81,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     setSelectedSavedId,
     saveFilterName,
     setSaveFilterName,
+    dutyDisableAutoScroll,
   } = deps;
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
@@ -309,7 +312,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     async (feedId: string) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
-      setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
+      if (!dutyDisableAutoScroll) {
+        setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
+      }
       const refs = columnRefsRef.current;
       const scrollToEnd = () => {
         requestAnimationFrame(() => requestAnimationFrame(() => refs[feedId]?.scrollToEnd()));
@@ -333,7 +338,10 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
           setMessageFeeds((prev) =>
             prev.map((f) => (f.id === feedId ? { ...f, unreadCount: Math.max(f.unreadCount, quantity) } : f)),
           );
-          await loadFeedNewerMessages(feedId, { nolimit: true, scrollToEndAfterLoad: true });
+          await loadFeedNewerMessages(feedId, {
+            nolimit: true,
+            scrollToEndAfterLoad: !dutyDisableAutoScroll,
+          });
         } else if (!feed.loading) {
           await loadFeedInitialMessages(feedId);
         }
@@ -354,6 +362,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       setWatchModeByFeedId,
       setLoadingNewerFeedId,
       setMessageFeeds,
+      dutyDisableAutoScroll,
     ],
   );
 

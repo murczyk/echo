@@ -20,6 +20,8 @@ import { PowerChip } from '../../components/PowerChip';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
 const LOAD_OLDER_BUFFER_ITEMS = 10;
+/** Virtuoso: consider "at bottom" when within this many pixels of the scroll end (watch mode / reach-bottom). */
+const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 /** After loading older, don't trigger again until the user scrolls back up so the visible range is at least this far from the bottom. */
 const LOAD_OLDER_RESET_MARGIN = 20;
 
@@ -31,7 +33,7 @@ const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function 
     <div
       ref={ref}
       data-virtuoso-scroller
-      style={{ ...style, paddingLeft: 12 }}
+      style={{ ...style, paddingLeft: 0 }}
       className={[className, 'rer-duty-feed-scroll'].filter(Boolean).join(' ')}
       {...props}
     />
@@ -108,6 +110,8 @@ export type FeedColumnProps = {
   onLeftBottom?: () => void;
   /** Called when the visible range enters or leaves the "near bottom" zone (within LOAD_OLDER_BUFFER_ITEMS of the end). Used so the poll can load newer when count > 0 and user is below buffer. */
   onNearBottomChange?: (near: boolean) => void;
+  /** Virtuoso pixel at-bottom (see DUTY_FEED_AT_BOTTOM_THRESHOLD_PX); used so auto-scroll follow only runs when the scroller is actually at the bottom. */
+  onAtBottomChange?: (atBottom: boolean) => void;
   isWatchMode?: boolean;
   loadingNewer?: boolean;
   arrowResultMessage?: string | null;
@@ -178,6 +182,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     onReachedBottom,
     onLeftBottom,
     onNearBottomChange,
+    onAtBottomChange,
     isWatchMode = false,
     loadingNewer = false,
     arrowResultMessage = null,
@@ -379,10 +384,11 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 tryLoadOlder();
               }
             }}
-            atBottomThreshold={300}
+            atBottomThreshold={DUTY_FEED_AT_BOTTOM_THRESHOLD_PX}
             atBottomStateChange={(atBottom) => {
               const wasAtBottom = atBottomRef.current;
               atBottomRef.current = atBottom;
+              onAtBottomChange?.(atBottom);
               if (!atBottom) hasSeenNotAtBottomRef.current = true;
               setIsAtBottom(atBottom);
               if (atBottom && hasSeenNotAtBottomRef.current) onReachedBottom?.();
