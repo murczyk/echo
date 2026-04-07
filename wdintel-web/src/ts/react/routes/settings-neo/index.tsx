@@ -300,6 +300,14 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       noOptionsText="Немає варіантів"
                       loading={loadInProgress}
                       loadingText="Завантаження..."
+                      renderOption={(props, option) => {
+                        const { key: _unusedKey, ...optionProps } = props;
+                        return (
+                          <Box component="li" {...optionProps} key={option.id}>
+                            {option.label}
+                          </Box>
+                        );
+                      }}
                       sx={{
                         width: { xs: '100%', sm: '420px' },
                         maxWidth: '100%',

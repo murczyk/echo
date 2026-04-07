@@ -303,13 +303,18 @@ delta_kmz_to_geojson toMsg file =
 alpine_convert :
     (Result ApiError Int -> msg)
     -> File
+    -> String
     -> Cmd msg
-alpine_convert toMsg file =
+alpine_convert toMsg file outputFormat =
     Http.request
         { method = "POST"
         , headers = []
         , url = "/api/alpine/convert"
-        , body = Http.multipartBody [ Http.filePart (File.name file) file ]
+        , body =
+            Http.multipartBody
+                [ Http.stringPart "output_format" outputFormat
+                , Http.filePart (File.name file) file
+                ]
         , expect = leExpectJson toMsg Decode.int
         , timeout = Nothing
         , tracker = Nothing

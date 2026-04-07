@@ -8,6 +8,12 @@ import { postJson } from './client';
 
 type GoiAssociationLike = {
   id?: number | string;
+  integrationId?: number | string;
+  integration_id?: number | string;
+  serverLabel?: string | null;
+  server_label?: string | null;
+  ownerOrganismName?: string | null;
+  owner_organism_name?: string | null;
   sourceAssociationId?: number | string;
   source_association_id?: number | string;
   sourceCreatedAtMs?: number | string;
@@ -39,6 +45,7 @@ type ListGoiAssociationsReqBody = {
   offset: number | null;
   sort_by: ListGoiAssociationsReq['sortBy'];
   filter_text: string | null;
+  filter_server: string | null;
   filter_frequency: string | null;
   filter_coordinates: string | null;
   filter_note: string | null;
@@ -90,6 +97,12 @@ function normalizeOptionalString(value: string | null | undefined): string | nul
 function normalizeGoiAssociation(raw: GoiAssociationLike | null | undefined): GoiAssociation {
   return {
     id: normalizeNumber(raw?.id),
+    integrationId: normalizeNumber(raw?.integrationId ?? raw?.integration_id),
+    serverLabel: normalizeOptionalString(raw?.serverLabel ?? raw?.server_label) ?? '',
+    ownerOrganismName:
+      normalizeOptionalString(
+        raw?.ownerOrganismName ?? raw?.owner_organism_name,
+      ) ?? '',
     sourceAssociationId: normalizeNumber(
       raw?.sourceAssociationId ?? raw?.source_association_id,
     ),
@@ -135,6 +148,7 @@ function toListGoiAssociationsReqBody(
     offset: req.offset ?? null,
     sort_by: req.sortBy ?? null,
     filter_text: normalizeOptionalText(req.filterText),
+    filter_server: normalizeOptionalText(req.filterServer),
     filter_frequency: normalizeOptionalText(req.filterFrequency),
     filter_coordinates: normalizeOptionalText(req.filterCoordinates),
     filter_note: normalizeOptionalText(req.filterNote),
@@ -149,7 +163,7 @@ export async function listCurrentUserGoiAssociations(
   signal?: AbortSignal,
 ): Promise<ListGoiAssociationsRsp> {
   const data = await postJson<ListGoiAssociationsRspLike>(
-    '/api/organism/goi-associations',
+    '/api/goi/associations',
     toListGoiAssociationsReqBody(req),
     { signal },
   );

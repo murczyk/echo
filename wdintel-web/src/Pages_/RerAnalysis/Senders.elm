@@ -22,6 +22,7 @@ menuItems profiles senders =
             duplicateNames profiles senders
     in
     senders
+        |> List.sortBy (senderLabel profiles duplicatedNames)
         |> List.map
             (\sender ->
                 Select.basicMenuItem

@@ -3,7 +3,7 @@ module Pages.GoiSettings exposing (Model, Msg, page)
 import Auth
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
-import Html.Attributes exposing (attribute, class)
+import Html.Attributes exposing (class)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -64,9 +64,7 @@ view user _ =
         [ div [ class "box-border px-6 pt-6 pb-6 w-full flex flex-col" ]
             [ div [ class "w-full" ]
                 [ node "goi-settings"
-                    [ attribute "data-goi-host" (Maybe.withDefault "" user.goiHost)
-                    , class "react-fill-host block w-full"
-                    ]
+                    [ class "react-fill-host block w-full" ]
                     []
                 ]
             ]

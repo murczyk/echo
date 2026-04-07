@@ -1513,17 +1513,17 @@ view dark _ _ model =
                 ]
                 [ span [ class "visually-hidden" ] [ text "Loading..." ] ]
     in
-    { title = "імпортер"
+    { title = "Імпортер"
     , body =
         [ -- , Views.navBarBpla dark mServerInfo user "importer"
           div [ class "w-5/6 mx-auto mt-4" ] <|
             p [ class "text-muted mb-4" ]
-                [ text "окрім ручного вводу, ви також можете "
+                [ text "Окрім ручного вводу, ви також можете "
                 , span
                     [ class "text-action cursor-pointer"
                     , onClick UploadPdfClicked
                     ]
-                    [ text "підвантажити pdf-рапорт з програми \"Термінал\"" ]
+                    [ text "підвантажити PDF-рапорт з програми \"Термінал\"" ]
                 ]
                 :: pdfUploadProgressDivs model
                 ++ EL.toList (EL.map (renderImpRow dark model.formErrors) model.rows)
@@ -1554,7 +1554,7 @@ view dark _ _ model =
 
                               else
                                 spinner
-                            , text " скачати kmz"
+                            , text " скачати KMZ"
                             ]
                         , button
                             [ type_ "button"
@@ -1567,7 +1567,7 @@ view dark _ _ model =
 
                               else
                                 spinner
-                            , text " скачати geojson"
+                            , text " скачати GeoJSON"
                             ]
                         ]
                    ]

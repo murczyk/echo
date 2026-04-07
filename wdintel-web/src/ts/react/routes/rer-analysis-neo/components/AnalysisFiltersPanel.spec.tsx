@@ -6,6 +6,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { SignalGroupEntry } from '../../../../../Bindings';
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { emptyQueryState } from '../helpers';
 
@@ -111,6 +112,17 @@ function buildOptions(): AnalysisPageState['options'] {
   };
 }
 
+function buildGroupInfo(masterKey: string, name: string): SignalGroupEntry {
+  return {
+    masterKey,
+    name,
+    ignoreOperativny: false,
+    groupStats: { activityLastDay: 0, activityLastWeek: 0 },
+    adminData: null,
+    areasOfResponsibility: null,
+  };
+}
+
 function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPanel>> = {}): ComponentProps<typeof AnalysisFiltersPanel> {
   return {
     isDirty: false,
@@ -119,6 +131,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
     includeOnlyNewFreqs: false,
     loadedSavedFilter: null,
     options: buildOptions(),
+    groupInfos: {},
     queryState: emptyQueryState(),
     saveInFlight: false,
     savedFilterName: '',
@@ -240,6 +253,65 @@ describe('AnalysisFiltersPanel', () => {
     expect(frequencyField?.loading).toBe(true);
     expect(groupsField?.disabled ?? false).toBe(false);
     expect(groupsField?.loading).toBe(true);
+  });
+
+  it('passes group master keys as filter values while keeping duplicate group names as labels', async () => {
+    const props = buildProps({
+      groupInfos: {
+        'group-a': buildGroupInfo('group-a', 'Грак Пл'),
+        'group-b': buildGroupInfo('group-b', 'Грак Пл'),
+      },
+      options: {
+        ...buildOptions(),
+        groups: ['group-a', 'group-b'],
+      },
+      queryState: {
+        ...emptyQueryState(),
+        groupsSelected: ['group-b'],
+      },
+    });
+
+    rendered.push(await renderComponent(props));
+
+    const groupsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string }>; value: string[] })
+      .find((callProps) => callProps.label === 'Групи');
+
+    expect(groupsField?.options).toEqual([
+      { value: 'group-a', label: 'Грак Пл' },
+      { value: 'group-b', label: 'Грак Пл' },
+    ]);
+    expect(groupsField?.value).toEqual(['group-b']);
+  });
+
+  it('uppercases callsign labels without changing filter values sent to the API state', async () => {
+    const updateQueryState = vi.fn();
+    const props = buildProps({
+      updateQueryState,
+      options: {
+        ...buildOptions(),
+        callsigns: ['alpha', 'ALPHA'],
+      },
+      queryState: {
+        ...emptyQueryState(),
+        callsignsSelected: ['Bravo'],
+      },
+    });
+
+    rendered.push(await renderComponent(props));
+
+    const callsignsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; values: string[] }>; value: string[]; onChange: (next: string[]) => void })
+      .find((callProps) => callProps.label === 'Позивні');
+
+    expect(callsignsField?.options).toEqual([
+      { value: 'ALPHA', label: 'ALPHA', values: ['alpha', 'ALPHA'] },
+      { value: 'BRAVO', label: 'BRAVO', values: ['Bravo'] },
+    ]);
+    expect(callsignsField?.value).toEqual(['Bravo']);
+
+    callsignsField?.onChange(['alpha', 'ALPHA']);
+    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['alpha', 'ALPHA'] });
   });
 
   it('wires checkbox and switch changes into the analysis callbacks', async () => {

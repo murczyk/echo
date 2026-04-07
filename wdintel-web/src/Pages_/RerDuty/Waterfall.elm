@@ -649,7 +649,7 @@ updateFreqsAndCallsigns messages model =
                     ( model.freqs, model.freqsSelect.items )
 
                 _ ->
-                    ( model.freqs ++ newFreqs, Filters.createMenu (model.freqs ++ newFreqs) )
+                    ( model.freqs ++ newFreqs, Filters.createFreqMenu (model.freqs ++ newFreqs) )
 
         fs =
             LeSelect.updateSelectItems (\_ -> freqMenu) model.freqsSelect
@@ -827,6 +827,7 @@ updateFilters msg model =
             let
                 selectFilterMenu =
                     filters
+                        |> List.sortBy .name
                         |> List.map
                             (\filter ->
                                 Select.basicMenuItem
@@ -874,6 +875,7 @@ updateFilters msg model =
             let
                 selectFilterMenu =
                     filters
+                        |> List.sortBy .name
                         |> List.map
                             (\filter ->
                                 Select.basicMenuItem
@@ -2056,7 +2058,7 @@ update shared user msg model =
                     freqs |> List.filter (\x -> not (List.member x model.freqs))
 
                 freqsMenu =
-                    Filters.createMenu (model.freqs ++ newFreqs)
+                    Filters.createFreqMenu (model.freqs ++ newFreqs)
             in
             ( { model
                 | freqs = model.freqs ++ freqs

@@ -436,6 +436,14 @@ function AdminKeysNeoPageBody() {
                 helperText={createErrors.grantFrom}
               />
             )}
+            renderOption={(props, option) => {
+              const { key: _unusedKey, ...optionProps } = props;
+              return (
+                <Box component="li" {...optionProps} key={option.id}>
+                  {option.name}
+                </Box>
+              );
+            }}
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
           <Autocomplete
@@ -454,6 +462,14 @@ function AdminKeysNeoPageBody() {
                 helperText={createErrors.grantTo}
               />
             )}
+            renderOption={(props, option) => {
+              const { key: _unusedKey, ...optionProps } = props;
+              return (
+                <Box component="li" {...optionProps} key={option.id}>
+                  {option.name}
+                </Box>
+              );
+            }}
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
         </DialogContent>

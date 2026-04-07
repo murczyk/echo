@@ -34,6 +34,7 @@ use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::{Deserialize, Serialize};
 
 mod goi_ssh;
+pub mod integrations;
 pub mod shared;
 pub mod types;
 pub mod worker;
@@ -382,7 +383,7 @@ pub async fn goi_delete_file_loose(
     }
 }
 
-async fn goi_run_command(
+pub(super) async fn goi_run_command(
     ssh_req: CheckOrganismGoiConnectionReq,
     command: String,
     error_context: &'static str,
@@ -757,6 +758,9 @@ fn goi_association_from_model(
 ) -> GoiAssociation {
     GoiAssociation {
         id: association.id,
+        integration_id: association.integration_id,
+        server_label: String::new(),
+        owner_organism_name: String::new(),
         source_association_id: association.source_association_id,
         source_created_at_ms: association.source_created_at.timestamp_millis(),
         created_at_ms: association.created_at.timestamp_millis(),
@@ -781,6 +785,9 @@ fn goi_association_from_model(
 fn goi_knowledge_from_model(knowledge: goi_knowledge::Model) -> GoiKnowledge {
     GoiKnowledge {
         id: knowledge.id,
+        integration_id: knowledge.integration_id,
+        server_label: String::new(),
+        owner_organism_name: String::new(),
         source_knowledge_id: knowledge.source_knowledge_id,
         source_created_at_ms: knowledge.source_created_at.timestamp_millis(),
         created_at_ms: knowledge.created_at.timestamp_millis(),
@@ -808,7 +815,7 @@ fn goi_association_call_signs(value: serde_json::Value) -> Vec<String> {
     }
 }
 
-async fn goi_run_setup_worker(
+pub(super) async fn goi_run_setup_worker(
     ssh_req: CheckOrganismGoiConnectionReq,
     setup_command: String,
 ) -> Result<(), AppError> {
@@ -851,7 +858,7 @@ async fn goi_store_settings(
     Ok(organism.update(dbx).await.c(h!())?)
 }
 
-fn goi_validate_ssh_port(port: i32) -> Result<(), AppError> {
+pub(super) fn goi_validate_ssh_port(port: i32) -> Result<(), AppError> {
     if (1..=65535).contains(&port) {
         return Ok(());
     }
@@ -860,7 +867,7 @@ fn goi_validate_ssh_port(port: i32) -> Result<(), AppError> {
     })
 }
 
-fn goi_validate_api_port(port: i32) -> Result<(), AppError> {
+pub(super) fn goi_validate_api_port(port: i32) -> Result<(), AppError> {
     if (1..=65535).contains(&port) {
         return Ok(());
     }
@@ -944,7 +951,7 @@ fn goi_control_state_from_organism(
     }
 }
 
-fn goi_restart_service_command(
+pub(super) fn goi_restart_service_command(
     service: &RestartCurrentUserGoiService,
 ) -> &'static str {
     match service {
@@ -953,7 +960,7 @@ fn goi_restart_service_command(
     }
 }
 
-fn goi_restart_service_error_context(
+pub(super) fn goi_restart_service_error_context(
     service: &RestartCurrentUserGoiService,
 ) -> &'static str {
     match service {
@@ -966,7 +973,7 @@ fn goi_restart_service_error_context(
     }
 }
 
-fn goi_validate_connection_req(
+pub(super) fn goi_validate_connection_req(
     req: &CheckOrganismGoiConnectionReq,
 ) -> Result<(), AppError> {
     if req.ssh_host.trim().is_empty() {
@@ -987,7 +994,7 @@ fn goi_validate_connection_req(
     goi_validate_ssh_port(req.ssh_port)
 }
 
-fn goi_validate_setup_worker_req(
+pub(super) fn goi_validate_setup_worker_req(
     req: &SetupOrganismGoiWorkerReq,
 ) -> Result<(), AppError> {
     goi_validate_connection_req(&CheckOrganismGoiConnectionReq {
@@ -1031,11 +1038,11 @@ fn goi_validate_settings_req(
     Ok(())
 }
 
-fn goi_generate_worker_secret() -> String {
+pub(super) fn goi_generate_worker_secret() -> String {
     Uuid::new_v4().simple().to_string()
 }
 
-fn goi_build_setup_worker_command(
+pub(super) fn goi_build_setup_worker_command(
     pg_password: &str,
     api_password: &str,
 ) -> String {
