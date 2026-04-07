@@ -1,4 +1,4 @@
-module Pages_.RerDuty.Waterfall.Filters exposing (Filter, FilterMsg(..), createMenu, ensureAllSendersNamed, extractSendersIds, groupNameToIds, updateSelectItems)
+module Pages_.RerDuty.Waterfall.Filters exposing (Filter, FilterMsg(..), createFreqMenu, createMenu, ensureAllSendersNamed, extractSendersIds, groupNameToIds, updateSelectItems)
 
 import Bindings as B
 import Core.Types exposing (ApiError)
@@ -122,6 +122,7 @@ ensureAllSendersNamed profiles sendersIds sendersNames =
 createMenu : List String -> List (Select.MenuItem String)
 createMenu list =
     list
+        |> List.sort
         |> List.map
             (\item ->
                 Select.basicMenuItem
@@ -129,6 +130,29 @@ createMenu list =
                     , label = getLabelOrDefault item
                     }
             )
+
+
+createFreqMenu : List String -> List (Select.MenuItem String)
+createFreqMenu list =
+    list
+        |> List.sortBy freqSortKey
+        |> List.map
+            (\item ->
+                Select.basicMenuItem
+                    { item = item
+                    , label = getLabelOrDefault item
+                    }
+            )
+
+
+freqSortKey : String -> ( Int, Float, String )
+freqSortKey freq =
+    case String.toFloat freq of
+        Just value ->
+            ( 0, value, freq )
+
+        Nothing ->
+            ( 1, 0, freq )
 
 
 groupNameToIds n dict =

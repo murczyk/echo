@@ -1724,6 +1724,14 @@ function AdminDirectionsNeoPageBody() {
                 selectedAorIds: value.map((aor) => aor.id),
               })
             }
+            renderOption={(props, option) => {
+              const { key: _unusedKey, ...optionProps } = props;
+              return (
+                <Box component="li" {...optionProps} key={option.id}>
+                  {option.name}
+                </Box>
+              );
+            }}
             renderInput={(params) => (
               <TextField {...params} label="Смуги відповідальності" />
             )}
@@ -1798,6 +1806,14 @@ function AdminDirectionsNeoPageBody() {
                 selectedAorIds: value.map((aor) => aor.id),
               })
             }
+            renderOption={(props, option) => {
+              const { key: _unusedKey, ...optionProps } = props;
+              return (
+                <Box component="li" {...optionProps} key={option.id}>
+                  {option.name}
+                </Box>
+              );
+            }}
             renderInput={(params) => (
               <TextField {...params} label="Смуги відповідальності" />
             )}
@@ -1873,6 +1889,14 @@ function AdminDirectionsNeoPageBody() {
               assignDialog &&
               setAssignDialog({ ...assignDialog, selectedZones: value })
             }
+            renderOption={(props, option) => {
+              const { key: _unusedKey, ...optionProps } = props;
+              return (
+                <Box component="li" {...optionProps} key={option[0]}>
+                  {option[1].name}
+                </Box>
+              );
+            }}
             renderInput={(params) => <TextField {...params} label="Напрямки" />}
             isOptionEqualToValue={(option, value) => option[0] === value[0]}
           />

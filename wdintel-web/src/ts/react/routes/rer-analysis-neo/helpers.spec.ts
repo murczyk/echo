@@ -8,6 +8,7 @@ import {
   buildInboxReq,
   parseQueryStateFromWindow,
   emptyQueryState,
+  normalizeQueryState,
   queryStateComparisonKey,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
@@ -156,6 +157,13 @@ describe('rer-analysis-neo helpers', () => {
 
   it('starts neo query state with unitsExactMatchOnly unset', () => {
     expect(emptyQueryState().unitsExactMatchOnly).toBeNull();
+  });
+
+  it('preserves selected callsign casing for case-sensitive backend filtering', () => {
+    expect(normalizeQueryState(createQueryState({ callsignsSelected: ['alpha', 'Bravo'] })).callsignsSelected).toEqual([
+      'alpha',
+      'Bravo',
+    ]);
   });
 
   it('derives default analysis dates in the app timezone', () => {

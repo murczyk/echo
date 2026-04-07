@@ -287,7 +287,7 @@ view isDark user model =
                                            )
                                         |> Tag.view tag_.label
                                 )
-                                model.tags
+                                (List.sortBy (Tuple.second >> .label) model.tags)
                         , let
                             checkboxLabel =
                                 [ Html.node
@@ -939,6 +939,8 @@ view isDark user model =
                                     [ Shared.Components.Spinner.loadingSpinner ]
 
                                 else
-                                    List.map renderSavedFilter model.savedFilters
+                                    model.savedFilters
+                                        |> List.sortBy (Tuple.second >> .name)
+                                        |> List.map renderSavedFilter
                                )
                )

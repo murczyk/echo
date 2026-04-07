@@ -61,6 +61,7 @@ import {
 } from '../../services/api/analysis';
 import { listPalitrasV2 } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
+import { sortFrequenciesNumerically } from '../../utils/misc';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
@@ -751,8 +752,8 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         setMessages(inboxRsp.inboxItems ?? []);
         setOptions({
           ...emptyOptions,
-          freqs: nextFrequencies,
-          newFreqs: freqsRsp.freqs.filter((item) => item.isNew).map((item) => item.freq),
+          freqs: sortFrequenciesNumerically(nextFrequencies),
+          newFreqs: sortFrequenciesNumerically(freqsRsp.freqs.filter((item) => item.isNew).map((item) => item.freq)),
         });
         setTopFreqs(topItems(freqsRsp.freqs, (item) => item.freq, (item) => item.count));
         setMapDateRange({
@@ -815,10 +816,15 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
             return;
           }
 
+          const groupInfosByKey: Record<string, SignalGroupEntry> = {};
+          groupsRsp.groupNames.forEach((item) => {
+            groupInfosByKey[item.masterKey] = item;
+          });
+
           setOptions((current) => ({
             ...current,
             aors: aorsRsp.aors.map((item) => String(item.aorId)),
-            groups: groupsRsp.groupNames.map((item) => item.name),
+            groups: groupsRsp.groups.map((item) => item.masterKey),
             senders: sendersRsp.senders.map((item) => item.uuid),
             callsigns: callsignsRsp.callsigns.map((item) => item.callsign),
             units: unitsRsp.units.map((item) => item.unit),
@@ -830,6 +836,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
             metadataReceivers: metadataRsp.receivers.map((item) => item.value),
             metadataHashes: metadataRsp.hashes.map((item) => item.value),
           }));
+          setGroupInfos((current) => ({ ...current, ...groupInfosByKey }));
           setAorEntries((aorsRsp.aorNames ?? []).map((item) => ({ id: item.id, name: item.name })));
           setProfiles(senderProfilesRsp.data ?? {});
           setTagsMap(
@@ -868,7 +875,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
             return;
           }
 
-          const nextGroupInfos: Record<string, SignalGroupEntry> = {};
+          const nextGroupInfos: Record<string, SignalGroupEntry> = { ...groupInfosByKey };
           groupInfosRsp.forEach((item) => {
             nextGroupInfos[item.masterKey] = item;
           });

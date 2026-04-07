@@ -23,7 +23,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
-import { APP_DATE_INPUT_MIN } from '../../../utils/misc';
+import { APP_DATE_INPUT_MIN, uppercaseStrings } from '../../../utils/misc';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 
@@ -36,6 +36,7 @@ type Props = Pick<
   | 'loadedSavedFilter'
   | 'options'
   | 'filtersLoading'
+  | 'groupInfos'
   | 'queryState'
   | 'saveInFlight'
   | 'savedFilterName'
@@ -204,6 +205,7 @@ export function AnalysisFiltersPanel({
   counts,
   canResetFilters,
   filtersLoading,
+  groupInfos,
   includeOnlyNewFreqs,
   loadedSavedFilter,
   options,
@@ -236,6 +238,13 @@ export function AnalysisFiltersPanel({
   const toggleSection = (section: FilterSectionId) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
+
+  const callsignValues = Array.from(new Set([...options.callsigns, ...queryState.callsignsSelected]));
+  const callsignLabels = uppercaseStrings(callsignValues);
+  const callsignsOptions = callsignValues.map((callsign, index) => ({
+    value: callsign,
+    label: callsignLabels[index] ?? callsign,
+  }));
 
   return (
     <Paper
@@ -424,7 +433,7 @@ export function AnalysisFiltersPanel({
           <FilterSection title="Групи" expanded={expandedSections.groups} onToggle={() => toggleSection('groups')}>
             <AnalysisFilterField
               label="Групи"
-              options={options.groups}
+              options={options.groups.map((masterKey) => ({ value: masterKey, label: groupInfos[masterKey]?.name ?? masterKey }))}
               loading={filtersLoading}
               value={queryState.groupsSelected}
               onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
@@ -474,7 +483,7 @@ export function AnalysisFiltersPanel({
           <FilterSection title="Позивні" expanded={expandedSections.callsigns} onToggle={() => toggleSection('callsigns')}>
             <AnalysisFilterField
               label="Позивні"
-              options={options.callsigns}
+              options={callsignsOptions}
               loading={filtersLoading}
               value={queryState.callsignsSelected}
               onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
