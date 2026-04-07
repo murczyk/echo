@@ -1193,20 +1193,31 @@ update shared msg model =
                     { addUnitSelect | selected = Nothing }
 
                 freqs2 =
-                    case fre of
-                        Just v ->
-                            let
-                                fre2 =
-                                    { v | networkIds = v.networkIds ++ [ network.id ] }
-                            in
-                            ListX.updateIf (\freq_ -> freq_.freq == freq) (\_ -> fre2) model.freqs
+                    if model.showOnlyUnknownNetwork then
+                        List.filter (\freq_ -> freq_.freq /= freq) model.freqs
 
-                        Nothing ->
-                            model.freqs
+                    else
+                        case fre of
+                            Just v ->
+                                let
+                                    fre2 =
+                                        { v | networkIds = v.networkIds ++ [ network.id ] }
+                                in
+                                ListX.updateIf (\freq_ -> freq_.freq == freq) (\_ -> fre2) model.freqs
+
+                            Nothing ->
+                                model.freqs
+
+                networkWorkflowStatus =
+                    if model.showOnlyUnknownNetwork then
+                        NotStarted
+
+                    else
+                        SelectingNetwork freq Nothing
             in
             ( { model
                 | freqs = freqs2
-                , networkWorkflowStatus = SelectingNetwork freq Nothing
+                , networkWorkflowStatus = networkWorkflowStatus
                 , networkDialogUnitSelect = aus2
                 , networkAddLoading = False
               }
