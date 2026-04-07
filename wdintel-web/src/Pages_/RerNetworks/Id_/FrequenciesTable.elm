@@ -82,6 +82,9 @@ doNeedReloadCatalogCallsigns freqsMsg =
         FreqUpdatedByApi _ ->
             True
 
+        FreqReactivatedByApi _ ->
+            True
+
         _ ->
             False
 
@@ -234,7 +237,7 @@ update shared msg model =
         SetFreqsTableState newState ->
             ( { model | freqsTableState = newState }, E.none )
 
-        OpenFreqEditSidebar freqId updateReq ->
+        OpenFreqEditSidebar networkFreqId freqId updateReq ->
             let
                 -- Оновлюємо селекти з даними з частоти
                 kindSelect =
@@ -260,10 +263,11 @@ update shared msg model =
                     updateReq.activeTo /= Nothing
             in
             ( { model
-                | freqEditSidebar = Just ( freqId, updateReq )
+                | freqEditSidebar = Just ( networkFreqId, freqId, updateReq )
                 , freqEditKindSelect = updatedKindSelect
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqEditKeySelect = updatedKeySelect
+                , freqReactivateLoading = False
                 , freqEditShowActiveTo = showActiveTo
                 , freqEditNewKeyInput = ""
                 , freqEditNewKeySaving = False
@@ -274,6 +278,7 @@ update shared msg model =
         CloseFreqEditSidebar ->
             ( { model
                 | freqEditSidebar = Nothing
+                , freqReactivateLoading = False
                 , freqEditShowActiveTo = False
                 , freqEditNewKeyInput = ""
                 , freqEditNewKeySaving = False
@@ -282,17 +287,57 @@ update shared msg model =
             )
 
         UpdateFreqEditSidebar updateReq ->
-            ( { model | freqEditSidebar = Maybe.map (\( freqId, _ ) -> ( freqId, updateReq )) model.freqEditSidebar }, E.none )
+            ( { model
+                | freqEditSidebar =
+                    Maybe.map
+                        (\( networkFreqId, freqId, _ ) ->
+                            ( networkFreqId, freqId, updateReq )
+                        )
+                        model.freqEditSidebar
+              }
+            , E.none
+            )
 
         SaveFreqEditSidebar ->
             case model.freqEditSidebar of
-                Just ( _, updateReq ) ->
+                Just ( _, _, updateReq ) ->
                     ( { model | freqEditSaving = True }
                     , E.updateNetworkFreq FreqUpdatedByApi updateReq
                     )
 
                 Nothing ->
                     ( model, E.none )
+
+        ReactivateFreqClicked ->
+            case model.freqEditSidebar of
+                Just ( networkFreqId, _, updateReq ) ->
+                    ( { model | freqReactivateLoading = True }
+                    , E.reactivateNetworkFreq FreqReactivatedByApi
+                        { networkId = updateReq.networkId
+                        , networkFreqId = networkFreqId
+                        }
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        FreqReactivatedByApi (Err e) ->
+            ( { model | freqReactivateLoading = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка увімкнення частоти" e
+            )
+
+        FreqReactivatedByApi (Ok network) ->
+            ( { model
+                | network = Success network
+                , freqsEditingState = Readonly
+                , freqReactivateLoading = False
+                , freqEditSidebar = Nothing
+              }
+            , E.batch
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
+                , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
+                ]
+            )
 
         OpenFreqDetailPopup freqId ->
             ( { model | freqDetailPopup = Just freqId }, E.none )
@@ -365,8 +410,8 @@ update shared msg model =
 
                 updatedSidebar =
                     case model.freqEditSidebar of
-                        Just ( freqId, updateReq ) ->
-                            Just ( freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
+                        Just ( networkFreqId, freqId, updateReq ) ->
+                            Just ( networkFreqId, freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -400,8 +445,8 @@ update shared msg model =
 
                 updatedSidebar =
                     case model.freqEditSidebar of
-                        Just ( freqId, updateReq ) ->
-                            Just ( freqId, { updateReq | modulationId = updatedModulationId } )
+                        Just ( networkFreqId, freqId, updateReq ) ->
+                            Just ( networkFreqId, freqId, { updateReq | modulationId = updatedModulationId } )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -435,8 +480,8 @@ update shared msg model =
 
                 updatedSidebar =
                     case model.freqEditSidebar of
-                        Just ( freqId, updateReq ) ->
-                            Just ( freqId, { updateReq | encryptionKeyIds = updatedSelected } )
+                        Just ( networkFreqId, freqId, updateReq ) ->
+                            Just ( networkFreqId, freqId, { updateReq | encryptionKeyIds = updatedSelected } )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -460,12 +505,12 @@ update shared msg model =
                     if not newShowActiveTo then
                         -- очистити activeTo при знятті чекбокса
                         case model.freqEditSidebar of
-                            Just ( freqId, updateReq ) ->
+                            Just ( networkFreqId, freqId, updateReq ) ->
                                 let
                                     newUpdateReq =
                                         { updateReq | activeTo = Nothing }
                                 in
-                                { model | freqEditSidebar = Just ( freqId, newUpdateReq ) }
+                                { model | freqEditSidebar = Just ( networkFreqId, freqId, newUpdateReq ) }
 
                             Nothing ->
                                 model
@@ -1325,7 +1370,7 @@ freqsTableConfig shared model user =
                                                         [ title "Редагувати"
                                                         , class "icon-btn icon-btn-primary"
                                                         , onClick <|
-                                                            OpenFreqEditSidebar freq.freq
+                                                            OpenFreqEditSidebar freq.networkFreqId freq.freq
                                                         { networkId = network.id
                                                         , freq = freq.freq
                                                         , kind = Maybe.withDefault "VHF" freq.kind
@@ -1367,8 +1412,8 @@ freqsTableConfig shared model user =
 editSidebar : Model -> Auth.User -> Shared.Model -> Html FrequenciesMsg
 editSidebar model user shared =
     case model.freqEditSidebar of
-        Just ( freqId, updateReq ) ->
-            Sidebar.view True CloseFreqEditSidebar (freqEditSidebarContent shared model user freqId updateReq)
+        Just ( networkFreqId, freqId, updateReq ) ->
+            Sidebar.view True CloseFreqEditSidebar (freqEditSidebarContent shared model user networkFreqId freqId updateReq)
 
         Nothing ->
             text ""
@@ -1432,8 +1477,39 @@ freqActivityChartDetailed model shared =
             text ""
 
 
-freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html FrequenciesMsg)
-freqEditSidebarContent shared model user freqId updateReq =
+freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> Int -> String -> B.UpdateNetworkFreqReq -> List (Html FrequenciesMsg)
+freqEditSidebarContent shared model user networkFreqId freqId updateReq =
+    let
+        editedFreq =
+            model.freqs
+                |> RD.withDefault []
+                |> ListX.find (\freq -> freq.networkFreqId == networkFreqId)
+
+        aorScopeLabel =
+            case model.network of
+                Success network ->
+                    if List.length network.aorIds == 1 then
+                        "в цій смузі"
+
+                    else
+                        "у смугах мережі"
+
+                _ ->
+                    "у смугах мережі"
+
+        lastInboxInAorText =
+            case editedFreq |> Maybe.andThen .lastDatetimeInAor of
+                Just lastDatetime ->
+                    "Останній SIGINT inbox item "
+                        ++ aorScopeLabel
+                        ++ ": "
+                        ++ Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime)
+
+                Nothing ->
+                    "Останній SIGINT inbox item "
+                        ++ aorScopeLabel
+                        ++ ": не знайдено"
+    in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати частоту" ]
@@ -1624,6 +1700,24 @@ freqEditSidebarContent shared model user freqId updateReq =
                                        )
                             ]
                             []
+                        , if updateReq.activeTo /= Nothing then
+                            div [ class "flex items-center gap-3 pt-2" ]
+                                [ if model.freqReactivateLoading then
+                                    Button.new { label = "Увімкнення...", onClick = ReactivateFreqClicked }
+                                        |> Button.withStyleSecondary
+                                        |> Button.withDisabled True
+                                        |> Button.view
+
+                                  else
+                                    Button.new { label = "Увімкнути частоту", onClick = ReactivateFreqClicked }
+                                        |> Button.withStyleSecondary
+                                        |> Button.view
+                                , p [ class "text-xs text-muted-foreground" ]
+                                    [ text lastInboxInAorText ]
+                                ]
+
+                          else
+                            text ""
                         ]
 
                   else
@@ -1634,6 +1728,7 @@ freqEditSidebarContent shared model user freqId updateReq =
             [ div [ class "flex justify-end gap-3" ]
                 [ Button.new { label = "Скасувати", onClick = CloseFreqEditSidebar }
                     |> Button.withStyleSecondary
+                    |> Button.withDisabled model.freqReactivateLoading
                     |> Button.view
                 , if model.freqEditSaving then
                     Button.new { label = "Збереження...", onClick = SaveFreqEditSidebar }
@@ -1642,6 +1737,7 @@ freqEditSidebarContent shared model user freqId updateReq =
 
                   else
                     Button.new { label = "Зберегти", onClick = SaveFreqEditSidebar }
+                        |> Button.withDisabled model.freqReactivateLoading
                         |> Button.view
                 ]
             ]
@@ -2044,8 +2140,8 @@ addKeyToFreqEditForm model keyData =
 
                 updatedSidebar =
                     case clearedModel.freqEditSidebar of
-                        Just ( freqId, updateReq ) ->
-                            Just ( freqId, { updateReq | encryptionKeyIds = updatedSelected } )
+                        Just ( networkFreqId, freqId, updateReq ) ->
+                            Just ( networkFreqId, freqId, { updateReq | encryptionKeyIds = updatedSelected } )
 
                         Nothing ->
                             clearedModel.freqEditSidebar
