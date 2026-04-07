@@ -12,6 +12,8 @@ import File.Download as Download
 import File.Select
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (preventDefaultOn)
+import Json.Decode as Decode
 import Layouts
 import Page exposing (Page)
 import Process
@@ -81,6 +83,7 @@ initConversionModel =
 
 type Msg
     = UploadAlpinequestKmzFile
+    | OpenDocsDodatki
     | UploadAlpinequestKmzFileSelected File
     | UploadAlpinequestKmzFileDone File (Result ApiError Int)
     | DownloadAlpinequestKmzResultDone File (Result ApiError Bytes)
@@ -107,6 +110,9 @@ finalizer toMsg conversionModel =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
+        OpenDocsDodatki ->
+            ( model, E.loadExternalUrl "/docs/#dodatki" )
+
         UploadAlpinequestKmzFile ->
             ( model
             , E.sendCmd <|
@@ -388,7 +394,11 @@ view _ _ _ model =
                         { heading = Just ".pgd в .tif (cloud-optimised GeoTiff)"
                         , description =
                             [ text "Радимо конвертувати файли .pgd у формат .tif (Cloud-Optimized GeoTIFF, відповідає вимогам Delta до ортознімків), щоб використовувати їх як підкладку в шарах Delta. Інструкція з додавання ортофото в Delta: "
-                            , a [ href "/docs/#dodatki" ] [ text "/docs/#dodatki" ]
+                            , a
+                                [ href "/docs/#dodatki"
+                                , preventDefaultOn "click" (Decode.succeed ( OpenDocsDodatki, True ))
+                                ]
+                                [ text "/docs/#dodatki" ]
                             ]
                         , conversionModel = model.geotiff
                         , onUpload = UploadAlpinequestGeotiffFile
