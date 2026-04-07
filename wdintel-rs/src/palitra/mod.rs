@@ -847,7 +847,6 @@ pub async fn delete_palitra_folder(
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
         login.clone(),
         req.into_inner().folder,
@@ -857,32 +856,46 @@ pub async fn delete_palitra_folder(
     .c(h!())?;
     let mut deleted_palitra_ids = Vec::new();
     for palitra_id in &palitra_ids {
-        let palitra = palitra::Entity::find_by_id(*palitra_id)
-            .one(&env.dbx)
+        if delete_palitra_from_folder_if_allowed(*palitra_id, &login, &env)
             .await
             .c(h!())?
-            .c(h!())?;
-        let is_author_or_admin =
-            is_palitra_author_or_admin(&env.dbx, &login, &palitra)
-                .await
-                .c(h!())?;
-        if !is_author_or_admin {
-            continue;
+        {
+            deleted_palitra_ids.push(*palitra_id);
         }
-        let existing_access =
-            read_palitra_access(&env.dbx, *palitra_id).await.c(h!())?;
-        bl::delete_palitra(*palitra_id, &txn, existing_access, &env)
-            .await
-            .c(h!())?;
-        deleted_palitra_ids.push(*palitra_id);
     }
-    txn.commit().await.c(h!())?;
     for palitra_id in &deleted_palitra_ids {
         env.palitra_worker_context.flush_cache(*palitra_id).await;
     }
     Ok(Json(PalitraBulkActionRsp {
         palitra_ids: deleted_palitra_ids,
     }))
+}
+
+async fn delete_palitra_from_folder_if_allowed(
+    palitra_id: i64,
+    login: &str,
+    env: &Data<Env>,
+) -> Result<bool, AppError> {
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Ok(false);
+    }
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    bl::delete_palitra(palitra_id, &txn, existing_access, env)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(true)
 }
 
 #[post("/api/palitra/download")]
