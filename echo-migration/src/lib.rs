@@ -229,8 +229,8 @@ mod m20260325_123200_add_rer_duty_test_settings;
 mod m20260326_120000_add_full_name_to_sigint_callsign;
 mod m20260329_184900_add_palitra_line_strings;
 mod m20260331_230927_add_palitra_s3_id;
-mod m20260406_210334_add_goi_integrations;
 mod m20260406_194408_palitra_archive_and_folder;
+mod m20260406_210334_add_goi_integrations;
 
 pub struct Migrator;
 
