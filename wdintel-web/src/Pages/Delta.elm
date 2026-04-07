@@ -118,7 +118,7 @@ pageBlock model =
     let
         contentBlockKmz2Geojson =
             div []
-                [ Button.new { label = " додати kmz", onClick = UploadKmzToGeojson }
+                [ Button.new { label = " додати KMZ", onClick = UploadKmzToGeojson }
                     |> Button.withIcon
                         [ if not model.convertKmzInProgress then
                             i [ class "bi bi-file-zip" ] []
@@ -143,12 +143,12 @@ pageBlock model =
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ _ _ model =
-    { title = "дельта"
+    { title = "KMZ в GeoJSON"
     , body =
         [ div [ class "w-4/5 mx-auto px-4" ]
             [ div [ class "flex" ]
                 [ div [ class "w-full" ]
-                    [ h1 [ class "py-4" ] [ text "kmz в geojson" ]
+                    [ h1 [ class "py-4" ] [ text "KMZ в GeoJSON" ]
                     , pageBlock model
                     ]
                 ]

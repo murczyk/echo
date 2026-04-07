@@ -109,14 +109,11 @@ subscriptions _ =
 
 view : Shared.Model -> B.User -> Model -> View Msg
 view _ user model =
-    { title = "головна"
+    { title = "ЕХО"
     , body =
         [ div [ class "box-border container mx-auto px-4 py-6" ]
             [ div [ class "w-full" ]
-                [ section [ class "mb-6" ]
-                    [ h1 [ class "m-0 font-semibold", Attr.style "font-size" "21px", Attr.style "line-height" "1.2" ] [ text "Головна" ]
-                    ]
-                , section [ class "flex flex-col lg:flex-row gap-4 min-w-0 min-h-[50vh] lg:h-[50vh]" ]
+                [ section [ class "flex flex-col lg:flex-row gap-4 min-w-0 min-h-[50vh] lg:h-[50vh]" ]
                     [ a [ target "_blank", href "/docs", class "w-full lg:basis-[clamp(280px,32%,360px)] xl:basis-[420px] lg:shrink min-h-[240px] lg:min-h-0 bg-card border border-border rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
                         [ div [ class "w-16 h-16 bg-gradient-to-br from-[var(--ochre-normal)] to-[var(--ochre-normal-hover)] rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300" ]
                             [ i [ class "bi bi-book text-white text-2xl" ] []

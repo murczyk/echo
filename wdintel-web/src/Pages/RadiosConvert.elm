@@ -193,7 +193,7 @@ contentBlock model =
     div []
         [ p []
             [ text "Приймає файли типу РАДІОСТАНЦІЇ_29.09-03.10.2023.kmz" ]
-        , Button.new { label = " додати kmz", onClick = UploadFileToConvert }
+        , Button.new { label = " додати KMZ", onClick = UploadFileToConvert }
             |> Button.withStyleSecondary
             |> Button.withIcon
                 [ if not (Shared.Components.Console.isInProgress model.console) then
@@ -209,12 +209,12 @@ contentBlock model =
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ _ _ model =
-    { title = "Конвертер радіо kmz-файлу"
+    { title = "Конвертер радіо KMZ-файлу"
     , body =
         [ div [ class "w-4/5 mx-auto px-4" ]
             [ div [ class "flex" ]
                 [ div [ class "w-full" ]
-                    [ h1 [ class "py-4" ] [ text "Конвертер радіо kmz-файлу" ]
+                    [ h1 [ class "py-4" ] [ text "Конвертер радіо KMZ-файлу" ]
                     , div [ class "page-radios-convert" ] <|
                         [ div [ class "flex" ]
                             [ div [ class "w-full" ]

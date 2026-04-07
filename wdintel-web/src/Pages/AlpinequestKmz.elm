@@ -369,15 +369,15 @@ conversionBlock config =
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ _ _ model =
-    { title = "alpinequest в kmz"
+    { title = "AlpineQuest в KMZ"
     , body =
         [ div [ class "w-4/5 mx-auto px-4" ]
             [ div [ class "flex" ]
                 [ div [ class "w-full" ]
-                    [ h1 [ class "py-4" ] [ text "alpinequest в kmz" ]
+                    [ h1 [ class "py-4" ] [ text "AlpineQuest в KMZ" ]
                     , conversionBlock
                         { heading = Nothing
-                        , description = "Конвертуйте AlpineQuest файли у формат .kmz, у зручному для Delta вигляді."
+                        , description = "Конвертуйте AlpineQuest файли у формат KMZ, в дружній до Delta формі."
                         , conversionModel = model.kmz
                         , onUpload = UploadAlpinequestKmzFile
                         , showSupportedFormats = True
