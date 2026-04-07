@@ -230,6 +230,20 @@ pub async fn download_and_decrypt_from_s3_with_operator(
         })
 }
 
+pub async fn stat_s3_object_size_with_operator(
+    op: &Option<Operator>,
+    config: &Option<S3Config>,
+    rel_path: &str,
+) -> Result<Option<u64>, AppError> {
+    let (Some(op), Some(config)) = (op, config) else {
+        warn!("S3 not configured, failed to stat!");
+        return Ok(None);
+    };
+    let remote_key = config.prefixed_key(rel_path);
+    let metadata = op.stat(&remote_key).await.c(h!())?;
+    Ok(Some(metadata.content_length()))
+}
+
 /// Check if encryption prerequisites are satisfied
 pub fn is_s3_encryption_ready(config: &S3Config, strongbox_key: &str) -> bool {
     !config.bucket.trim().is_empty()

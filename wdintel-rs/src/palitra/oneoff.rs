@@ -15,7 +15,6 @@ use futures_util::TryStreamExt;
 use sea_orm::*;
 use sea_query::{Expr, OnConflict};
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::Arc;
 
 pub async fn oneoff_backfill_palitra_point_lexemes(
@@ -185,7 +184,10 @@ pub async fn oneoff_backup_palitras(mode: Mode) -> Result<(), AppError> {
         )
         .await
         .c(h!())?;
-        let filename = build_backup_file_name(&palitra, geometry.as_ref());
+        let filename = crate::palitra::bl::build_palitra_download_file_name(
+            &palitra,
+            geometry.as_ref(),
+        );
         let target_path = output_dir.join(filename);
         tokio::fs::write(&target_path, bytes).await.c(h!())?;
         restored += 1;
@@ -260,28 +262,4 @@ async fn insert_lexeme_batch(
         })
         .c(h!())?;
     Ok(lexemes_inserted)
-}
-
-fn build_backup_file_name(
-    palitra: &palitra::Model,
-    geometry: Option<&palitra_geometry::Model>,
-) -> String {
-    let source_file_name = geometry
-        .and_then(|geometry| geometry.source_file_name.as_deref())
-        .map(crate::palitra::kmz::sanitize_upload_filename);
-    let timestamp = geometry
-        .and_then(|geometry| geometry.last_uploaded_at)
-        .map(|ts| ts.and_utc().format("%Y%m%dT%H%M%SZ").to_string())
-        .unwrap_or_else(|| "unknown-ts".to_string());
-    let fallback_extension = palitra
-        .s3_id
-        .as_deref()
-        .and_then(|s3_id| Path::new(s3_id).extension())
-        .and_then(|ext| ext.to_str())
-        .filter(|ext| !ext.is_empty())
-        .unwrap_or("kmz");
-    let fallback_name =
-        format!("palitra_{}.{}", palitra.id, fallback_extension);
-    let source_file_name = source_file_name.unwrap_or(fallback_name);
-    format!("{:06}_{}_{}", palitra.id, timestamp, source_file_name)
 }

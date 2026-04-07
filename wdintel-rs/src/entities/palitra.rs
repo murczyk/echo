@@ -28,6 +28,9 @@ pub struct Model {
     //     pub center: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub s3_id: Option<String>,
+    pub is_archived: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub folder: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
