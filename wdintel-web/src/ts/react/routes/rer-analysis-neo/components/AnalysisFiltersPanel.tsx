@@ -241,10 +241,16 @@ export function AnalysisFiltersPanel({
 
   const callsignValues = Array.from(new Set([...options.callsigns, ...queryState.callsignsSelected]));
   const callsignLabels = uppercaseStrings(callsignValues);
-  const callsignsOptions = callsignValues.map((callsign, index) => ({
-    value: callsign,
-    label: callsignLabels[index] ?? callsign,
-  }));
+  const callsignsOptions = callsignValues.reduce<Array<{ value: string; label: string; values: string[] }>>((acc, callsign, index) => {
+    const label = callsignLabels[index] ?? callsign;
+    const existingOption = acc.find((option) => option.label === label);
+    if (existingOption != null) {
+      existingOption.values.push(callsign);
+      return acc;
+    }
+    acc.push({ value: label, label, values: [callsign] });
+    return acc;
+  }, []);
   const groupOptions = options.groups
     .map((masterKey) => ({ value: masterKey, label: groupInfos[masterKey]?.name ?? masterKey }))
     .sort((a, b) => a.label.localeCompare(b.label));

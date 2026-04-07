@@ -290,7 +290,7 @@ describe('AnalysisFiltersPanel', () => {
       updateQueryState,
       options: {
         ...buildOptions(),
-        callsigns: ['alpha'],
+        callsigns: ['alpha', 'ALPHA'],
       },
       queryState: {
         ...emptyQueryState(),
@@ -301,17 +301,17 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const callsignsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string }>; value: string[]; onChange: (next: string[]) => void })
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; values: string[] }>; value: string[]; onChange: (next: string[]) => void })
       .find((callProps) => callProps.label === 'Позивні');
 
     expect(callsignsField?.options).toEqual([
-      { value: 'alpha', label: 'ALPHA' },
-      { value: 'Bravo', label: 'BRAVO' },
+      { value: 'ALPHA', label: 'ALPHA', values: ['alpha', 'ALPHA'] },
+      { value: 'BRAVO', label: 'BRAVO', values: ['Bravo'] },
     ]);
     expect(callsignsField?.value).toEqual(['Bravo']);
 
-    callsignsField?.onChange(['alpha']);
-    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['alpha'] });
+    callsignsField?.onChange(['alpha', 'ALPHA']);
+    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['alpha', 'ALPHA'] });
   });
 
   it('wires checkbox and switch changes into the analysis callbacks', async () => {
