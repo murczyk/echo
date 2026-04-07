@@ -1698,6 +1698,7 @@ pub async fn reactivate_network_freq(
     }
 
     let mut network_freq = network_freq.into_active_model();
+    network_freq.active_from = Set(Utc::now().naive_utc());
     network_freq.active_to = Set(None);
     network_freq.update(&txn).await.context(h!())?;
 
