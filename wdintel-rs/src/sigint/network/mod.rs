@@ -2509,10 +2509,13 @@ pub async fn network_freqs_list(
         .context(h!())?
     };
 
-    let last_datetime_in_aor =
-        load_network_freq_last_datetime_in_aor(&env.dbx, req.network_id)
-            .await
-            .context(h!())?;
+    let last_datetime_in_aor = load_network_freq_last_datetime_in_aor(
+        &env.dbx,
+        req.network_id,
+        &groups,
+    )
+    .await
+    .context(h!())?;
     for freq in &mut freqs {
         freq.last_datetime_in_aor = last_datetime_in_aor
             .get(&freq.network_freq_id)
@@ -2534,7 +2537,12 @@ struct NetworkFreqLastDatetimeInAorRow {
 async fn load_network_freq_last_datetime_in_aor(
     dbx: &DatabaseConnection,
     network_id: i64,
+    groups: &[String],
 ) -> Result<HashMap<i64, Option<i64>>, AppError> {
+    if groups.is_empty() {
+        return Ok(HashMap::new());
+    }
+
     let aor_ids = sigint_network_aor::Entity::find()
         .filter(sigint_network_aor::Column::NetworkId.eq(network_id))
         .select_only()
@@ -2557,9 +2565,13 @@ async fn load_network_freq_last_datetime_in_aor(
             ON ii.freq = nf.freq
         JOIN signal_message sm
             ON sm.id = ii.id
+        JOIN datasource_group dg
+            ON dg.id = sm.datasource_group_id
         WHERE nf.network_id = $1
           AND nf.deleted = false
+          AND sm.deleted = false
           AND ii.datetime IS NOT NULL
+          AND dg.group_master_key = ANY($3)
           AND EXISTS (
               SELECT 1
               FROM signal_message_group smg
@@ -2585,6 +2597,7 @@ async fn load_network_freq_last_datetime_in_aor(
     )
     .bind(network_id)
     .bind(aor_ids)
+    .bind(groups)
     .fetch_all(dbx.get_postgres_connection_pool())
     .await
     .context(h!())?;
