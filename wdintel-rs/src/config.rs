@@ -27,6 +27,7 @@ pub const SIGNAL_CLIENT_ADDR: &str = "http://localhost:8083";
 pub const SIGNAL_CLIENT_PORT: i32 = 8083;
 pub const SIGNAL_MAX_MESSAGES: usize = 40;
 pub const RQ_TIMEOUT_SIGNAL_API: u64 = 600;
+pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
 pub const RQ_TIMEOUT_LAUNCH_SUBPROCESS: u64 = 60;
 /// Grace period before the first Signal login check after wdintel-rs start (ms)
 pub const SIGNAL_LOGIN_INITIAL_SLEEP_MS: u64 = 2_000;
