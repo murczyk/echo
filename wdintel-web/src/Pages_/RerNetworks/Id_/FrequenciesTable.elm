@@ -1500,13 +1500,13 @@ freqEditSidebarContent shared model user networkFreqId freqId updateReq =
         lastInboxInAorText =
             case editedFreq |> Maybe.andThen .lastDatetimeInAor of
                 Just lastDatetime ->
-                    "Останній SIGINT inbox item "
+                    "Останнє перехоплення "
                         ++ aorScopeLabel
                         ++ ": "
                         ++ Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime)
 
                 Nothing ->
-                    "Останній SIGINT inbox item "
+                    "Останнє перехоплення "
                         ++ aorScopeLabel
                         ++ ": не знайдено"
     in
