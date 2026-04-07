@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2206](https://github.com/echoua/echo/issues/2206) ✅ Навігація: впорядковано меню, оновлено назви та бейджі пунктів.
 - [#2164](https://github.com/echoua/echo/issues/2164) ✅ Налаштування, Оперативний (нова): додано підтримку налаштувань зовнішнього вигляду картки повідомлення: макет, теги тощо.
 - [#2145](https://github.com/echoua/echo/issues/2145) ✅ Палітри (нова): редактори можуть надавати доступ за логінами свого підрозділу. Покращено логіку правил доступу.
 - [#2158](https://github.com/echoua/echo/issues/2158) ✅🐞 Карта: додано можливість відображення ліній та лінійних об'єктів на мапі.
@@ -139,7 +140,7 @@ sudo systemctl disable wdintel-rs
 - [#1675](https://github.com/echoua/echo/issues/1675) ✅ Адмін: панель керування, ручний рестарт джерел
 - [#1797](https://github.com/echoua/echo/issues/1797) ✅ Частоти: зберігати ключ шифрування
 - [#1698](https://github.com/echoua/echo/issues/1698) 🚨 KMZ зберігаємо в b2
-- [#1769](https://github.com/echoua/echo/issues/1769) ✅ Інше: AlpineQuest конвертер інтегровано в Ехо
+- [#1769](https://github.com/echoua/echo/issues/1769) ✅ Інше: AlpineQuest конвертер інтегровано в ЕХО
 - [#1646](https://github.com/echoua/echo/issues/1646) ✅ Звіт Еталонка. Форматування та сортування розділів.
 - [#1782](https://github.com/echoua/echo/issues/1782) 🐞 Прибраний зайвий чекбокс при генерації звітів, який впливав на
   загальні фільтри

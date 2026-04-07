@@ -99,7 +99,7 @@ subscriptions _ =
 contentBlock : Model -> Html Msg
 contentBlock model =
     div []
-        [ p [] [ text "УВАГА! Приймається лише csv в форматі, який віддає Дельта. Інші формати не підтримуються." ]
+        [ p [] [ text "УВАГА! Приймається лише CSV в форматі, який віддає Дельта. Інші формати не підтримуються." ]
         , button
             [ class "btn btn-sm btn-outline-secondary me-2"
             , type_ "button"
@@ -114,19 +114,19 @@ contentBlock model =
                     , attribute "role" "status"
                     ]
                     [ span [ class "visually-hidden" ] [ text "Loading..." ] ]
-            , text " додати csv"
+            , text " додати CSV"
             ]
         ]
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ _ _ model =
-    { title = "csv в kmz"
+    { title = "CSV в KMZ"
     , body =
         [ div [ class "w-4/5 mx-auto bd-gutter" ]
             [ div [ class "row" ]
                 [ div [ class "col-12" ]
-                    [ h1 [ class "py-4" ] [ text "csv в kmz" ]
+                    [ h1 [ class "py-4" ] [ text "CSV в KMZ" ]
                     , div [ class "page-csv2kmz" ] <|
                         [ div [ class "row" ]
                             [ div [ class "col-sm-12" ]
