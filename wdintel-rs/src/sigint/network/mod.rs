@@ -1680,6 +1680,23 @@ pub async fn reactivate_network_freq(
             .ok_or(AppError::NotFound)?;
 
     let freq = network_freq.freq.clone();
+    let existing_active_freq = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+        .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
+        .filter(sigint_network_freq::Column::Id.ne(req.network_freq_id))
+        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?;
+    if existing_active_freq.is_some() {
+        return Err(AppError::BL {
+            msg: format!(
+                "Cannot reactivate frequency {freq}: another active row already exists for this network"
+            ),
+        });
+    }
+
     let mut network_freq = network_freq.into_active_model();
     network_freq.active_to = Set(None);
     network_freq.update(&txn).await.context(h!())?;
