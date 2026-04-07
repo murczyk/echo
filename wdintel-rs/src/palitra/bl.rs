@@ -929,7 +929,7 @@ pub async fn archive_accessible_palitra_folder(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let palitra_ids =
-        collect_accessible_palitra_ids_in_folder(login.clone(), folder, txn)
+        collect_accessible_palitra_ids_in_folder(login.clone(), folder, dbx)
             .await
             .c(h!())?;
     let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
@@ -951,16 +951,46 @@ pub async fn archive_accessible_palitra_folder(
     Ok(palitra_ids)
 }
 
+async fn has_admin_role(
+    login: &str,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<bool> {
+    Ok(crate::users::has_role(dbx, login, "Admin").await.is_ok())
+}
+
 async fn collect_mutable_palitra_models_for_accessible_login(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<palitra::Model>> {
+    if has_admin_role(&login, dbx).await.c(h!())? {
+        return palitra::Entity::find()
+            .filter(palitra::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!());
+    }
+    let login_filter = login;
+    palitra::Entity::find()
+        .filter(palitra::Column::Author.eq(login_filter))
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())
+}
+
+async fn collect_accessible_requested_palitra_ids(
+    login: String,
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<i64>> {
     let accessible_ids = collect_accessible_palitra_ids(login.clone(), dbx)
         .await
         .c(h!())?;
-    collect_mutable_palitra_models(login, accessible_ids, dbx)
-        .await
-        .c(h!())
+    let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
+    Ok(palitra_ids
+        .into_iter()
+        .filter(|palitra_id| accessible_ids.contains(palitra_id))
+        .collect_vec())
 }
 
 async fn collect_mutable_palitra_models(
@@ -972,14 +1002,21 @@ async fn collect_mutable_palitra_models(
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
-    let accessible_ids = collect_accessible_palitra_ids(login.clone(), dbx)
-        .await
-        .c(h!())?;
-    let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
-    let palitra_ids = palitra_ids
-        .into_iter()
-        .filter(|palitra_id| accessible_ids.contains(palitra_id))
-        .collect_vec();
+    if has_admin_role(&login, dbx).await.c(h!())? {
+        return palitra::Entity::find()
+            .filter(palitra::Column::Id.is_in(palitra_ids))
+            .filter(palitra::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!());
+    }
+    let palitra_ids = collect_accessible_requested_palitra_ids(
+        login.clone(),
+        palitra_ids,
+        dbx,
+    )
+    .await
+    .c(h!())?;
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -989,35 +1026,28 @@ async fn collect_mutable_palitra_models(
         .all(dbx)
         .await
         .c(h!())?;
-    let is_admin = crate::users::has_role(dbx, &login, "Admin").await.is_ok();
-    if is_admin {
-        return Ok(palitras);
-    }
     palitras
         .retain(|palitra| palitra.author.as_deref() == Some(login.as_str()));
     Ok(palitras)
 }
 
-pub async fn collect_accessible_palitra_ids_in_folder<'a, 'async_trait, C>(
+pub async fn collect_accessible_palitra_ids_in_folder(
     login: String,
     folder: String,
-    dbx: &'a C,
-) -> anyhow::Result<Vec<i64>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<i64>> {
     let folder = normalize_palitra_folder(&folder).c(h!())?;
-    let accessible_ids =
-        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
-    if accessible_ids.is_empty() {
-        return Ok(vec![]);
-    }
-    let palitras = palitra::Entity::find()
-        .filter(palitra::Column::Id.is_in(accessible_ids))
+    let mut palitras = palitra::Entity::find()
         .filter(palitra::Column::Deleted.eq(false))
         .all(dbx)
         .await
         .c(h!())?;
+    if !has_admin_role(&login, dbx).await.c(h!())? {
+        let accessible_ids =
+            collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+        let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
+        palitras.retain(|palitra| accessible_ids.contains(&palitra.id));
+    }
     Ok(palitras
         .into_iter()
         .filter_map(|palitra| {

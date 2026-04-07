@@ -851,7 +851,7 @@ pub async fn delete_palitra_folder(
     let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
         login.clone(),
         req.into_inner().folder,
-        &txn,
+        &env.dbx,
     )
     .await
     .c(h!())?;
