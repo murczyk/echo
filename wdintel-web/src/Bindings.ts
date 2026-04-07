@@ -2140,6 +2140,7 @@ export type ListFreqsReq = {
   filterGroupMasterKeys: Array<string> | null;
   filterSenderProfileIds: Array<string> | null;
   filterFurtherInvestigation: boolean | null;
+  filterUnknownNetwork: boolean | null;
 };
 
 export type ListFreqsRsp = {

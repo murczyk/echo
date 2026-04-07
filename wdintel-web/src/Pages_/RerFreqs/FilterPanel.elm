@@ -33,6 +33,7 @@ view shared model =
                 || (filterState.unit /= "")
                 || not (List.isEmpty filterState.callsigns)
                 || model.showOnlyInvestigating
+                || model.showOnlyUnknownNetwork
 
         -- Count active filters
         activeFilterCount =
@@ -40,6 +41,7 @@ view shared model =
             , filterState.unit /= ""
             , not (List.isEmpty filterState.callsigns)
             , model.showOnlyInvestigating
+            , model.showOnlyUnknownNetwork
             ]
                 |> List.filter identity
                 |> List.length
@@ -156,6 +158,39 @@ view shared model =
                     ]
                     [ text "Підрозділи" ]
                 , tabFiltersCallsigns
+                , label
+                    [ style "align-items" "center"
+                    , style "cursor"
+                        (if model.loading then
+                            "not-allowed"
+
+                         else
+                            "pointer"
+                        )
+                    , style "display" "flex"
+                    , style "gap" "8px"
+                    , style "line-height" "1"
+                    , style "padding" "0 8px"
+                    , style "white-space" "nowrap"
+                    ]
+                    [ input
+                        [ checked model.showOnlyUnknownNetwork
+                        , disabled model.loading
+                        , onCheck ToggleShowOnlyUnknownNetwork
+                        , style "cursor"
+                            (if model.loading then
+                                "not-allowed"
+
+                             else
+                                "pointer"
+                            )
+                        , style "flex-shrink" "0"
+                        , style "margin" "0"
+                        , type_ "checkbox"
+                        ]
+                        []
+                    , span [ style "line-height" "1" ] [ text "Невідома радіомережа" ]
+                    ]
                 ]
             ]
         ]
