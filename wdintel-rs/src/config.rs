@@ -126,6 +126,9 @@ pub const PALITRA_KMZ_TOP_COLORS_LIMIT: usize = 20;
 pub const PALITRA_POINTS_INSERT_BATCH_SIZE: usize = 10_000;
 pub const PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE: usize = 5_000;
 pub const PALITRA_POINT_FALLBACK_COLOR_HEX: &str = "#060606";
+pub const PALITRA_DOWNLOAD_MAX_FILES: usize = 50;
+pub const PALITRA_DOWNLOAD_MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
+pub const PALITRA_DOWNLOAD_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 /// Global limit when since_id_noninclusive and since_date_inclusive_ms is not set, safety measure
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;

@@ -22,9 +22,10 @@ use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashSet};
-use std::io::Write;
+use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
 use tempfile::tempdir;
+use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
 
 pub(crate) mod bl;
@@ -894,13 +895,25 @@ pub async fn download_palitras(
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
-    let palitras = bl::collect_downloadable_palitra_files(
-        login,
-        req.into_inner().palitra_ids,
-        &env.dbx,
-    )
-    .await
-    .c(h!())?;
+    let palitra_ids = req
+        .into_inner()
+        .palitra_ids
+        .into_iter()
+        .unique()
+        .collect_vec();
+    if palitra_ids.len() > crate::config::PALITRA_DOWNLOAD_MAX_FILES {
+        return Err(AppError::BL {
+            msg: format!(
+                "Too many palitras requested: {}, max is {}",
+                palitra_ids.len(),
+                crate::config::PALITRA_DOWNLOAD_MAX_FILES
+            ),
+        });
+    }
+    let palitras =
+        bl::collect_downloadable_palitra_files(login, palitra_ids, &env.dbx)
+            .await
+            .c(h!())?;
 
     let strongbox_key = env
         .config
@@ -908,12 +921,14 @@ pub async fn download_palitras(
         .as_ref()
         .map(|config| config.strongbox_key.clone())
         .unwrap_or_default();
-    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let zip_file = tempfile::tempfile().c(h!())?;
+    let mut zip = zip::ZipWriter::new(BufWriter::new(zip_file));
     let options: FileOptions<zip::write::ExtendedFileOptions> =
         FileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .unix_permissions(0o644);
     let mut used_file_names = HashSet::new();
+    let mut total_bytes = 0u64;
 
     for (palitra, geometry) in palitras {
         let Some(s3_id) = palitra.s3_id.as_deref() else {
@@ -930,6 +945,27 @@ pub async fn download_palitras(
         if bytes.is_empty() {
             continue;
         }
+        let file_bytes = bytes.len() as u64;
+        if file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
+                    palitra.id,
+                    file_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+                ),
+            });
+        }
+        total_bytes = total_bytes.saturating_add(file_bytes);
+        if total_bytes > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Requested palitra download is too large: bytes={}, max={}",
+                    total_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+                ),
+            });
+        }
         let file_name = ensure_unique_zip_entry_name(
             &mut used_file_names,
             bl::build_palitra_download_file_name(&palitra, geometry.as_ref()),
@@ -938,7 +974,10 @@ pub async fn download_palitras(
         zip.write_all(&bytes).c(h!())?;
     }
 
-    let body = zip.finish().c(h!())?.into_inner();
+    let mut zip_file = zip.finish().c(h!())?.into_inner().c(h!())?;
+    let zip_size = zip_file.metadata().c(h!())?.len();
+    zip_file.rewind().c(h!())?;
+    let stream = ReaderStream::new(tokio::fs::File::from_std(zip_file));
     let archive_name =
         format!("palitras_{}.zip", Utc::now().format("%Y%m%dT%H%M%SZ"));
     Ok(HttpResponse::Ok()
@@ -947,7 +986,8 @@ pub async fn download_palitras(
             "Content-Disposition",
             format!("attachment; filename=\"{archive_name}\""),
         ))
-        .body(body))
+        .insert_header(("Content-Length", zip_size.to_string()))
+        .streaming(stream))
 }
 
 #[post("/api/palitra/update/{palitra_id}")]
