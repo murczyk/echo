@@ -78,10 +78,60 @@ pub struct CNHighlight {
     pub end: usize,
 }
 
+fn is_highlight_word_char(c: char) -> bool {
+    c.is_alphanumeric()
+}
+
+fn expand_to_highlight_word_bounds(
+    input: &str,
+    begin: usize,
+    end: usize,
+) -> (usize, usize) {
+    let chars: Vec<char> = input.chars().collect();
+    let mut begin = begin.min(chars.len());
+    let mut end = end.min(chars.len()).max(begin);
+
+    while begin > 0 && is_highlight_word_char(chars[begin - 1]) {
+        begin -= 1;
+    }
+    while end < chars.len() && is_highlight_word_char(chars[end]) {
+        end += 1;
+    }
+
+    (begin, end)
+}
+
 pub fn extract_ts_headline_keywords(
     input: &str,
     no_header_body_start: Option<usize>,
     ts_headline: &str,
+) -> Result<Vec<CNHighlight>, AppError> {
+    extract_ts_headline_keywords_with_bounds_expansion(
+        input,
+        no_header_body_start,
+        ts_headline,
+        true,
+    )
+}
+
+pub fn extract_ts_headline_keywords_exact(
+    input: &str,
+    no_header_body_start: Option<usize>,
+    ts_headline: &str,
+) -> Result<Vec<CNHighlight>, AppError> {
+    extract_ts_headline_keywords_with_bounds_expansion(
+        input,
+        no_header_body_start,
+        ts_headline,
+        false,
+    )
+}
+
+fn extract_ts_headline_keywords_with_bounds_expansion(
+    input: &str,
+    no_header_body_start: Option<usize>,
+    ts_headline: &str,
+    expand_bounds: bool,
 ) -> Result<Vec<CNHighlight>, AppError> {
     let mut res = vec![];
     let mut first = true;
@@ -100,14 +150,16 @@ pub fn extract_ts_headline_keywords(
         let mut parts2 = part.split("</b>");
         if let Some(part2_bold) = parts2.next() {
             if cursor >= no_header_body_start.unwrap_or(0) {
+                let end = cursor + cline_len(part2_bold);
+                let (begin, end) = if expand_bounds {
+                    expand_to_highlight_word_bounds(input, cursor, end)
+                } else {
+                    (cursor, end)
+                };
                 res.push(CNHighlight {
-                    // text: part2_bold.to_string(),
-                    text: input
-                        .to_string()
-                        .substring(cursor, cursor + cline_len(part2_bold))
-                        .to_string(),
-                    begin: cursor,
-                    end: cursor + cline_len(part2_bold),
+                    text: input.to_string().substring(begin, end).to_string(),
+                    begin,
+                    end,
                 });
             }
             // cursor += cline_len(part2_bold) + 4;
@@ -1101,6 +1153,44 @@ mod tests {
                 begin: 5,
                 end: 9,
             }]
+        )
+    }
+
+    #[test]
+    fn test_extract_ts_headline_keywords_expands_stemmed_words() {
+        let input = "третьем канал высоту утро 054";
+        let headline =
+            "<b>третье</b>м <b>кана</b>л <b>высот</b>у <b>утр</b>о <b>05</b>4";
+        let res = extract_ts_headline_keywords(input, None, headline).unwrap();
+        assert_eq!(
+            res,
+            vec![
+                CNHighlight {
+                    text: "третьем".to_string(),
+                    begin: 0,
+                    end: 7,
+                },
+                CNHighlight {
+                    text: "канал".to_string(),
+                    begin: 8,
+                    end: 13,
+                },
+                CNHighlight {
+                    text: "высоту".to_string(),
+                    begin: 14,
+                    end: 20,
+                },
+                CNHighlight {
+                    text: "утро".to_string(),
+                    begin: 21,
+                    end: 25,
+                },
+                CNHighlight {
+                    text: "054".to_string(),
+                    begin: 26,
+                    end: 29,
+                },
+            ],
         )
     }
 

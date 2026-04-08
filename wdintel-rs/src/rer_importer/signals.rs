@@ -93,7 +93,7 @@ fn extract_highlighted_tokens(
 
     for signal in signals {
         let keywords =
-            crate::rer_importer::highlight::extract_ts_headline_keywords(
+            crate::rer_importer::highlight::extract_ts_headline_keywords_exact(
                 body,
                 Some(body_noheader.start),
                 signal.highlighted_text.as_str(),
