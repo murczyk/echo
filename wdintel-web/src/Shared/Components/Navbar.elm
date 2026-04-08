@@ -147,8 +147,7 @@ navBar user shared activeName props =
             ]
 
         adminSubs =
-            [ internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
-            , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
+            [ internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
             , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
             , internalMenu Route.Path.Admin_Messenger "messenger" "Месенджери"
             , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
@@ -158,6 +157,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
             , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "Теги"
             , MenuSeparator
+            , internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
             , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
             ]
 

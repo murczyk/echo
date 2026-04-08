@@ -191,7 +191,9 @@ type FrequenciesMsg
     | FreqsEditStartedByUser
     | FreqsEditSavedByUser
     | FreqsEditCanceledByUser
-    | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
+    | OpenFreqEditSidebar Int String B.UpdateNetworkFreqReq
+    | ReactivateFreqClicked
+    | FreqReactivatedByApi (Result ApiError B.Network)
     | CloseFreqEditSidebar
     | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
     | SaveFreqEditSidebar
