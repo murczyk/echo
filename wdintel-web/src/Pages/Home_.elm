@@ -131,8 +131,8 @@ view _ user model =
                         div [ class "flex-1 min-w-0 overflow-hidden bg-card border border-border rounded-sm relative flex flex-col h-[50vh]" ]
                             [ h4
                                 [ class "m-0 font-semibold"
-                                , Attr.style "padding-top" "30px"
-                                , Attr.style "padding-left" "30px"
+                                , Attr.style "padding-top" "24px"
+                                , Attr.style "padding-left" "24px"
                                 ]
                                 [ text "Активність груп" ]
                             , div [ class "flex-1 min-h-0 min-w-0 overflow-hidden", Attr.style "margin-top" "20px" ]
