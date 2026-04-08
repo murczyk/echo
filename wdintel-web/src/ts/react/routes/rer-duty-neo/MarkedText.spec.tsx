@@ -70,6 +70,15 @@ describe('MarkedText', () => {
     expect(badge?.getAttribute('title')).toBeNull();
   });
 
+  it('does not render empty highlighted keywords', async () => {
+    await act(async () => {
+      root.render(<TestHost nodes={[{ CNHighlightC: { text: '  ', begin: 0, end: 5 } }]} bodyText="текст" />);
+    });
+
+    expect(container.querySelector('.badge-highlighed-token')).toBeNull();
+    expect(container.textContent).toBe('');
+  });
+
   it('renders point tokens with a menu action that keeps the map tooltip', async () => {
     await act(async () => {
       root.render(
@@ -103,6 +112,25 @@ describe('MarkedText', () => {
     expect(menuItems[1]?.getAttribute('href')).toBe(
       `/rer-analysis?state=${encodeURIComponent(JSON.stringify({ search: 'P-1' }))}&showMap=true`,
     );
+  });
+
+  it('does not render empty point markers', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[
+            { CNPointC: { begin: 0, end: 3, etalon: 'P-1', text: '  ' } },
+            { CNPointC: { begin: 0, end: 3, etalon: '', text: 'P-2' } },
+          ]}
+          bodyText="P-2"
+          messagePointEtalons={['P-1']}
+        />,
+      );
+    });
+
+    expect(container.querySelector('.content-token--point')).toBeNull();
+    expect(container.querySelector('button[aria-label="Показати на мапі"]')).toBeNull();
+    expect(container.textContent).toBe('P-2');
   });
 
   it('renders a single point menu item when the message has only one point', async () => {

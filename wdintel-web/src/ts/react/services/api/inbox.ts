@@ -22,6 +22,7 @@ import type {
   SignalGroupStats,
   SignalProfilesRsp,
   Tag,
+  ContentNode,
 } from '../../../../Bindings';
 import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
 import { emptyArrToNull } from '../../utils/misc';
@@ -67,6 +68,11 @@ type InboxMessageTagRaw = {
   organismId?: number | null;
 };
 
+type ContentNodeCandidate = Partial<{
+  CNHighlightC: { text?: string | null };
+  CNPointC: { text?: string | null; etalon?: string | null };
+}>;
+
 function normalizeInboxMessageTag(t: InboxMessageTagRaw): InboxMessageTag {
   return {
     id: (t.id ?? 0) as number,
@@ -76,6 +82,35 @@ function normalizeInboxMessageTag(t: InboxMessageTagRaw): InboxMessageTag {
     model: (t.model ?? null) as string | null,
     organismId: (t.organismId ?? t.organism_id ?? null) as number | null,
   };
+}
+
+function normalizeContentNode(node: unknown): ContentNode | null {
+  if (typeof node === 'string') return node === 'CNNewlineC' ? node : null;
+  if (node == null || typeof node !== 'object') return null;
+  const candidate = node as ContentNodeCandidate;
+  if (candidate.CNHighlightC != null) {
+    return String(candidate.CNHighlightC.text ?? '').trim() !== '' ? (node as ContentNode) : null;
+  }
+  if (candidate.CNPointC != null) {
+    const displayText = candidate.CNPointC.text ?? '';
+    if (displayText.trim() === '') return null;
+    if (String(candidate.CNPointC.etalon ?? '').trim() === '') return { CNTextC: { text: displayText } };
+    return node as ContentNode;
+  }
+  return node as ContentNode;
+}
+
+function normalizeTextMarked(textMarked: InboxMessageType['textMarked']): InboxMessageType['textMarked'] {
+  if (textMarked == null || !Array.isArray(textMarked)) return null;
+  return textMarked.flatMap((node) => {
+    const normalizedNode = normalizeContentNode(node);
+    return normalizedNode == null ? [] : [normalizedNode];
+  });
+}
+
+function normalizePointTokens(pointTokens: InboxMessageType['pointTokens']): InboxMessageType['pointTokens'] {
+  if (pointTokens == null || !Array.isArray(pointTokens)) return null;
+  return pointTokens.filter((pointToken) => String(pointToken.etalon ?? '').trim() !== '');
 }
 
 function normalizeInboxMessage(
@@ -99,10 +134,9 @@ function normalizeInboxMessage(
     rawInboxTags != null && Array.isArray(rawInboxTags)
       ? rawInboxTags.map(normalizeInboxMessageTag)
       : null;
-  const textMarked = (raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked'];
+  const textMarked = normalizeTextMarked((raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked']);
   const rawPointTokens = (raw.point_tokens ?? m.pointTokens ?? null) as InboxMessageType['pointTokens'];
-  const pointTokens =
-    rawPointTokens != null && Array.isArray(rawPointTokens) ? rawPointTokens : null;
+  const pointTokens = normalizePointTokens(rawPointTokens);
   return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked, pointTokens };
 }
 

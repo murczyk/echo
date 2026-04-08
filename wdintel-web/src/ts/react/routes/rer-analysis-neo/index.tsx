@@ -51,6 +51,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     page.centerTabPending || page.editorSaveInFlight || page.messageActionLoading,
     450,
   );
+  const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
   const gridTemplateColumns = {
     xs: '1fr',
     lg: [leftColumnWidth, 'minmax(0,1fr)', rightColumnWidth].join(' '),
@@ -337,7 +338,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     editorMessage={page.editorMessage}
                     editorSaveInFlight={page.editorSaveInFlight}
                     groupInfos={page.groupInfos}
-                    loading={page.messagesLoading}
+                    loading={messagesPaneLoading}
                     paginationLoading={page.messagesPaging}
                     messages={page.messages}
                     networkDisplayMap={page.networkDisplayMap}
