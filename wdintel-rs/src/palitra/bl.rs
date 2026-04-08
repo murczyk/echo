@@ -18,6 +18,7 @@ use sea_orm::sea_query::SimpleExpr;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 enum LabelPattern {
@@ -794,6 +795,330 @@ where
     Ok(())
 }
 
+pub fn normalize_palitra_folder(folder: &str) -> anyhow::Result<String> {
+    let trimmed = folder.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("Palitra folder may not be empty");
+    }
+    let parts = trimmed.split('/').map(str::trim).collect_vec();
+    if parts.iter().any(|part| part.is_empty()) {
+        anyhow::bail!(
+            "Palitra folder may not contain empty path segments: {folder}"
+        );
+    }
+    Ok(parts.join("/"))
+}
+
+pub fn normalize_palitra_folder_from_db(
+    folder: Option<String>,
+) -> Option<String> {
+    folder.and_then(|folder| normalize_palitra_folder(&folder).ok())
+}
+
+fn folder_matches_prefix(folder: Option<&str>, prefix: &str) -> bool {
+    let Some(folder) = folder else {
+        return false;
+    };
+    folder == prefix || folder.starts_with(&format!("{prefix}/"))
+}
+
+fn replace_folder_prefix(
+    folder: Option<&str>,
+    from_folder: &str,
+    to_folder: &str,
+) -> Option<String> {
+    let folder = folder?;
+    if folder == from_folder {
+        return Some(to_folder.to_string());
+    }
+    let suffix = folder.strip_prefix(&format!("{from_folder}/"))?;
+    Some(format!("{to_folder}/{suffix}"))
+}
+
+pub async fn update_accessible_palitra_archive_flag(
+    login: String,
+    palitra_id: i64,
+    is_archived: bool,
+    dbx: &DatabaseConnection,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<Option<Palitra>> {
+    let palitra = collect_mutable_palitra_models(login, vec![palitra_id], dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .next();
+    let Some(palitra) = palitra else {
+        return Ok(None);
+    };
+    let mut palitra = palitra.into_active_model();
+    palitra.is_archived = Set(is_archived);
+    let palitra = palitra.update(txn).await.c(h!())?;
+    render_palitra(Either::Left(palitra), txn)
+        .await
+        .map(Some)
+        .c(h!())
+}
+
+pub async fn assign_folder_to_accessible_palitras(
+    login: String,
+    palitra_ids: Vec<i64>,
+    folder: String,
+    dbx: &DatabaseConnection,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<Vec<i64>> {
+    let folder = normalize_palitra_folder(&folder).c(h!())?;
+    let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|palitra| palitra.id)
+        .collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    palitra::Entity::update_many()
+        .filter(palitra::Column::Id.is_in(palitra_ids.clone()))
+        .filter(palitra::Column::Deleted.eq(false))
+        .col_expr(palitra::Column::Folder, Expr::value(folder))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(palitra_ids)
+}
+
+pub async fn rename_accessible_palitra_folder(
+    login: String,
+    from_folder: String,
+    to_folder: String,
+    dbx: &DatabaseConnection,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<Vec<i64>> {
+    let from_folder = normalize_palitra_folder(&from_folder).c(h!())?;
+    let to_folder = normalize_palitra_folder(&to_folder).c(h!())?;
+    let mutable_palitras =
+        collect_mutable_palitra_models_for_accessible_login(login, dbx)
+            .await
+            .c(h!())?;
+    if mutable_palitras.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut updated_ids = Vec::new();
+    for palitra in mutable_palitras {
+        let old_folder =
+            normalize_palitra_folder_from_db(palitra.folder.clone());
+        let Some(new_folder) = replace_folder_prefix(
+            old_folder.as_deref(),
+            &from_folder,
+            &to_folder,
+        ) else {
+            continue;
+        };
+        let mut palitra = palitra.into_active_model();
+        palitra.folder = Set(Some(new_folder));
+        let palitra = palitra.update(txn).await.c(h!())?;
+        updated_ids.push(palitra.id);
+    }
+    Ok(updated_ids)
+}
+
+pub async fn archive_accessible_palitra_folder(
+    login: String,
+    folder: String,
+    is_archived: bool,
+    dbx: &DatabaseConnection,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<Vec<i64>> {
+    let palitra_ids =
+        collect_accessible_palitra_ids_in_folder(login.clone(), folder, dbx)
+            .await
+            .c(h!())?;
+    let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|palitra| palitra.id)
+        .collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    palitra::Entity::update_many()
+        .filter(palitra::Column::Id.is_in(palitra_ids.clone()))
+        .filter(palitra::Column::Deleted.eq(false))
+        .col_expr(palitra::Column::IsArchived, Expr::value(is_archived))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(palitra_ids)
+}
+
+async fn has_admin_role(
+    login: &str,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<bool> {
+    Ok(crate::users::has_role(dbx, login, "Admin").await.is_ok())
+}
+
+async fn collect_mutable_palitra_models_for_accessible_login(
+    login: String,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<palitra::Model>> {
+    if has_admin_role(&login, dbx).await.c(h!())? {
+        return palitra::Entity::find()
+            .filter(palitra::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!());
+    }
+    let login_filter = login;
+    palitra::Entity::find()
+        .filter(palitra::Column::Author.eq(login_filter))
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())
+}
+
+async fn collect_accessible_requested_palitra_ids(
+    login: String,
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<i64>> {
+    let accessible_ids = collect_accessible_palitra_ids(login.clone(), dbx)
+        .await
+        .c(h!())?;
+    let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
+    Ok(palitra_ids
+        .into_iter()
+        .filter(|palitra_id| accessible_ids.contains(palitra_id))
+        .collect_vec())
+}
+
+async fn collect_mutable_palitra_models(
+    login: String,
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<palitra::Model>> {
+    let palitra_ids = palitra_ids.into_iter().unique().collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    if has_admin_role(&login, dbx).await.c(h!())? {
+        return palitra::Entity::find()
+            .filter(palitra::Column::Id.is_in(palitra_ids))
+            .filter(palitra::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!());
+    }
+    let palitra_ids = collect_accessible_requested_palitra_ids(
+        login.clone(),
+        palitra_ids,
+        dbx,
+    )
+    .await
+    .c(h!())?;
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut palitras = palitra::Entity::find()
+        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    palitras
+        .retain(|palitra| palitra.author.as_deref() == Some(login.as_str()));
+    Ok(palitras)
+}
+
+pub async fn collect_accessible_palitra_ids_in_folder(
+    login: String,
+    folder: String,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<i64>> {
+    let folder = normalize_palitra_folder(&folder).c(h!())?;
+    let mut palitras = palitra::Entity::find()
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if !has_admin_role(&login, dbx).await.c(h!())? {
+        let accessible_ids =
+            collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+        let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
+        palitras.retain(|palitra| accessible_ids.contains(&palitra.id));
+    }
+    Ok(palitras
+        .into_iter()
+        .filter_map(|palitra| {
+            let folder_value =
+                normalize_palitra_folder_from_db(palitra.folder.clone());
+            if folder_matches_prefix(folder_value.as_deref(), &folder) {
+                Some(palitra.id)
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
+pub async fn collect_downloadable_palitra_files(
+    login: String,
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<(palitra::Model, Option<palitra_geometry::Model>)>> {
+    let accessible_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+    let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
+    let palitra_ids = palitra_ids
+        .into_iter()
+        .filter(|palitra_id| accessible_ids.contains(palitra_id))
+        .unique()
+        .collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let palitras = palitra::Entity::find()
+        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut result = Vec::with_capacity(palitras.len());
+    for palitra in palitras {
+        let geometry =
+            read_latest_palitra_geometry_with_warning(dbx, palitra.id)
+                .await
+                .c(h!())?;
+        result.push((palitra, geometry));
+    }
+    Ok(result)
+}
+
+pub fn build_palitra_download_file_name(
+    palitra: &palitra::Model,
+    geometry: Option<&palitra_geometry::Model>,
+) -> String {
+    let source_file_name = geometry
+        .and_then(|geometry| geometry.source_file_name.as_deref())
+        .map(crate::palitra::kmz::sanitize_upload_filename);
+    let timestamp = geometry
+        .and_then(|geometry| geometry.last_uploaded_at)
+        .map(|ts| ts.and_utc().format("%Y%m%dT%H%M%SZ").to_string())
+        .unwrap_or_else(|| "unknown-ts".to_string());
+    let fallback_extension = palitra
+        .s3_id
+        .as_deref()
+        .and_then(|s3_id| Path::new(s3_id).extension())
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .unwrap_or("kmz");
+    let fallback_name =
+        format!("palitra_{}.{}", palitra.id, fallback_extension);
+    let source_file_name = source_file_name.unwrap_or(fallback_name);
+    format!("{:06}_{}_{}", palitra.id, timestamp, source_file_name)
+}
+
 async fn render_palitra_details<'a, 'async_trait, C>(
     txn: &'a C,
     palitra_ids: Vec<i64>,
@@ -1566,6 +1891,8 @@ where
     Ok(Palitra {
         id: palitra_id,
         name: palitra_model.name,
+        folder: normalize_palitra_folder_from_db(palitra_model.folder),
+        is_archived: palitra_model.is_archived,
         color_hex,
         author: palitra_model.author,
         source_file_name,
@@ -1707,10 +2034,13 @@ where
     })
 }
 
-pub(crate) async fn collect_accessible_palitra_ids(
+pub(crate) async fn collect_accessible_palitra_ids<'a, 'async_trait, C>(
     login: String,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<Vec<i64>> {
+    dbx: &'a C,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let scope = load_login_access_scope(dbx, &login).await.c(h!())?;
     let mut filter = Condition::any()
         .add(palitra::Column::Author.eq(login.clone()))
@@ -1743,10 +2073,13 @@ pub(crate) async fn collect_accessible_palitra_ids(
         .c(h!())
 }
 
-async fn load_login_access_scope(
-    dbx: &DatabaseConnection,
+async fn load_login_access_scope<'a, 'async_trait, C>(
+    dbx: &'a C,
     login_name: &str,
-) -> anyhow::Result<LoginAccessScope> {
+) -> anyhow::Result<LoginAccessScope>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let organism_aors = organism_aor::Entity::find()
         .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
         .join(JoinType::InnerJoin, organism::Relation::Login.def())
@@ -2075,8 +2408,9 @@ mod tests {
         mk_palitra_point,
     };
     use crate::palitra::bl::{
-        collect_accessible_palitra_ids, search_palitra_points_by_labels,
-        update_palitra, update_palitra_v2,
+        collect_accessible_palitra_ids, normalize_palitra_folder,
+        replace_folder_prefix, search_palitra_points_by_labels, update_palitra,
+        update_palitra_v2,
     };
     use crate::palitra::types::{
         CreatePalitraReq, PalitraAccess, PalitraSearchPointsReq,
@@ -2495,5 +2829,24 @@ mod tests {
             palitra_ids: vec![palitra_id],
             point_labels: labels,
         }
+    }
+
+    #[test]
+    fn test_normalize_palitra_folder_rejects_empty_segments() {
+        assert!(normalize_palitra_folder("foo//bar").is_err());
+        assert!(normalize_palitra_folder(" / ").is_err());
+    }
+
+    #[test]
+    fn test_replace_folder_prefix_handles_exact_and_nested_paths() {
+        assert_eq!(
+            replace_folder_prefix(Some("foo"), "foo", "bar"),
+            Some("bar".to_string())
+        );
+        assert_eq!(
+            replace_folder_prefix(Some("foo/baz"), "foo", "bar"),
+            Some("bar/baz".to_string())
+        );
+        assert_eq!(replace_folder_prefix(Some("foobar"), "foo", "bar"), None);
     }
 }

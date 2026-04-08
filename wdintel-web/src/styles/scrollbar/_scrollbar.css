@@ -87,6 +87,7 @@
 }
 
 .rer-duty-feed-scroll {
+    padding-left: 0;
     scrollbar-width: thin;
     scrollbar-color: #707070 transparent;
 }

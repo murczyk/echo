@@ -133,13 +133,14 @@ type alias Model =
     , keyEditSaving : Bool
     , deleteKeyConfirmation : Maybe ( Int, String )
     , deleteKeyLoading : Bool
-    , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
+    , freqEditSidebar : Maybe ( Int, String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     , modulations : RemoteData ApiError (List B.ModulationRec)
     , freqEditKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqEditModulationSelect : Utils.Select.SelectTypeSingle Int
     , freqEditKeySelect : Utils.Select.SelectType Int
     , freqEditSaving : Bool
+    , freqReactivateLoading : Bool
     , freqEditShowActiveTo : Bool
     , freqEditNewKeyInput : String
     , freqEditNewKeySaving : Bool

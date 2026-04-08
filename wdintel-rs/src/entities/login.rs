@@ -85,6 +85,8 @@ pub enum Relation {
     SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
     TagsOrdering,
+    #[sea_orm(has_one = "super::user_settings::Entity")]
+    UserSettings,
 }
 
 impl Related<super::area_of_responsibility::Entity> for Entity {
@@ -204,6 +206,12 @@ impl Related<super::system_settings::Entity> for Entity {
 impl Related<super::tags_ordering::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::TagsOrdering.def()
+    }
+}
+
+impl Related<super::user_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserSettings.def()
     }
 }
 

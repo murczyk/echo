@@ -33,6 +33,8 @@ export type FeedStateDeps = {
   testSinceMs: number;
   testLimit: number;
   pollIntervalSec: number;
+  /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
+  disableAutoScroll: boolean;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
@@ -69,6 +71,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  /** Virtuoso "at bottom" (pixel threshold); used so poll only auto-scrolls when the scroller is actually at the bottom. */
+  const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -262,11 +266,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               );
               if (opts?.scrollToEndAfterLoad === true) {
                 scrollToEndAfterNewerRef.current = feedId;
+                nearBottomByFeedIdRef.current = {
+                  ...nearBottomByFeedIdRef.current,
+                  [feedId]: true,
+                };
               }
-              nearBottomByFeedIdRef.current = {
-                ...nearBottomByFeedIdRef.current,
-                [feedId]: true,
-              };
             }
           }
         }
@@ -327,12 +331,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
       const { feedId } = entry;
       if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
+        const atBottom = atBottomByFeedIdRef.current[feedId] ?? false;
+        const shouldFollowScroll =
+          !deps.disableAutoScroll &&
+          (watchModeByFeedId[feedId] ?? false) &&
+          atBottom;
         await loadFeedNewerMessages(feedId, {
-          scrollToEndAfterLoad: watchModeByFeedId[feedId],
+          scrollToEndAfterLoad: shouldFollowScroll,
         });
       }
     }
-  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed]);
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, deps.disableAutoScroll]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
@@ -453,6 +462,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setError,
     columnRefsRef,
     nearBottomByFeedIdRef,
+    atBottomByFeedIdRef,
     loadFeedInitialMessages,
     loadFeedOlderMessages,
     loadFeedNewerMessages,

@@ -2784,6 +2784,8 @@ createPalitraReqEncoder struct =
 type alias Palitra =
     { id : Int
     , name : String
+    , folder : Maybe String
+    , isArchived : Bool
     , colorHex : String
     , author : Maybe String
     , sourceFileName : Maybe String
@@ -2800,6 +2802,8 @@ palitraEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
         , ( "name", Json.Encode.string struct.name )
+        , ( "folder", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.folder )
+        , ( "is_archived", Json.Encode.bool struct.isArchived )
         , ( "color_hex", Json.Encode.string struct.colorHex )
         , ( "author", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.author )
         , ( "source_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceFileName )
@@ -2980,6 +2984,72 @@ analyzeKmzResponseEncoder struct =
     Json.Encode.object
         [ ( "top_colors", Json.Encode.list kmzColorInfoEncoder struct.topColors )
         , ( "filename", Json.Encode.string struct.filename )
+
+        ]
+
+
+type alias PalitraFolderAssignReq =
+    { palitraIds : List Int
+    , folder : String
+    }
+
+
+palitraFolderAssignReqEncoder : PalitraFolderAssignReq -> Json.Encode.Value
+palitraFolderAssignReqEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", Json.Encode.list Json.Encode.int struct.palitraIds )
+        , ( "folder", Json.Encode.string struct.folder )
+        ]
+
+
+type alias PalitraFolderRenameReq =
+    { fromFolder : String
+    , toFolder : String
+    }
+
+
+palitraFolderRenameReqEncoder : PalitraFolderRenameReq -> Json.Encode.Value
+palitraFolderRenameReqEncoder struct =
+    Json.Encode.object
+        [ ( "from_folder", Json.Encode.string struct.fromFolder )
+        , ( "to_folder", Json.Encode.string struct.toFolder )
+        ]
+
+
+type alias PalitraFolderReq =
+    { folder : String
+    }
+
+
+palitraFolderReqEncoder : PalitraFolderReq -> Json.Encode.Value
+palitraFolderReqEncoder struct =
+    Json.Encode.object
+        [ ( "folder", Json.Encode.string struct.folder )
+        ]
+
+
+type alias PalitraDownloadReq =
+    { palitraIds : List Int
+    }
+
+
+palitraDownloadReqEncoder : PalitraDownloadReq -> Json.Encode.Value
+palitraDownloadReqEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", Json.Encode.list Json.Encode.int struct.palitraIds )
+        ]
+
+
+type alias PalitraBulkActionRsp =
+    { palitraIds : List Int
+    }
+
+
+palitraBulkActionRspEncoder : PalitraBulkActionRsp -> Json.Encode.Value
+palitraBulkActionRspEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", Json.Encode.list Json.Encode.int struct.palitraIds )
+
         ]
 
 
@@ -3248,6 +3318,7 @@ userEncoder struct =
         , ( "goi_configured_for_organism", Json.Encode.bool struct.goiConfiguredForOrganism )
         , ( "goi_full_access_for_organism", Json.Encode.bool struct.goiFullAccessForOrganism )
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.goiHost )
+
         , ( "goi_integrations", Json.Encode.list goiUserIntegrationEncoder struct.goiIntegrations )
         ]
 
@@ -3279,6 +3350,7 @@ goiUserIntegrationEncoder struct =
         , ( "has_data_access", Json.Encode.bool struct.hasDataAccess )
         , ( "can_restart", Json.Encode.bool struct.canRestart )
         , ( "restart_unavailable_reason", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.restartUnavailableReason )
+
         ]
 
 
@@ -3737,7 +3809,9 @@ type alias ListGoiAssociationsReq =
     , offset : Maybe Int
     , sortBy : Maybe ListGoiAssociationsSortBy
     , filterText : Maybe String
+
     , filterServer : Maybe String
+
     , filterFrequency : Maybe String
     , filterCoordinates : Maybe String
     , filterNote : Maybe String
@@ -3754,7 +3828,9 @@ listGoiAssociationsReqEncoder struct =
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.offset )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listGoiAssociationsSortByEncoder) struct.sortBy )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
+
         , ( "filter_server", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterServer )
+
         , ( "filter_frequency", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFrequency )
         , ( "filter_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterCoordinates )
         , ( "filter_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterNote )
@@ -3792,9 +3868,11 @@ goiAssociationEncoder : GoiAssociation -> Json.Encode.Value
 goiAssociationEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
+
         , ( "integration_id", Json.Encode.int struct.integrationId )
         , ( "server_label", Json.Encode.string struct.serverLabel )
         , ( "owner_organism_name", Json.Encode.string struct.ownerOrganismName )
+
         , ( "source_association_id", Json.Encode.int struct.sourceAssociationId )
         , ( "source_created_at_ms", Json.Encode.int struct.sourceCreatedAtMs )
         , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
@@ -3920,7 +3998,9 @@ type alias ListGoiKnowledgeReq =
     , offset : Maybe Int
     , sortBy : Maybe ListGoiKnowledgeSortBy
     , filterText : Maybe String
+
     , filterServer : Maybe String
+
     , filterName : Maybe String
     , filterKey : Maybe String
     , filterKnowledgeType : Maybe String
@@ -3938,7 +4018,9 @@ listGoiKnowledgeReqEncoder struct =
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.offset )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listGoiKnowledgeSortByEncoder) struct.sortBy )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
+
         , ( "filter_server", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterServer )
+
         , ( "filter_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterName )
         , ( "filter_key", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterKey )
         , ( "filter_knowledge_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterKnowledgeType )
@@ -3973,9 +4055,11 @@ goiKnowledgeEncoder : GoiKnowledge -> Json.Encode.Value
 goiKnowledgeEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
+
         , ( "integration_id", Json.Encode.int struct.integrationId )
         , ( "server_label", Json.Encode.string struct.serverLabel )
         , ( "owner_organism_name", Json.Encode.string struct.ownerOrganismName )
+
         , ( "source_knowledge_id", Json.Encode.int struct.sourceKnowledgeId )
         , ( "source_created_at_ms", Json.Encode.int struct.sourceCreatedAtMs )
         , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
@@ -5494,6 +5578,7 @@ type alias NetworkFreqsRes =
     , messageCount : Int
     , callsigns : Maybe (List String)
     , lastDatetime : Maybe Int
+    , lastDatetimeInAor : Maybe Int
     , createdAt : Int
     , isActive : Bool
     , activeFrom : Int
@@ -5514,6 +5599,7 @@ networkFreqsResEncoder struct =
         , ( "message_count", Json.Encode.int struct.messageCount )
         , ( "callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.callsigns )
         , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
+        , ( "last_datetime_in_aor", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetimeInAor )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "is_active", Json.Encode.bool struct.isActive )
         , ( "active_from", Json.Encode.int struct.activeFrom )
@@ -6211,6 +6297,20 @@ addNetworkFreqReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
         , ( "freq_rec", addNetworkFreqEncoder struct.freqRec )
+        ]
+
+
+type alias ReactivateNetworkFreqReq =
+    { networkId : Int
+    , networkFreqId : Int
+    }
+
+
+reactivateNetworkFreqReqEncoder : ReactivateNetworkFreqReq -> Json.Encode.Value
+reactivateNetworkFreqReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "network_freq_id", Json.Encode.int struct.networkFreqId )
         ]
 
 
@@ -9052,6 +9152,8 @@ palitraDecoder =
     Json.Decode.succeed Palitra
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "folder" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_name" (Json.Decode.nullable Json.Decode.string)))
@@ -9146,6 +9248,40 @@ analyzeKmzResponseDecoder =
     Json.Decode.succeed AnalyzeKmzResponse
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "top_colors" (Json.Decode.list kmzColorInfoDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filename" Json.Decode.string))
+
+
+
+palitraFolderAssignReqDecoder : Json.Decode.Decoder PalitraFolderAssignReq
+palitraFolderAssignReqDecoder =
+    Json.Decode.succeed PalitraFolderAssignReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "folder" Json.Decode.string))
+
+
+palitraFolderRenameReqDecoder : Json.Decode.Decoder PalitraFolderRenameReq
+palitraFolderRenameReqDecoder =
+    Json.Decode.succeed PalitraFolderRenameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "from_folder" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to_folder" Json.Decode.string))
+
+
+palitraFolderReqDecoder : Json.Decode.Decoder PalitraFolderReq
+palitraFolderReqDecoder =
+    Json.Decode.succeed PalitraFolderReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "folder" Json.Decode.string))
+
+
+palitraDownloadReqDecoder : Json.Decode.Decoder PalitraDownloadReq
+palitraDownloadReqDecoder =
+    Json.Decode.succeed PalitraDownloadReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list Json.Decode.int)))
+
+
+palitraBulkActionRspDecoder : Json.Decode.Decoder PalitraBulkActionRsp
+palitraBulkActionRspDecoder =
+    Json.Decode.succeed PalitraBulkActionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list Json.Decode.int)))
+
 
 
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody
@@ -9285,6 +9421,7 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_configured_for_organism" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_full_access_for_organism" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable Json.Decode.string)))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_integrations" (Json.Decode.list goiUserIntegrationDecoder)))
 
 
@@ -9301,6 +9438,7 @@ goiUserIntegrationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_data_access" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_restart" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restart_unavailable_reason" (Json.Decode.nullable Json.Decode.string)))
+
 
 
 settingsSaveReqDecoder : Json.Decode.Decoder SettingsSaveReq
@@ -9721,7 +9859,9 @@ listGoiAssociationsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listGoiAssociationsSortByDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_server" (Json.Decode.nullable Json.Decode.string)))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_frequency" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_coordinates" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_note" (Json.Decode.nullable Json.Decode.string)))
@@ -9734,9 +9874,11 @@ goiAssociationDecoder : Json.Decode.Decoder GoiAssociation
 goiAssociationDecoder =
     Json.Decode.succeed GoiAssociation
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "server_label" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "owner_organism_name" Json.Decode.string))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_association_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_created_at_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
@@ -9975,7 +10117,9 @@ listGoiKnowledgeReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listGoiKnowledgeSortByDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_server" (Json.Decode.nullable Json.Decode.string)))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_key" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_knowledge_type" (Json.Decode.nullable Json.Decode.string)))
@@ -9989,9 +10133,11 @@ goiKnowledgeDecoder : Json.Decode.Decoder GoiKnowledge
 goiKnowledgeDecoder =
     Json.Decode.succeed GoiKnowledge
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "server_label" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "owner_organism_name" Json.Decode.string))
+
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_knowledge_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_created_at_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
@@ -11017,6 +11163,7 @@ networkFreqsResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime_in_aor" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" Json.Decode.int))
@@ -11401,6 +11548,13 @@ addNetworkFreqReqDecoder =
     Json.Decode.succeed AddNetworkFreqReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_rec" addNetworkFreqDecoder))
+
+
+reactivateNetworkFreqReqDecoder : Json.Decode.Decoder ReactivateNetworkFreqReq
+reactivateNetworkFreqReqDecoder =
+    Json.Decode.succeed ReactivateNetworkFreqReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" Json.Decode.int))
 
 
 updateNetworkFreqReqDecoder : Json.Decode.Decoder UpdateNetworkFreqReq

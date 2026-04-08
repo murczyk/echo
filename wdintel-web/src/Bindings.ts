@@ -1058,6 +1058,8 @@ export type CreatePalitraReq = {
 export type Palitra = {
   id: number;
   name: string;
+  folder: string | null;
+  isArchived: boolean;
   colorHex: string;
   author: string | null;
   sourceFileName: string | null;
@@ -1130,6 +1132,28 @@ export type KmzColorInfo = {
 export type AnalyzeKmzResponse = {
   topColors: Array<KmzColorInfo>;
   filename: string;
+};
+
+export type PalitraFolderAssignReq = {
+  palitraIds: Array<number>;
+  folder: string;
+};
+
+export type PalitraFolderRenameReq = {
+  fromFolder: string;
+  toFolder: string;
+};
+
+export type PalitraFolderReq = {
+  folder: string;
+};
+
+export type PalitraDownloadReq = {
+  palitraIds: Array<number>;
+};
+
+export type PalitraBulkActionRsp = {
+  palitraIds: Array<number>;
 };
 
 export type NoHeadersBody = {
@@ -2073,6 +2097,7 @@ export type NetworkFreqsRes = {
   messageCount: number;
   callsigns: Array<string> | null;
   lastDatetime: number | null;
+  lastDatetimeInAor: number | null;
   createdAt: number;
   isActive: boolean;
   activeFrom: number;
@@ -2343,6 +2368,11 @@ export type NetworkGroupsActivityReq = {
 export type AddNetworkFreqReq = {
   networkId: number;
   freqRec: AddNetworkFreq;
+};
+
+export type ReactivateNetworkFreqReq = {
+  networkId: number;
+  networkFreqId: number;
 };
 
 export type AddNetworkFrequencyDescription = {
