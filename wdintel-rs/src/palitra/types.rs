@@ -48,6 +48,8 @@ impl PalitraAccess {
 pub struct Palitra {
     pub id: i64,
     pub name: String,
+    pub folder: Option<String>,
+    pub is_archived: bool,
     pub color_hex: String,
     pub author: Option<String>,
     pub source_file_name: Option<String>,
@@ -182,6 +184,43 @@ pub struct KmzColorInfo {
 pub struct AnalyzeKmzResponse {
     pub top_colors: Vec<KmzColorInfo>,
     pub filename: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraFolderAssignReq {
+    pub palitra_ids: Vec<i64>,
+    pub folder: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraFolderRenameReq {
+    pub from_folder: String,
+    pub to_folder: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraFolderReq {
+    pub folder: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraDownloadReq {
+    pub palitra_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraBulkActionRsp {
+    pub palitra_ids: Vec<i64>,
 }
 
 impl Coords {

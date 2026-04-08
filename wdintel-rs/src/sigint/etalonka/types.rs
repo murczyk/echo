@@ -117,6 +117,7 @@ pub struct NetworkFreqsRes {
     pub message_count: i64,
     pub callsigns: Option<Vec<String>>,
     pub last_datetime: Option<i64>,
+    pub last_datetime_in_aor: Option<i64>,
     pub created_at: i64,
     pub is_active: bool,
     pub active_from: i64,

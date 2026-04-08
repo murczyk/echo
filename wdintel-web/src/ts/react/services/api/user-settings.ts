@@ -3,58 +3,76 @@ import type { DutyTagsLayout, UserDutySettingsDto } from '../../../../Bindings';
 import { getJson, putJson } from './client';
 import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
+export type { UserDutySettingsDto };
 export type UserDutySettings = {
   tagsLayout: TagsLayoutVariant;
   disableAutoScroll: boolean;
 };
 
-function normalizeTagsLayout(value: DutyTagsLayout): TagsLayoutVariant {
-  switch (value) {
+type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
+type UserDutySettingsWire = Omit<UserDutySettingsDto, 'tagsLayout'> & {
+  tagsLayout: DutyTagsLayoutWire;
+};
+
+function normalizeTagsLayout(
+  tagsLayout: DutyTagsLayoutWire | null | undefined,
+): TagsLayoutVariant {
+  switch (tagsLayout) {
+    case 'compact':
+    case 'Compact':
+      return 'compact';
+    case 'full':
     case 'Full':
       return 'full';
+    case 'hidden':
     case 'Hidden':
       return 'hidden';
-    case 'Compact':
     default:
       return 'compact';
   }
 }
 
-function toTagsLayoutDto(value: TagsLayoutVariant): DutyTagsLayout {
-  switch (value) {
+function serializeTagsLayout(
+  tagsLayout: TagsLayoutVariant,
+): DutyTagsLayoutWire {
+  switch (tagsLayout) {
     case 'full':
-      return 'Full';
-    case 'hidden':
-      return 'Hidden';
+      return 'full';
     case 'compact':
+      return 'compact';
+    case 'hidden':
+      return 'hidden';
     default:
-      return 'Compact';
+      return 'compact';
   }
 }
 
-function normalizeUserDutySettings(dto: UserDutySettingsDto): UserDutySettings {
+function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings {
   return {
-    tagsLayout: normalizeTagsLayout(dto.tagsLayout),
-    disableAutoScroll: dto.disableAutoScroll,
+    tagsLayout: normalizeTagsLayout(raw.tagsLayout),
+    disableAutoScroll: raw.disableAutoScroll,
   };
 }
 
 export async function fetchUserSettings(signal?: AbortSignal): Promise<UserDutySettings> {
-  const dto = await getJson<UserDutySettingsDto>('/api/user/settings', { signal });
-  return normalizeUserDutySettings(dto);
+  const response = await getJson<UserDutySettingsWire>(
+    '/api/user/settings',
+    { signal },
+  );
+  return normalizeUserDutySettings(response);
 }
 
 export async function saveUserSettings(
   body: UserDutySettings,
   signal?: AbortSignal,
 ): Promise<UserDutySettings> {
-  const dto = await putJson<UserDutySettingsDto>(
+  const response = await putJson<UserDutySettingsWire>(
     '/api/user/settings',
     {
-      tagsLayout: toTagsLayoutDto(body.tagsLayout),
+      tagsLayout: serializeTagsLayout(body.tagsLayout),
       disableAutoScroll: body.disableAutoScroll,
     },
     { signal },
   );
-  return normalizeUserDutySettings(dto);
+  return normalizeUserDutySettings(response);
 }

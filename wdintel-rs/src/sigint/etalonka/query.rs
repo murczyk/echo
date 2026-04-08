@@ -585,6 +585,7 @@ async fn load_network_freq_rows(
                     .try_get("", "last_datetime")
                     .ok()
                     .map(|dt: NaiveDateTime| dt.and_utc().timestamp_millis()),
+                last_datetime_in_aor: None,
 
                 created_at: created_at.and_utc().timestamp_millis(),
                 is_active: active_to.is_none(),
