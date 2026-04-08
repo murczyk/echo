@@ -44,7 +44,6 @@ type Msg
     | GroupsMessageCountByDayReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
     | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
     | NetworksInfoLoaded (Result ApiError (List B.Network))
-    | AltUnitsByFreqReturnedByApi (Result ApiError Api.ListAltUnitsByFreqsRsp)
     | SortByMessageNumber
     | FreqsLoadMore
     | RowShowAllPopupChanged (Maybe ( String, ShowAllPopupFor ))
@@ -72,6 +71,7 @@ type Msg
     | FurtherInvestigationFilterChanged Pages_.RerFreqs.Model.FurtherInvestigationFilter
     | ToggleSidebar
     | ToggleShowOnlyInvestigating Bool
+    | ToggleShowOnlyUnknownNetwork Bool
     | ToggleArmyExpanded String
     | ToggleDivisionExpanded String String
     | ToggleRegimentExpanded String String String

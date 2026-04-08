@@ -1,7 +1,7 @@
 module Shared.Components.Checkbox exposing (new, view, withContent, withDisabled)
 
 import Html exposing (Html, div, input, label, text)
-import Html.Attributes exposing (checked, class, for, type_)
+import Html.Attributes exposing (checked, class, disabled, for, type_)
 import Html.Events exposing (onCheck)
 
 
@@ -41,6 +41,7 @@ view (Config config) =
         (input
             [ type_ "checkbox"
             , checked config.isChecked
+            , disabled config.isDisabled
             , onCheck config.onToggle
             , class "accent-toggle-selected mr-[4px]!"
             ]

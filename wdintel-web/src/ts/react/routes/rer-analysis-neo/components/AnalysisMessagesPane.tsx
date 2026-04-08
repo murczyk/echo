@@ -202,7 +202,7 @@ function AnalysisMessagesPaneComponent({
         ) : null}
       </Box>
 
-      {loading && messages.length > 0 ? (
+      {loading ? (
         <SectionLoadingOverlay open ariaLabel="Оновлення повідомлень" sx={{ zIndex: 2 }} />
       ) : null}
 

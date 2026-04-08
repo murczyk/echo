@@ -166,6 +166,14 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).toContain('Немає жодного повідомлення для аналізу.');
   });
 
+  it('shows the loading overlay instead of the empty state while messages refresh', async () => {
+    const view = await renderComponent(buildProps({ loading: true }));
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('loading');
+    expect(view.container.textContent).not.toContain('Немає жодного повідомлення для аналізу.');
+  });
+
   it('wires load more into the page callback when more messages are available', async () => {
     const onLoadMoreMessages = vi.fn();
     const view = await renderComponent(

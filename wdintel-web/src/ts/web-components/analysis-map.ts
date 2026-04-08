@@ -57,7 +57,6 @@ class AnalysisMap extends HTMLElement {
   private _coordMenuController: AnalysisMapCoordMenuController | null = null;
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
-  private _isBackgroundPointsLoading = false;
   private _isDateRangeLoading = false;
   private _isSearchLoading = false;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
@@ -390,10 +389,6 @@ class AnalysisMap extends HTMLElement {
            this._isSearchLoading = isLoading;
            this._syncAsyncInteractionState();
          },
-         onBackgroundPointsLoadingChanged: (isLoading) => {
-           this._isBackgroundPointsLoading = isLoading;
-           this._syncAsyncInteractionState();
-         },
          onOverlayContextMenu: (target, latlng) => {
            this._clickedPoint = null;
            this._clickedLatLng = null;
@@ -509,11 +504,6 @@ class AnalysisMap extends HTMLElement {
       return;
     }
 
-    if (this._isBackgroundPointsLoading) {
-      this._searchControl.updatePlaceholder('Завантаження точок...');
-      return;
-    }
-
     if (isPalitrasLoading) {
       this._searchControl.updatePlaceholder('Завантаження палітр...');
       return;
@@ -527,7 +517,7 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _isSearchInteractionLocked(): boolean {
-    return this._isDateRangeLoading || this._isBackgroundPointsLoading || this._palitrasLoadState === 'loading';
+    return this._isDateRangeLoading || this._palitrasLoadState === 'loading';
   }
 
   private _isPalitraSelectionInteractionLocked(): boolean {

@@ -5739,6 +5739,7 @@ type alias ListFreqsReq =
     , filterGroupMasterKeys : Maybe (List String)
     , filterSenderProfileIds : Maybe (List String)
     , filterFurtherInvestigation : Maybe Bool
+    , filterUnknownNetwork : Maybe Bool
     }
 
 
@@ -5757,6 +5758,7 @@ listFreqsReqEncoder struct =
         , ( "filter_group_master_keys", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.filterGroupMasterKeys )
         , ( "filter_sender_profile_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.filterSenderProfileIds )
         , ( "filter_further_investigation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterFurtherInvestigation )
+        , ( "filter_unknown_network", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterUnknownNetwork )
         ]
 
 
@@ -11245,6 +11247,7 @@ listFreqsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_group_master_keys" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_sender_profile_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_further_investigation" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unknown_network" (Json.Decode.nullable Json.Decode.bool)))
 
 
 listFreqsRspDecoder : Json.Decode.Decoder ListFreqsRsp

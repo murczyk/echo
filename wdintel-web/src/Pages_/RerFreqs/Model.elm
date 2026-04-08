@@ -49,7 +49,6 @@ type alias Model =
 
     --TODO Remove when back returns proper list of data for table
     , callsigns : List String
-    , altUnitsByFreq : Api.ListAltUnitsByFreqsRsp
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp
     , noMoreToLoad : Bool
@@ -78,6 +77,7 @@ type alias Model =
     , expandedRegiments : Set.Set String
     , expandedBattalions : Set.Set String
     , showOnlyInvestigating : Bool
+    , showOnlyUnknownNetwork : Bool
     , networkWorkflowTab : NetworkWorkflowTab
     , tableState : Table.State
     }
@@ -114,4 +114,3 @@ type TextLocation
 type ShowAllPopupFor
     = ShowAllCallsigns
     | ShowAllLocations
-    | ShowAllAltUnits

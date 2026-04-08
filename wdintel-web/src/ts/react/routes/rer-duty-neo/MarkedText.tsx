@@ -167,7 +167,7 @@ function KeywordToken({ text }: { text: string }) {
 
 export function renderMarkedText(
   nodes: ContentNode[],
-  bodyText: string,
+  _bodyText: string,
   messagePointEtalons?: string[],
   options?: { showPointLinks?: boolean; message?: InboxMessage },
 ): ReactNode[] {
@@ -187,7 +187,9 @@ export function renderMarkedText(
     }
     if ('CNCallsignC' in node) {
       const { text } = node.CNCallsignC;
-      const displayText = text.toUpperCase();
+      const callsignText = text.trim();
+      if (callsignText === '') return null;
+      const displayText = callsignText.toUpperCase();
       const href = `/rer-callsigns?callsign=${encodeURIComponent(displayText)}`;
       return (
         <a
@@ -204,10 +206,12 @@ export function renderMarkedText(
     }
     if ('CNHighlightC' in node) {
       const { text } = node.CNHighlightC;
+      if (text.trim() === '') return null;
       return <KeywordToken key={i} text={text} />;
     }
     if ('CNSignalC' in node) {
       const { text } = node.CNSignalC;
+      if (text.trim() === '') return null;
       return (
         <span key={i} className="content-token--ADV">
           {text}
@@ -215,10 +219,14 @@ export function renderMarkedText(
       );
     }
     if ('CNPointC' in node) {
-      const { begin, end, etalon } = node.CNPointC;
-      const sliceText = bodyText.slice(begin, end);
+      const { etalon, text } = node.CNPointC;
+      if (text.trim() === '') return null;
+      const cleanEtalon = String(etalon ?? '').trim();
       if (!showPointLinks) {
-        return <span key={i}>{sliceText}</span>;
+        return <span key={i}>{text}</span>;
+      }
+      if (cleanEtalon === '') {
+        return <span key={i}>{text}</span>;
       }
       const etalonsForUrl = allPointEtalons.length > 0 ? allPointEtalons : [etalon];
       const hrefAll = buildAnalysisMapHrefWithSearch(etalonsForUrl, messageForMap);
@@ -226,11 +234,11 @@ export function renderMarkedText(
       const title =
         allPointEtalons.length > 1
           ? `Відкрити на мапі аналізу: ${allPointEtalons.join(', ')}`
-          : `Відкрити на мапі аналізу: ${etalon}`;
+          : `Відкрити на мапі аналізу: ${cleanEtalon}`;
       return (
         <PointToken
           key={i}
-          text={sliceText}
+          text={text}
           hrefAll={hrefAll}
           hrefSingle={hrefSingle}
           title={title}
