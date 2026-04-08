@@ -106,6 +106,33 @@ pub fn extract_ts_headline_keywords(
     no_header_body_start: Option<usize>,
     ts_headline: &str,
 ) -> Result<Vec<CNHighlight>, AppError> {
+    extract_ts_headline_keywords_with_bounds_expansion(
+        input,
+        no_header_body_start,
+        ts_headline,
+        true,
+    )
+}
+
+pub fn extract_ts_headline_keywords_exact(
+    input: &str,
+    no_header_body_start: Option<usize>,
+    ts_headline: &str,
+) -> Result<Vec<CNHighlight>, AppError> {
+    extract_ts_headline_keywords_with_bounds_expansion(
+        input,
+        no_header_body_start,
+        ts_headline,
+        false,
+    )
+}
+
+fn extract_ts_headline_keywords_with_bounds_expansion(
+    input: &str,
+    no_header_body_start: Option<usize>,
+    ts_headline: &str,
+    expand_bounds: bool,
+) -> Result<Vec<CNHighlight>, AppError> {
     let mut res = vec![];
     let mut first = true;
     let mut cursor = 0;
@@ -123,11 +150,12 @@ pub fn extract_ts_headline_keywords(
         let mut parts2 = part.split("</b>");
         if let Some(part2_bold) = parts2.next() {
             if cursor >= no_header_body_start.unwrap_or(0) {
-                let (begin, end) = expand_to_highlight_word_bounds(
-                    input,
-                    cursor,
-                    cursor + cline_len(part2_bold),
-                );
+                let end = cursor + cline_len(part2_bold);
+                let (begin, end) = if expand_bounds {
+                    expand_to_highlight_word_bounds(input, cursor, end)
+                } else {
+                    (cursor, end)
+                };
                 res.push(CNHighlight {
                     text: input.to_string().substring(begin, end).to_string(),
                     begin,
