@@ -1,11 +1,8 @@
 import * as L from 'leaflet';
 
 import { PalitraCacheManager } from './palitra-cache-manager';
-import { Palitra, PalitraDetails, PalitraManagerCallbacks, PalitraManagerOptions } from './palitra-types';
+import { Palitra, PalitraDetails, PalitraManagerOptions } from './palitra-types';
 import { filterPalitraApiIdsByBounds } from './utils/palitra-map-geometry';
-
-const BACKGROUND_PRELOAD_ZOOM = 13;
-const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
 
 type StateAccessor = {
   getPalitras: () => PalitraDetails[];
@@ -14,7 +11,7 @@ type StateAccessor = {
 
 type MapAccessor = {
   getBufferedBounds: () => L.LatLngBounds;
-  shouldRenderPointsAtCurrentZoom: () => boolean;
+  shouldLoadViewportPointsAtCurrentZoom: () => boolean;
 };
 
 type ApiAccessor = {
@@ -23,14 +20,10 @@ type ApiAccessor = {
 
 export class PalitraPointsLoader {
   private requestTimer: number | null = null;
-  private backgroundPreloadKey: string | null = null;
-  private backgroundPreloadRequestedKey: string | null = null;
-  private backgroundPreloadInFlight = false;
 
   constructor(
     private map: L.Map,
     private options: PalitraManagerOptions,
-    private callbacks: PalitraManagerCallbacks,
     private cacheManager: PalitraCacheManager,
     private stateAccessor: StateAccessor,
     private mapAccessor: MapAccessor,
@@ -40,15 +33,16 @@ export class PalitraPointsLoader {
   ) {}
 
   onPalitrasChanged(): void {
-    // Warm up cache in background for faster first zoom-in render.
-    this.scheduleBackgroundPointsPreload();
     this.schedulePointsRequest();
   }
 
   schedulePointsRequest(): void {
-    if (this.requestTimer !== null) {
-      window.clearTimeout(this.requestTimer);
+    if (!this.shouldLoadViewportPointsAtCurrentZoom()) {
+      this.clearRequestTimer();
+      return;
     }
+
+    this.clearRequestTimer();
     this.requestTimer = window.setTimeout(() => {
       this.requestTimer = null;
       void this.requestPoints();
@@ -56,54 +50,14 @@ export class PalitraPointsLoader {
   }
 
   destroy(): void {
+    this.clearRequestTimer();
+  }
+
+  private clearRequestTimer(): void {
     if (this.requestTimer !== null) {
       window.clearTimeout(this.requestTimer);
       this.requestTimer = null;
     }
-  }
-
-  private scheduleBackgroundPointsPreload(): void {
-    const palitraIds = this.getAllApiPalitraIds();
-
-    if (palitraIds.length === 0) {
-      this.backgroundPreloadKey = null;
-      this.backgroundPreloadRequestedKey = null;
-      this.setBackgroundPointsLoading(false);
-      return;
-    }
-
-    const preloadKey = palitraIds.join(',');
-    this.backgroundPreloadRequestedKey = preloadKey;
-    if (this.backgroundPreloadInFlight || this.backgroundPreloadKey === preloadKey) {
-      return;
-    }
-
-    this.backgroundPreloadKey = preloadKey;
-    void this.preloadAllPoints(palitraIds, preloadKey).catch((error) => {
-      console.error('[PalitraManager] Background points preload failed:', error);
-    });
-  }
-
-  private async preloadAllPoints(palitraIds: number[], preloadKey: string): Promise<void> {
-    this.backgroundPreloadInFlight = true;
-    this.setBackgroundPointsLoading(true);
-
-    try {
-      const data = await this.cacheManager.fetchPointsForBounds(palitraIds, WORLD_BOUNDS);
-      this.cacheManager.storePointsByGrid(data, BACKGROUND_PRELOAD_ZOOM);
-      this.onPointsUpdated();
-    } finally {
-      this.backgroundPreloadInFlight = false;
-      this.setBackgroundPointsLoading(false);
-      this.onPointsUpdated();
-      if (this.backgroundPreloadRequestedKey !== preloadKey) {
-        this.scheduleBackgroundPointsPreload();
-      }
-    }
-  }
-
-  private setBackgroundPointsLoading(isLoading: boolean): void {
-    this.callbacks.onBackgroundPointsLoadingChanged?.(isLoading);
   }
 
   private async requestPoints(): Promise<void> {
@@ -114,7 +68,7 @@ export class PalitraPointsLoader {
     if (palitras.length === 0) {
       return;
     }
-    if (!this.mapAccessor.shouldRenderPointsAtCurrentZoom()) {
+    if (!this.shouldLoadViewportPointsAtCurrentZoom()) {
       return;
     }
 
@@ -152,9 +106,7 @@ export class PalitraPointsLoader {
     }
   }
 
-  private getAllApiPalitraIds(): number[] {
-    return Array.from(
-      new Set(this.stateAccessor.getPalitras().map((entry) => this.apiAccessor.apiPalitraId(entry.palitra))),
-    ).sort((left, right) => left - right);
+  private shouldLoadViewportPointsAtCurrentZoom(): boolean {
+    return this.mapAccessor.shouldLoadViewportPointsAtCurrentZoom();
   }
 }
