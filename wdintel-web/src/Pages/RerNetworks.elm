@@ -1289,7 +1289,7 @@ networksTableConfig user shared model =
                     \network ->
                         { attributes = []
                         , children =
-                            [ div [ class "flex flex-col" ] (List.map (\freq -> span [] [ text freq.freq ]) network.freqs)
+                            [ renderNetworkFreqsColumn shared network.freqs
                             ]
                         }
                 , sorter = Table.unsortable
@@ -1461,6 +1461,59 @@ findSuggestedToMergeNetworks networks_ =
                     findPairs (List.append acc newPairs) xs
     in
     findPairs [] networks_
+
+
+renderNetworkFreqsColumn : Shared.Model -> List B.NetworkFreq -> Html Msg
+renderNetworkFreqsColumn shared freqs =
+    let
+        activeFreqs =
+            freqs |> List.filter (\freq -> freq.activeTo == Nothing)
+
+        inactiveFreqs =
+            freqs |> List.filter (\freq -> freq.activeTo /= Nothing)
+    in
+    div [ class "flex flex-col gap-2" ]
+        (renderNetworkFreqGroup shared "Активні" False activeFreqs
+            :: (if List.isEmpty inactiveFreqs then
+                    []
+
+                else
+                    [ renderNetworkFreqGroup shared "Неактивні" True inactiveFreqs ]
+               )
+        )
+
+
+renderNetworkFreqGroup : Shared.Model -> String -> Bool -> List B.NetworkFreq -> Html Msg
+renderNetworkFreqGroup shared groupLabel isInactive freqs =
+    if List.isEmpty freqs then
+        text ""
+
+    else
+        div [ class "flex flex-col" ]
+            (span [ class "text-xs font-semibold text-gray-600 dark:text-gray-300" ] [ text groupLabel ]
+                :: List.map (renderNetworkFreq shared isInactive) freqs
+            )
+
+
+renderNetworkFreq : Shared.Model -> Bool -> B.NetworkFreq -> Html Msg
+renderNetworkFreq shared isInactive freq =
+    let
+        activeToTitle =
+            freq.activeTo
+                |> Maybe.map (\activeTo -> "Неактивна, по " ++ Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix activeTo))
+                |> Maybe.withDefault "Активна"
+    in
+    span
+        [ class
+             (if isInactive then
+                "text-gray-500"
+
+             else
+                ""
+            )
+        , title activeToTitle
+        ]
+        [ text freq.freq ]
 
 
 
