@@ -340,7 +340,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
           );
           await loadFeedNewerMessages(feedId, {
             nolimit: true,
-            scrollToEndAfterLoad: !dutyDisableAutoScroll,
+            scrollToEndAfterLoad: true,
           });
         } else if (!feed.loading) {
           await loadFeedInitialMessages(feedId);
