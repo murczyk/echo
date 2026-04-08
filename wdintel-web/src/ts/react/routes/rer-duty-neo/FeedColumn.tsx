@@ -33,7 +33,7 @@ const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function 
     <div
       ref={ref}
       data-virtuoso-scroller
-      style={{ ...style, paddingLeft: 0 }}
+      style={style}
       className={[className, 'rer-duty-feed-scroll'].filter(Boolean).join(' ')}
       {...props}
     />
