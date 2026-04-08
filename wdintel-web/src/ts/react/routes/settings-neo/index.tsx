@@ -80,8 +80,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   );
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
-  /** ToDo implement in next task. */
-  const [dutyDisableAutoScrollFromServer, setDutyDisableAutoScrollFromServer] = useState(false);
+  const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
+  const [initialDutyDisableAutoScroll, setInitialDutyDisableAutoScroll] = useState(false);
   const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
   const [dutySaveError, setDutySaveError] = useState<string | null>(null);
   const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
@@ -131,11 +131,13 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           setDutyPrefsLoadError('Не вдалося завантажити налаштування.');
           setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
           setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
-          setDutyDisableAutoScrollFromServer(false);
+          setDutyDisableAutoScroll(false);
+          setInitialDutyDisableAutoScroll(false);
         } else {
           setTagsLayout(prefsRsp.tagsLayout);
           setInitialTagsLayout(prefsRsp.tagsLayout);
-          setDutyDisableAutoScrollFromServer(prefsRsp.disableAutoScroll);
+          setDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
+          setInitialDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
         }
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
@@ -168,7 +170,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
-  const isDutyDirty = tagsLayout !== initialTagsLayout;
+  const isDutyDirty = tagsLayout !== initialTagsLayout || dutyDisableAutoScroll !== initialDutyDisableAutoScroll;
 
   async function handleDutySave(event?: FormEvent) {
     event?.preventDefault();
@@ -180,8 +182,9 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     setDutySaveInProgress(true);
 
     try {
-      await saveUserPrefsSettings({ tagsLayout, disableAutoScroll: dutyDisableAutoScrollFromServer });
+      await saveUserPrefsSettings({ tagsLayout, disableAutoScroll: dutyDisableAutoScroll });
       setInitialTagsLayout(tagsLayout);
+      setInitialDutyDisableAutoScroll(dutyDisableAutoScroll);
       setDutySaveSuccess('Збережено');
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -229,8 +232,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   return (
     <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
       <Stack spacing={2} useFlexGap>
-        <PageHeader title="Налаштування" />
-
+        <PageHeader title="Налаштування" titleInfo="Зберігається для вашого облікового запису" />
         <Card
           variant="outlined"
           sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden', backgroundColor: 'background.paper' }}
@@ -368,6 +370,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 setDutySaveSuccess(null);
                 setDutySaveError(null);
                 setTagsLayout(layout);
+              }}
+              disableAutoScroll={dutyDisableAutoScroll}
+              onDisableAutoScrollChange={(value) => {
+                setDutySaveSuccess(null);
+                setDutySaveError(null);
+                setDutyDisableAutoScroll(value);
               }}
               onSave={handleDutySave}
               isDirty={isDutyDirty}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { fetchUserSettings } from '../../services/api/user-settings';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { sortFrequenciesNumerically } from '../../utils/misc';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
@@ -69,6 +70,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
   const [testSinceMs, setTestSinceMs] = useState(0);
   const [testLimit, setTestLimit] = useState(1);
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
+  const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
@@ -77,6 +79,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     testSinceMs,
     testLimit,
     pollIntervalSec,
+    disableAutoScroll: dutyDisableAutoScroll,
   });
   const setFeedError = feedState.setError;
   useEffect(() => {
@@ -97,6 +100,24 @@ export function useRerDutyFeeds(authUserName: string | null) {
       cancelled = true;
     };
   }, [setFeedError]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchUserSettings()
+      .then((prefs) => {
+        if (cancelled) return;
+        setDutyDisableAutoScroll(prefs.disableAutoScroll);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDutyDisableAutoScroll(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (dutyDisableAutoScroll) feedState.setWatchModeByFeedId({});
+  }, [dutyDisableAutoScroll, feedState.setWatchModeByFeedId]);
   const actions = useRerDutyMessageActions({
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
@@ -118,6 +139,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     setSelectedSavedId: filterOpts.setSelectedSavedId,
     saveFilterName: filterOpts.saveFilterName,
     setSaveFilterName: filterOpts.setSaveFilterName,
+    dutyDisableAutoScroll,
   });
 
   const freqs = useMemo(
@@ -140,6 +162,8 @@ export function useRerDutyFeeds(authUserName: string | null) {
     authUserName,
     columnRefsRef: feedState.columnRefsRef,
     nearBottomByFeedIdRef: feedState.nearBottomByFeedIdRef,
+    atBottomByFeedIdRef: feedState.atBottomByFeedIdRef,
+    dutyDisableAutoScroll,
     createMessageFeed: feedState.createMessageFeed,
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,
