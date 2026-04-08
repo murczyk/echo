@@ -54,7 +54,7 @@ export function SettingsDutySection({
             color: 'text.primary',
           }}
         >
-          Оперативний (зберігається для вашого облікового запису)
+          Оперативний
         </Typography>
         {prefsLoadError ? <Alert severity="warning">{prefsLoadError}</Alert> : null}
         {saveError ? <Alert severity="error">{saveError}</Alert> : null}
@@ -102,9 +102,8 @@ export function SettingsDutySection({
             />
 
             <Typography variant="caption" className="mt-0">
-              Якщо перемикач увімкнено: автоматична прокрутка до нових повідомлень працює лише коли стрічка прокручена
-              до самого низу + невеликий зазор від кінця. Якщо трохи прокрутити вгору — автопрокрутка припиняється, доки
-              знову не дійдете до низу.
+              Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки (з невеликим зазором); якщо прокрутити
+              вгору — вона зупиняється і відновлюється після повернення вниз.
             </Typography>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1.5, pt: 1 }}>
               {saveSuccess ? (

@@ -232,8 +232,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   return (
     <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
       <Stack spacing={2} useFlexGap>
-        <PageHeader title="Налаштування" />
-
+        <PageHeader title="Налаштування" titleInfo="Зберігається для вашого облікового запису" />
         <Card
           variant="outlined"
           sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden', backgroundColor: 'background.paper' }}
