@@ -37,6 +37,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     error,
     columnRefsRef,
     nearBottomByFeedIdRef,
+    atBottomByFeedIdRef,
+    dutyDisableAutoScroll,
     createMessageFeed,
     removeMessageFeed,
     loadFeedInitialMessages,
@@ -196,7 +198,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
               onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
               onReachedBottom={() => {
-                setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
+                if (!dutyDisableAutoScroll) {
+                  setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
+                }
                 if (w.items.length > 0) {
                   handleVisibleMessageIds(w.id)(
                     w.items.map(([id]) => id),
@@ -211,7 +215,13 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   [w.id]: near,
                 };
               }}
-              isWatchMode={watchModeByFeedId[w.id] ?? false}
+              onAtBottomChange={(atBottom) => {
+                atBottomByFeedIdRef.current = {
+                  ...atBottomByFeedIdRef.current,
+                  [w.id]: atBottom,
+                };
+              }}
+              isWatchMode={!dutyDisableAutoScroll && (watchModeByFeedId[w.id] ?? false)}
               loadingNewer={loadingNewerFeedId === w.id}
               arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
               onArrowClick={() => handleArrowClick(w.id)}

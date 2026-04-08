@@ -77,6 +77,7 @@ function inboxRsp(items: Array<[number, InboxMessage]>): InboxMessagesRsp {
 
 function TestHarness(props: {
   apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null>;
+  disableAutoScroll?: boolean;
 }) {
   const api = useRerDutyFeedState({
     freqs: [],
@@ -86,6 +87,7 @@ function TestHarness(props: {
     testSinceMs: 0,
     testLimit: 1,
     pollIntervalSec: 1,
+    disableAutoScroll: props.disableAutoScroll ?? false,
   });
   props.apiRef.current = api;
   return null;
@@ -222,6 +224,7 @@ describe('useRerDutyFeedState — loading', () => {
 
     await act(async () => {
       apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
+      apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = true;
     });
 
     await act(async () => {
@@ -302,5 +305,127 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
     expect(startedCount).toBeGreaterThanOrEqual(2);
+  });
+
+  describe('poll autoscroll (scrollToEndAfterLoad)', () => {
+    it('marks newer mail as read when watch mode, pixel at-bottom, and auto-scroll is allowed', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+
+      await act(async () => {
+        apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
+        apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = true;
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.readIds.has(1) && feed.readIds.has(2)).toBe(true);
+      expect(feed.unreadCount).toBe(0);
+    });
+
+    it('does not mark-all-read on newer mail when watch mode but not at pixel bottom (autoscroll off)', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+
+      await act(async () => {
+        apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
+        apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = false;
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.readIds.has(2)).toBe(false);
+      expect(feed.unreadCount).toBeGreaterThan(0);
+    });
+
+    it('does not mark-all-read when user prefs disable auto-scroll even if watch mode and at bottom', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} disableAutoScroll />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+
+      await act(async () => {
+        apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
+        apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = true;
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.readIds.has(2)).toBe(false);
+      expect(feed.unreadCount).toBeGreaterThan(0);
+    });
+
+    it('does not mark-all-read when only near-bottom (range) is true without watch mode', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+
+      await act(async () => {
+        apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = true;
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.readIds.has(2)).toBe(false);
+      expect(feed.unreadCount).toBeGreaterThan(0);
+    });
   });
 });
