@@ -101,6 +101,14 @@ describe('rer-duty utils', () => {
       `/rer-analysis?state=${encodeURIComponent(JSON.stringify({ search: 'A1,B2' }))}&showMap=true`,
     );
 
+    const msgWithFreq = { freq: '123.45', messageUid: 'uid-1' } as InboxMessage;
+    const hrefWithMsg = buildAnalysisMapHrefWithSearch(['P-1', 'P-2'], msgWithFreq);
+    const stateWithMsg = JSON.parse(
+      decodeURIComponent(new URL(hrefWithMsg, 'https://example.test').searchParams.get('state')!),
+    ) as { search: string; freqs_selected: string[] };
+    expect(stateWithMsg.search).toBe('P-1,P-2');
+    expect(stateWithMsg.freqs_selected).toEqual(['123.45']);
+
     const fromTokens = getPointEtalonsFromMessage({
       pointTokens: [{ etalon: 'P-1' }, { etalon: 'P-2' }],
       textMarked: [],

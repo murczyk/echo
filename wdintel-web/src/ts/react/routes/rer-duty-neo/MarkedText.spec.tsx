@@ -7,18 +7,28 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { renderMarkedText } from './MarkedText';
-import type { ContentNode } from '../../../../Bindings';
+import type { ContentNode, InboxMessage } from '../../../../Bindings';
+
+function decodeMapHrefState(href: string | null): { search: string; freqs_selected?: string[] } {
+  const url = new URL(href!, 'https://example.test');
+  return JSON.parse(decodeURIComponent(url.searchParams.get('state')!)) as {
+    search: string;
+    freqs_selected?: string[];
+  };
+}
 
 function TestHost(props: {
   nodes: ContentNode[];
   bodyText: string;
   messagePointEtalons?: string[];
   showPointLinks?: boolean;
+  message?: InboxMessage;
 }) {
   return (
     <div>
       {renderMarkedText(props.nodes, props.bodyText, props.messagePointEtalons, {
         showPointLinks: props.showPointLinks,
+        message: props.message,
       })}
     </div>
   );
@@ -77,6 +87,7 @@ describe('MarkedText', () => {
           nodes={[{ CNPointC: { begin: 0, end: 3, etalon: 'P-1', text: 'P-1' } }]}
           bodyText="P-1"
           messagePointEtalons={['P-1', 'P-2']}
+          message={{ freq: '100.125' } as InboxMessage}
         />,
       );
     });
@@ -96,13 +107,15 @@ describe('MarkedText', () => {
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(2);
     expect(menuItems[0]?.textContent).toContain('Показати на мапі всі точки');
-    expect(menuItems[0]?.getAttribute('href')).toBe(
-      `/rer-analysis?state=${encodeURIComponent(JSON.stringify({ search: 'P-1,P-2' }))}&showMap=true`,
-    );
+    expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
+      search: 'P-1,P-2',
+      freqs_selected: ['100.125'],
+    });
     expect(menuItems[1]?.textContent).toContain('Показати на мапі цю точку');
-    expect(menuItems[1]?.getAttribute('href')).toBe(
-      `/rer-analysis?state=${encodeURIComponent(JSON.stringify({ search: 'P-1' }))}&showMap=true`,
-    );
+    expect(decodeMapHrefState(menuItems[1]?.getAttribute('href') ?? null)).toMatchObject({
+      search: 'P-1',
+      freqs_selected: ['100.125'],
+    });
   });
 
   it('renders a single point menu item when the message has only one point', async () => {
@@ -112,6 +125,7 @@ describe('MarkedText', () => {
           nodes={[{ CNPointC: { begin: 0, end: 3, etalon: 'P-1', text: 'P-1' } }]}
           bodyText="P-1"
           messagePointEtalons={['P-1']}
+          message={{ freq: '200' } as InboxMessage}
         />,
       );
     });
@@ -124,8 +138,9 @@ describe('MarkedText', () => {
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(1);
     expect(menuItems[0]?.textContent).toContain('Показати на мапі');
-    expect(menuItems[0]?.getAttribute('href')).toBe(
-      `/rer-analysis?state=${encodeURIComponent(JSON.stringify({ search: 'P-1' }))}&showMap=true`,
-    );
+    expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
+      search: 'P-1',
+      freqs_selected: ['200'],
+    });
   });
 });
