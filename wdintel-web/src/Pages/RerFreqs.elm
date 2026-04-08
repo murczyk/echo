@@ -68,7 +68,7 @@ init _ =
         m2 : Model
         m2 =
             { now = Nothing
-            , loading = False
+            , loading = True
             , loadingMore = False
             , currentRequestTracker = Nothing
             , requestCounter = 0
@@ -92,7 +92,6 @@ init _ =
             , networksExtra = Dict.empty
             , callsigns = []
             , sortingOrder = B.MessageCountDesc
-            , altUnitsByFreq = Dict.empty
             , groupsMessageCountByDay = Dict.empty
             , noMoreToLoad = True
             , rowShowAllPopupStatus = Nothing
@@ -188,6 +187,7 @@ init _ =
             , expandedRegiments = Set.empty
             , expandedBattalions = Set.empty
             , showOnlyInvestigating = False
+            , showOnlyUnknownNetwork = False
             , networkWorkflowTab = Pages_.RerFreqs.Model.Search
             , tableState = Table.sortBy "Частота" True
             }
@@ -253,6 +253,12 @@ loadFreqs model paginating =
 
                     else
                         Nothing
+                , filterUnknownNetwork =
+                    if model.showOnlyUnknownNetwork then
+                        Just True
+
+                    else
+                        Nothing
                 }
 
         _ ->
@@ -283,6 +289,12 @@ loadFreqsWithTracker model paginating tracker =
                 , filterSenderProfileIds = Nothing
                 , filterFurtherInvestigation =
                     if model.showOnlyInvestigating then
+                        Just True
+
+                    else
+                        Nothing
+                , filterUnknownNetwork =
+                    if model.showOnlyUnknownNetwork then
                         Just True
 
                     else
@@ -434,14 +446,6 @@ update shared msg model =
                                         , sinceDateInclusiveMs = timeFrom
                                         , tillDateNoninclusiveMs = timeTo
                                         }
-                                , E.sendCmd <|
-                                    Api.list_alt_units_by_freqs AltUnitsByFreqReturnedByApi
-                                        { freqs = freqsAsString
-                                        , sinceDateInclusiveMs = timeFrom
-                                        , tillDateNoninclusiveMs = timeTo
-                                        , filterGroupMasterKeys = Nothing
-                                        , filterSenderProfileIds = Nothing
-                                        }
                                 ]
 
                             _ ->
@@ -487,6 +491,7 @@ update shared msg model =
             ( { m2
                 | locationTexts = Dict.empty
                 , callsignSearchResults = NotAsked
+                , loading = True
               }
             , E.batch [ eff2, initLoad m2 ]
             )
@@ -502,7 +507,7 @@ update shared msg model =
                         , toMsg = DateTimeToMsg
                         }
             in
-            ( { m2 | callsignSearchResults = NotAsked }
+            ( { m2 | callsignSearchResults = NotAsked, loading = True }
             , E.batch [ eff2, initLoad m2 ]
             )
 
@@ -519,6 +524,7 @@ update shared msg model =
                         | from = from
                         , to = to
                         , now = Just now_
+                        , loading = True
                     }
             in
             ( m2, initLoad m2 )
@@ -898,16 +904,6 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
             )
 
-        AltUnitsByFreqReturnedByApi (Ok rsp) ->
-            ( { model | altUnitsByFreq = Dict.union model.altUnitsByFreq rsp }
-            , E.none
-            )
-
-        AltUnitsByFreqReturnedByApi (Err err) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
-            )
-
         CallsignsInfoReturnedByApi (Err e) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
@@ -947,7 +943,7 @@ update shared msg model =
                     changeSortOrder model.sortingOrder
 
                 m2 =
-                    { model | sortingOrder = newSortOrder }
+                    { model | sortingOrder = newSortOrder, loading = True }
             in
             ( m2
             , E.sendCmd <|
@@ -1197,20 +1193,31 @@ update shared msg model =
                     { addUnitSelect | selected = Nothing }
 
                 freqs2 =
-                    case fre of
-                        Just v ->
-                            let
-                                fre2 =
-                                    { v | networkIds = v.networkIds ++ [ network.id ] }
-                            in
-                            ListX.updateIf (\freq_ -> freq_.freq == freq) (\_ -> fre2) model.freqs
+                    if model.showOnlyUnknownNetwork then
+                        List.filter (\freq_ -> freq_.freq /= freq) model.freqs
 
-                        Nothing ->
-                            model.freqs
+                    else
+                        case fre of
+                            Just v ->
+                                let
+                                    fre2 =
+                                        { v | networkIds = v.networkIds ++ [ network.id ] }
+                                in
+                                ListX.updateIf (\freq_ -> freq_.freq == freq) (\_ -> fre2) model.freqs
+
+                            Nothing ->
+                                model.freqs
+
+                networkWorkflowStatus =
+                    if model.showOnlyUnknownNetwork then
+                        NotStarted
+
+                    else
+                        SelectingNetwork freq Nothing
             in
             ( { model
                 | freqs = freqs2
-                , networkWorkflowStatus = SelectingNetwork freq Nothing
+                , networkWorkflowStatus = networkWorkflowStatus
                 , networkDialogUnitSelect = aus2
                 , networkAddLoading = False
               }
@@ -1418,6 +1425,17 @@ update shared msg model =
             in
             ( m2, E.sendCmd <| loadFreqs m2 False )
 
+        ToggleShowOnlyUnknownNetwork val ->
+            if model.loading then
+                ( model, E.none )
+
+            else
+                let
+                    m2 =
+                        { model | showOnlyUnknownNetwork = val, loading = True }
+                in
+                ( m2, E.sendCmd <| loadFreqs m2 False )
+
         ToggleArmyExpanded army ->
             ( { model
                 | expandedArmies =
@@ -1513,6 +1531,7 @@ update shared msg model =
                     { model
                         | filterState = clearedFilterState
                         , showOnlyInvestigating = False
+                        , showOnlyUnknownNetwork = False
                         , loading = True
                     }
             in
@@ -1817,7 +1836,7 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
-                { name = "Привʼязки"
+                { name = "Приналежність до радіомережі"
                 , viewData =
                     \freq ->
                         { attributes = []
@@ -1825,69 +1844,7 @@ freqsTableConfig shared model user =
                         }
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "26%"
-            , Table.veryCustomColumn
-                { name = "Альтернативні Привʼязки"
-                , viewData =
-                    \freq ->
-                        { attributes = []
-                        , children =
-                            [ div [ class "flex flex-col gap-[4px]" ]
-                                (case Dict.get freq.freq model.altUnitsByFreq of
-                                    Just units ->
-                                        (List.map (\u -> span [] [ text u.unit ]) units
-                                            |> List.take 3
-                                        )
-                                            ++ (if List.length units > 3 then
-                                                    let
-                                                        body =
-                                                            span
-                                                                [ style "font-size" "12px"
-                                                                , style "font-weight" "300"
-                                                                , style "cursor" "pointer"
-                                                                , style "display" "block"
-                                                                , style "padding-right" "6px"
-                                                                , style "text-decoration" "underline"
-                                                                ]
-                                                                [ text ("Показати всі " ++ (units |> List.length |> String.fromInt)) ]
-
-                                                        popupBody =
-                                                            div [ class "d-flex flex-column", style "gap" "20px" ]
-                                                                (List.map (\unit -> span [] [ text unit.unit ]) units)
-
-                                                        isOpen =
-                                                            case model.rowShowAllPopupStatus of
-                                                                Just ( freq_, ShowAllAltUnits ) ->
-                                                                    freq_ == freq.freq
-
-                                                                _ ->
-                                                                    False
-                                                    in
-                                                    [ Shared.Components.Popup.new
-                                                        { body = body
-                                                        , popupBody = popupBody
-                                                        , isOpen = isOpen
-                                                        , onClose = RowShowAllPopupChanged Nothing
-                                                        , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllAltUnits )
-                                                        , disabled = False
-                                                        }
-                                                        |> Shared.Components.Popup.withFakeAnchor
-                                                        |> Shared.Components.Popup.withCloseButton
-                                                        |> Shared.Components.Popup.view
-                                                    ]
-
-                                                else
-                                                    [ text "" ]
-                                               )
-
-                                    Nothing ->
-                                        [ text "" ]
-                                )
-                            ]
-                        }
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "20%"
+                |> Table.withColumnWidth "34%"
             , Table.veryCustomColumn
                 { name = "Активність р/м"
                 , viewData =
@@ -1995,31 +1952,35 @@ viewFreqBlock mUser shared model freq =
     [ div [ class "d-flex justify-content-between" ]
         [ div [ class "d-flex" ]
             [ div [] <|
-                for_ freq.networkIds <|
-                    \networkId ->
-                        case Dict.get networkId (networksForView shared model) of
-                            Just network ->
-                                span [ class "inline-flex items-center gap-1" ]
-                                    [ case shared.masterUnits of
-                                        Success units ->
-                                            NetworksUtils.renderNetwork network units
+                if List.isEmpty freq.networkIds then
+                    [ text "Невідома" ]
 
-                                        _ ->
-                                            text "Завантаження..."
-                                    , case network.unitIds of
-                                        Nothing ->
-                                            span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+                else
+                    for_ freq.networkIds <|
+                        \networkId ->
+                            case Dict.get networkId (networksForView shared model) of
+                                Just network ->
+                                    span [ class "inline-flex items-center gap-1" ]
+                                        [ case shared.masterUnits of
+                                            Success units ->
+                                                NetworksUtils.renderNetwork network units
 
-                                        Just ids ->
-                                            if List.isEmpty ids then
+                                            _ ->
+                                                text "Завантаження..."
+                                        , case network.unitIds of
+                                            Nothing ->
                                                 span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
 
-                                            else
-                                                text ""
-                                    ]
+                                            Just ids ->
+                                                if List.isEmpty ids then
+                                                    span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
 
-                            _ ->
-                                text "Невідома мережа"
+                                                else
+                                                    text ""
+                                        ]
+
+                                _ ->
+                                    text "Невідома"
             ]
         , editBlock
         ]
@@ -2090,6 +2051,37 @@ leftPanel shared model =
             [ i [ class "bi bi-chevron-left" ] [] ]
         , unitsBlock shared model
         ]
+
+
+freqsResultsBlock : Shared.Model -> B.User -> Model -> Html Msg
+freqsResultsBlock shared user model =
+    let
+        loadingBlock =
+            div
+                [ class "flex items-center justify-center py-4" ]
+                [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+        emptyBlock =
+            div
+                [ class "flex items-center justify-center py-4 text-sm text-gray-600 dark:text-gray-300" ]
+                [ text "Немає частот за вибраними фільтрами" ]
+    in
+    if model.loading && List.isEmpty model.freqs then
+        loadingBlock
+
+    else
+        div []
+            [ if model.loading then
+                loadingBlock
+
+              else
+                text ""
+            , if List.isEmpty model.freqs then
+                emptyBlock
+
+              else
+                Table.view (freqsTableConfig shared model user) model.tableState model.freqs
+            ]
 
 
 unitsBlock : Shared.Model -> Model -> Html Msg
@@ -2215,7 +2207,7 @@ view dark shared user model =
                             ]
                             [ FilterPanel.view shared model
                             ]
-                        , Table.view (freqsTableConfig shared model user) model.tableState model.freqs
+                        , freqsResultsBlock shared user model
                         , div [ class "flex justify-center mt-3 mb-3" ] <|
                             if not model.noMoreToLoad then
                                 [ Button.new { label = "Завантажити ще", onClick = FreqsLoadMore }

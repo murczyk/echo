@@ -574,7 +574,7 @@ pub async fn list_freqs(
                 .table_name(callsigns_cte_alias.clone())
                 .to_owned();
 
-            let main_query = Query::select()
+            let mut main_query = Query::select()
                 .expr_as(
                     Expr::cust("unique_callsigns.freq".to_string()),
                     Alias::new("freq"),
@@ -597,6 +597,12 @@ pub async fn list_freqs(
                 .add_group_by(vec![Expr::cust("freq")])
                 .order_by_expr(Expr::cust("message_count"), Order::Desc)
                 .to_owned();
+
+            if req.filter_unknown_network.unwrap_or(false) {
+                main_query.and_where(unknown_network_freq_filter(
+                    "unique_callsigns.freq",
+                ));
+            }
 
             let combined_query = Query::with()
                 .cte(dedup_cte)
@@ -660,6 +666,10 @@ pub async fn list_freqs(
                 )
                 .add_group_by([Expr::cust("freq")])
                 .to_owned();
+
+            if req.filter_unknown_network.unwrap_or(false) {
+                main_query.and_where(unknown_network_freq_filter("uniq.freq"));
+            }
 
             if let Some(sort_by) = &req.sort_by {
                 for sort in sort_by {
@@ -819,6 +829,18 @@ pub async fn list_freqs(
         freqs,
     }))
 }
+
+fn unknown_network_freq_filter(freq_expr: &str) -> SimpleExpr {
+    Expr::cust(format!(
+        "NOT EXISTS (SELECT 1 FROM sigint_network_freq snf \
+         JOIN sigint_network sn ON sn.id = snf.network_id \
+         WHERE snf.freq = {freq_expr} \
+         AND snf.active_to IS NULL \
+         AND snf.deleted = false \
+         AND sn.deleted = false)"
+    ))
+}
+
 /// This API is slow. DO NOT USE FOR POPULAR PAGES TO GET FREQ INFO. Only intended for admin pages.
 #[post("/api/sigint/freqs-v2")]
 pub async fn list_freqs_v2(
