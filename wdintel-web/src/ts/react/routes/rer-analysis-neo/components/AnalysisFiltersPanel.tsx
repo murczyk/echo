@@ -23,7 +23,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
-import { APP_DATE_INPUT_MIN } from '../../../utils/misc';
+import { APP_DATE_INPUT_MIN, uppercaseStrings } from '../../../utils/misc';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 
@@ -36,6 +36,7 @@ type Props = Pick<
   | 'loadedSavedFilter'
   | 'options'
   | 'filtersLoading'
+  | 'groupInfos'
   | 'queryState'
   | 'saveInFlight'
   | 'savedFilterName'
@@ -204,6 +205,7 @@ export function AnalysisFiltersPanel({
   counts,
   canResetFilters,
   filtersLoading,
+  groupInfos,
   includeOnlyNewFreqs,
   loadedSavedFilter,
   options,
@@ -236,6 +238,22 @@ export function AnalysisFiltersPanel({
   const toggleSection = (section: FilterSectionId) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
+
+  const callsignValues = Array.from(new Set([...options.callsigns, ...queryState.callsignsSelected]));
+  const callsignLabels = uppercaseStrings(callsignValues);
+  const callsignsOptions = callsignValues.reduce<Array<{ value: string; label: string; values: string[] }>>((acc, callsign, index) => {
+    const label = callsignLabels[index] ?? callsign;
+    const existingOption = acc.find((option) => option.label === label);
+    if (existingOption != null) {
+      existingOption.values.push(callsign);
+      return acc;
+    }
+    acc.push({ value: label, label, values: [callsign] });
+    return acc;
+  }, []);
+  const groupOptions = options.groups
+    .map((masterKey) => ({ value: masterKey, label: groupInfos[masterKey]?.name ?? masterKey }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   return (
     <Paper
@@ -322,12 +340,14 @@ export function AnalysisFiltersPanel({
           size="small"
           value={queryState.search}
           onChange={(event) => updateQueryState({ search: event.target.value })}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            },
           }}
         />
         <Box>
@@ -422,7 +442,7 @@ export function AnalysisFiltersPanel({
           <FilterSection title="Групи" expanded={expandedSections.groups} onToggle={() => toggleSection('groups')}>
             <AnalysisFilterField
               label="Групи"
-              options={options.groups}
+              options={groupOptions}
               loading={filtersLoading}
               value={queryState.groupsSelected}
               onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
@@ -472,7 +492,7 @@ export function AnalysisFiltersPanel({
           <FilterSection title="Позивні" expanded={expandedSections.callsigns} onToggle={() => toggleSection('callsigns')}>
             <AnalysisFilterField
               label="Позивні"
-              options={options.callsigns}
+              options={callsignsOptions}
               loading={filtersLoading}
               value={queryState.callsignsSelected}
               onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}

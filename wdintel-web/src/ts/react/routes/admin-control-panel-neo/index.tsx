@@ -95,7 +95,7 @@ export function AdminControlPanelNeoPage() {
         <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
           <div className="space-y-5">
             <Typography variant="h6" component="h3" className="!text-lg !font-semibold mb-3">
-              Натисність щоби перезапустити Ехо Сервер
+              Натисніть, щоб перезапустити ЕХО Сервер
             </Typography>
             <FormGroup>
               <FormControlLabel

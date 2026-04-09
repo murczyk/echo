@@ -16,7 +16,7 @@ import {
 import { listAors } from './aor';
 import { HttpRequestError, isUnauthorizedError, postJson, postVoid } from './client';
 import { listLogins } from './logins';
-import { listOrganisms } from './organisms';
+import { listOrganismLogins, listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
 
 type CreatePalitraReqBody = {
@@ -34,8 +34,11 @@ type CreatePalitraReqBody = {
 type PalitraLike = {
   id?: number | string;
   name?: string;
+  folder?: string | null;
   colorHex?: string;
   color_hex?: string;
+  isArchived?: boolean;
+  is_archived?: boolean;
   author?: string | null;
   sourceFileName?: string | null;
   source_file_name?: string | null;
@@ -172,9 +175,12 @@ function toAccessBody(access: PalitraAccess): CreatePalitraReqBody['access'] {
 }
 
 function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
+  const folder = raw?.folder?.trim() ?? '';
   return {
     id: normalizeNumber(raw?.id),
     name: raw?.name ?? '',
+    folder: folder.length > 0 ? folder : null,
+    isArchived: raw?.isArchived ?? raw?.is_archived ?? false,
     colorHex: raw?.colorHex ?? raw?.color_hex ?? '#00bcd4',
     author: raw?.author ?? null,
     sourceFileName: raw?.sourceFileName ?? raw?.source_file_name ?? null,
@@ -435,15 +441,21 @@ async function fetchAdminReferenceOptional<T>(fetchReference: () => Promise<T>):
 export async function fetchPalitraReferenceData(user: User): Promise<{
   myScope: MyScope | null;
   logins: ListLoginsRsp | null;
+  organismLogins: string[] | null;
   organisms: Organism[] | null;
   aors: Awaited<ReturnType<typeof listAors>> | null;
 }> {
   const isAdmin = user.roles.includes('Admin');
+  const isEditor = user.roles.includes('UnitsEditor') || user.roles.includes('CallsignsEditor');
+  const hasPalitraAccess = user.roles.includes('Admin') || user.roles.includes('Full') || user.roles.includes('Rer');
 
-  const [myScope, logins, organisms, aors] = await Promise.all([
+  const [myScope, logins, organismLogins, organisms, aors] = await Promise.all([
     fetchMyScopeOptional(),
     isAdmin
       ? fetchAdminReferenceOptional(() => listLogins({ sortBy: null, filterByRoles: null }))
+      : Promise.resolve(null),
+    !isAdmin && hasPalitraAccess && isEditor
+      ? fetchAdminReferenceOptional(() => listOrganismLogins())
       : Promise.resolve(null),
     isAdmin
       ? fetchAdminReferenceOptional(() => listOrganisms({ sortBy: null }))
@@ -451,7 +463,7 @@ export async function fetchPalitraReferenceData(user: User): Promise<{
     isAdmin ? fetchAdminReferenceOptional(() => listAors({ sortBy: null })) : Promise.resolve(null),
   ]);
 
-  return { myScope, logins, organisms, aors };
+  return { myScope, logins, organismLogins, organisms, aors };
 }
 
 export async function fetchPalitraBootstrapData(): Promise<{
@@ -459,6 +471,7 @@ export async function fetchPalitraBootstrapData(): Promise<{
   palitras: Palitra[];
   myScope: MyScope | null;
   logins: ListLoginsRsp | null;
+  organismLogins: string[] | null;
   organisms: Organism[] | null;
   aors: Awaited<ReturnType<typeof listAors>> | null;
 }> {

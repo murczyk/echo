@@ -1651,6 +1651,104 @@ pub async fn add_network_freq(
     Ok(Json(network_detail[0].clone()))
 }
 
+#[post("/api/sigint/network/reactivate-freq")]
+pub async fn reactivate_network_freq(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ReactivateNetworkFreqReq>,
+) -> Result<Json<Network>, AppError> {
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_id = user_id.to_string();
+
+    let req = req.into_inner();
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let network_freq =
+        sigint_network_freq::Entity::find_by_id(req.network_freq_id)
+            .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .one(&txn)
+            .await
+            .context(h!())?
+            .ok_or(AppError::NotFound)?;
+
+    if network_freq.active_to.is_none() {
+        return Err(AppError::BL {
+            msg: format!(
+                "Cannot reactivate frequency row {}: it is already active",
+                req.network_freq_id
+            ),
+        });
+    }
+
+    let freq = network_freq.freq.clone();
+    let existing_active_freq = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+        .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
+        .filter(sigint_network_freq::Column::Id.ne(req.network_freq_id))
+        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?;
+    if existing_active_freq.is_some() {
+        return Err(AppError::BL {
+            msg: format!(
+                "Cannot reactivate frequency {freq}: another active row already exists for this network"
+            ),
+        });
+    }
+
+    let mut network_freq = network_freq.into_active_model();
+    network_freq.active_from = Set(Utc::now().naive_utc());
+    network_freq.active_to = Set(None);
+    network_freq.update(&txn).await.context(h!())?;
+
+    let (network_active_from, network_active_to) =
+        get_network_activity_range(&txn, req.network_id)
+            .await
+            .context(h!())?;
+
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_id.clone()));
+    network_model.active_from = Set(network_active_from);
+    network_model.active_to = Set(network_active_to);
+    let network = network_model.update(&txn).await.context(h!())?;
+
+    let network_detail =
+        bl_network_info_batch(vec![req.network_id], &txn, &user_id)
+            .await
+            .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![freq.clone()],
+        &env.dbx,
+        format!("reactivated network frequency from web UI: {freq}"),
+    )
+    .await
+    .c(h!())?;
+    refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
+        .await
+        .c(h!())?;
+
+    Ok(Json(network_detail[0].clone()))
+}
+
 #[post("/api/sigint/network/unit-stats")]
 pub async fn network_unit_stats(
     user: actix_identity::Identity,
@@ -2402,7 +2500,7 @@ pub async fn network_freqs_list(
     .context(h!())?;
 
     let include_callsigns = req.include_callsigns.unwrap_or(true);
-    let freqs = if env
+    let mut freqs = if env
         .config
         .feature_group_stats_aggregated
         .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
@@ -2438,9 +2536,115 @@ pub async fn network_freqs_list(
         .context(h!())?
     };
 
+    let last_datetime_in_aor = load_network_freq_last_datetime_in_aor(
+        &env.dbx,
+        req.network_id,
+        &groups,
+    )
+    .await
+    .context(h!())?;
+    for freq in &mut freqs {
+        freq.last_datetime_in_aor = last_datetime_in_aor
+            .get(&freq.network_freq_id)
+            .copied()
+            .flatten();
+    }
+
     let res = SingleNetworkFreqsListRsp { freqs };
 
     Ok(Json(res))
+}
+
+#[derive(Debug, FromRow)]
+struct NetworkFreqLastDatetimeInAorRow {
+    network_freq_id: i64,
+    last_datetime_in_aor: Option<PrimitiveDateTime>,
+}
+
+async fn load_network_freq_last_datetime_in_aor(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    groups: &[String],
+) -> Result<HashMap<i64, Option<i64>>, AppError> {
+    if groups.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let aor_ids = sigint_network_aor::Entity::find()
+        .filter(sigint_network_aor::Column::NetworkId.eq(network_id))
+        .select_only()
+        .column(sigint_network_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+    if aor_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query_as::<_, NetworkFreqLastDatetimeInAorRow>(
+        r#"
+        SELECT
+            nf.id AS network_freq_id,
+            max(ii.datetime) AS last_datetime_in_aor
+        FROM sigint_network_freq nf
+        JOIN sigint_inbox_item ii
+            ON ii.freq = nf.freq
+        JOIN signal_message sm
+            ON sm.id = ii.id
+        JOIN datasource_group dg
+            ON dg.id = sm.datasource_group_id
+        WHERE nf.network_id = $1
+          AND nf.deleted = false
+          AND sm.deleted = false
+          AND ii.datetime IS NOT NULL
+          AND dg.group_master_key = ANY($3)
+          AND EXISTS (
+              SELECT 1
+              FROM signal_message_group smg
+              JOIN signal_group_aor sga
+                  ON sga.master_key = smg.group_master_key
+              JOIN area_of_responsibility linked_aor
+                  ON linked_aor.id = sga.aor_id
+              JOIN area_of_responsibility selected_aor
+                  ON selected_aor.id = ANY($2)
+              WHERE smg.signal_message_id = sm.id
+                AND linked_aor.deleted = false
+                AND selected_aor.deleted = false
+                AND (
+                    linked_aor.left_bound BETWEEN selected_aor.left_bound AND selected_aor.right_bound
+                    OR (
+                        linked_aor.left_bound <= selected_aor.left_bound
+                        AND linked_aor.right_bound >= selected_aor.right_bound
+                    )
+                )
+          )
+        GROUP BY nf.id
+        "#,
+    )
+    .bind(network_id)
+    .bind(aor_ids)
+    .bind(groups)
+    .fetch_all(dbx.get_postgres_connection_pool())
+    .await
+    .context(h!())?;
+
+    rows.into_iter()
+        .map(|row| {
+            (
+                row.network_freq_id,
+                row.last_datetime_in_aor
+                    .map(primitive_to_naive_datetime)
+                    .transpose(),
+            )
+        })
+        .map(|(network_freq_id, last_datetime_in_aor)| {
+            Ok((
+                network_freq_id,
+                last_datetime_in_aor?.map(|dt| dt.and_utc().timestamp_millis()),
+            ))
+        })
+        .collect::<Result<HashMap<_, _>, AppError>>()
 }
 
 #[post("/api/sigint/network-freq-callsigns")]

@@ -156,9 +156,35 @@ pub async fn organism_logins(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    let is_admin = match crate::users::has_role(&env.dbx, &login, "Admin").await
+    {
+        Ok(()) => true,
+        Err(AppError::Forbidden(_)) => false,
+        Err(err) => return Err(err),
+    };
+    let has_palitra_access =
+        match crate::users::has_role(&env.dbx, &login, "Rer").await {
+            Ok(()) => true,
+            Err(AppError::Forbidden(_)) => false,
+            Err(err) => return Err(err),
+        };
+    let has_editor_access = match crate::users::has_any_role(
+        &env.dbx,
+        &login,
+        vec!["UnitsEditor", "CallsignsEditor"],
+    )
+    .await
+    {
+        Ok(()) => true,
+        Err(AppError::Forbidden(_)) => false,
+        Err(err) => return Err(err),
+    };
+    if is_admin || !has_palitra_access || !has_editor_access {
+        return Err(AppError::Forbidden(
+            "organism logins are only available to non-admin palette editors"
+                .into(),
+        ));
+    }
 
     let login = login::Entity::find()
         .filter(login::Column::Login.eq(login))

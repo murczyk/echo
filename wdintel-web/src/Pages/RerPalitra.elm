@@ -18,6 +18,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import Platform.Sub as Sub
 import Route exposing (Route)
+import Route.Path
 import Select
 import Shared
 import Shared.Components.Badge as Badge
@@ -159,72 +160,112 @@ isAdmin user =
 
 init : Auth.User -> () -> ( Model, Effect Msg )
 init user _ =
-    let
-        admin =
-            isAdmin user
+    if Core.Auth.hasRole "Rer" user then
+        let
+            admin =
+                isAdmin user
 
-        adminCmds =
-            if admin then
-                [ Api.list_organisms OrganismsResp { sortBy = Nothing }
-                , Api.aor_list AorListResp { sortBy = Nothing }
-                ]
+            adminCmds =
+                if admin then
+                    [ Api.list_organisms OrganismsResp { sortBy = Nothing }
+                    , Api.aor_list AorListResp { sortBy = Nothing }
+                    ]
 
-            else
-                []
-    in
-    ( { palitras = Loading
-      , tableState = Table.initialSort "Назва"
-      , deleting = Nothing
-      , uploadingPoints = Nothing
-      , form = emptyForm
-      , submitInFlight = False
-      , showCreateSidebar = False
-      , editSidebar = Nothing
-      , editForm = Nothing
-      , editSubmitInFlight = False
-      , myScope = Loading
-      , loginsSelect =
-            { state = Select.initState (Select.selectIdentifier "sel-logins")
-            , items = []
-            , selected = []
-            }
-      , organismsSelect =
-            { state = Select.initState (Select.selectIdentifier "sel-organisms")
-            , items = []
-            , selected = []
-            }
-      , aorSelect =
-            { state = Select.initState (Select.selectIdentifier "sel-aor")
-            , items = []
-            , selected = []
-            }
-      , logins = NotAsked
-      , organisms =
-            if admin then
-                Loading
+                else
+                    []
+        in
+        ( { palitras = Loading
+          , tableState = Table.initialSort "Назва"
+          , deleting = Nothing
+          , uploadingPoints = Nothing
+          , form = emptyForm
+          , submitInFlight = False
+          , showCreateSidebar = False
+          , editSidebar = Nothing
+          , editForm = Nothing
+          , editSubmitInFlight = False
+          , myScope = Loading
+          , loginsSelect =
+                { state = Select.initState (Select.selectIdentifier "sel-logins")
+                , items = []
+                , selected = []
+                }
+          , organismsSelect =
+                { state = Select.initState (Select.selectIdentifier "sel-organisms")
+                , items = []
+                , selected = []
+                }
+          , aorSelect =
+                { state = Select.initState (Select.selectIdentifier "sel-aor")
+                , items = []
+                , selected = []
+                }
+          , logins = NotAsked
+          , organisms =
+                if admin then
+                    Loading
 
-            else
-                NotAsked
-      , aorList =
-            if admin then
-                Loading
+                else
+                    NotAsked
+          , aorList =
+                if admin then
+                    Loading
 
-            else
-                NotAsked
-      , kmzAnalysis = NotAsked
-      , uploadedKmzFile = Nothing
-      , selectedColorFromKmz = Nothing
-      , kmzColorOptions = []
-      , kmzCreateBatch = Nothing
-      }
-    , E.sendCmd <|
-        Cmd.batch
-            ([ Api.palitra_list PalitraListResp
-             , Api.my_scope MyScopeResp
-             ]
-                ++ adminCmds
-            )
-    )
+                else
+                    NotAsked
+          , kmzAnalysis = NotAsked
+          , uploadedKmzFile = Nothing
+          , selectedColorFromKmz = Nothing
+          , kmzColorOptions = []
+          , kmzCreateBatch = Nothing
+          }
+        , E.sendCmd <|
+            Cmd.batch
+                ([ Api.palitra_list PalitraListResp
+                 , Api.my_scope MyScopeResp
+                 ]
+                    ++ adminCmds
+                )
+        )
+
+    else
+        ( { palitras = NotAsked
+          , tableState = Table.initialSort "Назва"
+          , deleting = Nothing
+          , uploadingPoints = Nothing
+          , form = emptyForm
+          , submitInFlight = False
+          , showCreateSidebar = False
+          , editSidebar = Nothing
+          , editForm = Nothing
+          , editSubmitInFlight = False
+          , myScope = NotAsked
+          , loginsSelect =
+                { state = Select.initState (Select.selectIdentifier "sel-logins")
+                , items = []
+                , selected = []
+                }
+          , organismsSelect =
+                { state = Select.initState (Select.selectIdentifier "sel-organisms")
+                , items = []
+                , selected = []
+                }
+          , aorSelect =
+                { state = Select.initState (Select.selectIdentifier "sel-aor")
+                , items = []
+                , selected = []
+                }
+          , logins = NotAsked
+          , organisms = NotAsked
+          , aorList = NotAsked
+          , kmzAnalysis = NotAsked
+          , uploadedKmzFile = Nothing
+          , selectedColorFromKmz = Nothing
+          , kmzColorOptions = []
+          , kmzCreateBatch = Nothing
+          }
+        , E.replaceRoutePath Route.Path.Home_
+        )
 
 
 emptyForm : Form

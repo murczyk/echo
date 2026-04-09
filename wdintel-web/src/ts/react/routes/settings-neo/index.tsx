@@ -1,51 +1,33 @@
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  Card,
-  CircularProgress,
-  FormControlLabel,
-  Stack,
-  Switch,
-  Tab,
-  Tabs,
-  TextField,
-  Typography,
-} from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
-import type { FormEvent, SyntheticEvent } from "react";
+import { Alert, Autocomplete, Box, Card, CircularProgress, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent, SyntheticEvent } from 'react';
 
-import { SettingsSaveReq, SigintZone } from "../../../../Bindings";
-import { PageHeader } from "../../components/PageHeader";
-import { Button } from "../../components/mui-customized/button";
-import { isUnauthorizedError } from "../../services/api/client";
-import { fetchServerInfo } from "../../services/api/server-info";
-import { fetchCurrentUser, saveUserSettings } from "../../services/api/user";
-import { listSigintZones } from "../../services/api/zones";
-import {
-  getBrowserNotificationPermission,
-  getStoredDutyNotificationSettings,
-  requestBrowserNotificationPermission,
-  resumeDutyNotificationAudioFromUserGesture,
-  setStoredDutyNotificationSettings,
-  type DutyNotificationSettings,
-} from "../rer-duty-neo/notifications";
+import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
+import { PageHeader } from '../../components/PageHeader';
+import { Button } from '../../components/mui-customized/button';
+import { isUnauthorizedError } from '../../services/api/client';
+import { fetchServerInfo } from '../../services/api/server-info';
+import { fetchCurrentUser, saveUserSettings as saveAccountSettings } from '../../services/api/user';
+import { fetchUserSettings, saveUserSettings as saveUserDutySettings } from '../../services/api/user-settings';
+import { listSigintZones } from '../../services/api/zones';
+import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
+import { SettingsDutySection } from './SettingsDutySection';
 
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
 
-export type SettingsSection = "general" | "duty" | "analysis";
+export type SettingsSection = 'general' | 'duty' | 'analysis';
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
 };
 
-const SETTINGS_SECTION_QUERY_PARAM = "section";
+const SETTINGS_SECTION_QUERY_PARAM = 'section';
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
-  if (typeof error === "string" && error.trim().length > 0) return error;
-  return "Невідома помилка. Спробуйте ще раз.";
+  if (typeof error === 'string' && error.trim().length > 0) return error;
+  return 'Невідома помилка. Спробуйте ще раз.';
 }
 
 function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
@@ -53,8 +35,8 @@ function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
 }
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === "duty" || section === "analysis") return section;
-  return "general";
+  if (section === 'duty' || section === 'analysis') return section;
+  return 'general';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -64,7 +46,7 @@ function readSettingsSectionFromUrl(): SettingsSection {
 function buildSettingsSectionUrl(section: SettingsSection): string {
   const url = new URL(window.location.href);
   url.searchParams.set(SETTINGS_SECTION_QUERY_PARAM, section);
-  url.hash = "";
+  url.hash = '';
   return url.pathname + url.search + url.hash;
 }
 
@@ -72,29 +54,27 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [zones, setZones] = useState<ZonePair[]>([]);
   const [zoneId, setZoneId] = useState<number | null>(null);
   const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
-  const [versionText, setVersionText] = useState<string>("невідома версія");
+  const [versionText, setVersionText] = useState<string>('невідома версія');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadInProgress, setLoadInProgress] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => parseSettingsSection(section ?? readSettingsSectionFromUrl()));
-  const [dutyNotificationSettings, setDutyNotificationSettings] = useState<DutyNotificationSettings>(
-    getStoredDutyNotificationSettings,
-  );
-  const [browserPermission, setBrowserPermission] = useState<NotificationPermission | "unsupported">(() =>
-    getBrowserNotificationPermission(),
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
+    parseSettingsSection(section ?? readSettingsSectionFromUrl()),
   );
 
-  const zoneOptions = useMemo<ZoneOption[]>(
-    () => zones.map(([id, zone]) => ({ id, label: zone.name })),
-    [zones],
-  );
+  const zoneOptions = useMemo<ZoneOption[]>(() => zones.map(([id, zone]) => ({ id, label: zone.name })), [zones]);
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
+  const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
+  const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
+  const [initialDutyDisableAutoScroll, setInitialDutyDisableAutoScroll] = useState(false);
+  const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
+  const [dutySaveError, setDutySaveError] = useState<string | null>(null);
+  const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
+  const [dutySaveInProgress, setDutySaveInProgress] = useState(false);
 
-  const selectedZone = useMemo(
-    () => zoneOptions.find((option) => option.id === zoneId) ?? null,
-    [zoneOptions, zoneId],
-  );
+  const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
 
   useEffect(() => {
     if (section == null) return;
@@ -106,16 +86,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       setSettingsSection(readSettingsSectionFromUrl());
     };
 
-    window.addEventListener("popstate", handlePopState);
+    window.addEventListener('popstate', handlePopState);
 
     return () => {
-      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener('popstate', handlePopState);
     };
   }, []);
-
-  useEffect(() => {
-    setStoredDutyNotificationSettings(dutyNotificationSettings);
-  }, [dutyNotificationSettings]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -125,28 +101,43 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       setLoadError(null);
 
       try {
-        const [zonesData, user] = await Promise.all([
+        const [zonesData, user, prefsRsp] = await Promise.all([
           listSigintZones(abortController.signal),
           fetchCurrentUser(abortController.signal),
+          fetchUserSettings(abortController.signal).catch(() => null),
         ]);
 
         setZones(zonesData);
         setZoneId(user.sigintZoneId);
         setInitialZoneId(user.sigintZoneId);
+
+        setDutyPrefsLoadError(null);
+        if (prefsRsp == null) {
+          setDutyPrefsLoadError('Не вдалося завантажити налаштування.');
+          setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+          setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+          setDutyDisableAutoScroll(false);
+          setInitialDutyDisableAutoScroll(false);
+        } else {
+          setTagsLayout(prefsRsp.tagsLayout);
+          setInitialTagsLayout(prefsRsp.tagsLayout);
+          setDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
+          setInitialDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
+        }
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
           if (!abortController.signal.aborted) {
-            setVersionText(serverInfo.version || "невідома версія");
+            setVersionText(serverInfo.version || 'невідома версія');
           }
         } catch (_) {
           if (!abortController.signal.aborted) {
-            setVersionText("невідома версія");
+            setVersionText('невідома версія');
           }
         }
       } catch (error) {
         if (abortController.signal.aborted) return;
         if (isUnauthorizedError(error)) {
-          window.location.assign("/login");
+          window.location.assign('/login');
           return;
         }
         setLoadError(`Помилка завантаження налаштувань: ${formatErrorMessage(error)}`);
@@ -164,6 +155,32 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
+  const isDutyDirty = tagsLayout !== initialTagsLayout || dutyDisableAutoScroll !== initialDutyDisableAutoScroll;
+
+  async function handleDutySave(event?: FormEvent) {
+    event?.preventDefault();
+    if (dutySaveInProgress) return;
+    if (!isDutyDirty) return;
+
+    setDutySaveError(null);
+    setDutySaveSuccess(null);
+    setDutySaveInProgress(true);
+
+    try {
+      await saveUserDutySettings({ tagsLayout, disableAutoScroll: dutyDisableAutoScroll });
+      setInitialTagsLayout(tagsLayout);
+      setInitialDutyDisableAutoScroll(dutyDisableAutoScroll);
+      setDutySaveSuccess('Збережено');
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        window.location.assign('/login');
+        return;
+      }
+      setDutySaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
+    } finally {
+      setDutySaveInProgress(false);
+    }
+  }
 
   async function handleSave(event?: FormEvent) {
     event?.preventDefault();
@@ -175,12 +192,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     setSaveInProgress(true);
 
     try {
-      await saveUserSettings(toSettingsSaveReq(zoneId));
+      await saveAccountSettings(toSettingsSaveReq(zoneId));
       setInitialZoneId(zoneId);
-      setSaveSuccess("Налаштування збережено");
+      setSaveSuccess('Налаштування збережено');
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        window.location.assign("/login");
+        window.location.assign('/login');
         return;
       }
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
@@ -193,16 +210,18 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     if (value === settingsSection) return;
 
     setSettingsSection(value);
-    window.history.pushState(window.history.state, "", buildSettingsSectionUrl(value));
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.history.pushState(window.history.state, '', buildSettingsSectionUrl(value));
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
   return (
-    <Box className="w-full" sx={{ maxWidth: 980, mx: "auto" }}>
+    <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
       <Stack spacing={2} useFlexGap>
-        <PageHeader title="Налаштування" />
-
-        <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: "none", overflow: "hidden", backgroundColor: "background.paper" }}>
+        <PageHeader title="Налаштування" titleInfo="Зберігається для вашого облікового запису" />
+        <Card
+          variant="outlined"
+          sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden', backgroundColor: 'background.paper' }}
+        >
           <Tabs
             value={settingsSection}
             onChange={handleTabChange}
@@ -211,19 +230,37 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             sx={{
               minHeight: 48,
               borderBottom: 1,
-              borderColor: "divider",
+              borderColor: 'divider',
               flexShrink: 0,
             }}
           >
-            <Tab value="general" label="ЗАГАЛЬНІ" id="settings-neo-tab-general" aria-controls="settings-neo-panel-general" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
-            <Tab value="duty" label="ОПЕРАТИВНИЙ" id="settings-neo-tab-duty" aria-controls="settings-neo-panel-duty" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
-            <Tab value="analysis" label="АНАЛІЗ" id="settings-neo-tab-analysis" aria-controls="settings-neo-panel-analysis" sx={{ alignItems: "flex-start", textAlign: "left", minHeight: 48 }} />
+            <Tab
+              value="general"
+              label="ЗАГАЛЬНІ"
+              id="settings-neo-tab-general"
+              aria-controls="settings-neo-panel-general"
+              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
+            />
+            <Tab
+              value="duty"
+              label="ОПЕРАТИВНИЙ"
+              id="settings-neo-tab-duty"
+              aria-controls="settings-neo-panel-duty"
+              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
+            />
+            <Tab
+              value="analysis"
+              label="АНАЛІЗ"
+              id="settings-neo-tab-analysis"
+              aria-controls="settings-neo-panel-analysis"
+              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
+            />
           </Tabs>
 
-          {settingsSection === "general" ? (
+          {settingsSection === 'general' ? (
             <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
               <Box component="form" onSubmit={handleSave} noValidate sx={{ p: 3 }}>
-                <Stack spacing={3} sx={{ width: "100%" }}>
+                <Stack spacing={3} sx={{ width: '100%' }}>
                   {loadError ? <Alert severity="error">{loadError}</Alert> : null}
                   {saveError ? <Alert severity="error">{saveError}</Alert> : null}
                   {saveSuccess ? (
@@ -247,14 +284,22 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       noOptionsText="Немає варіантів"
                       loading={loadInProgress}
                       loadingText="Завантаження..."
+                      renderOption={(props, option) => {
+                        const { key: _unusedKey, ...optionProps } = props;
+                        return (
+                          <Box component="li" {...optionProps} key={option.id}>
+                            {option.label}
+                          </Box>
+                        );
+                      }}
                       sx={{
-                        width: { xs: "100%", sm: "420px" },
-                        maxWidth: "100%",
-                        "& .MuiOutlinedInput-root": {
-                          backgroundColor: "var(--bs-body-bg)",
+                        width: { xs: '100%', sm: '420px' },
+                        maxWidth: '100%',
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'var(--bs-body-bg)',
                         },
-                        "& .MuiAutocomplete-clearIndicator": {
-                          visibility: "visible",
+                        '& .MuiAutocomplete-clearIndicator': {
+                          visibility: 'visible',
                           opacity: 1,
                         },
                       }}
@@ -271,7 +316,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     />
                   </Box>
 
-                  <Box sx={{ display: "flex", alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between", gap: 2, flexWrap: "wrap", pt: 2 }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: { xs: 'flex-start', sm: 'center' },
+                      justifyContent: 'space-between',
+                      gap: 2,
+                      flexWrap: 'wrap',
+                      pt: 2,
+                    }}
+                  >
                     <Typography variant="caption" color="text.secondary">
                       Версія: {versionText}
                     </Typography>
@@ -290,67 +344,42 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             </Box>
           ) : null}
 
-          {settingsSection === "duty" ? (
-            <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
-              <Stack spacing={2} sx={{ maxWidth: 560 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  Нотифікації про нові повідомлення
-                </Typography>
-                <FormControlLabel
-                    control={
-                      <Switch
-                          checked={dutyNotificationSettings.soundEnabled}
-                          onChange={(_, checked) => {
-                            if (checked) {
-                              resumeDutyNotificationAudioFromUserGesture();
-                            }
-                            setDutyNotificationSettings((prev) => ({ ...prev, soundEnabled: checked }));
-                          }}
-                      />
-                    }
-                    label="Звукова нотифікація"
-                />
-                <FormControlLabel
-                    control={
-                      <Switch
-                          checked={dutyNotificationSettings.browserEnabled}
-                          onChange={async (_, checked) => {
-                            if (checked) {
-                              const permission = await requestBrowserNotificationPermission();
-                              setBrowserPermission(permission);
-                              if (permission !== "granted") {
-                                setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: false }));
-                                return;
-                              }
-                            }
-                            setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: checked }));
-                          }}
-                      />
-                    }
-                    label="Браузерна нотифікація"
-                />
-                {browserPermission === "denied" ? (
-                    <Typography variant="caption" color="error">
-                      Браузерні нотифікації вимкнені у налаштуваннях браузера.
-                    </Typography>
-                ) : null}
-                {browserPermission === "unsupported" ? (
-                    <Typography variant="caption" color="text.secondary">
-                      Ваш браузер не підтримує browser-нотифікації.
-                    </Typography>
-                ) : null}
-              </Stack>
-            </Box>
+          {settingsSection === 'duty' ? (
+            <SettingsDutySection
+              loadInProgress={loadInProgress}
+              prefsLoadError={dutyPrefsLoadError}
+              saveError={dutySaveError}
+              saveSuccess={dutySaveSuccess}
+              tagsLayout={tagsLayout}
+              onTagsLayoutChange={(layout) => {
+                setDutySaveSuccess(null);
+                setDutySaveError(null);
+                setTagsLayout(layout);
+              }}
+              disableAutoScroll={dutyDisableAutoScroll}
+              onDisableAutoScrollChange={(value) => {
+                setDutySaveSuccess(null);
+                setDutySaveError(null);
+                setDutyDisableAutoScroll(value);
+              }}
+              onSave={handleDutySave}
+              isDirty={isDutyDirty}
+              saveInProgress={dutySaveInProgress}
+            />
           ) : null}
 
-          {settingsSection === "analysis" ? (
-            <Box id="settings-neo-panel-analysis" role="tabpanel" aria-labelledby="settings-neo-tab-analysis" sx={{ p: 3 }}>
+          {settingsSection === 'analysis' ? (
+            <Box
+              id="settings-neo-panel-analysis"
+              role="tabpanel"
+              aria-labelledby="settings-neo-tab-analysis"
+              sx={{ p: 3 }}
+            >
               <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
                 Налаштування аналізу з’являться тут
               </Typography>
             </Box>
           ) : null}
-
         </Card>
       </Stack>
     </Box>

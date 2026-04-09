@@ -28,23 +28,13 @@ export function createMasterUnitText(network: Network, unitsMap: Record<number, 
 }
 
 export const PAGE_ID = 'rer-duty-neo';
-/** LocalStorage key for message card layout preference (dividers | fluid). */
-export const MESSAGE_CARD_LAYOUT_STORAGE_KEY = 'rer-duty-neo-message-card-layout';
 /** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
 export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
 
-export type MessageCardLayoutVariant = 'dividers' | 'fluid';
+export type TagsLayoutVariant = 'full' | 'compact' | 'hidden';
 
-export function getStoredMessageCardLayout(): MessageCardLayoutVariant {
-  if (typeof window === 'undefined') return 'dividers';
-  const raw = window.localStorage.getItem(MESSAGE_CARD_LAYOUT_STORAGE_KEY);
-  return raw === 'fluid' ? 'fluid' : 'dividers';
-}
-
-export function setStoredMessageCardLayout(v: MessageCardLayoutVariant): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(MESSAGE_CARD_LAYOUT_STORAGE_KEY, v);
-}
+/** When `rerDutyNeo` prefs omit a value or loading fails (settings + operative feed). */
+export const DEFAULT_DUTY_TAGS_LAYOUT: TagsLayoutVariant = 'compact';
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
@@ -255,7 +245,7 @@ export function buildSenderOptions(
       id: uuid,
       label: profileLabel(uuid, profiles[uuid] ?? null),
     }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
 }
 
 export function formatTime(time: string | null): string {

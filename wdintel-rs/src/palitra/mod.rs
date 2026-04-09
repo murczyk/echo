@@ -2,6 +2,7 @@ use crate::config::{ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::organism::goi::shared::goi_integration_web_host;
 use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::palitra::bl::{
     palitra_search_cache_key, palitra_suggest_cache_key, read_cached_json,
@@ -14,14 +15,18 @@ use crate::utils::string::normalize_trimmed_or_default;
 use actix_multipart::{Field, Multipart};
 use actix_web::post;
 use actix_web::web::{Data, Json};
+use actix_web::HttpResponse;
 use anyhow::{bail, Context};
 use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashSet};
+use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
 use tempfile::tempdir;
+use tokio_util::io::ReaderStream;
+use zip::write::FileOptions;
 
 pub(crate) mod bl;
 mod kmz;
@@ -706,6 +711,334 @@ pub async fn create_palitra(
     Ok(Json(palitra))
 }
 
+#[post("/api/palitra/archive/{palitra_id}")]
+pub async fn archive_palitra(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = bl::update_accessible_palitra_archive_flag(
+        login, palitra_id, true, &env.dbx, &txn,
+    )
+    .await
+    .c(h!())?
+    .ok_or_else(|| {
+        AppError::Forbidden(format!(
+            "Palitra {palitra_id} is not accessible for archiving"
+        ))
+    })?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/unarchive/{palitra_id}")]
+pub async fn unarchive_palitra(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = bl::update_accessible_palitra_archive_flag(
+        login, palitra_id, false, &env.dbx, &txn,
+    )
+    .await
+    .c(h!())?
+    .ok_or_else(|| {
+        AppError::Forbidden(format!(
+            "Palitra {palitra_id} is not accessible for unarchiving"
+        ))
+    })?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/folder/assign")]
+pub async fn assign_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderAssignReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let req = req.into_inner();
+    let palitra_ids = bl::assign_folder_to_accessible_palitras(
+        login,
+        req.palitra_ids,
+        req.folder,
+        &env.dbx,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(PalitraBulkActionRsp { palitra_ids }))
+}
+
+#[post("/api/palitra/folder/rename")]
+pub async fn rename_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderRenameReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let req = req.into_inner();
+    let palitra_ids = bl::rename_accessible_palitra_folder(
+        login,
+        req.from_folder,
+        req.to_folder,
+        &env.dbx,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(PalitraBulkActionRsp { palitra_ids }))
+}
+
+#[post("/api/palitra/folder/archive")]
+pub async fn archive_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra_ids = bl::archive_accessible_palitra_folder(
+        login,
+        req.into_inner().folder,
+        true,
+        &env.dbx,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(PalitraBulkActionRsp { palitra_ids }))
+}
+
+#[post("/api/palitra/folder/delete")]
+pub async fn delete_palitra_folder(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraFolderReq>,
+) -> Result<Json<PalitraBulkActionRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
+        login.clone(),
+        req.into_inner().folder,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    let mut deleted_palitra_ids = Vec::new();
+    for palitra_id in &palitra_ids {
+        if delete_palitra_from_folder_if_allowed(*palitra_id, &login, &env)
+            .await
+            .c(h!())?
+        {
+            deleted_palitra_ids.push(*palitra_id);
+        }
+    }
+    for palitra_id in &deleted_palitra_ids {
+        env.palitra_worker_context.flush_cache(*palitra_id).await;
+    }
+    Ok(Json(PalitraBulkActionRsp {
+        palitra_ids: deleted_palitra_ids,
+    }))
+}
+
+async fn delete_palitra_from_folder_if_allowed(
+    palitra_id: i64,
+    login: &str,
+    env: &Data<Env>,
+) -> Result<bool, AppError> {
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Ok(false);
+    }
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    bl::delete_palitra(palitra_id, &txn, existing_access, env)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(true)
+}
+
+#[post("/api/palitra/download")]
+pub async fn download_palitras(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraDownloadReq>,
+) -> Result<HttpResponse, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra_ids = req
+        .into_inner()
+        .palitra_ids
+        .into_iter()
+        .unique()
+        .collect_vec();
+    if palitra_ids.len() > crate::config::PALITRA_DOWNLOAD_MAX_FILES {
+        return Err(AppError::BL {
+            msg: format!(
+                "Too many palitras requested: {}, max is {}",
+                palitra_ids.len(),
+                crate::config::PALITRA_DOWNLOAD_MAX_FILES
+            ),
+        });
+    }
+    let palitras =
+        bl::collect_downloadable_palitra_files(login, palitra_ids, &env.dbx)
+            .await
+            .c(h!())?;
+
+    let strongbox_key = env
+        .config
+        .s3_config
+        .as_ref()
+        .map(|config| config.strongbox_key.clone())
+        .unwrap_or_default();
+    let zip_file = tempfile::tempfile().c(h!())?;
+    let mut zip = zip::ZipWriter::new(BufWriter::new(zip_file));
+    let options: FileOptions<zip::write::ExtendedFileOptions> =
+        FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+    let mut used_file_names = HashSet::new();
+    let mut total_encrypted_bytes = 0u64;
+    let mut total_bytes = 0u64;
+
+    for (palitra, geometry) in palitras {
+        let Some(s3_id) = palitra.s3_id.as_deref() else {
+            continue;
+        };
+        let Some(encrypted_file_bytes) =
+            crate::storage::stat_s3_object_size_with_operator(
+                &env.s3,
+                &env.s3_config,
+                s3_id,
+            )
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        if encrypted_file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+        {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
+                    palitra.id,
+                    encrypted_file_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+                ),
+            });
+        }
+        total_encrypted_bytes =
+            total_encrypted_bytes.saturating_add(encrypted_file_bytes);
+        if total_encrypted_bytes
+            > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+        {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Requested palitra download is too large: bytes={}, max={}",
+                    total_encrypted_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+                ),
+            });
+        }
+        let bytes = crate::storage::download_and_decrypt_from_s3_with_operator(
+            &env.s3,
+            &env.s3_config,
+            &strongbox_key,
+            s3_id,
+        )
+        .await
+        .c(h!())?;
+        if bytes.is_empty() {
+            continue;
+        }
+        let file_bytes = bytes.len() as u64;
+        if file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
+                    palitra.id,
+                    file_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+                ),
+            });
+        }
+        total_bytes = total_bytes.saturating_add(file_bytes);
+        if total_bytes > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Requested palitra download is too large: bytes={}, max={}",
+                    total_bytes,
+                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+                ),
+            });
+        }
+        let file_name = ensure_unique_zip_entry_name(
+            &mut used_file_names,
+            bl::build_palitra_download_file_name(&palitra, geometry.as_ref()),
+        );
+        zip.start_file(file_name, options.clone()).c(h!())?;
+        zip.write_all(&bytes).c(h!())?;
+    }
+
+    let mut zip_file = zip.finish().c(h!())?.into_inner().c(h!())?;
+    let zip_size = zip_file.metadata().c(h!())?.len();
+    zip_file.rewind().c(h!())?;
+    let stream = ReaderStream::new(tokio::fs::File::from_std(zip_file));
+    let archive_name =
+        format!("palitras_{}.zip", Utc::now().format("%Y%m%dT%H%M%SZ"));
+    Ok(HttpResponse::Ok()
+        .content_type("application/zip")
+        .insert_header((
+            "Content-Disposition",
+            format!("attachment; filename=\"{archive_name}\""),
+        ))
+        .insert_header(("Content-Length", zip_size.to_string()))
+        .streaming(stream))
+}
+
 #[post("/api/palitra/update/{palitra_id}")]
 pub async fn update_palitra(
     user: actix_identity::Identity,
@@ -1023,6 +1356,8 @@ async fn render_created_palitra_response(
     Ok(Palitra {
         id: palitra.id,
         name: palitra.name,
+        folder: bl::normalize_palitra_folder_from_db(palitra.folder),
+        is_archived: palitra.is_archived,
         color_hex: palitra_geometry.hex,
         author: palitra.author,
         source_file_name: palitra_geometry.source_file_name,
@@ -1078,10 +1413,16 @@ async fn ensure_palitra_permissions(
                 return Ok(());
             }
             if is_editor {
-                // Editor can only manage palitra scoped to own login
-                let all_self = logins.iter().all(|l| l == login);
-                if !all_self {
-                    bail!("Editor may only manage palitra scoped to own login");
+                let permitted_logins =
+                    crate::users::get_organism_logins_by_login(&env.dbx, login)
+                        .await
+                        .c(h!())?;
+                let all_known =
+                    logins.iter().all(|value| permitted_logins.contains(value));
+                if !all_known {
+                    bail!(
+                        "Editor may only manage palitra scoped to own organism logins"
+                    );
                 }
                 return Ok(());
             }
@@ -1320,24 +1661,26 @@ async fn collect_connected_goi_targets(
         return Ok(vec![]);
     }
 
-    let organisms = organism::Entity::find()
-        .filter(organism::Column::Id.is_in(organism_ids.to_vec()))
-        .filter(organism::Column::DeletedPermanently.eq(false))
+    let integrations = goi_integration::Entity::find()
+        .filter(
+            goi_integration::Column::OwnerOrganismId
+                .is_in(organism_ids.to_vec()),
+        )
         .all(dbx)
         .await
         .c(h!())?;
 
-    let mut goi_targets = Vec::with_capacity(organisms.len());
-    for organism in organisms {
-        let organism_id = organism.id;
-        let ssh_host = organism
-            .goi_ssh_host
+    let mut goi_targets = Vec::with_capacity(integrations.len());
+    for integration in integrations {
+        let integration_id = integration.id;
+        let ssh_host = integration
+            .ssh_host
             .as_ref()
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        let ssh_user = organism
-            .goi_ssh_user
+        let ssh_user = integration
+            .ssh_user
             .as_ref()
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
@@ -1347,15 +1690,15 @@ async fn collect_connected_goi_targets(
         let Some(ssh_user) = ssh_user else { continue };
 
         let path = normalize_trimmed_or_default(
-            organism.goi_path,
+            integration.path.clone(),
             ORGANISM_GOI_PATH_DEFAULT,
         );
         if path.trim().is_empty() {
             continue;
         }
 
-        let ssh_port = if organism.goi_ssh_port > 0 {
-            organism.goi_ssh_port
+        let ssh_port = if integration.ssh_port > 0 {
+            integration.ssh_port
         } else {
             ORGANISM_GOI_SSH_PORT_DEFAULT
         };
@@ -1370,7 +1713,9 @@ async fn collect_connected_goi_targets(
             Ok(()) => goi_targets.push(req),
             Err(err) => {
                 log::warn!(
-                    "Skipping GOI sync target for organism {organism_id}: {err:#}"
+                    "Skipping GOI sync target for integration {} ({}): {err:#}",
+                    integration_id,
+                    goi_integration_web_host(&integration).unwrap_or_default()
                 );
             }
         }
@@ -1411,6 +1756,35 @@ fn compose_goi_palette_remote_path(path: &str, file_name: &str) -> String {
     } else {
         format!("{trimmed_path}/{trimmed_file}")
     }
+}
+
+fn ensure_unique_zip_entry_name(
+    used_file_names: &mut HashSet<String>,
+    file_name: String,
+) -> String {
+    if used_file_names.insert(file_name.clone()) {
+        return file_name;
+    }
+    let path = Path::new(&file_name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("palitra");
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    for index in 1.. {
+        let candidate = if extension.is_empty() {
+            format!("{stem}_{index}")
+        } else {
+            format!("{stem}_{index}.{extension}")
+        };
+        if used_file_names.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!("zip entry deduplication loop must terminate");
 }
 
 fn goi_validate_connection_req(

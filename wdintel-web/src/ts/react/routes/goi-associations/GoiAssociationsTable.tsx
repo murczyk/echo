@@ -32,6 +32,7 @@ const defaultMRTOptions = getDefaultMRTOptions<GoiAssociationRowView>();
 export const DEFAULT_GOI_ASSOCIATIONS_COLUMN_VISIBILITY = {
   sourceAssociationId: true,
   sourceCreatedAt: true,
+  server: true,
   frequency: true,
   coordinates: true,
   category: true,
@@ -47,6 +48,7 @@ export const DEFAULT_GOI_ASSOCIATIONS_COLUMN_ORDER = buildDefaultColumnOrder({
   dataColumnIds: [
     'sourceAssociationId',
     'sourceCreatedAt',
+    'server',
     'frequency',
     'coordinates',
     'category',
@@ -120,6 +122,17 @@ export function GoiAssociationsTable(props: Props) {
         enableColumnFilter: false,
         size: 170,
         Cell: ({ row }) => row.original.sourceCreatedAtLabel,
+      },
+      {
+        header: 'Сервер',
+        accessorKey: 'serverLabel',
+        id: 'server',
+        enableColumnFilter: true,
+        enableSorting: false,
+        size: 220,
+        Cell: ({ row }) => (
+          <LongTextCell value={row.original.serverLabel} maxWidth={220} />
+        ),
       },
       {
         header: 'Частота',

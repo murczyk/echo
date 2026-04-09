@@ -1,11 +1,12 @@
 import { Box, Button, Paper } from '@mui/material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { setDutyNeoDocumentTitleUnreadCount, startDutyNeoDocumentTitleTracking } from './notifications';
 import { FeedColumn } from './FeedColumn';
-import { feedColumnUnreadDisplayed, getStoredMessageCardLayout, setStoredMessageCardLayout } from './utils';
+import { feedColumnUnreadDisplayed, DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
+import { fetchUserSettings } from '../../services/api/user-settings';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -14,16 +15,31 @@ export type RerDutyNeoPageProps = {
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const authUserName = authUserNameProp ?? null;
-  const [messageCardLayout, setMessageCardLayout] = useState(getStoredMessageCardLayout);
-  const handleMessageCardLayoutChange = useCallback((v: 'dividers' | 'fluid') => {
-    setStoredMessageCardLayout(v);
-    setMessageCardLayout(v);
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
+  useEffect(() => {
+    let cancelled = false;
+    const loadLayout = async () => {
+      try {
+        const prefs = await fetchUserSettings();
+        if (cancelled) return;
+        setTagsLayout(prefs.tagsLayout);
+      } catch {
+        if (cancelled) return;
+        setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+      }
+    };
+    loadLayout();
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const {
     messageFeeds,
     error,
     columnRefsRef,
     nearBottomByFeedIdRef,
+    atBottomByFeedIdRef,
+    dutyDisableAutoScroll,
     createMessageFeed,
     removeMessageFeed,
     loadFeedInitialMessages,
@@ -128,8 +144,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               adjacentFreqsRange={w.adjacentFreqsRange}
               highlightSignalsEnabled={w.highlightSignalsEnabled}
               onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
-              messageCardLayout={messageCardLayout}
-              onMessageCardLayoutChange={handleMessageCardLayoutChange}
+              tagsLayout={tagsLayout}
               savedFilters={savedFilters}
               selectedSavedId={selectedSavedId}
               saveFilterName={saveFilterName}
@@ -190,7 +205,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
               onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
               onReachedBottom={() => {
-                setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
+                if (!dutyDisableAutoScroll) {
+                  setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
+                }
                 if (w.items.length > 0) {
                   handleVisibleMessageIds(w.id)(
                     w.items.map(([id]) => id),
@@ -205,7 +222,13 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   [w.id]: near,
                 };
               }}
-              isWatchMode={watchModeByFeedId[w.id] ?? false}
+              onAtBottomChange={(atBottom) => {
+                atBottomByFeedIdRef.current = {
+                  ...atBottomByFeedIdRef.current,
+                  [w.id]: atBottom,
+                };
+              }}
+              isWatchMode={!dutyDisableAutoScroll && (watchModeByFeedId[w.id] ?? false)}
               loadingNewer={loadingNewerFeedId === w.id}
               arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
               onArrowClick={() => handleArrowClick(w.id)}

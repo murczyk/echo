@@ -49,6 +49,7 @@ pub struct ListFreqsReq {
     pub filter_sender_profile_ids: Option<Vec<String>>,
     /// filter_further_investigation - to filter freqs that does not have any unit assigned to them yet
     pub filter_further_investigation: Option<bool>,
+    pub filter_unknown_network: Option<bool>,
 }
 
 #[derive(

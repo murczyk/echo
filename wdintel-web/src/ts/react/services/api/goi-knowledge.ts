@@ -8,6 +8,12 @@ import { postJson } from './client';
 
 type GoiKnowledgeLike = {
   id?: number | string;
+  integrationId?: number | string;
+  integration_id?: number | string;
+  serverLabel?: string | null;
+  server_label?: string | null;
+  ownerOrganismName?: string | null;
+  owner_organism_name?: string | null;
   sourceKnowledgeId?: number | string;
   source_knowledge_id?: number | string;
   sourceCreatedAtMs?: number | string;
@@ -33,6 +39,7 @@ type ListGoiKnowledgeReqBody = {
   offset: number | null;
   sort_by: ListGoiKnowledgeReq['sortBy'];
   filter_text: string | null;
+  filter_server: string | null;
   filter_name: string | null;
   filter_key: string | null;
   filter_knowledge_type: string | null;
@@ -78,6 +85,12 @@ function normalizeOptionalString(value: string | null | undefined): string | nul
 function normalizeGoiKnowledge(raw: GoiKnowledgeLike | null | undefined): GoiKnowledge {
   return {
     id: normalizeNumber(raw?.id),
+    integrationId: normalizeNumber(raw?.integrationId ?? raw?.integration_id),
+    serverLabel: normalizeOptionalString(raw?.serverLabel ?? raw?.server_label) ?? '',
+    ownerOrganismName:
+      normalizeOptionalString(
+        raw?.ownerOrganismName ?? raw?.owner_organism_name,
+      ) ?? '',
     sourceKnowledgeId: normalizeNumber(
       raw?.sourceKnowledgeId ?? raw?.source_knowledge_id,
     ),
@@ -117,6 +130,7 @@ function toListGoiKnowledgeReqBody(
     offset: req.offset ?? null,
     sort_by: req.sortBy ?? null,
     filter_text: normalizeOptionalText(req.filterText),
+    filter_server: normalizeOptionalText(req.filterServer),
     filter_name: normalizeOptionalText(req.filterName),
     filter_key: normalizeOptionalText(req.filterKey),
     filter_knowledge_type: normalizeOptionalText(req.filterKnowledgeType),
@@ -132,7 +146,7 @@ export async function listCurrentUserGoiKnowledge(
   signal?: AbortSignal,
 ): Promise<ListGoiKnowledgeRsp> {
   const data = await postJson<ListGoiKnowledgeRspLike>(
-    '/api/organism/goi-knowledge',
+    '/api/goi/knowledge',
     toListGoiKnowledgeReqBody(req),
     { signal },
   );

@@ -93,11 +93,12 @@ describe('rer-palitra helpers', () => {
 
     expect(
       applyRestrictedAccess(
-        makeForm({ accessType: 'logins', logins: ['other', 'scout'] }),
+        makeForm({ accessType: 'logins', logins: ['other', 'scout', 'enemy'] }),
         restrictedUser,
         scope,
+        ['other', 'scout'],
       ).logins,
-    ).toEqual(['scout']);
+    ).toEqual(['other', 'scout']);
 
     expect(
       applyRestrictedAccess(
@@ -114,6 +115,19 @@ describe('rer-palitra helpers', () => {
         scope,
       ).aorIds,
     ).toEqual([11]);
+  });
+
+  it('falls back to own login when scoped editor selections contain no allowed logins', () => {
+    const restrictedUser = makeUser({ name: 'scout', roles: ['UnitsEditor'] });
+
+    expect(
+      applyRestrictedAccess(
+        makeForm({ accessType: 'logins', logins: ['enemy'] }),
+        restrictedUser,
+        makeScope(),
+        ['other'],
+      ).logins,
+    ).toEqual(['scout']);
   });
 
   it('defaults restricted AOR access to the current scope when nothing scoped is selected', () => {

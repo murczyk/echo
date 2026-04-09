@@ -1,12 +1,14 @@
 module Pages.RerPalitraNeo exposing (Model, Msg, page)
 
 import Auth
+import Core.Auth
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
 import Html.Attributes exposing (class)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
+import Route.Path
 import Shared
 import View exposing (View)
 
@@ -15,11 +17,17 @@ type alias Model =
     {}
 
 
-init : () -> ( Model, Effect Msg )
-init _ =
-    ( {}
-    , E.none
-    )
+init : Auth.User -> () -> ( Model, Effect Msg )
+init user _ =
+    if Core.Auth.hasRole "Rer" user then
+        ( {}
+        , E.none
+        )
+
+    else
+        ( {}
+        , E.replaceRoutePath Route.Path.Home_
+        )
 
 
 type Msg
@@ -29,7 +37,7 @@ type Msg
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user _ _ =
     Page.new
-        { init = init
+        { init = init user
         , update = update
         , subscriptions = subscriptions
         , view = view

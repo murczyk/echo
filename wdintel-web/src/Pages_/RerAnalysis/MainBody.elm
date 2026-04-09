@@ -740,7 +740,7 @@ view user model shared route =
                             [ class "form-check-label"
                             , for "report-digest-omit-exo-id"
                             ]
-                            [ text "не включати Ехо ID перехоплень" ]
+                            [ text "не включати ЕХО ID перехоплень" ]
                         ]
                     , div [ class "form-check mt-2" ]
                         [ input

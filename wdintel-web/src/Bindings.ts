@@ -1058,6 +1058,8 @@ export type CreatePalitraReq = {
 export type Palitra = {
   id: number;
   name: string;
+  folder: string | null;
+  isArchived: boolean;
   colorHex: string;
   author: string | null;
   sourceFileName: string | null;
@@ -1130,6 +1132,28 @@ export type KmzColorInfo = {
 export type AnalyzeKmzResponse = {
   topColors: Array<KmzColorInfo>;
   filename: string;
+};
+
+export type PalitraFolderAssignReq = {
+  palitraIds: Array<number>;
+  folder: string;
+};
+
+export type PalitraFolderRenameReq = {
+  fromFolder: string;
+  toFolder: string;
+};
+
+export type PalitraFolderReq = {
+  folder: string;
+};
+
+export type PalitraDownloadReq = {
+  palitraIds: Array<number>;
+};
+
+export type PalitraBulkActionRsp = {
+  palitraIds: Array<number>;
 };
 
 export type NoHeadersBody = {
@@ -1225,6 +1249,20 @@ export type User = {
   goiConfiguredForOrganism: boolean;
   goiFullAccessForOrganism: boolean;
   goiHost: string | null;
+  goiIntegrations: Array<GoiUserIntegration>;
+};
+
+export type GoiUserIntegration = {
+  id: number;
+  ownerOrganismId: number;
+  ownerOrganismName: string;
+  integrationType: string;
+  serverLabel: string;
+  goiUrl: string | null;
+  swappUrl: string | null;
+  hasDataAccess: boolean;
+  canRestart: boolean;
+  restartUnavailableReason: string | null;
 };
 
 export type SettingsSaveReq = {
@@ -1393,6 +1431,7 @@ export type ListGoiAssociationsReq = {
   offset: number | null;
   sortBy: ListGoiAssociationsSortBy | null;
   filterText: string | null;
+  filterServer: string | null;
   filterFrequency: string | null;
   filterCoordinates: string | null;
   filterNote: string | null;
@@ -1403,6 +1442,9 @@ export type ListGoiAssociationsReq = {
 
 export type GoiAssociation = {
   id: number;
+  integrationId: number;
+  serverLabel: string;
+  ownerOrganismName: string;
   sourceAssociationId: number;
   sourceCreatedAtMs: number;
   createdAtMs: number;
@@ -1454,6 +1496,7 @@ export type ListGoiKnowledgeReq = {
   offset: number | null;
   sortBy: ListGoiKnowledgeSortBy | null;
   filterText: string | null;
+  filterServer: string | null;
   filterName: string | null;
   filterKey: string | null;
   filterKnowledgeType: string | null;
@@ -1465,6 +1508,9 @@ export type ListGoiKnowledgeReq = {
 
 export type GoiKnowledge = {
   id: number;
+  integrationId: number;
+  serverLabel: string;
+  ownerOrganismName: string;
   sourceKnowledgeId: number;
   sourceCreatedAtMs: number;
   createdAtMs: number;
@@ -2051,6 +2097,7 @@ export type NetworkFreqsRes = {
   messageCount: number;
   callsigns: Array<string> | null;
   lastDatetime: number | null;
+  lastDatetimeInAor: number | null;
   createdAt: number;
   isActive: boolean;
   activeFrom: number;
@@ -2118,6 +2165,7 @@ export type ListFreqsReq = {
   filterGroupMasterKeys: Array<string> | null;
   filterSenderProfileIds: Array<string> | null;
   filterFurtherInvestigation: boolean | null;
+  filterUnknownNetwork: boolean | null;
 };
 
 export type ListFreqsRsp = {
@@ -2321,6 +2369,11 @@ export type NetworkGroupsActivityReq = {
 export type AddNetworkFreqReq = {
   networkId: number;
   freqRec: AddNetworkFreq;
+};
+
+export type ReactivateNetworkFreqReq = {
+  networkId: number;
+  networkFreqId: number;
 };
 
 export type AddNetworkFrequencyDescription = {
@@ -2863,5 +2916,16 @@ export type SigintKeySharePolicy = {
   grantTo: number;
   author: string;
   createdAt: number;
+};
+
+export type DutyTagsLayout =
+  | 'Full'
+  | 'Compact'
+  | 'Hidden'
+;
+
+export type UserDutySettingsDto = {
+  tagsLayout: DutyTagsLayout;
+  disableAutoScroll: boolean;
 };
 

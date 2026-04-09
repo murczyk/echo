@@ -46,6 +46,7 @@ import './ts/react/tags-neo-keyword-edit-element'
 import './ts/react/users-neo-element'
 import './ts/react/goi-associations-element'
 import './ts/react/goi-knowledge-element'
+import './ts/react/goi-integrations-neo-element'
 import './ts/react/goi-settings-element'
 import './ts/react/rer-duty-neo-element'
 import './ts/react/rer-analysis-neo-element'
@@ -63,7 +64,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY = 'rer-callsigns-neo-beta-banner-dismissed';
-const RER_ANALYSIS_NEO_BETA_BANNER_DISMISSED_KEY = 'rer-analysis-neo-beta-banner-dismissed';
+const RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY = 'rer-analysis-neo-alpha-banner-dismissed';
 
 // Theme management functions
 type AppliedTheme = 'light' | 'dark';
@@ -808,20 +809,20 @@ export const onReady = ({ app, env }) => {
 
     if (
         app.ports &&
-        app.ports.rer_analysis_neo_saveBetaBannerDismissed &&
-        app.ports.rer_analysis_neo_loadBetaBannerDismissed &&
-        app.ports.rer_analysis_neo_loadBetaBannerDismissedRes
+        app.ports.rer_analysis_neo_saveAlphaBannerDismissed &&
+        app.ports.rer_analysis_neo_loadAlphaBannerDismissed &&
+        app.ports.rer_analysis_neo_loadAlphaBannerDismissedRes
     ) {
-        app.ports.rer_analysis_neo_saveBetaBannerDismissed.subscribe((isDismissed: boolean) => {
+        app.ports.rer_analysis_neo_saveAlphaBannerDismissed.subscribe((isDismissed: boolean) => {
             sessionStorage.setItem(
-                RER_ANALYSIS_NEO_BETA_BANNER_DISMISSED_KEY,
+                RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY,
                 isDismissed ? '1' : '0'
             );
         });
 
-        app.ports.rer_analysis_neo_loadBetaBannerDismissed.subscribe(() => {
-            const storedValue = sessionStorage.getItem(RER_ANALYSIS_NEO_BETA_BANNER_DISMISSED_KEY);
-            app.ports.rer_analysis_neo_loadBetaBannerDismissedRes.send(storedValue === '1');
+        app.ports.rer_analysis_neo_loadAlphaBannerDismissed.subscribe(() => {
+            const storedValue = sessionStorage.getItem(RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY);
+            app.ports.rer_analysis_neo_loadAlphaBannerDismissedRes.send(storedValue === '1');
         });
     }
 

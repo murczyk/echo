@@ -316,12 +316,18 @@ export class BarChart2 extends LitElement {
 
 	@state()
 	chartHeight = 0;
-	margins = {
-		right: 10,
-		top: 10,
-		bottom: 25,
-		left: 30,
-	}
+
+	@property({ type: Number, attribute: 'margin-right' })
+	marginRight = 10;
+
+	@property({ type: Number, attribute: 'margin-top' })
+	marginTop = 10;
+
+	@property({ type: Number, attribute: 'margin-bottom' })
+	marginBottom = 25;
+
+	@property({ type: Number, attribute: 'margin-left' })
+	marginLeft = 30;
 	xAxisGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
 	yAxisGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
 	tooltip: d3.Selection<HTMLDivElement, unknown, HTMLElement, any>;
@@ -481,13 +487,13 @@ export class BarChart2 extends LitElement {
 				.style('pointer-events', 'none')
 		}
 		const tooltip = this.tooltip;
-		const { xScale, xAxis } = createBandScale(uniqueDates, [this.margins.left, this.chartWidth - this.margins.right], tickFormatFn)
+		const { xScale, xAxis } = createBandScale(uniqueDates, [this.marginLeft, this.chartWidth - this.marginRight], tickFormatFn)
 		const maxStackedValue = d3.max(s, d => d3.max(d, d => d[1]))
 		const yAxisConfig = createYAxisConfig(maxStackedValue)
 
 		const y = d3.scaleLinear()
 			.domain([0, yAxisConfig.domainMax])
-			.rangeRound([this.chartHeight - this.margins.bottom, this.margins.top]);
+			.rangeRound([this.chartHeight - this.marginBottom, this.marginTop]);
 		const groups = svg
 			.selectAll(".data-group")
 			.data(s)
@@ -507,12 +513,12 @@ export class BarChart2 extends LitElement {
 			.join(
 				(enter) => enter.append('rect')
 					.attr("x", d => { return xScale(d.data[0]) ?? 0 })
-					.attr("y", this.chartHeight - this.margins.bottom)
+					.attr("y", this.chartHeight - this.marginBottom)
 					.attr("height", 0)
 					.attr("width", d => barWidth),
 				(update) => update,
 				(exit) => exit.transition()
-					.attr('y', this.chartHeight - this.margins.bottom)
+					.attr('y', this.chartHeight - this.marginBottom)
 					.attr('height', 0)
 					.remove()
 			)
@@ -555,7 +561,7 @@ export class BarChart2 extends LitElement {
 		if (!this.xAxisGroup) {
 			this.xAxisGroup = svg.append("g")
 		}
-		const xAxisGroup = this.xAxisGroup.attr("transform", `translate(0,${this.chartHeight - this.margins.bottom})`)
+		const xAxisGroup = this.xAxisGroup.attr("transform", `translate(0,${this.chartHeight - this.marginBottom})`)
 		if (shouldAnimate) {
 			xAxisGroup.transition().call(xAxis)
 		} else {
@@ -572,7 +578,7 @@ export class BarChart2 extends LitElement {
 		if (yAxisConfig.tickFormat) {
 			yAxis.tickFormat(yAxisConfig.tickFormat)
 		}
-		const yAxisGroup = this.yAxisGroup.attr("transform", `translate(${this.margins.left},0)`)
+		const yAxisGroup = this.yAxisGroup.attr("transform", `translate(${this.marginLeft},0)`)
 		if (shouldAnimate) {
 			yAxisGroup.transition().call(yAxis)
 		} else {

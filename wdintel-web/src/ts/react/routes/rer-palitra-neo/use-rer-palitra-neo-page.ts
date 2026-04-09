@@ -131,7 +131,7 @@ export function useRerPalitraNeoPage() {
           if (cancelled) return;
 
           setMyScope(references.myScope);
-          setAllLogins(references.logins?.users.map((entry) => entry.login) ?? []);
+          setAllLogins(references.logins?.users.map((entry) => entry.login) ?? references.organismLogins ?? []);
           setOrganisms(references.organisms ?? []);
           setAors(references.aors ?? []);
           setReferenceDataReady(true);
@@ -225,7 +225,7 @@ export function useRerPalitraNeoPage() {
 
   function openEdit(palitra: Palitra) {
     setEditPalitraId(palitra.id);
-    setEditForm(applyRestrictedAccess(palitraToForm(palitra), user, myScope));
+    setEditForm(applyRestrictedAccess(palitraToForm(palitra), user, myScope, allLogins));
   }
 
   function closeEdit() {
@@ -418,7 +418,7 @@ export function useRerPalitraNeoPage() {
   async function handleCreate(mode: PalitraCreateMode) {
     if (!kmzFile || createInFlight) return;
 
-    const normalizedForm = applyRestrictedAccess(createForm, user, myScope);
+    const normalizedForm = applyRestrictedAccess(createForm, user, myScope, allLogins);
     if (!isFormValid(normalizedForm)) return;
 
     setCreateInFlight(true);
@@ -490,7 +490,7 @@ export function useRerPalitraNeoPage() {
   async function handleEditSave() {
     if (!editForm || editPalitraId === null || editInFlight) return;
 
-    const normalizedForm = applyRestrictedAccess(editForm, user, myScope);
+    const normalizedForm = applyRestrictedAccess(editForm, user, myScope, allLogins);
     if (!isFormValid(normalizedForm)) return;
 
     setEditInFlight(true);

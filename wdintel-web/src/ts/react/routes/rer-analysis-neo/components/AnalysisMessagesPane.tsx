@@ -73,8 +73,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
     <MessageCard
       id={id}
       msg={message}
-      feedId="analysis"
-      layoutVariant="dividers"
+      displayMode="analysis"
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
       groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
@@ -203,7 +202,7 @@ function AnalysisMessagesPaneComponent({
         ) : null}
       </Box>
 
-      {loading && messages.length > 0 ? (
+      {loading ? (
         <SectionLoadingOverlay open ariaLabel="Оновлення повідомлень" sx={{ zIndex: 2 }} />
       ) : null}
 

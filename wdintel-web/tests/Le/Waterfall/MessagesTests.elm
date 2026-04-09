@@ -34,6 +34,7 @@ messageStub =
     , post = Nothing
     , sender = Just "00333c5b-2068-498c-b38a-d4198985a063"
     , signalTokens = Just []
+    , pointTokens = Just []
     , tags = Just []
     , text = "19.09, 11:33:43\n461.3400\nУКХ р/м йм. 1/2 мсб 1199 мсп (КАМ'ЯНКА-ДНІПРОВСЬКА)\nНВ\nКОЛЬЦО 22\n\n— Кольцо, 22, 22, Штиль 1, Штиль 1."
     , textMarked = Just [ B.CnTextC { text = "— Кольцо, 22, 22, Штиль 1, Штиль 1." } ]
@@ -44,6 +45,7 @@ messageStub =
     , networkIds = Nothing
     , inboxTags = Nothing
     , messageUid = Nothing
+    , metadata = []
     }
 
 

@@ -34,6 +34,8 @@ export type FeedStateDeps = {
   testSinceMs: number;
   testLimit: number;
   pollIntervalSec: number;
+  /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
+  disableAutoScroll: boolean;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
@@ -72,6 +74,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const lastServerCountByFeedIdRef = useRef<Record<string, number>>({});
   const lastFilterSignatureByFeedIdRef = useRef<Record<string, string>>({});
+  /** Virtuoso "at bottom" (pixel threshold); used so poll only auto-scrolls when the scroller is actually at the bottom. */
+  const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -266,11 +270,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               );
               if (opts?.scrollToEndAfterLoad === true) {
                 scrollToEndAfterNewerRef.current = feedId;
+                nearBottomByFeedIdRef.current = {
+                  ...nearBottomByFeedIdRef.current,
+                  [feedId]: true,
+                };
               }
-              nearBottomByFeedIdRef.current = {
-                ...nearBottomByFeedIdRef.current,
-                [feedId]: true,
-              };
             }
           }
         }
@@ -376,10 +380,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         newCountBySignature[signatureKey] = Math.max(prevCount, newCount);
       }
       lastServerCountByFeedIdRef.current[feedId] = nextCount;
-      const shouldAutoLoad = watchModeByFeedId[feedId] || nearBottom[feedId];
-      if (shouldAutoLoad) {
+      if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
+        const atBottom = atBottomByFeedIdRef.current[feedId] ?? false;
+        const shouldFollowScroll =
+          !deps.disableAutoScroll &&
+          (watchModeByFeedId[feedId] ?? false) &&
+          atBottom;
         await loadFeedNewerMessages(feedId, {
-          scrollToEndAfterLoad: watchModeByFeedId[feedId],
+          scrollToEndAfterLoad: shouldFollowScroll,
         });
       }
     }
@@ -387,7 +395,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     if (totalNewCount > 0) {
       notifyDutyNewMessages(totalNewCount);
     }
-  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, freqs]);
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, freqs,deps.disableAutoScroll]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
@@ -508,6 +516,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setError,
     columnRefsRef,
     nearBottomByFeedIdRef,
+    atBottomByFeedIdRef,
     loadFeedInitialMessages,
     loadFeedOlderMessages,
     loadFeedNewerMessages,

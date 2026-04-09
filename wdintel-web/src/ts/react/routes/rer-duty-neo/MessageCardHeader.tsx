@@ -13,26 +13,20 @@ import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined
 import PriorityHighOutlinedIcon from '@mui/icons-material/PriorityHighOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import {
-  Box,
-  Button,
-  ButtonGroup,
-  Link,
-  Stack,
-  Tooltip,
-  Typography,
-  type SxProps,
-  type Theme,
-} from '@mui/material';
+import { Box, Button, ButtonGroup, Link, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
 import type { InboxMessage, Network } from '../../../../Bindings';
 import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
 
+/** Where the card is shown: duty columns use a 4-wide action grid when stacked; analysis uses 3. */
+export type MessageCardDisplayMode = 'duty' | 'analysis';
+
 type ActionIconsRowProps = {
   id: number;
   msg: InboxMessage;
   compact?: boolean;
+  displayMode: MessageCardDisplayMode;
   copiedFeedbackId: string | null;
   onBookmark: () => void;
   onImportant: () => void;
@@ -106,13 +100,13 @@ function CenteredInfoRow({
           maxWidth: '100%',
         }}
       >
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          {icon}
-        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>{icon}</Box>
         <Box sx={{ minWidth: 0, maxWidth: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           {text}
         </Box>
-        <Box sx={{ width: 30, minWidth: 30, height: 30, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <Box
+          sx={{ width: 30, minWidth: 30, height: 30, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+        >
           {trailing ?? null}
         </Box>
       </Box>
@@ -120,11 +114,7 @@ function CenteredInfoRow({
   );
 }
 
-function CenteredTextOnlyRow({
-  text,
-}: {
-  text: JSX.Element;
-}) {
+function CenteredTextOnlyRow({ text }: { text: JSX.Element }) {
   return (
     <Box
       sx={{
@@ -143,6 +133,7 @@ function ActionIconsRow({
   id,
   msg,
   compact = false,
+  displayMode,
   copiedFeedbackId,
   onBookmark,
   onImportant,
@@ -157,9 +148,19 @@ function ActionIconsRow({
 
   const buttons = [
     onEditDetails != null ? (
-      <ActionIconButton key="edit-details" title="Редагувати додаткові поля та позивні" icon={<EditIcon fontSize="inherit" />} onClick={onEditDetails} />
+      <ActionIconButton
+        key="edit-details"
+        title="Редагувати додаткові поля та позивні"
+        icon={<EditIcon fontSize="inherit" />}
+        onClick={onEditDetails}
+      />
     ) : null,
-    <ActionIconButton key="comment" title="Редагувати коментар" icon={<ChatBubbleOutlineOutlinedIcon fontSize="inherit" />} onClick={onComment} />,
+    <ActionIconButton
+      key="comment"
+      title="Редагувати коментар"
+      icon={<ChatBubbleOutlineOutlinedIcon fontSize="inherit" />}
+      onClick={onComment}
+    />,
     <ActionIconButton
       key="copy"
       title="Копіювати повідомлення"
@@ -181,9 +182,22 @@ function ActionIconsRow({
       selected={msg.bookmarked}
     />,
     onDelete != null ? (
-      <ActionIconButton key="delete" title="Видалити" icon={<DeleteOutlineOutlinedIcon fontSize="inherit" />} onClick={onDelete} />
+      <ActionIconButton
+        key="delete"
+        title="Видалити"
+        icon={<DeleteOutlineOutlinedIcon fontSize="inherit" />}
+        onClick={onDelete}
+      />
     ) : null,
   ].filter(Boolean);
+
+  const actionGridColumns = displayMode === 'duty' ? 4 : 3;
+  const lastRowButtonCount =
+    buttons.length === 0
+      ? 0
+      : buttons.length % actionGridColumns === 0
+        ? actionGridColumns
+        : buttons.length % actionGridColumns;
 
   useEffect(() => {
     if (compact) {
@@ -215,6 +229,8 @@ function ActionIconsRow({
   }, [compact]);
 
   if (stackedLayout) {
+    const col = actionGridColumns;
+    const lastRow = lastRowButtonCount;
     return (
       <div ref={rootRef} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
         <Box
@@ -223,7 +239,7 @@ function ActionIconsRow({
           sx={[
             {
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 30px)',
+              gridTemplateColumns: `repeat(${col}, 30px)`,
               gridAutoRows: '30px',
               width: 'fit-content',
               marginInline: 'auto',
@@ -241,12 +257,16 @@ function ActionIconsRow({
                 borderRightColor: 'divider',
                 borderBottomColor: 'divider',
               },
-              '& .MuiButton-root:nth-of-type(3n)': {
+              [`& .MuiButton-root:nth-of-type(${col}n)`]: {
                 borderRight: 'none',
               },
-              '& .MuiButton-root:nth-last-of-type(-n+3)': {
-                borderBottom: 'none',
-              },
+              ...(lastRow > 0
+                ? {
+                    [`& .MuiButton-root:nth-last-of-type(-n+${lastRow})`]: {
+                      borderBottom: 'none',
+                    },
+                  }
+                : {}),
               '& .MuiButton-root:hover': {
                 borderColor: 'divider',
                 backgroundColor: 'action.hover',
@@ -298,15 +318,7 @@ function ActionIconsRow({
   );
 }
 
-function MetaLine({
-  icon,
-  title,
-  text,
-}: {
-  icon: JSX.Element;
-  title: string;
-  text: string;
-}) {
+function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; text: string }) {
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }} title={text}>
       <Box sx={{ color: 'var(--color-icons)', lineHeight: 0, flexShrink: 0 }} title={title}>
@@ -330,7 +342,10 @@ function NetworkLocationLine({
 
   return (
     <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, width: '100%' }}>
-      <PeopleOutlineOutlinedIcon sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Еталонна прив'язка" />
+      <PeopleOutlineOutlinedIcon
+        sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }}
+        titleAccess="Еталонна прив'язка"
+      />
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Box
           sx={{
@@ -342,81 +357,48 @@ function NetworkLocationLine({
             verticalAlign: 'top',
           }}
         >
-        <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-          {networkLabel}
-        </Typography>
-        {hasLocationDetails ? (
-          <Tooltip title={location} placement="top">
-            <Box
-              component="button"
-              type="button"
-              aria-label={`Показати локацію: ${location}`}
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 18,
-                height: 18,
-                p: 0,
-                border: 'none',
-                borderRadius: '50%',
-                bgcolor: 'transparent',
-                color: 'var(--color-icons)',
-                cursor: 'help',
-                flexShrink: 0,
-                '&:hover': {
-                  color: 'var(--message-callsign-color)',
-                },
-                '&:focus-visible': {
-                  outline: '2px solid var(--message-callsign-color)',
-                  outlineOffset: '2px',
-                },
-              }}
-            >
-              <InfoOutlinedIcon sx={{ fontSize: 16 }} />
-            </Box>
-          </Tooltip>
-        ) : null}
+          <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
+            {networkLabel}
+          </Typography>
+          {hasLocationDetails ? (
+            <Tooltip title={location} placement="top">
+              <Box
+                component="button"
+                type="button"
+                aria-label={`Показати локацію: ${location}`}
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 18,
+                  height: 18,
+                  p: 0,
+                  border: 'none',
+                  borderRadius: '50%',
+                  bgcolor: 'transparent',
+                  color: 'var(--color-icons)',
+                  cursor: 'help',
+                  flexShrink: 0,
+                  '&:hover': {
+                    color: 'var(--message-callsign-color)',
+                  },
+                  '&:focus-visible': {
+                    outline: '2px solid var(--message-callsign-color)',
+                    outlineOffset: '2px',
+                  },
+                }}
+              >
+                <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+              </Box>
+            </Tooltip>
+          ) : null}
         </Box>
       </Box>
     </Stack>
   );
 }
 
-function AnalysisLinks({
-  msg,
-  mapHref,
-  direction = 'row',
-  align = 'flex-start',
-}: {
-  msg: InboxMessage;
-  mapHref: string;
-  direction?: 'row' | 'column';
-  align?: 'flex-start' | 'flex-end';
-}) {
-  return (
-    <Stack
-      direction={direction}
-      spacing={direction === 'row' ? 1.5 : 0.75}
-      useFlexGap
-      flexWrap={direction === 'row' ? 'wrap' : 'nowrap'}
-      alignItems={align}
-    >
-      <AnalysisActionLink href={buildAnalysisHref(msg, false)} icon={<BarChartOutlinedIcon aria-hidden />} label="Аналіз" />
-      <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />
-    </Stack>
-  );
-}
-
-function AnalysisActionLink({
-  href,
-  icon,
-  label,
-}: {
-  href: string;
-  icon: JSX.Element;
-  label: string;
-}) {
+function AnalysisActionLink({ href, icon, label }: { href: string; icon: JSX.Element; label: string }) {
   return (
     <Link
       href={href}
@@ -466,9 +448,8 @@ function AnalysisActionLink({
 }
 
 export type MessageCardHeaderProps = {
-  layout: 'fluid' | 'dividers';
   compact?: boolean;
-  feedCount: number;
+  displayMode: MessageCardDisplayMode;
   id: number;
   msg: InboxMessage;
   mapHref: string;
@@ -491,9 +472,8 @@ export type MessageCardHeaderProps = {
 };
 
 export function MessageCardHeader({
-  layout,
   compact = false,
-  feedCount,
+  displayMode,
   id,
   msg,
   mapHref,
@@ -532,23 +512,36 @@ export function MessageCardHeader({
     </Stack>
   );
 
-  const freqBlock = msg.freq != null ? (
-    <CenteredInfoRow
-      icon={<SettingsInputAntennaOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} titleAccess="Частота" />}
-      text={
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-            {msg.freq}
-          </Typography>
-        </Box>
-      }
-      trailing={
-        <ActionIconButton title="Копіювати частоту" icon={<ContentCopyOutlinedIcon fontSize="inherit" />} onClick={onCopyFreq} />
-      }
-    />
-  ) : null;
+  const freqBlock =
+    msg.freq != null ? (
+      <CenteredInfoRow
+        icon={
+          <SettingsInputAntennaOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} titleAccess="Частота" />
+        }
+        text={
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+              {msg.freq}
+            </Typography>
+          </Box>
+        }
+        trailing={
+          <ActionIconButton
+            title="Копіювати частоту"
+            icon={<ContentCopyOutlinedIcon fontSize="inherit" />}
+            onClick={onCopyFreq}
+          />
+        }
+      />
+    ) : null;
 
-  const analysisLink = <AnalysisActionLink href={buildAnalysisHref(msg, false)} icon={<BarChartOutlinedIcon aria-hidden />} label="Аналіз" />;
+  const analysisLink = (
+    <AnalysisActionLink
+      href={buildAnalysisHref(msg, false)}
+      icon={<BarChartOutlinedIcon aria-hidden />}
+      label="Аналіз"
+    />
+  );
 
   const mapLink = <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />;
 
@@ -561,34 +554,6 @@ export function MessageCardHeader({
           })
           .join(', ')
       : (etalonNoNetworkLabel ?? '—');
-
-  if (layout === 'fluid') {
-    return (
-      <Stack spacing={1}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5} useFlexGap flexWrap="wrap">
-          {dateTimeBlock}
-          {groupName != null ? <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} /> : null}
-          {senderName != null ? <MetaLine icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />} title="Відправник" text={senderName} /> : null}
-          {freqBlock}
-        </Stack>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} useFlexGap flexWrap="wrap">
-          <AnalysisLinks msg={msg} mapHref={mapHref} />
-          <ActionIconsRow
-            id={id}
-            msg={msg}
-            compact={compact}
-            copiedFeedbackId={copiedFeedbackId}
-            onBookmark={onBookmark}
-            onImportant={onImportant}
-            onComment={onComment}
-            onCopyText={onCopyText}
-            onDelete={onDelete}
-            onEditDetails={onEditDetails}
-          />
-        </Stack>
-      </Stack>
-    );
-  }
 
   if (compact) {
     return (
@@ -610,10 +575,21 @@ export function MessageCardHeader({
         <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
           {dateTimeBlock}
         </Box>
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 1 }}>
+        <Box
+          sx={{
+            minWidth: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gridColumn: 2,
+            gridRow: 1,
+          }}
+        >
           <ActionIconsRow
             id={id}
             msg={msg}
+            compact
+            displayMode={displayMode}
             copiedFeedbackId={copiedFeedbackId}
             onBookmark={onBookmark}
             onImportant={onImportant}
@@ -623,25 +599,94 @@ export function MessageCardHeader({
             onEditDetails={onEditDetails}
           />
         </Box>
-        <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gridColumn: 3, gridRow: 1 }}>
+        <Box
+          sx={{
+            minWidth: 0,
+            pr: `${rightInsetPx}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gridColumn: 3,
+            gridRow: 1,
+          }}
+        >
           {analysisLink}
         </Box>
         <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
           <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
-            {groupName != null ? <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} /> : <Typography variant="caption" color="text.secondary">—</Typography>}
-            {senderName != null ? <MetaLine icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />} title="Відправник" text={senderName} /> : <Typography variant="caption" color="text.secondary">—</Typography>}
+            {groupName != null ? (
+              <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} />
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                —
+              </Typography>
+            )}
+            {senderName != null ? (
+              <MetaLine
+                icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
+                title="Відправник"
+                text={senderName}
+              />
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                —
+              </Typography>
+            )}
           </Stack>
         </Box>
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 2 }}>
-          {freqBlock ?? <Typography variant="caption" color="text.secondary">—</Typography>}
+        <Box
+          sx={{
+            minWidth: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gridColumn: 2,
+            gridRow: 2,
+          }}
+        >
+          {freqBlock ?? (
+            <Typography variant="caption" color="text.secondary">
+              —
+            </Typography>
+          )}
         </Box>
-        <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gridColumn: 3, gridRow: 2 }}>
+        <Box
+          sx={{
+            minWidth: 0,
+            pr: `${rightInsetPx}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gridColumn: 3,
+            gridRow: 2,
+          }}
+        >
           {mapLink}
         </Box>
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', gridColumn: '1 / span 2', gridRow: 3 }}>
+        <Box
+          sx={{
+            minWidth: 0,
+            display: 'flex',
+            alignItems: 'flex-start',
+            alignSelf: 'start',
+            gridColumn: '1 / span 2',
+            gridRow: 3,
+          }}
+        >
           <NetworkLocationLine networkLabel={networkLabel} location={msg.location} />
         </Box>
-        <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'flex-end', gridColumn: 3, gridRow: 3 }}>
+        <Box
+          sx={{
+            minWidth: 0,
+            pr: `${rightInsetPx}px`,
+            display: 'flex',
+            alignItems: 'flex-start',
+            alignSelf: 'start',
+            justifyContent: 'flex-end',
+            gridColumn: 3,
+            gridRow: 3,
+          }}
+        >
           {timeDistance != null ? (
             <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
               {timeDistance}
@@ -665,14 +710,15 @@ export function MessageCardHeader({
         rowGap: 0.75,
       }}
     >
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
-        {dateTimeBlock}
-      </Box>
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 1 }}>
+      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>{dateTimeBlock}</Box>
+      <Box
+        sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 1 }}
+      >
         <ActionIconsRow
           id={id}
           msg={msg}
           compact={compact}
+          displayMode={displayMode}
           copiedFeedbackId={copiedFeedbackId}
           onBookmark={onBookmark}
           onImportant={onImportant}
@@ -682,25 +728,87 @@ export function MessageCardHeader({
           onEditDetails={onEditDetails}
         />
       </Box>
-      <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gridColumn: 3, gridRow: 1 }}>
+      <Box
+        sx={{
+          minWidth: 0,
+          pr: `${rightInsetPx}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gridColumn: 3,
+          gridRow: 1,
+        }}
+      >
         {analysisLink}
       </Box>
       <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
         <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
-          {groupName != null ? <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} /> : <Typography variant="caption" color="text.secondary">—</Typography>}
-          {senderName != null ? <MetaLine icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />} title="Відправник" text={senderName} /> : <Typography variant="caption" color="text.secondary">—</Typography>}
+          {groupName != null ? (
+            <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} />
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              —
+            </Typography>
+          )}
+          {senderName != null ? (
+            <MetaLine icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />} title="Відправник" text={senderName} />
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              —
+            </Typography>
+          )}
         </Stack>
       </Box>
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 2 }}>
-        {freqBlock ?? <CenteredTextOnlyRow text={<Typography variant="caption" color="text.secondary">—</Typography>} />}
+      <Box
+        sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 2 }}
+      >
+        {freqBlock ?? (
+          <CenteredTextOnlyRow
+            text={
+              <Typography variant="caption" color="text.secondary">
+                —
+              </Typography>
+            }
+          />
+        )}
       </Box>
-      <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gridColumn: 3, gridRow: 2 }}>
+      <Box
+        sx={{
+          minWidth: 0,
+          pr: `${rightInsetPx}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gridColumn: 3,
+          gridRow: 2,
+        }}
+      >
         {mapLink}
       </Box>
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', gridColumn: '1 / span 2', gridRow: 3 }}>
+      <Box
+        sx={{
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'flex-start',
+          alignSelf: 'start',
+          gridColumn: '1 / span 2',
+          gridRow: 3,
+        }}
+      >
         <NetworkLocationLine networkLabel={networkLabel} location={msg.location} />
       </Box>
-      <Box sx={{ minWidth: 0, pr: `${rightInsetPx}px`, display: 'flex', alignItems: 'flex-start', alignSelf: 'start', justifyContent: 'flex-end', gridColumn: 3, gridRow: 3 }}>
+      <Box
+        sx={{
+          minWidth: 0,
+          pr: `${rightInsetPx}px`,
+          display: 'flex',
+          alignItems: 'flex-start',
+          alignSelf: 'start',
+          justifyContent: 'flex-end',
+          gridColumn: 3,
+          gridRow: 3,
+        }}
+      >
         {timeDistance != null ? (
           <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
             {timeDistance}

@@ -49,6 +49,8 @@ pub enum Relation {
     Organism,
     #[sea_orm(has_many = "super::palitra::Entity")]
     Palitra,
+    #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
+    GoiIntegrationAccessLogin,
     #[sea_orm(has_many = "super::palitra_access_login::Entity")]
     PalitraAccessLogin,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
@@ -83,6 +85,8 @@ pub enum Relation {
     SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
     TagsOrdering,
+    #[sea_orm(has_one = "super::user_settings::Entity")]
+    UserSettings,
 }
 
 impl Related<super::area_of_responsibility::Entity> for Entity {
@@ -112,6 +116,12 @@ impl Related<super::organism::Entity> for Entity {
 impl Related<super::palitra::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Palitra.def()
+    }
+}
+
+impl Related<super::goi_integration_access_login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiIntegrationAccessLogin.def()
     }
 }
 
@@ -196,6 +206,12 @@ impl Related<super::system_settings::Entity> for Entity {
 impl Related<super::tags_ordering::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::TagsOrdering.def()
+    }
+}
+
+impl Related<super::user_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserSettings.def()
     }
 }
 

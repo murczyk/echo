@@ -31,6 +31,7 @@ type Menu
         { label : String
         , subs : List Menu
         }
+    | MenuSeparator
 
 
 type alias Props msg =
@@ -105,6 +106,9 @@ menuIsActive activeName menu =
         MenuGroup group ->
             List.any (menuIsActive activeName) group.subs
 
+        MenuSeparator ->
+            False
+
 
 isActiveName : String -> String -> Bool
 isActiveName itemActiveName activeName =
@@ -122,9 +126,6 @@ navBar user shared activeName props =
             else
                 "Звичайний режим"
 
-        menu =
-            menuItem props activeName
-
         menuWithSubs =
             menuItemWithSubs props activeName
 
@@ -132,102 +133,130 @@ navBar user shared activeName props =
             menuItemRoute props activeName
 
         operationalSubs =
-            [ internalMenu Route.Path.RerDuty "rer-duty" "класичний"
-            , internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "новий"
-            , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "duty" ) ], hash = Nothing } "settings-neo-duty" "налаштування"
+            [ internalMenu Route.Path.RerDuty "rer-duty" "Класичний"
+            , internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "Новий"
+            , MenuSeparator
+            , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "duty" ) ], hash = Nothing } "settings-neo-duty" "Налаштування"
             ]
 
         analysisSubs =
-            [ internalMenu Route.Path.RerAnalysis "analysis" "класичний"
-            , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "новий"
-            , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "analysis" ) ], hash = Nothing } "settings-neo-analysis" "налаштування"
+            [ internalMenu Route.Path.RerAnalysis "analysis" "Класичний"
+            , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "Новий"
+            , MenuSeparator
+            , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "analysis" ) ], hash = Nothing } "settings-neo-analysis" "Налаштування"
             ]
 
         adminSubs =
-            [ internalMenu Route.Path.Admin_DirectionsNeo "zones" "напрямки"
-            , internalMenu Route.Path.Admin_UsersNeo "users-neo" "користувачі"
-            , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "організми"
-            , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "теги"
-            , internalMenu Route.Path.Admin_AorNeo "aor-neo" "смуги"
-            , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "ключі"
-            , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "месенджери"
-            , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "панель керування"
-            , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "налаштування системи"
-            , internalMenu Route.Path.Admin_Messenger "messenger" "месенджери (стара)"
+            [ internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
+            , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
+            , internalMenu Route.Path.Admin_Messenger "messenger" "Месенджери"
+            , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
+            , internalMenu Route.Path.Admin_DirectionsNeo "zones" "Напрямки"
+            , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "Організми"
+            , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "Панель керування"
+            , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
+            , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "Теги"
+            , MenuSeparator
+            , internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
+            , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
             ]
 
         etalonkaSubs =
-            [ internalMenu Route.Path.RerFreqs "freqs" "частоти"
-            , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "позивні"
-            , internalMenu Route.Path.RerUnits "rer-units" "підрозділи"
-            , internalMenu Route.Path.RerSignals "signals" "сигнали"
-            , internalMenu Route.Path.RerNetworks "networks" "мережі"
-            , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "палітри"
-            , internalMenu Route.Path.RerCallsigns "callsigns" "позивні (стара)"
-            , internalMenu Route.Path.RerPalitra "palitra" "палітри (стара)"
+            [ internalMenu Route.Path.RerNetworks "networks" "Мережі"
+            , internalMenu Route.Path.RerPalitra "palitra" "Палітри"
+            , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
+            , internalMenu Route.Path.RerUnits "rer-units" "Підрозділи"
+            , internalMenu Route.Path.RerCallsigns "callsigns" "Позивні"
+            , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "Позивні"
+            , internalMenu Route.Path.RerSignals "signals" "Сигнали"
+            , internalMenu Route.Path.RerFreqs "freqs" "Частоти"
             ]
 
         goiSubs =
-            (user.goiHost
-                |> Maybe.andThen goiExternalUrl
-                |> Maybe.map
-                    (\url ->
-                        [ externalMenu url "goi-external" "відкрити ГОІ"
-                        ]
-                    )
-                |> Maybe.withDefault []
-            )
-                ++ (if user.goiFullAccessForOrganism then
-                        [ internalMenu Route.Path.GoiSettings "goi-settings" "налаштування"
-                        , internalMenu Route.Path.GoiAssociations "goi-associations" "висновки"
-                        , internalMenu Route.Path.GoiKnowledge "goi-knowledge" "інформованість"
-                        ]
+            let
+                openGoiSubs =
+                    user.goiIntegrations
+                        |> List.concatMap
+                            (\integration ->
+                                integration.goiUrl
+                                    |> Maybe.andThen goiExternalUrl
+                                    |> Maybe.map
+                                        (\url ->
+                                            [ externalMenu
+                                                url
+                                                ("goi-external-" ++ String.fromInt integration.id)
+                                                ("Сервер " ++ integration.ownerOrganismName)
+                                            ]
+                                        )
+                                    |> Maybe.withDefault []
+                            )
 
-                    else
-                        [ internalMenu Route.Path.GoiSettings "goi-settings" "налаштування"
-                        ]
-                   )
+                goiAssociations =
+                    internalMenu Route.Path.GoiAssociations "goi-associations" "Висновки"
+
+                goiKnowledge =
+                    internalMenu Route.Path.GoiKnowledge "goi-knowledge" "Інформованість"
+
+                goiSettings =
+                    internalMenu Route.Path.GoiSettings "goi-settings" "Налаштування"
+            in
+            List.concat
+                [ ifOrEmpty user.goiFullAccessForOrganism [ goiAssociations ]
+                , ifOrEmpty user.goiFullAccessForOrganism [ goiKnowledge ]
+                , openGoiSubs
+                , [ MenuSeparator
+                  , goiSettings
+                  ]
+                ]
 
         importSubs =
-            [ internalMenu Route.Path.RerDeltaImport "rer-delta-import" "імпорт delta"
-            , internalMenu Route.Path.RerCsvImport "rer-csv-import" "імпорт csv"
-            ]
+            List.concat
+                [ ifOrEmpty (hasRole "Basic" user)
+                    [ internalMenu Route.Path.Importer "importer" "Імпортер" ]
+                , ifOrEmpty (hasRole "Rer" user)
+                    [ internalMenu Route.Path.RerCsvImport "rer-csv-import" "Імпорт CSV"
+                    , internalMenu Route.Path.RerDeltaImport "rer-delta-import" "Імпорт Delta"
+                    ]
+                ]
 
-        otherSubs =
-            [ internalMenu Route.Path.Importer "importer" "імпортер"
-                   , internalMenu Route.Path.Delta "kmz2geojson" "kmz в geojson"
-                   , internalMenu Route.Path.AlpinequestKmz "alpinequest-kmz" "alpinequest в kmz"
-                   , internalMenu Route.Path.DeltaCsv2kmz "csv2kmz" "delta csv в kmz"
-                   , internalMenu Route.Path.DeltaFixkmz "fixkmz" "очисник kmz"
-                   , internalMenu Route.Path.CoordsConverter "coords-converter" "конвертер координат"
-                   ]
+        converterSubs =
+            [ internalMenu Route.Path.AlpinequestKmz "alpinequest-kmz" "AlpineQuest в KMZ"
+            , internalMenu Route.Path.DeltaCsv2kmz "csv2kmz" "Delta CSV в KMZ"
+            , internalMenu Route.Path.Delta "kmz2geojson" "KMZ в GeoJSON"
+            , internalMenu Route.Path.CoordsConverter "coords-converter" "Координати"
+            ]
                 ++ (if hasRole "Admin" user then
-                        [ internalMenu Route.Path.RadiosConvert "radios-convert" "радіо kmz конвертер" ]
+                        [ internalMenu Route.Path.RadiosConvert "radios-convert" "Радіо KMZ" ]
 
                     else
                         []
                    )
 
+        otherSubs =
+            [ internalMenu Route.Path.DeltaFixkmz "fixkmz" "Очисник KMZ"
+            ]
+
         menuItems =
-            menu Route.Path.Home_ "home" "головна"
-                :: ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menuWithSubs "operational" "оперативний" operationalSubs ]
-                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menuWithSubs "analysis" "аналіз" analysisSubs ]
-                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menuWithSubs "etalonka" "еталонка" etalonkaSubs ]
-                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
-                    [ menuWithSubs "goi" "гоі" goiSubs ]
-                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menuWithSubs "import" "імпорт" importSubs ]
-                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
-                    [ menuWithSubs "other" "інше" otherSubs ]
-                -- ++ ifOrEmpty (hasRole "Basic" user)
-                --     [ menu Route.Path.Settings "settings" "налаштування (стара)" ]
-                ++ ifOrEmpty (hasRole "Basic" user)
-                    [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "general" ) ], hash = Nothing } "settings-neo" "налаштування" ]
-                ++ ifOrEmpty (hasRole "Admin" user)
-                    [ menuWithSubs "admin" "адмін" adminSubs ]
+            List.concat
+                [ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                    [ menuWithSubs "operational" "Оперативний" operationalSubs ]
+                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                    [ menuWithSubs "analysis" "Аналіз" analysisSubs ]
+                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                    [ menuWithSubs "etalonka" "Еталонка" etalonkaSubs ]
+                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
+                    [ menuWithSubs "goi" "ГОІ" goiSubs ]
+                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
+                    [ menuWithSubs "import" "Імпорт" importSubs ]
+                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
+                    [ menuWithSubs "other" "Конвертери" converterSubs ]
+                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
+                    [ menuWithSubs "other-tools" "Інше" otherSubs ]
+                , ifOrEmpty (hasRole "Basic" user)
+                    [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "general" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
+                , ifOrEmpty (hasRole "Admin" user)
+                    [ menuWithSubs "admin" "Адмін" adminSubs ]
+                ]
 
         navbarStyles =
             [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
@@ -462,6 +491,13 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                             (List.map dropdownItem group.subs)
                         ]
 
+                MenuSeparator ->
+                    li
+                        [ class "mx-2 my-2 border-t border-white/10"
+                        , attribute "role" "separator"
+                        ]
+                        []
+
         menuItemLabel :
             { a
                 | activeName : String
@@ -469,39 +505,15 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
             }
             -> Html msg
         menuItemLabel item =
-            let
-                oldSuffix =
-                    " (стара)"
-
-                hasOldBadge =
-                    String.endsWith oldSuffix item.label
-
-                baseLabel =
-                    if hasOldBadge then
-                        String.dropRight (String.length oldSuffix) item.label
-
-                    else
-                        item.label
-            in
             span [ class "inline-flex items-center gap-2" ]
-                ([ text baseLabel ]
-                    ++ (if hasOldBadge then
-                            [ span
-                                [ class "rounded-full border border-slate-500/40 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-slate-600"
-                                ]
-                                [ text "стара" ]
-                            ]
-
-                        else
-                            []
-                       )
-                    ++ (if item.activeName == "callsigns-neo" || item.activeName == "rer-analysis-neo" then
+                (text item.label
+                    :: (if item.activeName == "callsigns-neo" || item.activeName == "palitra-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]
                             ]
 
-                        else if item.activeName == "rer-duty-neo" then
+                        else if item.activeName == "rer-duty-neo" || item.activeName == "rer-analysis-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Alpha" ]
