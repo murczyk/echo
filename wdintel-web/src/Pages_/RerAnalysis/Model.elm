@@ -227,6 +227,7 @@ type ReportTemplate
     | RTReo
     | RTDigest
     | ActiveNetworks
+    | RTReport1213
 
 
 type FilterName

@@ -21,6 +21,7 @@ pub mod interception;
 pub mod mouse;
 mod naushnom;
 mod posts;
+mod report_1213;
 mod report_xlsx_kind_pelengs;
 mod revo;
 mod senders;
@@ -239,6 +240,17 @@ pub async fn report_docx(
         }
         self::active_networks::report_docx_kind_active_networks(
             &env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == "report_1213" {
+        if let Some(resp) =
+            ensure_editor_report_permissions(&env, &user_login).await?
+        {
+            return Ok(resp);
+        }
+        self::report_1213::report_docx_kind_report_1213(
+            user, &env, &req, &outpath,
         )
         .await
         .c(h!())?;

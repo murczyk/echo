@@ -576,6 +576,11 @@ view user model shared route =
                     (ReportTemplateSelect ActiveNetworks)
                     "Активні радіомережі"
                     "Для генерування потрібні права редактора чи адміна"
+                , templateCard
+                    (model.reportTemplate == RTReport1213)
+                    (ReportTemplateSelect RTReport1213)
+                    "Звіт 1.2.13"
+                    "Стислий звіт по радіомережах з частотою, часом, позивним вузла та координатами"
                 ]
             -- Add adjacent-freqs range selector when RTReo is chosen
             , HtmlX.viewIf (model.reportTemplate == RTReo) <|
@@ -787,7 +792,8 @@ view user model shared route =
             RTPostsDocx,
             RTMouse,
             RTReo,
-            RTDigest
+            RTDigest,
+            RTReport1213
              ]) <|
                 let
                     disableUnitCommentsFilter =
@@ -797,6 +803,9 @@ view user model shared route =
                     unitCommentsLabel =
                         if model.reportTemplate == RTDigest then
                             "лише коментарі мого підрозділу"
+
+                        else if model.reportTemplate == RTReport1213 then
+                            "лише пеленги мого підрозділу"
 
                         else
                             "лише теги/коментарі мого підрозділу"
