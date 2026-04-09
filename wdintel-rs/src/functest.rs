@@ -203,10 +203,6 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
-        login::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
         organism_group::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -216,18 +212,6 @@ pub mod tests {
             .await
             .context(h!())?;
         goi_knowledge::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        organism_aor::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        organism::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_zone::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
@@ -245,6 +229,22 @@ pub mod tests {
             .await
             .context(h!())?;
         datasource::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        login::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_zone::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        organism_aor::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        organism::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;

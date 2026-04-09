@@ -25,9 +25,17 @@ use std::path::Path;
 const REPORT_1213_EMPTY_TEXT: &str =
     "За обраний період даних для звіту 1.2.13 не виявлено";
 const REPORT_1213_UNKNOWN_TEXT: &str = "Не встановлено";
-const REPORT_1213_DOC_NAME: &str = "Форма №1.2.13/ОСУВ";
+const REPORT_1213_DOC_NAME: &str = "Форма №1.2.13/ГУР";
 const REPORT_1213_DOC_HEADER: &str =
-    "Донесення за результатами ведення радіоелектронної розвідки";
+    "Донесення за результатами функціонування тактичної радіопеленгаторної мережі у зоні відповідальності УОС (УВ (с), УСіЗ)";
+
+const REPORT_1213_P1: &str = "1. Склад сил і засобів, які розгорнуті для визначення місцеположення джерел (об’єктів) розвідки:";
+const REPORT_1213_P2: &str = "Для визначення місцезнаходження джерел (об’єктів ) розвідки задіяно ... операторів з моніторингу радіомереж, розгорнуто ....";
+const REPORT_1213_P3: &str = "2. Зміни в стані засобів пеленгування (вихід з ладу, зміна технічних позицій, розгортання нових засобів, втрати та заходи щодо відновлення): Обладнання та засоби пеленгування в наявності та у справному стані.";
+const REPORT_1213_P4: &str = "3. Загальна кількість викритих (підтверджених) районів, кількість отриманих пеленгів (напрямків): 0";
+const REPORT_1213_P5: &str =
+    "4. Результати визначення місцеположення джерел (об’єктів) розвідки.";
+const REPORT_1213_DOC_FOOTER_PARAGRAPH: &str = "Начальник ОВУР";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Report1213Data {
@@ -423,12 +431,12 @@ fn build_report_1213_docx_to_path(
 fn build_report_1213_docx(report_data: &Report1213Data) -> Docx {
     let mut doc = Docx::new()
         .page_orient(PageOrientationType::Portrait)
-        .default_size(20)
+        .default_size(24)
         .page_size(11906, 16838)
         .page_margin(PageMargin::new().left(600).right(300).top(1200));
 
     let form_paragraph = Paragraph::new()
-        .add_run(Run::new().add_text(REPORT_1213_DOC_NAME))
+        .add_run(Run::new().add_text(REPORT_1213_DOC_NAME).size(22))
         .align(AlignmentType::Right);
     let title_paragraph = Paragraph::new()
         .add_run(Run::new().add_text(REPORT_1213_DOC_HEADER).bold())
@@ -453,53 +461,79 @@ fn build_report_1213_docx(report_data: &Report1213Data) -> Docx {
         );
     }
 
-    doc = doc.add_paragraph(Paragraph::new());
+    doc = doc
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(
+            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P1)),
+        )
+        .add_paragraph(
+            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P2)),
+        )
+        .add_paragraph(
+            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P3)),
+        )
+        .add_paragraph(
+            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P4)),
+        )
+        .add_paragraph(
+            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P5)),
+        )
+        .add_paragraph(Paragraph::new());
 
     if report_data.items.is_empty() {
-        return doc.add_paragraph(
+        doc = doc.add_paragraph(
             Paragraph::new()
                 .add_run(Run::new().add_text(REPORT_1213_EMPTY_TEXT)),
         );
-    }
+    } else {
+        for (idx, item) in report_data.items.iter().enumerate() {
+            doc = doc
+                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
+                    format!("Назва радіомережі: {}", item.network_name),
+                )))
+                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
+                    format!(
+                        "Номінал робочої частоти: {}",
+                        item.nominal_working_freq
+                    ),
+                )))
+                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
+                    format!(
+                        "Час функціонування: {}",
+                        render_report_1213_activity_period(item)
+                    ),
+                )))
+                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
+                    format!(
+                        "Позивний вузла зв’язку: {}",
+                        item.node_callsign.clone().unwrap_or_else(|| {
+                            REPORT_1213_UNKNOWN_TEXT.to_string()
+                        })
+                    ),
+                )))
+                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
+                    format!(
+                        "Координати джерел (об’єктів): {}",
+                        item.source_mgrs.clone().unwrap_or_else(|| {
+                            REPORT_1213_UNKNOWN_TEXT.to_string()
+                        })
+                    ),
+                )));
 
-    for (idx, item) in report_data.items.iter().enumerate() {
-        doc =
-            doc.add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                format!("Назва радіомережі: {}", item.network_name),
-            )))
-            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                format!(
-                    "Номінал робочої частоти: {}",
-                    item.nominal_working_freq
-                ),
-            )))
-            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                format!(
-                    "Час функціонування: {}",
-                    render_report_1213_activity_period(item)
-                ),
-            )))
-            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                format!(
-                    "Позивний вузла зв’язку: {}",
-                    item.node_callsign.clone().unwrap_or_else(|| {
-                        REPORT_1213_UNKNOWN_TEXT.to_string()
-                    })
-                ),
-            )))
-            .add_paragraph(Paragraph::new().add_run(
-                Run::new().add_text(format!(
-                    "Координати джерел (об’єктів): {}",
-                    item.source_mgrs.clone().unwrap_or_else(|| {
-                        REPORT_1213_UNKNOWN_TEXT.to_string()
-                    })
-                )),
-            ));
-
-        if idx + 1 != report_data.items.len() {
-            doc = doc.add_paragraph(Paragraph::new());
+            if idx + 1 != report_data.items.len() {
+                doc = doc.add_paragraph(Paragraph::new());
+            }
         }
     }
+
+    doc =
+        doc.add_paragraph(Paragraph::new())
+            .add_paragraph(Paragraph::new())
+            .add_paragraph(Paragraph::new())
+            .add_paragraph(Paragraph::new())
+            .add_paragraph(Paragraph::new().add_run(
+                Run::new().add_text(REPORT_1213_DOC_FOOTER_PARAGRAPH),
+            ));
 
     doc
 }
@@ -653,6 +687,20 @@ mod tests {
     fn mgrs_from_latlng(lat: f64, lng: f64) -> String {
         Mgrs::from_latlon(&LatLon::create(lat, lng).expect("latlon"), 6)
             .to_string()
+    }
+
+    async fn clear_datasource_api_login(
+        dbx: &DatabaseConnection,
+        datasource_id: i64,
+    ) {
+        let mut datasource = datasource::Entity::find_by_id(datasource_id)
+            .one(dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        datasource.api_login = Set(None);
+        datasource.update(dbx).await.unwrap();
     }
 
     #[tokio::test]
@@ -942,6 +990,10 @@ mod tests {
         assert_eq!(row.last_seen_at, reported_dt(9, 0, 6));
         assert_eq!(row.node_callsign.as_deref(), Some("ЗАЛИВ"));
         assert_eq!(row.source_mgrs, Some(mgrs_from_latlng(48.2, 37.2)));
+
+        clear_datasource_api_login(&env.dbx, datasource_group.datasource_id)
+            .await;
+        clear_datasource_api_login(&env.dbx, outsider_datasource.id).await;
     }
 
     #[test]
