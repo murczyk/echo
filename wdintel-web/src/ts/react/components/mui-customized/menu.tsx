@@ -15,7 +15,6 @@ export const Menu = forwardRef(function Menu(
   return (
     <MuiMenu
       ref={ref}
-      disableAutoFocus
       elevation={3}
       MenuListProps={{
         'aria-labelledby': MenuListProps?.['aria-labelledby'] || 'basic-button',

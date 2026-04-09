@@ -1,10 +1,14 @@
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
 import EditIcon from '@mui/icons-material/Edit';
+import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 import type { MRT_VisibilityState } from 'material-react-table';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import React from 'react';
+import { useEffect, useMemo } from 'react';
+import type { CSSProperties } from 'react';
 
 import type { Palitra } from '../../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
@@ -49,7 +53,9 @@ function buildLoadingRows(): PalitraRowView[] {
     accessSummary: '',
     canModify: false,
     canSelect: false,
+    archiveInFlight: false,
     deleteInFlight: false,
+    downloadInFlight: false,
     uploadInFlight: false,
   }));
 }
@@ -76,6 +82,9 @@ type Props = {
   bulkDeleteInFlight: boolean;
   selectedPalitraIds: number[];
   onOpenEdit: (palitra: Palitra) => void;
+  onRequestArchive: (palitra: Palitra) => void;
+  onRequestUnarchive: (palitra: Palitra) => void;
+  onDownload: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
   onDelete: (palitra: Palitra) => void;
   onSetSelectedPalitraIds: (palitraIds: number[]) => void;
@@ -98,12 +107,15 @@ export function PalitraTable({
   bulkDeleteInFlight,
   selectedPalitraIds,
   onOpenEdit,
+  onRequestArchive,
+  onRequestUnarchive,
+  onDownload,
   onRequestUploadPoints,
   onDelete,
   onSetSelectedPalitraIds,
 }: Props) {
   const tableStateContext = useTableStateContext();
-  const columns = React.useMemo<MRT_ColumnDef<PalitraRowView>[]>(
+  const columns = useMemo<MRT_ColumnDef<PalitraRowView>[]>(
     () => [
       {
         header: 'Назва',
@@ -111,9 +123,23 @@ export function PalitraTable({
         id: 'name',
         size: 240,
         Cell: ({ row }) => (
-          <Typography variant='body2' fontWeight={600}>
-            {formatText(row.original.name)}
-          </Typography>
+          <Stack direction='row' spacing={1} alignItems='center' flexWrap='wrap' useFlexGap>
+            <Typography variant='body2' fontWeight={600}>
+              {formatText(row.original.name)}
+            </Typography>
+            {row.original.palitra.isArchived ? (
+              <PowerChip
+                label='Архів'
+                size='small'
+                interactive={false}
+                selected
+                backgroundColor='warning.light'
+                selectedBorderColor='warning.main'
+                selectedTextColor='warning.contrastText'
+                sx={{ '& .MuiChip-label': { px: 1 } }}
+              />
+            ) : null}
+          </Stack>
         ),
       },
       {
@@ -177,7 +203,7 @@ export function PalitraTable({
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-  const rowSelection = React.useMemo(
+  const rowSelection = useMemo(
     () =>
       rows.reduce<Record<string, boolean>>((acc, row) => {
         if (selectedPalitraIds.includes(row.id)) {
@@ -192,7 +218,7 @@ export function PalitraTable({
   const showTableOverlay = loading;
   const tableRows = isInitialLoading ? buildLoadingRows() : rows;
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (selectedPalitraIds.length === 0) return;
     onSetSelectedPalitraIds([]);
   }, [tableStateContext.globalFilter, tableStateContext.columnFilters, tableStateContext.sorting]);
@@ -237,19 +263,93 @@ export function PalitraTable({
           <MrtRowActionButton
             label='Редагувати'
             onClick={() => onOpenEdit(row.original.palitra)}
-            disabled={row.original.canModify === false || row.original.deleteInFlight || row.original.uploadInFlight || bulkDeleteInFlight}
+            disabled={
+              row.original.canModify === false ||
+              row.original.archiveInFlight ||
+              row.original.deleteInFlight ||
+              row.original.downloadInFlight ||
+              row.original.uploadInFlight ||
+              bulkDeleteInFlight
+            }
             icon={<EditIcon fontSize='small' />}
           />
+          {row.original.palitra.isArchived ? (
+            <MrtRowActionButton
+              label='Повернути з архіву'
+              onClick={() => onRequestUnarchive(row.original.palitra)}
+              disabled={
+                row.original.canModify === false ||
+                row.original.archiveInFlight ||
+                row.original.deleteInFlight ||
+                row.original.downloadInFlight ||
+                row.original.uploadInFlight ||
+                bulkDeleteInFlight
+              }
+              icon={
+                row.original.archiveInFlight ? (
+                  <CircularProgress size={16} color='inherit' />
+                ) : (
+                  <UnarchiveOutlinedIcon fontSize='small' />
+                )
+              }
+            />
+          ) : (
+            <MrtRowActionButton
+              label='Перенести в архів'
+              onClick={() => onRequestArchive(row.original.palitra)}
+              disabled={
+                row.original.canModify === false ||
+                row.original.archiveInFlight ||
+                row.original.deleteInFlight ||
+                row.original.downloadInFlight ||
+                row.original.uploadInFlight ||
+                bulkDeleteInFlight
+              }
+              icon={
+                row.original.archiveInFlight ? (
+                  <CircularProgress size={16} color='inherit' />
+                ) : (
+                  <ArchiveOutlinedIcon fontSize='small' />
+                )
+              }
+            />
+          )}
           <MrtRowActionButton
-            label='Завантажити точки'
+            label='Завантажити'
+            onClick={() => onDownload(row.original.palitra)}
+            disabled={
+              row.original.archiveInFlight ||
+              row.original.deleteInFlight ||
+              row.original.downloadInFlight ||
+              row.original.uploadInFlight ||
+              bulkDeleteInFlight
+            }
+            icon={row.original.downloadInFlight ? <CircularProgress size={16} color='inherit' /> : <DownloadIcon fontSize='small' />}
+          />
+          <MrtRowActionButton
+            label='Додати точки'
             onClick={() => onRequestUploadPoints(row.original.id)}
-            disabled={row.original.canModify === false || row.original.deleteInFlight || row.original.uploadInFlight || bulkDeleteInFlight}
+            disabled={
+              row.original.canModify === false ||
+              row.original.archiveInFlight ||
+              row.original.deleteInFlight ||
+              row.original.downloadInFlight ||
+              row.original.uploadInFlight ||
+              bulkDeleteInFlight
+            }
             icon={row.original.uploadInFlight ? <CircularProgress size={16} color='inherit' /> : <CloudUploadIcon fontSize='small' />}
           />
           <MrtRowActionButton
             label='Видалити'
             onClick={() => onDelete(row.original.palitra)}
-            disabled={row.original.canModify === false || row.original.deleteInFlight || row.original.uploadInFlight || bulkDeleteInFlight}
+            disabled={
+              row.original.canModify === false ||
+              row.original.archiveInFlight ||
+              row.original.deleteInFlight ||
+              row.original.downloadInFlight ||
+              row.original.uploadInFlight ||
+              bulkDeleteInFlight
+            }
             icon={row.original.deleteInFlight ? <CircularProgress size={16} color='inherit' /> : <DeleteIcon fontSize='small' />}
             tone='danger'
           />
@@ -275,7 +375,7 @@ export function PalitraTable({
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(3),
+        size: mrtRowActionsColumnSize(5),
       },
     },
     muiTablePaperProps: ({ table }) => {
@@ -290,7 +390,7 @@ export function PalitraTable({
           overflow: table.getState().isFullScreen ? 'auto' : 'hidden',
         },
         style: {
-          ...(baseProps as { style?: React.CSSProperties })?.style,
+          ...(baseProps as { style?: CSSProperties })?.style,
           padding: 0,
         },
       };
@@ -310,7 +410,13 @@ export function PalitraTable({
     muiTableBodyRowProps: ({ row }) => ({
       hover: true,
       sx: {
-        opacity: row.original.deleteInFlight || row.original.uploadInFlight ? 0.6 : 1,
+        opacity:
+          row.original.archiveInFlight ||
+          row.original.deleteInFlight ||
+          row.original.downloadInFlight ||
+          row.original.uploadInFlight
+            ? 0.6
+            : 1,
       },
     }),
     state: {
@@ -330,7 +436,7 @@ export function PalitraTable({
     },
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table, tableStateContext]);
 

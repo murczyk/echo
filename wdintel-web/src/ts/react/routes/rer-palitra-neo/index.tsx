@@ -9,6 +9,9 @@ import {
   DialogContentText,
   DialogTitle,
   Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from '@mui/material';
 import type { MRT_SortingState } from 'material-react-table';
 
@@ -37,6 +40,42 @@ function RerPalitraNeoPageBody() {
           title='Палітри'
           withGlobalTextFilter
           filtersHidden
+          filter={
+            <ToggleButtonGroup
+              value={page.archiveView}
+              exclusive
+              size='small'
+              color='primary'
+              onChange={(_event, value: 'active' | 'all' | 'archived' | null) => {
+                if (value) page.setArchiveView(value);
+              }}
+              sx={{
+                flexShrink: 0,
+                borderRadius: 1,
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  px: 1.75,
+                  py: 0.875,
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  lineHeight: 1.25,
+                  borderRadius: 0,
+                },
+                '& .MuiToggleButtonGroup-firstButton': {
+                  borderTopLeftRadius: 8,
+                  borderBottomLeftRadius: 8,
+                },
+                '& .MuiToggleButtonGroup-lastButton': {
+                  borderTopRightRadius: 8,
+                  borderBottomRightRadius: 8,
+                },
+              }}
+            >
+              <ToggleButton value='all'>Усі</ToggleButton>
+              <ToggleButton value='active'>Активні</ToggleButton>
+              <ToggleButton value='archived'>Архів</ToggleButton>
+            </ToggleButtonGroup>
+          }
           actions={
             <Stack direction='row' spacing={2}>
               <Button
@@ -52,7 +91,12 @@ function RerPalitraNeoPageBody() {
                 variant='outlined'
                 color='error'
                 onClick={page.requestBulkDelete}
-                disabled={page.selectedPalitraIds.length === 0 || page.bulkDeleteInFlight || page.inFlightDeleteId !== null}
+                disabled={
+                  page.selectedPalitraIds.length === 0 ||
+                  page.bulkDeleteInFlight ||
+                  page.inFlightArchiveId !== null ||
+                  page.inFlightDeleteId !== null
+                }
               >
                 Видалити палітри
               </Button>
@@ -72,12 +116,70 @@ function RerPalitraNeoPageBody() {
             bulkDeleteInFlight={page.bulkDeleteInFlight}
             selectedPalitraIds={page.selectedPalitraIds}
             onOpenEdit={page.openEdit}
+            onRequestArchive={page.requestArchive}
+            onRequestUnarchive={page.handleUnarchive}
+            onDownload={page.handleDownload}
             onRequestUploadPoints={page.requestUploadPoints}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
           />
         </Box>
       </Stack>
+
+      <Dialog
+        open={page.archiveDialogOpen}
+        onClose={page.cancelArchive}
+        disableRestoreFocus
+        TransitionProps={{ onExited: page.onArchiveDialogExited }}
+        fullWidth
+        maxWidth='sm'
+      >
+        <DialogTitle>Перенести палітру в архів</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 1.5, fontSize: '1rem', lineHeight: 1.6 }}>
+            {'Перенести палітру «' + (page.archiveDialogPalitra?.name ?? '') + '» в архів?'}
+          </DialogContentText>
+          <Typography variant='body1' color='text.primary' sx={{ mb: 1.5, lineHeight: 1.6 }}>
+            Архівні палітри залишаються в системі, але не беруть участі в активній роботі:
+          </Typography>
+          <Box
+            component='ul'
+            sx={{
+              m: 0,
+              pl: 3,
+              listStyleType: 'disc',
+              '& li': {
+                mb: 1,
+                display: 'list-item',
+              },
+            }}
+          >
+            <Typography component='li' variant='body1' sx={{ lineHeight: 1.6 }}>
+              Лишаються в системі з позначкою «Архів»
+            </Typography>
+            <Typography component='li' variant='body1' sx={{ lineHeight: 1.6 }}>
+              Не відображаються в результатах пошуку
+            </Typography>
+            <Typography component='li' variant='body1' sx={{ lineHeight: 1.6 }}>
+              Не відображаються на мапах
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <Button onClick={page.cancelArchive} disabled={page.inFlightArchiveId !== null}>
+            Скасувати
+          </Button>
+          <Button
+            onClick={page.confirmArchive}
+            color='warning'
+            variant='contained'
+            disabled={page.inFlightArchiveId !== null}
+            startIcon={page.inFlightArchiveId !== null ? <CircularProgress color='inherit' size={16} /> : null}
+          >
+            Перенести в архів
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={page.deleteDialogOpen}

@@ -22,6 +22,10 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
         '& .MuiOutlinedInput-root': {
           borderRadius: 0,
           backgroundColor: 'var(--bs-body-bg)',
+          '& .MuiInputBase-input::placeholder': {
+            color: 'text.secondary',
+            opacity: 1,
+          },
           '& .MuiOutlinedInput-notchedOutline': {
             borderColor: 'var(--bs-border-color)',
           },
@@ -45,7 +49,7 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
             <InputAdornment position="start">
               <FilterAltIcon
                 sx={{
-                  color: props.globalFilter ? 'action.active' : 'action.disabled',
+                  color: props.globalFilter ? 'text.secondary' : 'text.secondary',
                 }}
               />
             </InputAdornment>

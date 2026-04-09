@@ -10,7 +10,7 @@ module Shared exposing
 
 import Api
 import Bindings as B
-import Shared.Components.Toast
+import Core.Auth
 import Core.EventService
 import Core.EventTypes
 import Core.Types exposing (ApiError)
@@ -22,6 +22,7 @@ import PagePorts.SharedPorts as Ports
 import Process
 import Route exposing (Route)
 import Route.Path
+import Shared.Components.Toast
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Task
@@ -135,6 +136,9 @@ update req msg model =
             ( { model | user = Just user }
             , E.batch
                 [ if req.path == Route.Path.Login then
+                    E.replaceRoutePath Route.Path.Home_
+
+                  else if shouldRedirectUnauthorizedRerPage req.path user then
                     E.replaceRoutePath Route.Path.Home_
 
                   else
@@ -479,6 +483,19 @@ pollEvents lastEventId =
 
 
 -- HELPERS
+
+
+shouldRedirectUnauthorizedRerPage : Route.Path.Path -> B.User -> Bool
+shouldRedirectUnauthorizedRerPage path user =
+    case path of
+        Route.Path.RerPalitra ->
+            not (Core.Auth.hasRole "Rer" user)
+
+        Route.Path.RerPalitraNeo ->
+            not (Core.Auth.hasRole "Rer" user)
+
+        _ ->
+            False
 
 
 formatError : ApiError -> String

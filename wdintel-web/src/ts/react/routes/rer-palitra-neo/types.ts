@@ -36,6 +36,8 @@ export type PalitraRowView = {
   accessSummary: string;
   canModify: boolean;
   canSelect: boolean;
+  archiveInFlight: boolean;
   deleteInFlight: boolean;
+  downloadInFlight: boolean;
   uploadInFlight: boolean;
 };
