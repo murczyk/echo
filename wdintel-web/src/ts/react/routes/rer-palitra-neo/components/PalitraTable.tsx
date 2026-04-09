@@ -318,6 +318,7 @@ export function PalitraTable({
             label='Завантажити'
             onClick={() => onDownload(row.original.palitra)}
             disabled={
+              row.original.id < 0 ||
               row.original.archiveInFlight ||
               row.original.deleteInFlight ||
               row.original.downloadInFlight ||

@@ -58,8 +58,10 @@ describe('Menu', () => {
     expect(muiMenuSpy).toHaveBeenCalledTimes(1);
     expect(muiMenuSpy.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
-        MenuListProps: expect.objectContaining({
-          'aria-labelledby': 'overflow-trigger',
+        slotProps: expect.objectContaining({
+          list: expect.objectContaining({
+            'aria-labelledby': 'overflow-trigger',
+          }),
         }),
       }),
     );

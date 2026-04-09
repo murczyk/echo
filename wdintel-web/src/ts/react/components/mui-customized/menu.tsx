@@ -12,6 +12,9 @@ export const Menu = forwardRef(function Menu(
     }
   }
 
+  const legacyMenuListProps = (props as { MenuListProps?: Record<string, unknown> }).MenuListProps;
+  const { MenuListProps: _ignoredMenuListProps, ...restProps } = props as MuiMenuProps & { MenuListProps?: Record<string, unknown> };
+
   return (
     <MuiMenu
       ref={ref}
@@ -19,7 +22,8 @@ export const Menu = forwardRef(function Menu(
       slotProps={{
         ...slotProps,
         list: {
-          'aria-labelledby': slotProps?.list?.['aria-labelledby'] || 'basic-button',
+          'aria-labelledby': slotProps?.list?.['aria-labelledby'] || legacyMenuListProps?.['aria-labelledby'] || 'basic-button',
+          ...legacyMenuListProps,
           ...slotProps?.list,
         },
       }}
@@ -41,7 +45,7 @@ export const Menu = forwardRef(function Menu(
           horizontal: -10,
         }
       }
-      {...props}
+      {...restProps}
     >
       <div onKeyDown={onKeyDown}>{children}</div>
     </MuiMenu>
