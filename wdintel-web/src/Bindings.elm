@@ -2984,7 +2984,6 @@ analyzeKmzResponseEncoder struct =
     Json.Encode.object
         [ ( "top_colors", Json.Encode.list kmzColorInfoEncoder struct.topColors )
         , ( "filename", Json.Encode.string struct.filename )
-
         ]
 
 
@@ -3049,7 +3048,6 @@ palitraBulkActionRspEncoder : PalitraBulkActionRsp -> Json.Encode.Value
 palitraBulkActionRspEncoder struct =
     Json.Encode.object
         [ ( "palitra_ids", Json.Encode.list Json.Encode.int struct.palitraIds )
-
         ]
 
 
@@ -3318,7 +3316,6 @@ userEncoder struct =
         , ( "goi_configured_for_organism", Json.Encode.bool struct.goiConfiguredForOrganism )
         , ( "goi_full_access_for_organism", Json.Encode.bool struct.goiFullAccessForOrganism )
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.goiHost )
-
         , ( "goi_integrations", Json.Encode.list goiUserIntegrationEncoder struct.goiIntegrations )
         ]
 
@@ -3350,7 +3347,6 @@ goiUserIntegrationEncoder struct =
         , ( "has_data_access", Json.Encode.bool struct.hasDataAccess )
         , ( "can_restart", Json.Encode.bool struct.canRestart )
         , ( "restart_unavailable_reason", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.restartUnavailableReason )
-
         ]
 
 
@@ -3809,9 +3805,7 @@ type alias ListGoiAssociationsReq =
     , offset : Maybe Int
     , sortBy : Maybe ListGoiAssociationsSortBy
     , filterText : Maybe String
-
     , filterServer : Maybe String
-
     , filterFrequency : Maybe String
     , filterCoordinates : Maybe String
     , filterNote : Maybe String
@@ -3828,9 +3822,7 @@ listGoiAssociationsReqEncoder struct =
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.offset )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listGoiAssociationsSortByEncoder) struct.sortBy )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
-
         , ( "filter_server", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterServer )
-
         , ( "filter_frequency", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFrequency )
         , ( "filter_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterCoordinates )
         , ( "filter_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterNote )
@@ -3868,11 +3860,9 @@ goiAssociationEncoder : GoiAssociation -> Json.Encode.Value
 goiAssociationEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
-
         , ( "integration_id", Json.Encode.int struct.integrationId )
         , ( "server_label", Json.Encode.string struct.serverLabel )
         , ( "owner_organism_name", Json.Encode.string struct.ownerOrganismName )
-
         , ( "source_association_id", Json.Encode.int struct.sourceAssociationId )
         , ( "source_created_at_ms", Json.Encode.int struct.sourceCreatedAtMs )
         , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
@@ -3998,9 +3988,7 @@ type alias ListGoiKnowledgeReq =
     , offset : Maybe Int
     , sortBy : Maybe ListGoiKnowledgeSortBy
     , filterText : Maybe String
-
     , filterServer : Maybe String
-
     , filterName : Maybe String
     , filterKey : Maybe String
     , filterKnowledgeType : Maybe String
@@ -4018,9 +4006,7 @@ listGoiKnowledgeReqEncoder struct =
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.offset )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listGoiKnowledgeSortByEncoder) struct.sortBy )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
-
         , ( "filter_server", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterServer )
-
         , ( "filter_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterName )
         , ( "filter_key", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterKey )
         , ( "filter_knowledge_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterKnowledgeType )
@@ -4055,11 +4041,9 @@ goiKnowledgeEncoder : GoiKnowledge -> Json.Encode.Value
 goiKnowledgeEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
-
         , ( "integration_id", Json.Encode.int struct.integrationId )
         , ( "server_label", Json.Encode.string struct.serverLabel )
         , ( "owner_organism_name", Json.Encode.string struct.ownerOrganismName )
-
         , ( "source_knowledge_id", Json.Encode.int struct.sourceKnowledgeId )
         , ( "source_created_at_ms", Json.Encode.int struct.sourceCreatedAtMs )
         , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
@@ -4588,6 +4572,7 @@ type alias ReportPreviewReq =
     , req : InboxMessagesReq
     , reportType : Maybe ReportType
     , reportTagsOnlyThisUnit : Maybe Bool
+    , report1213LinkedNetworksOnly : Maybe Bool
     , withoutComments : Maybe Bool
     , digestOmitExoId : Maybe Bool
     , digestForm1217 : Maybe Bool
@@ -4601,6 +4586,7 @@ reportPreviewReqEncoder struct =
         , ( "req", inboxMessagesReqEncoder struct.req )
         , ( "report_type", (Maybe.withDefault Json.Encode.null << Maybe.map reportTypeEncoder) struct.reportType )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
+        , ( "report_1213_linked_networks_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.report1213LinkedNetworksOnly )
         , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutComments )
         , ( "digest_omit_exo_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.digestOmitExoId )
         , ( "digest_form_1_2_17", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.digestForm1217 )
@@ -9260,7 +9246,6 @@ analyzeKmzResponseDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filename" Json.Decode.string))
 
 
-
 palitraFolderAssignReqDecoder : Json.Decode.Decoder PalitraFolderAssignReq
 palitraFolderAssignReqDecoder =
     Json.Decode.succeed PalitraFolderAssignReq
@@ -9291,7 +9276,6 @@ palitraBulkActionRspDecoder : Json.Decode.Decoder PalitraBulkActionRsp
 palitraBulkActionRspDecoder =
     Json.Decode.succeed PalitraBulkActionRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list Json.Decode.int)))
-
 
 
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody
@@ -9431,7 +9415,6 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_configured_for_organism" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_full_access_for_organism" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable Json.Decode.string)))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_integrations" (Json.Decode.list goiUserIntegrationDecoder)))
 
 
@@ -9448,7 +9431,6 @@ goiUserIntegrationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_data_access" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_restart" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restart_unavailable_reason" (Json.Decode.nullable Json.Decode.string)))
-
 
 
 settingsSaveReqDecoder : Json.Decode.Decoder SettingsSaveReq
@@ -9869,9 +9851,7 @@ listGoiAssociationsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listGoiAssociationsSortByDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_server" (Json.Decode.nullable Json.Decode.string)))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_frequency" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_coordinates" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_note" (Json.Decode.nullable Json.Decode.string)))
@@ -9884,11 +9864,9 @@ goiAssociationDecoder : Json.Decode.Decoder GoiAssociation
 goiAssociationDecoder =
     Json.Decode.succeed GoiAssociation
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "server_label" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "owner_organism_name" Json.Decode.string))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_association_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_created_at_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
@@ -10127,9 +10105,7 @@ listGoiKnowledgeReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listGoiKnowledgeSortByDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_server" (Json.Decode.nullable Json.Decode.string)))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_key" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_knowledge_type" (Json.Decode.nullable Json.Decode.string)))
@@ -10143,11 +10119,9 @@ goiKnowledgeDecoder : Json.Decode.Decoder GoiKnowledge
 goiKnowledgeDecoder =
     Json.Decode.succeed GoiKnowledge
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "server_label" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "owner_organism_name" Json.Decode.string))
-
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_knowledge_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_created_at_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
@@ -10407,6 +10381,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" inboxMessagesReqDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_type" (Json.Decode.nullable reportTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_1213_linked_networks_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_omit_exo_id" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_form_1_2_17" (Json.Decode.nullable Json.Decode.bool)))

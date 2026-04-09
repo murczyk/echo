@@ -131,6 +131,7 @@ type alias Model =
     , reportTemplate : ReportTemplate
     , reportTagsOnlyThisUnit : Bool
     , reportTagsOnlyThisUnitForReport : Bool
+    , report1213LinkedNetworksOnly : Bool
     , reportWithoutComments : Bool
     , reportDigestOmitExoId : Bool
     , reportDigestForm1217 : Bool
@@ -227,6 +228,7 @@ type ReportTemplate
     | RTReo
     | RTDigest
     | ActiveNetworks
+    | RTReport1213
 
 
 type FilterName
