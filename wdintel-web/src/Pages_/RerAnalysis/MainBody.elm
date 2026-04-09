@@ -850,6 +850,24 @@ view user model shared route =
                                 [ text "не включати коментарі" ]
                             ]
                     ]
+            , HtmlX.viewIf (model.reportTemplate == RTReport1213) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.report1213LinkedNetworksOnly
+                            , id "report-1213-linked-networks-only"
+                            , onClick Report1213LinkedNetworksOnlyToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-1213-linked-networks-only"
+                            ]
+                            [ text "включати лише пеленги прив'язаних мереж" ]
+                        ]
+                    ]
             , case model.reportTemplate of
                 RTSenders x ->
                     div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]

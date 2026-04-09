@@ -195,6 +195,7 @@ init route _ =
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
             , reportTagsOnlyThisUnitForReport = False
+            , report1213LinkedNetworksOnly = True
             , reportWithoutComments = False
             , reportDigestOmitExoId = False
             , reportDigestForm1217 = False
@@ -3517,6 +3518,11 @@ update user shared route msg model =
             , E.none
             )
 
+        Report1213LinkedNetworksOnlyToggle ->
+            ( { model | report1213LinkedNetworksOnly = not model.report1213LinkedNetworksOnly }
+            , E.none
+            )
+
         ReportWithoutCommentsToggle ->
             let
                 reportWithoutComments =
@@ -3569,6 +3575,12 @@ update user shared route msg model =
                 , reportType = reportTemplateToApiType model model.reportTemplate
                 , req = getInboxReq model
                 , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
+                , report1213LinkedNetworksOnly =
+                    if model.reportTemplate == RTReport1213 then
+                        Just model.report1213LinkedNetworksOnly
+
+                    else
+                        Nothing
                 , withoutComments =
                     if model.reportTemplate == RTBabak then
                         Just model.reportWithoutComments

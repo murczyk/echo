@@ -131,6 +131,7 @@ type alias Model =
     , reportTemplate : ReportTemplate
     , reportTagsOnlyThisUnit : Bool
     , reportTagsOnlyThisUnitForReport : Bool
+    , report1213LinkedNetworksOnly : Bool
     , reportWithoutComments : Bool
     , reportDigestOmitExoId : Bool
     , reportDigestForm1217 : Bool
