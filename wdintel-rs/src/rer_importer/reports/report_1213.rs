@@ -1,6 +1,6 @@
 use crate::entities::{
-    datasource, sigint_network, sigint_network::Entity as SigintNetwork,
-    sigint_peleng,
+    datasource, sigint_inbox_item, sigint_network,
+    sigint_network::Entity as SigintNetwork, sigint_peleng, signal_group_aor,
 };
 use crate::error::AppError;
 use crate::rer_importer::inbox::get_inbox_messages_with_conn;
@@ -32,7 +32,7 @@ const REPORT_1213_DOC_HEADER: &str =
 const REPORT_1213_P1: &str = "  1. Склад сил і засобів, які розгорнуті для визначення місцеположення джерел (об’єктів) розвідки:";
 const REPORT_1213_P2: &str = "Для визначення місцезнаходження джерел (об’єктів ) розвідки задіяно ... операторів з моніторингу радіомереж, розгорнуто ....";
 const REPORT_1213_P3: &str = "  2. Зміни в стані засобів пеленгування (вихід з ладу, зміна технічних позицій, розгортання нових засобів, втрати та заходи щодо відновлення): Обладнання та засоби пеленгування в наявності та у справному стані.";
-const REPORT_1213_P4: &str = "  3. Загальна кількість викритих (підтверджених) районів, кількість отриманих пеленгів (напрямків): 0";
+const REPORT_1213_P4: &str = "  3. Загальна кількість викритих (підтверджених) районів, кількість отриманих пеленгів (напрямків): ";
 const REPORT_1213_P5: &str =
     "   4. Результати визначення місцеположення джерел (об’єктів) розвідки.";
 const REPORT_1213_DOC_FOOTER_PARAGRAPH: &str = "Начальник ОВУР";
@@ -40,6 +40,7 @@ const REPORT_1213_DOC_FOOTER_PARAGRAPH: &str = "Начальник ОВУР";
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Report1213Data {
     report_till_at: Option<DateTime<Utc>>,
+    peleng_count: usize,
     items: Vec<Report1213Item>,
 }
 
@@ -63,6 +64,7 @@ struct SenderNameStat {
 struct Report1213Accumulator {
     network_name: String,
     nominal_working_freq: String,
+    activity_key: Report1213ActivityKey,
     first_seen_at: NaiveDateTime,
     last_seen_at: NaiveDateTime,
     sender_name_stats: BTreeMap<String, SenderNameStat>,
@@ -73,11 +75,13 @@ impl Report1213Accumulator {
     fn new(
         network_name: String,
         nominal_working_freq: String,
+        activity_key: Report1213ActivityKey,
         seen_at: NaiveDateTime,
     ) -> Self {
         Self {
             network_name,
             nominal_working_freq,
+            activity_key,
             first_seen_at: seen_at,
             last_seen_at: seen_at,
             sender_name_stats: BTreeMap::new(),
@@ -88,6 +92,11 @@ impl Report1213Accumulator {
     fn observe_datetime(&mut self, seen_at: NaiveDateTime) {
         self.first_seen_at = self.first_seen_at.min(seen_at);
         self.last_seen_at = self.last_seen_at.max(seen_at);
+    }
+
+    fn apply_activity_range(&mut self, range: &Report1213ActivityRange) {
+        self.first_seen_at = range.first_seen_at;
+        self.last_seen_at = range.last_seen_at;
     }
 
     fn observe_sender_names(
@@ -130,6 +139,38 @@ impl Report1213Accumulator {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Report1213ActivityKey {
+    LinkedNetwork(i64),
+    FuzzyFreqAor(Option<i64>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Report1213ActivityRange {
+    first_seen_at: NaiveDateTime,
+    last_seen_at: NaiveDateTime,
+}
+
+impl Report1213ActivityRange {
+    fn new(seen_at: NaiveDateTime) -> Self {
+        Self {
+            first_seen_at: seen_at,
+            last_seen_at: seen_at,
+        }
+    }
+
+    fn observe(&mut self, seen_at: NaiveDateTime) {
+        self.first_seen_at = self.first_seen_at.min(seen_at);
+        self.last_seen_at = self.last_seen_at.max(seen_at);
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct Report1213ActivityRanges {
+    linked: BTreeMap<(i64, String), Report1213ActivityRange>,
+    fuzzy: BTreeMap<(String, Option<i64>), Report1213ActivityRange>,
+}
+
 pub async fn report_docx_kind_report_1213(
     user: Identity,
     env: &Env,
@@ -168,12 +209,6 @@ async fn collect_report_1213_data(
         get_inbox_messages_with_conn(dbx, login, logins, env, &inbox_req)
             .await
             .c(h!())?;
-    let message_ids = messages
-        .iter()
-        .map(|(message_id, _)| *message_id)
-        .collect_vec();
-    let pelengs_by_message =
-        load_report_1213_pelengs(dbx, &message_ids).await?;
     let own_datasource_ids = if req.report_tags_only_this_unit == Some(true) {
         Some(load_report_1213_datasource_ids(dbx, logins).await?)
     } else {
@@ -181,14 +216,21 @@ async fn collect_report_1213_data(
     };
     let messages = messages
         .into_iter()
-        .filter(|(message_id, message)| {
-            pelengs_by_message.contains_key(message_id)
-                && report_1213_message_matches_datasource_scope(
-                    message,
-                    own_datasource_ids.as_ref(),
-                )
+        .filter(|(_, message)| {
+            report_1213_message_matches_datasource_scope(
+                message,
+                own_datasource_ids.as_ref(),
+            )
         })
         .collect_vec();
+    let message_ids = messages
+        .iter()
+        .map(|(message_id, _)| *message_id)
+        .collect_vec();
+    let pelengs_by_message =
+        load_report_1213_pelengs(dbx, &message_ids).await?;
+    let message_datetimes =
+        load_report_1213_message_datetimes(dbx, &message_ids).await?;
 
     let network_ids = messages
         .iter()
@@ -198,6 +240,12 @@ async fn collect_report_1213_data(
         .collect::<BTreeSet<_>>();
     let network_names =
         load_report_1213_network_names(dbx, &network_ids).await?;
+    let group_master_keys = messages
+        .iter()
+        .filter_map(|(_, message)| message.group_master_key.clone())
+        .collect::<BTreeSet<_>>();
+    let group_aors =
+        load_report_1213_group_aors(dbx, &group_master_keys).await?;
     let include_only_linked_networks =
         req.report_1213_linked_networks_only.unwrap_or(true);
 
@@ -205,6 +253,8 @@ async fn collect_report_1213_data(
         messages,
         &network_names,
         &pelengs_by_message,
+        &message_datetimes,
+        &group_aors,
         include_only_linked_networks,
     )?;
     report_data.report_till_at = req
@@ -212,6 +262,60 @@ async fn collect_report_1213_data(
         .till_date_inclusive_ms
         .and_then(DateTime::from_timestamp_millis);
     Ok(report_data)
+}
+
+async fn load_report_1213_message_datetimes(
+    dbx: &DatabaseConnection,
+    message_ids: &[i64],
+) -> Result<BTreeMap<i64, NaiveDateTime>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut datetimes = BTreeMap::new();
+    for item in sigint_inbox_item::Entity::find()
+        .filter(sigint_inbox_item::Column::Id.eq_any(message_ids.to_vec()))
+        .all(dbx)
+        .await
+        .c(h!())?
+    {
+        let Some(datetime_utc) = item.datetime else {
+            continue;
+        };
+        let datetime =
+            dt_zoned_from_millis(datetime_utc.and_utc().timestamp_millis())?
+                .naive_local();
+        datetimes.insert(item.id, datetime);
+    }
+
+    Ok(datetimes)
+}
+
+async fn load_report_1213_group_aors(
+    dbx: &DatabaseConnection,
+    group_master_keys: &BTreeSet<String>,
+) -> Result<HashMap<String, i64>, AppError> {
+    if group_master_keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut group_aors = HashMap::new();
+    for group_aor in signal_group_aor::Entity::find()
+        .filter(
+            signal_group_aor::Column::MasterKey
+                .eq_any(group_master_keys.iter().cloned().collect_vec()),
+        )
+        .order_by_asc(signal_group_aor::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())?
+    {
+        group_aors
+            .entry(group_aor.master_key)
+            .or_insert(group_aor.aor_id);
+    }
+
+    Ok(group_aors)
 }
 
 async fn load_report_1213_datasource_ids(
@@ -287,16 +391,31 @@ fn build_report_1213_data(
     messages: Vec<(i64, InboxMessage)>,
     network_names: &HashMap<i64, String>,
     pelengs_by_message: &BTreeMap<i64, Vec<sigint_peleng::Model>>,
+    message_datetimes: &BTreeMap<i64, NaiveDateTime>,
+    group_aors: &HashMap<String, i64>,
     include_only_linked_networks: bool,
 ) -> Result<Report1213Data, AppError> {
+    let activity_ranges = build_report_1213_activity_ranges(
+        &messages,
+        network_names,
+        message_datetimes,
+        group_aors,
+        include_only_linked_networks,
+    )?;
     let mut rows: BTreeMap<(String, String), Report1213Accumulator> =
         BTreeMap::new();
+    let mut peleng_count = 0usize;
 
     for (message_id, message) in messages {
         let Some(freq) = sanitize_report_1213_text(message.freq.clone()) else {
             continue;
         };
-        let Some(seen_at) = extract_report_1213_datetime(&message)? else {
+        let Some(seen_at) = extract_report_1213_seen_at(
+            message_id,
+            &message,
+            message_datetimes,
+        )?
+        else {
             continue;
         };
         let Some(pelengs) = pelengs_by_message.get(&message_id) else {
@@ -312,21 +431,37 @@ fn build_report_1213_data(
             .collect_vec();
         let source_mgrs = extract_report_1213_mgrs(pelengs);
 
-        for row_def in build_report_1213_row_defs(
+        let row_defs = build_report_1213_row_defs(
             &message,
             network_names,
+            group_aors,
             include_only_linked_networks,
-        ) {
+        );
+        if row_defs.is_empty() {
+            continue;
+        }
+        peleng_count += pelengs.len();
+
+        for row_def in row_defs {
             let row = rows
                 .entry((row_def.row_key, freq.clone()))
                 .or_insert_with(|| {
                     Report1213Accumulator::new(
                         row_def.network_name,
                         freq.clone(),
+                        row_def.activity_key,
                         seen_at,
                     )
                 });
-            row.observe_datetime(seen_at);
+            if let Some(range) = find_report_1213_activity_range(
+                &row.activity_key,
+                &freq,
+                &activity_ranges,
+            ) {
+                row.apply_activity_range(range);
+            } else {
+                row.observe_datetime(seen_at);
+            }
             row.observe_sender_names(&sender_names, seen_at);
             if let Some(ref source_mgrs) = source_mgrs {
                 row.observe_source_mgrs(source_mgrs.clone(), seen_at);
@@ -343,6 +478,7 @@ fn build_report_1213_data(
 
     Ok(Report1213Data {
         report_till_at: None,
+        peleng_count,
         items,
     })
 }
@@ -364,11 +500,13 @@ fn report_1213_message_matches_datasource_scope(
 struct Report1213RowDef {
     row_key: String,
     network_name: String,
+    activity_key: Report1213ActivityKey,
 }
 
 fn build_report_1213_row_defs(
     message: &InboxMessage,
     network_names: &HashMap<i64, String>,
+    group_aors: &HashMap<String, i64>,
     include_only_linked_networks: bool,
 ) -> Vec<Report1213RowDef> {
     let linked_rows = message
@@ -381,6 +519,9 @@ fn build_report_1213_row_defs(
                 Report1213RowDef {
                     row_key: format!("network:{network_id}"),
                     network_name: network_name.clone(),
+                    activity_key: Report1213ActivityKey::LinkedNetwork(
+                        network_id,
+                    ),
                 }
             })
         })
@@ -392,15 +533,117 @@ fn build_report_1213_row_defs(
     }
 
     let network_name = report_1213_fuzzy_network_name(message);
+    let aor_id = report_1213_message_aor_id(message, group_aors);
     vec![Report1213RowDef {
-        row_key: format!("fuzzy:{network_name}"),
+        row_key: match aor_id {
+            Some(aor_id) => format!("fuzzy:{network_name}:{aor_id}"),
+            None => format!("fuzzy:{network_name}:none"),
+        },
         network_name,
+        activity_key: Report1213ActivityKey::FuzzyFreqAor(aor_id),
     }]
 }
 
 fn report_1213_fuzzy_network_name(message: &InboxMessage) -> String {
     sanitize_report_1213_text(message.unit.clone())
         .unwrap_or_else(|| REPORT_1213_UNKNOWN_TEXT.to_string())
+}
+
+fn report_1213_message_aor_id(
+    message: &InboxMessage,
+    group_aors: &HashMap<String, i64>,
+) -> Option<i64> {
+    message
+        .group_master_key
+        .as_ref()
+        .and_then(|group_master_key| group_aors.get(group_master_key).copied())
+}
+
+fn build_report_1213_activity_ranges(
+    messages: &[(i64, InboxMessage)],
+    network_names: &HashMap<i64, String>,
+    message_datetimes: &BTreeMap<i64, NaiveDateTime>,
+    group_aors: &HashMap<String, i64>,
+    include_only_linked_networks: bool,
+) -> Result<Report1213ActivityRanges, AppError> {
+    let mut ranges = Report1213ActivityRanges::default();
+
+    for (message_id, message) in messages {
+        let Some(freq) = sanitize_report_1213_text(message.freq.clone()) else {
+            continue;
+        };
+        let Some(seen_at) = extract_report_1213_seen_at(
+            *message_id,
+            message,
+            message_datetimes,
+        )?
+        else {
+            continue;
+        };
+
+        for network_id in message
+            .network_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|network_id| network_names.contains_key(network_id))
+            .unique()
+        {
+            observe_report_1213_activity_range(
+                &mut ranges.linked,
+                (network_id, freq.clone()),
+                seen_at,
+            );
+        }
+
+        if !include_only_linked_networks {
+            observe_report_1213_activity_range(
+                &mut ranges.fuzzy,
+                (freq, report_1213_message_aor_id(message, group_aors)),
+                seen_at,
+            );
+        }
+    }
+
+    Ok(ranges)
+}
+
+fn observe_report_1213_activity_range<K: Ord>(
+    ranges: &mut BTreeMap<K, Report1213ActivityRange>,
+    key: K,
+    seen_at: NaiveDateTime,
+) {
+    ranges
+        .entry(key)
+        .and_modify(|range| range.observe(seen_at))
+        .or_insert_with(|| Report1213ActivityRange::new(seen_at));
+}
+
+fn find_report_1213_activity_range<'a>(
+    activity_key: &Report1213ActivityKey,
+    freq: &str,
+    ranges: &'a Report1213ActivityRanges,
+) -> Option<&'a Report1213ActivityRange> {
+    match activity_key {
+        Report1213ActivityKey::LinkedNetwork(network_id) => {
+            ranges.linked.get(&(*network_id, freq.to_string()))
+        }
+        Report1213ActivityKey::FuzzyFreqAor(aor_id) => {
+            ranges.fuzzy.get(&(freq.to_string(), *aor_id))
+        }
+    }
+}
+
+fn extract_report_1213_seen_at(
+    message_id: i64,
+    message: &InboxMessage,
+    message_datetimes: &BTreeMap<i64, NaiveDateTime>,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    if let Some(seen_at) = message_datetimes.get(&message_id) {
+        return Ok(Some(*seen_at));
+    }
+
+    extract_report_1213_datetime(message)
 }
 
 fn extract_report_1213_datetime(
@@ -507,61 +750,45 @@ fn build_report_1213_docx(report_data: &Report1213Data) -> Docx {
 
     doc = doc
         .add_paragraph(Paragraph::new())
-        .add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P1)),
-        )
-        .add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P2)),
-        )
-        .add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P3)),
-        )
-        .add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P4)),
-        )
-        .add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(REPORT_1213_P5)),
-        )
+        .add_paragraph(report_1213_body_paragraph(REPORT_1213_P1))
+        .add_paragraph(report_1213_body_paragraph(REPORT_1213_P2))
+        .add_paragraph(report_1213_body_paragraph(REPORT_1213_P3))
+        .add_paragraph(report_1213_body_paragraph(&format!(
+            "{REPORT_1213_P4}{}",
+            report_data.peleng_count
+        )))
+        .add_paragraph(report_1213_body_paragraph(REPORT_1213_P5))
         .add_paragraph(Paragraph::new());
 
     if report_data.items.is_empty() {
-        doc = doc.add_paragraph(
-            Paragraph::new()
-                .add_run(Run::new().add_text(REPORT_1213_EMPTY_TEXT)),
-        );
+        doc = doc
+            .add_paragraph(report_1213_body_paragraph(REPORT_1213_EMPTY_TEXT));
     } else {
         for (idx, item) in report_data.items.iter().enumerate() {
             doc = doc
-                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                    format!("Назва радіомережі: {}", item.network_name),
+                .add_paragraph(report_1213_item_paragraph(&format!(
+                    "Назва радіомережі: {}",
+                    item.network_name
                 )))
-                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                    format!(
-                        "Номінал робочої частоти: {}",
-                        item.nominal_working_freq
-                    ),
+                .add_paragraph(report_1213_item_paragraph(&format!(
+                    "Номінал робочої частоти: {}",
+                    item.nominal_working_freq
                 )))
-                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                    format!(
-                        "Час функціонування: {}",
-                        render_report_1213_activity_period(item)
-                    ),
+                .add_paragraph(report_1213_item_paragraph(&format!(
+                    "Час функціонування: {}",
+                    render_report_1213_activity_period(item)
                 )))
-                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                    format!(
-                        "Позивний вузла зв’язку: {}",
-                        item.node_callsign.clone().unwrap_or_else(|| {
-                            REPORT_1213_UNKNOWN_TEXT.to_string()
-                        })
-                    ),
+                .add_paragraph(report_1213_item_paragraph(&format!(
+                    "Позивний вузла зв’язку: {}",
+                    item.node_callsign
+                        .clone()
+                        .unwrap_or_else(|| REPORT_1213_UNKNOWN_TEXT.to_string())
                 )))
-                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                    format!(
-                        "Координати джерел (об’єктів): {}",
-                        item.source_mgrs.clone().unwrap_or_else(|| {
-                            REPORT_1213_UNKNOWN_TEXT.to_string()
-                        })
-                    ),
+                .add_paragraph(report_1213_item_paragraph(&format!(
+                    "Координати джерел (об’єктів): {}",
+                    item.source_mgrs
+                        .clone()
+                        .unwrap_or_else(|| REPORT_1213_UNKNOWN_TEXT.to_string())
                 )));
 
             if idx + 1 != report_data.items.len() {
@@ -570,16 +797,28 @@ fn build_report_1213_docx(report_data: &Report1213Data) -> Docx {
         }
     }
 
-    doc =
-        doc.add_paragraph(Paragraph::new())
-            .add_paragraph(Paragraph::new())
-            .add_paragraph(Paragraph::new())
-            .add_paragraph(Paragraph::new())
-            .add_paragraph(Paragraph::new().add_run(
-                Run::new().add_text(REPORT_1213_DOC_FOOTER_PARAGRAPH),
-            ));
+    doc = doc
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(report_1213_body_paragraph(
+            REPORT_1213_DOC_FOOTER_PARAGRAPH,
+        ));
 
     doc
+}
+
+fn report_1213_body_paragraph(text: &str) -> Paragraph {
+    Paragraph::new()
+        .add_run(Run::new().add_text(text))
+        .align(AlignmentType::Both)
+}
+
+fn report_1213_item_paragraph(text: &str) -> Paragraph {
+    Paragraph::new()
+        .add_run(Run::new().add_tab().add_text(text))
+        .align(AlignmentType::Both)
 }
 
 fn render_report_1213_activity_period(item: &Report1213Item) -> String {
@@ -594,9 +833,10 @@ fn render_report_1213_activity_period(item: &Report1213Item) -> String {
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource, datasource_group, login, organism, sigint_inbox_item,
-        sigint_inbox_item_metadata, sigint_inbox_item_network, sigint_network,
-        sigint_peleng, signal_message, signal_message_group,
+        area_of_responsibility, datasource, datasource_group, login, organism,
+        sigint_inbox_item, sigint_inbox_item_metadata,
+        sigint_inbox_item_network, sigint_network, sigint_peleng, signal_group,
+        signal_group_aor, signal_message, signal_message_group,
     };
     use crate::functest::tests::*;
     use chrono::NaiveDate;
@@ -723,14 +963,6 @@ mod tests {
             .expect("date")
             .and_hms_opt(hour, minute, 0)
             .expect("time")
-    }
-
-    fn reported_dt(day: u32, hour: u32, minute: u32) -> NaiveDateTime {
-        crate::utils::dt_zoned_from_millis(
-            test_dt(day, hour, minute).and_utc().timestamp_millis(),
-        )
-        .expect("local dt")
-        .naive_local()
     }
 
     fn mgrs_from_latlng(lat: f64, lng: f64) -> String {
@@ -884,6 +1116,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(report_data.items.len(), 2);
+        assert_eq!(report_data.peleng_count, 3);
 
         let rows = report_data
             .items
@@ -893,8 +1126,8 @@ mod tests {
 
         let row_with_sender = rows.get("ОГ Лёва 121 мсп 68 мсд 6 А").unwrap();
         assert_eq!(row_with_sender.nominal_working_freq, "138.8150");
-        assert_eq!(row_with_sender.first_seen_at, reported_dt(9, 6, 10));
-        assert_eq!(row_with_sender.last_seen_at, reported_dt(9, 22, 29));
+        assert_eq!(row_with_sender.first_seen_at, test_dt(9, 6, 10));
+        assert_eq!(row_with_sender.last_seen_at, test_dt(9, 22, 29));
         assert_eq!(row_with_sender.node_callsign.as_deref(), Some("ЯМАЛ"));
         assert_eq!(
             row_with_sender.source_mgrs,
@@ -903,8 +1136,8 @@ mod tests {
 
         let row_without_sender = rows.get("1843 омсб 68 мсд 6 А").unwrap();
         assert_eq!(row_without_sender.nominal_working_freq, "136.2350");
-        assert_eq!(row_without_sender.first_seen_at, reported_dt(9, 20, 30));
-        assert_eq!(row_without_sender.last_seen_at, reported_dt(9, 20, 30));
+        assert_eq!(row_without_sender.first_seen_at, test_dt(9, 1, 30));
+        assert_eq!(row_without_sender.last_seen_at, test_dt(9, 20, 30));
         assert_eq!(row_without_sender.node_callsign, None);
         assert_eq!(
             row_without_sender.source_mgrs,
@@ -1042,10 +1275,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(report_data.items.len(), 1);
+        assert_eq!(report_data.peleng_count, 1);
         let row = report_data.items.first().unwrap();
         assert_eq!(row.network_name, "вБпЛА 1855 омсб 68 мсд 6 А");
-        assert_eq!(row.first_seen_at, reported_dt(9, 0, 6));
-        assert_eq!(row.last_seen_at, reported_dt(9, 0, 6));
+        assert_eq!(row.first_seen_at, test_dt(9, 0, 6));
+        assert_eq!(row.last_seen_at, test_dt(9, 0, 6));
         assert_eq!(row.node_callsign.as_deref(), Some("ЗАЛИВ"));
         assert_eq!(row.source_mgrs, Some(mgrs_from_latlng(48.2, 37.2)));
 
@@ -1061,7 +1295,62 @@ mod tests {
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
+        let other_aor = mk_aor(
+            &env.dbx,
+            area_of_responsibility::ActiveModel {
+                name: Set("report-1213-other-aor".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_signal_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("report-1213-other-aor".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                group_master_key: Set(other_signal_group.master_key.clone()),
+                datasource_id: Set(datasource_group.datasource_id),
+                name: Set("other-aor-dsg".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_group_aor(
+            &env.dbx,
+            signal_group_aor::ActiveModel {
+                master_key: Set(other_datasource_group
+                    .group_master_key
+                    .clone()),
+                aor_id: Set(other_aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
+        seed_report_1213_message(
+            &env.dbx,
+            &datasource_group,
+            None,
+            "msg-fuzzy-early",
+            "138.6250",
+            test_dt(9, 4, 5),
+            None,
+            Some("різний підрозділ"),
+            None,
+            &["АЛЬФА"],
+        )
+        .await
+        .unwrap();
         seed_report_1213_message(
             &env.dbx,
             &datasource_group,
@@ -1073,6 +1362,34 @@ mod tests {
             Some("121 мсп 68 мсд 6 А"),
             None,
             &["СИГМА"],
+        )
+        .await
+        .unwrap();
+        seed_report_1213_message(
+            &env.dbx,
+            &datasource_group,
+            None,
+            "msg-fuzzy-late",
+            "138.6250",
+            test_dt(9, 20, 54),
+            None,
+            Some("ще інший підрозділ"),
+            None,
+            &["БЕТА"],
+        )
+        .await
+        .unwrap();
+        seed_report_1213_message(
+            &env.dbx,
+            &other_datasource_group,
+            None,
+            "msg-fuzzy-other-aor",
+            "138.6250",
+            test_dt(9, 23, 10),
+            None,
+            Some("чужий аор"),
+            None,
+            &["ГАММА"],
         )
         .await
         .unwrap();
@@ -1122,6 +1439,7 @@ mod tests {
         .await
         .unwrap();
 
+        assert_eq!(report_data.peleng_count, 2);
         let rows = report_data
             .items
             .into_iter()
@@ -1130,8 +1448,8 @@ mod tests {
 
         let fuzzy_row = rows.get("121 мсп 68 мсд 6 А").unwrap();
         assert_eq!(fuzzy_row.nominal_working_freq, "138.6250");
-        assert_eq!(fuzzy_row.first_seen_at, reported_dt(9, 5, 14));
-        assert_eq!(fuzzy_row.last_seen_at, reported_dt(9, 5, 14));
+        assert_eq!(fuzzy_row.first_seen_at, test_dt(9, 4, 5));
+        assert_eq!(fuzzy_row.last_seen_at, test_dt(9, 20, 54));
         assert_eq!(fuzzy_row.source_mgrs, Some(mgrs_from_latlng(48.25, 37.25)));
 
         let unknown_row = rows.get(REPORT_1213_UNKNOWN_TEXT).unwrap();
@@ -1195,6 +1513,7 @@ mod tests {
         .unwrap();
 
         assert!(report_data.items.is_empty());
+        assert_eq!(report_data.peleng_count, 0);
     }
 
     #[test]
@@ -1207,6 +1526,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            peleng_count: 1,
             items: vec![Report1213Item {
                 network_name: "ОГ Лёва 121 мсп 68 мсд 6 А".to_string(),
                 nominal_working_freq: "138.8150".to_string(),
