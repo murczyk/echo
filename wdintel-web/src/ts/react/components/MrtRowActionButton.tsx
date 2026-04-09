@@ -1,8 +1,11 @@
-import { Stack, Theme, Tooltip, alpha } from '@mui/material';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import { ListItemIcon, ListItemText, MenuItem, Stack, Theme, Tooltip, alpha } from '@mui/material';
 import { SystemStyleObject } from '@mui/system';
-import type { ReactNode } from 'react';
+import { Children, isValidElement, useId, useState } from 'react';
+import type { MouseEvent, ReactElement, ReactNode } from 'react';
 
 import { IconButton } from './mui-customized/icon-button';
+import { Menu } from './mui-customized/menu';
 
 type Tone = 'default' | 'danger';
 type Layout = 'row' | 'grid';
@@ -19,6 +22,8 @@ type GroupProps = {
   children: ReactNode;
   layout?: Layout;
 };
+
+type ActionElement = ReactElement<Props, typeof MrtRowActionButton>;
 
 function actionButtonSx(theme: Theme, tone: Tone): SystemStyleObject<Theme> {
   if (tone === 'danger') {
@@ -63,6 +68,56 @@ function actionButtonSx(theme: Theme, tone: Tone): SystemStyleObject<Theme> {
 }
 
 export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
+  const actions = Children.toArray(children).filter(isMrtRowActionElement);
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const menuButtonId = useId();
+
+  if (actions.length >= 3) {
+    const primaryAction = actions[0];
+    const overflowActions = actions.slice(1);
+    const menuOpen = Boolean(anchorEl);
+
+    return (
+      <>
+        <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" useFlexGap>
+          {primaryAction}
+          <Tooltip title="Інші дії">
+            <span style={{ display: 'inline-flex' }}>
+              <IconButton
+                size="small"
+                aria-label="Інші дії"
+                aria-controls={menuOpen ? menuButtonId : undefined}
+                aria-expanded={menuOpen ? 'true' : undefined}
+                aria-haspopup="menu"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setAnchorEl(event.currentTarget);
+                }}
+                sx={(theme) => actionButtonSx(theme, 'default')}
+              >
+                <MoreVertIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+        <Menu
+          id={menuButtonId}
+          anchorEl={anchorEl}
+          open={menuOpen}
+          onClose={() => setAnchorEl(null)}
+        >
+          {overflowActions.map((action, index) => (
+            <OverflowMenuAction
+              key={action.key ?? `overflow-action-${index}`}
+              action={action}
+              onClose={() => setAnchorEl(null)}
+            />
+          ))}
+        </Menu>
+      </>
+    );
+  }
+
   return (
     <Stack
       direction={layout === 'grid' ? undefined : 'row'}
@@ -102,7 +157,45 @@ export function MrtRowActionButton({ label, onClick, icon, disabled = false, ton
   return <Tooltip title={label}>{button}</Tooltip>;
 }
 
+function isMrtRowActionElement(child: ReactNode): child is ActionElement {
+  return isValidElement(child) && child.type === MrtRowActionButton;
+}
+
+function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClose: () => void }) {
+  const { label, onClick, icon, disabled = false, tone = 'default' } = action.props;
+
+  function handleClick(event: MouseEvent<HTMLLIElement>) {
+    event.stopPropagation();
+    onClose();
+    onClick();
+  }
+
+  return (
+    <MenuItem disabled={disabled} onClick={handleClick} sx={{ pl: 0.5 }}>
+      <ListItemIcon
+        sx={(theme) => ({
+          minWidth: 40,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: tone === 'danger' ? theme.palette.error.main : theme.palette.text.primary,
+          '& > *': {
+            display: 'block',
+          },
+        })}
+      >
+        {icon}
+      </ListItemIcon>
+      <ListItemText primary={label} />
+    </MenuItem>
+  );
+}
+
 export function mrtRowActionsColumnSize(actionCount: number, layout: Layout = 'row') {
+  if (actionCount >= 3) {
+    return layout === 'grid' ? 84 : 78;
+  }
+
   if (layout === 'grid') {
     return 84;
   }

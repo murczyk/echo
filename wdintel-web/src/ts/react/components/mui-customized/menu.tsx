@@ -3,7 +3,7 @@ import { forwardRef } from 'react';
 import type { ForwardedRef, KeyboardEvent } from 'react';
 
 export const Menu = forwardRef(function Menu(
-  { children, ...props }: MuiMenuProps,
+  { children, MenuListProps, sx, ...props }: MuiMenuProps,
   ref: ForwardedRef<HTMLDivElement>,
 ) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -18,19 +18,13 @@ export const Menu = forwardRef(function Menu(
       disableAutoFocus
       elevation={3}
       MenuListProps={{
-        'aria-labelledby': 'basic-button',
+        'aria-labelledby': MenuListProps?.['aria-labelledby'] || 'basic-button',
+        ...MenuListProps,
       }}
       sx={{
+        ...(sx || {}),
         '& .MuiList-padding:focus': {
           outline: 0,
-        },
-        '& .MuiMenu-list': {
-          paddingTop: 0,
-          paddingBottom: 0,
-        },
-        '& .MuiList-root': {
-          paddingTop: 0,
-          paddingBottom: 0,
         },
       }}
       anchorOrigin={

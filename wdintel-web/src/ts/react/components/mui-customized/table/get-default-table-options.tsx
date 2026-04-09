@@ -1,4 +1,5 @@
 import { Box } from '@mui/material';
+import { CheckboxProps } from '@mui/material/Checkbox';
 import { MenuItem } from '@mui/material';
 import { Theme } from '@mui/material';
 import { TextField } from '@mui/material';
@@ -159,6 +160,18 @@ export function getSharedFilterTextFieldProps(filterVariant?: string): TextField
   };
 }
 
+export function getSharedSelectAllCheckboxProps<TData extends MRT_RowData>({
+  table,
+}: {
+  table: MRT_TableInstance<TData>;
+}): CheckboxProps {
+  const hasSelectableRows = table.getRowModel().rows.some((row) => row.getCanSelect());
+
+  return {
+    disabled: !hasSelectableRows,
+  };
+}
+
 export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_TableOptions<TData>> => ({
   layoutMode: 'grid',
   enableStickyHeader: true,
@@ -172,6 +185,7 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
   localization: MRT_Localization_UK,
   positionToolbarAlertBanner: 'bottom',
   muiFilterTextFieldProps: ({ column }) => getSharedFilterTextFieldProps(column.columnDef.filterVariant),
+  muiSelectAllCheckboxProps: getSharedSelectAllCheckboxProps,
   renderEmptyRowsFallback: ({ table }) => {
     const hasFilters =
       Boolean(table.getState().globalFilter) ||
