@@ -2,7 +2,7 @@ import { IconButton, Menu, MenuItem } from '@mui/material';
 import { useId, useState } from 'react';
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 
-import type { ContentNode } from '../../../../Bindings';
+import type { ContentNode, InboxMessage } from '../../../../Bindings';
 import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
 
 const ORANGE_TOKEN_BG = '#fd884f';
@@ -169,9 +169,10 @@ export function renderMarkedText(
   nodes: ContentNode[],
   _bodyText: string,
   messagePointEtalons?: string[],
-  options?: { showPointLinks?: boolean },
+  options?: { showPointLinks?: boolean; message?: InboxMessage },
 ): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
+  const messageForMap = options?.message;
   const fromNodes = collectPointEtalons(nodes);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
     messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
@@ -227,9 +228,9 @@ export function renderMarkedText(
       if (cleanEtalon === '') {
         return <span key={i}>{text}</span>;
       }
-      const etalonsForUrl = allPointEtalons.length > 0 ? allPointEtalons : [cleanEtalon];
-      const hrefAll = buildAnalysisMapHrefWithSearch(etalonsForUrl);
-      const hrefSingle = buildAnalysisMapHrefWithSearch(cleanEtalon);
+      const etalonsForUrl = allPointEtalons.length > 0 ? allPointEtalons : [etalon];
+      const hrefAll = buildAnalysisMapHrefWithSearch(etalonsForUrl, messageForMap);
+      const hrefSingle = buildAnalysisMapHrefWithSearch(etalon, messageForMap);
       const title =
         allPointEtalons.length > 1
           ? `Відкрити на мапі аналізу: ${allPointEtalons.join(', ')}`

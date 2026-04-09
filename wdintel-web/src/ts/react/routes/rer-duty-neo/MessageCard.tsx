@@ -12,6 +12,9 @@ import {
   type TagsLayoutVariant,
 } from './utils';
 
+/** Share of the header row (network vs relative time) reserved for etalon / network block. */
+export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
+
 export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
@@ -75,12 +78,14 @@ export function MessageCard({
   const compactLayout = feedCount >= 3;
   const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
-  const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
+  const mapHref =
+    pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons, msg) : buildAnalysisHref(msg, true);
   const watermarkUserName = authUserName?.trim() ?? '';
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
     displayMode,
+    networkRowContentWidthPct: MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT,
     id,
     msg,
     mapHref,

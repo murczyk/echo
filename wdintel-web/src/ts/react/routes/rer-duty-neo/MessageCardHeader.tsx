@@ -7,8 +7,8 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PriorityHighOutlinedIcon from '@mui/icons-material/PriorityHighOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
@@ -331,11 +331,25 @@ function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; tex
   );
 }
 
-function NetworkLocationLine({
-  networkLabel,
+function networkNeedsInvestigationBadge(network: Network | undefined): boolean {
+  if (network == null) return false;
+  const ids = network.unitIds;
+  if (ids == null) return true;
+  return ids.length === 0;
+}
+
+function NetworkEtalonSection({
+  networkIds,
+  networkDisplayMap,
+  networkMap,
+  fallbackEtalonLabel,
   location,
 }: {
-  networkLabel: string;
+  networkIds: number[];
+  networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+  /** When `networkIds` is empty: unit / «Не встановлена» / «—». */
+  fallbackEtalonLabel: string;
   location: string | null | undefined;
 }) {
   const hasLocationDetails = location != null && location !== '' && location !== 'Не встановлена';
@@ -347,53 +361,124 @@ function NetworkLocationLine({
         titleAccess="Еталонна прив'язка"
       />
       <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Box
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'flex-start',
-            gap: 0.5,
-            minWidth: 0,
-            maxWidth: '100%',
-            verticalAlign: 'top',
-          }}
-        >
+        {networkIds.length > 0 ? (
+          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+            {networkIds.map((networkId) => {
+              const network = networkMap[networkId];
+              const label =
+                networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : 'Невідома мережа');
+              const badge = networkNeedsInvestigationBadge(network);
+              const hasNetworkLink = network != null;
+              return (
+                <Box key={networkId} sx={{ minWidth: 0, width: '100%' }}>
+                  {hasNetworkLink ? (
+                    <Link
+                      href={`/rer-networks/${networkId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Відкрити мережу в новій вкладці"
+                      underline="none"
+                      color="inherit"
+                      sx={{
+                        /* Inline flow: chip + icon sit after the last word of the name, not the row edge. */
+                        display: 'inline-block',
+                        maxWidth: '100%',
+                        verticalAlign: 'top',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                        '&:hover': { color: 'var(--message-callsign-color)' },
+                        '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
+                      }}
+                    >
+                      <Box component="span" sx={{ fontWeight: 700 }}>
+                        {label}
+                      </Box>
+                      {badge ? (
+                        <Box
+                          component="span"
+                          className="badge badge-no-unit-sm"
+                          sx={{
+                            ml: '0.35em',
+                            verticalAlign: 'middle',
+                            position: 'relative',
+                            top: '-0.06em',
+                          }}
+                        >
+                          в дорозвідці
+                        </Box>
+                      ) : null}
+                      <OpenInNewOutlinedIcon
+                        sx={{
+                          fontSize: '1.2em',
+                          width: '1.2em',
+                          height: '1.2em',
+                          verticalAlign: 'middle',
+                          ml: '0.2em',
+                          color: 'var(--color-icons)',
+                          opacity: 0.75,
+                          display: 'inline-block',
+                          position: 'relative',
+                          top: '-0.05em',
+                        }}
+                        aria-hidden
+                      />
+                    </Link>
+                  ) : (
+                    <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
+                      {label}
+                    </Typography>
+                  )}
+                </Box>
+              );
+            })}
+          </Stack>
+        ) : (
           <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-            {networkLabel}
+            {fallbackEtalonLabel}
           </Typography>
-          {hasLocationDetails ? (
-            <Tooltip title={location} placement="top">
-              <Box
-                component="button"
-                type="button"
-                aria-label={`Показати локацію: ${location}`}
-                sx={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 18,
-                  height: 18,
-                  p: 0,
-                  border: 'none',
-                  borderRadius: '50%',
-                  bgcolor: 'transparent',
-                  color: 'var(--color-icons)',
-                  cursor: 'help',
-                  flexShrink: 0,
-                  '&:hover': {
-                    color: 'var(--message-callsign-color)',
-                  },
-                  '&:focus-visible': {
-                    outline: '2px solid var(--message-callsign-color)',
-                    outlineOffset: '2px',
-                  },
-                }}
-              >
-                <InfoOutlinedIcon sx={{ fontSize: 16 }} />
-              </Box>
-            </Tooltip>
-          ) : null}
-        </Box>
+        )}
       </Box>
+      {hasLocationDetails ? (
+        <Tooltip title={location} placement="top">
+          <Box
+            component="button"
+            type="button"
+            aria-label={`Показати локацію: ${location}`}
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxSizing: 'border-box',
+              width: 18,
+              height: 18,
+              p: 0,
+              mt: '2px',
+              border: '1px solid',
+              borderColor: 'var(--color-icons)',
+              borderRadius: '50%',
+              bgcolor: 'transparent',
+              color: 'var(--color-icons)',
+              cursor: 'help',
+              flexShrink: 0,
+              '&:hover': {
+                color: 'var(--message-callsign-color)',
+                borderColor: 'var(--message-callsign-color)',
+              },
+              '&:focus-visible': {
+                outline: '2px solid var(--message-callsign-color)',
+                outlineOffset: '2px',
+              },
+            }}
+          >
+            <Box
+              component="i"
+              className="bi bi-geo-alt-fill"
+              aria-hidden
+              sx={{ fontSize: 12, lineHeight: 1, fontStyle: 'normal' }}
+            />
+          </Box>
+        </Tooltip>
+      ) : null}
     </Stack>
   );
 }
@@ -450,6 +535,8 @@ function AnalysisActionLink({ href, icon, label }: { href: string; icon: JSX.Ele
 export type MessageCardHeaderProps = {
   compact?: boolean;
   displayMode: MessageCardDisplayMode;
+  /** Width % of the bottom header row for the network / etalon block (remainder for relative time). */
+  networkRowContentWidthPct?: number;
   id: number;
   msg: InboxMessage;
   mapHref: string;
@@ -474,6 +561,7 @@ export type MessageCardHeaderProps = {
 export function MessageCardHeader({
   compact = false,
   displayMode,
+  networkRowContentWidthPct = 80,
   id,
   msg,
   mapHref,
@@ -544,16 +632,6 @@ export function MessageCardHeader({
   );
 
   const mapLink = <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />;
-
-  const networkLabel =
-    networkIds.length > 0
-      ? networkIds
-          .map((networkId) => {
-            const network = networkMap[networkId];
-            return networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : 'Невідома мережа');
-          })
-          .join(', ')
-      : (etalonNoNetworkLabel ?? '—');
 
   if (compact) {
     return (
@@ -669,29 +747,30 @@ export function MessageCardHeader({
             display: 'flex',
             alignItems: 'flex-start',
             alignSelf: 'start',
-            gridColumn: '1 / span 2',
+            gridColumn: '1 / -1',
             gridRow: 3,
-          }}
-        >
-          <NetworkLocationLine networkLabel={networkLabel} location={msg.location} />
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
+            columnGap: 1,
             pr: `${rightInsetPx}px`,
-            display: 'flex',
-            alignItems: 'flex-start',
-            alignSelf: 'start',
-            justifyContent: 'flex-end',
-            gridColumn: 3,
-            gridRow: 3,
           }}
         >
-          {timeDistance != null ? (
-            <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-              {timeDistance}
-            </Typography>
-          ) : null}
+          <Box
+            sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}
+          >
+            <NetworkEtalonSection
+              networkIds={networkIds}
+              networkDisplayMap={networkDisplayMap}
+              networkMap={networkMap}
+              fallbackEtalonLabel={etalonNoNetworkLabel ?? '—'}
+              location={msg.location}
+            />
+          </Box>
+          <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+            {timeDistance != null ? (
+              <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                {timeDistance}
+              </Typography>
+            ) : null}
+          </Box>
         </Box>
       </Box>
     );
@@ -791,29 +870,28 @@ export function MessageCardHeader({
           display: 'flex',
           alignItems: 'flex-start',
           alignSelf: 'start',
-          gridColumn: '1 / span 2',
+          gridColumn: '1 / -1',
           gridRow: 3,
-        }}
-      >
-        <NetworkLocationLine networkLabel={networkLabel} location={msg.location} />
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
+          columnGap: 1,
           pr: `${rightInsetPx}px`,
-          display: 'flex',
-          alignItems: 'flex-start',
-          alignSelf: 'start',
-          justifyContent: 'flex-end',
-          gridColumn: 3,
-          gridRow: 3,
         }}
       >
-        {timeDistance != null ? (
-          <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-            {timeDistance}
-          </Typography>
-        ) : null}
+        <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
+          <NetworkEtalonSection
+            networkIds={networkIds}
+            networkDisplayMap={networkDisplayMap}
+            networkMap={networkMap}
+            fallbackEtalonLabel={etalonNoNetworkLabel ?? '—'}
+            location={msg.location}
+          />
+        </Box>
+        <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+          {timeDistance != null ? (
+            <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+              {timeDistance}
+            </Typography>
+          ) : null}
+        </Box>
       </Box>
     </Box>
   );
