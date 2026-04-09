@@ -8842,7 +8842,15 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen
+            (\x ->
+                Json.Decode.map x
+                    (Json.Decode.oneOf
+                        [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)
+                        , Json.Decode.succeed Nothing
+                        ]
+                    )
+            )
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
