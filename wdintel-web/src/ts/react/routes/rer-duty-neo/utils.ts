@@ -306,7 +306,8 @@ export function toDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
+/** Full legacy Elm `state` object for /rer-analysis; `search` is message UID or map point query. */
+function rerAnalysisStateSnakeFromMessage(msg: InboxMessage, search: string) {
   const now = new Date();
   const from = new Date(now);
   from.setDate(from.getDate() - 15);
@@ -314,7 +315,7 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
   to.setDate(to.getDate() + 1);
   const freqStr = msg.freq != null ? String(msg.freq).trim() : '';
   const freqsSelected = freqStr !== '' ? [freqStr] : [];
-  const stateSnake = {
+  return {
     date_from_str: toDateStr(from),
     time_from_str: '',
     date_to_str: toDateStr(to),
@@ -333,7 +334,7 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
     or_bookmarked: false,
     or_important: false,
     or_with_coords: false,
-    search: msg.messageUid ?? '',
+    search,
     metadata_cc: [] as string[],
     metadata_sender: [] as string[],
     metadata_receiver: [] as string[],
@@ -345,7 +346,14 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
     units_exact_match_only: null as boolean | null,
     adjacent_freqs_range: 0,
     without_model_tags: false,
+    /** Required by Elm `rerAnalysisQueryStateDecoder`; omitting breaks decode and drops all filters. */
+    filter_tags_option: null,
+    report_tags_only_this_unit: null,
   };
+}
+
+export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
+  const stateSnake = rerAnalysisStateSnakeFromMessage(msg, msg.messageUid ?? '');
   const stateEnc = encodeURIComponent(JSON.stringify(stateSnake));
   const base = `/rer-analysis?state=${stateEnc}`;
   return showMap ? `${base}&showMap=true` : base;
@@ -363,11 +371,23 @@ export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
   return out;
 }
 
-export function buildAnalysisMapHrefWithSearch(etalons: string | string[]): string {
+/**
+ * Map-focused analysis URL. When `msg` is passed, includes the same date range and `freqs_selected`
+ * as other analysis links from this message (legacy `state` JSON for /rer-analysis).
+ */
+export function buildAnalysisMapHrefWithSearch(etalons: string | string[], msg?: InboxMessage): string {
   const searchStr = Array.isArray(etalons)
     ? uniquePointEtalonsForMapSearch(etalons).join(',')
     : String(etalons).trim();
-  if (!searchStr) return '/rer-analysis?showMap=true';
+  if (!searchStr) {
+    if (msg != null) return buildAnalysisHref(msg, true);
+    return '/rer-analysis?showMap=true';
+  }
+  if (msg != null) {
+    const stateSnake = rerAnalysisStateSnakeFromMessage(msg, searchStr);
+    const stateEnc = encodeURIComponent(JSON.stringify(stateSnake));
+    return `/rer-analysis?state=${stateEnc}&showMap=true`;
+  }
   const stateEnc = encodeURIComponent(JSON.stringify({ search: searchStr }));
   return `/rer-analysis?state=${stateEnc}&showMap=true`;
 }

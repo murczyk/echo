@@ -299,6 +299,7 @@ export function MessageCardMessageBody({
     msg.textMarked && msg.textMarked.length > 0
       ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
           showPointLinks,
+          message: msg,
         })
       : msg.text || '—';
 
