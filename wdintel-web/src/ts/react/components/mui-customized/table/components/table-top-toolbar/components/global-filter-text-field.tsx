@@ -49,7 +49,7 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
             <InputAdornment position="start">
               <FilterAltIcon
                 sx={{
-                  color: props.globalFilter ? 'text.secondary' : 'text.secondary',
+                  color: 'text.secondary',
                 }}
               />
             </InputAdornment>
