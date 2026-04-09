@@ -71,6 +71,7 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
   const actions = Children.toArray(children).filter(isMrtRowActionElement);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const menuButtonId = useId();
+  const menuLabelId = `${menuButtonId}-trigger`;
 
   if (actions.length >= 3) {
     const primaryAction = actions[0];
@@ -84,6 +85,7 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
           <Tooltip title="Інші дії">
             <span style={{ display: 'inline-flex' }}>
               <IconButton
+                id={menuLabelId}
                 size="small"
                 aria-label="Інші дії"
                 aria-controls={menuOpen ? menuButtonId : undefined}
@@ -105,6 +107,7 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
           anchorEl={anchorEl}
           open={menuOpen}
           onClose={() => setAnchorEl(null)}
+          slotProps={{ list: { 'aria-labelledby': menuLabelId } }}
         >
           {overflowActions.map((action, index) => (
             <OverflowMenuAction

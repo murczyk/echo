@@ -3,7 +3,7 @@ import { forwardRef } from 'react';
 import type { ForwardedRef, KeyboardEvent } from 'react';
 
 export const Menu = forwardRef(function Menu(
-  { children, MenuListProps, sx, ...props }: MuiMenuProps,
+  { children, slotProps, sx, ...props }: MuiMenuProps,
   ref: ForwardedRef<HTMLDivElement>,
 ) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -16,9 +16,12 @@ export const Menu = forwardRef(function Menu(
     <MuiMenu
       ref={ref}
       elevation={3}
-      MenuListProps={{
-        'aria-labelledby': MenuListProps?.['aria-labelledby'] || 'basic-button',
-        ...MenuListProps,
+      slotProps={{
+        ...slotProps,
+        list: {
+          'aria-labelledby': slotProps?.list?.['aria-labelledby'] || 'basic-button',
+          ...slotProps?.list,
+        },
       }}
       sx={{
         ...(sx || {}),
