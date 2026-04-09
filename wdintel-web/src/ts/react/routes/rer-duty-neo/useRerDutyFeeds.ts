@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { fetchUserSettings } from '../../services/api/user-settings';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { sortFrequenciesNumerically } from '../../utils/misc';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
@@ -82,6 +83,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     disableAutoScroll: dutyDisableAutoScroll,
   });
   const setFeedError = feedState.setError;
+  useEffect(() => attachDutyNotificationAudioPrimingListeners(), []);
   useEffect(() => {
     let cancelled = false;
     currentSystemSettings()

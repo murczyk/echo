@@ -1723,6 +1723,7 @@ export type ReportPreviewReq = {
   req: InboxMessagesReq;
   reportType: ReportType | null;
   reportTagsOnlyThisUnit: boolean | null;
+  report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
   digestOmitExoId: boolean | null;
   digestForm1217: boolean | null;

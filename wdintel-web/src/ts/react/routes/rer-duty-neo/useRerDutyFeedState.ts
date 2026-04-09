@@ -24,6 +24,7 @@ import {
 } from './utils';
 import type { MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
+import { notifyDutyNewMessages } from './notifications';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -71,6 +72,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  const lastServerCountByFeedIdRef = useRef<Record<string, number>>({});
+  const lastFilterSignatureByFeedIdRef = useRef<Record<string, string>>({});
   /** Virtuoso "at bottom" (pixel threshold); used so poll only auto-scrolls when the scroller is actually at the bottom. */
   const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
 
@@ -256,6 +259,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                   const markAllRead = opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
                   const readIds = markAllRead ? new Set(combined.map(([id]) => id)) : x.readIds;
                   const unreadCount = markAllRead ? 0 : combined.length - x.readIds.size;
+                  delete lastServerCountByFeedIdRef.current[feedId];
                   return {
                     ...x,
                     items: sortMessageItemsByTime(combined),
@@ -287,10 +291,39 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
+    const signatureByFeedId: Record<string, string> = {};
+    messageFeeds.forEach((feed) => {
+      const signature = JSON.stringify({
+        filter: {
+          groupsSelected: feed.filter.groupsSelected ?? null,
+          sendersSelected: feed.filter.sendersSelected ?? null,
+          deniedSenders: feed.filter.deniedSenders ?? null,
+          freqsSelected: feed.filter.freqsSelected ?? null,
+          freqsDenied: feed.filter.freqsDenied ?? null,
+          postsSelected: feed.filter.postsSelected ?? null,
+          postsDenied: feed.filter.postsDenied ?? null,
+        },
+        freqUniverse: feed.adjacentFreqsRange > 0 ? freqs : null,
+        adjacentFreqsRange: feed.adjacentFreqsRange ?? 0,
+        highlightSignalsEnabled: feed.highlightSignalsEnabled ?? false,
+        onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled ?? false,
+      });
+      signatureByFeedId[feed.id] = signature;
+      if (lastFilterSignatureByFeedIdRef.current[feed.id] !== signature) {
+        lastFilterSignatureByFeedIdRef.current[feed.id] = signature;
+        delete lastServerCountByFeedIdRef.current[feed.id];
+      }
+    });
     const counts = await Promise.all(
       messageFeeds.map(async (w) => {
         if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
-          return { feedId: w.id, quantity: null as number | null, hasItems: w.items.length > 0, skipped: true };
+          return {
+            feedId: w.id,
+            quantity: null as number | null,
+            hasItems: w.items.length > 0,
+            skipped: true,
+            failed: false,
+          };
         }
         countInFlightByFeedIdRef.current.add(w.id);
         try {
@@ -303,9 +336,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           const { quantity } = await fetchInboxCount(
             buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
           );
-          return { feedId: w.id, quantity, hasItems, skipped: false };
+          return { feedId: w.id, quantity, hasItems, skipped: false, failed: false };
         } catch {
-          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false };
+          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false, failed: true };
         } finally {
           countInFlightByFeedIdRef.current.delete(w.id);
         }
@@ -327,9 +360,26 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         return { ...f, unreadCount };
       }),
     );
+    const newCountBySignature: Record<string, number> = {};
     for (const entry of counts) {
-      if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
+      if (entry.skipped || entry.quantity == null) continue;
       const { feedId } = entry;
+      if (entry.failed) {
+        continue;
+      }
+      if (entry.quantity <= 0) {
+        lastServerCountByFeedIdRef.current[feedId] = 0;
+        continue;
+      }
+      const prevServerCount = lastServerCountByFeedIdRef.current[feedId] ?? (entry.hasItems ? 0 : null);
+      const nextCount = entry.quantity;
+      if (prevServerCount != null) {
+        const newCount = Math.max(0, nextCount - prevServerCount);
+        const signatureKey = signatureByFeedId[feedId] ?? feedId;
+        const prevCount = newCountBySignature[signatureKey] ?? 0;
+        newCountBySignature[signatureKey] = Math.max(prevCount, newCount);
+      }
+      lastServerCountByFeedIdRef.current[feedId] = nextCount;
       if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
         const atBottom = atBottomByFeedIdRef.current[feedId] ?? false;
         const shouldFollowScroll =
@@ -341,7 +391,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         });
       }
     }
-  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, deps.disableAutoScroll]);
+    const totalNewCount = Object.values(newCountBySignature).reduce((sum, count) => sum + count, 0);
+    if (totalNewCount > 0) {
+      notifyDutyNewMessages(totalNewCount);
+    }
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, freqs,deps.disableAutoScroll]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(

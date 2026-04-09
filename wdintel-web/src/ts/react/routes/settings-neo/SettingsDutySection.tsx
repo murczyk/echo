@@ -9,9 +9,16 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import type { FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import { Button } from '../../components/mui-customized/button';
+import {
+  getBrowserNotificationPermission,
+  getStoredDutyNotificationSettings,
+  requestBrowserNotificationPermission,
+  resumeDutyNotificationAudioFromUserGesture,
+  setStoredDutyNotificationSettings,
+} from '../rer-duty-neo/notifications';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 export type SettingsDutySectionProps = {
@@ -42,6 +49,15 @@ export function SettingsDutySection({
   isDirty,
   saveInProgress,
 }: SettingsDutySectionProps) {
+  const [dutyNotificationSettings, setDutyNotificationSettings] = useState(() => getStoredDutyNotificationSettings());
+  const [browserPermission, setBrowserPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    getBrowserNotificationPermission(),
+  );
+
+  useEffect(() => {
+    setStoredDutyNotificationSettings(dutyNotificationSettings);
+  }, [dutyNotificationSettings]);
+
   return (
     <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
       <Stack spacing={2} sx={{ maxWidth: 960 }}>
@@ -121,6 +137,54 @@ export function SettingsDutySection({
                 зберегти
               </Button>
             </Box>
+          </Stack>
+          <Stack spacing={2} sx={{ maxWidth: 560 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              Нотифікації про нові повідомлення
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={dutyNotificationSettings.soundEnabled}
+                  onChange={(_, checked) => {
+                    if (checked) {
+                      resumeDutyNotificationAudioFromUserGesture();
+                    }
+                    setDutyNotificationSettings((prev) => ({ ...prev, soundEnabled: checked }));
+                  }}
+                />
+              }
+              label="Звукова нотифікація"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={dutyNotificationSettings.browserEnabled}
+                  onChange={async (_, checked) => {
+                    if (checked) {
+                      const permission = await requestBrowserNotificationPermission();
+                      setBrowserPermission(permission);
+                      if (permission !== 'granted') {
+                        setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: false }));
+                        return;
+                      }
+                    }
+                    setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: checked }));
+                  }}
+                />
+              }
+              label="Браузерна нотифікація"
+            />
+            {browserPermission === 'denied' ? (
+              <Typography variant="caption" color="error">
+                Браузерні нотифікації вимкнені у налаштуваннях браузера.
+              </Typography>
+            ) : null}
+            {browserPermission === 'unsupported' ? (
+              <Typography variant="caption" color="text.secondary">
+                Ваш браузер не підтримує browser-нотифікації.
+              </Typography>
+            ) : null}
           </Stack>
         </Box>
       </Stack>
