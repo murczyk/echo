@@ -21,7 +21,6 @@ import { downloadBlob } from '../../utils/download-blob';
 import {
   applyRestrictedAccess,
   buildPalitraNameWithSuffix,
-  canModifyPalitra,
   DEFAULT_COLOR_HEX,
   formatErrorMessage,
   getAvailableAccessTypes,
@@ -134,6 +133,10 @@ export function useRerPalitraNeoPage() {
       }),
     );
   }, [visiblePalitras, user, myScope, organisms, aors, inFlightArchiveId, inFlightDeleteId, inFlightDownloadId, inFlightUploadId]);
+  const visibleSelectablePalitraIds = useMemo(
+    () => new Set(rows.filter((row) => row.canSelect).map((row) => row.id)),
+    [rows],
+  );
   const updateCreateForm = useCallback(
     (updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)),
     [],
@@ -165,6 +168,13 @@ export function useRerPalitraNeoPage() {
       }
     });
   }, [archiveView]);
+
+  useEffect(() => {
+    setSelectedPalitraIds((prev) => {
+      const next = prev.filter((id) => visibleSelectablePalitraIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [visibleSelectablePalitraIds]);
 
   const reloadPalitras = useCallback(async () => {
     const list = await listPalitras();
@@ -405,15 +415,9 @@ export function useRerPalitraNeoPage() {
     if (archiveDialogOpen || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null || deleteDialogOpen) return;
 
     const selectedSet = new Set(selectedPalitraIds);
-    const selected = palitras.filter(
-      (palitra) =>
-        selectedSet.has(palitra.id) &&
-        canModifyPalitra(user, palitra) &&
-        inFlightArchiveId !== palitra.id &&
-        inFlightDeleteId !== palitra.id &&
-        inFlightDownloadId !== palitra.id &&
-        inFlightUploadId !== palitra.id,
-    );
+    const selected = rows
+      .filter((row) => selectedSet.has(row.id) && row.canSelect)
+      .map((row) => row.palitra);
     if (selected.length === 0) return;
 
     setBulkDeleteDialogPalitras(selected);
