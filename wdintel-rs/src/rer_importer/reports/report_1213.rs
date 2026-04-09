@@ -55,7 +55,7 @@ struct Report1213Item {
 }
 
 #[derive(Debug, Clone)]
-struct SenderNameStat {
+struct Report1213ObservedTextStat {
     count: usize,
     last_seen_at: NaiveDateTime,
 }
@@ -67,7 +67,8 @@ struct Report1213Accumulator {
     activity_key: Report1213ActivityKey,
     first_seen_at: NaiveDateTime,
     last_seen_at: NaiveDateTime,
-    sender_name_stats: BTreeMap<String, SenderNameStat>,
+    sender_name_stats: BTreeMap<String, Report1213ObservedTextStat>,
+    linked_unit_name_stats: BTreeMap<String, Report1213ObservedTextStat>,
     latest_source_mgrs: Option<(NaiveDateTime, String)>,
 }
 
@@ -85,6 +86,7 @@ impl Report1213Accumulator {
             first_seen_at: seen_at,
             last_seen_at: seen_at,
             sender_name_stats: BTreeMap::new(),
+            linked_unit_name_stats: BTreeMap::new(),
             latest_source_mgrs: None,
         }
     }
@@ -104,18 +106,27 @@ impl Report1213Accumulator {
         sender_names: &[String],
         seen_at: NaiveDateTime,
     ) {
-        for sender_name in sender_names {
-            self.sender_name_stats
-                .entry(sender_name.clone())
-                .and_modify(|stat| {
-                    stat.count += 1;
-                    stat.last_seen_at = stat.last_seen_at.max(seen_at);
-                })
-                .or_insert(SenderNameStat {
-                    count: 1,
-                    last_seen_at: seen_at,
-                });
-        }
+        observe_report_1213_texts(
+            &mut self.sender_name_stats,
+            sender_names,
+            seen_at,
+        );
+    }
+
+    fn observe_linked_unit_name(
+        &mut self,
+        linked_unit_name: Option<&str>,
+        seen_at: NaiveDateTime,
+    ) {
+        let Some(linked_unit_name) = linked_unit_name else {
+            return;
+        };
+
+        observe_report_1213_texts(
+            &mut self.linked_unit_name_stats,
+            &[linked_unit_name.to_string()],
+            seen_at,
+        );
     }
 
     fn observe_source_mgrs(&mut self, mgrs: String, seen_at: NaiveDateTime) {
@@ -126,16 +137,45 @@ impl Report1213Accumulator {
     }
 
     fn finish(self) -> Report1213Item {
+        let network_name = match self.activity_key {
+            Report1213ActivityKey::LinkedNetwork(_) => {
+                match pick_report_1213_text(&self.linked_unit_name_stats) {
+                    Some(unit_name) => {
+                        format!("{} {}", self.network_name, unit_name)
+                    }
+                    None => self.network_name,
+                }
+            }
+            Report1213ActivityKey::FuzzyFreqAor(_) => self.network_name,
+        };
+
         Report1213Item {
-            network_name: self.network_name,
+            network_name,
             nominal_working_freq: self.nominal_working_freq,
             first_seen_at: self.first_seen_at,
             last_seen_at: self.last_seen_at,
-            node_callsign: pick_report_1213_sender_name(
-                &self.sender_name_stats,
-            ),
+            node_callsign: pick_report_1213_text(&self.sender_name_stats),
             source_mgrs: self.latest_source_mgrs.map(|(_, mgrs)| mgrs),
         }
+    }
+}
+
+fn observe_report_1213_texts(
+    stats: &mut BTreeMap<String, Report1213ObservedTextStat>,
+    values: &[String],
+    seen_at: NaiveDateTime,
+) {
+    for value in values {
+        stats
+            .entry(value.clone())
+            .and_modify(|stat| {
+                stat.count += 1;
+                stat.last_seen_at = stat.last_seen_at.max(seen_at);
+            })
+            .or_insert(Report1213ObservedTextStat {
+                count: 1,
+                last_seen_at: seen_at,
+            });
     }
 }
 
@@ -462,6 +502,10 @@ fn build_report_1213_data(
             } else {
                 row.observe_datetime(seen_at);
             }
+            row.observe_linked_unit_name(
+                row_def.linked_unit_name.as_deref(),
+                seen_at,
+            );
             row.observe_sender_names(&sender_names, seen_at);
             if let Some(ref source_mgrs) = source_mgrs {
                 row.observe_source_mgrs(source_mgrs.clone(), seen_at);
@@ -501,6 +545,7 @@ struct Report1213RowDef {
     row_key: String,
     network_name: String,
     activity_key: Report1213ActivityKey,
+    linked_unit_name: Option<String>,
 }
 
 fn build_report_1213_row_defs(
@@ -522,6 +567,9 @@ fn build_report_1213_row_defs(
                     activity_key: Report1213ActivityKey::LinkedNetwork(
                         network_id,
                     ),
+                    linked_unit_name: sanitize_report_1213_text(
+                        message.unit.clone(),
+                    ),
                 }
             })
         })
@@ -541,6 +589,7 @@ fn build_report_1213_row_defs(
         },
         network_name,
         activity_key: Report1213ActivityKey::FuzzyFreqAor(aor_id),
+        linked_unit_name: None,
     }]
 }
 
@@ -682,19 +731,15 @@ fn extract_report_1213_mgrs(
     Some(Mgrs::from_latlon(&latlon, 6).to_string())
 }
 
-fn pick_report_1213_sender_name(
-    sender_name_stats: &BTreeMap<String, SenderNameStat>,
+fn pick_report_1213_text(
+    text_stats: &BTreeMap<String, Report1213ObservedTextStat>,
 ) -> Option<String> {
-    sender_name_stats
+    text_stats
         .iter()
-        .max_by_key(|(sender_name, stat)| {
-            (
-                stat.count,
-                stat.last_seen_at,
-                Reverse((*sender_name).clone()),
-            )
+        .max_by_key(|(text, stat)| {
+            (stat.count, stat.last_seen_at, Reverse((*text).clone()))
         })
-        .map(|(sender_name, _)| sender_name.clone())
+        .map(|(text, _)| text.clone())
 }
 
 fn sanitize_report_1213_text(value: Option<String>) -> Option<String> {
@@ -1143,6 +1188,74 @@ mod tests {
             row_without_sender.source_mgrs,
             Some(mgrs_from_latlng(48.05, 37.05))
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn collect_report_1213_appends_unit_name_for_linked_networks() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("управління".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        seed_report_1213_message(
+            &env.dbx,
+            &datasource_group,
+            Some(&network),
+            "msg-linked-unit",
+            "138.5000",
+            test_dt(9, 9, 30),
+            Some((48.3, 37.3)),
+            Some("12 мсд 45 мсп"),
+            None,
+            &["ТЕСТ"],
+        )
+        .await
+        .unwrap();
+
+        let req = ReportPreviewReq {
+            kind: "report_1213".to_string(),
+            req: crate::rer_importer::InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    test_dt(8, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(10, 23, 59).and_utc().timestamp_millis(),
+                ),
+                nolimit: Some(true),
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: None,
+            report_1213_linked_networks_only: Some(true),
+            without_comments: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
+        };
+
+        let logins = vec![login.login.clone()];
+        let report_data = collect_report_1213_data(
+            &env.dbx,
+            &login.login,
+            &logins,
+            &env,
+            &req,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report_data.items.len(), 1);
+        let row = report_data.items.first().unwrap();
+        assert_eq!(row.network_name, "управління 12 мсд 45 мсп");
     }
 
     #[tokio::test]
