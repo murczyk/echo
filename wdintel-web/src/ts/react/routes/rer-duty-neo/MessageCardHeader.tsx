@@ -354,131 +354,147 @@ function NetworkEtalonSection({
 }) {
   const hasLocationDetails = location != null && location !== '' && location !== 'Не встановлена';
 
+  const geoButton = hasLocationDetails ? (
+    <Tooltip title={location} placement="top">
+      <Box
+        component="button"
+        type="button"
+        aria-label={`Показати локацію: ${location}`}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxSizing: 'border-box',
+          width: 18,
+          height: 18,
+          p: 0,
+          mt: '2px',
+          border: '1px solid',
+          borderColor: 'var(--color-icons)',
+          borderRadius: '50%',
+          bgcolor: 'transparent',
+          color: 'var(--color-icons)',
+          cursor: 'help',
+          flexShrink: 0,
+          alignSelf: 'flex-start',
+          '&:hover': {
+            color: 'var(--message-callsign-color)',
+            borderColor: 'var(--message-callsign-color)',
+          },
+          '&:focus-visible': {
+            outline: '2px solid var(--message-callsign-color)',
+            outlineOffset: '2px',
+          },
+        }}
+      >
+        <Box
+          component="i"
+          className="bi bi-geo-alt-fill"
+          aria-hidden
+          sx={{ fontSize: 12, lineHeight: 1, fontStyle: 'normal' }}
+        />
+      </Box>
+    </Tooltip>
+  ) : null;
+
   return (
     <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, width: '100%' }}>
       <PeopleOutlineOutlinedIcon
         sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }}
         titleAccess="Еталонна прив'язка"
       />
-      <Box sx={{ minWidth: 0, flex: 1 }}>
-        {networkIds.length > 0 ? (
-          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-            {networkIds.map((networkId) => {
-              const network = networkMap[networkId];
-              const label =
-                networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : 'Невідома мережа');
-              const badge = networkNeedsInvestigationBadge(network);
-              const hasNetworkLink = network != null;
-              return (
-                <Box key={networkId} sx={{ minWidth: 0, width: '100%' }}>
-                  {hasNetworkLink ? (
-                    <Link
-                      href={`/rer-networks/${networkId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Відкрити мережу в новій вкладці"
-                      underline="none"
-                      color="inherit"
-                      sx={{
-                        /* Inline flow: chip + icon sit after the last word of the name, not the row edge. */
-                        display: 'inline-block',
-                        maxWidth: '100%',
-                        verticalAlign: 'top',
-                        overflowWrap: 'anywhere',
-                        wordBreak: 'break-word',
-                        '&:hover': { color: 'var(--message-callsign-color)' },
-                        '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
-                      }}
-                    >
-                      <Box component="span" sx={{ fontWeight: 700 }}>
-                        {label}
-                      </Box>
-                      {badge ? (
-                        <Box
-                          component="span"
-                          className="badge badge-no-unit-sm"
-                          sx={{
-                            ml: '0.35em',
-                            verticalAlign: 'middle',
-                            position: 'relative',
-                            top: '-0.06em',
-                          }}
-                        >
-                          в дорозвідці
-                        </Box>
-                      ) : null}
-                      <OpenInNewOutlinedIcon
+      <Box
+        sx={{
+          minWidth: 0,
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+          columnGap: 0.75,
+          rowGap: 0.5,
+        }}
+      >
+        <Box sx={{ minWidth: 0, flex: '0 1 auto', maxWidth: '100%' }}>
+          {networkIds.length > 0 ? (
+            <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+              {networkIds.map((networkId) => {
+                const network = networkMap[networkId];
+                const label =
+                  networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : 'Невідома мережа');
+                const badge = networkNeedsInvestigationBadge(network);
+                const hasNetworkLink = network != null;
+                return (
+                  <Box key={networkId} sx={{ minWidth: 0, width: '100%' }}>
+                    {hasNetworkLink ? (
+                      <Link
+                        href={`/rer-networks/${networkId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Відкрити мережу в новій вкладці"
+                        underline="none"
+                        color="inherit"
                         sx={{
-                          fontSize: '1.2em',
-                          width: '1.2em',
-                          height: '1.2em',
-                          verticalAlign: 'middle',
-                          ml: '0.2em',
-                          color: 'var(--color-icons)',
-                          opacity: 0.75,
+                          /* Inline flow: chip + icon sit after the last word of the name, not the row edge. */
                           display: 'inline-block',
-                          position: 'relative',
-                          top: '-0.05em',
+                          maxWidth: '100%',
+                          verticalAlign: 'top',
+                          overflowWrap: 'anywhere',
+                          wordBreak: 'break-word',
+                          '&:hover': { color: 'var(--message-callsign-color)' },
+                          '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
                         }}
-                        aria-hidden
-                      />
-                    </Link>
-                  ) : (
-                    <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-                      {label}
-                    </Typography>
-                  )}
-                </Box>
-              );
-            })}
-          </Stack>
-        ) : (
-          <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-            {fallbackEtalonLabel}
-          </Typography>
-        )}
+                      >
+                        <Box component="span" sx={{ fontWeight: 700 }}>
+                          {label}
+                        </Box>
+                        {badge ? (
+                          <Box
+                            component="span"
+                            className="badge badge-no-unit-sm"
+                            sx={{
+                              ml: '0.35em',
+                              verticalAlign: 'middle',
+                              position: 'relative',
+                              top: '-0.06em',
+                            }}
+                          >
+                            в дорозвідці
+                          </Box>
+                        ) : null}
+                        <OpenInNewOutlinedIcon
+                          sx={{
+                            fontSize: '1.2em',
+                            width: '1.2em',
+                            height: '1.2em',
+                            verticalAlign: 'middle',
+                            ml: '0.2em',
+                            color: 'var(--color-icons)',
+                            opacity: 0.75,
+                            display: 'inline-block',
+                            position: 'relative',
+                            top: '-0.05em',
+                          }}
+                          aria-hidden
+                        />
+                      </Link>
+                    ) : (
+                      <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
+                        {label}
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </Stack>
+          ) : (
+            <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
+              {fallbackEtalonLabel}
+            </Typography>
+          )}
+        </Box>
+        {geoButton}
       </Box>
-      {hasLocationDetails ? (
-        <Tooltip title={location} placement="top">
-          <Box
-            component="button"
-            type="button"
-            aria-label={`Показати локацію: ${location}`}
-            sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxSizing: 'border-box',
-              width: 18,
-              height: 18,
-              p: 0,
-              mt: '2px',
-              border: '1px solid',
-              borderColor: 'var(--color-icons)',
-              borderRadius: '50%',
-              bgcolor: 'transparent',
-              color: 'var(--color-icons)',
-              cursor: 'help',
-              flexShrink: 0,
-              '&:hover': {
-                color: 'var(--message-callsign-color)',
-                borderColor: 'var(--message-callsign-color)',
-              },
-              '&:focus-visible': {
-                outline: '2px solid var(--message-callsign-color)',
-                outlineOffset: '2px',
-              },
-            }}
-          >
-            <Box
-              component="i"
-              className="bi bi-geo-alt-fill"
-              aria-hidden
-              sx={{ fontSize: 12, lineHeight: 1, fontStyle: 'normal' }}
-            />
-          </Box>
-        </Tooltip>
-      ) : null}
     </Stack>
   );
 }

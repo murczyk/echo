@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Box, Button, Collapse, Stack, Tooltip, Typography } from '@mui/material';
 
-import type { ContentNode, InboxMessage, Tag } from '../../../../Bindings';
+import type { ContentNode, InboxMessage, MessageMediaInfo, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from './utils';
 import { renderMarkedText } from './MarkedText';
@@ -281,6 +281,58 @@ function MessageCardTagChips({
   );
 }
 
+function isImageAttachment(m: MessageMediaInfo): boolean {
+  const ct = String(m.contentType ?? '').trim();
+  if (ct.startsWith('image/')) return true;
+  if (ct !== '') return false;
+  const href = String(m.href ?? '').toLowerCase();
+  return /\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
+}
+
+/** Same as Elm `renderMedia` when `featureHideDocuments` is off: images as thumb; other files as download. */
+function MessageCardMediaList({ media }: { media: MessageMediaInfo[] }) {
+  if (media.length === 0) return null;
+  return (
+    <Stack spacing={1} sx={{ minWidth: 0, alignItems: 'flex-start' }}>
+      {media.map((attachment, index) => {
+        const rowKey = attachment.id || attachment.href || `media-${index}`;
+        if (isImageAttachment(attachment)) {
+          return (
+            <Box key={rowKey} sx={{ display: 'inline-block', maxWidth: '100%' }}>
+              <a href={attachment.href} target="_blank" rel="noopener noreferrer">
+                <Box
+                  component="img"
+                  src={attachment.href}
+                  alt={attachment.fileName ?? 'Вкладення'}
+                  sx={{ height: 100, minHeight: 100, display: 'block', maxWidth: '100%', objectFit: 'contain' }}
+                />
+              </a>
+            </Box>
+          );
+        }
+        const displayFileName =
+          attachment.fileName != null && attachment.fileName.trim() !== '' ? attachment.fileName : 'файл без назви';
+        return (
+          <Button
+            key={rowKey}
+            component="a"
+            href={attachment.href}
+            download={displayFileName}
+            target="_blank"
+            rel="noopener noreferrer"
+            size="small"
+            variant="outlined"
+            sx={{ textTransform: 'none', maxWidth: '100%' }}
+            startIcon={<Box component="i" className="bi bi-download" sx={{ fontStyle: 'normal' }} />}
+          >
+            {displayFileName}
+          </Button>
+        );
+      })}
+    </Stack>
+  );
+}
+
 export function MessageCardMessageBody({
   compact = false,
   msg,
@@ -305,6 +357,7 @@ export function MessageCardMessageBody({
 
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
+      <MessageCardMediaList media={msg.media ?? []} />
       <Typography
         component="div"
         variant="body2"
