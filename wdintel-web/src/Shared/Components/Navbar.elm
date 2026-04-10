@@ -505,9 +505,16 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
             }
             -> Html msg
         menuItemLabel item =
+            let
+                betaPages =
+                    [ "callsigns-neo"
+                    , "palitra-neo"
+                    , "messenger-neo"
+                    ]
+            in
             span [ class "inline-flex items-center gap-2" ]
                 (text item.label
-                    :: (if item.activeName == "callsigns-neo" || item.activeName == "palitra-neo" then
+                    :: (if List.member item.activeName betaPages then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Beta" ]

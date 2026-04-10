@@ -3,7 +3,7 @@ import { forwardRef } from 'react';
 import type { ForwardedRef, KeyboardEvent } from 'react';
 
 export const Menu = forwardRef(function Menu(
-  { children, ...props }: MuiMenuProps,
+  { children, slotProps, sx, ...props }: MuiMenuProps,
   ref: ForwardedRef<HTMLDivElement>,
 ) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -12,25 +12,25 @@ export const Menu = forwardRef(function Menu(
     }
   }
 
+  const legacyMenuListProps = (props as { MenuListProps?: Record<string, unknown> }).MenuListProps;
+  const { MenuListProps: _ignoredMenuListProps, ...restProps } = props as MuiMenuProps & { MenuListProps?: Record<string, unknown> };
+
   return (
     <MuiMenu
       ref={ref}
-      disableAutoFocus
       elevation={3}
-      MenuListProps={{
-        'aria-labelledby': 'basic-button',
+      slotProps={{
+        ...slotProps,
+        list: {
+          'aria-labelledby': slotProps?.list?.['aria-labelledby'] || legacyMenuListProps?.['aria-labelledby'] || 'basic-button',
+          ...legacyMenuListProps,
+          ...slotProps?.list,
+        },
       }}
       sx={{
+        ...(sx || {}),
         '& .MuiList-padding:focus': {
           outline: 0,
-        },
-        '& .MuiMenu-list': {
-          paddingTop: 0,
-          paddingBottom: 0,
-        },
-        '& .MuiList-root': {
-          paddingTop: 0,
-          paddingBottom: 0,
         },
       }}
       anchorOrigin={
@@ -45,7 +45,7 @@ export const Menu = forwardRef(function Menu(
           horizontal: -10,
         }
       }
-      {...props}
+      {...restProps}
     >
       <div onKeyDown={onKeyDown}>{children}</div>
     </MuiMenu>

@@ -14,7 +14,7 @@ import {
 } from '../../../../Bindings';
 
 import { listAors } from './aor';
-import { HttpRequestError, isUnauthorizedError, postJson, postVoid } from './client';
+import { HttpRequestError, isUnauthorizedError, postBytes, postJson, postVoid } from './client';
 import { listLogins } from './logins';
 import { listOrganismLogins, listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
@@ -29,6 +29,10 @@ type CreatePalitraReqBody = {
   };
   source_file_name: string | null;
   last_uploaded_at_ts: number | null;
+};
+
+type PalitraDownloadReqBody = {
+  palitra_ids: number[];
 };
 
 type PalitraLike = {
@@ -330,6 +334,23 @@ function pickPrimaryGeometryIdForUpdate(geometries: PalitraGeometryDetailsLike[]
 
 export async function deletePalitra(palitraId: number): Promise<void> {
   await postVoid(`/api/palitra/delete/${palitraId}`);
+}
+
+export async function archivePalitra(palitraId: number): Promise<Palitra> {
+  const data = await postJson<PalitraLike>(`/api/palitra/archive/${palitraId}`);
+  return normalizePalitra(data);
+}
+
+export async function unarchivePalitra(palitraId: number): Promise<Palitra> {
+  const data = await postJson<PalitraLike>(`/api/palitra/unarchive/${palitraId}`);
+  return normalizePalitra(data);
+}
+
+export async function downloadPalitras(palitraIds: number[]): Promise<Blob> {
+  const body: PalitraDownloadReqBody = {
+    palitra_ids: palitraIds,
+  };
+  return postBytes('/api/palitra/download', body);
 }
 
 export async function createPalitra(req: CreatePalitraReq): Promise<Palitra> {

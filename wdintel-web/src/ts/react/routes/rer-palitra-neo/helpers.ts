@@ -240,7 +240,9 @@ export function mapPalitraToRowView({
   myScope,
   organisms,
   aors,
+  inFlightArchiveId,
   inFlightDeleteId,
+  inFlightDownloadId,
   inFlightUploadId,
 }: {
   palitra: Palitra;
@@ -248,11 +250,15 @@ export function mapPalitraToRowView({
   myScope: MyScope | null;
   organisms: Organism[];
   aors: AreaOfResponsibility[];
+  inFlightArchiveId: number | null;
   inFlightDeleteId: number | null;
+  inFlightDownloadId: number | null;
   inFlightUploadId: number | null;
 }): PalitraRowView {
   const canModify = canModifyPalitra(user, palitra);
+  const archiveInFlight = inFlightArchiveId === palitra.id;
   const deleteInFlight = inFlightDeleteId === palitra.id;
+  const downloadInFlight = inFlightDownloadId === palitra.id;
   const uploadInFlight = inFlightUploadId === palitra.id;
 
   return {
@@ -265,8 +271,10 @@ export function mapPalitraToRowView({
     author: palitra.author,
     accessSummary: getAccessSummary(palitra, user, myScope, organisms, aors),
     canModify,
-    canSelect: canModify && !deleteInFlight && !uploadInFlight,
+    canSelect: canModify && !archiveInFlight && !deleteInFlight && !downloadInFlight && !uploadInFlight,
+    archiveInFlight,
     deleteInFlight,
+    downloadInFlight,
     uploadInFlight,
   };
 }
