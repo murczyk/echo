@@ -280,6 +280,7 @@ export const CUSTOM_STYLES = {
       flex: 1,
       minHeight: 0,
       boxSizing: 'border-box',
+      backgroundColor: 'transparent',
       border: '1px solid',
       borderColor: 'var(--bs-border-color)',
       '& .MuiTableBody-root .MuiTableRow-root:last-of-type > .MuiTableCell-root': {

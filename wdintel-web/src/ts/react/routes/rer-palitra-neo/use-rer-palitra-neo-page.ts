@@ -6,12 +6,16 @@ import { isUnauthorizedError } from '../../services/api/client';
 import {
   analyzePalitraKmz,
   archivePalitra,
+  archivePalitraFolder,
+  assignPalitraFolder,
   createPalitraBasicWithKmz,
   createPalitraWithKmz,
   deletePalitra,
+  deletePalitraFolder,
   downloadPalitras,
   fetchPalitraReferenceData,
   listPalitras,
+  renamePalitraFolder,
   unarchivePalitra,
   updatePalitra,
   uploadPalitraPoints,
@@ -20,18 +24,27 @@ import { fetchCurrentUser } from '../../services/api/user';
 import { downloadBlob } from '../../utils/download-blob';
 import {
   applyRestrictedAccess,
+  buildAssignFolderPreview,
+  buildBulkActionResultSummary,
+  buildFolderSubtreePreview,
+  buildFolderTree,
   buildPalitraNameWithSuffix,
+  buildTableRows,
   DEFAULT_COLOR_HEX,
   formatErrorMessage,
+  formatFolderActionSuccessMessage,
+  normalizeFolderPathForUi,
+  validateFolderPath,
   getAvailableAccessTypes,
+  getExistingFolderOptions,
+  getFolderNodeByPath,
   getInitialCreateForm,
   isFormValid,
   kmzColorOptionsFromAnalysis,
-  mapPalitraToRowView,
   palitraToForm,
   toCreateReq,
 } from './helpers';
-import { KmzColorOption, PalitraCreateMode, PalitraFormState, UiError } from './types';
+import type { FolderActionDialogState, KmzColorOption, PalitraCreateMode, PalitraFormState, TableRowView, UiStatus } from './types';
 
 type ArchiveView = 'active' | 'all' | 'archived';
 
@@ -51,8 +64,23 @@ function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
   const params = new URLSearchParams(url.search);
   mutator(params);
   const nextSearch = params.toString();
-  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+  const nextUrl = url.pathname + (nextSearch ? '?' + nextSearch : '') + url.hash;
   window.history.replaceState({}, '', nextUrl);
+}
+
+function buildFolderActionStatus(state: FolderActionDialogState, changedIds: number[]): UiStatus {
+  const summary = buildBulkActionResultSummary(state.targetPalitraIds, changedIds);
+  const text = formatFolderActionSuccessMessage(state.kind, summary);
+
+  if (summary.changedCount === 0) {
+    return { kind: 'warning', text };
+  }
+
+  if (state.preview.skippedCount > 0 || state.preview.unchangedCount > 0 || summary.skippedCount > 0) {
+    return { kind: 'warning', text };
+  }
+
+  return { kind: 'success', text };
 }
 
 export function useRerPalitraNeoPage() {
@@ -78,7 +106,10 @@ export function useRerPalitraNeoPage() {
   const [bulkDeleteDialogPalitras, setBulkDeleteDialogPalitras] = useState<Palitra[]>([]);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleteInFlight, setBulkDeleteInFlight] = useState(false);
-  const [error, setError] = useState<UiError | null>(null);
+  const [status, setStatus] = useState<UiStatus>(null);
+  const [folderDialogState, setFolderDialogState] = useState<FolderActionDialogState | null>(null);
+  const [folderActionInFlight, setFolderActionInFlight] = useState(false);
+  const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<PalitraCreateMode>('basic');
@@ -101,6 +132,9 @@ export function useRerPalitraNeoPage() {
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
 
   const availableAccessTypes = useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
+  const folderTree = useMemo(() => buildFolderTree(palitras, user), [palitras, user]);
+  const folderOptions = useMemo(() => getExistingFolderOptions(folderTree), [folderTree]);
+  const expandedFolderPathSet = useMemo(() => new Set(expandedFolderPaths), [expandedFolderPaths]);
   const visiblePalitras = useMemo(() => {
     switch (archiveView) {
       case 'archived':
@@ -112,43 +146,24 @@ export function useRerPalitraNeoPage() {
         return palitras.filter((palitra) => !palitra.isArchived);
     }
   }, [archiveView, palitras]);
-  const rows = useMemo(() => {
-    const sortedPalitras = [...visiblePalitras].sort((left, right) => {
-      const leftTs = left.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
-      const rightTs = right.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
-      return rightTs - leftTs;
-    });
-
-    return sortedPalitras.map((palitra) =>
-      mapPalitraToRowView({
-        palitra,
-        user,
-        myScope,
-        organisms,
-        aors,
-        inFlightArchiveId,
-        inFlightDeleteId,
-        inFlightDownloadId,
-        inFlightUploadId,
-      }),
-    );
-  }, [visiblePalitras, user, myScope, organisms, aors, inFlightArchiveId, inFlightDeleteId, inFlightDownloadId, inFlightUploadId]);
-  const visibleSelectablePalitraIds = useMemo(
-    () => new Set(rows.filter((row) => row.canSelect).map((row) => row.id)),
-    [rows],
-  );
-  const updateCreateForm = useCallback(
-    (updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)),
-    [],
-  );
-  const updateKmzColorOptions = useCallback(
-    (updater: (prev: KmzColorOption[]) => KmzColorOption[]) => setKmzColorOptions((prev) => updater(prev)),
-    [],
-  );
-  const updateEditForm = useCallback(
-    (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => setEditForm((prev) => updater(prev)),
-    [],
-  );
+  const rows = useMemo<TableRowView[]>(() => buildTableRows({
+    palitras: visiblePalitras,
+    user,
+    myScope,
+    organisms,
+    aors,
+    inFlightArchiveId,
+    inFlightDeleteId,
+    inFlightDownloadId,
+    inFlightUploadId,
+    expandedFolderPaths: expandedFolderPathSet,
+  }), [visiblePalitras, user, myScope, organisms, aors, inFlightArchiveId, inFlightDeleteId, inFlightDownloadId, inFlightUploadId, expandedFolderPathSet]);
+  const palitraRows = useMemo(() => rows.filter((row): row is Extract<TableRowView, { kind: 'palitra' }> => row.kind === 'palitra'), [rows]);
+  const visibleSelectablePalitraIds = useMemo(() => new Set(palitraRows.filter((row) => row.canSelect).map((row) => row.id)), [palitraRows]);
+  const folderActionsBlocked = folderActionInFlight || folderDialogState !== null;
+  const updateCreateForm = useCallback((updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)), []);
+  const updateKmzColorOptions = useCallback((updater: (prev: KmzColorOption[]) => KmzColorOption[]) => setKmzColorOptions((prev) => updater(prev)), []);
+  const updateEditForm = useCallback((updater: (prev: PalitraFormState | null) => PalitraFormState | null) => setEditForm((prev) => updater(prev)), []);
 
   useEffect(() => {
     function onPopState() {
@@ -182,13 +197,72 @@ export function useRerPalitraNeoPage() {
     setSelectedPalitraIds((prev) => (prev.length === 0 ? prev : []));
   }, []);
 
+  const setPalitraFolderLocally = useCallback((palitraIds: number[], nextFolderPath: string) => {
+    const palitraIdSet = new Set(palitraIds);
+    const normalizedFolderPath = normalizeFolderPathForUi(nextFolderPath);
+
+    setPalitras((prev) =>
+      prev.map((palitra) =>
+        palitraIdSet.has(palitra.id)
+          ? {
+              ...palitra,
+              folder: normalizedFolderPath === '' ? null : normalizedFolderPath,
+            }
+          : palitra,
+      ),
+    );
+  }, []);
+
+  const renameFolderLocally = useCallback((palitraIds: number[], fromFolderPath: string, nextFolderPath: string) => {
+    const palitraIdSet = new Set(palitraIds);
+    const normalizedFromPath = normalizeFolderPathForUi(fromFolderPath);
+    const normalizedNextPath = normalizeFolderPathForUi(nextFolderPath);
+    const fromPrefix = normalizedFromPath + '/';
+
+    setPalitras((prev) =>
+      prev.map((palitra) => {
+        if (!palitraIdSet.has(palitra.id)) return palitra;
+
+        const normalizedFolderPath = normalizeFolderPathForUi(palitra.folder ?? '');
+        if (normalizedFolderPath === normalizedFromPath) {
+          return {
+            ...palitra,
+            folder: normalizedNextPath === '' ? null : normalizedNextPath,
+          };
+        }
+
+        if (!normalizedFolderPath.startsWith(fromPrefix)) return palitra;
+
+        return {
+          ...palitra,
+          folder: normalizedNextPath + normalizedFolderPath.slice(normalizedFromPath.length),
+        };
+      }),
+    );
+  }, []);
+
+  const archiveFolderLocally = useCallback((palitraIds: number[]) => {
+    const palitraIdSet = new Set(palitraIds);
+
+    setPalitras((prev) =>
+      prev.map((palitra) => (palitraIdSet.has(palitra.id) ? { ...palitra, isArchived: true } : palitra)),
+    );
+  }, []);
+
+  const deleteFolderLocally = useCallback((palitraIds: number[]) => {
+    const palitraIdSet = new Set(palitraIds);
+
+    setPalitras((prev) => prev.filter((palitra) => !palitraIdSet.has(palitra.id)));
+    setSelectedPalitraIds((prev) => prev.filter((id) => !palitraIdSet.has(id)));
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     async function loadData() {
       setLoading(true);
       setReferenceDataReady(false);
-      setError(null);
+      setStatus(null);
 
       try {
         const currentUser = await fetchCurrentUser();
@@ -228,7 +302,7 @@ export function useRerPalitraNeoPage() {
             return;
           }
 
-          setError({ text: 'Не вдалося завантажити довідники палітр: ' + formatErrorMessage(referencesError) });
+          setStatus({ kind: 'error', text: 'Не вдалося завантажити довідники палітр: ' + formatErrorMessage(referencesError) });
         }
 
         try {
@@ -244,7 +318,7 @@ export function useRerPalitraNeoPage() {
             return;
           }
 
-          setError({ text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(palitrasError) });
+          setStatus({ kind: 'error', text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(palitrasError) });
         }
       } catch (loadError) {
         if (cancelled) return;
@@ -254,7 +328,7 @@ export function useRerPalitraNeoPage() {
           return;
         }
 
-        setError({ text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(loadError) });
+        setStatus({ kind: 'error', text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(loadError) });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -268,7 +342,7 @@ export function useRerPalitraNeoPage() {
   }, []);
 
   function clearCreateFlow(clearError: boolean) {
-    if (clearError) setError(null);
+    if (clearError) setStatus(null);
     setCreateMode('basic');
     setCreateForm(getInitialCreateForm(user, myScope));
     setCreateInFlight(false);
@@ -285,8 +359,8 @@ export function useRerPalitraNeoPage() {
   }
 
   function openCreate() {
-    if (createInFlight) return;
-    setError(null);
+    if (createInFlight || folderActionsBlocked) return;
+    setStatus(null);
     clearCreateFlow(false);
     setCreateOpen(true);
   }
@@ -297,6 +371,7 @@ export function useRerPalitraNeoPage() {
   }
 
   function openEdit(palitra: Palitra) {
+    if (folderActionsBlocked) return;
     setEditPalitraId(palitra.id);
     setEditForm(applyRestrictedAccess(palitraToForm(palitra), user, myScope, allLogins));
   }
@@ -312,7 +387,7 @@ export function useRerPalitraNeoPage() {
   }
 
   function requestArchive(palitra: Palitra) {
-    if (archiveDialogOpen || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    if (archiveDialogOpen || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight || folderActionsBlocked) return;
     setArchiveDialogPalitra(palitra);
     setArchiveDialogOpen(true);
   }
@@ -324,10 +399,10 @@ export function useRerPalitraNeoPage() {
 
   async function confirmArchive() {
     const palitra = archiveDialogPalitra;
-    if (!palitra || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    if (!palitra || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight || folderActionsBlocked) return;
 
     setInFlightArchiveId(palitra.id);
-    setError(null);
+    setStatus(null);
 
     try {
       const updatedPalitra = await archivePalitra(palitra.id);
@@ -339,7 +414,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: 'Не вдалося перенести палітру в архів: ' + formatErrorMessage(archiveError) });
+      setStatus({ kind: 'error', text: 'Не вдалося перенести палітру в архів: ' + formatErrorMessage(archiveError) });
     } finally {
       setInFlightArchiveId(null);
     }
@@ -351,10 +426,10 @@ export function useRerPalitraNeoPage() {
   }
 
   async function handleUnarchive(palitra: Palitra) {
-    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight || folderActionsBlocked) return;
 
     setInFlightArchiveId(palitra.id);
-    setError(null);
+    setStatus(null);
 
     try {
       const updatedPalitra = await unarchivePalitra(palitra.id);
@@ -365,14 +440,14 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: 'Не вдалося повернути палітру з архіву: ' + formatErrorMessage(archiveError) });
+      setStatus({ kind: 'error', text: 'Не вдалося повернути палітру з архіву: ' + formatErrorMessage(archiveError) });
     } finally {
       setInFlightArchiveId(null);
     }
   }
 
   function requestDelete(palitra: Palitra) {
-    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen) return;
+    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen || folderActionsBlocked) return;
     setDeleteDialogPalitra(palitra);
     setDeleteDialogOpen(true);
   }
@@ -384,10 +459,10 @@ export function useRerPalitraNeoPage() {
 
   async function confirmDelete() {
     const palitra = deleteDialogPalitra;
-    if (!palitra || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    if (!palitra || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight || folderActionsBlocked) return;
 
     setInFlightDeleteId(palitra.id);
-    setError(null);
+    setStatus(null);
 
     try {
       await deletePalitra(palitra.id);
@@ -400,7 +475,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: 'Не вдалося видалити палітру: ' + formatErrorMessage(deleteError) });
+      setStatus({ kind: 'error', text: 'Не вдалося видалити палітру: ' + formatErrorMessage(deleteError) });
     } finally {
       setInFlightDeleteId(null);
     }
@@ -412,12 +487,10 @@ export function useRerPalitraNeoPage() {
   }
 
   function requestBulkDelete() {
-    if (archiveDialogOpen || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null || deleteDialogOpen) return;
+    if (archiveDialogOpen || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null || deleteDialogOpen || folderActionsBlocked) return;
 
     const selectedSet = new Set(selectedPalitraIds);
-    const selected = rows
-      .filter((row) => selectedSet.has(row.id) && row.canSelect)
-      .map((row) => row.palitra);
+    const selected = palitraRows.filter((row) => selectedSet.has(row.id) && row.canSelect).map((row) => row.palitra);
     if (selected.length === 0) return;
 
     setBulkDeleteDialogPalitras(selected);
@@ -430,14 +503,14 @@ export function useRerPalitraNeoPage() {
   }
 
   async function confirmBulkDelete() {
-    if (bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
+    if (bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null || folderActionsBlocked) return;
 
     const palitrasToDelete = [...bulkDeleteDialogPalitras];
     if (palitrasToDelete.length === 0) return;
 
     setBulkDeleteDialogOpen(false);
     setBulkDeleteInFlight(true);
-    setError(null);
+    setStatus(null);
 
     const failed: string[] = [];
 
@@ -462,7 +535,7 @@ export function useRerPalitraNeoPage() {
       }
 
       if (failed.length > 0) {
-        setError({ text: 'Не вдалося видалити деякі палітри: ' + failed[0] });
+        setStatus({ kind: 'error', text: 'Не вдалося видалити деякі палітри: ' + failed[0] });
       }
     } finally {
       setBulkDeleteInFlight(false);
@@ -476,28 +549,28 @@ export function useRerPalitraNeoPage() {
   }
 
   function requestUploadPoints(palitraId: number) {
-    if (!uploadPointsInputRef.current) return;
+    if (folderActionsBlocked || !uploadPointsInputRef.current) return;
     pendingUploadPalitraIdRef.current = palitraId;
     uploadPointsInputRef.current.value = '';
     uploadPointsInputRef.current.click();
   }
 
   async function handleDownload(palitra: Palitra) {
-    if (inFlightDownloadId !== null) return;
+    if (inFlightDownloadId !== null || folderActionsBlocked) return;
 
     setInFlightDownloadId(palitra.id);
-    setError(null);
+    setStatus(null);
 
     try {
       const blob = await downloadPalitras([palitra.id]);
-      downloadBlob(blob, `palitra-${palitra.id}.zip`);
+      downloadBlob(blob, 'palitra-' + String(palitra.id) + '.zip');
     } catch (downloadError) {
       if (isUnauthorizedError(downloadError)) {
         window.location.assign('/login');
         return;
       }
 
-      setError({ text: 'Не вдалося завантажити палітру: ' + formatErrorMessage(downloadError) });
+      setStatus({ kind: 'error', text: 'Не вдалося завантажити палітру: ' + formatErrorMessage(downloadError) });
     } finally {
       setInFlightDownloadId(null);
     }
@@ -509,7 +582,7 @@ export function useRerPalitraNeoPage() {
     if (!file || palitraId === null) return;
 
     setInFlightUploadId(palitraId);
-    setError(null);
+    setStatus(null);
 
     try {
       await uploadPalitraPoints(palitraId, file);
@@ -520,7 +593,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: 'Не вдалося завантажити точки: ' + formatErrorMessage(uploadError) });
+      setStatus({ kind: 'error', text: 'Не вдалося завантажити точки: ' + formatErrorMessage(uploadError) });
     } finally {
       setInFlightUploadId(null);
       pendingUploadPalitraIdRef.current = null;
@@ -542,7 +615,7 @@ export function useRerPalitraNeoPage() {
     setKmzAnalysis(null);
     setKmzColorOptions([]);
     setSelectedColorFromKmz(DEFAULT_COLOR_HEX);
-    setError(null);
+    setStatus(null);
 
     try {
       const analysis = await analyzePalitraKmz(file);
@@ -563,7 +636,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: 'Не вдалося проаналізувати KMZ файл: ' + formatErrorMessage(analysisError) });
+      setStatus({ kind: 'error', text: 'Не вдалося проаналізувати KMZ файл: ' + formatErrorMessage(analysisError) });
     } finally {
       setKmzAnalyzing(false);
     }
@@ -576,13 +649,13 @@ export function useRerPalitraNeoPage() {
     if (!isFormValid(normalizedForm)) return;
 
     setCreateInFlight(true);
-    setError(null);
+    setStatus(null);
 
     try {
       if (mode === 'advanced' && kmzColorOptions.length > 0) {
         const selectedOptions = kmzColorOptions.filter((option) => option.selected);
         if (selectedOptions.length === 0) {
-          setError({ text: 'Оберіть хоча б один колір з KMZ.' });
+          setStatus({ kind: 'error', text: 'Оберіть хоча б один колір з KMZ.' });
           return;
         }
 
@@ -597,10 +670,7 @@ export function useRerPalitraNeoPage() {
           }),
         );
 
-        const created = results
-          .filter((result): result is PromiseFulfilledResult<Palitra> => result.status === 'fulfilled')
-          .map((result) => result.value);
-
+        const created = results.filter((result): result is PromiseFulfilledResult<Palitra> => result.status === 'fulfilled').map((result) => result.value);
         const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
         if (rejected.some((result) => isUnauthorizedError(result.reason))) {
           window.location.assign('/login');
@@ -609,7 +679,7 @@ export function useRerPalitraNeoPage() {
 
         const firstError = rejected[0];
         if (firstError) {
-          setError({ text: 'Помилка створення палітри: ' + formatErrorMessage(firstError.reason) });
+          setStatus({ kind: 'error', text: 'Помилка створення палітри: ' + formatErrorMessage(firstError.reason) });
         }
 
         if (created.length > 0) {
@@ -635,7 +705,7 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: 'Не вдалося створити палітру: ' + formatErrorMessage(createError) });
+      setStatus({ kind: 'error', text: 'Не вдалося створити палітру: ' + formatErrorMessage(createError) });
     } finally {
       setCreateInFlight(false);
     }
@@ -648,7 +718,7 @@ export function useRerPalitraNeoPage() {
     if (!isFormValid(normalizedForm)) return;
 
     setEditInFlight(true);
-    setError(null);
+    setStatus(null);
 
     try {
       const details = await updatePalitra(editPalitraId, toCreateReq(normalizedForm));
@@ -660,9 +730,244 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      setError({ text: 'Не вдалося оновити палітру: ' + formatErrorMessage(updateError) });
+      setStatus({ kind: 'error', text: 'Не вдалося оновити палітру: ' + formatErrorMessage(updateError) });
     } finally {
       setEditInFlight(false);
+    }
+  }
+
+  function openAssignFolderDialog(targetPalitraIds: number[], emptySelectionMessage: string, blockedSelectionMessage: string) {
+    const preview = buildAssignFolderPreview(palitraRows, targetPalitraIds, '');
+    if (preview.requestedCount === 0) {
+      setStatus({ kind: 'warning', text: emptySelectionMessage });
+      return;
+    }
+
+    if (preview.modifiableCount === 0) {
+      setStatus({ kind: 'warning', text: blockedSelectionMessage });
+      return;
+    }
+
+    setFolderDialogState({
+      kind: 'assign',
+      folderPath: '',
+      nextFolderPath: '',
+      targetPalitraIds: preview.modifiableIds,
+      preview,
+    });
+  }
+
+  function requestAssignFolder() {
+    if (folderActionsBlocked || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
+
+    openAssignFolderDialog(
+      selectedPalitraIds,
+      'Оберіть хоча б одну палітру для переміщення.',
+      'Серед вибраних палітр немає доступних для переміщення.',
+    );
+  }
+
+  function requestAssignFolderForPalitra(palitra: Palitra) {
+    if (folderActionsBlocked || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
+
+    openAssignFolderDialog([palitra.id], 'Не вдалося знайти палітру для переміщення.', 'Цю палітру зараз не можна перемістити.');
+  }
+
+  function requestRenameFolder(path: string) {
+    if (folderActionsBlocked || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
+    const node = getFolderNodeByPath(folderTree, path);
+    if (!node) return;
+
+    const preview = buildFolderSubtreePreview(node);
+    if (preview.requestedCount === 0) {
+      setStatus({ kind: 'warning', text: 'У цій папці немає палітр для перейменування.' });
+      return;
+    }
+
+    setFolderDialogState({
+      kind: 'rename',
+      folderPath: node.path,
+      nextFolderPath: node.path,
+      targetPalitraIds: preview.modifiableIds,
+      preview,
+    });
+  }
+
+  function requestArchiveFolder(path: string) {
+    if (folderActionsBlocked || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
+    const node = getFolderNodeByPath(folderTree, path);
+    if (!node) return;
+
+    const preview = buildFolderSubtreePreview(node);
+    if (preview.requestedCount === 0) {
+      setStatus({ kind: 'warning', text: 'У цій папці немає палітр для архівації.' });
+      return;
+    }
+
+    setFolderDialogState({
+      kind: 'archive',
+      folderPath: node.path,
+      nextFolderPath: node.path,
+      targetPalitraIds: preview.modifiableIds,
+      preview,
+    });
+  }
+
+  function requestDeleteFolder(path: string) {
+    if (folderActionsBlocked || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
+    const node = getFolderNodeByPath(folderTree, path);
+    if (!node) return;
+
+    const preview = buildFolderSubtreePreview(node);
+    if (preview.requestedCount === 0) {
+      setStatus({ kind: 'warning', text: 'У цій папці немає палітр для видалення.' });
+      return;
+    }
+
+    setFolderDialogState({
+      kind: 'delete',
+      folderPath: node.path,
+      nextFolderPath: node.path,
+      targetPalitraIds: preview.modifiableIds,
+      preview,
+    });
+  }
+
+  function cancelFolderAction() {
+    if (folderActionInFlight) return;
+    setFolderDialogState(null);
+  }
+
+  function setFolderDialogNextFolderPath(nextFolderPath: string) {
+    setFolderDialogState((prev) => {
+      if (!prev) return prev;
+      if (prev.kind === 'assign') {
+        const preview = buildAssignFolderPreview(palitraRows, prev.preview.requestedIds, nextFolderPath);
+        return {
+          ...prev,
+          nextFolderPath,
+          targetPalitraIds: preview.modifiableIds,
+          preview,
+        };
+      }
+
+      return {
+        ...prev,
+        nextFolderPath,
+      };
+    });
+  }
+
+  function toggleFolderExpanded(path: string) {
+    setExpandedFolderPaths((prev) => (prev.includes(path) ? prev.filter((item) => item !== path) : [...prev, path]));
+  }
+
+  async function handleAssignFolderConfirm(state: FolderActionDialogState) {
+    const nextFolderPath = state.nextFolderPath.trim();
+    if (nextFolderPath === '') {
+      setStatus({ kind: 'warning', text: 'Вкажіть назву папки для переміщення.' });
+      return;
+    }
+
+    const folderPathError = validateFolderPath(nextFolderPath);
+    if (folderPathError) {
+      setStatus({ kind: 'warning', text: folderPathError });
+      return;
+    }
+
+    const changedIds = await assignPalitraFolder(state.targetPalitraIds, nextFolderPath);
+    setPalitraFolderLocally(changedIds, nextFolderPath);
+    setExpandedFolderPaths((prev) => {
+      const normalizedFolderPath = normalizeFolderPathForUi(nextFolderPath);
+      if (normalizedFolderPath === '' || prev.includes(normalizedFolderPath)) return prev;
+      return [...prev, normalizedFolderPath];
+    });
+    setFolderDialogState(null);
+    setStatus(buildFolderActionStatus(state, changedIds));
+  }
+
+  async function handleRenameFolderConfirm(state: FolderActionDialogState) {
+    const nextFolderPath = state.nextFolderPath.trim();
+    if (nextFolderPath === '') {
+      setStatus({ kind: 'warning', text: 'Вкажіть нову назву папки.' });
+      return;
+    }
+
+    const folderPathError = validateFolderPath(nextFolderPath);
+    if (folderPathError) {
+      setStatus({ kind: 'warning', text: folderPathError });
+      return;
+    }
+
+    if (nextFolderPath === state.folderPath) {
+      setStatus({ kind: 'warning', text: 'Нова назва папки збігається з поточною.' });
+      return;
+    }
+
+    const changedIds = await renamePalitraFolder(state.folderPath, nextFolderPath);
+    renameFolderLocally(changedIds, state.folderPath, nextFolderPath);
+    setExpandedFolderPaths((prev) => {
+      const normalizedFromPath = normalizeFolderPathForUi(state.folderPath);
+      const normalizedNextPath = normalizeFolderPathForUi(nextFolderPath);
+      const fromPrefix = normalizedFromPath + '/';
+
+      return [...new Set(
+        prev.map((item) => {
+          if (item === normalizedFromPath) return normalizedNextPath;
+          if (item.startsWith(fromPrefix)) return normalizedNextPath + item.slice(normalizedFromPath.length);
+          return item;
+        }),
+      )];
+    });
+    setFolderDialogState(null);
+    setStatus(buildFolderActionStatus(state, changedIds));
+  }
+
+  async function handleArchiveFolderConfirm(state: FolderActionDialogState) {
+    const changedIds = await archivePalitraFolder(state.folderPath);
+    archiveFolderLocally(changedIds);
+    setFolderDialogState(null);
+    setStatus(buildFolderActionStatus(state, changedIds));
+  }
+
+  async function handleDeleteFolderConfirm(state: FolderActionDialogState) {
+    const changedIds = await deletePalitraFolder(state.folderPath);
+    deleteFolderLocally(changedIds);
+    setExpandedFolderPaths((prev) => {
+      const normalizedFolderPath = normalizeFolderPathForUi(state.folderPath);
+      const folderPrefix = normalizedFolderPath + '/';
+      return prev.filter((item) => item !== normalizedFolderPath && !item.startsWith(folderPrefix));
+    });
+    setFolderDialogState(null);
+    setStatus(buildFolderActionStatus(state, changedIds));
+  }
+
+  async function confirmFolderAction() {
+    const state = folderDialogState;
+    if (!state || folderActionInFlight) return;
+
+    setFolderActionInFlight(true);
+    setStatus(null);
+
+    try {
+      if (state.kind === 'assign') {
+        await handleAssignFolderConfirm(state);
+      } else if (state.kind === 'rename') {
+        await handleRenameFolderConfirm(state);
+      } else if (state.kind === 'archive') {
+        await handleArchiveFolderConfirm(state);
+      } else {
+        await handleDeleteFolderConfirm(state);
+      }
+    } catch (folderError) {
+      if (isUnauthorizedError(folderError)) {
+        window.location.assign('/login');
+        return;
+      }
+
+      setStatus({ kind: 'error', text: 'Не вдалося виконати операцію з папкою: ' + formatErrorMessage(folderError) });
+    } finally {
+      setFolderActionInFlight(false);
     }
   }
 
@@ -672,12 +977,16 @@ export function useRerPalitraNeoPage() {
     organisms,
     aors,
     allLogins,
-    error,
+    status,
     archiveView,
     setArchiveView,
     loading,
     rows,
     palitras,
+    folderOptions,
+    folderDialogState,
+    folderActionInFlight,
+    folderActionsBlocked,
     inFlightArchiveId,
     inFlightDeleteId,
     inFlightDownloadId,
@@ -740,5 +1049,14 @@ export function useRerPalitraNeoPage() {
     handleEditSave,
     handleUploadPointsSelected,
     handleKmzSelected,
+    requestAssignFolder,
+    requestAssignFolderForPalitra,
+    requestRenameFolder,
+    requestArchiveFolder,
+    requestDeleteFolder,
+    cancelFolderAction,
+    confirmFolderAction,
+    setFolderDialogNextFolderPath,
+    toggleFolderExpanded,
   };
 }
