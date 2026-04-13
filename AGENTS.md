@@ -1,8 +1,8 @@
-## General project info
+# General project info
 
 - Read README.md to understand the general project purpose
 
-## CODE STYLE AND CHECKING
+## Code style and checking
 
 - keep code formatted with `cargo fmt`
 - keep `cargo clippy` clean
@@ -19,7 +19,7 @@
   datasource.into_active_model()`, but prefer same `datasource` for
   both if possible
 
-## GIT
+## Git
 
 - **Never Commit or Push Without Permission**
 - **NEVER** run `git commit` without explicitly asking the user first
@@ -31,7 +31,7 @@
 - When asked to suggest or draft a commit message, ALWAYS use `.github/skills/conventional-commit-branch-scope/SKILL.md`.
 - Derive commit scope from the current branch name when possible, and do not replace a branch-derived ticket scope with ad hoc module scopes like `palettes` or `navbar`.
 
-## CHANGELOG
+## Changelog
 
 - Every new `CHANGELOG.md` entry must include a GitHub reference in the beginning: issue (`[#123](https://github.com/echoua/echo/issues/123)`).
 - Before asking the user for a GitHub issue number, try to extract it from the current git branch name. If the branch contains project key + number (for example `ABC-123`), use both when reporting the detected issue reference. If the branch contains only a number (for example `123`), use the number only.
@@ -59,20 +59,20 @@
 - run `just gen-seaorm` after you've made some schema changes in the database to regenerate sea-orm models
 - run `just gen-front` to generate Elm front-end bindings from back-end definitions (types listed in elm.rs)
 
-## CONSTANTS
+## Constants
 
 - Keep constants in central config.rs, prefixed by their overall module or logical group. Avoid hard-coding inlined constants when possible
 - Don't reuse constants too much, better keep separate, same-prefix different constants
 
-## FAIL FAST
+## Fail fast
 
 - Don't overly-obsess yourself with failing via AppError::BL with clear error messages. Most of the time, fail fast via `.c(h!())?`, let the developer see the line where the error happened
 - add context with data value when needed but only in rare cases
 - when writing function that must not fail (like infinite loop workers), move out inner loop body in regular AppError-Result function, and call it from the no-fail one, use `.c(h!())?` in AppError one for errors, don't fill the code with too many `match ... Err ...` blocks
 
-## FRONTEND (Elm)
+## Frontend (Elm)
 
-### Type Generation
+### Type generation
 
 - **NEVER** manually write backend types, encoders, or decoders on the frontend
 - All backend types are defined in `wdintel-rs/src/elm.rs`
@@ -82,14 +82,14 @@
 - Front-end is using the Elm Land framework https://elm.land/guide/ ,
   use its `elm-land` command-line utility to manage pages etc.
 
-### Compilation and Checking
+### Compilation and checking
 
 - Check the modified file(s) using: `elm make path/to/file.elm --output=/dev/null`
 - This is much faster and sufficient to verify syntax and type checking
 - Example: `cd wdintel-web && elm make src/Pages/RerPalitra.elm --output=/dev/null`
 - Once you're fully done with changes, verify yourself with `just build-front` to check full front-end build
 
-### HTTP Error Handling
+### HTTP error handling
 
 - **ALWAYS** handle API errors and show them to users via toasts
 - Use `Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails` for Shared toasts (no need to add toasts to model):
@@ -104,3 +104,49 @@
   - Shows user-friendly Ukrainian error messages
   - Displays error details in toast notifications
 - **NEVER** silently ignore API errors - users must see what went wrong
+
+# Token-efficient Codex policy
+
+## Goal
+Solve tasks correctly with strong reasoning, but minimize visible output tokens.
+
+## Default behavior
+- Keep reasoning effort unchanged unless I explicitly ask to lower it.
+- Be concise by default.
+- Do not restate the task.
+- Do not explain reasoning unless I explicitly ask.
+- Prefer the smallest complete answer.
+
+## For coding tasks
+- Output only one of:
+  - the exact changed code, or
+  - a unified diff/patch
+- Do not print full files unless explicitly requested.
+- Do not add comments unless necessary for correctness.
+- Do not include examples, alternatives, or summaries unless asked.
+
+## For edit tasks
+- Make the narrowest correct change.
+- Preserve existing style and structure.
+- Avoid unrelated refactors.
+- Do not rename symbols unless required.
+- Do not modify unrelated files.
+
+## For question-answering
+- Answer in 1–4 short sentences unless I ask for detail.
+- Prefer direct answers over background explanation.
+- Use bullets only when they save tokens.
+
+## When assumptions are needed
+- Choose the most conservative reasonable assumption and proceed.
+- Mention assumptions only if they materially affect correctness.
+
+## Output formatting
+- If I ask for code: output code only.
+- If I ask for a fix: output patch or changed code only.
+- If I ask for commands: output commands only.
+- If I ask for JSON: output valid JSON only.
+
+## Quality guardrail
+- Never trade correctness for brevity.
+- Optimize visible output tokens, not solution quality.

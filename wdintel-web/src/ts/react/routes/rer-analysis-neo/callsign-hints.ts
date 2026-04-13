@@ -1,4 +1,5 @@
 import type { CallsignInfo, CallsignInfoRes, Network, Unit } from '../../../../Bindings';
+import { formatLegacyCallsignTooltipLine } from './callsign-hints-utils';
 
 export type CallsignHintContext = 'message' | 'frequency';
 export type CallsignHintStrategy = 'network' | 'system' | 'none';
@@ -13,10 +14,6 @@ export type CallsignHintTooltipData = {
   header: string;
   items: string[];
 };
-
-function toText(value: string | null | undefined): string {
-  return value?.trim() ?? '';
-}
 
 function getReportedNetworkIds(callsignInfo: Pick<CallsignInfo, 'networkIdsReportedIn'>): number[] {
   return callsignInfo.networkIdsReportedIn ?? [];
@@ -133,10 +130,6 @@ function getPrioritizedCallsigns(params: {
   const networksByFreq = filterNetworksByFreq(networks, freq);
   const networkUnits = getUnitsInfoByIds(getAllUnitIdsForNetworks(networksByFreq), unitsMap);
   return filterCallsignsByNetworkUnits(callsignInfo, unitsMap, networkUnits);
-}
-
-export function formatLegacyCallsignTooltipLine(callsignInfo: Pick<CallsignInfo, 'position' | 'unit1' | 'unit2'>): string {
-  return `🐷 ${toText(callsignInfo.position)} ${toText(callsignInfo.unit1)} ${toText(callsignInfo.unit2)}`;
 }
 
 function isTooltipLineVisible(line: string): boolean {

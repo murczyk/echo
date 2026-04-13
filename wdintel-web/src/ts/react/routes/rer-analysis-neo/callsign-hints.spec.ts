@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CallsignInfoRes, Network, Unit } from '../../../../Bindings';
-import { formatCallsignHintTooltip, formatCallsignHintTooltipData, formatLegacyCallsignTooltipLine, getCallsignHintResult } from './callsign-hints';
+import { formatCallsignHintTooltip, formatCallsignHintTooltipData, getCallsignHintResult } from './callsign-hints';
+import { formatLegacyCallsignTooltipLine } from './callsign-hints-utils';
 
 const unitsMap: Record<number, Unit> = {
   1: {
