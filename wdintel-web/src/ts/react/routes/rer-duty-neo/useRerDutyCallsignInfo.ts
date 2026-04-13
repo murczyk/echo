@@ -65,6 +65,45 @@ export function combineDutyCallsignInfoMaps(
   return next;
 }
 
+export function updateDutyResolvedCallsignInfoMap(
+  prev: Record<string, CallsignInfoRes>,
+  items: CallsignInfoRes[] | null | undefined,
+): Record<string, CallsignInfoRes> {
+  if (!items || items.length === 0) return prev;
+
+  const next = { ...prev };
+  items.forEach((item) => {
+    const key = item.callsign.toLowerCase();
+    if (item.res.length === 0) {
+      delete next[key];
+      return;
+    }
+    next[key] = mergeDutyCallsignInfoEntry(next[key], item);
+  });
+  return next;
+}
+
+export function updateDutyInboxCallsignInfoMapByFeedId(
+  prev: Record<string, Record<string, CallsignInfoRes>>,
+  feedId: string,
+  callsigns: CallsignInfoRes[] | null | undefined,
+  options?: { replace?: boolean },
+): Record<string, Record<string, CallsignInfoRes>> {
+  if (options?.replace) {
+    return {
+      ...prev,
+      [feedId]: replaceDutyCallsignInfoMap(prev[feedId] ?? {}, callsigns),
+    };
+  }
+
+  if (!callsigns || callsigns.length === 0) return prev;
+
+  return {
+    ...prev,
+    [feedId]: mergeDutyCallsignInfoMap(prev[feedId] ?? {}, callsigns),
+  };
+}
+
 export function useRerDutyCallsignInfo() {
   const [inboxCallsignInfoMapByFeedId, setInboxCallsignInfoMapByFeedId] = useState<Record<string, Record<string, CallsignInfoRes>>>(
     {},
@@ -73,20 +112,14 @@ export function useRerDutyCallsignInfo() {
 
   const mergeInboxCallsigns = useCallback(
     (feedId: string, callsigns: CallsignInfoRes[] | null | undefined, options?: { replace?: boolean }) => {
-      if (!callsigns || callsigns.length === 0) return;
-      setInboxCallsignInfoMapByFeedId((prev) => ({
-        ...prev,
-        [feedId]: options?.replace
-          ? replaceDutyCallsignInfoMap(prev[feedId] ?? {}, callsigns)
-          : mergeDutyCallsignInfoMap(prev[feedId] ?? {}, callsigns),
-      }));
+      setInboxCallsignInfoMapByFeedId((prev) => updateDutyInboxCallsignInfoMapByFeedId(prev, feedId, callsigns, options));
     },
     [],
   );
 
   const mergeResolvedCallsigns = useCallback((callsigns: CallsignInfoRes[] | null | undefined) => {
     if (!callsigns || callsigns.length === 0) return;
-    setResolvedCallsignInfoMap((prev) => mergeDutyCallsignInfoMap(prev, callsigns));
+    setResolvedCallsignInfoMap((prev) => updateDutyResolvedCallsignInfoMap(prev, callsigns));
   }, []);
 
   const retainFeedIds = useCallback((feedIds: string[]) => {

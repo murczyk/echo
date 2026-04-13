@@ -182,22 +182,12 @@ export function useRerDutyFeeds(authUserName: string | null) {
             retryMapChanged = emptyResultRetryAfterMsRef.current.delete(key) || retryMapChanged;
             return;
           }
-          if ((feedState.inboxCallsignInfoMap[key]?.res.length ?? 0) > 0) {
-            enrichedCallsignsRef.current.add(key);
-            retryMapChanged = emptyResultRetryAfterMsRef.current.delete(key) || retryMapChanged;
-            return;
-          }
           enrichedCallsignsRef.current.delete(key);
           emptyResultRetryAfterMsRef.current.set(key, nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS);
           retryMapChanged = true;
         });
         pendingCallsigns.forEach((callsign) => {
           if (!returnedByCallsign.has(callsign)) {
-            if ((feedState.inboxCallsignInfoMap[callsign]?.res.length ?? 0) > 0) {
-              enrichedCallsignsRef.current.add(callsign);
-              retryMapChanged = emptyResultRetryAfterMsRef.current.delete(callsign) || retryMapChanged;
-              return;
-            }
             enrichedCallsignsRef.current.delete(callsign);
             emptyResultRetryAfterMsRef.current.set(callsign, nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS);
             retryMapChanged = true;
@@ -211,11 +201,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
       .catch((error) => {
         if (isUnmountedRef.current) return;
         pendingCallsigns.forEach((callsign) => {
-          if ((feedState.inboxCallsignInfoMap[callsign]?.res.length ?? 0) > 0) {
-            enrichedCallsignsRef.current.add(callsign);
-            emptyResultRetryAfterMsRef.current.delete(callsign);
-            return;
-          }
+          enrichedCallsignsRef.current.delete(callsign);
           emptyResultRetryAfterMsRef.current.set(callsign, nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS);
         });
         setCallsignRetryVersion((current) => current + 1);

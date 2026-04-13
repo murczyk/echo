@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CallsignInfoRes } from '../../../../Bindings';
-import { combineDutyCallsignInfoMaps, mergeDutyCallsignInfoMap, replaceDutyCallsignInfoMap } from './useRerDutyCallsignInfo';
+import {
+  combineDutyCallsignInfoMaps,
+  mergeDutyCallsignInfoMap,
+  replaceDutyCallsignInfoMap,
+  updateDutyResolvedCallsignInfoMap,
+  updateDutyInboxCallsignInfoMapByFeedId,
+} from './useRerDutyCallsignInfo';
 
 function callsignInfoRow(overrides: Partial<CallsignInfoRes['res'][number]> = {}): CallsignInfoRes['res'][number] {
   return {
@@ -130,5 +136,46 @@ describe('combineDutyCallsignInfoMaps', () => {
         networkIdsReportedIn: [1001],
       }),
     ]);
+  });
+});
+
+describe('updateDutyInboxCallsignInfoMapByFeedId', () => {
+  it('clears prior feed cache when replace payload is empty', () => {
+    const prev = {
+      'mf-1': {
+        'борода': callsignInfo('БОРОДА', [
+          callsignInfoRow({
+            id: 11,
+            networkIdsReportedIn: [1001],
+          }),
+        ]),
+      },
+    };
+
+    const next = updateDutyInboxCallsignInfoMapByFeedId(prev, 'mf-1', [], { replace: true });
+
+    expect(next).toEqual({
+      'mf-1': {},
+    });
+  });
+});
+
+describe('updateDutyResolvedCallsignInfoMap', () => {
+  it('clears stale resolved rows when backend returns an empty result for that callsign', () => {
+    const prev = {
+      'борода': callsignInfo('БОРОДА', [
+        callsignInfoRow({
+          id: 11,
+          position: 'командир',
+          networkIdsReportedIn: [1001],
+        }),
+      ]),
+    };
+
+    const next = updateDutyResolvedCallsignInfoMap(prev, [
+      callsignInfo('БОРОДА', []),
+    ]);
+
+    expect(next).toEqual({});
   });
 });

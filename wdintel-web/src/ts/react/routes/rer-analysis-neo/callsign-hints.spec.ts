@@ -179,7 +179,7 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 командир 1 рота \n🐷 заступник 2 рота ');
   });
 
-  it('returns no hints in message context when the callsign is absent from the message networks', () => {
+  it('returns no tooltip in message context when exact message-network ids are absent', () => {
     const result = getCallsignHintResult({
       hintContext: 'message',
       freq: null,
@@ -206,7 +206,7 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(result.strategy).toBe('none');
     expect(result.iconClass).toBe('');
     expect(result.prioritizedCallsigns).toEqual([]);
-    expect(formatCallsignHintTooltipData(result)).toBeNull();
+    expect(formatCallsignHintTooltip(result)).toBeNull();
   });
 
   it('returns network tooltip in message context and keeps only rows from message networks', () => {

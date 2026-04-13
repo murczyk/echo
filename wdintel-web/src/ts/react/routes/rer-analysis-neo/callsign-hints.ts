@@ -72,6 +72,13 @@ function hasCallsignInMessageNetworks(callsignInfo: CallsignInfo[] | null, messa
   return callsignInfo.some((item) => getReportedNetworkIds(item).some((networkId) => messageNetworkIds.includes(networkId)));
 }
 
+function getStrictMessageNetworkHintStrategy(
+  callsignInfo: CallsignInfo[] | null,
+  messageNetworkIds: number[],
+): Extract<CallsignHintStrategy, 'network' | 'none'> {
+  return hasCallsignInMessageNetworks(callsignInfo, messageNetworkIds) ? 'network' : 'none';
+}
+
 function getIconClass(strategy: CallsignHintStrategy): string {
   switch (strategy) {
     case 'network':
@@ -98,7 +105,7 @@ function determineHintStrategyForCallsign(params: {
 
   if (hintContext === 'message') {
     if (messageNetworkIds) {
-      return hasCallsignInMessageNetworks(callsignInfo, messageNetworkIds) ? 'network' : 'none';
+      return getStrictMessageNetworkHintStrategy(callsignInfo, messageNetworkIds);
     }
     return hasCatalogMatch ? 'system' : 'none';
   }
@@ -199,6 +206,7 @@ export const __private__ = {
   filterCallsignsByNetworkUnits,
   isCallsignRelatedToNetworks,
   hasCallsignInMessageNetworks,
+  getStrictMessageNetworkHintStrategy,
   determineHintStrategyForCallsign,
   getPrioritizedCallsigns,
 };

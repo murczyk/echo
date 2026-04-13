@@ -288,7 +288,13 @@ describe('useRerDutyFeeds', () => {
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
   });
 
-  it('retries failed callsign lookups after the backoff expires even without unrelated rerenders', async () => {
+  it('retries failed callsign lookups after the backoff expires even when inbox rows already exist', async () => {
+    hoisted.initialCallsignInfoMap = {
+      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+    };
+    hoisted.initialInboxCallsignInfoMap = {
+      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+    };
     hoisted.fetchAnalysisCallsignInfos
       .mockReset()
       .mockRejectedValueOnce(new Error('network down'))
@@ -333,14 +339,17 @@ describe('useRerDutyFeeds', () => {
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(1, ['борода']);
   });
 
-  it('stops retrying when inbox rows are already usable and enrichment returns empty', async () => {
+  it('retries empty enrichment results even when inbox rows already exist', async () => {
     hoisted.initialCallsignInfoMap = {
       'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
     hoisted.initialInboxCallsignInfoMap = {
       'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
-    hoisted.fetchAnalysisCallsignInfos.mockReset().mockResolvedValueOnce([{ callsign: 'БОРОДА', res: [] }]);
+    hoisted.fetchAnalysisCallsignInfos
+      .mockReset()
+      .mockResolvedValueOnce([{ callsign: 'БОРОДА', res: [] }])
+      .mockResolvedValueOnce([{ callsign: 'БОРОДА', res: [] }]);
 
     await act(async () => {
       root.render(React.createElement(TestHarness));
@@ -356,6 +365,7 @@ describe('useRerDutyFeeds', () => {
       await flushMicrotasks();
     });
 
-    expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
+    expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
   });
 });
