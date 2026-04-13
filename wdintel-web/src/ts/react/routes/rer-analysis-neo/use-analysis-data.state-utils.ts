@@ -54,48 +54,114 @@ type Params = {
 };
 
 export function useAnalysisDataStateUtils(params: Params) {
+  const {
+    emptyNewCallsigns,
+    emptyOptions,
+    invalidateCallsignGraph,
+    optionsFreqsRef,
+    setAorEntries,
+    setCounts,
+    setCorrelatedFreqs,
+    setGroupInfos,
+    setGroupsActivity,
+    setGroupsActivityLoadedFreq,
+    setGroupsActivityLoadedPeriod,
+    setMapDateRange,
+    setMapNetworkUnits,
+    setMapOpenMessages,
+    setMapPoints,
+    setMessages,
+    setNetworkDisplayMap,
+    setNetworks,
+    setNewCallsigns,
+    setNoMoreToLoad,
+    setNolimitShown,
+    setOptions,
+    setProfiles,
+    setSummaryCallsignsInfo,
+    setSummaryRows,
+    setTagsMap,
+    setTopCallsigns,
+    setTopFreqs,
+    setTopLocations,
+    setTopUnits,
+    setUnitsMap,
+  } = params;
+
   const patchMessages = useCallback(
     (updater: (messageId: number, message: InboxMessage) => InboxMessage) => {
       const updateItems = (items: Array<[number, InboxMessage]>) =>
         items.map(([messageId, message]) => [messageId, updater(messageId, message)] as [number, InboxMessage]);
 
-      params.setMessages((current) => updateItems(current));
-      params.setMapOpenMessages((current) => updateItems(current));
+      setMessages((current) => updateItems(current));
+      setMapOpenMessages((current) => updateItems(current));
     },
-    [params],
+    [setMapOpenMessages, setMessages],
   );
 
   const clearAnalysisResults = useCallback(() => {
-    params.setCounts(null);
-    params.setMessages([]);
-    params.setSummaryRows([]);
-    params.setNewCallsigns(params.emptyNewCallsigns);
-    params.setOptions(params.emptyOptions);
-    params.setTopFreqs([]);
-    params.setTopCallsigns([]);
-    params.setTopUnits([]);
-    params.setTopLocations([]);
-    params.setAorEntries([]);
-    params.setProfiles({});
-    params.setGroupInfos({});
-    params.setTagsMap({});
-    params.setNetworks([]);
-    params.setUnitsMap({});
-    params.setNetworkDisplayMap({});
-    params.setSummaryCallsignsInfo({});
-    params.setMapDateRange({ startDate: 0, endDate: 0 });
-    params.setMapPoints([]);
-    params.setMapNetworkUnits([]);
-    params.setMapOpenMessages([]);
-    params.setCorrelatedFreqs([]);
-    params.setGroupsActivity(null);
-    params.setGroupsActivityLoadedFreq(null);
-    params.setGroupsActivityLoadedPeriod(null);
-    params.setNoMoreToLoad(false);
-    params.setNolimitShown(false);
-    params.optionsFreqsRef.current = [];
-    params.invalidateCallsignGraph();
-  }, [params]);
+    setCounts(null);
+    setMessages([]);
+    setSummaryRows([]);
+    setNewCallsigns(emptyNewCallsigns);
+    setOptions(emptyOptions);
+    setTopFreqs([]);
+    setTopCallsigns([]);
+    setTopUnits([]);
+    setTopLocations([]);
+    setAorEntries([]);
+    setProfiles({});
+    setGroupInfos({});
+    setTagsMap({});
+    setNetworks([]);
+    setUnitsMap({});
+    setNetworkDisplayMap({});
+    setSummaryCallsignsInfo({});
+    setMapDateRange({ startDate: 0, endDate: 0 });
+    setMapPoints([]);
+    setMapNetworkUnits([]);
+    setMapOpenMessages([]);
+    setCorrelatedFreqs([]);
+    setGroupsActivity(null);
+    setGroupsActivityLoadedFreq(null);
+    setGroupsActivityLoadedPeriod(null);
+    setNoMoreToLoad(false);
+    setNolimitShown(false);
+    optionsFreqsRef.current = [];
+    invalidateCallsignGraph();
+  }, [
+    emptyNewCallsigns,
+    emptyOptions,
+    invalidateCallsignGraph,
+    optionsFreqsRef,
+    setAorEntries,
+    setCorrelatedFreqs,
+    setCounts,
+    setGroupInfos,
+    setGroupsActivity,
+    setGroupsActivityLoadedFreq,
+    setGroupsActivityLoadedPeriod,
+    setMapDateRange,
+    setMapNetworkUnits,
+    setMapOpenMessages,
+    setMapPoints,
+    setMessages,
+    setNetworkDisplayMap,
+    setNetworks,
+    setNewCallsigns,
+    setNoMoreToLoad,
+    setNolimitShown,
+    setOptions,
+    setProfiles,
+    setSummaryCallsignsInfo,
+    setSummaryRows,
+    setTagsMap,
+    setTopCallsigns,
+    setTopFreqs,
+    setTopLocations,
+    setTopUnits,
+    setUnitsMap,
+  ]);
 
   const onUpdateLocalMessage = useCallback(
     (messageId: number, updater: (message: InboxMessage) => InboxMessage) => {

@@ -2,6 +2,14 @@ import { useCallback, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes } from '../../../../Bindings';
 
+function mergeDutyCallsignTextField(existing: string, incoming: string): string {
+  const existingTrimmed = existing.trim();
+  const incomingTrimmed = incoming.trim();
+  if (existingTrimmed === '') return incoming;
+  if (incomingTrimmed === '') return existing;
+  return incomingTrimmed.length > existingTrimmed.length ? incoming : existing;
+}
+
 export function mergeDutyCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {
   if (current == null) return incoming;
 
@@ -18,10 +26,10 @@ export function mergeDutyCallsignInfoEntry(current: CallsignInfoRes | undefined,
     rowsById.set(row.id, {
       ...existing,
       ...row,
-      position: row.position || existing.position,
-      comment: row.comment || existing.comment,
-      unit1: row.unit1 || existing.unit1,
-      unit2: row.unit2 || existing.unit2,
+      position: mergeDutyCallsignTextField(existing.position, row.position),
+      comment: mergeDutyCallsignTextField(existing.comment, row.comment),
+      unit1: mergeDutyCallsignTextField(existing.unit1, row.unit1),
+      unit2: mergeDutyCallsignTextField(existing.unit2, row.unit2),
       networkIdsReportedIn: Array.from(new Set([...(existing.networkIdsReportedIn ?? []), ...(row.networkIdsReportedIn ?? [])])),
     });
   });

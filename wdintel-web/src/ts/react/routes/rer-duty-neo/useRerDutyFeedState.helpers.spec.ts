@@ -137,6 +137,42 @@ describe('combineDutyCallsignInfoMaps', () => {
       }),
     ]);
   });
+
+  it('preserves richer resolved row text when inbox carries a weaker version of the same row id', () => {
+    const next = combineDutyCallsignInfoMaps(
+      {
+        'mf-1': {
+          'борода': callsignInfo('БОРОДА', [
+            callsignInfoRow({
+              id: 11,
+              position: 'командир',
+              unit1: '2 мсб',
+              networkIdsReportedIn: [1001],
+            }),
+          ]),
+        },
+      },
+      {
+        'борода': callsignInfo('БОРОДА', [
+          callsignInfoRow({
+            id: 11,
+            position: 'Командир відділення 5 мср',
+            unit1: '2 мсб 1431 мсп 11 АК',
+            networkIdsReportedIn: [3003],
+          }),
+        ]),
+      },
+    );
+
+    expect(next['борода'].res).toEqual([
+      callsignInfoRow({
+        id: 11,
+        position: 'Командир відділення 5 мср',
+        unit1: '2 мсб 1431 мсп 11 АК',
+        networkIdsReportedIn: [3003, 1001],
+      }),
+    ]);
+  });
 });
 
 describe('updateDutyInboxCallsignInfoMapByFeedId', () => {

@@ -60,22 +60,54 @@ type Params = {
 };
 
 export function useAnalysisDataLoaders(params: Params) {
+  const {
+    callsignGraphNolimit,
+    callsignGraphRequestRef,
+    groupsActivityPeriod,
+    mapDateRangeLoadVersionRef,
+    mapMessagesLoadVersionRef,
+    newestFirst,
+    onError,
+    onUnauthorized,
+    optionsFreqs,
+    queryState,
+    setCallsignGraph,
+    setCallsignGraphLoading,
+    setCallsignGraphLoadVersion,
+    setCallsignGraphNolimit,
+    setCorrelatedFreqs,
+    setCorrelatedFreqsLoading,
+    setGroupsActivity,
+    setGroupsActivityLoadedFreq,
+    setGroupsActivityLoadedPeriod,
+    setGroupsActivityLoading,
+    setGroupsActivityPeriod,
+    setMapDateRange,
+    setMapLoading,
+    setMapNetworkUnits,
+    setMapOpenMessages,
+    setMapPalitras,
+    setMapPalitrasLoaded,
+    setMapPalitrasLoadState,
+    setMapPoints,
+  } = params;
+
   const invalidateCallsignGraph = useCallback(() => {
-    params.callsignGraphRequestRef.current += 1;
-    params.setCallsignGraph(null);
-    params.setCallsignGraphLoading(false);
-    params.setCallsignGraphLoadVersion((current) => current + 1);
-  }, [params]);
+    callsignGraphRequestRef.current += 1;
+    setCallsignGraph(null);
+    setCallsignGraphLoading(false);
+    setCallsignGraphLoadVersion((current) => current + 1);
+  }, [callsignGraphRequestRef, setCallsignGraph, setCallsignGraphLoading, setCallsignGraphLoadVersion]);
 
   const refreshMapDateRange = useCallback(
     async (range: { startDate: number; endDate: number }) => {
-      const inboxReq = buildInboxReq(params.queryState, params.optionsFreqs);
+      const inboxReq = buildInboxReq(queryState, optionsFreqs);
       if (inboxReq == null) return;
 
-      const loadVersion = params.mapDateRangeLoadVersionRef.current + 1;
-      params.mapDateRangeLoadVersionRef.current = loadVersion;
-      params.setMapLoading(true);
-      params.setMapDateRange(range);
+      const loadVersion = mapDateRangeLoadVersionRef.current + 1;
+      mapDateRangeLoadVersionRef.current = loadVersion;
+      setMapLoading(true);
+      setMapDateRange(range);
 
       try {
         const rsp = await fetchAnalysisMapPoints({
@@ -83,120 +115,131 @@ export function useAnalysisDataLoaders(params: Params) {
             ...inboxReq,
             sinceDateInclusiveMs: range.startDate,
             tillDateInclusiveMs: range.endDate,
-            newestFirst: params.newestFirst,
+            newestFirst,
           },
           mapFilter: null,
           pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
         });
-        if (params.mapDateRangeLoadVersionRef.current !== loadVersion) return;
-        params.setMapPoints(rsp.points ?? []);
-        params.setMapNetworkUnits(rsp.networkUnits ?? []);
+        if (mapDateRangeLoadVersionRef.current !== loadVersion) return;
+        setMapPoints(rsp.points ?? []);
+        setMapNetworkUnits(rsp.networkUnits ?? []);
       } catch (loadError) {
-        if (params.mapDateRangeLoadVersionRef.current !== loadVersion) return;
-        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+        if (mapDateRangeLoadVersionRef.current !== loadVersion) return;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       } finally {
-        if (params.mapDateRangeLoadVersionRef.current === loadVersion) params.setMapLoading(false);
+        if (mapDateRangeLoadVersionRef.current === loadVersion) setMapLoading(false);
       }
     },
-    [params],
+    [
+      mapDateRangeLoadVersionRef,
+      newestFirst,
+      onError,
+      onUnauthorized,
+      optionsFreqs,
+      queryState,
+      setMapDateRange,
+      setMapLoading,
+      setMapNetworkUnits,
+      setMapPoints,
+    ],
   );
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
-      const loadVersion = params.mapMessagesLoadVersionRef.current + 1;
-      params.mapMessagesLoadVersionRef.current = loadVersion;
+      const loadVersion = mapMessagesLoadVersionRef.current + 1;
+      mapMessagesLoadVersionRef.current = loadVersion;
 
       try {
         const nextMessages = await fetchMessagesByIds(messageIds);
-        if (params.mapMessagesLoadVersionRef.current !== loadVersion) return;
-        params.setMapOpenMessages(nextMessages);
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return;
+        setMapOpenMessages(nextMessages);
       } catch (loadError) {
-        if (params.mapMessagesLoadVersionRef.current !== loadVersion) return;
-        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       }
     },
-    [params],
+    [mapMessagesLoadVersionRef, onError, onUnauthorized, setMapOpenMessages],
   );
 
   const loadMapPalitras = useCallback(async () => {
-    params.setMapPalitrasLoadState('loading');
-    params.setMapPalitrasLoaded(false);
+    setMapPalitrasLoadState('loading');
+    setMapPalitrasLoaded(false);
 
     try {
       const palitras = await listPalitrasV2();
-      params.setMapPalitras(
+      setMapPalitras(
         palitras.map((palitraRead) => ({
           ...palitraRead,
           geometries: palitraRead.geometries.map((geometry) => ({ ...geometry, points: [] })),
         })),
       );
-      params.setMapPalitrasLoaded(true);
-      params.setMapPalitrasLoadState('success');
+      setMapPalitrasLoaded(true);
+      setMapPalitrasLoadState('success');
     } catch (loadError) {
-      if (!params.onUnauthorized(loadError)) {
-        params.onError(`Не вдалося завантажити палітри: ${toErrorMessage(loadError)}`);
+      if (!onUnauthorized(loadError)) {
+        onError(`Не вдалося завантажити палітри: ${toErrorMessage(loadError)}`);
       }
-      params.setMapPalitras([]);
-      params.setMapPalitrasLoaded(false);
-      params.setMapPalitrasLoadState('error');
+      setMapPalitras([]);
+      setMapPalitrasLoaded(false);
+      setMapPalitrasLoadState('error');
     }
-  }, [params]);
+  }, [onError, onUnauthorized, setMapPalitras, setMapPalitrasLoaded, setMapPalitrasLoadState]);
 
   const loadCorrelatedFreqs = useCallback(async () => {
-    const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
-    if (analysisReq == null || params.queryState.freqsSelected.length === 0) {
-      params.setCorrelatedFreqs([]);
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+    if (analysisReq == null || queryState.freqsSelected.length === 0) {
+      setCorrelatedFreqs([]);
       return;
     }
 
-    params.setCorrelatedFreqsLoading(true);
+    setCorrelatedFreqsLoading(true);
     try {
       const rsp = await fetchAnalysisCorrelatedFreqs(analysisReq);
-      params.setCorrelatedFreqs(rsp.freqs ?? []);
+      setCorrelatedFreqs(rsp.freqs ?? []);
     } catch (loadError) {
-      if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      params.setCorrelatedFreqsLoading(false);
+      setCorrelatedFreqsLoading(false);
     }
-  }, [params]);
+  }, [onError, onUnauthorized, optionsFreqs, queryState, setCorrelatedFreqs, setCorrelatedFreqsLoading]);
 
   const loadCallsignGraph = useCallback(async () => {
-    const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
     if (analysisReq == null) return;
 
-    const requestId = params.callsignGraphRequestRef.current + 1;
-    params.callsignGraphRequestRef.current = requestId;
-    params.setCallsignGraphLoading(true);
+    const requestId = callsignGraphRequestRef.current + 1;
+    callsignGraphRequestRef.current = requestId;
+    setCallsignGraphLoading(true);
     try {
-      const rsp = await fetchAnalysisCallsignGraph({ ...analysisReq, nolimit: params.callsignGraphNolimit });
-      if (requestId !== params.callsignGraphRequestRef.current) return;
-      params.setCallsignGraph(rsp);
+      const rsp = await fetchAnalysisCallsignGraph({ ...analysisReq, nolimit: callsignGraphNolimit });
+      if (requestId !== callsignGraphRequestRef.current) return;
+      setCallsignGraph(rsp);
     } catch (loadError) {
-      if (requestId !== params.callsignGraphRequestRef.current) return;
-      if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      if (requestId !== callsignGraphRequestRef.current) return;
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      if (requestId !== params.callsignGraphRequestRef.current) return;
-      params.setCallsignGraphLoading(false);
+      if (requestId !== callsignGraphRequestRef.current) return;
+      setCallsignGraphLoading(false);
     }
-  }, [params]);
+  }, [callsignGraphNolimit, callsignGraphRequestRef, onError, onUnauthorized, optionsFreqs, queryState, setCallsignGraph, setCallsignGraphLoading]);
 
   const toggleCallsignGraphNolimit = useCallback(() => {
     invalidateCallsignGraph();
-    params.setCallsignGraphNolimit((current) => !current);
-  }, [invalidateCallsignGraph, params]);
+    setCallsignGraphNolimit((current) => !current);
+  }, [invalidateCallsignGraph, setCallsignGraphNolimit]);
 
   const loadGroupsActivity = useCallback(
     async (period?: AnalysisGroupsActivityPeriod) => {
-      const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
-      const firstFreq = params.queryState.freqsSelected[0];
+      const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+      const firstFreq = queryState.freqsSelected[0];
       if (analysisReq == null || !firstFreq) {
-        params.setGroupsActivity(null);
-        params.setGroupsActivityLoadedFreq(null);
-        params.setGroupsActivityLoadedPeriod(null);
+        setGroupsActivity(null);
+        setGroupsActivityLoadedFreq(null);
+        setGroupsActivityLoadedPeriod(null);
         return;
       }
 
-      const nextPeriod = period ?? params.groupsActivityPeriod;
+      const nextPeriod = period ?? groupsActivityPeriod;
       const tillDateInclusiveMs = analysisReq.tillDateNoninclusiveMs;
       const dayMs = 24 * 60 * 60 * 1000;
       const sinceDateInclusiveMs =
@@ -208,63 +251,74 @@ export function useAnalysisDataLoaders(params: Params) {
               ? tillDateInclusiveMs - 365 * dayMs
               : analysisReq.sinceDateInclusiveMs;
 
-      params.setGroupsActivityLoading(true);
-      params.setGroupsActivityPeriod(nextPeriod);
+      setGroupsActivityLoading(true);
+      setGroupsActivityPeriod(nextPeriod);
       try {
         const rsp = await fetchFreqActivityDaily({ freq: firstFreq, sinceDateInclusiveMs, tillDateInclusiveMs });
-        params.setGroupsActivity(rsp);
-        params.setGroupsActivityLoadedFreq(firstFreq);
-        params.setGroupsActivityLoadedPeriod(nextPeriod);
+        setGroupsActivity(rsp);
+        setGroupsActivityLoadedFreq(firstFreq);
+        setGroupsActivityLoadedPeriod(nextPeriod);
       } catch (loadError) {
-        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       } finally {
-        params.setGroupsActivityLoading(false);
+        setGroupsActivityLoading(false);
       }
     },
-    [params],
+    [
+      groupsActivityPeriod,
+      onError,
+      onUnauthorized,
+      optionsFreqs,
+      queryState,
+      setGroupsActivity,
+      setGroupsActivityLoadedFreq,
+      setGroupsActivityLoadedPeriod,
+      setGroupsActivityLoading,
+      setGroupsActivityPeriod,
+    ],
   );
 
   const downloadSummaryXlsx = useCallback(async () => {
-    const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
     if (analysisReq == null) {
-      params.onError('Перевірте дату та час перед експортом.');
+      onError('Перевірте дату та час перед експортом.');
       return;
     }
     try {
       const blob = await downloadAnalysisSummaryTableXlsx(analysisReq);
       downloadBlob(blob, 'rer-analysis-summary.xlsx');
     } catch (loadError) {
-      if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     }
-  }, [params]);
+  }, [onError, onUnauthorized, optionsFreqs, queryState]);
 
   const downloadKmz = useCallback(async () => {
-    const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
     if (analysisReq == null) {
-      params.onError('Перевірте дату та час перед експортом.');
+      onError('Перевірте дату та час перед експортом.');
       return;
     }
     try {
       const blob = await downloadAnalysisKmz(analysisReq);
       downloadBlob(blob, 'rer-analysis.kmz');
     } catch (loadError) {
-      if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     }
-  }, [params]);
+  }, [onError, onUnauthorized, optionsFreqs, queryState]);
 
   const downloadGeojson = useCallback(async () => {
-    const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
     if (analysisReq == null) {
-      params.onError('Перевірте дату та час перед експортом.');
+      onError('Перевірте дату та час перед експортом.');
       return;
     }
     try {
       const blob = await downloadAnalysisGeojson(analysisReq);
       downloadBlob(blob, 'rer-analysis.geojson');
     } catch (loadError) {
-      if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     }
-  }, [params]);
+  }, [onError, onUnauthorized, optionsFreqs, queryState]);
 
   return {
     downloadGeojson,
