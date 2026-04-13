@@ -8,6 +8,10 @@ draft = false
 
 ## Загальний огляд
 
+{{video(id="overview_mar2026.mp4")}}
+
+### Попередній огляд
+
 {{video(id="overview.mp4")}}
 
 ## 1. Загальний опис системи
