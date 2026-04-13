@@ -74,6 +74,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
   const loadingCallsignsRef = useRef<Set<string>>(new Set());
+  const isUnmountedRef = useRef(false);
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
@@ -120,6 +121,13 @@ export function useRerDutyFeeds(authUserName: string | null) {
     };
   }, []);
   useEffect(() => {
+    isUnmountedRef.current = false;
+    return () => {
+      isUnmountedRef.current = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (dutyDisableAutoScroll) feedState.setWatchModeByFeedId({});
   }, [dutyDisableAutoScroll, feedState.setWatchModeByFeedId]);
 
@@ -127,30 +135,24 @@ export function useRerDutyFeeds(authUserName: string | null) {
     const allCallsigns = collectUniqueCallsignsFromMessages(feedState.messageFeeds);
     const missingCallsigns = allCallsigns.filter((callsign) => {
       const entry = feedState.callsignInfoMap[callsign];
-      return entry == null || (entry.res?.length ?? 0) === 0;
+      return entry == null;
     });
     const pendingCallsigns = missingCallsigns.filter((callsign) => !loadingCallsignsRef.current.has(callsign));
     if (pendingCallsigns.length === 0) return;
 
     pendingCallsigns.forEach((callsign) => loadingCallsignsRef.current.add(callsign));
-    let cancelled = false;
     fetchAnalysisCallsignInfos(pendingCallsigns)
       .then((items) => {
-        if (cancelled) return;
+        if (isUnmountedRef.current) return;
         feedState.mergeResolvedCallsigns(items);
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (isUnmountedRef.current) return;
         setFeedError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         pendingCallsigns.forEach((callsign) => loadingCallsignsRef.current.delete(callsign));
       });
-
-    return () => {
-      cancelled = true;
-      pendingCallsigns.forEach((callsign) => loadingCallsignsRef.current.delete(callsign));
-    };
   }, [feedState.messageFeeds, feedState.callsignInfoMap, feedState.mergeResolvedCallsigns, setFeedError]);
 
   const actions = useRerDutyMessageActions({
