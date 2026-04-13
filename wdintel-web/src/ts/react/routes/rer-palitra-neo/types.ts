@@ -56,6 +56,7 @@ export type FolderActionDialogState = {
   folderPath: string;
   nextFolderPath: string;
   targetPalitraIds: number[];
+  targetPalitraNames: string[];
   preview: FolderActionPreview;
 };
 

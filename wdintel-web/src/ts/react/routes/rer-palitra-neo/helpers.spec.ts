@@ -214,7 +214,16 @@ describe('rer-palitra helpers', () => {
     );
   });
 
-  it('normalizes folder paths and builds folder tree aggregates', () => {
+
+  it('does not mark root palitras as already in target folder before a folder is chosen', () => {
+    const preview = buildAssignFolderPreview([makeRow(1, null), makeRow(2, '')], [1, 2], '');
+
+    expect(preview.requestedCount).toBe(2);
+    expect(preview.unchangedIds).toEqual([]);
+    expect(preview.unchangedCount).toBe(0);
+  });
+
+  it('treats slash-separated paths as flat folder names in rer-palitra-neo UI', () => {
     expect(normalizeFolderPathForUi('  North /  Alpha / ')).toBe('North/Alpha');
 
     const tree = buildFolderTree(
@@ -232,7 +241,7 @@ describe('rer-palitra helpers', () => {
     expect(tree.every((node) => node.depth === 0)).toBe(true);
   });
 
-  it('rejects slash in folder names', () => {
+  it('rejects slash in folder names because this UI supports only flat folders', () => {
     expect(validateFolderPath('North')).toBe(null);
     expect(validateFolderPath(' North ')).toBe(null);
     expect(validateFolderPath('')).toBe('Вкажіть назву папки.');

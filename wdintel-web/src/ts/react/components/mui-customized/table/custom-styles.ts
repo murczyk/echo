@@ -251,7 +251,7 @@ export const CUSTOM_STYLES = {
         lineHeight: 1,
         letterSpacing: '0.02em',
         color: 'var(--bs-body-color)',
-        opacity: 0.14,
+        opacity: 0.08,
         transform: 'rotate(-28deg)',
         pointerEvents: 'none',
         userSelect: 'none',

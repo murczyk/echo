@@ -134,6 +134,12 @@ export function SearchInput(props: SearchInputProps) {
                 borderRadius: 2,
                 backgroundColor: 'background.paper',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                  WebkitTextFillColor: 'var(--bs-body-color)',
+                  WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
+                  transition: 'background-color 9999s ease-out 0s',
+                  caretColor: 'var(--bs-body-color)',
+                },
                 '& .MuiOutlinedInput-notchedOutline': {
                   borderColor: 'divider',
                 },
@@ -148,6 +154,7 @@ export function SearchInput(props: SearchInputProps) {
             }}
             slotProps={{
               input: {
+                autoComplete: 'new-password',
                 sx: {
                   height: 48,
                   '& .MuiInputBase-input': {

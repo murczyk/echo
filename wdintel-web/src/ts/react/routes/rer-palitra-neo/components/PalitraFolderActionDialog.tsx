@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Autocomplete,
+  Box,
   Button,
   CircularProgress,
   Dialog,
@@ -43,11 +44,12 @@ function getConfirmLabel(state: FolderActionDialogState): string {
 }
 
 function sanitizeFolderInput(value: string): string {
+  // Flat UI only: replace slash so users cannot type nested folder paths here.
   return value.replaceAll('/', ' ');
 }
 
 function getDescription(state: FolderActionDialogState): string {
-  if (state.kind === 'assign') return 'Введіть назву папки';
+  if (state.kind === 'assign') return 'Створіть нову папку або оберіть з існуючих.';
   if (state.kind === 'rename') return 'Введіть нову назву папки';
   if (state.kind === 'archive') return 'В архів буде перенесено всі доступні палітри в цій папці.';
   return 'Буде видалено всі доступні палітри в цій папці.';
@@ -62,11 +64,9 @@ export function PalitraFolderActionDialog({
   onNextFolderPathChange,
 }: Props) {
   const [nameTouched, setNameTouched] = useState(false);
-  const [folderAutocompleteInput, setFolderAutocompleteInput] = useState('');
 
   useEffect(() => {
     setNameTouched(false);
-    setFolderAutocompleteInput('');
   }, [state]);
 
   const normalizedFolderOptions = useMemo(
@@ -81,6 +81,7 @@ export function PalitraFolderActionDialog({
   const showNameError = nameTouched && Boolean(nextFolderPathError);
   const previewLines = formatFolderActionPreviewLines(state);
   const hasFolderOptions = normalizedFolderOptions.length > 0;
+  const assignMetaLines = state.kind === 'assign' ? previewLines.filter((line) => !line.startsWith('Обрано палітр:')) : previewLines;
 
   return (
     <Dialog open onClose={submitting ? undefined : onClose} fullWidth maxWidth='sm'>
@@ -90,38 +91,70 @@ export function PalitraFolderActionDialog({
           <DialogContentText>{getDescription(state)}</DialogContentText>
 
           {state.kind === 'assign' ? (
-            <>
-              <TextField
-                label='Назва папки'
-                value={state.nextFolderPath}
-                onChange={(event) => onNextFolderPathChange(sanitizeFolderInput(event.target.value))}
-                onBlur={() => setNameTouched(true)}
-                error={showNameError}
-                helperText={showNameError ? nextFolderPathError : undefined}
-                autoFocus
-              />
-
-              {hasFolderOptions ? (
-                <Stack spacing={1}>
-                  <Typography variant='body2' color='text.secondary'>
-                    Оберіть існуючу папку
-                  </Typography>
-                  <Autocomplete
-                    options={normalizedFolderOptions}
-                    value={null}
-                    inputValue={folderAutocompleteInput}
-                    onInputChange={(_event, value) => setFolderAutocompleteInput(value)}
-                    onChange={(_event, value) => {
-                      if (!value) return;
-                      onNextFolderPathChange(value);
-                      setFolderAutocompleteInput(value);
-                      setNameTouched(true);
+            <Stack spacing={1.75}>
+              <Autocomplete
+                freeSolo
+                selectOnFocus
+                clearOnBlur={false}
+                handleHomeEndKeys
+                autoHighlight
+                options={normalizedFolderOptions}
+                value={null}
+                inputValue={state.nextFolderPath}
+                onInputChange={(_event, value) => {
+                  onNextFolderPathChange(sanitizeFolderInput(value));
+                }}
+                onChange={(_event, value) => {
+                  const nextValue = typeof value === 'string' ? value : (value ?? '');
+                  onNextFolderPathChange(sanitizeFolderInput(nextValue));
+                  setNameTouched(true);
+                }}
+                noOptionsText='Немає збігів. Буде створено нову папку з цією назвою.'
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label='Папка'
+                    onBlur={() => setNameTouched(true)}
+                    error={showNameError}
+                    helperText={
+                      showNameError
+                        ? nextFolderPathError
+                        : hasFolderOptions
+                          ? 'Введіть назву або оберіть зі списку.'
+                          : 'Введіть назву папки.'
+                    }
+                    autoFocus
+                    slotProps={{
+                      htmlInput: {
+                        ...params.inputProps,
+                        autoComplete: 'new-password',
+                      },
                     }}
-                    renderInput={(params) => <TextField {...params} placeholder='Почніть вводити назву папки' />}
+                    sx={{
+                      '& .MuiInputBase-root': {
+                        minHeight: 56,
+                      },
+                      '& .MuiInputLabel-root': {
+                        transform: 'translate(14px, 16px) scale(1)',
+                      },
+                      '& .MuiInputLabel-shrink': {
+                        transform: 'translate(14px, -9px) scale(0.75)',
+                      },
+                      '& .MuiInputBase-input': {
+                        paddingTop: 16.5,
+                        paddingBottom: 16.5,
+                      },
+                      '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                        WebkitTextFillColor: 'var(--bs-body-color)',
+                        WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
+                        transition: 'background-color 9999s ease-out 0s',
+                        caretColor: 'var(--bs-body-color)',
+                      },
+                    }}
                   />
-                </Stack>
-              ) : null}
-            </>
+                )}
+              />
+            </Stack>
           ) : null}
 
           {state.kind === 'rename' ? (
@@ -136,8 +169,34 @@ export function PalitraFolderActionDialog({
             />
           ) : null}
 
+          {state.kind === 'assign' && state.targetPalitraNames.length > 0 ? (
+            <Stack spacing={1}>
+              <Typography variant='body2' color='text.secondary'>
+                Обрані палітри: {state.preview.requestedCount}
+              </Typography>
+              <Box
+                sx={{
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  border: (theme) => '1px solid ' + theme.palette.divider,
+                  borderRadius: 1,
+                  px: 1.5,
+                  py: 1,
+                }}
+              >
+                <Stack spacing={0.75}>
+                  {state.targetPalitraNames.map((name, index) => (
+                    <Typography key={name + '-' + String(index)} variant='body2'>
+                      {name}
+                    </Typography>
+                  ))}
+                </Stack>
+              </Box>
+            </Stack>
+          ) : null}
+
           <Stack spacing={1}>
-            {previewLines.map((line) => (
+            {assignMetaLines.map((line) => (
               <Typography key={line} variant='body2'>
                 {line}
               </Typography>
