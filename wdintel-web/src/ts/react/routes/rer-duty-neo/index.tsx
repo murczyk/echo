@@ -85,6 +85,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     reloadLatestFrequencies,
     networkDisplayMap,
     networkMap,
+    unitsMap,
+    callsignInfoMap,
     featureStrictNetworks,
     watchModeByFeedId,
     setWatchModeByFeedId,
@@ -163,6 +165,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
               networkMap={networkMap}
+              unitsMap={unitsMap}
+              callsignInfoMap={callsignInfoMap}
               featureStrictNetworks={featureStrictNetworks}
               tagsMap={tagsMap}
               tagIdsList={tagIdsList}

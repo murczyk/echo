@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type {
+  CallsignInfoRes,
   Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
@@ -62,6 +63,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const messageFeedsRef = useRef(messageFeeds);
   const [networkMap, setNetworkMap] = useState<Record<number, Network>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
+  const [callsignInfoMap, setCallsignInfoMap] = useState<Record<string, CallsignInfoRes>>({});
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
   const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
@@ -80,6 +82,22 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
   }, [messageFeeds]);
+
+  const mergeInboxCallsigns = useCallback((callsigns: CallsignInfoRes[] | null | undefined) => {
+    if (!callsigns || callsigns.length === 0) return;
+    setCallsignInfoMap((prev) => {
+      const next = { ...prev };
+      callsigns.forEach((item) => {
+        const key = item.callsign.toLowerCase();
+        next[key] = item;
+      });
+      return next;
+    });
+  }, []);
+
+  const mergeResolvedCallsigns = useCallback((callsigns: CallsignInfoRes[] | null | undefined) => {
+    mergeInboxCallsigns(callsigns);
+  }, [mergeInboxCallsigns]);
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -139,6 +157,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       try {
         const req = buildReqForFeed(effectiveFeed, { loadLatest: true });
         const rsp = await fetchInboxMessages(req);
+        mergeInboxCallsigns(rsp.callsigns);
         const deduped = dedupeMessageItems(rsp.inboxItems);
         const initialReadIds = new Set<number>(deduped.map(([id]) => id));
         setMessageFeeds((prev) =>
@@ -169,7 +188,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
       }
     },
-    [messageFeeds, buildReqForFeed, setProfiles, setGroupInfos],
+    [messageFeeds, buildReqForFeed, mergeInboxCallsigns, setProfiles, setGroupInfos],
   );
 
   const loadFeedOlderMessages = useCallback(
@@ -182,6 +201,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       try {
         const req = buildReqForFeed(w, { beforeIdNoninclusive: firstId });
         const rsp = await fetchInboxMessages(req);
+        mergeInboxCallsigns(rsp.callsigns);
         if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
         if (rsp.signalGroups?.length) {
           const map: Record<string, SignalGroupEntry> = {};
@@ -216,7 +236,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: false } : x)));
       }
     },
-    [messageFeeds, buildReqForFeed],
+    [messageFeeds, buildReqForFeed, mergeInboxCallsigns],
   );
 
   const loadFeedNewerMessages = useCallback(
@@ -236,6 +256,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           nolimit: opts?.nolimit ?? undefined,
         });
         const rsp = await fetchInboxMessages(req);
+        mergeInboxCallsigns(rsp.callsigns);
         if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
         if (rsp.signalGroups?.length) {
           const map: Record<string, SignalGroupEntry> = {};
@@ -285,7 +306,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         setLoadingNewerFeedId((prev) => (prev === feedId ? null : prev));
       }
     },
-    [messageFeeds, buildReqForFeed],
+    [messageFeeds, buildReqForFeed, mergeInboxCallsigns],
   );
 
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
@@ -528,6 +549,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     buildReqForFeed,
     networkDisplayMap,
     networkMap,
+    unitsMap,
+    callsignInfoMap,
+    mergeResolvedCallsigns,
     watchModeByFeedId,
     setWatchModeByFeedId,
     loadingNewerFeedId,

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Box, Button, Collapse, Stack, Tooltip, Typography } from '@mui/material';
 
-import type { ContentNode, InboxMessage, Tag } from '../../../../Bindings';
+import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from './utils';
 import { renderMarkedText } from './MarkedText';
@@ -287,12 +287,18 @@ export function MessageCardMessageBody({
   tagsMap,
   onToggleTag,
   tagsLayout = 'full',
+  callsignInfoMap,
+  networks,
+  unitsMap,
 }: {
   compact?: boolean;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
   tagsLayout?: TagsLayoutVariant;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  unitsMap?: Record<number, Unit>;
 }) {
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const textPrimary =
@@ -300,6 +306,11 @@ export function MessageCardMessageBody({
       ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
           showPointLinks,
           message: msg,
+          callsignInfoMap,
+          networks,
+          unitsMap,
+          freq: msg.freq ?? null,
+          networkIds: msg.networkIds ?? null,
         })
       : msg.text || '—';
 

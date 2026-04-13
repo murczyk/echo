@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { fetchUserSettings } from '../../services/api/user-settings';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
@@ -7,6 +7,7 @@ import { sortFrequenciesNumerically } from '../../utils/misc';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
+import { collectUniqueCallsignsFromMessages } from './utils';
 
 const MAX_MESSAGE_FEEDS = 4;
 
@@ -72,6 +73,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
   const [testLimit, setTestLimit] = useState(1);
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
+  const loadingCallsignsRef = useRef<Set<string>>(new Set());
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
@@ -120,6 +122,37 @@ export function useRerDutyFeeds(authUserName: string | null) {
   useEffect(() => {
     if (dutyDisableAutoScroll) feedState.setWatchModeByFeedId({});
   }, [dutyDisableAutoScroll, feedState.setWatchModeByFeedId]);
+
+  useEffect(() => {
+    const allCallsigns = collectUniqueCallsignsFromMessages(feedState.messageFeeds);
+    const missingCallsigns = allCallsigns.filter((callsign) => {
+      const entry = feedState.callsignInfoMap[callsign];
+      return entry == null || (entry.res?.length ?? 0) === 0;
+    });
+    const pendingCallsigns = missingCallsigns.filter((callsign) => !loadingCallsignsRef.current.has(callsign));
+    if (pendingCallsigns.length === 0) return;
+
+    pendingCallsigns.forEach((callsign) => loadingCallsignsRef.current.add(callsign));
+    let cancelled = false;
+    fetchAnalysisCallsignInfos(pendingCallsigns)
+      .then((items) => {
+        if (cancelled) return;
+        feedState.mergeResolvedCallsigns(items);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setFeedError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        pendingCallsigns.forEach((callsign) => loadingCallsignsRef.current.delete(callsign));
+      });
+
+    return () => {
+      cancelled = true;
+      pendingCallsigns.forEach((callsign) => loadingCallsignsRef.current.delete(callsign));
+    };
+  }, [feedState.messageFeeds, feedState.callsignInfoMap, feedState.mergeResolvedCallsigns, setFeedError]);
+
   const actions = useRerDutyMessageActions({
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
@@ -211,6 +244,8 @@ export function useRerDutyFeeds(authUserName: string | null) {
     reloadLatestFrequencies: filterOpts.reloadLatestFrequencies,
     networkDisplayMap: feedState.networkDisplayMap,
     networkMap: feedState.networkMap,
+    unitsMap: feedState.unitsMap,
+    callsignInfoMap: feedState.callsignInfoMap,
     featureStrictNetworks: filterOpts.featureStrictNetworks,
     watchModeByFeedId: feedState.watchModeByFeedId,
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,

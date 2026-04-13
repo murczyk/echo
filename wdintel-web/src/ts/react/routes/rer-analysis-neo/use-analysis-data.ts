@@ -149,6 +149,23 @@ type Result = {
   renameSummaryUnit: (freq: string, unit: string, unitNew: string) => Promise<void>;
 };
 
+function mergeCallsignInfoMap(
+  prev: Record<string, CallsignInfoRes>,
+  items: CallsignInfoRes[] | null | undefined,
+  options?: { overwrite?: boolean },
+): Record<string, CallsignInfoRes> {
+  if (!items || items.length === 0) return prev;
+  const overwrite = options?.overwrite ?? false;
+  const next = { ...prev };
+  items.forEach((item) => {
+    const key = item.callsign.toLowerCase();
+    if (overwrite || next[key] == null || (next[key].res?.length ?? 0) === 0) {
+      next[key] = item;
+    }
+  });
+  return next;
+}
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return 'Сталася помилка під час завантаження аналізу.';
@@ -750,6 +767,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
 
         setCounts(nextCounts);
         setMessages(inboxRsp.inboxItems ?? []);
+        setSummaryCallsignsInfo((current) => mergeCallsignInfoMap(current, inboxRsp.callsigns, { overwrite: true }));
         setOptions({
           ...emptyOptions,
           freqs: sortFrequenciesNumerically(nextFrequencies),
@@ -883,10 +901,11 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
           unitsRspById.units.forEach((unit) => {
             nextUnitsMap[unit.id] = unit;
           });
-          const nextSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {};
-          callsignInfosRsp.forEach((item) => {
-            nextSummaryCallsignsInfo[item.callsign.toLowerCase()] = item;
+          let nextSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {};
+          nextSummaryCallsignsInfo = mergeCallsignInfoMap(nextSummaryCallsignsInfo, criticalData.inboxRsp.callsigns, {
+            overwrite: true,
           });
+          nextSummaryCallsignsInfo = mergeCallsignInfoMap(nextSummaryCallsignsInfo, callsignInfosRsp);
 
           setGroupInfos(nextGroupInfos);
           setNetworks(networksRspById);
@@ -1007,6 +1026,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     try {
       const rsp = await fetchInboxMessages({ ...inboxReq, nolimit: true, newestFirst });
       setMessages(rsp.inboxItems ?? []);
+      setSummaryCallsignsInfo((current) => mergeCallsignInfoMap(current, rsp.callsigns, { overwrite: true }));
       setNolimitShown(true);
       setNoMoreToLoad(true);
     } catch (loadError) {
@@ -1056,6 +1076,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         return;
       }
       const nextMessages = rsp.inboxItems ?? [];
+      setSummaryCallsignsInfo((current) => mergeCallsignInfoMap(current, rsp.callsigns, { overwrite: true }));
       setMessages((current) => [...current, ...nextMessages]);
       if (nextMessages.length === 0) {
         setNoMoreToLoad(true);

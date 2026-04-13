@@ -3,7 +3,7 @@
  * e.g. "unit_ids" -> "unitIds", "created_at" -> "createdAt"
  */
 export function toCamelCase(str: string): string {
-  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  return str.replace(/_([a-z0-9])/gi, (_, chunk: string) => chunk.toUpperCase());
 }
 
 /**

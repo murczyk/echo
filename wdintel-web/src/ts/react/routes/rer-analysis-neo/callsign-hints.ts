@@ -6,13 +6,34 @@ export type CallsignHintStrategy = 'network' | 'system' | 'none';
 export type CallsignHintResult = {
   strategy: CallsignHintStrategy;
   prioritizedCallsigns: CallsignInfo[];
-  nonPrioritizedCallsigns: CallsignInfo[];
   iconClass: string;
 };
+
+export type CallsignHintTooltipData = {
+  header: string;
+  items: string[];
+};
+
+function toText(value: string | null | undefined): string {
+  return value?.trim() ?? '';
+}
+
+function getReportedNetworkIds(callsignInfo: Pick<CallsignInfo, 'networkIdsReportedIn'>): number[] {
+  return callsignInfo.networkIdsReportedIn ?? [];
+}
+
+function getMessageNetworkIds(networkIds?: number[] | null): number[] | null {
+  if (!networkIds || networkIds.length === 0) return null;
+  return networkIds;
+}
 
 function filterNetworksByFreq(networks: Network[], freq: string | null): Network[] {
   if (!freq) return [];
   return networks.filter((network) => network.freqs.some((networkFreq) => networkFreq.freq === freq));
+}
+
+function getNetworksByIds(ids: number[], networks: Network[]): Network[] {
+  return ids.map((id) => networks.find((network) => network.id === id)).filter((network): network is Network => network != null);
 }
 
 function getAllUnitIdsForNetworks(networks: Network[]): number[] {
@@ -49,6 +70,11 @@ function isCallsignRelatedToNetworks(callsignInfo: CallsignInfo[] | null, networ
   return callsignUnits.some((callsignUnit) => networkUnits.some((networkUnit) => isSameOrChildUnit(callsignUnit, networkUnit)));
 }
 
+function hasCallsignInMessageNetworks(callsignInfo: CallsignInfo[] | null, messageNetworkIds: number[]): boolean {
+  if (!callsignInfo || callsignInfo.length === 0) return false;
+  return callsignInfo.some((item) => getReportedNetworkIds(item).some((networkId) => messageNetworkIds.includes(networkId)));
+}
+
 function getIconClass(strategy: CallsignHintStrategy): string {
   switch (strategy) {
     case 'network':
@@ -70,25 +96,51 @@ function determineHintStrategyForCallsign(params: {
 }): CallsignHintStrategy {
   const { hintContext, freq, networkIds, networks, unitsMap, callsignInfo } = params;
   const networksByFreq = filterNetworksByFreq(networks, freq);
-  const networksFromMessage = (networkIds ?? []).length > 0 ? networks.filter((network) => (networkIds ?? []).includes(network.id)) : [];
+  const messageNetworkIds = getMessageNetworkIds(networkIds);
   const hasCatalogMatch = (callsignInfo ?? []).length > 0;
 
   if (hintContext === 'message') {
-    if (networksFromMessage.length > 0) {
-      const hasCallsignInMessageNetworks = (callsignInfo ?? []).some((item) =>
-        item.networkIdsReportedIn.some((networkId) => (networkIds ?? []).includes(networkId)),
-      );
-      if (hasCallsignInMessageNetworks) return 'network';
-      return hasCatalogMatch ? 'system' : 'none';
+    if (messageNetworkIds) {
+      return hasCallsignInMessageNetworks(callsignInfo, messageNetworkIds) ? 'network' : 'none';
     }
     return hasCatalogMatch ? 'system' : 'none';
   }
 
-  if (networksFromMessage.length > 0) return 'network';
+  if (messageNetworkIds) return 'network';
   if (networksByFreq.length > 0) {
     return isCallsignRelatedToNetworks(callsignInfo, networksByFreq, unitsMap) ? 'network' : 'system';
   }
   return 'system';
+}
+
+function getPrioritizedCallsigns(params: {
+  strategy: CallsignHintStrategy;
+  freq: string | null;
+  networkIds?: number[] | null;
+  networks: Network[];
+  unitsMap: Record<number, Unit>;
+  callsignInfo: CallsignInfo[];
+}): CallsignInfo[] {
+  const { strategy, freq, networkIds, networks, unitsMap, callsignInfo } = params;
+  if (strategy === 'none') return [];
+  if (strategy === 'system') return callsignInfo;
+
+  const messageNetworkIds = getMessageNetworkIds(networkIds);
+  if (messageNetworkIds) {
+    return callsignInfo.filter((item) => getReportedNetworkIds(item).some((networkId) => messageNetworkIds.includes(networkId)));
+  }
+
+  const networksByFreq = filterNetworksByFreq(networks, freq);
+  const networkUnits = getUnitsInfoByIds(getAllUnitIdsForNetworks(networksByFreq), unitsMap);
+  return filterCallsignsByNetworkUnits(callsignInfo, unitsMap, networkUnits);
+}
+
+export function formatLegacyCallsignTooltipLine(callsignInfo: Pick<CallsignInfo, 'position' | 'unit1' | 'unit2'>): string {
+  return `🐷 ${toText(callsignInfo.position)} ${toText(callsignInfo.unit1)} ${toText(callsignInfo.unit2)}`;
+}
+
+function isTooltipLineVisible(line: string): boolean {
+  return line.replace(/^🐷/, '').trim() !== '';
 }
 
 export function getCallsignHintResult(params: {
@@ -97,10 +149,10 @@ export function getCallsignHintResult(params: {
   networkIds?: number[] | null;
   networks: Network[];
   unitsMap: Record<number, Unit>;
-  callsignInfoMap: Record<string, CallsignInfoRes>;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
   callsign: string;
 }): CallsignHintResult {
-  const callsignInfo = params.callsignInfoMap[params.callsign.toLowerCase()]?.res ?? null;
+  const callsignInfo = params.callsignInfoMap?.[params.callsign.toLowerCase()]?.res ?? null;
   const strategy = determineHintStrategyForCallsign({
     hintContext: params.hintContext,
     freq: params.freq,
@@ -110,55 +162,50 @@ export function getCallsignHintResult(params: {
     callsignInfo,
   });
 
-  if (!callsignInfo || callsignInfo.length === 0 || strategy === 'none') {
-    return {
-      strategy,
-      prioritizedCallsigns: [],
-      nonPrioritizedCallsigns: [],
-      iconClass: getIconClass(strategy),
-    };
-  }
-
-  const prioritizedCallsigns =
-    strategy === 'network'
-      ? filterCallsignsByNetworkUnits(
-          callsignInfo,
-          params.unitsMap,
-          getUnitsInfoByIds(
-            getAllUnitIdsForNetworks(
-              (params.networkIds ?? []).length > 0
-                ? params.networks.filter((network) => (params.networkIds ?? []).includes(network.id))
-                : filterNetworksByFreq(params.networks, params.freq),
-            ),
-            params.unitsMap,
-          ),
-        )
-      : callsignInfo;
-  const prioritizedIds = new Set(prioritizedCallsigns.map((item) => item.id));
   return {
     strategy,
-    prioritizedCallsigns,
-    nonPrioritizedCallsigns: callsignInfo.filter((item) => !prioritizedIds.has(item.id)),
+    prioritizedCallsigns: callsignInfo
+      ? getPrioritizedCallsigns({
+          strategy,
+          freq: params.freq,
+          networkIds: params.networkIds,
+          networks: params.networks,
+          unitsMap: params.unitsMap,
+          callsignInfo,
+        })
+      : [],
     iconClass: getIconClass(strategy),
   };
 }
 
-export function formatCallsignHintTooltip(result: CallsignHintResult): string | null {
-  if (result.prioritizedCallsigns.length === 0 && result.nonPrioritizedCallsigns.length === 0) {
-    return null;
-  }
+export function formatCallsignHintTooltipData(result: CallsignHintResult): CallsignHintTooltipData | null {
+  if (result.prioritizedCallsigns.length === 0) return null;
 
-  const toText = (value: string | null | undefined): string => value?.trim() ?? '';
+  const header = result.strategy === 'network' ? 'Позивні підрозділів мережі:' : 'Позивні з каталогу:';
+  const items = result.prioritizedCallsigns.map(formatLegacyCallsignTooltipLine).filter(isTooltipLineVisible);
+  if (items.length === 0) return null;
 
-  const viewCallsign = (callsignInfo: CallsignInfo) =>
-    ['🐷', toText(callsignInfo.position), toText(callsignInfo.unit1), toText(callsignInfo.unit2)]
-      .filter((part) => part !== '')
-      .join(' ');
-
-  if (result.prioritizedCallsigns.length > 0) {
-    const header = result.strategy === 'network' ? 'Позивні підрозділів мережі:' : 'Позивні з каталогу:';
-    return [header, ...result.prioritizedCallsigns.map(viewCallsign)].join('\n');
-  }
-
-  return null;
+  return {
+    header,
+    items,
+  };
 }
+
+export function formatCallsignHintTooltip(result: CallsignHintResult): string | null {
+  const tooltipData = formatCallsignHintTooltipData(result);
+  if (!tooltipData) return null;
+  return [tooltipData.header, ...tooltipData.items].join('\n');
+}
+
+export const __private__ = {
+  filterNetworksByFreq,
+  getNetworksByIds,
+  getAllUnitIdsForNetworks,
+  getUnitsInfoByIds,
+  isSameOrChildUnit,
+  filterCallsignsByNetworkUnits,
+  isCallsignRelatedToNetworks,
+  hasCallsignInMessageNetworks,
+  determineHintStrategyForCallsign,
+  getPrioritizedCallsigns,
+};
