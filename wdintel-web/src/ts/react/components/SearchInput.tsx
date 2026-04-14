@@ -150,6 +150,18 @@ export function SearchInput(props: SearchInputProps) {
                   borderColor: 'primary.main',
                   borderWidth: 1,
                 },
+                '& .MuiInputBase-input::placeholder': {
+                  color: (theme) => (theme.palette.mode === 'light' ? 'rgba(31, 41, 55, 0.78)' : 'rgba(255, 255, 255, 0.68)'),
+                  opacity: 1,
+                },
+                '& .MuiInputBase-input.Mui-disabled': {
+                  WebkitTextFillColor: (theme) =>
+                    theme.palette.mode === 'light' ? 'rgba(31, 41, 55, 0.78)' : 'rgba(255, 255, 255, 0.68)',
+                },
+                '& .MuiInputBase-input.Mui-disabled::placeholder': {
+                  color: (theme) => (theme.palette.mode === 'light' ? 'rgba(31, 41, 55, 0.78)' : 'rgba(255, 255, 255, 0.68)'),
+                  opacity: 1,
+                },
               },
             }}
             slotProps={{

@@ -27,6 +27,7 @@ function toMapPalitras(palitras: PalitraReadV2[]): unknown[] {
           id: geometry.id,
           apiPalitraId: palitraRead.palitra.id,
           name: palitraRead.palitra.name,
+          folder: palitraRead.palitra.folder,
           colorHex: geometry.colorHex,
           author: palitraRead.palitra.author,
           sourceFileName: geometry.sourceFileName,

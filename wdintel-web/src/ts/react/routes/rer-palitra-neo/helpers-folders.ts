@@ -14,9 +14,7 @@ export function normalizeFolderPathForUi(path: string): string {
 export function splitFolderPath(path: string | null): string[] {
   if (!path) return [];
   const normalizedPath = normalizeFolderPathForUi(path);
-  // rer-palitra-neo intentionally exposes a flat folder UI.
-  // Even if legacy/backend data may contain slash-separated paths,
-  // this screen treats the whole normalized value as one folder name.
+  // Flat folder semantics: treat the normalized value as a single segment.
   return normalizedPath === '' ? [] : [normalizedPath];
 }
 

@@ -800,6 +800,9 @@ pub fn normalize_palitra_folder(folder: &str) -> anyhow::Result<String> {
     if trimmed.is_empty() {
         anyhow::bail!("Palitra folder may not be empty");
     }
+    if trimmed.contains('/') {
+        anyhow::bail!("Palitra folder may not contain '/'");
+    }
     let parts = trimmed.split('/').map(str::trim).collect_vec();
     if parts.iter().any(|part| part.is_empty()) {
         anyhow::bail!(
@@ -815,24 +818,23 @@ pub fn normalize_palitra_folder_from_db(
     folder.and_then(|folder| normalize_palitra_folder(&folder).ok())
 }
 
-fn folder_matches_prefix(folder: Option<&str>, prefix: &str) -> bool {
+fn folder_matches_exact(folder: Option<&str>, exact_folder: &str) -> bool {
     let Some(folder) = folder else {
         return false;
     };
-    folder == prefix || folder.starts_with(&format!("{prefix}/"))
+    folder == exact_folder
 }
 
-fn replace_folder_prefix(
+fn replace_folder_exact(
     folder: Option<&str>,
     from_folder: &str,
     to_folder: &str,
 ) -> Option<String> {
     let folder = folder?;
-    if folder == from_folder {
-        return Some(to_folder.to_string());
+    if folder != from_folder {
+        return None;
     }
-    let suffix = folder.strip_prefix(&format!("{from_folder}/"))?;
-    Some(format!("{to_folder}/{suffix}"))
+    Some(to_folder.to_string())
 }
 
 pub async fn update_accessible_palitra_archive_flag(
@@ -906,7 +908,7 @@ pub async fn rename_accessible_palitra_folder(
     for palitra in mutable_palitras {
         let old_folder =
             normalize_palitra_folder_from_db(palitra.folder.clone());
-        let Some(new_folder) = replace_folder_prefix(
+        let Some(new_folder) = replace_folder_exact(
             old_folder.as_deref(),
             &from_folder,
             &to_folder,
@@ -1053,7 +1055,7 @@ pub async fn collect_accessible_palitra_ids_in_folder(
         .filter_map(|palitra| {
             let folder_value =
                 normalize_palitra_folder_from_db(palitra.folder.clone());
-            if folder_matches_prefix(folder_value.as_deref(), &folder) {
+            if folder_matches_exact(folder_value.as_deref(), &folder) {
                 Some(palitra.id)
             } else {
                 None
@@ -2409,7 +2411,7 @@ mod tests {
     };
     use crate::palitra::bl::{
         collect_accessible_palitra_ids, normalize_palitra_folder,
-        replace_folder_prefix, search_palitra_points_by_labels, update_palitra,
+        replace_folder_exact, search_palitra_points_by_labels, update_palitra,
         update_palitra_v2,
     };
     use crate::palitra::types::{
@@ -2832,21 +2834,22 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_palitra_folder_rejects_empty_segments() {
+    fn test_normalize_palitra_folder_rejects_slash_and_empty_values() {
+        assert!(normalize_palitra_folder("foo/bar").is_err());
         assert!(normalize_palitra_folder("foo//bar").is_err());
         assert!(normalize_palitra_folder(" / ").is_err());
     }
 
     #[test]
-    fn test_replace_folder_prefix_handles_exact_and_nested_paths() {
+    fn test_replace_folder_exact_handles_only_exact_match() {
         assert_eq!(
-            replace_folder_prefix(Some("foo"), "foo", "bar"),
+            replace_folder_exact(Some("foo"), "foo", "bar"),
             Some("bar".to_string())
         );
         assert_eq!(
-            replace_folder_prefix(Some("foo/baz"), "foo", "bar"),
-            Some("bar/baz".to_string())
+            replace_folder_exact(Some("foo/baz"), "foo", "bar"),
+            None
         );
-        assert_eq!(replace_folder_prefix(Some("foobar"), "foo", "bar"), None);
+        assert_eq!(replace_folder_exact(Some("foobar"), "foo", "bar"), None);
     }
 }

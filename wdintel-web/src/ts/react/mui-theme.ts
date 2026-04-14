@@ -123,8 +123,7 @@ export function useNeoMuiTheme() {
 }
 
 export function NeoMuiThemeProvider({ children }: { children: ReactNode }) {
-  const mode = useMuiPaletteMode();
   const theme = useNeoMuiTheme();
 
-  return createElement(ThemeProvider, { theme, key: mode }, children);
+  return createElement(ThemeProvider, { theme }, children);
 }

@@ -223,21 +223,21 @@ describe('rer-palitra helpers', () => {
     expect(preview.unchangedCount).toBe(0);
   });
 
-  it('treats slash-separated paths as flat folder names in rer-palitra-neo UI', () => {
-    expect(normalizeFolderPathForUi('  North /  Alpha / ')).toBe('North/Alpha');
+  it('builds flat folder nodes for rer-palitra-neo folder UI', () => {
+    expect(normalizeFolderPathForUi('  North  ')).toBe('North');
 
     const tree = buildFolderTree(
       [
-        makePalitra(1, 'North/Alpha'),
-        makePalitra(2, 'North/Alpha/Sub'),
-        makePalitra(3, 'North/Beta', 'other'),
+        makePalitra(1, 'North'),
+        makePalitra(2, 'South'),
+        makePalitra(3, 'Bravo', 'other'),
       ],
       makeUser({ name: 'operator', roles: ['Admin'] }),
     );
 
-    expect(tree.map((node) => node.path)).toEqual(['North/Alpha', 'North/Alpha/Sub', 'North/Beta']);
-    expect(tree.find((node) => node.path === 'North/Alpha')?.allPalitraIds).toEqual([1]);
-    expect(tree.find((node) => node.path === 'North/Alpha/Sub')?.allPalitraIds).toEqual([2]);
+    expect(tree.map((node) => node.path)).toEqual(['Bravo', 'North', 'South']);
+    expect(tree.find((node) => node.path === 'North')?.allPalitraIds).toEqual([1]);
+    expect(tree.find((node) => node.path === 'South')?.allPalitraIds).toEqual([2]);
     expect(tree.every((node) => node.depth === 0)).toBe(true);
   });
 

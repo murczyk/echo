@@ -57,6 +57,9 @@ evaluate:
 dev-front:
     (cd wdintel-web && npx elm-land server)
 
+sync-dev-front-nginx:
+    bash deploy/sync-dev-front-nginx.sh
+
 # now with build!
 dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
