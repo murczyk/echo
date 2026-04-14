@@ -91,6 +91,7 @@ export function useRerPalitraNeoPage() {
   const folderOptions = useMemo(() => getExistingFolderOptions(folderTree), [folderTree]);
   const rows = useMemo<TableRowView[]>(() => buildTableRows({
     palitras: visiblePalitras,
+    folderPermissionPalitras: palitras,
     user,
     myScope,
     organisms,

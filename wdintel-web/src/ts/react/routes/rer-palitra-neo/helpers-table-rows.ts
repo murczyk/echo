@@ -55,6 +55,7 @@ export function mapPalitraToRowView({
 
 export function buildTableRows(args: {
   palitras: Palitra[];
+  folderPermissionPalitras?: Palitra[];
   user: User | null;
   myScope: MyScope | null;
   organisms: Organism[];
@@ -67,6 +68,7 @@ export function buildTableRows(args: {
 }): TableRowView[] {
   const {
     palitras,
+    folderPermissionPalitras,
     user,
     myScope,
     organisms,
@@ -77,11 +79,13 @@ export function buildTableRows(args: {
     inFlightUploadId,
     expandedFolderPaths,
   } = args;
-  const folderTree = buildFolderTree(palitras, user);
-  const nodesByPath = new Map(folderTree.map((node) => [node.path, node]));
+  const visibleFolderTree = buildFolderTree(palitras, user);
+  const permissionFolderTree = buildFolderTree(folderPermissionPalitras ?? palitras, user);
+  const nodesByPath = new Map(visibleFolderTree.map((node) => [node.path, node]));
+  const permissionNodesByPath = new Map(permissionFolderTree.map((node) => [node.path, node]));
   const folderChildren = new Map<string, string[]>();
 
-  for (const node of folderTree) {
+  for (const node of visibleFolderTree) {
     const parentPath = splitFolderPath(node.path).slice(0, -1).join('/');
     const current = folderChildren.get(parentPath) ?? [];
     current.push(node.path);
@@ -120,8 +124,11 @@ export function buildTableRows(args: {
   function appendFolder(path: string) {
     const node = nodesByPath.get(path);
     if (!node) return;
-
-    rows.push(mapFolderNodeToRowView(node, expandedFolderPaths));
+    const permissionNode = permissionNodesByPath.get(path) ?? node;
+    const folderRow = mapFolderNodeToRowView(node, expandedFolderPaths);
+    folderRow.modifiableCount = permissionNode.modifiablePalitraIds.length;
+    folderRow.canModify = permissionNode.modifiablePalitraIds.length > 0;
+    rows.push(folderRow);
 
     if (!expandedFolderPaths.has(path)) return;
 
