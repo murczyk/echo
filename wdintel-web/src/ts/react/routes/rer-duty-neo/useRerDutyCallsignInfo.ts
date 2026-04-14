@@ -2,12 +2,18 @@ import { useCallback, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes } from '../../../../Bindings';
 
-function mergeDutyCallsignTextField(existing: string, incoming: string): string {
-  const existingTrimmed = existing.trim();
-  const incomingTrimmed = incoming.trim();
-  if (existingTrimmed === '') return incoming;
-  if (incomingTrimmed === '') return existing;
-  return incomingTrimmed.length > existingTrimmed.length ? incoming : existing;
+function normalizeDutyCallsignText(value: string | null | undefined): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function mergeDutyCallsignTextField(existing: string | null | undefined, incoming: string | null | undefined): string {
+  const existingValue = normalizeDutyCallsignText(existing);
+  const incomingValue = normalizeDutyCallsignText(incoming);
+  const existingTrimmed = existingValue.trim();
+  const incomingTrimmed = incomingValue.trim();
+  if (existingTrimmed === '') return incomingValue;
+  if (incomingTrimmed === '') return existingValue;
+  return incomingTrimmed.length > existingTrimmed.length ? incomingValue : existingValue;
 }
 
 export function mergeDutyCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {

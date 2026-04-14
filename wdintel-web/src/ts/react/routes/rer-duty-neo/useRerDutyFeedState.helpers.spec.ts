@@ -70,6 +70,45 @@ describe('mergeDutyCallsignInfoMap', () => {
       }),
     ]);
   });
+
+  it('handles undefined text fields in incoming rows without crashing', () => {
+    const prev = {
+      'борода': callsignInfo('БОРОДА', [
+        callsignInfoRow({
+          id: 11,
+          position: 'Командир відділення 5 мср',
+          unit1: '2 мсб 1431 мсп 11 АК',
+          comment: 'details',
+          networkIdsReportedIn: [1001],
+        }),
+      ]),
+    };
+
+    const next = mergeDutyCallsignInfoMap(prev, [
+      callsignInfo('БОРОДА', [
+        {
+          ...callsignInfoRow({
+            id: 11,
+            networkIdsReportedIn: [1002],
+          }),
+          position: undefined as never,
+          comment: undefined as never,
+          unit1: undefined as never,
+          unit2: undefined as never,
+        },
+      ]),
+    ]);
+
+    expect(next['борода'].res).toEqual([
+      callsignInfoRow({
+        id: 11,
+        position: 'Командир відділення 5 мср',
+        unit1: '2 мсб 1431 мсп 11 АК',
+        comment: 'details',
+        networkIdsReportedIn: [1001, 1002],
+      }),
+    ]);
+  });
 });
 
 describe('replaceDutyCallsignInfoMap', () => {

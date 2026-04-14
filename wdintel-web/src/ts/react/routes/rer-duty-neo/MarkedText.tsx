@@ -291,7 +291,7 @@ function CallsignWithHint({
               borderRadius: '50%',
               bgcolor: 'var(--color-card)',
               color: 'var(--message-callsign-color)',
-              boxShadow: '0 0 0 1px var(--color-card)',
+              lineHeight: 0,
               pointerEvents: 'none',
             }}
           >
