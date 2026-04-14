@@ -2420,6 +2420,7 @@ mod tests {
     };
     use crate::palitra::bl::{
         collect_accessible_palitra_ids, normalize_palitra_folder,
+        normalize_palitra_folder_from_db, normalize_palitra_folder_lookup,
         replace_folder_exact, search_palitra_points_by_labels, update_palitra,
         update_palitra_v2,
     };
