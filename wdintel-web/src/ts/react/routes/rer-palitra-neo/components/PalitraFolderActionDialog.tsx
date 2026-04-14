@@ -91,7 +91,11 @@ export function PalitraFolderActionDialog({
     () => [...folderOptions].sort((left, right) => left.localeCompare(right, 'uk')),
     [folderOptions],
   );
-  const folderOptionSet = useMemo(() => new Set(normalizedFolderOptions), [normalizedFolderOptions]);
+  const assignFolderOptions = useMemo(
+    () => normalizedFolderOptions.filter((path) => !path.includes('/')),
+    [normalizedFolderOptions],
+  );
+  const assignFolderOptionSet = useMemo(() => new Set(assignFolderOptions), [assignFolderOptions]);
 
   if (!state) return null;
 
@@ -99,7 +103,7 @@ export function PalitraFolderActionDialog({
     state.kind === 'assign' || state.kind === 'rename' ? validateFolderPath(state.nextFolderPath) : null;
   const showNameError = nameTouched && Boolean(nextFolderPathError);
   const previewLines = formatFolderActionPreviewLines(state);
-  const hasFolderOptions = normalizedFolderOptions.length > 0;
+  const hasFolderOptions = assignFolderOptions.length > 0;
   const assignMetaLines = state.kind === 'assign' ? previewLines.filter((line) => !line.startsWith('Обрано палітр:')) : previewLines;
 
   return (
@@ -117,11 +121,11 @@ export function PalitraFolderActionDialog({
                 clearOnBlur={false}
                 handleHomeEndKeys
                 autoHighlight
-                options={normalizedFolderOptions}
+                options={assignFolderOptions}
                 value={null}
                 inputValue={state.nextFolderPath}
                 onInputChange={(_event, value, reason) => {
-                  if (reason === 'reset' && folderOptionSet.has(value)) {
+                  if (reason === 'reset' && assignFolderOptionSet.has(value)) {
                     onNextFolderPathChange(value);
                     return;
                   }
@@ -130,7 +134,7 @@ export function PalitraFolderActionDialog({
                 onChange={(_event, value) => {
                   const nextValue = typeof value === 'string' ? value : (value ?? '');
                   onNextFolderPathChange(
-                    folderOptionSet.has(nextValue) ? nextValue : sanitizeFolderInput(nextValue),
+                    assignFolderOptionSet.has(nextValue) ? nextValue : sanitizeFolderInput(nextValue),
                   );
                   setNameTouched(true);
                 }}
