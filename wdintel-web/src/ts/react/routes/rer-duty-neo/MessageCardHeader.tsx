@@ -355,12 +355,12 @@ function NetworkEtalonSection({
   const hasLocationDetails = location != null && location !== '' && location !== 'Не встановлена';
 
   return (
-    <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, width: '100%' }}>
+    <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}>
       <PeopleOutlineOutlinedIcon
         sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }}
         titleAccess="Еталонна прив'язка"
       />
-      <Box sx={{ minWidth: 0, flex: 1 }}>
+      <Box sx={{ minWidth: 0, flexShrink: 1 }}>
         {networkIds.length > 0 ? (
           <Stack spacing={0.5} sx={{ minWidth: 0 }}>
             {networkIds.map((networkId) => {

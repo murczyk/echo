@@ -1,4 +1,6 @@
 import type {
+  CallsignInfoRes,
+  ContentNode,
   InboxMessage,
   InboxMessagesReq,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
@@ -422,6 +424,45 @@ export function getPointEtalonsFromMessage(msg: InboxMessage, tagsMap?: Record<n
 }
 
 export type MessageItem = [number, InboxMessage];
+
+function extractCallsignsFromNodes(nodes: ContentNode[] | null | undefined): string[] {
+  if (!nodes || nodes.length === 0) return [];
+  const callsigns: string[] = [];
+  for (const node of nodes) {
+    if (typeof node !== 'string' && 'CNCallsignC' in node) {
+      const callsign = node.CNCallsignC.text.trim().toLowerCase();
+      if (callsign !== '') callsigns.push(callsign);
+    }
+  }
+  return callsigns;
+}
+
+export function collectUniqueCallsignsFromMessages(feeds: Array<{ items: MessageItem[] }>): string[] {
+  const callsigns = new Set<string>();
+  feeds.forEach((feed) => {
+    feed.items.forEach(([, msg]) => {
+      extractCallsignsFromNodes(msg.textMarked).forEach((callsign) => {
+        callsigns.add(callsign);
+      });
+    });
+  });
+  return [...callsigns];
+}
+
+export function mergeCallsignInfoResponses(
+  prev: Record<string, CallsignInfoRes>,
+  nextItems: CallsignInfoRes[],
+): Record<string, CallsignInfoRes> {
+  if (nextItems.length === 0) return prev;
+  const next = { ...prev };
+  nextItems.forEach((item) => {
+    const callsign = item.callsign.trim().toLowerCase();
+    if (callsign !== '') {
+      next[callsign] = item;
+    }
+  });
+  return next;
+}
 
 /** Sort message items by time ascending (oldest first). Uses timestamp then id as tiebreaker. */
 export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
