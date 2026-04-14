@@ -2,19 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type {
-  Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
-  Unit,
 } from '../../../../Bindings';
 import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
-import { getNetworksByIds } from '../../services/api/networks';
-import { getUnitsList } from '../../services/api/units';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
-  createMasterUnitText,
   dedupeMessageItems,
   emptyFilter,
   findAllAdjacentFreqs,
@@ -25,6 +20,8 @@ import {
 import type { MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 import { notifyDutyNewMessages } from './notifications';
+import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
+import { useRerDutyReferenceData } from './useRerDutyReferenceData';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -60,8 +57,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   });
   const [error, setError] = useState<string | null>(null);
   const messageFeedsRef = useRef(messageFeeds);
-  const [networkMap, setNetworkMap] = useState<Record<number, Network>>({});
-  const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
   const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
@@ -80,6 +75,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
   }, [messageFeeds]);
+
+  const { inboxCallsignInfoMap, callsignInfoMap, mergeInboxCallsigns, mergeResolvedCallsigns, retainFeedIds } =
+    useRerDutyCallsignInfo();
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -139,6 +137,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       try {
         const req = buildReqForFeed(effectiveFeed, { loadLatest: true });
         const rsp = await fetchInboxMessages(req);
+        mergeInboxCallsigns(feedId, rsp.callsigns, { replace: true });
         const deduped = dedupeMessageItems(rsp.inboxItems);
         const initialReadIds = new Set<number>(deduped.map(([id]) => id));
         setMessageFeeds((prev) =>
@@ -169,7 +168,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
       }
     },
-    [messageFeeds, buildReqForFeed, setProfiles, setGroupInfos],
+    [messageFeeds, buildReqForFeed, mergeInboxCallsigns, setProfiles, setGroupInfos],
   );
 
   const loadFeedOlderMessages = useCallback(
@@ -182,6 +181,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       try {
         const req = buildReqForFeed(w, { beforeIdNoninclusive: firstId });
         const rsp = await fetchInboxMessages(req);
+        mergeInboxCallsigns(feedId, rsp.callsigns);
         if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
         if (rsp.signalGroups?.length) {
           const map: Record<string, SignalGroupEntry> = {};
@@ -216,7 +216,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: false } : x)));
       }
     },
-    [messageFeeds, buildReqForFeed],
+    [messageFeeds, buildReqForFeed, mergeInboxCallsigns],
   );
 
   const loadFeedNewerMessages = useCallback(
@@ -236,6 +236,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           nolimit: opts?.nolimit ?? undefined,
         });
         const rsp = await fetchInboxMessages(req);
+        mergeInboxCallsigns(feedId, rsp.callsigns);
         if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
         if (rsp.signalGroups?.length) {
           const map: Record<string, SignalGroupEntry> = {};
@@ -285,8 +286,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         setLoadingNewerFeedId((prev) => (prev === feedId ? null : prev));
       }
     },
-    [messageFeeds, buildReqForFeed],
+    [messageFeeds, buildReqForFeed, mergeInboxCallsigns],
   );
+
+  useEffect(() => {
+    retainFeedIds(messageFeeds.map((feed) => feed.id));
+  }, [messageFeeds, retainFeedIds]);
 
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
     if (!messageFeeds.length) return;
@@ -446,66 +451,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [messageFeeds]);
 
-  const allNetworkIds = useMemo(() => {
-    const ids = new Set<number>();
-    messageFeeds.forEach((w) => {
-      w.items.forEach(([, msg]) => {
-        (msg.networkIds ?? []).forEach((id) => ids.add(id));
-      });
-    });
-    return Array.from(ids);
-  }, [messageFeeds]);
-
-  const networkMapRef = useRef(networkMap);
-  networkMapRef.current = networkMap;
-  useEffect(() => {
-    const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
-    if (missing.length === 0) return;
-    let cancelled = false;
-    getNetworksByIds(missing)
-      .then((networks) => {
-        if (cancelled) return;
-        setNetworkMap((prev) => {
-          const next = { ...prev };
-          networks.forEach((n) => {
-            next[n.id] = n;
-          });
-          return next;
-        });
-      })
-      .catch((err) => console.error('Failed to load networks', err));
-    return () => {
-      cancelled = true;
-    };
-  }, [allNetworkIds.join(',')]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getUnitsList()
-      .then((units) => {
-        if (cancelled) return;
-        setUnitsMap((prev) => {
-          const next = { ...prev };
-          units.forEach((u) => {
-            next[u.id] = u;
-          });
-          return next;
-        });
-      })
-      .catch((err) => console.error('Failed to load units', err));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const networkDisplayMap = useMemo(() => {
-    const out: Record<number, string> = {};
-    Object.entries(networkMap).forEach(([idStr, n]) => {
-      const id = Number(idStr);
-      out[id] = createMasterUnitText(n, unitsMap);
-    });
-    return out;
-  }, [networkMap, unitsMap]);
+  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
 
   const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds);
 
@@ -528,6 +474,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     buildReqForFeed,
     networkDisplayMap,
     networkMap,
+    unitsMap,
+    inboxCallsignInfoMap,
+    callsignInfoMap,
+    mergeResolvedCallsigns,
     watchModeByFeedId,
     setWatchModeByFeedId,
     loadingNewerFeedId,

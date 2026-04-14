@@ -1,6 +1,6 @@
 import { Box } from '@mui/material';
 
-import type { InboxMessage, Network, Tag } from '../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
 import { MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
@@ -37,6 +37,9 @@ export type MessageCardProps = {
   /** When false, show `msg.unit` if network ids are empty (and freq present). */
   featureStrictNetworks?: boolean;
   tagsMap: Record<number, Tag>;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  unitsMap?: Record<number, Unit>;
   onBookmark: () => void;
   onImportant: () => void;
   onCopyText: () => void;
@@ -63,6 +66,9 @@ export function MessageCard({
   networkMap = {},
   featureStrictNetworks = false,
   tagsMap,
+  callsignInfoMap,
+  networks,
+  unitsMap,
   onBookmark,
   onImportant,
   onCopyText,
@@ -150,7 +156,7 @@ export function MessageCard({
           </Box>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
+        <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} callsignInfoMap={callsignInfoMap} networks={networks} unitsMap={unitsMap} />
       </Box>
     </Box>
   );

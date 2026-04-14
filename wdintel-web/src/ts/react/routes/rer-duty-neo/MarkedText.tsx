@@ -1,12 +1,24 @@
-import { IconButton, Menu, MenuItem } from '@mui/material';
+import { Badge, Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
+import InfoIcon from '@mui/icons-material/Info';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useId, useState } from 'react';
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 
-import type { ContentNode, InboxMessage } from '../../../../Bindings';
+import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../Bindings';
 import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
+import { formatCallsignHintTooltipData, getCallsignHintResult } from '../rer-analysis-neo/callsign-hints';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
+
+export const CALLSIGN_TOOLTIP_ITEM_SX = {
+  fontSize: '0.875rem',
+  lineHeight: 1.35,
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
+  wordBreak: 'break-word',
+  minWidth: 0,
+} as const;
 
 function collectPointEtalons(nodes: ContentNode[]): string[] {
   const etalons: string[] = [];
@@ -165,11 +177,176 @@ function KeywordToken({ text }: { text: string }) {
   );
 }
 
+function CallsignWithHint({
+  text,
+  callsignInfoMap,
+  networks,
+  unitsMap,
+  freq,
+  networkIds,
+}: {
+  text: string;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  unitsMap?: Record<number, Unit>;
+  freq?: string | null;
+  networkIds?: number[] | null;
+}) {
+  const displayText = text.toUpperCase();
+  const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
+
+  // If we don't have networks or unitsMap, just render as plain link
+  if (!networks || !unitsMap) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="content-token--ADP hover:cursor-pointer"
+        style={callsignLinkStyle()}
+      >
+        {displayText}
+      </a>
+    );
+  }
+
+  const hintResult = getCallsignHintResult({
+    hintContext: 'message',
+    freq: freq ?? null,
+    networkIds,
+    networks,
+    unitsMap,
+    callsignInfoMap,
+    callsign: displayText,
+  });
+
+  const tooltipText = formatCallsignHintTooltipData(hintResult);
+  const isNetworkHint = hintResult.strategy === 'network';
+
+  if (!tooltipText) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="content-token--ADP hover:cursor-pointer"
+        style={callsignLinkStyle()}
+      >
+        {displayText}
+      </a>
+    );
+  }
+
+  return (
+    <Tooltip
+      placement="top"
+      arrow
+      describeChild
+      slotProps={{
+        tooltip: {
+          sx: {
+            maxWidth: 420,
+            width: 'min(420px, calc(100vw - 32px))',
+            px: 1.5,
+            py: 1.25,
+            whiteSpace: 'normal',
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+          },
+        },
+      }}
+      title={
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 320, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
+          <Typography component="div" sx={{ fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.3 }}>
+            {tooltipText.header}
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0 }}>
+            {tooltipText.items.map((item, index) => (
+              <Typography
+                key={`${displayText}-${index}`}
+                component="li"
+                sx={CALLSIGN_TOOLTIP_ITEM_SX}
+              >
+                {item}
+              </Typography>
+            ))}
+          </Box>
+        </Box>
+      }
+    >
+      <Badge
+        overlap="rectangular"
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        badgeContent={
+          <Box
+            component="span"
+            aria-label={isNetworkHint ? 'Підказка по мережі' : 'Підказка з каталогу'}
+            data-testid={isNetworkHint ? 'callsign-hint-badge-network' : 'callsign-hint-badge-system'}
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              bgcolor: 'var(--color-card)',
+              color: 'var(--message-callsign-color)',
+              lineHeight: 0,
+              pointerEvents: 'none',
+            }}
+          >
+            {isNetworkHint ? <InfoIcon sx={{ fontSize: 16 }} /> : <InfoOutlinedIcon sx={{ fontSize: 16 }} />}
+          </Box>
+        }
+        sx={{
+          display: 'inline-flex',
+          verticalAlign: 'baseline',
+          mr: '0.1em',
+          '& .MuiBadge-badge': {
+            p: 0,
+            border: 'none',
+            bgcolor: 'transparent',
+            minWidth: 18,
+            height: 18,
+            transform: 'translate(45%, -35%)',
+          },
+          '&:focus-within': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: '2px',
+            borderRadius: '4px',
+          },
+        }}
+      >
+        <Box component="span" sx={{ display: 'inline-block', pr: '8px' }}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="content-token--ADP hover:cursor-pointer"
+            style={callsignLinkStyle()}
+          >
+            {displayText}
+          </a>
+        </Box>
+      </Badge>
+    </Tooltip>
+  );
+}
+
 export function renderMarkedText(
   nodes: ContentNode[],
   _bodyText: string,
   messagePointEtalons?: string[],
-  options?: { showPointLinks?: boolean; message?: InboxMessage },
+  options?: {
+    showPointLinks?: boolean;
+    message?: InboxMessage;
+    callsignInfoMap?: Record<string, CallsignInfoRes>;
+    networks?: Network[];
+    unitsMap?: Record<number, Unit>;
+    freq?: string | null;
+    networkIds?: number[] | null;
+  },
 ): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
   const messageForMap = options?.message;
@@ -189,19 +366,16 @@ export function renderMarkedText(
       const { text } = node.CNCallsignC;
       const callsignText = text.trim();
       if (callsignText === '') return null;
-      const displayText = callsignText.toUpperCase();
-      const href = `/rer-callsigns?callsign=${encodeURIComponent(displayText)}`;
       return (
-        <a
+        <CallsignWithHint
           key={i}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="content-token--ADP hover:cursor-pointer"
-          style={callsignLinkStyle()}
-        >
-          {displayText}
-        </a>
+          text={callsignText}
+          callsignInfoMap={options?.callsignInfoMap}
+          networks={options?.networks}
+          unitsMap={options?.unitsMap}
+          freq={options?.freq}
+          networkIds={options?.networkIds}
+        />
       );
     }
     if ('CNHighlightC' in node) {

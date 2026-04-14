@@ -354,6 +354,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     onToggleMessageTag={page.onToggleMessageTag}
                     profiles={page.profiles}
                     tagsMap={page.tagsMap}
+                    callsignInfoMap={page.summaryCallsignsInfo}
+                    networks={page.networks}
+                    unitsMap={page.unitsMap}
                   />
                 </Box>
 
