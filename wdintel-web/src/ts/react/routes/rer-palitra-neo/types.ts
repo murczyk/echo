@@ -57,6 +57,7 @@ export type FolderActionDialogState = {
   nextFolderPath: string;
   targetPalitraIds: number[];
   targetPalitraNames: string[];
+  assignRequestedRows?: PalitraRowView[];
   preview: FolderActionPreview;
 };
 

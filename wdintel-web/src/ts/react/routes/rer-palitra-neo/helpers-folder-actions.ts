@@ -69,14 +69,13 @@ export function buildBulkActionResultSummary(requestedIds: number[], changedIds:
 }
 
 export function formatFolderActionSuccessMessage(kind: FolderActionKind, summary: FolderActionResultSummary): string {
-  const label =
-    kind === 'assign'
-      ? 'Палітри переміщено в папку'
-      : kind === 'rename'
-        ? 'Папку перейменовано'
-        : kind === 'archive'
-          ? 'Архівовано палітри з папки'
-          : 'Видалено палітри з папки';
+  const labels: Record<FolderActionKind, string> = {
+    assign: 'Палітри переміщено в папку',
+    rename: 'Папку перейменовано',
+    archive: 'Архівовано палітри з папки',
+    delete: 'Видалено палітри з папки',
+  };
+  const label = labels[kind];
 
   if (summary.changedCount === 0) {
     return label + ': змін не застосовано.';

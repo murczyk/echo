@@ -21,6 +21,7 @@ function buildFolderDialogState(args: {
   nextFolderPath: string;
   preview: FolderActionPreview;
   targetPalitraNames?: string[];
+  assignRequestedRows?: PalitraRowView[];
 }): FolderActionDialogState {
   return {
     kind: args.kind,
@@ -28,6 +29,7 @@ function buildFolderDialogState(args: {
     nextFolderPath: args.nextFolderPath,
     targetPalitraIds: args.preview.modifiableIds,
     targetPalitraNames: args.targetPalitraNames ?? [],
+    assignRequestedRows: args.assignRequestedRows,
     preview: args.preview,
   };
 }
@@ -56,7 +58,9 @@ type Props = {
 
 export function createPalitraFolderActionHandlers(props: Props) {
   function openAssignFolderDialog(targetPalitraIds: number[], emptySelectionMessage: string, blockedSelectionMessage: string) {
-    const preview = buildAssignFolderPreview(props.palitraRows, targetPalitraIds, '');
+    const requestedIdSet = new Set(targetPalitraIds);
+    const requestedRowsSnapshot = props.palitraRows.filter((row) => requestedIdSet.has(row.id));
+    const preview = buildAssignFolderPreview(requestedRowsSnapshot, targetPalitraIds, '');
     if (preview.requestedCount === 0) {
       props.setStatus({ kind: 'warning', text: emptySelectionMessage });
       return;
@@ -67,8 +71,8 @@ export function createPalitraFolderActionHandlers(props: Props) {
       return;
     }
 
-    const requestedIdSet = new Set(preview.requestedIds);
-    const targetPalitraNames = props.palitraRows.filter((row) => requestedIdSet.has(row.id)).map((row) => row.name);
+    const requestedPreviewIdSet = new Set(preview.requestedIds);
+    const targetPalitraNames = requestedRowsSnapshot.filter((row) => requestedPreviewIdSet.has(row.id)).map((row) => row.name);
 
     props.setFolderDialogState(
       buildFolderDialogState({
@@ -77,6 +81,7 @@ export function createPalitraFolderActionHandlers(props: Props) {
         nextFolderPath: '',
         preview,
         targetPalitraNames,
+        assignRequestedRows: requestedRowsSnapshot,
       }),
     );
   }
@@ -143,7 +148,8 @@ export function createPalitraFolderActionHandlers(props: Props) {
     props.setFolderDialogState((prev) => {
       if (!prev) return prev;
       if (prev.kind === 'assign') {
-        const preview = buildAssignFolderPreview(props.palitraRows, prev.preview.requestedIds, nextFolderPath);
+        const assignRows = prev.assignRequestedRows ?? props.palitraRows;
+        const preview = buildAssignFolderPreview(assignRows, prev.preview.requestedIds, nextFolderPath);
         return {
           ...prev,
           nextFolderPath,
@@ -251,14 +257,19 @@ export function createPalitraFolderActionHandlers(props: Props) {
     props.setStatus(null);
 
     try {
-      if (state.kind === 'assign') {
-        await handleAssignFolderConfirm(state);
-      } else if (state.kind === 'rename') {
-        await handleRenameFolderConfirm(state);
-      } else if (state.kind === 'archive') {
-        await handleArchiveFolderConfirm(state);
-      } else {
-        await handleDeleteFolderConfirm(state);
+      switch (state.kind) {
+        case 'assign':
+          await handleAssignFolderConfirm(state);
+          break;
+        case 'rename':
+          await handleRenameFolderConfirm(state);
+          break;
+        case 'archive':
+          await handleArchiveFolderConfirm(state);
+          break;
+        case 'delete':
+          await handleDeleteFolderConfirm(state);
+          break;
       }
     } catch (folderError) {
       if (isUnauthorizedError(folderError)) {

@@ -18,7 +18,7 @@ import {
 
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { formatFolderActionPreviewLines, validateFolderPath } from '../helpers';
-import type { FolderActionDialogState } from '../types';
+import type { FolderActionDialogState, FolderActionKind } from '../types';
 
 type Props = {
   state: FolderActionDialogState | null;
@@ -29,18 +29,33 @@ type Props = {
   onNextFolderPathChange: (value: string) => void;
 };
 
+const FOLDER_ACTION_DIALOG_TITLES: Record<FolderActionKind, string> = {
+  assign: 'Перемістити палітри в папку',
+  rename: 'Перейменувати папку',
+  archive: 'Архівувати всі палітри в папці',
+  delete: 'Видалити всі палітри в папці',
+};
+
+const FOLDER_ACTION_CONFIRM_LABELS: Record<FolderActionKind, string> = {
+  assign: 'Перемістити',
+  rename: 'Зберегти',
+  archive: 'Архівувати',
+  delete: 'Видалити',
+};
+
+const FOLDER_ACTION_CONFIRM_COLORS: Record<FolderActionKind, 'primary' | 'warning' | 'error'> = {
+  assign: 'primary',
+  rename: 'primary',
+  archive: 'warning',
+  delete: 'error',
+};
+
 function getDialogTitle(state: FolderActionDialogState): string {
-  if (state.kind === 'assign') return 'Перемістити палітри в папку';
-  if (state.kind === 'rename') return 'Перейменувати папку';
-  if (state.kind === 'archive') return 'Архівувати всі палітри в папці';
-  return 'Видалити всі палітри в папці';
+  return FOLDER_ACTION_DIALOG_TITLES[state.kind];
 }
 
 function getConfirmLabel(state: FolderActionDialogState): string {
-  if (state.kind === 'assign') return 'Перемістити';
-  if (state.kind === 'rename') return 'Зберегти';
-  if (state.kind === 'archive') return 'Архівувати';
-  return 'Видалити';
+  return FOLDER_ACTION_CONFIRM_LABELS[state.kind];
 }
 
 function sanitizeFolderInput(value: string): string {
@@ -49,10 +64,13 @@ function sanitizeFolderInput(value: string): string {
 }
 
 function getDescription(state: FolderActionDialogState): string {
-  if (state.kind === 'assign') return 'Створіть нову папку або оберіть з існуючих.';
-  if (state.kind === 'rename') return 'Введіть нову назву папки.';
-  if (state.kind === 'archive') return 'В архів буде перенесено всі доступні палітри в цій папці.';
-  return 'Буде видалено всі доступні палітри в цій папці.';
+  const descriptions: Record<FolderActionKind, string> = {
+    assign: 'Створіть нову папку або оберіть з існуючих.',
+    rename: 'Введіть нову назву папки.',
+    archive: 'В архів буде перенесено всі доступні палітри в цій папці.',
+    delete: 'Буде видалено всі доступні палітри в цій папці.',
+  };
+  return descriptions[state.kind];
 }
 
 export function PalitraFolderActionDialog({
@@ -245,7 +263,7 @@ export function PalitraFolderActionDialog({
             onConfirm();
           }}
           variant='contained'
-          color={state.kind === 'delete' ? 'error' : state.kind === 'archive' ? 'warning' : 'primary'}
+          color={FOLDER_ACTION_CONFIRM_COLORS[state.kind]}
           disabled={submitting || Boolean(nextFolderPathError) || state.preview.modifiableCount === 0}
           startIcon={submitting ? <CircularProgress size={16} color='inherit' /> : null}
         >
