@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest';
 import {
   EXPLICIT_SELECT_ALL_OPTION,
   buildExplicitSingleSelectColumnFilter,
+  getDefaultMRTOptions,
   getSharedFilterTextFieldProps,
+  getSharedSelectAllCheckboxProps,
   resolveExplicitSelectFilterValue,
   withExplicitSelectAllOption,
 } from './get-default-table-options';
@@ -117,5 +119,45 @@ describe('buildExplicitSingleSelectColumnFilter', () => {
     element.props.onChange({ target: { value: 'так' } });
 
     expect(calls).toEqual(['так']);
+  });
+});
+
+describe('getSharedSelectAllCheckboxProps', () => {
+  it('disables select-all when the current row model has no selectable rows', () => {
+    const props = getSharedSelectAllCheckboxProps({
+      table: {
+        getRowModel: () => ({
+          rows: [
+            { getCanSelect: () => false },
+            { getCanSelect: () => false },
+          ],
+        }),
+      } as any,
+    });
+
+    expect(props.disabled).toBe(true);
+  });
+
+  it('keeps select-all interactive when at least one row is selectable', () => {
+    const props = getSharedSelectAllCheckboxProps({
+      table: {
+        getRowModel: () => ({
+          rows: [
+            { getCanSelect: () => false },
+            { getCanSelect: () => true },
+          ],
+        }),
+      } as any,
+    });
+
+    expect(props.disabled).toBe(false);
+  });
+});
+
+describe('getDefaultMRTOptions', () => {
+  it('wires the shared select-all checkbox props into MRT defaults', () => {
+    const options = getDefaultMRTOptions<{ id: string }>();
+
+    expect(options.muiSelectAllCheckboxProps).toBe(getSharedSelectAllCheckboxProps);
   });
 });

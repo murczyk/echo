@@ -5,19 +5,22 @@ import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, U
 import { isUnauthorizedError } from '../../services/api/client';
 import {
   analyzePalitraKmz,
+  archivePalitra,
   createPalitraBasicWithKmz,
   createPalitraWithKmz,
   deletePalitra,
+  downloadPalitras,
   fetchPalitraReferenceData,
   listPalitras,
+  unarchivePalitra,
   updatePalitra,
   uploadPalitraPoints,
 } from '../../services/api/palitra';
 import { fetchCurrentUser } from '../../services/api/user';
+import { downloadBlob } from '../../utils/download-blob';
 import {
   applyRestrictedAccess,
   buildPalitraNameWithSuffix,
-  canModifyPalitra,
   DEFAULT_COLOR_HEX,
   formatErrorMessage,
   getAvailableAccessTypes,
@@ -30,7 +33,30 @@ import {
 } from './helpers';
 import { KmzColorOption, PalitraCreateMode, PalitraFormState, UiError } from './types';
 
+type ArchiveView = 'active' | 'all' | 'archived';
+
+const VIEW_MODE_QUERY_PARAM = 'viewMode';
+
+function readInitialArchiveViewFromUrl(): ArchiveView {
+  const params = new URLSearchParams(window.location.search);
+  const value = params.get(VIEW_MODE_QUERY_PARAM);
+  if (value === 'all' || value === 'archived' || value === 'active') {
+    return value;
+  }
+  return 'active';
+}
+
+function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  mutator(params);
+  const nextSearch = params.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
 export function useRerPalitraNeoPage() {
+  const [archiveView, setArchiveView] = useState<ArchiveView>(() => readInitialArchiveViewFromUrl());
   const [user, setUser] = useState<User | null>(null);
   const [palitras, setPalitras] = useState<Palitra[]>([]);
   const [myScope, setMyScope] = useState<MyScope | null>(null);
@@ -40,8 +66,12 @@ export function useRerPalitraNeoPage() {
 
   const [loading, setLoading] = useState(true);
   const [referenceDataReady, setReferenceDataReady] = useState(false);
+  const [inFlightArchiveId, setInFlightArchiveId] = useState<number | null>(null);
   const [inFlightDeleteId, setInFlightDeleteId] = useState<number | null>(null);
+  const [inFlightDownloadId, setInFlightDownloadId] = useState<number | null>(null);
   const [inFlightUploadId, setInFlightUploadId] = useState<number | null>(null);
+  const [archiveDialogPalitra, setArchiveDialogPalitra] = useState<Palitra | null>(null);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [deleteDialogPalitra, setDeleteDialogPalitra] = useState<Palitra | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPalitraIds, setSelectedPalitraIds] = useState<number[]>([]);
@@ -71,8 +101,19 @@ export function useRerPalitraNeoPage() {
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
 
   const availableAccessTypes = useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
+  const visiblePalitras = useMemo(() => {
+    switch (archiveView) {
+      case 'archived':
+        return palitras.filter((palitra) => palitra.isArchived);
+      case 'all':
+        return palitras;
+      case 'active':
+      default:
+        return palitras.filter((palitra) => !palitra.isArchived);
+    }
+  }, [archiveView, palitras]);
   const rows = useMemo(() => {
-    const sortedPalitras = [...palitras].sort((left, right) => {
+    const sortedPalitras = [...visiblePalitras].sort((left, right) => {
       const leftTs = left.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
       const rightTs = right.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
       return rightTs - leftTs;
@@ -85,11 +126,17 @@ export function useRerPalitraNeoPage() {
         myScope,
         organisms,
         aors,
+        inFlightArchiveId,
         inFlightDeleteId,
+        inFlightDownloadId,
         inFlightUploadId,
       }),
     );
-  }, [palitras, user, myScope, organisms, aors, inFlightDeleteId, inFlightUploadId]);
+  }, [visiblePalitras, user, myScope, organisms, aors, inFlightArchiveId, inFlightDeleteId, inFlightDownloadId, inFlightUploadId]);
+  const visibleSelectablePalitraIds = useMemo(
+    () => new Set(rows.filter((row) => row.canSelect).map((row) => row.id)),
+    [rows],
+  );
   const updateCreateForm = useCallback(
     (updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)),
     [],
@@ -102,6 +149,32 @@ export function useRerPalitraNeoPage() {
     (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => setEditForm((prev) => updater(prev)),
     [],
   );
+
+  useEffect(() => {
+    function onPopState() {
+      setArchiveView(readInitialArchiveViewFromUrl());
+    }
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    updateUrlSearchParams((params) => {
+      if (archiveView === 'active') {
+        params.delete(VIEW_MODE_QUERY_PARAM);
+      } else {
+        params.set(VIEW_MODE_QUERY_PARAM, archiveView);
+      }
+    });
+  }, [archiveView]);
+
+  useEffect(() => {
+    setSelectedPalitraIds((prev) => {
+      const next = prev.filter((id) => visibleSelectablePalitraIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [visibleSelectablePalitraIds]);
 
   const reloadPalitras = useCallback(async () => {
     const list = await listPalitras();
@@ -228,26 +301,90 @@ export function useRerPalitraNeoPage() {
     setEditForm(applyRestrictedAccess(palitraToForm(palitra), user, myScope, allLogins));
   }
 
+  function replacePalitra(nextPalitra: Palitra) {
+    setPalitras((prev) => prev.map((palitra) => (palitra.id === nextPalitra.id ? nextPalitra : palitra)));
+  }
+
   function closeEdit() {
     setEditPalitraId(null);
     setEditForm(null);
     setEditInFlight(false);
   }
 
+  function requestArchive(palitra: Palitra) {
+    if (archiveDialogOpen || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    setArchiveDialogPalitra(palitra);
+    setArchiveDialogOpen(true);
+  }
+
+  function cancelArchive() {
+    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    setArchiveDialogOpen(false);
+  }
+
+  async function confirmArchive() {
+    const palitra = archiveDialogPalitra;
+    if (!palitra || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+
+    setInFlightArchiveId(palitra.id);
+    setError(null);
+
+    try {
+      const updatedPalitra = await archivePalitra(palitra.id);
+      replacePalitra(updatedPalitra);
+      setArchiveDialogOpen(false);
+    } catch (archiveError) {
+      if (isUnauthorizedError(archiveError)) {
+        window.location.assign('/login');
+        return;
+      }
+
+      setError({ text: 'Не вдалося перенести палітру в архів: ' + formatErrorMessage(archiveError) });
+    } finally {
+      setInFlightArchiveId(null);
+    }
+  }
+
+  function onArchiveDialogExited() {
+    if (archiveDialogOpen || inFlightArchiveId !== null) return;
+    setArchiveDialogPalitra(null);
+  }
+
+  async function handleUnarchive(palitra: Palitra) {
+    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+
+    setInFlightArchiveId(palitra.id);
+    setError(null);
+
+    try {
+      const updatedPalitra = await unarchivePalitra(palitra.id);
+      replacePalitra(updatedPalitra);
+    } catch (archiveError) {
+      if (isUnauthorizedError(archiveError)) {
+        window.location.assign('/login');
+        return;
+      }
+
+      setError({ text: 'Не вдалося повернути палітру з архіву: ' + formatErrorMessage(archiveError) });
+    } finally {
+      setInFlightArchiveId(null);
+    }
+  }
+
   function requestDelete(palitra: Palitra) {
-    if (inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen) return;
+    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen) return;
     setDeleteDialogPalitra(palitra);
     setDeleteDialogOpen(true);
   }
 
   function cancelDelete() {
-    if (inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    if (inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
     setDeleteDialogOpen(false);
   }
 
   async function confirmDelete() {
     const palitra = deleteDialogPalitra;
-    if (!palitra || inFlightDeleteId !== null || bulkDeleteInFlight) return;
+    if (!palitra || inFlightArchiveId !== null || inFlightDeleteId !== null || bulkDeleteInFlight) return;
 
     setInFlightDeleteId(palitra.id);
     setError(null);
@@ -275,16 +412,12 @@ export function useRerPalitraNeoPage() {
   }
 
   function requestBulkDelete() {
-    if (bulkDeleteInFlight || inFlightDeleteId !== null || deleteDialogOpen) return;
+    if (archiveDialogOpen || bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null || deleteDialogOpen) return;
 
     const selectedSet = new Set(selectedPalitraIds);
-    const selected = palitras.filter(
-      (palitra) =>
-        selectedSet.has(palitra.id) &&
-        canModifyPalitra(user, palitra) &&
-        inFlightDeleteId !== palitra.id &&
-        inFlightUploadId !== palitra.id,
-    );
+    const selected = rows
+      .filter((row) => selectedSet.has(row.id) && row.canSelect)
+      .map((row) => row.palitra);
     if (selected.length === 0) return;
 
     setBulkDeleteDialogPalitras(selected);
@@ -292,12 +425,12 @@ export function useRerPalitraNeoPage() {
   }
 
   function cancelBulkDelete() {
-    if (bulkDeleteInFlight || inFlightDeleteId !== null) return;
+    if (bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
     setBulkDeleteDialogOpen(false);
   }
 
   async function confirmBulkDelete() {
-    if (bulkDeleteInFlight || inFlightDeleteId !== null) return;
+    if (bulkDeleteInFlight || inFlightArchiveId !== null || inFlightDeleteId !== null) return;
 
     const palitrasToDelete = [...bulkDeleteDialogPalitras];
     if (palitrasToDelete.length === 0) return;
@@ -347,6 +480,27 @@ export function useRerPalitraNeoPage() {
     pendingUploadPalitraIdRef.current = palitraId;
     uploadPointsInputRef.current.value = '';
     uploadPointsInputRef.current.click();
+  }
+
+  async function handleDownload(palitra: Palitra) {
+    if (inFlightDownloadId !== null) return;
+
+    setInFlightDownloadId(palitra.id);
+    setError(null);
+
+    try {
+      const blob = await downloadPalitras([palitra.id]);
+      downloadBlob(blob, `palitra-${palitra.id}.zip`);
+    } catch (downloadError) {
+      if (isUnauthorizedError(downloadError)) {
+        window.location.assign('/login');
+        return;
+      }
+
+      setError({ text: 'Не вдалося завантажити палітру: ' + formatErrorMessage(downloadError) });
+    } finally {
+      setInFlightDownloadId(null);
+    }
   }
 
   async function handleUploadPointsSelected(event: ChangeEvent<HTMLInputElement>) {
@@ -519,11 +673,17 @@ export function useRerPalitraNeoPage() {
     aors,
     allLogins,
     error,
+    archiveView,
+    setArchiveView,
     loading,
     rows,
     palitras,
+    inFlightArchiveId,
     inFlightDeleteId,
+    inFlightDownloadId,
     inFlightUploadId,
+    archiveDialogPalitra,
+    archiveDialogOpen,
     deleteDialogPalitra,
     deleteDialogOpen,
     selectedPalitraIds,
@@ -559,7 +719,13 @@ export function useRerPalitraNeoPage() {
     resetCreateFlow,
     openEdit,
     closeEdit,
+    requestArchive,
+    cancelArchive,
+    confirmArchive,
+    onArchiveDialogExited,
+    handleUnarchive,
     requestUploadPoints,
+    handleDownload,
     requestDelete,
     cancelDelete,
     confirmDelete,

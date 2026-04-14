@@ -1,9 +1,10 @@
 import { Box, Button, Paper } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
+import { setDutyNeoDocumentTitleUnreadCount, startDutyNeoDocumentTitleTracking } from './notifications';
 import { FeedColumn } from './FeedColumn';
-import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
+import { feedColumnUnreadDisplayed, DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
 import { fetchUserSettings } from '../../services/api/user-settings';
 
@@ -93,6 +94,16 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     setMessageFeeds,
   } = useRerDutyFeeds(authUserName);
 
+  const dutyTabUnreadTotal = useMemo(
+    () => messageFeeds.reduce((sum, w) => sum + feedColumnUnreadDisplayed(w), 0),
+    [messageFeeds],
+  );
+
+  useEffect(() => startDutyNeoDocumentTitleTracking(), []);
+  useEffect(() => {
+    setDutyNeoDocumentTitleUnreadCount(dutyTabUnreadTotal);
+  }, [dutyTabUnreadTotal]);
+
   return (
     <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 54px)', minHeight: 0, overflow: 'hidden' }}>
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
@@ -122,11 +133,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               }}
               feed={w}
               feedCount={messageFeeds.length}
-              unreadCount={
-                w.items.length > 0
-                  ? Math.max(w.unreadCount, w.items.filter(([id]) => !w.readIds.has(id)).length)
-                  : w.unreadCount
-              }
+              unreadCount={feedColumnUnreadDisplayed(w)}
               filterStable={filterStable}
               groupsList={groupsList}
               groupInfos={groupInfos}

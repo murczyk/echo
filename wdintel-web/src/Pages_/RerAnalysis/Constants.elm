@@ -57,3 +57,6 @@ reportTemplateToString x =
 
         ActiveNetworks ->
             "active_networks"
+
+        RTReport1213 ->
+            "report_1213"

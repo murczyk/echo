@@ -195,6 +195,7 @@ init route _ =
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
             , reportTagsOnlyThisUnitForReport = False
+            , report1213LinkedNetworksOnly = True
             , reportWithoutComments = False
             , reportDigestOmitExoId = False
             , reportDigestForm1217 = False
@@ -3517,6 +3518,11 @@ update user shared route msg model =
             , E.none
             )
 
+        Report1213LinkedNetworksOnlyToggle ->
+            ( { model | report1213LinkedNetworksOnly = not model.report1213LinkedNetworksOnly }
+            , E.none
+            )
+
         ReportWithoutCommentsToggle ->
             let
                 reportWithoutComments =
@@ -3569,6 +3575,12 @@ update user shared route msg model =
                 , reportType = reportTemplateToApiType model model.reportTemplate
                 , req = getInboxReq model
                 , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
+                , report1213LinkedNetworksOnly =
+                    if model.reportTemplate == RTReport1213 then
+                        Just model.report1213LinkedNetworksOnly
+
+                    else
+                        Nothing
                 , withoutComments =
                     if model.reportTemplate == RTBabak then
                         Just model.reportWithoutComments
@@ -3642,6 +3654,9 @@ update user shared route msg model =
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         ActiveNetworks ->
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
+                        RTReport1213 ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
@@ -4141,6 +4156,9 @@ reportTemplateToApiType model template =
 
         ActiveNetworks ->
             Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })
+
+        RTReport1213 ->
+            Nothing
 
 
 

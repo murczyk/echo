@@ -1,15 +1,4 @@
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  Card,
-  CircularProgress,
-  Stack,
-  Tab,
-  Tabs,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Alert, Autocomplete, Box, Card, CircularProgress, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, SyntheticEvent } from 'react';
 
@@ -18,14 +7,10 @@ import { PageHeader } from '../../components/PageHeader';
 import { Button } from '../../components/mui-customized/button';
 import { isUnauthorizedError } from '../../services/api/client';
 import { fetchServerInfo } from '../../services/api/server-info';
-import { fetchCurrentUser, saveUserSettings } from '../../services/api/user';
+import { fetchCurrentUser, saveUserSettings as saveAccountSettings } from '../../services/api/user';
+import { fetchUserSettings, saveUserSettings as saveUserDutySettings } from '../../services/api/user-settings';
 import { listSigintZones } from '../../services/api/zones';
-import {
-  fetchUserSettings as fetchUserPrefsSettings,
-  saveUserSettings as saveUserPrefsSettings,
-} from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
-
 import { SettingsDutySection } from './SettingsDutySection';
 
 type ZonePair = [number, SigintZone];
@@ -78,6 +63,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
     parseSettingsSection(section ?? readSettingsSectionFromUrl()),
   );
+
+  const zoneOptions = useMemo<ZoneOption[]>(() => zones.map(([id, zone]) => ({ id, label: zone.name })), [zones]);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
@@ -86,8 +73,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [dutySaveError, setDutySaveError] = useState<string | null>(null);
   const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
   const [dutySaveInProgress, setDutySaveInProgress] = useState(false);
-
-  const zoneOptions = useMemo<ZoneOption[]>(() => zones.map(([id, zone]) => ({ id, label: zone.name })), [zones]);
 
   const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
 
@@ -119,7 +104,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         const [zonesData, user, prefsRsp] = await Promise.all([
           listSigintZones(abortController.signal),
           fetchCurrentUser(abortController.signal),
-          fetchUserPrefsSettings(abortController.signal).catch(() => null),
+          fetchUserSettings(abortController.signal).catch(() => null),
         ]);
 
         setZones(zonesData);
@@ -182,7 +167,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     setDutySaveInProgress(true);
 
     try {
-      await saveUserPrefsSettings({ tagsLayout, disableAutoScroll: dutyDisableAutoScroll });
+      await saveUserDutySettings({ tagsLayout, disableAutoScroll: dutyDisableAutoScroll });
       setInitialTagsLayout(tagsLayout);
       setInitialDutyDisableAutoScroll(dutyDisableAutoScroll);
       setDutySaveSuccess('Збережено');
@@ -207,7 +192,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     setSaveInProgress(true);
 
     try {
-      await saveUserSettings(toSettingsSaveReq(zoneId));
+      await saveAccountSettings(toSettingsSaveReq(zoneId));
       setInitialZoneId(zoneId);
       setSaveSuccess('Налаштування збережено');
     } catch (error) {

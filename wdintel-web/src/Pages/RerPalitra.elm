@@ -160,7 +160,7 @@ isAdmin user =
 
 init : Auth.User -> () -> ( Model, Effect Msg )
 init user _ =
-    if Core.Auth.hasRole "Rer" user then
+    if user.name == "anonymous" || Core.Auth.hasRole "Rer" user then
         let
             admin =
                 isAdmin user
@@ -1590,7 +1590,7 @@ renderTable user model palitras =
                                                 ]
                                                 [ i [ class "bi bi-pencil" ] [] ]
                                             , button
-                                                [ title "Завантажити точки"
+                                                [ title "Додати точки"
                                                 , class "icon-btn icon-btn-primary"
                                                 , onClick
                                                     (if isUploading then
