@@ -50,7 +50,7 @@ function sanitizeFolderInput(value: string): string {
 
 function getDescription(state: FolderActionDialogState): string {
   if (state.kind === 'assign') return 'Створіть нову папку або оберіть з існуючих.';
-  if (state.kind === 'rename') return 'Введіть нову назву папки';
+  if (state.kind === 'rename') return 'Введіть нову назву папки.';
   if (state.kind === 'archive') return 'В архів буде перенесено всі доступні палітри в цій папці.';
   return 'Буде видалено всі доступні палітри в цій папці.';
 }
@@ -120,8 +120,8 @@ export function PalitraFolderActionDialog({
                       showNameError
                         ? nextFolderPathError
                         : hasFolderOptions
-                          ? 'Введіть назву або оберіть зі списку.'
-                          : 'Введіть назву папки.'
+                          ? 'Введіть назву або оберіть зі списку'
+                          : 'Введіть назву папки'
                     }
                     autoFocus
                     slotProps={{
@@ -202,6 +202,12 @@ export function PalitraFolderActionDialog({
               </Typography>
             ))}
           </Stack>
+
+          {state.kind !== 'assign' ? (
+            <Alert severity='info'>
+              Дія застосовується до всіх доступних палітр у цій папці, включаючи архівні.
+            </Alert>
+          ) : null}
 
           {state.kind === 'delete' ? (
             <Alert severity='error'>Ця дія видалить палітри, що зараз лежать у папці.</Alert>

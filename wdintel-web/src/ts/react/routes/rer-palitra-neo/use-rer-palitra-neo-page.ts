@@ -87,7 +87,7 @@ export function useRerPalitraNeoPage() {
         return palitras.filter((palitra) => !palitra.isArchived);
     }
   }, [archiveView, palitras]);
-  const folderTree = useMemo(() => buildFolderTree(visiblePalitras, user), [visiblePalitras, user]);
+  const folderTree = useMemo(() => buildFolderTree(palitras, user), [palitras, user]);
   const folderOptions = useMemo(() => getExistingFolderOptions(folderTree), [folderTree]);
   const rows = useMemo<TableRowView[]>(() => buildTableRows({
     palitras: visiblePalitras,
