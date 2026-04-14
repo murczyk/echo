@@ -796,24 +796,35 @@ where
 }
 
 pub fn normalize_palitra_folder(folder: &str) -> anyhow::Result<String> {
-    let trimmed = folder.trim();
-    if trimmed.is_empty() {
-        anyhow::bail!("Palitra folder may not be empty");
-    }
-    // Intentional flat-folder semantics: slash-separated nested folder paths are unsupported.
-    // If legacy data with '/' ever appears, migrate folder names before using folder APIs.
-    if trimmed.contains('/') {
+    let normalized = normalize_palitra_folder_lookup(folder).c(h!())?;
+    // Intentional flat-folder semantics for new writes: slash-separated nested folder paths are unsupported.
+    // Legacy slash folders are handled only for lookup/mutation compatibility in existing data.
+    if normalized.contains('/') {
         anyhow::bail!(
             "Palitra folder may not contain '/': nested folders are unsupported"
         );
     }
-    Ok(trimmed.to_string())
+    Ok(normalized)
+}
+
+fn normalize_palitra_folder_lookup(folder: &str) -> anyhow::Result<String> {
+    let trimmed = folder.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("Palitra folder may not be empty");
+    }
+    let parts = trimmed.split('/').map(str::trim).collect_vec();
+    if parts.iter().any(|part| part.is_empty()) {
+        anyhow::bail!(
+            "Palitra folder may not contain empty path segments: {folder}"
+        );
+    }
+    Ok(parts.join("/"))
 }
 
 pub fn normalize_palitra_folder_from_db(
     folder: Option<String>,
 ) -> Option<String> {
-    folder.and_then(|folder| normalize_palitra_folder(&folder).ok())
+    folder.and_then(|folder| normalize_palitra_folder_lookup(&folder).ok())
 }
 
 fn folder_matches_exact(folder: Option<&str>, exact_folder: &str) -> bool {
@@ -893,7 +904,7 @@ pub async fn rename_accessible_palitra_folder(
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
-    let from_folder = normalize_palitra_folder(&from_folder).c(h!())?;
+    let from_folder = normalize_palitra_folder_lookup(&from_folder).c(h!())?;
     let to_folder = normalize_palitra_folder(&to_folder).c(h!())?;
     let mutable_palitras =
         collect_mutable_palitra_models_for_accessible_login(login, dbx)
@@ -1036,7 +1047,7 @@ pub async fn collect_accessible_palitra_ids_in_folder(
     folder: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
-    let folder = normalize_palitra_folder(&folder).c(h!())?;
+    let folder = normalize_palitra_folder_lookup(&folder).c(h!())?;
     let mut palitras = palitra::Entity::find()
         .filter(palitra::Column::Deleted.eq(false))
         .all(dbx)
@@ -2836,6 +2847,20 @@ mod tests {
         assert!(normalize_palitra_folder("foo/bar").is_err());
         assert!(normalize_palitra_folder("foo//bar").is_err());
         assert!(normalize_palitra_folder(" / ").is_err());
+    }
+
+    #[test]
+    fn test_normalize_palitra_folder_lookup_accepts_legacy_slash_paths() {
+        assert_eq!(
+            normalize_palitra_folder_lookup(" North / Sub ").unwrap(),
+            "North/Sub".to_string()
+        );
+        assert!(normalize_palitra_folder_lookup("foo//bar").is_err());
+        assert!(normalize_palitra_folder_lookup(" / ").is_err());
+        assert_eq!(
+            normalize_palitra_folder_from_db(Some("North/Sub".to_string())),
+            Some("North/Sub".to_string())
+        );
     }
 
     #[test]
