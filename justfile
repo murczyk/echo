@@ -1585,6 +1585,28 @@ deploy-echo-install-package:
     ssh {{ server }} "rm -rf $TGT_DIR_SERVER || true && mkdir -p $TGT_DIR_SERVER"
     rsync -r $TGT_DIR/ {{ server }}:$TGT_DIR_SERVER/
 
+deploy-stg:
+    #!/bin/bash
+    set -euxo pipefail
+    ssh echo-build-main "cd ~/workspace/krab/echo-feature/echo && \
+        git fetch origin && \
+        git checkout main && \
+        git checkout {{ branch }} && \
+        git pull && \
+        cd wdintel-web && \
+        git pull && \
+        . ~/.nvm/nvm.sh && \
+        npx npm ci && \
+        npx elm-land build && \
+        cd .. && \
+        \$HOME/.cargo/bin/cargo clean && \
+        touch wdintel-rs/build.rs && \
+        \$HOME/.cargo/bin/cargo deb -p wdintel-rs"
+  scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
+  ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
+  ssh "echo-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
+
+
 export-datasource-to-target:
     ssh {{ server }} -t 'wdintel-rs --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }} --till-epoch-ms {{ till_ts }} '
     ssh -t {{ server }} 'mv /tmp/ds_export_{{ dt1 }}.json /tmp/ds_import_{{ dt1 }}.json && gzip -c /tmp/ds_import_{{ dt1 }}.json > /tmp/ds_import_{{ dt1 }}.json.gz'
