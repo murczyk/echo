@@ -211,13 +211,11 @@ export function createPalitraFolderActionHandlers(props: Props) {
     props.setExpandedFolderPaths((prev) => {
       const normalizedFromPath = normalizeFolderPathForUi(state.folderPath);
       const normalizedNextPath = normalizeFolderPathForUi(nextFolderPath);
-      const fromPrefix = normalizedFromPath + '/';
 
       return [
         ...new Set(
           prev.map((item) => {
             if (item === normalizedFromPath) return normalizedNextPath;
-            if (item.startsWith(fromPrefix)) return normalizedNextPath + item.slice(normalizedFromPath.length);
             return item;
           }),
         ),
@@ -239,8 +237,7 @@ export function createPalitraFolderActionHandlers(props: Props) {
     props.deleteFolderLocally(changedIds);
     props.setExpandedFolderPaths((prev) => {
       const normalizedFolderPath = normalizeFolderPathForUi(state.folderPath);
-      const folderPrefix = normalizedFolderPath + '/';
-      return prev.filter((item) => item !== normalizedFolderPath && !item.startsWith(folderPrefix));
+      return prev.filter((item) => item !== normalizedFolderPath);
     });
     props.setFolderDialogState(null);
     props.setStatus(props.buildFolderActionStatus(state, changedIds));

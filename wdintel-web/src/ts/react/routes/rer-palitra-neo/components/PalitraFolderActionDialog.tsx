@@ -73,6 +73,7 @@ export function PalitraFolderActionDialog({
     () => [...folderOptions].sort((left, right) => left.localeCompare(right, 'uk')),
     [folderOptions],
   );
+  const folderOptionSet = useMemo(() => new Set(normalizedFolderOptions), [normalizedFolderOptions]);
 
   if (!state) return null;
 
@@ -101,12 +102,18 @@ export function PalitraFolderActionDialog({
                 options={normalizedFolderOptions}
                 value={null}
                 inputValue={state.nextFolderPath}
-                onInputChange={(_event, value) => {
+                onInputChange={(_event, value, reason) => {
+                  if (reason === 'reset' && folderOptionSet.has(value)) {
+                    onNextFolderPathChange(value);
+                    return;
+                  }
                   onNextFolderPathChange(sanitizeFolderInput(value));
                 }}
                 onChange={(_event, value) => {
                   const nextValue = typeof value === 'string' ? value : (value ?? '');
-                  onNextFolderPathChange(sanitizeFolderInput(nextValue));
+                  onNextFolderPathChange(
+                    folderOptionSet.has(nextValue) ? nextValue : sanitizeFolderInput(nextValue),
+                  );
                   setNameTouched(true);
                 }}
                 noOptionsText='Немає збігів. Буде створено нову папку з цією назвою.'
