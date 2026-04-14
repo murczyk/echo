@@ -30,7 +30,7 @@ export function updateArchiveViewInUrl(archiveView: ArchiveView) {
 }
 
 export function buildFolderActionStatus(state: FolderActionDialogState, changedIds: number[]): UiStatus {
-  const summary = buildBulkActionResultSummary(state.targetPalitraIds, changedIds);
+  const summary = buildBulkActionResultSummary(state.preview.requestedIds, changedIds);
   const text = formatFolderActionSuccessMessage(state.kind, summary);
 
   if (summary.changedCount === 0) {
