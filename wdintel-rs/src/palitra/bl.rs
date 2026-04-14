@@ -800,16 +800,14 @@ pub fn normalize_palitra_folder(folder: &str) -> anyhow::Result<String> {
     if trimmed.is_empty() {
         anyhow::bail!("Palitra folder may not be empty");
     }
+    // Intentional flat-folder semantics: slash-separated nested folder paths are unsupported.
+    // If legacy data with '/' ever appears, migrate folder names before using folder APIs.
     if trimmed.contains('/') {
-        anyhow::bail!("Palitra folder may not contain '/'");
-    }
-    let parts = trimmed.split('/').map(str::trim).collect_vec();
-    if parts.iter().any(|part| part.is_empty()) {
         anyhow::bail!(
-            "Palitra folder may not contain empty path segments: {folder}"
+            "Palitra folder may not contain '/': nested folders are unsupported"
         );
     }
-    Ok(parts.join("/"))
+    Ok(trimmed.to_string())
 }
 
 pub fn normalize_palitra_folder_from_db(
@@ -2846,10 +2844,7 @@ mod tests {
             replace_folder_exact(Some("foo"), "foo", "bar"),
             Some("bar".to_string())
         );
-        assert_eq!(
-            replace_folder_exact(Some("foo/baz"), "foo", "bar"),
-            None
-        );
+        assert_eq!(replace_folder_exact(Some("foo/baz"), "foo", "bar"), None);
         assert_eq!(replace_folder_exact(Some("foobar"), "foo", "bar"), None);
     }
 }

@@ -75,8 +75,6 @@ export function useRerPalitraNeoPage() {
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
 
   const availableAccessTypes = useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
-  const folderTree = useMemo(() => buildFolderTree(palitras, user), [palitras, user]);
-  const folderOptions = useMemo(() => getExistingFolderOptions(folderTree), [folderTree]);
   const expandedFolderPathSet = useMemo(() => new Set(expandedFolderPaths), [expandedFolderPaths]);
   const visiblePalitras = useMemo(() => {
     switch (archiveView) {
@@ -89,6 +87,8 @@ export function useRerPalitraNeoPage() {
         return palitras.filter((palitra) => !palitra.isArchived);
     }
   }, [archiveView, palitras]);
+  const folderTree = useMemo(() => buildFolderTree(visiblePalitras, user), [visiblePalitras, user]);
+  const folderOptions = useMemo(() => getExistingFolderOptions(folderTree), [folderTree]);
   const rows = useMemo<TableRowView[]>(() => buildTableRows({
     palitras: visiblePalitras,
     user,
