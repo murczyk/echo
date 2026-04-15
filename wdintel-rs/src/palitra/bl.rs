@@ -846,6 +846,12 @@ fn replace_folder_exact(
     Some(to_folder.to_string())
 }
 
+#[derive(Clone, Debug)]
+pub struct PalitraFolderSyncItem {
+    pub palitra_id: i64,
+    pub source_folder: Option<String>,
+}
+
 pub async fn update_accessible_palitra_archive_flag(
     login: String,
     palitra_id: i64,
@@ -876,18 +882,23 @@ pub async fn assign_folder_to_accessible_palitras(
     folder: String,
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
-) -> anyhow::Result<Vec<i64>> {
+) -> anyhow::Result<Vec<PalitraFolderSyncItem>> {
     // Write path: only flat folder names are allowed for new assignments.
     let folder = normalize_palitra_folder(&folder).c(h!())?;
-    let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
+    let sync_items = collect_mutable_palitra_models(login, palitra_ids, dbx)
         .await
         .c(h!())?
         .into_iter()
-        .map(|palitra| palitra.id)
+        .map(|palitra| PalitraFolderSyncItem {
+            palitra_id: palitra.id,
+            source_folder: normalize_palitra_folder_from_db(palitra.folder),
+        })
         .collect_vec();
-    if palitra_ids.is_empty() {
+    if sync_items.is_empty() {
         return Ok(vec![]);
     }
+    let palitra_ids =
+        sync_items.iter().map(|item| item.palitra_id).collect_vec();
     palitra::Entity::update_many()
         .filter(palitra::Column::Id.is_in(palitra_ids.clone()))
         .filter(palitra::Column::Deleted.eq(false))
@@ -895,7 +906,7 @@ pub async fn assign_folder_to_accessible_palitras(
         .exec(txn)
         .await
         .c(h!())?;
-    Ok(palitra_ids)
+    Ok(sync_items)
 }
 
 pub async fn rename_accessible_palitra_folder(
@@ -904,7 +915,7 @@ pub async fn rename_accessible_palitra_folder(
     to_folder: String,
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
-) -> anyhow::Result<Vec<i64>> {
+) -> anyhow::Result<Vec<PalitraFolderSyncItem>> {
     // Lookup path keeps legacy slash folders operable as source values.
     let from_folder = normalize_palitra_folder_lookup(&from_folder).c(h!())?;
     // Write path for target folder remains flat-only.
@@ -916,7 +927,7 @@ pub async fn rename_accessible_palitra_folder(
     if mutable_palitras.is_empty() {
         return Ok(vec![]);
     }
-    let mut updated_ids = Vec::new();
+    let mut sync_items = Vec::new();
     for palitra in mutable_palitras {
         let old_folder =
             normalize_palitra_folder_from_db(palitra.folder.clone());
@@ -930,9 +941,12 @@ pub async fn rename_accessible_palitra_folder(
         let mut palitra = palitra.into_active_model();
         palitra.folder = Set(Some(new_folder));
         let palitra = palitra.update(txn).await.c(h!())?;
-        updated_ids.push(palitra.id);
+        sync_items.push(PalitraFolderSyncItem {
+            palitra_id: palitra.id,
+            source_folder: old_folder,
+        });
     }
-    Ok(updated_ids)
+    Ok(sync_items)
 }
 
 pub async fn archive_accessible_palitra_folder(

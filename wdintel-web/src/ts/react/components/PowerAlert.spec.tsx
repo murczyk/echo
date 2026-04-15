@@ -53,4 +53,39 @@ describe('PowerAlert', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(view.container.textContent).not.toContain('done');
   });
+
+  it('does not auto-hide success alert by default when onClose is not provided', () => {
+    vi.useFakeTimers();
+
+    const view = renderComponent(
+      <PowerAlert severity="success">done</PowerAlert>,
+    );
+    rendered.push(view);
+
+    act(() => {
+      vi.advanceTimersByTime(7000);
+    });
+
+    expect(view.container.textContent).toContain('done');
+  });
+
+  it('shows close button only when onClose is provided', () => {
+    const withoutOnClose = renderComponent(
+      <PowerAlert severity="error">error</PowerAlert>,
+    );
+    rendered.push(withoutOnClose);
+    expect(
+      withoutOnClose.container.querySelector('button[aria-label="Close"]'),
+    ).toBeNull();
+
+    const withOnClose = renderComponent(
+      <PowerAlert severity="error" onClose={() => {}}>
+        error
+      </PowerAlert>,
+    );
+    rendered.push(withOnClose);
+    expect(
+      withOnClose.container.querySelector('button[aria-label="Close"]'),
+    ).not.toBeNull();
+  });
 });

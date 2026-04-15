@@ -14,6 +14,7 @@ use crate::organism::goi::shared::{
     goi_integration_has_api_config,
 };
 use crate::organism::types::CheckOrganismGoiConnectionReq;
+use crate::palitra::bl::normalize_palitra_folder;
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
 use goi_echo_worker::api::{
@@ -637,12 +638,29 @@ async fn sync_goi_palitra_folders_from_fs(
             continue;
         };
         let folder_from_fs = folder_from_fs.clone();
-        if normalize_optional_trimmed(palitra.folder.clone()) == folder_from_fs
-        {
+        let folder_for_db = match folder_from_fs {
+            Some(folder_from_fs) => {
+                match normalize_palitra_folder(&folder_from_fs) {
+                    Ok(folder_for_db) => Some(folder_for_db),
+                    Err(err) => {
+                        log::warn!(
+                        "Skipping GOI palitra folder write for integration {} palitra {} (source file '{}'): invalid nested/non-flat folder '{}': {err:#}",
+                        integration.id,
+                        palitra.id,
+                        source_file_name,
+                        folder_from_fs,
+                    );
+                        continue;
+                    }
+                }
+            }
+            None => None,
+        };
+        if normalize_optional_trimmed(palitra.folder.clone()) == folder_for_db {
             continue;
         }
         let mut palitra = palitra.into_active_model();
-        palitra.folder = Set(folder_from_fs);
+        palitra.folder = Set(folder_for_db);
         palitra.update(&env.dbx).await.c(h!())?;
     }
 

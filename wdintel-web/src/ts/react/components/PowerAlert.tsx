@@ -16,7 +16,7 @@ export function PowerAlert(props: PowerAlertProps) {
   }, [children, severity]);
 
   const resolvedAutoHideDuration =
-    autoHideDuration === undefined ? (severity === 'success' ? DEFAULT_SUCCESS_AUTO_HIDE_MS : null) : autoHideDuration;
+    autoHideDuration === undefined ? (severity === 'success' && onClose ? DEFAULT_SUCCESS_AUTO_HIDE_MS : null) : autoHideDuration;
 
   const handleClose = React.useCallback(
     (event?: React.SyntheticEvent) => {
@@ -44,13 +44,17 @@ export function PowerAlert(props: PowerAlertProps) {
     return null;
   }
 
+  const alertOnClose = onClose
+    ? (event: React.SyntheticEvent) => {
+        handleClose(event);
+      }
+    : undefined;
+
   return (
     <Alert
       {...rest}
       severity={severity}
-      onClose={(event) => {
-        handleClose(event);
-      }}
+      onClose={alertOnClose}
     >
       {children}
     </Alert>

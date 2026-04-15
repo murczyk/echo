@@ -406,6 +406,7 @@ pub async fn goi_move_file_to_folder(
     req: CheckOrganismGoiConnectionReq,
     file_name: String,
     target_folder: Option<String>,
+    source_folder_hint: Option<String>,
 ) -> anyhow::Result<()> {
     goi_validate_connection_req(&req)?;
     let file_name = file_name.trim().trim_start_matches('/').to_string();
@@ -413,9 +414,12 @@ pub async fn goi_move_file_to_folder(
         anyhow::bail!("GOI file move failed: file name is empty");
     }
     let entries = goi_list_relative_files(req.clone()).await.c(h!())?;
-    let current_rel_path =
-        goi_find_unique_relative_path_by_file_name(entries, &file_name)
-            .c(h!())?;
+    let current_rel_path = goi_find_source_relative_path(
+        entries,
+        &file_name,
+        source_folder_hint.as_deref(),
+    )
+    .c(h!())?;
     let target_rel_path =
         goi_build_relative_path(target_folder.as_deref(), &file_name);
     if current_rel_path == target_rel_path {
@@ -436,33 +440,47 @@ pub async fn goi_move_file_to_folder(
     Ok(())
 }
 
-fn goi_find_unique_relative_path_by_file_name(
+fn goi_find_source_relative_path(
     entries: Vec<String>,
     file_name: &str,
+    source_folder_hint: Option<&str>,
 ) -> anyhow::Result<String> {
-    let matches = entries
+    let paths = entries
         .into_iter()
         .filter_map(|entry| {
             goi_parse_relative_file_entry(&entry).and_then(
                 |(entry_folder, entry_file_name)| {
-                    (entry_file_name == file_name).then(|| {
+                    (entry_file_name == file_name).then_some(
                         goi_build_relative_path(
                             entry_folder.as_deref(),
                             &entry_file_name,
-                        )
-                    })
+                        ),
+                    )
                 },
             )
         })
         .collect::<Vec<_>>();
-    match matches.as_slice() {
+    if let Some(source_folder_hint) = source_folder_hint {
+        let source_folder_hint =
+            source_folder_hint.trim().trim_matches('/').to_string();
+        if !source_folder_hint.is_empty() {
+            let hinted_source_rel_path = goi_build_relative_path(
+                Some(source_folder_hint.as_str()),
+                file_name,
+            );
+            if paths.contains(&hinted_source_rel_path) {
+                return Ok(hinted_source_rel_path);
+            }
+        }
+    }
+    match paths.as_slice() {
         [] => anyhow::bail!(
             "GOI file move failed: source file '{file_name}' not found"
         ),
         [single] => Ok(single.clone()),
         _ => anyhow::bail!(
             "GOI file move failed: multiple source files named '{file_name}' were found: {:?}",
-            matches
+            paths
         ),
     }
 }
@@ -471,13 +489,19 @@ pub async fn goi_move_file_to_folder_loose(
     req: CheckOrganismGoiConnectionReq,
     file_name: String,
     target_folder: Option<String>,
+    source_folder_hint: Option<String>,
 ) {
     let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
     let file_name_for_log = file_name.clone();
     let folder_for_log =
         target_folder.clone().unwrap_or_else(|| ".".to_string());
-    if let Err(err) =
-        goi_move_file_to_folder(req, file_name, target_folder).await
+    if let Err(err) = goi_move_file_to_folder(
+        req,
+        file_name,
+        target_folder,
+        source_folder_hint,
+    )
+    .await
     {
         log::warn!(
             "Skipping GOI file move for {ssh_target} {file_name_for_log} -> {folder_for_log}: {err:#}"
@@ -549,55 +573,6 @@ fn goi_relative_parent_dir(path: &str) -> String {
 fn goi_shell_quote_single(value: &str) -> String {
     let escaped = value.replace('\'', "'\\''");
     format!("'{escaped}'")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn goi_find_unique_relative_path_by_file_name_returns_single_match() {
-        let path = goi_find_unique_relative_path_by_file_name(
-            vec!["./folder_a/palitra.kmz".to_string()],
-            "palitra.kmz",
-        )
-        .unwrap();
-        assert_eq!(path, "folder_a/palitra.kmz");
-    }
-
-    #[test]
-    fn goi_find_unique_relative_path_by_file_name_fails_for_duplicates() {
-        let err = goi_find_unique_relative_path_by_file_name(
-            vec![
-                "./folder_a/palitra.kmz".to_string(),
-                "./folder_b/palitra.kmz".to_string(),
-            ],
-            "palitra.kmz",
-        )
-        .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("multiple source files named 'palitra.kmz'"));
-    }
-
-    #[test]
-    fn goi_parse_relative_file_entry_supports_nested_folders() {
-        let parsed =
-            goi_parse_relative_file_entry("./North/Sub/palitra.kmz").unwrap();
-        assert_eq!(
-            parsed,
-            (Some("North/Sub".to_string()), "palitra.kmz".to_string())
-        );
-    }
-
-    #[test]
-    fn goi_relative_parent_dir_supports_nested_folders() {
-        assert_eq!(
-            goi_relative_parent_dir("North/Sub/palitra.kmz"),
-            "North/Sub".to_string()
-        );
-        assert_eq!(goi_relative_parent_dir("palitra.kmz"), ".".to_string());
-    }
 }
 
 async fn goi_find_organism(
@@ -1320,4 +1295,69 @@ sudo systemctl is-active --quiet goi-echo-worker
 echo "GOI worker configured successfully"
 GOI_ECHO_WORKER_SETUP"#,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn goi_find_source_relative_path_returns_single_match() {
+        let path = goi_find_source_relative_path(
+            vec!["./folder_a/palitra.kmz".to_string()],
+            "palitra.kmz",
+            None,
+        )
+        .unwrap();
+        assert_eq!(path, "folder_a/palitra.kmz");
+    }
+
+    #[test]
+    fn goi_find_source_relative_path_uses_source_folder_hint() {
+        let path = goi_find_source_relative_path(
+            vec![
+                "./folder_a/palitra.kmz".to_string(),
+                "./folder_b/palitra.kmz".to_string(),
+            ],
+            "palitra.kmz",
+            Some("folder_b"),
+        )
+        .unwrap();
+        assert_eq!(path, "folder_b/palitra.kmz");
+    }
+
+    #[test]
+    fn goi_find_source_relative_path_fails_for_duplicates_without_hint() {
+        let err = goi_find_source_relative_path(
+            vec![
+                "./folder_a/palitra.kmz".to_string(),
+                "./folder_b/palitra.kmz".to_string(),
+            ],
+            "palitra.kmz",
+            None,
+        )
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("multiple source files named 'palitra.kmz'"));
+    }
+
+    #[test]
+    fn goi_parse_relative_file_entry_supports_nested_folders() {
+        let parsed =
+            goi_parse_relative_file_entry("./North/Sub/palitra.kmz").unwrap();
+        assert_eq!(
+            parsed,
+            (Some("North/Sub".to_string()), "palitra.kmz".to_string())
+        );
+    }
+
+    #[test]
+    fn goi_relative_parent_dir_supports_nested_folders() {
+        assert_eq!(
+            goi_relative_parent_dir("North/Sub/palitra.kmz"),
+            "North/Sub".to_string()
+        );
+        assert_eq!(goi_relative_parent_dir("palitra.kmz"), ".".to_string());
+    }
 }

@@ -779,7 +779,7 @@ pub async fn assign_palitra_folder(
         .context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
-    let palitra_ids = bl::assign_folder_to_accessible_palitras(
+    let sync_items = bl::assign_folder_to_accessible_palitras(
         login,
         req.palitra_ids,
         req.folder,
@@ -789,9 +789,11 @@ pub async fn assign_palitra_folder(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
+    let palitra_ids =
+        sync_items.iter().map(|item| item.palitra_id).collect_vec();
     spawn_sync_move_palitra_files_to_connected_organisms_loose(
         env.dbx.clone(),
-        palitra_ids.clone(),
+        sync_items,
     );
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
 }
@@ -808,7 +810,7 @@ pub async fn rename_palitra_folder(
         .context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
-    let palitra_ids = bl::rename_accessible_palitra_folder(
+    let sync_items = bl::rename_accessible_palitra_folder(
         login,
         req.from_folder,
         req.to_folder,
@@ -818,9 +820,11 @@ pub async fn rename_palitra_folder(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
+    let palitra_ids =
+        sync_items.iter().map(|item| item.palitra_id).collect_vec();
     spawn_sync_move_palitra_files_to_connected_organisms_loose(
         env.dbx.clone(),
-        palitra_ids.clone(),
+        sync_items,
     );
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
 }
@@ -1667,10 +1671,10 @@ async fn sync_delete_palitra_from_connected_organisms(
 
 async fn sync_move_palitra_files_to_connected_organisms_loose(
     dbx: &DatabaseConnection,
-    palitra_ids: &[i64],
+    sync_items: &[bl::PalitraFolderSyncItem],
 ) {
     for attempt in 1..=GOI_FOLDER_SYNC_RETRY_ATTEMPTS {
-        match sync_move_palitra_files_to_connected_organisms(dbx, palitra_ids)
+        match sync_move_palitra_files_to_connected_organisms(dbx, sync_items)
             .await
         {
             Ok(()) => return,
@@ -1695,22 +1699,27 @@ async fn sync_move_palitra_files_to_connected_organisms_loose(
 
 fn spawn_sync_move_palitra_files_to_connected_organisms_loose(
     dbx: DatabaseConnection,
-    palitra_ids: Vec<i64>,
+    sync_items: Vec<bl::PalitraFolderSyncItem>,
 ) {
     tokio::spawn(async move {
-        sync_move_palitra_files_to_connected_organisms_loose(
-            &dbx,
-            &palitra_ids,
-        )
-        .await;
+        sync_move_palitra_files_to_connected_organisms_loose(&dbx, &sync_items)
+            .await;
     });
 }
 
 async fn sync_move_palitra_files_to_connected_organisms(
     dbx: &DatabaseConnection,
-    palitra_ids: &[i64],
+    sync_items: &[bl::PalitraFolderSyncItem],
 ) -> anyhow::Result<()> {
-    for palitra_id in palitra_ids.iter().copied().unique() {
+    let mut palitra_ids = std::collections::BTreeSet::new();
+    for item in sync_items {
+        palitra_ids.insert(item.palitra_id);
+    }
+    for palitra_id in palitra_ids {
+        let source_folder_hint = sync_items
+            .iter()
+            .find(|item| item.palitra_id == palitra_id)
+            .and_then(|item| item.source_folder.clone());
         let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
             .filter(palitra::Column::Deleted.eq(false))
             .one(dbx)
@@ -1752,6 +1761,7 @@ async fn sync_move_palitra_files_to_connected_organisms(
                 target,
                 file_name.clone(),
                 target_folder.clone(),
+                source_folder_hint.clone(),
             )
             .await;
         }
