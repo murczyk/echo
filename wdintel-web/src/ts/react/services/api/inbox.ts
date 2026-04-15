@@ -299,6 +299,7 @@ function rerDutyQueryStateWfToSnake(
 ): Record<string, string[] | number | null> {
   return {
     groups_selected: w.groupsSelected,
+    groups_denied: w.groupsDenied,
     senders_selected: w.sendersSelected,
     denied_senders: w.deniedSenders,
     freqs_selected: w.freqsSelected,
