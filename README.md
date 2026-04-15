@@ -4,12 +4,12 @@ SIGINT analytical platform webapp.
 
 **USE THIS REPO WITH [GIT Large File Storage](https://git-lfs.com/)**
 
-## DEPLOY
+## Deploy
 
 - Встановлення (apt): [docs/INSTALL_APT.md](./docs/INSTALL_APT.md)
 - **рекомендовано** Встановлення (zip): [docs/INSTALL_ZIP.md](./docs/INSTALL_ZIP.md)
 
-## SETUP
+## Setup
 
 Setup local nginx per [deploy/README.md](deploy/README.md). Also see `just setup-dev` for notes and scripts.
 
@@ -26,6 +26,14 @@ Front-end:
 ```
 just dev-front
 ```
+
+If you use the HTTPS nginx facade (`https://<host>:8300`) and frontend module requests fail after restarting dev servers, re-sync nginx to the active Elm Land port:
+
+```bash
+just sync-dev-front-nginx
+```
+
+This command auto-detects the newest running Elm Land server, updates `/etc/nginx/echo-dev-front-proxy.inc`, validates nginx config, and restarts nginx.
 
 Back-end:
 
@@ -53,7 +61,6 @@ Then, use following scripts:
 just doc # builds documentation webapp
 just dev-dock #serves documentation webapp on local machine
 ```
-
 
 ### Codegen
 
@@ -127,7 +134,7 @@ see [[wdintel-py/README]]
 
 read echo-im repo instructions
 
-## DEPLOY
+## Deploy
 
 For server like echo-kherson do:
 
@@ -140,6 +147,7 @@ Batch-deploy:
 ```
 for server in echo-kherson echo-soledarnist; do echo "\n🚀🚀🚀 deploying $server 🚀🚀🚀\n"; just server=$server deploy; done
 ```
+
 ## Docs maintainance
 
 ### [Postman.md](postman/README.md)
@@ -166,7 +174,9 @@ in order to erase data from db you may just run [clear_db.sql](deploy/clear_db.s
 it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
 
 # Reports
+
 ## РЕО
+
 Доповідь про радіоелектронну обстановку.
 - неприв'язані мережі: показуємо лише топ 90% активних за кількістю сеансів зв'язку, групуємо по частотах в межах +-12.5КГц
 - на неприв'язаних частотах показуємо лише позивні які б'ються із білим списком [callsigns_whitelist.txt](wdintel-rs/data/callsigns_whitelist.txt). він генеруєжться в модулі callsign-crawler проету milgeo-rs: https://github.com/echoua/milgeo-rs/tree/main/callsigns_crawler

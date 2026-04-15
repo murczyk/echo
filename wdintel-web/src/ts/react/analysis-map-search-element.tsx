@@ -25,8 +25,14 @@ class AnalysisMapSearchElement extends HTMLElement {
   private initialQuery = '';
   private isDisabled = false;
   private placeholder = DEFAULT_PLACEHOLDER;
+  private pendingUnmountHandle: number | null = null;
 
   connectedCallback() {
+    if (this.pendingUnmountHandle !== null) {
+      window.clearTimeout(this.pendingUnmountHandle);
+      this.pendingUnmountHandle = null;
+    }
+
     if (!this.root) {
       this.style.display = 'block';
       this.root = createRoot(this);
@@ -122,8 +128,29 @@ class AnalysisMapSearchElement extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.root?.unmount();
-    this.root = null;
+    this.scheduleRootUnmount();
+  }
+
+  private scheduleRootUnmount() {
+    if (this.pendingUnmountHandle !== null) {
+      return;
+    }
+
+    const root = this.root;
+    if (!root) {
+      return;
+    }
+
+    this.pendingUnmountHandle = window.setTimeout(() => {
+      this.pendingUnmountHandle = null;
+
+      if (this.isConnected || this.root !== root) {
+        return;
+      }
+
+      root.unmount();
+      this.root = null;
+    }, 0);
   }
 
   private parseResultsCount(value: string | null): number | null {

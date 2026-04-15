@@ -6,8 +6,14 @@ import { AnalysisMapSettingsControl } from './AnalysisMapSettingsControl';
 class AnalysisMapSettingsElement extends HTMLElement {
   private root: Root | null = null;
   private visible = true;
+  private pendingUnmountHandle: number | null = null;
 
   connectedCallback() {
+    if (this.pendingUnmountHandle !== null) {
+      window.clearTimeout(this.pendingUnmountHandle);
+      this.pendingUnmountHandle = null;
+    }
+
     if (!this.root) {
       this.style.display = 'block';
       this.root = createRoot(this);
@@ -16,8 +22,7 @@ class AnalysisMapSettingsElement extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.root?.unmount();
-    this.root = null;
+    this.scheduleRootUnmount();
   }
 
   setPelengLabelsVisible(visible: boolean) {
@@ -46,6 +51,28 @@ class AnalysisMapSettingsElement extends HTMLElement {
         }}
       />,
     );
+  }
+
+  private scheduleRootUnmount() {
+    if (this.pendingUnmountHandle !== null) {
+      return;
+    }
+
+    const root = this.root;
+    if (!root) {
+      return;
+    }
+
+    this.pendingUnmountHandle = window.setTimeout(() => {
+      this.pendingUnmountHandle = null;
+
+      if (this.isConnected || this.root !== root) {
+        return;
+      }
+
+      root.unmount();
+      this.root = null;
+    }, 0);
   }
 }
 

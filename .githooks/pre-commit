@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+staged_justfile="$(git diff --cached --name-only -- justfile || true)"
+[ -z "$staged_justfile" ] && exit 0
+
+unstaged_justfile="$(git diff --name-only -- justfile || true)"
+if [ -n "$unstaged_justfile" ]; then
+  echo "❌ justfile has unstaged changes." >&2
+  echo "Stage or stash them, then commit again so hook can auto-format safely." >&2
+  exit 1
+fi
+
+if ! command -v just >/dev/null 2>&1; then
+  echo "❌ 'just' is required for pre-commit formatting of justfile." >&2
+  exit 1
+fi
+
+just --unstable --fmt >/dev/null
+git add justfile
+
+exit 0

@@ -35,6 +35,25 @@ type PalitraDownloadReqBody = {
   palitra_ids: number[];
 };
 
+type PalitraFolderAssignReqBody = {
+  palitra_ids: number[];
+  folder: string;
+};
+
+type PalitraFolderRenameReqBody = {
+  from_folder: string;
+  to_folder: string;
+};
+
+type PalitraFolderReqBody = {
+  folder: string;
+};
+
+type PalitraBulkActionRspBody = {
+  palitra_ids?: Array<number | string> | null;
+  palitraIds?: Array<number | string> | null;
+};
+
 type PalitraLike = {
   id?: number | string;
   name?: string;
@@ -131,6 +150,10 @@ function normalizeNumberArray(values: Array<number | string> | null | undefined)
   return values
     .map((value) => normalizeOptionalNumber(value))
     .filter((value): value is number => value !== null);
+}
+
+function normalizePalitraBulkActionRsp(raw: PalitraBulkActionRspBody | null | undefined): number[] {
+  return normalizeNumberArray(raw?.palitra_ids ?? raw?.palitraIds);
 }
 
 function toCreatePalitraReqBody(req: CreatePalitraReq): CreatePalitraReqBody {
@@ -351,6 +374,40 @@ export async function downloadPalitras(palitraIds: number[]): Promise<Blob> {
     palitra_ids: palitraIds,
   };
   return postBytes('/api/palitra/download', body);
+}
+
+export async function assignPalitraFolder(palitraIds: number[], folder: string): Promise<number[]> {
+  const body: PalitraFolderAssignReqBody = {
+    palitra_ids: palitraIds,
+    folder,
+  };
+  const data = await postJson<PalitraBulkActionRspBody>('/api/palitra/folder/assign', body);
+  return normalizePalitraBulkActionRsp(data);
+}
+
+export async function renamePalitraFolder(fromFolder: string, toFolder: string): Promise<number[]> {
+  const body: PalitraFolderRenameReqBody = {
+    from_folder: fromFolder,
+    to_folder: toFolder,
+  };
+  const data = await postJson<PalitraBulkActionRspBody>('/api/palitra/folder/rename', body);
+  return normalizePalitraBulkActionRsp(data);
+}
+
+export async function archivePalitraFolder(folder: string): Promise<number[]> {
+  const body: PalitraFolderReqBody = {
+    folder,
+  };
+  const data = await postJson<PalitraBulkActionRspBody>('/api/palitra/folder/archive', body);
+  return normalizePalitraBulkActionRsp(data);
+}
+
+export async function deletePalitraFolder(folder: string): Promise<number[]> {
+  const body: PalitraFolderReqBody = {
+    folder,
+  };
+  const data = await postJson<PalitraBulkActionRspBody>('/api/palitra/folder/delete', body);
+  return normalizePalitraBulkActionRsp(data);
 }
 
 export async function createPalitra(req: CreatePalitraReq): Promise<Palitra> {

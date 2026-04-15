@@ -21,6 +21,7 @@ import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
+import { PalitraFolderActionDialog } from './components/PalitraFolderActionDialog';
 import {
   DEFAULT_PALITRA_COLUMN_ORDER,
   DEFAULT_PALITRA_COLUMN_VISIBILITY,
@@ -77,7 +78,7 @@ function RerPalitraNeoPageBody() {
             </ToggleButtonGroup>
           }
           actions={
-            <Stack direction='row' spacing={2}>
+            <Stack direction='row' spacing={2} flexWrap='wrap' useFlexGap>
               <Button
                 component='a'
                 href='/alpinequest-kmz'
@@ -89,42 +90,71 @@ function RerPalitraNeoPageBody() {
               </Button>
               <Button
                 variant='outlined'
+                onClick={page.requestAssignFolder}
+                disabled={
+                  page.selectedPalitraIds.length === 0 ||
+                  page.folderActionsBlocked ||
+                  page.bulkDeleteInFlight ||
+                  page.inFlightArchiveId !== null ||
+                  page.inFlightDeleteId !== null
+                }
+              >
+                Перемістити в папку
+              </Button>
+              <Button
+                variant='outlined'
                 color='error'
                 onClick={page.requestBulkDelete}
                 disabled={
                   page.selectedPalitraIds.length === 0 ||
                   page.bulkDeleteInFlight ||
+                  page.folderActionsBlocked ||
                   page.inFlightArchiveId !== null ||
                   page.inFlightDeleteId !== null
                 }
               >
                 Видалити палітри
               </Button>
-              <Button variant='contained' onClick={page.openCreate} disabled={page.createInFlight}>
+              <Button variant='contained' onClick={page.openCreate} disabled={page.createInFlight || page.folderActionsBlocked}>
                 Додати палітру
               </Button>
             </Stack>
           }
         />
 
-        {page.error ? <Alert severity='error'>{page.error.text}</Alert> : null}
+        {page.status ? <Alert severity={page.status.kind}>{page.status.text}</Alert> : null}
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <PalitraTable
             loading={page.loading}
             rows={page.rows}
             bulkDeleteInFlight={page.bulkDeleteInFlight}
+            externalBusy={page.folderActionsBlocked}
             selectedPalitraIds={page.selectedPalitraIds}
             onOpenEdit={page.openEdit}
             onRequestArchive={page.requestArchive}
+            onRequestAssignFolder={page.requestAssignFolderForPalitra}
             onRequestUnarchive={page.handleUnarchive}
             onDownload={page.handleDownload}
             onRequestUploadPoints={page.requestUploadPoints}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
+            onToggleFolderExpanded={page.toggleFolderExpanded}
+            onRequestRenameFolder={page.requestRenameFolder}
+            onRequestArchiveFolder={page.requestArchiveFolder}
+            onRequestDeleteFolder={page.requestDeleteFolder}
           />
         </Box>
       </Stack>
+
+      <PalitraFolderActionDialog
+        state={page.folderDialogState}
+        folderOptions={page.folderOptions}
+        submitting={page.folderActionInFlight}
+        onClose={page.cancelFolderAction}
+        onConfirm={page.confirmFolderAction}
+        onNextFolderPathChange={page.setFolderDialogNextFolderPath}
+      />
 
       <Dialog
         open={page.archiveDialogOpen}
