@@ -384,7 +384,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             {...(feed.items.length > 0
               ? {
                   initialTopMostItemIndex: {
-                    index: (feed.firstItemIndex ?? 0) + feed.items.length - 1,
+                    index: feed.items.length - 1,
                     align: 'end' as const,
                   },
                 }
