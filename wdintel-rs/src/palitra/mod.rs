@@ -1719,7 +1719,7 @@ async fn sync_move_palitra_files_to_connected_organisms(
         let source_folder_hint = sync_items
             .iter()
             .find(|item| item.palitra_id == palitra_id)
-            .and_then(|item| item.source_folder.clone());
+            .map(|item| item.source_folder.clone().unwrap_or_default());
         let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
             .filter(palitra::Column::Deleted.eq(false))
             .one(dbx)

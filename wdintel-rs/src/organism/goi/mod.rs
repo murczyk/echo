@@ -463,14 +463,15 @@ fn goi_find_source_relative_path(
     if let Some(source_folder_hint) = source_folder_hint {
         let source_folder_hint =
             source_folder_hint.trim().trim_matches('/').to_string();
-        if !source_folder_hint.is_empty() {
-            let hinted_source_rel_path = goi_build_relative_path(
-                Some(source_folder_hint.as_str()),
-                file_name,
-            );
-            if paths.contains(&hinted_source_rel_path) {
-                return Ok(hinted_source_rel_path);
-            }
+        let source_folder_hint = if source_folder_hint.is_empty() {
+            None
+        } else {
+            Some(source_folder_hint.as_str())
+        };
+        let hinted_source_rel_path =
+            goi_build_relative_path(source_folder_hint, file_name);
+        if paths.contains(&hinted_source_rel_path) {
+            return Ok(hinted_source_rel_path);
         }
     }
     match paths.as_slice() {
@@ -1324,6 +1325,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(path, "folder_b/palitra.kmz");
+    }
+
+    #[test]
+    fn goi_find_source_relative_path_uses_root_source_folder_hint() {
+        let path = goi_find_source_relative_path(
+            vec![
+                "./palitra.kmz".to_string(),
+                "./folder_a/palitra.kmz".to_string(),
+            ],
+            "palitra.kmz",
+            Some(""),
+        )
+        .unwrap();
+        assert_eq!(path, "palitra.kmz");
     }
 
     #[test]

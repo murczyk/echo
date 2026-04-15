@@ -2,6 +2,7 @@ use crate::config::{
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
+    ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC, ORGANISM_GOI_SSH_PORT_DEFAULT,
 };
 use crate::entities::{
@@ -36,6 +37,7 @@ const GOI_XLSX_CONTENT_TYPE: &str =
 struct GoiWorkerState {
     last_knowledge_sync_attempt_at: HashMap<i64, Instant>,
     last_report_push_attempt_at: HashMap<i64, Instant>,
+    last_palitra_folder_sync_attempt_at: HashMap<i64, Instant>,
 }
 
 pub async fn goi_association_worker_nofail(env: Arc<Env>) {
@@ -80,7 +82,7 @@ async fn goi_association_worker_step(
             }
         }
         if let Err(err) =
-            sync_goi_palitra_folders_from_fs(env, &integration).await
+            sync_goi_palitra_folders_if_due(env, &integration, state).await
         {
             let label = integration.server_label.clone();
             log::warn!("Skipping GOI palitra folder sync for {label}: {err:#}");
@@ -88,6 +90,20 @@ async fn goi_association_worker_step(
         tokio::time::sleep(goi_worker_sleep_duration()).await;
     }
     Ok(())
+}
+
+async fn sync_goi_palitra_folders_if_due(
+    env: &Env,
+    integration: &goi_integration::Model,
+    state: &mut GoiWorkerState,
+) -> Result<(), AppError> {
+    if !goi_palitra_folder_sync_is_due(state, integration.id) {
+        return Ok(());
+    }
+    state
+        .last_palitra_folder_sync_attempt_at
+        .insert(integration.id, Instant::now());
+    sync_goi_palitra_folders_from_fs(env, integration).await
 }
 
 async fn load_goi_worker_integrations(
@@ -256,6 +272,18 @@ fn goi_knowledge_sync_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
         None => true,
         Some(last_attempt) => {
             last_attempt.elapsed() >= goi_knowledge_sync_interval()
+        }
+    }
+}
+
+fn goi_palitra_folder_sync_is_due(
+    state: &GoiWorkerState,
+    organism_id: i64,
+) -> bool {
+    match state.last_palitra_folder_sync_attempt_at.get(&organism_id) {
+        None => true,
+        Some(last_attempt) => {
+            last_attempt.elapsed() >= goi_palitra_folder_sync_interval()
         }
     }
 }
@@ -571,6 +599,10 @@ fn goi_knowledge_sync_interval() -> Duration {
     Duration::from_secs(ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC)
 }
 
+fn goi_palitra_folder_sync_interval() -> Duration {
+    Duration::from_secs(ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC)
+}
+
 fn goi_knowledge_sync_cutoff() -> chrono::DateTime<chrono::FixedOffset> {
     (chrono::Utc::now()
         - chrono::Duration::days(ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS))
@@ -581,19 +613,6 @@ async fn sync_goi_palitra_folders_from_fs(
     env: &Env,
     integration: &goi_integration::Model,
 ) -> Result<(), AppError> {
-    let Some(ssh_req) = goi_connection_req_from_integration(integration)?
-    else {
-        return Ok(());
-    };
-    let entries = super::goi_list_relative_files(ssh_req).await.c(h!())?;
-    if entries.is_empty() {
-        return Ok(());
-    }
-    let folder_by_file = goi_file_folder_map(entries);
-    if folder_by_file.is_empty() {
-        return Ok(());
-    }
-
     let palitra_ids = palitra_access_organism::Entity::find()
         .filter(
             palitra_access_organism::Column::OrganismId
@@ -606,6 +625,19 @@ async fn sync_goi_palitra_folders_from_fs(
         .await
         .c(h!())?;
     if palitra_ids.is_empty() {
+        return Ok(());
+    }
+
+    let Some(ssh_req) = goi_connection_req_from_integration(integration)?
+    else {
+        return Ok(());
+    };
+    let entries = super::goi_list_relative_files(ssh_req).await.c(h!())?;
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let folder_by_file = goi_file_folder_map(entries);
+    if folder_by_file.is_empty() {
         return Ok(());
     }
 
