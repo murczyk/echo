@@ -1711,10 +1711,21 @@ async fn sync_move_palitra_files_to_connected_organisms(
     dbx: &DatabaseConnection,
     sync_items: &[bl::PalitraFolderSyncItem],
 ) -> anyhow::Result<()> {
+    #[derive(Clone)]
+    struct GoiMoveTask {
+        file_name: String,
+        target_folder: Option<String>,
+        source_folder_hint: Option<String>,
+    }
+
     let mut palitra_ids = std::collections::BTreeSet::new();
     for item in sync_items {
         palitra_ids.insert(item.palitra_id);
     }
+    let mut tasks_by_target: BTreeMap<
+        String,
+        (CheckOrganismGoiConnectionReq, Vec<GoiMoveTask>),
+    > = BTreeMap::new();
     for palitra_id in palitra_ids {
         let source_folder_hint = sync_items
             .iter()
@@ -1757,11 +1768,47 @@ async fn sync_move_palitra_files_to_connected_organisms(
                 .await
                 .c(h!())?;
         for target in goi_targets {
-            crate::organism::goi::goi_move_file_to_folder_loose(
-                target,
-                file_name.clone(),
-                target_folder.clone(),
-                source_folder_hint.clone(),
+            let target_key = format!(
+                "{}|{}|{}|{}",
+                target.ssh_host, target.ssh_user, target.ssh_port, target.path
+            );
+            let task = GoiMoveTask {
+                file_name: file_name.clone(),
+                target_folder: target_folder.clone(),
+                source_folder_hint: source_folder_hint.clone(),
+            };
+            tasks_by_target
+                .entry(target_key)
+                .or_insert_with(|| (target, Vec::new()))
+                .1
+                .push(task);
+        }
+    }
+
+    for (_, (target, tasks)) in tasks_by_target {
+        let mut entries = match crate::organism::goi::goi_list_relative_files(
+            target.clone(),
+        )
+        .await
+        {
+            Ok(entries) => entries,
+            Err(err) => {
+                let ssh_target =
+                    format!("{}:{}", target.ssh_host, target.ssh_port);
+                log::warn!(
+                    "Skipping GOI file move batch for {ssh_target}: listing remote files failed: {err:#}"
+                );
+                continue;
+            }
+        };
+
+        for task in tasks {
+            crate::organism::goi::goi_move_file_to_folder_with_entries_loose(
+                target.clone(),
+                task.file_name,
+                task.target_folder,
+                task.source_folder_hint,
+                &mut entries,
             )
             .await;
         }

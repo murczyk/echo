@@ -28,12 +28,13 @@ pub fn goi_exec_command_sync(
     )
 }
 
-pub fn goi_exec_command_sync_unlimited(
+pub fn goi_exec_command_sync_capped(
     req: CheckOrganismGoiConnectionReq,
     command: String,
     timeout_ms: u32,
+    max_lines: usize,
 ) -> anyhow::Result<Vec<String>> {
-    goi_exec_command_sync_impl(req, command, timeout_ms, None)
+    goi_exec_command_sync_impl(req, command, timeout_ms, Some(max_lines))
 }
 
 fn goi_exec_command_sync_impl(
@@ -218,15 +219,23 @@ fn goi_exec_command_for_session(
         .context(h!()));
     }
 
-    let lines = stdout
+    let mut lines = Vec::new();
+    for line in stdout
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .map(ToString::to_string);
-    Ok(match max_lines {
-        Some(limit) => lines.take(limit).collect(),
-        None => lines.collect(),
-    })
+    {
+        if let Some(limit) = max_lines {
+            if lines.len() >= limit {
+                return Err(anyhow::anyhow!(
+                    "remote command output exceeds line limit {limit}"
+                )
+                .context(h!()));
+            }
+        }
+        lines.push(line.to_string());
+    }
+    Ok(lines)
 }
 
 fn goi_connect_for_socket(

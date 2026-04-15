@@ -1,7 +1,7 @@
 use crate::config::{
     ORGANISM_GOI_API_PORT_DEFAULT,
     ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_DEFAULT,
-    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX,
+    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX, ORGANISM_GOI_FILE_LIST_LIMIT,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_SSH_PORT_DEFAULT, ORGANISM_GOI_SSH_SETUP_TIMEOUT_MS,
@@ -392,10 +392,11 @@ pub async fn goi_list_relative_files(
         goi_shell_quote_single(req.path.trim())
     );
     tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_exec_command_sync_unlimited(
+        goi_ssh::goi_exec_command_sync_capped(
             req,
             command,
             ORGANISM_GOI_SSH_TIMEOUT_MS,
+            ORGANISM_GOI_FILE_LIST_LIMIT,
         )
     })
     .await
@@ -413,9 +414,31 @@ pub async fn goi_move_file_to_folder(
     if file_name.is_empty() {
         anyhow::bail!("GOI file move failed: file name is empty");
     }
-    let entries = goi_list_relative_files(req.clone()).await.c(h!())?;
+    let mut entries = goi_list_relative_files(req.clone()).await.c(h!())?;
+    goi_move_file_to_folder_with_entries(
+        req,
+        file_name,
+        target_folder,
+        source_folder_hint,
+        &mut entries,
+    )
+    .await
+}
+
+pub async fn goi_move_file_to_folder_with_entries(
+    req: CheckOrganismGoiConnectionReq,
+    file_name: String,
+    target_folder: Option<String>,
+    source_folder_hint: Option<String>,
+    entries: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    goi_validate_connection_req(&req)?;
+    let file_name = file_name.trim().trim_start_matches('/').to_string();
+    if file_name.is_empty() {
+        anyhow::bail!("GOI file move failed: file name is empty");
+    }
     let current_rel_path = goi_find_source_relative_path(
-        entries,
+        entries.clone(),
         &file_name,
         source_folder_hint.as_deref(),
     )
@@ -437,7 +460,31 @@ pub async fn goi_move_file_to_folder(
     goi_run_command(req, command, "GOI file move failed")
         .await
         .c(h!())?;
+    goi_replace_cached_relative_path(
+        entries,
+        &current_rel_path,
+        &target_rel_path,
+    );
     Ok(())
+}
+
+fn goi_replace_cached_relative_path(
+    entries: &mut Vec<String>,
+    current_rel_path: &str,
+    target_rel_path: &str,
+) {
+    let current_index = entries.iter().position(|entry| {
+        goi_parse_relative_file_entry(entry)
+            .map(|(folder, file_name)| {
+                goi_build_relative_path(folder.as_deref(), &file_name)
+            })
+            .as_deref()
+            == Some(current_rel_path)
+    });
+    if let Some(index) = current_index {
+        entries.remove(index);
+    }
+    entries.push(format!("./{target_rel_path}"));
 }
 
 fn goi_find_source_relative_path(
@@ -501,6 +548,32 @@ pub async fn goi_move_file_to_folder_loose(
         file_name,
         target_folder,
         source_folder_hint,
+    )
+    .await
+    {
+        log::warn!(
+            "Skipping GOI file move for {ssh_target} {file_name_for_log} -> {folder_for_log}: {err:#}"
+        );
+    }
+}
+
+pub async fn goi_move_file_to_folder_with_entries_loose(
+    req: CheckOrganismGoiConnectionReq,
+    file_name: String,
+    target_folder: Option<String>,
+    source_folder_hint: Option<String>,
+    entries: &mut Vec<String>,
+) {
+    let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
+    let file_name_for_log = file_name.clone();
+    let folder_for_log =
+        target_folder.clone().unwrap_or_else(|| ".".to_string());
+    if let Err(err) = goi_move_file_to_folder_with_entries(
+        req,
+        file_name,
+        target_folder,
+        source_folder_hint,
+        entries,
     )
     .await
     {
