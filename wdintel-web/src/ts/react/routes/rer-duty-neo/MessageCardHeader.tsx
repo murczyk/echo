@@ -398,12 +398,7 @@ function NetworkEtalonSection({
   ) : null;
 
   return (
-    <Stack
-      direction="row"
-      spacing={0.75}
-      alignItems="flex-start"
-      sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}
-    >
+    <Stack direction="row" spacing={0.75} sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}>
       <PeopleOutlineOutlinedIcon
         sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }}
         titleAccess="Еталонна прив'язка"

@@ -19,6 +19,12 @@ export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
 export const ANALYSIS_SESSION_ACTIVITY_PAGE_ID = 'rer-analysis';
 export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
 
+/** Duty / deep links append `?showMap=true` so the map center tab opens (see `buildRerAnalysisNeoHref` in rer-duty-neo). */
+export function shouldOpenAnalysisMapFromSearchParams(searchParams: URLSearchParams): boolean {
+  const v = searchParams.get('showMap');
+  return v === 'true' || v === '1';
+}
+
 function findAllAdjacentFreqs(allFrequencies: string[], selectedFrequencies: string[], range: number): string[] {
   if (range <= 0) return [];
   return allFrequencies.filter((freq) => {
