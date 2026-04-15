@@ -429,7 +429,8 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
             crate::secret::secret_worker(secret_config).await
         });
     }
-    spawn_goi_worker(bg_set, env);
+    spawn_goi_worker(bg_set, env.clone());
+    spawn_goi_folder_sync_worker(bg_set, env);
 }
 
 pub async fn main_server(

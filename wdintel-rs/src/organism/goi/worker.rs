@@ -2,7 +2,7 @@ use crate::config::{
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
-    ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC,
+    ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC, ORGANISM_GOI_SSH_PORT_DEFAULT,
 };
 use crate::entities::{
@@ -92,11 +92,15 @@ async fn goi_association_worker_step(
                 log::warn!("Skipping GOI report push for {label}: {err:#}");
             }
         }
-        if let Err(err) =
-            sync_goi_palitra_folders_if_due(env, &integration, state).await
-        {
-            let label = integration.server_label.clone();
-            log::warn!("Skipping GOI palitra folder sync for {label}: {err:#}");
+        if !with_api_jobs {
+            if let Err(err) =
+                sync_goi_palitra_folders_if_due(env, &integration, state).await
+            {
+                let label = integration.server_label.clone();
+                log::warn!(
+                    "Skipping GOI palitra folder sync for {label}: {err:#}"
+                );
+            }
         }
         tokio::time::sleep(goi_worker_sleep_duration()).await;
     }
@@ -755,12 +759,7 @@ fn goi_connection_req_from_integration(
             ORGANISM_GOI_SSH_PORT_DEFAULT
         },
         path: normalize_optional_trimmed(Some(integration.path.clone()))
-            .ok_or_else(|| AppError::BL {
-                msg: format!(
-                    "GOI path is missing for integration {}",
-                    integration.id
-                ),
-            })?,
+            .unwrap_or_else(|| ORGANISM_GOI_PATH_DEFAULT.to_string()),
     };
     super::goi_validate_connection_req(&req).c(h!())?;
     Ok(Some(req))
