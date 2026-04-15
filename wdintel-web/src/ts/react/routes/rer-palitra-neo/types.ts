@@ -74,6 +74,7 @@ export type FolderTableRowView = {
   id: string;
   kind: 'folder';
   folderPath: string;
+  hiddenByCollapsedFolder: boolean;
   name: string;
   depth: number;
   totalCount: number;
@@ -97,6 +98,7 @@ export type PalitraRowView = {
   id: number;
   kind: 'palitra';
   palitra: Palitra;
+  hiddenByCollapsedFolder: boolean;
   name: string;
   depth: number;
   colorHex: string;

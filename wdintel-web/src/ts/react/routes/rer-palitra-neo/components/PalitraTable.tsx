@@ -98,9 +98,30 @@ export function PalitraTable({
     [rows, selectedPalitraIds],
   );
   const hasActiveFilters = tableStateContext.globalFilter.trim() !== '' || tableStateContext.columnFilters.length > 0;
-  const isInitialLoading = loading && rows.length === 0;
+  const visibleRows = useMemo(
+    () => (hasActiveFilters ? rows : rows.filter((row) => !row.hiddenByCollapsedFolder)),
+    [hasActiveFilters, rows],
+  );
+  const visibleSelectablePalitraIdSet = useMemo(
+    () =>
+      new Set(
+        visibleRows
+          .filter((row): row is PalitraRowView => row.kind === 'palitra' && row.canSelect)
+          .map((row) => row.id),
+      ),
+    [visibleRows],
+  );
+  const isInitialLoading = loading && visibleRows.length === 0;
   const showTableOverlay = loading;
-  const tableRows = isInitialLoading ? buildLoadingRows() : rows;
+  const tableRows = isInitialLoading ? buildLoadingRows() : visibleRows;
+
+  useEffect(() => {
+    if (selectedPalitraIds.length === 0) return;
+    const nextIds = selectedPalitraIds.filter((id) => visibleSelectablePalitraIdSet.has(id));
+    if (nextIds.length !== selectedPalitraIds.length) {
+      onSetSelectedPalitraIds(nextIds);
+    }
+  }, [visibleSelectablePalitraIdSet, selectedPalitraIds, onSetSelectedPalitraIds]);
 
   useEffect(() => {
     if (selectedPalitraIds.length === 0) return;
@@ -138,7 +159,7 @@ export function PalitraTable({
     onSortingChange: tableStateContext.onSortingChange,
     onRowSelectionChange: (updater) => {
       const nextSelection = resolveUpdater(updater, rowSelection);
-      const nextIds = rows
+      const nextIds = visibleRows
         .filter((row): row is PalitraRowView => row.kind === 'palitra' && Boolean(nextSelection[String(row.id)]))
         .map((row) => row.id);
       onSetSelectedPalitraIds(nextIds);

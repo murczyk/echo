@@ -75,6 +75,7 @@ function makeRow(id: number, folder: string | null, canSelect = true): PalitraRo
     id,
     kind: 'palitra',
     palitra: makePalitra(id, folder),
+    hiddenByCollapsedFolder: false,
     name: 'Palitra ' + String(id),
     depth: 0,
     colorHex: '#00bcd4',
@@ -273,6 +274,7 @@ describe('rer-palitra helpers', () => {
       'palitra:2',
       'palitra:4',
       'folder:North/Sub',
+      'palitra:3',
       'palitra:1',
     ]);
 
@@ -282,6 +284,9 @@ describe('rer-palitra helpers', () => {
       modifiableCount: 1,
       isExpanded: true,
     });
+
+    const nestedPalitraRow = rows.find((row) => row.kind === 'palitra' && row.id === 3);
+    expect(nestedPalitraRow).toMatchObject({ hiddenByCollapsedFolder: true });
   });
 
   it('builds assign previews and human preview lines', () => {

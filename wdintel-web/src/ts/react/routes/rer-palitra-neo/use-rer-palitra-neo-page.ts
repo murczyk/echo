@@ -103,7 +103,10 @@ export function useRerPalitraNeoPage() {
     expandedFolderPaths: expandedFolderPathSet,
   }), [visiblePalitras, user, myScope, organisms, aors, inFlightArchiveId, inFlightDeleteId, inFlightDownloadId, inFlightUploadId, expandedFolderPathSet]);
   const palitraRows = useMemo(() => rows.filter((row): row is Extract<TableRowView, { kind: 'palitra' }> => row.kind === 'palitra'), [rows]);
-  const visibleSelectablePalitraIds = useMemo(() => new Set(palitraRows.filter((row) => row.canSelect).map((row) => row.id)), [palitraRows]);
+  const visibleSelectablePalitraIds = useMemo(
+    () => new Set(palitraRows.filter((row) => row.canSelect).map((row) => row.id)),
+    [palitraRows],
+  );
   const folderActionsBlocked = folderActionInFlight || folderDialogState !== null;
   const updateCreateForm = useCallback((updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)), []);
   const updateKmzColorOptions = useCallback((updater: (prev: KmzColorOption[]) => KmzColorOption[]) => setKmzColorOptions((prev) => updater(prev)), []);

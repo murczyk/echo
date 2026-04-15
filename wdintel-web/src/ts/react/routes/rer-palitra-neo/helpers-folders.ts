@@ -110,11 +110,16 @@ export function getExistingFolderOptions(tree: FolderTreeNode[]): string[] {
   return tree.map((node) => node.path).sort((left, right) => left.localeCompare(right, 'uk'));
 }
 
-export function mapFolderNodeToRowView(node: FolderTreeNode, expandedFolderPaths: Set<string>): FolderTableRowView {
+export function mapFolderNodeToRowView(
+  node: FolderTreeNode,
+  expandedFolderPaths: Set<string>,
+  hiddenByCollapsedFolder = false,
+): FolderTableRowView {
   return {
     id: 'folder:' + node.path,
     kind: 'folder',
     folderPath: node.path,
+    hiddenByCollapsedFolder,
     name: node.name,
     depth: node.depth,
     totalCount: node.allPalitraIds.length,

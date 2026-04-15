@@ -15,6 +15,7 @@ export function mapPalitraToRowView({
   inFlightDownloadId,
   inFlightUploadId,
   depth = 0,
+  hiddenByCollapsedFolder = false,
 }: {
   palitra: Palitra;
   user: User | null;
@@ -26,6 +27,7 @@ export function mapPalitraToRowView({
   inFlightDownloadId: number | null;
   inFlightUploadId: number | null;
   depth?: number;
+  hiddenByCollapsedFolder?: boolean;
 }): PalitraRowView {
   const canModify = canModifyPalitra(user, palitra);
   const archiveInFlight = inFlightArchiveId === palitra.id;
@@ -37,6 +39,7 @@ export function mapPalitraToRowView({
     id: palitra.id,
     kind: 'palitra',
     palitra,
+    hiddenByCollapsedFolder,
     name: palitra.name,
     depth,
     colorHex: palitra.colorHex,
@@ -121,16 +124,16 @@ export function buildTableRows(args: {
 
   const rows: TableRowView[] = [];
 
-  function appendFolder(path: string) {
+  function appendFolder(path: string, parentExpanded: boolean) {
     const node = nodesByPath.get(path);
     if (!node) return;
     const permissionNode = permissionNodesByPath.get(path) ?? node;
-    const folderRow = mapFolderNodeToRowView(node, expandedFolderPaths);
+    const folderRow = mapFolderNodeToRowView(node, expandedFolderPaths, !parentExpanded);
     folderRow.modifiableCount = permissionNode.modifiablePalitraIds.length;
     folderRow.canModify = permissionNode.modifiablePalitraIds.length > 0;
     rows.push(folderRow);
 
-    if (!expandedFolderPaths.has(path)) return;
+    const branchExpanded = parentExpanded && expandedFolderPaths.has(path);
 
     const directPalitras = sortPalitras(palitrasByFolder.get(path) ?? []);
     for (const palitra of directPalitras) {
@@ -146,17 +149,18 @@ export function buildTableRows(args: {
           inFlightDownloadId,
           inFlightUploadId,
           depth: node.depth + 1,
+          hiddenByCollapsedFolder: !branchExpanded,
         }),
       );
     }
 
     for (const childPath of folderChildren.get(path) ?? []) {
-      appendFolder(childPath);
+      appendFolder(childPath, branchExpanded);
     }
   }
 
   for (const rootFolderPath of folderChildren.get('') ?? []) {
-    appendFolder(rootFolderPath);
+    appendFolder(rootFolderPath, true);
   }
 
   for (const palitra of sortPalitras(rootPalitras)) {
@@ -172,6 +176,7 @@ export function buildTableRows(args: {
         inFlightDownloadId,
         inFlightUploadId,
         depth: 0,
+        hiddenByCollapsedFolder: false,
       }),
     );
   }

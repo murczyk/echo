@@ -877,6 +877,7 @@ pub async fn assign_folder_to_accessible_palitras(
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
+    // Write path: only flat folder names are allowed for new assignments.
     let folder = normalize_palitra_folder(&folder).c(h!())?;
     let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
         .await
@@ -904,7 +905,9 @@ pub async fn rename_accessible_palitra_folder(
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
+    // Lookup path keeps legacy slash folders operable as source values.
     let from_folder = normalize_palitra_folder_lookup(&from_folder).c(h!())?;
+    // Write path for target folder remains flat-only.
     let to_folder = normalize_palitra_folder(&to_folder).c(h!())?;
     let mutable_palitras =
         collect_mutable_palitra_models_for_accessible_login(login, dbx)
@@ -1047,6 +1050,7 @@ pub async fn collect_accessible_palitra_ids_in_folder(
     folder: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
+    // Lookup path accepts legacy slash folder names to keep existing data manageable.
     let folder = normalize_palitra_folder_lookup(&folder).c(h!())?;
     let mut palitras = palitra::Entity::find()
         .filter(palitra::Column::Deleted.eq(false))
@@ -2419,7 +2423,8 @@ mod tests {
         mk_palitra_point,
     };
     use crate::palitra::bl::{
-        collect_accessible_palitra_ids, normalize_palitra_folder,
+        collect_accessible_palitra_ids,
+        collect_accessible_palitra_ids_in_folder, normalize_palitra_folder,
         normalize_palitra_folder_from_db, normalize_palitra_folder_lookup,
         replace_folder_exact, search_palitra_points_by_labels, update_palitra,
         update_palitra_v2,
@@ -2430,8 +2435,8 @@ mod tests {
     };
     use chrono::Utc;
     use sea_orm::{
-        ActiveModelTrait, ColumnTrait, EntityTrait, NotSet, QueryFilter, Set,
-        TransactionTrait,
+        ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, NotSet,
+        QueryFilter, Set, TransactionTrait,
     };
     use serial_test::serial;
 
@@ -2862,6 +2867,30 @@ mod tests {
             normalize_palitra_folder_from_db(Some("North/Sub".to_string())),
             Some("North/Sub".to_string())
         );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_collect_accessible_palitra_ids_in_folder_supports_legacy_slash_folder_path(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let palitra_id = palitra.id;
+
+        let mut palitra = palitra.into_active_model();
+        palitra.folder = Set(Some("North/Sub".to_string()));
+        palitra.update(&env.dbx).await.unwrap();
+
+        let palitra_ids = collect_accessible_palitra_ids_in_folder(
+            login.login,
+            "North/Sub".to_string(),
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+
+        assert!(palitra_ids.contains(&palitra_id));
     }
 
     #[test]

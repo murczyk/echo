@@ -92,6 +92,8 @@ export function PalitraFolderActionDialog({
     [folderOptions],
   );
   const assignFolderOptions = useMemo(
+    // Assign flow supports only flat folder names; slash-based legacy paths are intentionally
+    // excluded here because validateFolderPath forbids '/' for new/target folder values.
     () => normalizedFolderOptions.filter((path) => !path.includes('/')),
     [normalizedFolderOptions],
   );

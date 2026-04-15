@@ -102,6 +102,7 @@ export function buildLoadingRows(): TableRowView[] {
       accessAorId: [],
       folder: null,
     } as unknown as Palitra,
+    hiddenByCollapsedFolder: false,
     name: '',
     depth: 0,
     colorHex: '',
