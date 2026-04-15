@@ -209,6 +209,7 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
     onlyShowUnprocessed: null,
     checkedOnly: false,
     selectedGroups: req.selectedGroups,
+    deniedGroups: null,
     selectedSenders: req.selectedSenders,
     deniedSenders: null,
     selectedFreqs: req.selectedFreqs,

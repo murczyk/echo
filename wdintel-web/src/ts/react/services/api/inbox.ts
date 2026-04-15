@@ -184,6 +184,7 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     only_show_unprocessed: req.onlyShowUnprocessed,
     checked_only: req.checkedOnly,
     selected_groups: emptyArrToNull(req.selectedGroups),
+    denied_groups: emptyArrToNull(req.deniedGroups),
     selected_senders: emptyArrToNull(req.selectedSenders),
     denied_senders: emptyArrToNull(req.deniedSenders),
     selected_freqs: emptyArrToNull(req.selectedFreqs),

@@ -222,6 +222,7 @@ pub struct InboxMessagesReq {
     pub only_show_unprocessed: Option<bool>,
     pub checked_only: Option<bool>,
     pub selected_groups: Option<Vec<String>>,
+    pub denied_groups: Option<Vec<String>>,
     pub selected_senders: Option<Vec<String>>,
     pub denied_senders: Option<Vec<String>>,
     pub selected_freqs: Option<Vec<String>>,
@@ -1036,6 +1037,7 @@ pub struct RerDutyQueryState {
 )]
 pub struct RerDutyQueryStateWf {
     pub groups_selected: Option<Vec<String>>,
+    pub groups_denied: Option<Vec<String>>,
     pub senders_selected: Option<Vec<String>>,
     pub denied_senders: Option<Vec<String>>,
     pub freqs_selected: Option<Vec<String>>,

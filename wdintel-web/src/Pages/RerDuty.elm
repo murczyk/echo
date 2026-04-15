@@ -431,6 +431,7 @@ subscriptions model =
 emptyWaterfallQueryStateWf : B.RerDutyQueryStateWf
 emptyWaterfallQueryStateWf =
     { groupsSelected = Nothing
+    , groupsDenied = Nothing
     , sendersSelected = Nothing
     , deniedSenders = Nothing
     , freqsSelected = Nothing
@@ -444,6 +445,7 @@ emptyWaterfallQueryStateWf =
 waterfallQueryState : Pages_.RerDuty.Waterfall.Model -> B.RerDutyQueryStateWf
 waterfallQueryState wf =
     { groupsSelected = Just wf.groupsSelected
+    , groupsDenied = Nothing
     , sendersSelected = Just wf.sendersSelect.selected
     , deniedSenders = Just wf.sendersDeniedSelect.selected
     , freqsSelected = Just wf.freqsSelect.selected

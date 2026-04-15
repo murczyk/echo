@@ -48,6 +48,7 @@ export type FeedColumnProps = {
   feedCount?: number;
   filterStable: {
     groupsSelected: string[];
+    deniedGroups: string[];
     sendersSelected: string[];
     deniedSenders: string[];
     freqsSelected: string[];
@@ -85,8 +86,8 @@ export type FeedColumnProps = {
   onLoadOlder: () => void;
   onRemoveColumn: () => void;
   onApplyFilter: (f: RerDutyFeedFilterState) => void;
-  onSelectAllGroups: () => void;
-  onToggleGroup: (key: string) => void;
+  onGroupsChange: (v: string[]) => void;
+  onDeniedGroupsChange: (v: string[]) => void;
   onSendersChange: (v: string[]) => void;
   onDeniedSendersChange: (v: string[]) => void;
   onFreqsChange: (v: string[]) => void;
@@ -161,8 +162,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     onRemoveColumn,
     maxWidth,
     onApplyFilter,
-    onSelectAllGroups,
-    onToggleGroup,
+    onGroupsChange,
+    onDeniedGroupsChange,
     onSendersChange,
     onDeniedSendersChange,
     onFreqsChange,
@@ -273,6 +274,12 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const applySenders = (v: string[]) => {
     onApplyFilter({ ...feed.filter, sendersSelected: v.length ? v : null });
   };
+  const applyGroups = (v: string[]) => {
+    onApplyFilter({ ...feed.filter, groupsSelected: v.length ? v : null });
+  };
+  const applyDeniedGroups = (v: string[]) => {
+    onApplyFilter({ ...feed.filter, groupsDenied: v.length ? v : null });
+  };
   const applyDeniedSenders = (v: string[]) => {
     onApplyFilter({ ...feed.filter, deniedSenders: v.length ? v : null });
   };
@@ -349,8 +356,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           selectedSavedId={selectedSavedId}
           saveFilterName={saveFilterName}
           reloadFreqsLoading={reloadFreqsLoading}
-          onSelectAllGroups={onSelectAllGroups}
-          onToggleGroup={onToggleGroup}
+          onGroupsChange={applyGroups}
+          onDeniedGroupsChange={applyDeniedGroups}
           onSendersChange={applySenders}
           onDeniedSendersChange={applyDeniedSenders}
           onFreqsChange={applyFreqs}
