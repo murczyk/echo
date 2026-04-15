@@ -221,6 +221,12 @@ fn spawn_goi_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     });
 }
 
+fn spawn_goi_folder_sync_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
+    spawn_named_worker("goi_folder_sync_worker", bg_set, async move {
+        crate::organism::goi::worker::goi_folder_sync_worker_nofail(env).await;
+    });
+}
+
 fn spawn_group_stats_worker_after_startup_recalc(
     bg_set: &mut JoinSet<()>,
     dbx: DatabaseConnection,
@@ -413,8 +419,8 @@ fn spawn_background_workers(
         });
     }
 
-    // GOI folder sync must run in debug/test too, not only in live/vault mode.
-    spawn_goi_worker(bg_set, env);
+    // In debug/test, run only GOI folder sync to avoid API/report mutations.
+    spawn_goi_folder_sync_worker(bg_set, env);
 }
 
 fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {

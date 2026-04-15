@@ -41,9 +41,19 @@ struct GoiWorkerState {
 }
 
 pub async fn goi_association_worker_nofail(env: Arc<Env>) {
+    goi_worker_nofail(env, true).await;
+}
+
+pub async fn goi_folder_sync_worker_nofail(env: Arc<Env>) {
+    goi_worker_nofail(env, false).await;
+}
+
+async fn goi_worker_nofail(env: Arc<Env>, with_api_jobs: bool) {
     let mut state = GoiWorkerState::default();
     loop {
-        if let Err(err) = goi_association_worker_step(&env, &mut state).await {
+        if let Err(err) =
+            goi_association_worker_step(&env, &mut state, with_api_jobs).await
+        {
             log::warn!("GOI association worker step failed: {err:#}");
             tokio::time::sleep(goi_worker_sleep_duration()).await;
         }
@@ -53,6 +63,7 @@ pub async fn goi_association_worker_nofail(env: Arc<Env>) {
 async fn goi_association_worker_step(
     env: &Env,
     state: &mut GoiWorkerState,
+    with_api_jobs: bool,
 ) -> Result<(), AppError> {
     let integrations = load_goi_worker_integrations(&env.dbx).await.c(h!())?;
     if integrations.is_empty() {
@@ -61,7 +72,7 @@ async fn goi_association_worker_step(
     }
 
     for integration in integrations {
-        if goi_integration_has_api_config(&integration) {
+        if with_api_jobs && goi_integration_has_api_config(&integration) {
             if let Err(err) = sync_goi_associations(env, &integration).await {
                 let label = integration.server_label.clone();
                 log::warn!(
