@@ -818,6 +818,11 @@ fn normalize_palitra_folder_lookup(folder: &str) -> anyhow::Result<String> {
             "Palitra folder may not contain empty path segments: {folder}"
         );
     }
+    if parts.iter().any(|part| part == &"." || part == &"..") {
+        anyhow::bail!(
+            "Palitra folder may not contain '.' or '..' path segments: {folder}"
+        );
+    }
     Ok(parts.join("/"))
 }
 
@@ -2867,6 +2872,8 @@ mod tests {
         assert!(normalize_palitra_folder("foo/bar").is_err());
         assert!(normalize_palitra_folder("foo//bar").is_err());
         assert!(normalize_palitra_folder(" / ").is_err());
+        assert!(normalize_palitra_folder("..").is_err());
+        assert!(normalize_palitra_folder(".").is_err());
     }
 
     #[test]
@@ -2877,6 +2884,8 @@ mod tests {
         );
         assert!(normalize_palitra_folder_lookup("foo//bar").is_err());
         assert!(normalize_palitra_folder_lookup(" / ").is_err());
+        assert!(normalize_palitra_folder_lookup("North/../Sub").is_err());
+        assert!(normalize_palitra_folder_lookup("./Sub").is_err());
         assert_eq!(
             normalize_palitra_folder_from_db(Some("North/Sub".to_string())),
             Some("North/Sub".to_string())

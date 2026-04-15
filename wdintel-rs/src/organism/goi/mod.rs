@@ -1486,6 +1486,6 @@ mod tests {
     fn goi_build_relative_path_checked_rejects_parent_segments() {
         let err =
             goi_build_relative_path_checked(Some(".."), "p.kmz").unwrap_err();
-        assert!(err.to_string().contains("may not contain '.' or '..'"));
+        assert!(format!("{err:#}").contains("may not contain '.' or '..'"));
     }
 }
