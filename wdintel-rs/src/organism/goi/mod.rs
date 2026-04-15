@@ -392,7 +392,7 @@ pub async fn goi_list_relative_files(
         goi_shell_quote_single(req.path.trim())
     );
     tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_exec_command_sync_capped(
+        goi_ssh::goi_exec_command_sync_capped_strict(
             req,
             command,
             ORGANISM_GOI_SSH_TIMEOUT_MS,

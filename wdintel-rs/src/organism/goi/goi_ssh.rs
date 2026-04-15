@@ -25,16 +25,17 @@ pub fn goi_exec_command_sync(
         command,
         timeout_ms,
         Some(ORGANISM_GOI_SSH_LIST_LIMIT),
+        false,
     )
 }
 
-pub fn goi_exec_command_sync_capped(
+pub fn goi_exec_command_sync_capped_strict(
     req: CheckOrganismGoiConnectionReq,
     command: String,
     timeout_ms: u32,
     max_lines: usize,
 ) -> anyhow::Result<Vec<String>> {
-    goi_exec_command_sync_impl(req, command, timeout_ms, Some(max_lines))
+    goi_exec_command_sync_impl(req, command, timeout_ms, Some(max_lines), true)
 }
 
 fn goi_exec_command_sync_impl(
@@ -42,6 +43,7 @@ fn goi_exec_command_sync_impl(
     command: String,
     timeout_ms: u32,
     max_lines: Option<usize>,
+    fail_on_limit: bool,
 ) -> anyhow::Result<Vec<String>> {
     let addr = format!("{}:{}", req.ssh_host.trim(), req.ssh_port);
     let socket_addrs = goi_resolve_socket_addrs_ipv4_first(&addr)?;
@@ -56,6 +58,7 @@ fn goi_exec_command_sync_impl(
             req.ssh_user.trim(),
             &command,
             max_lines,
+            fail_on_limit,
         ) {
             Ok(output_lines) => return Ok(output_lines),
             Err(err) => errors.push(format!("{socket_addr}: {err:#}")),
@@ -119,6 +122,7 @@ pub fn goi_delete_file_sync(
             req.ssh_user.trim(),
             &command,
             Some(ORGANISM_GOI_SSH_LIST_LIMIT),
+            false,
         ) {
             Ok(_) => return Ok(()),
             Err(err) => errors.push(format!("{socket_addr}: {err:#}")),
@@ -185,16 +189,18 @@ fn goi_try_exec_command_for_socket(
     ssh_user: &str,
     command: &str,
     max_lines: Option<usize>,
+    fail_on_limit: bool,
 ) -> anyhow::Result<Vec<String>> {
     let session =
         goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
-    goi_exec_command_for_session(session, command, max_lines)
+    goi_exec_command_for_session(session, command, max_lines, fail_on_limit)
 }
 
 fn goi_exec_command_for_session(
     session: ssh2::Session,
     command: &str,
     max_lines: Option<usize>,
+    fail_on_limit: bool,
 ) -> anyhow::Result<Vec<String>> {
     let mut channel = session.channel_session().c(h!())?;
     channel.exec(command).c(h!())?;
@@ -227,10 +233,13 @@ fn goi_exec_command_for_session(
     {
         if let Some(limit) = max_lines {
             if lines.len() >= limit {
-                return Err(anyhow::anyhow!(
-                    "remote command output exceeds line limit {limit}"
-                )
-                .context(h!()));
+                if fail_on_limit {
+                    return Err(anyhow::anyhow!(
+                        "remote command output exceeds line limit {limit}"
+                    )
+                    .context(h!()));
+                }
+                break;
             }
         }
         lines.push(line.to_string());
