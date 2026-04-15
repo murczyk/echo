@@ -410,7 +410,7 @@ function NetworkEtalonSection({
           display: 'flex',
           flexDirection: 'row',
           flexWrap: 'wrap',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           columnGap: 0.75,
           rowGap: 0.5,
         }}
