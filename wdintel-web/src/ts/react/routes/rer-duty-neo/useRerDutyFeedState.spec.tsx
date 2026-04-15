@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
+import { minimalInboxMessage } from './inbox-message-mocks';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 
 const hoisted = vi.hoisted(() => ({
@@ -25,45 +26,6 @@ vi.mock('../../services/api/networks', () => ({
 vi.mock('../../services/api/units', () => ({
   getUnitsList: vi.fn(() => Promise.resolve([])),
 }));
-
-function minimalMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
-  return {
-    messageUid: null,
-    text: '',
-    media: [],
-    images: [],
-    imageRecognized: [],
-    date: null,
-    time: null,
-    freq: null,
-    coords: null,
-    callsigns: [],
-    callsignsAlg2: [],
-    checked: false,
-    important: false,
-    bookmarked: false,
-    timestamp: 1,
-    groupMasterKey: null,
-    sender: null,
-    extendedForm: null,
-    post: null,
-    postId: null,
-    unit: null,
-    callsignTokens: null,
-    signalTokens: null,
-    pointTokens: null,
-    noHeadersBody: null,
-    keywordTokens: null,
-    textMarked: null,
-    datasourceId: null,
-    location: null,
-    tags: null,
-    networkIds: null,
-    inboxTags: null,
-    metadata: [],
-    ...overrides,
-  };
-}
 
 function inboxRsp(items: Array<[number, InboxMessage]>): InboxMessagesRsp {
   return {
@@ -110,7 +72,7 @@ describe('useRerDutyFeedState — loading', () => {
     hoisted.fetchInboxCount.mockReset();
     window.history.replaceState({}, '', '/');
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
-    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([[1, minimalMessage({ timestamp: 100 })]]));
+    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -189,7 +151,7 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[2, minimalMessage({ timestamp: 200, text: 'newer' })]]),
+      inboxRsp([[2, minimalInboxMessage({ timestamp: 200, text: 'newer' })]]),
     );
 
     await act(async () => {
@@ -219,7 +181,7 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
 
-    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[3, minimalMessage({ timestamp: 300 })]]));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]));
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
     await act(async () => {
@@ -317,7 +279,7 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
@@ -347,7 +309,7 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
@@ -377,7 +339,7 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
@@ -407,7 +369,7 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
