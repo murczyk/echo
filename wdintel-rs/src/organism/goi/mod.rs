@@ -438,13 +438,14 @@ pub async fn goi_move_file_to_folder_with_entries(
         anyhow::bail!("GOI file move failed: file name is empty");
     }
     let current_rel_path = goi_find_source_relative_path(
-        entries.clone(),
+        entries.as_slice(),
         &file_name,
         source_folder_hint.as_deref(),
     )
     .c(h!())?;
     let target_rel_path =
-        goi_build_relative_path(target_folder.as_deref(), &file_name);
+        goi_build_relative_path_checked(target_folder.as_deref(), &file_name)
+            .c(h!())?;
     if current_rel_path == target_rel_path {
         return Ok(());
     }
@@ -488,14 +489,14 @@ fn goi_replace_cached_relative_path(
 }
 
 fn goi_find_source_relative_path(
-    entries: Vec<String>,
+    entries: &[String],
     file_name: &str,
     source_folder_hint: Option<&str>,
 ) -> anyhow::Result<String> {
     let paths = entries
-        .into_iter()
+        .iter()
         .filter_map(|entry| {
-            goi_parse_relative_file_entry(&entry).and_then(
+            goi_parse_relative_file_entry(entry).and_then(
                 |(entry_folder, entry_file_name)| {
                     (entry_file_name == file_name).then_some(
                         goi_build_relative_path(
@@ -516,7 +517,8 @@ fn goi_find_source_relative_path(
             Some(source_folder_hint.as_str())
         };
         let hinted_source_rel_path =
-            goi_build_relative_path(source_folder_hint, file_name);
+            goi_build_relative_path_checked(source_folder_hint, file_name)
+                .c(h!())?;
         if paths.contains(&hinted_source_rel_path) {
             return Ok(hinted_source_rel_path);
         }
@@ -635,6 +637,33 @@ pub(super) fn goi_build_relative_path(
     } else {
         file_name.to_string()
     }
+}
+
+fn goi_build_relative_path_checked(
+    folder: Option<&str>,
+    file_name: &str,
+) -> anyhow::Result<String> {
+    if let Some(folder) =
+        folder.map(str::trim).filter(|folder| !folder.is_empty())
+    {
+        goi_validate_relative_folder(folder).c(h!())?;
+    }
+    Ok(goi_build_relative_path(folder, file_name))
+}
+
+fn goi_validate_relative_folder(folder: &str) -> anyhow::Result<()> {
+    for segment in folder.split('/') {
+        let segment = segment.trim();
+        if segment.is_empty() {
+            anyhow::bail!("GOI file move failed: folder has empty segments");
+        }
+        if segment == "." || segment == ".." {
+            anyhow::bail!(
+                "GOI file move failed: folder may not contain '.' or '..' segments"
+            );
+        }
+    }
+    Ok(())
 }
 
 fn goi_relative_parent_dir(path: &str) -> String {
@@ -1377,8 +1406,9 @@ mod tests {
 
     #[test]
     fn goi_find_source_relative_path_returns_single_match() {
+        let entries = vec!["./folder_a/palitra.kmz".to_string()];
         let path = goi_find_source_relative_path(
-            vec!["./folder_a/palitra.kmz".to_string()],
+            entries.as_slice(),
             "palitra.kmz",
             None,
         )
@@ -1388,11 +1418,12 @@ mod tests {
 
     #[test]
     fn goi_find_source_relative_path_uses_source_folder_hint() {
+        let entries = vec![
+            "./folder_a/palitra.kmz".to_string(),
+            "./folder_b/palitra.kmz".to_string(),
+        ];
         let path = goi_find_source_relative_path(
-            vec![
-                "./folder_a/palitra.kmz".to_string(),
-                "./folder_b/palitra.kmz".to_string(),
-            ],
+            entries.as_slice(),
             "palitra.kmz",
             Some("folder_b"),
         )
@@ -1402,11 +1433,12 @@ mod tests {
 
     #[test]
     fn goi_find_source_relative_path_uses_root_source_folder_hint() {
+        let entries = vec![
+            "./palitra.kmz".to_string(),
+            "./folder_a/palitra.kmz".to_string(),
+        ];
         let path = goi_find_source_relative_path(
-            vec![
-                "./palitra.kmz".to_string(),
-                "./folder_a/palitra.kmz".to_string(),
-            ],
+            entries.as_slice(),
             "palitra.kmz",
             Some(""),
         )
@@ -1416,11 +1448,12 @@ mod tests {
 
     #[test]
     fn goi_find_source_relative_path_fails_for_duplicates_without_hint() {
+        let entries = vec![
+            "./folder_a/palitra.kmz".to_string(),
+            "./folder_b/palitra.kmz".to_string(),
+        ];
         let err = goi_find_source_relative_path(
-            vec![
-                "./folder_a/palitra.kmz".to_string(),
-                "./folder_b/palitra.kmz".to_string(),
-            ],
+            entries.as_slice(),
             "palitra.kmz",
             None,
         )
@@ -1447,5 +1480,12 @@ mod tests {
             "North/Sub".to_string()
         );
         assert_eq!(goi_relative_parent_dir("palitra.kmz"), ".".to_string());
+    }
+
+    #[test]
+    fn goi_build_relative_path_checked_rejects_parent_segments() {
+        let err =
+            goi_build_relative_path_checked(Some(".."), "p.kmz").unwrap_err();
+        assert!(err.to_string().contains("may not contain '.' or '..'"));
     }
 }
