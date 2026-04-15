@@ -31,8 +31,8 @@ vi.mock('@mui/material', () => ({
   alpha: () => 'alpha-color',
 }));
 
-vi.mock('./mui-customized/icon-button', () => ({
-  IconButton: ({
+vi.mock('./PowerIconButton', () => ({
+  PowerIconButton: ({
     children,
     onClick,
     disabled,
@@ -51,8 +51,8 @@ vi.mock('./mui-customized/icon-button', () => ({
   ),
 }));
 
-vi.mock('./mui-customized/menu', () => ({
-  Menu: ({
+vi.mock('./PowerMenu', () => ({
+  PowerMenu: ({
     children,
     open,
   }: {

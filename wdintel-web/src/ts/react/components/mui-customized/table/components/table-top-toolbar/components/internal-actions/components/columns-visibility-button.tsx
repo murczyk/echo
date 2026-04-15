@@ -4,9 +4,9 @@ import clsx from 'clsx';
 import { useCallback, useState } from 'react';
 import type { ChangeEvent, MouseEvent } from 'react';
 
-import { Button } from '../../../../../../button';
-import { IconButton } from '../../../../../../icon-button';
-import { Menu } from '../../../../../../menu';
+import { PowerButton } from '../../../../../../../PowerButton';
+import { PowerIconButton } from '../../../../../../../PowerIconButton';
+import { PowerMenu } from '../../../../../../../PowerMenu';
 import { useTableStateContext } from '../../../../../table-state-provider';
 
 const internalColumns = ['mrt-row-actions', 'mrt-row-drag', 'mrt-row-numbers', 'mrt-row-select', 'mrt-row-expand'];
@@ -75,7 +75,7 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
 
   return (
     <>
-      <Menu
+      <PowerMenu
         onClose={onClose}
         anchorEl={anchorEl}
         open={!!anchorEl}
@@ -92,14 +92,14 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
           <div className="mb-3">
             <div className="mb-1 flex min-h-10 items-center justify-between gap-2">
               <p className="mb-0 font-semibold leading-6">Налаштування</p>
-              <Button
+              <PowerButton
                 onClick={onResetLayoutSettings}
                 size="small"
                 disabled={!hasLayoutChanges}
                 style={{ alignSelf: 'center', minHeight: 'unset', paddingTop: 0, paddingBottom: 0 }}
               >
                 Скинути
-              </Button>
+              </PowerButton>
             </div>
             <div>
               <FormControlLabel
@@ -119,14 +119,14 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
           <Divider className="!mb-3" />
           <div className="mb-1 flex min-h-10 items-center justify-between gap-2">
             <p className="mb-0 font-semibold leading-6">Показати</p>
-            <Button
+            <PowerButton
               onClick={onClickReset}
               size="small"
               disabled={!tableStateContext.columnVisibilityTouched}
               style={{ alignSelf: 'center', minHeight: 'unset', paddingTop: 0, paddingBottom: 0 }}
             >
               Скинути
-            </Button>
+            </PowerButton>
           </div>
           {sortedColumns.map((column) => {
             const columnIdentifier = getColumnIdentifier(column);
@@ -179,10 +179,10 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
             );
           })}
         </div>
-      </Menu>
+      </PowerMenu>
       <Tooltip title={props.showTitle ? '' : 'Показати/приховати стовпці'}>
         <span className="relative">
-          <IconButton
+          <PowerIconButton
             disabled={props.disabled}
             size="small"
             onClick={onOpen}
@@ -208,7 +208,7 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
               />
             )}
             {props.showTitle && <span className="pl-1 text-sm pointer-events-none">Показати/приховати стовпці</span>}
-          </IconButton>
+          </PowerIconButton>
         </span>
       </Tooltip>
     </>

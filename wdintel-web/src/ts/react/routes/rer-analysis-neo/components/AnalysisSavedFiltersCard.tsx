@@ -1,6 +1,7 @@
-import { Alert, Autocomplete, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Autocomplete, Button, Paper, Stack, TextField, Typography } from '@mui/material';
 
 import type { SavedFilter } from '../../../../../Bindings';
+import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
   isDirty: boolean;
@@ -71,13 +72,13 @@ export function AnalysisSavedFiltersCard({
           onChange={(event) => onSavedFilterNameChange(event.target.value)}
         />
         {loadedSavedFilter ? (
-          <Alert severity={isDirty ? 'warning' : 'info'} sx={{ py: 0.5 }}>
+          <PowerAlert severity={isDirty ? 'warning' : 'info'} sx={{ py: 0.5 }}>
             {isRenaming
               ? `Фільтр "${loadedSavedFilter.name}": змінено назву.`
               : isDirty
                 ? `Фільтр "${loadedSavedFilter.name}": є незбережені зміни.`
                 : `Вибрано фільтр "${loadedSavedFilter.name}".`}
-          </Alert>
+          </PowerAlert>
         ) : null}
         <Stack spacing={1.25} sx={{ width: '100%' }}>
           <Button

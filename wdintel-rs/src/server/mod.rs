@@ -412,6 +412,9 @@ fn spawn_background_workers(
             echo_install_utils::tmpdir::cleanup_tmp_worker_nofail().await;
         });
     }
+
+    // GOI folder sync must run in debug/test too, not only in live/vault mode.
+    spawn_goi_worker(bg_set, env);
 }
 
 fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {

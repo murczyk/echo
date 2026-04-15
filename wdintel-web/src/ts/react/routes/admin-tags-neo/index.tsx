@@ -8,7 +8,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -269,9 +269,9 @@ function AdminTagsNeoPageBody() {
         internalActionsDisabled={status !== 'success'}
         actions={
           <div className="flex gap-3">
-            <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
+            <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
               Створити тег
-            </Button>
+            </PowerButton>
           </div>
         }
       />

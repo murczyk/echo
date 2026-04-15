@@ -1,10 +1,10 @@
-import { Alert, Autocomplete, Box, Card, CircularProgress, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Autocomplete, Box, Card, CircularProgress, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, SyntheticEvent } from 'react';
 
 import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { isUnauthorizedError } from '../../services/api/client';
 import { fetchServerInfo } from '../../services/api/server-info';
 import { fetchCurrentUser, saveUserSettings as saveAccountSettings } from '../../services/api/user';
@@ -12,6 +12,7 @@ import { fetchUserSettings, saveUserSettings as saveUserDutySettings } from '../
 import { listSigintZones } from '../../services/api/zones';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsDutySection } from './SettingsDutySection';
+import { PowerAlert } from '../../components/PowerAlert';
 
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
@@ -261,12 +262,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
               <Box component="form" onSubmit={handleSave} noValidate sx={{ p: 3 }}>
                 <Stack spacing={3} sx={{ width: '100%' }}>
-                  {loadError ? <Alert severity="error">{loadError}</Alert> : null}
-                  {saveError ? <Alert severity="error">{saveError}</Alert> : null}
+                  {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+                  {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
                   {saveSuccess ? (
-                    <Alert severity="success" role="status">
+                    <PowerAlert severity="success" role="status">
                       {saveSuccess}
-                    </Alert>
+                    </PowerAlert>
                   ) : null}
 
                   <Box>
@@ -329,7 +330,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     <Typography variant="caption" color="text.secondary">
                       Версія: {versionText}
                     </Typography>
-                    <Button
+                    <PowerButton
                       variant="contained"
                       type="submit"
                       disabled={saveInProgress || !isDirty}
@@ -337,7 +338,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       sx={{ fontWeight: 500 }}
                     >
                       зберегти
-                    </Button>
+                    </PowerButton>
                   </Box>
                 </Stack>
               </Box>

@@ -6,6 +6,7 @@ import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { CALLSIGN_FORM_HINT, RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR } from '../helpers';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignEditForm } from '../types';
+import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
   open: boolean;
@@ -76,7 +77,7 @@ export function EditCallsignDrawer({ open, form, units, sources, submitting, err
       </Box>
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
-          {error ? <Alert severity='error'>{error}</Alert> : null}
+          {error ? <PowerAlert severity='error'>{error}</PowerAlert> : null}
           {form ? (
             <CallsignFormFields
               value={form}

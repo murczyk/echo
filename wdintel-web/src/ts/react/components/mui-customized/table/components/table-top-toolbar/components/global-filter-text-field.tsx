@@ -3,7 +3,7 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import { InputAdornment, TextField } from '@mui/material';
 import clsx from 'clsx';
 
-import { IconButton } from '../../../../icon-button';
+import { PowerIconButton } from '../../../../../PowerIconButton';
 
 type GlobalFilterTextFieldProps = {
   className?: string;
@@ -65,14 +65,14 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
           ),
           endAdornment: (
             <InputAdornment position="end">
-              <IconButton
+              <PowerIconButton
                 disabled={props.disabled || !props.globalFilter}
                 size="small"
                 aria-label="clear-filter"
                 onClick={() => props.setGlobalFilter('')}
               >
                 {props.globalFilter ? <ClearIcon className="!w-[18px] !h-[18px]" /> : <div className="!w-[18px] !h-[18px]" />}
-              </IconButton>
+              </PowerIconButton>
             </InputAdornment>
           ),
         },

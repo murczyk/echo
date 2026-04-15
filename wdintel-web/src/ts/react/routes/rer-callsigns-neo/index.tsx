@@ -1,11 +1,4 @@
-import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Stack,
-  useMediaQuery,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Stack, useMediaQuery } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -26,6 +19,7 @@ import { EditCallsignDrawer } from './components/EditCallsignDrawer';
 import { UnitStatsSidebar } from './components/UnitStatsSidebar';
 import { DESKTOP_LAYOUT_MIN_WIDTH_PX, getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
+import { PowerAlert } from '../../components/PowerAlert';
 
 function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerCallsignsNeoPage({ authUserRoles });
@@ -156,7 +150,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
           ) : undefined}
         />
 
-        {page.status ? <Alert severity={page.status.kind}>{page.status.text}</Alert> : null}
+        {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
 
         <Stack
           direction={isDesktopLayout ? 'row' : 'column'}

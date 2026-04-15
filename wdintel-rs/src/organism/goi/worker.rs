@@ -2,14 +2,18 @@ use crate::config::{
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
-    ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC,
+    ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC, ORGANISM_GOI_SSH_PORT_DEFAULT,
 };
-use crate::entities::{goi_association, goi_integration, goi_knowledge};
+use crate::entities::{
+    goi_association, goi_integration, goi_knowledge, palitra,
+    palitra_access_organism, palitra_geometry,
+};
 use crate::error::AppError;
 use crate::organism::goi::shared::{
     goi_integration_api_host, goi_integration_api_port,
     goi_integration_has_api_config,
 };
+use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
 use goi_echo_worker::api::{
@@ -47,34 +51,45 @@ async fn goi_association_worker_step(
     env: &Env,
     state: &mut GoiWorkerState,
 ) -> Result<(), AppError> {
-    let integrations = load_goi_api_integrations(&env.dbx).await.c(h!())?;
+    let integrations = load_goi_worker_integrations(&env.dbx).await.c(h!())?;
     if integrations.is_empty() {
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
     }
 
     for integration in integrations {
-        if let Err(err) = sync_goi_associations(env, &integration).await {
-            let label = integration.server_label.clone();
-            log::warn!("Skipping GOI association sync for {label}: {err:#}");
+        if goi_integration_has_api_config(&integration) {
+            if let Err(err) = sync_goi_associations(env, &integration).await {
+                let label = integration.server_label.clone();
+                log::warn!(
+                    "Skipping GOI association sync for {label}: {err:#}"
+                );
+            }
+            if let Err(err) =
+                sync_goi_knowledge_if_due(env, &integration, state).await
+            {
+                let label = integration.server_label.clone();
+                log::warn!("Skipping GOI knowledge sync for {label}: {err:#}");
+            }
+            if let Err(err) =
+                push_goi_report_if_due(env, &integration, state).await
+            {
+                let label = integration.server_label.clone();
+                log::warn!("Skipping GOI report push for {label}: {err:#}");
+            }
         }
         if let Err(err) =
-            sync_goi_knowledge_if_due(env, &integration, state).await
+            sync_goi_palitra_folders_from_fs(env, &integration).await
         {
             let label = integration.server_label.clone();
-            log::warn!("Skipping GOI knowledge sync for {label}: {err:#}");
-        }
-        if let Err(err) = push_goi_report_if_due(env, &integration, state).await
-        {
-            let label = integration.server_label.clone();
-            log::warn!("Skipping GOI report push for {label}: {err:#}");
+            log::warn!("Skipping GOI palitra folder sync for {label}: {err:#}");
         }
         tokio::time::sleep(goi_worker_sleep_duration()).await;
     }
     Ok(())
 }
 
-async fn load_goi_api_integrations(
+async fn load_goi_worker_integrations(
     db: &DatabaseConnection,
 ) -> Result<Vec<goi_integration::Model>, AppError> {
     let has_api_host = Condition::all()
@@ -83,23 +98,11 @@ async fn load_goi_api_integrations(
     let has_ssh_host = Condition::all()
         .add(goi_integration::Column::SshHost.is_not_null())
         .add(goi_integration::Column::SshHost.ne(""));
-    let has_api_login = Condition::all()
-        .add(goi_integration::Column::ApiLogin.is_not_null())
-        .add(goi_integration::Column::ApiLogin.ne(""));
-    let has_api_password = Condition::all()
-        .add(goi_integration::Column::ApiPassword.is_not_null())
-        .add(goi_integration::Column::ApiPassword.ne(""));
-    let integrations = goi_integration::Entity::find()
+    Ok(goi_integration::Entity::find()
         .filter(Condition::any().add(has_api_host).add(has_ssh_host))
-        .filter(has_api_login)
-        .filter(has_api_password)
         .all(db)
         .await
-        .c(h!())?;
-    Ok(integrations
-        .into_iter()
-        .filter(goi_integration_has_api_config)
-        .collect())
+        .c(h!())?)
 }
 
 async fn sync_goi_associations(
@@ -571,4 +574,133 @@ fn goi_knowledge_sync_cutoff() -> chrono::DateTime<chrono::FixedOffset> {
     (chrono::Utc::now()
         - chrono::Duration::days(ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS))
     .fixed_offset()
+}
+
+async fn sync_goi_palitra_folders_from_fs(
+    env: &Env,
+    integration: &goi_integration::Model,
+) -> Result<(), AppError> {
+    let Some(ssh_req) = goi_connection_req_from_integration(integration)?
+    else {
+        return Ok(());
+    };
+    let entries = super::goi_list_relative_files(ssh_req).await.c(h!())?;
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let folder_by_file = goi_file_folder_map(entries);
+    if folder_by_file.is_empty() {
+        return Ok(());
+    }
+
+    let palitra_ids = palitra_access_organism::Entity::find()
+        .filter(
+            palitra_access_organism::Column::OrganismId
+                .eq(integration.owner_organism_id),
+        )
+        .select_only()
+        .column(palitra_access_organism::Column::PalitraId)
+        .into_tuple::<i64>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    if palitra_ids.is_empty() {
+        return Ok(());
+    }
+
+    let palitras = palitra::Entity::find()
+        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    if palitras.is_empty() {
+        return Ok(());
+    }
+
+    for palitra in palitras {
+        let geometry = palitra_geometry::Entity::find()
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .order_by_desc(palitra_geometry::Column::UpdatedAt)
+            .order_by_desc(palitra_geometry::Column::Id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?;
+        let Some(source_file_name) =
+            geometry.and_then(|geometry| geometry.source_file_name)
+        else {
+            continue;
+        };
+        let file_name = crate::palitra::kmz_file_name_as_kmz(&source_file_name);
+        let Some(folder_from_fs) = folder_by_file.get(&file_name) else {
+            continue;
+        };
+        let folder_from_fs = folder_from_fs.clone();
+        if normalize_optional_trimmed(palitra.folder.clone()) == folder_from_fs
+        {
+            continue;
+        }
+        let mut palitra = palitra.into_active_model();
+        palitra.folder = Set(folder_from_fs);
+        palitra.update(&env.dbx).await.c(h!())?;
+    }
+
+    Ok(())
+}
+
+fn goi_file_folder_map(
+    entries: Vec<String>,
+) -> HashMap<String, Option<String>> {
+    let mut seen = HashMap::<String, Option<Option<String>>>::new();
+    for entry in entries {
+        let Some((folder, file_name)) =
+            super::goi_parse_relative_file_entry(&entry)
+        else {
+            continue;
+        };
+        let folder = normalize_optional_trimmed(folder);
+        let entry = seen.entry(file_name).or_insert(Some(folder.clone()));
+        if *entry != Some(folder) {
+            *entry = None;
+        }
+    }
+    seen.into_iter()
+        .filter_map(|(file_name, folder)| {
+            folder.map(|folder| (file_name, folder))
+        })
+        .collect()
+}
+
+fn goi_connection_req_from_integration(
+    integration: &goi_integration::Model,
+) -> Result<Option<CheckOrganismGoiConnectionReq>, AppError> {
+    let Some(ssh_host) =
+        normalize_optional_trimmed(integration.ssh_host.clone())
+    else {
+        return Ok(None);
+    };
+    let Some(ssh_user) =
+        normalize_optional_trimmed(integration.ssh_user.clone())
+    else {
+        return Ok(None);
+    };
+    let req = CheckOrganismGoiConnectionReq {
+        ssh_host,
+        ssh_user,
+        ssh_port: if integration.ssh_port > 0 {
+            integration.ssh_port
+        } else {
+            ORGANISM_GOI_SSH_PORT_DEFAULT
+        },
+        path: normalize_optional_trimmed(Some(integration.path.clone()))
+            .ok_or_else(|| AppError::BL {
+                msg: format!(
+                    "GOI path is missing for integration {}",
+                    integration.id
+                ),
+            })?,
+    };
+    super::goi_validate_connection_req(&req).c(h!())?;
+    Ok(Some(req))
 }

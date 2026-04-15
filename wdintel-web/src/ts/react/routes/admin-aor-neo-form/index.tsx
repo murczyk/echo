@@ -26,7 +26,7 @@ import { FormPageLayout } from '../../components/FormPageLayout';
 import { PageErrorState } from '../../components/PageErrorState';
 import { Info } from '../../components/info';
 import { PageLoadingState } from '../../components/PageLoadingState';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { createAor, deleteAor, listAors, updateAor } from '../../services/api/aor';
 import { navigateWithinSpa } from '../../utils/browser';
 
@@ -257,7 +257,7 @@ function FormActions(props: {
   return (
     <div className="flex flex-wrap justify-between gap-3">
       {!props.isNew ? (
-        <Button
+        <PowerButton
           variant="outlined"
           color="error"
           startIcon={<DeleteOutlineIcon />}
@@ -265,17 +265,17 @@ function FormActions(props: {
           disabled={props.isMutating}
         >
           Видалити смугу
-        </Button>
+        </PowerButton>
       ) : (
         <div />
       )}
       <div className="flex gap-3">
-        <Button onClick={props.onCancel} disabled={props.isMutating}>
+        <PowerButton onClick={props.onCancel} disabled={props.isMutating}>
           Скасувати
-        </Button>
-        <Button variant="contained" onClick={props.onSubmit} disabled={props.isMutating}>
+        </PowerButton>
+        <PowerButton variant="contained" onClick={props.onSubmit} disabled={props.isMutating}>
           {props.isNew ? 'Створити' : 'Зберегти'}
-        </Button>
+        </PowerButton>
       </div>
     </div>
   );
@@ -289,12 +289,12 @@ function DeleteDialog(props: { open: boolean; onClose: () => void; onConfirm: ()
         <Typography className="text-sm text-muted-foreground">Ви впевнені, що хочете видалити цю смугу?</Typography>
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={props.onClose}>
+        <PowerButton onClick={props.onClose}>
           Скасувати
-        </Button>
-        <Button variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>
+        </PowerButton>
+        <PowerButton variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>
           Видалити
-        </Button>
+        </PowerButton>
       </DialogActions>
     </Dialog>
   );

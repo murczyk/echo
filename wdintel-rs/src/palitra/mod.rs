@@ -24,6 +24,7 @@ use sea_orm::*;
 use std::collections::{BTreeMap, HashSet};
 use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
+use std::time::Duration;
 use tempfile::tempdir;
 use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
@@ -33,6 +34,9 @@ mod kmz;
 pub mod oneoff;
 pub mod types;
 pub mod worker;
+
+const GOI_FOLDER_SYNC_RETRY_ATTEMPTS: usize = 3;
+const GOI_FOLDER_SYNC_RETRY_DELAY_SEC: u64 = 2;
 
 #[derive(Clone)]
 struct UserScope {
@@ -785,6 +789,10 @@ pub async fn assign_palitra_folder(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
+    spawn_sync_move_palitra_files_to_connected_organisms_loose(
+        env.dbx.clone(),
+        palitra_ids.clone(),
+    );
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
 }
 
@@ -810,6 +818,10 @@ pub async fn rename_palitra_folder(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
+    spawn_sync_move_palitra_files_to_connected_organisms_loose(
+        env.dbx.clone(),
+        palitra_ids.clone(),
+    );
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
 }
 
@@ -1653,6 +1665,100 @@ async fn sync_delete_palitra_from_connected_organisms(
     Ok(())
 }
 
+async fn sync_move_palitra_files_to_connected_organisms_loose(
+    dbx: &DatabaseConnection,
+    palitra_ids: &[i64],
+) {
+    for attempt in 1..=GOI_FOLDER_SYNC_RETRY_ATTEMPTS {
+        match sync_move_palitra_files_to_connected_organisms(dbx, palitra_ids)
+            .await
+        {
+            Ok(()) => return,
+            Err(err) if attempt == GOI_FOLDER_SYNC_RETRY_ATTEMPTS => {
+                log::warn!(
+                    "Skipping GOI file move sync for palitra folders after {attempt} attempts: {err:#}"
+                );
+            }
+            Err(err) => {
+                log::warn!(
+                    "GOI file move sync attempt {attempt}/{} failed: {err:#}",
+                    GOI_FOLDER_SYNC_RETRY_ATTEMPTS
+                );
+                tokio::time::sleep(Duration::from_secs(
+                    GOI_FOLDER_SYNC_RETRY_DELAY_SEC,
+                ))
+                .await;
+            }
+        }
+    }
+}
+
+fn spawn_sync_move_palitra_files_to_connected_organisms_loose(
+    dbx: DatabaseConnection,
+    palitra_ids: Vec<i64>,
+) {
+    tokio::spawn(async move {
+        sync_move_palitra_files_to_connected_organisms_loose(
+            &dbx,
+            &palitra_ids,
+        )
+        .await;
+    });
+}
+
+async fn sync_move_palitra_files_to_connected_organisms(
+    dbx: &DatabaseConnection,
+    palitra_ids: &[i64],
+) -> anyhow::Result<()> {
+    for palitra_id in palitra_ids.iter().copied().unique() {
+        let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
+            .filter(palitra::Column::Deleted.eq(false))
+            .one(dbx)
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        let geometry = match read_latest_palitra_geometry_with_warning(
+            dbx, palitra.id,
+        )
+        .await
+        {
+            Ok(geometry) => geometry,
+            Err(err) => {
+                log::warn!(
+                    "Skipping GOI file move for palitra {}: missing geometry: {err:#}",
+                    palitra.id
+                );
+                continue;
+            }
+        };
+        let Some(source_file_name) = geometry.source_file_name else {
+            continue;
+        };
+        let access = read_palitra_access(dbx, palitra.id).await.c(h!())?;
+        let PalitraAccess::ByOrganisms { organism_ids } = &access else {
+            continue;
+        };
+        let target_folder =
+            bl::normalize_palitra_folder_from_db(palitra.folder.clone());
+        let file_name = kmz_file_name_as_kmz(&source_file_name);
+        let goi_targets =
+            collect_connected_goi_targets(dbx, organism_ids.as_slice())
+                .await
+                .c(h!())?;
+        for target in goi_targets {
+            crate::organism::goi::goi_move_file_to_folder_loose(
+                target,
+                file_name.clone(),
+                target_folder.clone(),
+            )
+            .await;
+        }
+    }
+    Ok(())
+}
+
 async fn collect_connected_goi_targets(
     dbx: &DatabaseConnection,
     organism_ids: &[i64],
@@ -1724,7 +1830,7 @@ async fn collect_connected_goi_targets(
     Ok(goi_targets)
 }
 
-fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
+pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     let safe_name = kmz::sanitize_upload_filename(source_file_name);
     let path = Path::new(&safe_name);
     let stem = path

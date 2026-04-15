@@ -1,21 +1,10 @@
-import {
-  Alert,
-  Box,
-  ButtonBase,
-  Card,
-  CardContent,
-  CircularProgress,
-  FormControlLabel,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Box, ButtonBase, Card, CardContent, CircularProgress, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
-import { Button } from '../../components/mui-customized/button';
+import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
 import { isUnauthorizedError } from '../../services/api/client';
 import {
   createSystemSettings,
@@ -152,12 +141,12 @@ export function AdminSystemSettingsNeoPage() {
                   Активні значення за замовчуванням
                 </Typography>
 
-                {loadError ? <Alert severity="error">{loadError}</Alert> : null}
-                {saveError ? <Alert severity="error">{saveError}</Alert> : null}
+                {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+                {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
                 {saveSuccess ? (
-                  <Alert severity="success" role="status">
+                  <PowerAlert severity="success" role="status">
                     {saveSuccess}
-                  </Alert>
+                  </PowerAlert>
                 ) : null}
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -241,14 +230,14 @@ export function AdminSystemSettingsNeoPage() {
                 />
 
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
-                  <Button
+                  <PowerButton
                     variant="contained"
                     type="submit"
                     disabled={saveInProgress || loadInProgress || !isDirty}
                     startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
                   >
                     зберегти
-                  </Button>
+                  </PowerButton>
                 </Box>
               </Stack>
             </Box>

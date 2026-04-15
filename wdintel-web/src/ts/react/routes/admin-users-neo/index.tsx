@@ -1,20 +1,5 @@
 import EditIcon from '@mui/icons-material/Edit';
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  Checkbox,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControlLabel,
-  MenuItem,
-  Stack,
-  TextField,
-  Tooltip,
-} from '@mui/material';
+import { Autocomplete, Box, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Tooltip } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -24,7 +9,7 @@ import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/Mr
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { PowerChip } from '../../components/PowerChip';
 import {
   CUSTOM_CELL_STYLES,
@@ -41,6 +26,7 @@ import { TableStateProvider, useTableStateContext } from '../../components/mui-c
 import { createLogin, createLoginDelta, listLogins, updateLogin } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
+import { PowerAlert } from '../../components/PowerAlert';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -550,12 +536,12 @@ function AddUserDialog(props: {
         />
 
         {lookups.zonesError ? (
-          <Alert severity="error">{`Не вдалося завантажити зони: ${lookups.zonesError}`}</Alert>
+          <PowerAlert severity="error">{`Не вдалося завантажити зони: ${lookups.zonesError}`}</PowerAlert>
         ) : null}
         {lookups.organismsError ? (
-          <Alert severity="error">{`Не вдалося завантажити організми: ${lookups.organismsError}`}</Alert>
+          <PowerAlert severity="error">{`Не вдалося завантажити організми: ${lookups.organismsError}`}</PowerAlert>
         ) : null}
-        {submitError ? <Alert severity="error">{submitError}</Alert> : null}
+        {submitError ? <PowerAlert severity="error">{submitError}</PowerAlert> : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           <TextField
@@ -656,12 +642,12 @@ function AddUserDialog(props: {
         </div>
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={handleClose} disabled={isSubmitting}>
+        <PowerButton onClick={handleClose} disabled={isSubmitting}>
           Скасувати
-        </Button>
-        <Button variant="contained" onClick={handleCreateUser} disabled={!canSubmit}>
+        </PowerButton>
+        <PowerButton variant="contained" onClick={handleCreateUser} disabled={!canSubmit}>
           Додати
-        </Button>
+        </PowerButton>
       </DialogActions>
     </Dialog>
   );
@@ -771,12 +757,12 @@ function EditUserDialog(props: {
       <DialogTitle>Редагувати користувача</DialogTitle>
       <DialogContent className="space-y-4">
         {lookups.zonesError ? (
-          <Alert severity="error">{`Не вдалося завантажити зони: ${lookups.zonesError}`}</Alert>
+          <PowerAlert severity="error">{`Не вдалося завантажити зони: ${lookups.zonesError}`}</PowerAlert>
         ) : null}
         {lookups.organismsError ? (
-          <Alert severity="error">{`Не вдалося завантажити організми: ${lookups.organismsError}`}</Alert>
+          <PowerAlert severity="error">{`Не вдалося завантажити організми: ${lookups.organismsError}`}</PowerAlert>
         ) : null}
-        {submitError ? <Alert severity="error">{submitError}</Alert> : null}
+        {submitError ? <PowerAlert severity="error">{submitError}</PowerAlert> : null}
 
         {form ? (
           <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
@@ -901,12 +887,12 @@ function EditUserDialog(props: {
         ) : null}
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={handleClose} disabled={isSubmitting}>
+        <PowerButton onClick={handleClose} disabled={isSubmitting}>
           Скасувати
-        </Button>
-        <Button variant="contained" onClick={handleSave} disabled={isSubmitting || !form}>
+        </PowerButton>
+        <PowerButton variant="contained" onClick={handleSave} disabled={isSubmitting || !form}>
           Зберегти
-        </Button>
+        </PowerButton>
       </DialogActions>
     </Dialog>
   );
@@ -1124,9 +1110,9 @@ function AdminUsersNeoPageBody() {
         internalActionsDisabled={status !== 'success'}
         actions={
           <div className="flex gap-3">
-            <Button variant="contained" onClick={() => setCreateOpen(true)}>
+            <PowerButton variant="contained" onClick={() => setCreateOpen(true)}>
               Додати користувача
-            </Button>
+            </PowerButton>
           </div>
         }
       />

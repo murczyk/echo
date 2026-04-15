@@ -13,7 +13,7 @@ import { FormPageLayout } from '../../components/FormPageLayout';
 import { Info } from '../../components/info';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { addTagKeywords, listTags, updateTagKeyword } from '../../services/api/tags';
 import { navigateWithinSpa } from '../../utils/browser';
 
@@ -181,12 +181,12 @@ function FormHeader(props: { title: string; subtitle?: string | null; onBack: ()
 function FormActions(props: { saving: boolean; isNew: boolean; onSave: () => void; onBack: () => void }) {
   return (
     <div className="flex gap-3">
-      <Button variant="outlined" onClick={props.onBack} disabled={props.saving}>
+      <PowerButton variant="outlined" onClick={props.onBack} disabled={props.saving}>
         Повернутись
-      </Button>
-      <Button variant="contained" onClick={props.onSave} disabled={props.saving}>
+      </PowerButton>
+      <PowerButton variant="contained" onClick={props.onSave} disabled={props.saving}>
         {props.isNew ? 'Створити' : 'Зберегти'}
-      </Button>
+      </PowerButton>
     </div>
   );
 }

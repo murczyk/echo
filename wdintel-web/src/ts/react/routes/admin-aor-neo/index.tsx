@@ -3,7 +3,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ClearIcon from '@mui/icons-material/Clear';
 import EditIcon from '@mui/icons-material/Edit';
 import SettingsIcon from '@mui/icons-material/Settings';
-import { Alert, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputAdornment, MenuItem, OutlinedInput, Select, SelectChangeEvent, Stack, Typography } from '@mui/material';
+import { Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputAdornment, MenuItem, OutlinedInput, Select, SelectChangeEvent, Stack, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -13,7 +13,7 @@ import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { TableContentState } from '../../components/TableContentState';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -29,6 +29,7 @@ import { TableStateProvider, useTableStateContext } from '../../components/mui-c
 import { listAors } from '../../services/api/aor';
 import { listAorLocationConfigs, saveAorLocationConfig } from '../../services/api/location-config';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
+import { PowerAlert } from '../../components/PowerAlert';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -446,9 +447,9 @@ function AdminAorNeoPageBody() {
           internalActionsDisabled={loadStatus !== 'success'}
           actions={
             <div className="flex gap-3">
-              <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
+              <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
                 Додати смугу
-              </Button>
+              </PowerButton>
             </div>
           }
         />
@@ -461,7 +462,7 @@ function AdminAorNeoPageBody() {
             {locationConfigDialog ? (
               <Stack spacing={2} sx={{ pt: 1 }}>
                 <Typography>Смуга: {formatMrtCellTextValue(locationConfigDialog.aorName)}</Typography>
-                {locationConfigDialog.error ? <Alert severity="error">{locationConfigDialog.error}</Alert> : null}
+                {locationConfigDialog.error ? <PowerAlert severity="error">{locationConfigDialog.error}</PowerAlert> : null}
                 <FormControl size="small" fullWidth>
                   <Select
                     multiple
@@ -518,17 +519,17 @@ function AdminAorNeoPageBody() {
             ) : null}
           </DialogContent>
           <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-            <Button onClick={closeLocationConfigDialog} disabled={locationConfigDialog?.isSaving}>
+            <PowerButton onClick={closeLocationConfigDialog} disabled={locationConfigDialog?.isSaving}>
               Скасувати
-            </Button>
-            <Button
+            </PowerButton>
+            <PowerButton
               variant="contained"
               onClick={() => void saveLocationConfig()}
               disabled={locationConfigDialog?.isSaving}
               startIcon={locationConfigDialog?.isSaving ? <CircularProgress color="inherit" size={16} /> : null}
             >
               Зберегти
-            </Button>
+            </PowerButton>
           </DialogActions>
         </Dialog>
       </Stack>

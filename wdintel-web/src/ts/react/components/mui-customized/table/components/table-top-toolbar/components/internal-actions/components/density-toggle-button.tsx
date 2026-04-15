@@ -3,7 +3,7 @@ import DensityMediumIcon from '@mui/icons-material/DensityMedium';
 import DensitySmallIcon from '@mui/icons-material/DensitySmall';
 import { Tooltip } from '@mui/material';
 
-import { IconButton } from '../../../../../../icon-button';
+import { PowerIconButton } from '../../../../../../../PowerIconButton';
 import { useTableStateContext } from '../../../../../table-state-provider';
 
 type DensityToggleButtonProps = {
@@ -28,11 +28,11 @@ export function DensityToggleButton(props: DensityToggleButtonProps) {
   return (
     <Tooltip title="Перемкнути щільність">
       <span>
-        <IconButton disabled={props.disabled} onClick={onClickChangeDensity}>
+        <PowerIconButton disabled={props.disabled} onClick={onClickChangeDensity}>
           {tableStateContext.density === 'compact' && <DensitySmallIcon />}
           {tableStateContext.density === 'comfortable' && <DensityMediumIcon />}
           {tableStateContext.density === 'spacious' && <DensityLargeIcon />}
-        </IconButton>
+        </PowerIconButton>
       </span>
     </Tooltip>
   );

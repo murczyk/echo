@@ -20,6 +20,28 @@ pub fn goi_exec_command_sync(
     command: String,
     timeout_ms: u32,
 ) -> anyhow::Result<Vec<String>> {
+    goi_exec_command_sync_impl(
+        req,
+        command,
+        timeout_ms,
+        Some(ORGANISM_GOI_SSH_LIST_LIMIT),
+    )
+}
+
+pub fn goi_exec_command_sync_unlimited(
+    req: CheckOrganismGoiConnectionReq,
+    command: String,
+    timeout_ms: u32,
+) -> anyhow::Result<Vec<String>> {
+    goi_exec_command_sync_impl(req, command, timeout_ms, None)
+}
+
+fn goi_exec_command_sync_impl(
+    req: CheckOrganismGoiConnectionReq,
+    command: String,
+    timeout_ms: u32,
+    max_lines: Option<usize>,
+) -> anyhow::Result<Vec<String>> {
     let addr = format!("{}:{}", req.ssh_host.trim(), req.ssh_port);
     let socket_addrs = goi_resolve_socket_addrs_ipv4_first(&addr)?;
     let timeout = Duration::from_millis(timeout_ms.into());
@@ -32,6 +54,7 @@ pub fn goi_exec_command_sync(
             timeout_ms,
             req.ssh_user.trim(),
             &command,
+            max_lines,
         ) {
             Ok(output_lines) => return Ok(output_lines),
             Err(err) => errors.push(format!("{socket_addr}: {err:#}")),
@@ -94,6 +117,7 @@ pub fn goi_delete_file_sync(
             ORGANISM_GOI_SSH_TIMEOUT_MS,
             req.ssh_user.trim(),
             &command,
+            Some(ORGANISM_GOI_SSH_LIST_LIMIT),
         ) {
             Ok(_) => return Ok(()),
             Err(err) => errors.push(format!("{socket_addr}: {err:#}")),
@@ -159,15 +183,17 @@ fn goi_try_exec_command_for_socket(
     timeout_ms: u32,
     ssh_user: &str,
     command: &str,
+    max_lines: Option<usize>,
 ) -> anyhow::Result<Vec<String>> {
     let session =
         goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
-    goi_exec_command_for_session(session, command)
+    goi_exec_command_for_session(session, command, max_lines)
 }
 
 fn goi_exec_command_for_session(
     session: ssh2::Session,
     command: &str,
+    max_lines: Option<usize>,
 ) -> anyhow::Result<Vec<String>> {
     let mut channel = session.channel_session().c(h!())?;
     channel.exec(command).c(h!())?;
@@ -192,13 +218,15 @@ fn goi_exec_command_for_session(
         .context(h!()));
     }
 
-    Ok(stdout
+    let lines = stdout
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .take(ORGANISM_GOI_SSH_LIST_LIMIT)
-        .map(ToString::to_string)
-        .collect())
+        .map(ToString::to_string);
+    Ok(match max_lines {
+        Some(limit) => lines.take(limit).collect(),
+        None => lines.collect(),
+    })
 }
 
 fn goi_connect_for_socket(

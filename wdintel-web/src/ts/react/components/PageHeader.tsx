@@ -2,7 +2,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Stack, Tooltip, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
-import { IconButton } from './mui-customized/icon-button';
+import { PowerIconButton } from './PowerIconButton';
 
 type Props = {
   title: ReactNode;
@@ -33,13 +33,13 @@ export function PageHeader({ title, titleInfo, actions, className, titleClassNam
         </Typography>
         {titleInfo ? (
           <Tooltip title={titleInfo} arrow placement="right-start">
-            <IconButton
+            <PowerIconButton
               size="small"
               aria-label="Інформація про сторінку"
               sx={{ p: 0.25, alignSelf: 'center', display: 'inline-flex' }}
             >
               <InfoOutlinedIcon fontSize="small" />
-            </IconButton>
+            </PowerIconButton>
           </Tooltip>
         ) : null}
       </Stack>

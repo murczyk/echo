@@ -1,17 +1,10 @@
 import LaunchIcon from '@mui/icons-material/Launch';
-import {
-  Alert,
-  Card,
-  CardActions,
-  CardContent,
-  CircularProgress,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Card, CardActions, CardContent, CircularProgress, Stack, Typography } from '@mui/material';
 import React from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
+import { PowerAlert } from '../../components/PowerAlert';
 import { isUnauthorizedError } from '../../services/api/client';
 import {
   GoiRestartService,
@@ -70,30 +63,30 @@ function IntegrationCard(props: IntegrationCardProps) {
 
           {integration.goiUrl ? (
             <div className="flex flex-wrap items-center gap-2">
-              <Button
+              <PowerButton
                 variant="outlined"
                 endIcon={<LaunchIcon />}
                 onClick={() => window.open(integration.goiUrl!, '_blank', 'noopener,noreferrer')}
               >
                 Відкрити ГОІ
-              </Button>
+              </PowerButton>
               <Typography variant="body2" color="text.secondary">
                 {integration.goiUrl}
               </Typography>
             </div>
           ) : (
-            <Alert severity="warning">Для цієї інтеграції не вказано URL / host ГОІ.</Alert>
+            <PowerAlert severity="warning">Для цієї інтеграції не вказано URL / host ГОІ.</PowerAlert>
           )}
 
           {integration.swappUrl ? (
             <div className="flex flex-wrap items-center gap-2">
-              <Button
+              <PowerButton
                 variant="outlined"
                 endIcon={<LaunchIcon />}
                 onClick={() => window.open(integration.swappUrl!, '_blank', 'noopener,noreferrer')}
               >
                 Відкрити SWAPP
-              </Button>
+              </PowerButton>
               <Typography variant="body2" color="text.secondary">
                 {integration.swappUrl}
               </Typography>
@@ -101,32 +94,32 @@ function IntegrationCard(props: IntegrationCardProps) {
           ) : null}
 
           {!integration.canRestart && integration.restartUnavailableReason ? (
-            <Alert severity="info">{integration.restartUnavailableReason}</Alert>
+            <PowerAlert severity="info">{integration.restartUnavailableReason}</PowerAlert>
           ) : null}
 
           {props.actionStatus?.integrationId === integration.id ? (
-            <Alert severity={props.actionStatus.kind}>{props.actionStatus.message}</Alert>
+            <PowerAlert severity={props.actionStatus.kind}>{props.actionStatus.message}</PowerAlert>
           ) : null}
         </Stack>
       </CardContent>
       <CardActions sx={{ px: 3, pb: 3, pt: 0, gap: 1, flexWrap: 'wrap' }}>
-        <Button
+        <PowerButton
           variant="contained"
           color="error"
           disabled={!integration.canRestart || props.pendingKey !== null}
           onClick={() => props.onRestart(integration.id, 'swapp')}
         >
           Перезапуск SWAPP
-        </Button>
+        </PowerButton>
         {props.pendingKey === swappKey ? <CircularProgress size={18} /> : null}
-        <Button
+        <PowerButton
           variant="contained"
           color="error"
           disabled={!integration.canRestart || props.pendingKey !== null}
           onClick={() => props.onRestart(integration.id, 'goi')}
         >
           Перезапуск GOI
-        </Button>
+        </PowerButton>
         {props.pendingKey === goiKey ? <CircularProgress size={18} /> : null}
       </CardActions>
     </Card>
@@ -202,10 +195,10 @@ export function GoiSettingsPage() {
         titleInfo="Доступні для поточного користувача інтеграції ГОІ, посилання та перезапуск сервісів."
       />
 
-      {loading ? <Alert severity="info">Завантажую інтеграції ГОІ...</Alert> : null}
-      {loadError ? <Alert severity="error">{loadError}</Alert> : null}
+      {loading ? <PowerAlert severity="info">Завантажую інтеграції ГОІ...</PowerAlert> : null}
+      {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
       {!loading && !loadError && integrations.length === 0 ? (
-        <Alert severity="info">Для поточного користувача немає доступних інтеграцій ГОІ.</Alert>
+        <PowerAlert severity="info">Для поточного користувача немає доступних інтеграцій ГОІ.</PowerAlert>
       ) : null}
 
       {integrations.map((integration) => (

@@ -1,4 +1,5 @@
-import { Alert, Box, Button, Stack } from '@mui/material';
+import { Box, Button, Stack } from '@mui/material';
+import { PowerAlert } from './PowerAlert';
 
 type Props = {
   message: string;
@@ -20,9 +21,9 @@ export function PageErrorState({ message, actionLabel, onAction, minHeight = 240
       }}
     >
       <Stack spacing={3} sx={{ width: '100%', maxWidth: 560, alignItems: 'center' }}>
-        <Alert severity="error" sx={{ width: '100%' }}>
+        <PowerAlert severity="error" sx={{ width: '100%' }}>
           {message}
-        </Alert>
+        </PowerAlert>
         {actionLabel && onAction ? (
           <Button variant="outlined" onClick={onAction}>
             {actionLabel}

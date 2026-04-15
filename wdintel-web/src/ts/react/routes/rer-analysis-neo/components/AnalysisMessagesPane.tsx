@@ -1,4 +1,4 @@
-import { Alert, Box, Button } from '@mui/material';
+import { Box, Button } from '@mui/material';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CallsignInfoRes, InboxMessage, Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
@@ -7,6 +7,7 @@ import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay
 import { MessageCard } from '../../rer-duty-neo/MessageCard';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildSenderLabel, copyMessageValue } from '../message-utils';
+import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
   authUserName: string | null;
@@ -179,7 +180,7 @@ function AnalysisMessagesPaneComponent({
   }, []);
 
   if (messages.length === 0 && !loading) {
-    return <Alert severity="info">Немає жодного повідомлення для аналізу.</Alert>;
+    return <PowerAlert severity="info">Немає жодного повідомлення для аналізу.</PowerAlert>;
   }
 
   return (

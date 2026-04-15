@@ -100,7 +100,7 @@ vi.mock('material-react-table', () => ({
   },
 }));
 
-vi.mock('../../../components/mui-customized/button', () => ({
+vi.mock('../../../components/PowerButton', () => ({
   Button: (props: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
     <button type="button" onClick={props.onClick} disabled={props.disabled}>
       {props.children}

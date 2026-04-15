@@ -12,7 +12,7 @@ import type { ChangeEvent } from 'react';
 
 import { Info } from '../../components/info';
 import { PageHeader } from '../../components/PageHeader';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { useBoolean } from '../../hooks/use-boolean';
 import { restartEcho, RestartEchoPayload } from '../../services/api/admin';
 
@@ -112,9 +112,9 @@ export function AdminControlPanelNeoPage() {
               />
             </FormGroup>
             <div className="flex items-center gap-2">
-              <Button variant="contained" color="error" disabled={restarting.value} onClick={handleRestart}>
+              <PowerButton variant="contained" color="error" disabled={restarting.value} onClick={handleRestart}>
                 Перезапустити
-              </Button>
+              </PowerButton>
               {restarting.value ? <CircularProgress size={18} /> : null}
             </div>
             {status?.kind === 'error' ? <Info text={status.message} color="error" /> : null}

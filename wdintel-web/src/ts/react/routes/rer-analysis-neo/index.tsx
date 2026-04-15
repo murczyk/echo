@@ -1,7 +1,7 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import { Alert, Backdrop, Box, Button, CircularProgress, FormControlLabel, Paper, Skeleton, Stack, Switch, Tab, Tabs } from '@mui/material';
+import { Backdrop, Box, Button, CircularProgress, FormControlLabel, Paper, Skeleton, Stack, Switch, Tab, Tabs } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
@@ -15,6 +15,7 @@ import { AnalysisSidebar } from './components/AnalysisSidebar';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+import { PowerAlert } from '../../components/PowerAlert';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -73,14 +74,14 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
       />
 
       {page.error ? (
-        <Alert severity="error" role="alert">
+        <PowerAlert severity="error" role="alert">
           {page.error}
-        </Alert>
+        </PowerAlert>
       ) : null}
       {page.validationError ? (
-        <Alert severity="warning" role="status">
+        <PowerAlert severity="warning" role="status">
           {page.validationError}
-        </Alert>
+        </PowerAlert>
       ) : null}
 
       <Box

@@ -5,21 +5,7 @@ import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import {
-  Alert,
-  Box,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Drawer,
-  MenuItem,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import {
   MRT_ColumnDef,
   MaterialReactTable,
@@ -42,7 +28,7 @@ import { TableContentState } from '../../components/TableContentState';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { Info } from '../../components/info';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -70,6 +56,7 @@ import {
   unlinkAccount,
 } from '../../services/api/messenger';
 import { listLogins } from '../../services/api/logins';
+import { PowerAlert } from '../../components/PowerAlert';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -1251,18 +1238,18 @@ function AdminMessengerNeoPageBody() {
           <Box className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="space-y-6">
               <Box className="flex gap-3">
-                <Button
+                <PowerButton
                   variant={linkMode === 'phone' ? 'contained' : 'outlined'}
                   onClick={() => switchLinkMode('phone')}
                 >
                   Телефон
-                </Button>
-                <Button
+                </PowerButton>
+                <PowerButton
                   variant={linkMode === 'api' ? 'contained' : 'outlined'}
                   onClick={() => switchLinkMode('api')}
                 >
                   API
-                </Button>
+                </PowerButton>
               </Box>
 
               <div>
@@ -1453,16 +1440,16 @@ function AdminMessengerNeoPageBody() {
               <Info text={linkStatus.message} color="error" />
             ) : null}
             <div className="flex items-center justify-center gap-2">
-              <Button onClick={closeLinkSidebar}>
+              <PowerButton onClick={closeLinkSidebar}>
                 Скасувати
-              </Button>
-              <Button
+              </PowerButton>
+              <PowerButton
                 variant="outlined"
                 onClick={() => fetchQrCode(qrData.accountId)}
                 startIcon={<RefreshIcon />}
               >
                 Оновити QR код
-              </Button>
+              </PowerButton>
             </div>
           </Box>
         ) : null}
@@ -1477,9 +1464,9 @@ function AdminMessengerNeoPageBody() {
               {getMessengerLabel(linkSuccessAccount.messenger)}:{' '}
               {linkSuccessAccount.phoneNumber}
             </Typography>
-            <Button variant="contained" onClick={closeLinkSidebar}>
+            <PowerButton variant="contained" onClick={closeLinkSidebar}>
               Закрити
-            </Button>
+            </PowerButton>
           </Box>
         ) : null}
 
@@ -1494,16 +1481,16 @@ function AdminMessengerNeoPageBody() {
               gap: 2,
             }}
           >
-            <Button onClick={closeLinkSidebar}>
+            <PowerButton onClick={closeLinkSidebar}>
               Скасувати
-            </Button>
-            <Button
+            </PowerButton>
+            <PowerButton
               variant="contained"
               onClick={submitLinkForm}
               disabled={isMutating}
             >
               Прив'язати
-            </Button>
+            </PowerButton>
           </Box>
         ) : null}
       </Box>
@@ -1580,16 +1567,16 @@ function AdminMessengerNeoPageBody() {
           </Box>
         ) : null}
         <Box className="p-6 border-t border-border flex gap-3">
-          <Button onClick={closeEditSidebar}>
+          <PowerButton onClick={closeEditSidebar}>
             Скасувати
-          </Button>
-          <Button
+          </PowerButton>
+          <PowerButton
             variant="contained"
             onClick={submitEditForm}
             disabled={isMutating || !editForm}
           >
             Зберегти
-          </Button>
+          </PowerButton>
         </Box>
       </Box>
     </Drawer>
@@ -1605,9 +1592,9 @@ function AdminMessengerNeoPageBody() {
         hideGlobalTextFilter={accountsStatus !== 'success'}
         internalActionsDisabled={accountsStatus !== 'success'}
         actions={
-          <Button variant="contained" onClick={openLinkSidebar}>
+          <PowerButton variant="contained" onClick={openLinkSidebar}>
             Прив'язати новий
-          </Button>
+          </PowerButton>
         }
       />
 
@@ -1615,9 +1602,9 @@ function AdminMessengerNeoPageBody() {
         <Info text={actionStatus.message} color="error" />
       ) : null}
       {actionStatus?.kind === 'success' ? (
-        <Alert severity="success" onClose={() => setActionStatus(null)}>
+        <PowerAlert severity="success" onClose={() => setActionStatus(null)}>
           {actionStatus.message}
-        </Alert>
+        </PowerAlert>
       ) : null}
       <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderAccountsTable()}</Box>
       {renderDeleteDialog()}

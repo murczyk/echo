@@ -2,7 +2,7 @@ import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { Button } from '../../../button';
+import { PowerButton } from '../../../../PowerButton';
 import { GlobalFilterTextField } from './components/global-filter-text-field';
 import { InternalTableActions } from './components/internal-actions';
 import { useTableStateContext } from '../../table-state-provider';
@@ -31,9 +31,9 @@ function MobileActionsBar(props: MobileActionsBarProps) {
     <div className="block sm:hidden w-full mb-3">
       <div className="flex flex-wrap items-center gap-2">
         {props.header}
-        <Button variant="contained" onClick={props.onToggleMobileActions || onToggleMobileActions}>
+        <PowerButton variant="contained" onClick={props.onToggleMobileActions || onToggleMobileActions}>
           {showMobileActions ? 'Приховати' : 'Показати'} дії
-        </Button>
+        </PowerButton>
       </div>
       <div
         className={clsx('h-0 overflow-hidden', {
