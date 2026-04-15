@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Box, Button, Collapse, Stack, Tooltip, Typography } from '@mui/material';
 
-import type { ContentNode, InboxMessage, MessageMediaInfo, Tag } from '../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, Network, Tag, MessageMediaInfo, Unit } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from './utils';
 import { renderMarkedText } from './MarkedText';
@@ -353,12 +353,18 @@ export function MessageCardMessageBody({
   tagsMap,
   onToggleTag,
   tagsLayout = 'full',
+  callsignInfoMap,
+  networks,
+  unitsMap,
 }: {
   compact?: boolean;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
   tagsLayout?: TagsLayoutVariant;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  unitsMap?: Record<number, Unit>;
 }) {
   const imageHrefs = useMemo(() => collectMessageImageHrefs(msg), [msg]);
   const attachmentMedia = useMemo(() => (msg.media ?? []).filter((m) => !isImageMediaAttachment(m)), [msg.media]);
@@ -369,6 +375,11 @@ export function MessageCardMessageBody({
       ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
           showPointLinks,
           message: msg,
+          callsignInfoMap,
+          networks,
+          unitsMap,
+          freq: msg.freq ?? null,
+          networkIds: msg.networkIds ?? null,
         })
       : msg.text || '—';
 

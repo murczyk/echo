@@ -26,6 +26,12 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
             color: 'text.secondary',
             opacity: 1,
           },
+          '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+            WebkitTextFillColor: 'var(--bs-body-color)',
+            WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
+            transition: 'background-color 9999s ease-out 0s',
+            caretColor: 'var(--bs-body-color)',
+          },
           '& .MuiOutlinedInput-notchedOutline': {
             borderColor: 'var(--bs-border-color)',
           },
@@ -42,9 +48,12 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
       disabled={props.disabled}
       onChange={(event) => props.setGlobalFilter(event.target.value)}
       value={props.globalFilter}
+      variant="outlined"
+      size="small"
       slotProps={{
         input: {
           readOnly: props.disabled,
+          autoComplete: 'new-password',
           startAdornment: (
             <InputAdornment position="start">
               <FilterAltIcon
@@ -68,8 +77,6 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
           ),
         },
       }}
-      variant="outlined"
-      size="small"
     />
   );
 }

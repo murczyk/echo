@@ -1,0 +1,336 @@
+import { useCallback } from 'react';
+
+import type {
+  CorrelatedFreq,
+  FreqDailyActivityCount,
+  FreqDetailedPoint,
+  InboxMessage,
+  NetJsonGraphAndMeta,
+  NetworkUnit,
+  PalitraReadV2,
+} from '../../../../Bindings';
+import {
+  downloadAnalysisGeojson,
+  downloadAnalysisKmz,
+  downloadAnalysisSummaryTableXlsx,
+  fetchAnalysisCallsignGraph,
+  fetchAnalysisCorrelatedFreqs,
+  fetchAnalysisMapPoints,
+  fetchFreqActivityDaily,
+  fetchMessagesByIds,
+} from '../../services/api/analysis';
+import { listPalitrasV2 } from '../../services/api/palitra';
+import { downloadBlob } from '../../utils/download-blob';
+import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq } from './helpers';
+import { toErrorMessage } from './use-analysis-data.shared';
+import type { AnalysisGroupsActivityPeriod, AnalysisPalitrasLoadState, AnalysisQueryState } from './types';
+
+type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
+
+type Params = {
+  callsignGraphNolimit: boolean;
+  callsignGraphRequestRef: React.MutableRefObject<number>;
+  groupsActivityPeriod: AnalysisGroupsActivityPeriod;
+  mapDateRangeLoadVersionRef: React.MutableRefObject<number>;
+  mapMessagesLoadVersionRef: React.MutableRefObject<number>;
+  newestFirst: boolean;
+  onError: (message: string) => void;
+  onUnauthorized: (error: unknown) => boolean;
+  optionsFreqs: string[];
+  queryState: AnalysisQueryState;
+  setCallsignGraph: Setter<NetJsonGraphAndMeta | null>;
+  setCallsignGraphLoading: Setter<boolean>;
+  setCallsignGraphLoadVersion: Setter<number>;
+  setCallsignGraphNolimit: Setter<boolean>;
+  setCorrelatedFreqs: Setter<CorrelatedFreq[]>;
+  setCorrelatedFreqsLoading: Setter<boolean>;
+  setGroupsActivity: Setter<FreqDailyActivityCount | null>;
+  setGroupsActivityLoadedFreq: Setter<string | null>;
+  setGroupsActivityLoadedPeriod: Setter<AnalysisGroupsActivityPeriod | null>;
+  setGroupsActivityLoading: Setter<boolean>;
+  setGroupsActivityPeriod: Setter<AnalysisGroupsActivityPeriod>;
+  setMapDateRange: Setter<{ startDate: number; endDate: number }>;
+  setMapLoading: Setter<boolean>;
+  setMapNetworkUnits: Setter<NetworkUnit[]>;
+  setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
+  setMapPalitras: Setter<PalitraReadV2[]>;
+  setMapPalitrasLoaded: Setter<boolean>;
+  setMapPalitrasLoadState: Setter<AnalysisPalitrasLoadState>;
+  setMapPoints: Setter<FreqDetailedPoint[]>;
+};
+
+export function useAnalysisDataLoaders(params: Params) {
+  const {
+    callsignGraphNolimit,
+    callsignGraphRequestRef,
+    groupsActivityPeriod,
+    mapDateRangeLoadVersionRef,
+    mapMessagesLoadVersionRef,
+    newestFirst,
+    onError,
+    onUnauthorized,
+    optionsFreqs,
+    queryState,
+    setCallsignGraph,
+    setCallsignGraphLoading,
+    setCallsignGraphLoadVersion,
+    setCallsignGraphNolimit,
+    setCorrelatedFreqs,
+    setCorrelatedFreqsLoading,
+    setGroupsActivity,
+    setGroupsActivityLoadedFreq,
+    setGroupsActivityLoadedPeriod,
+    setGroupsActivityLoading,
+    setGroupsActivityPeriod,
+    setMapDateRange,
+    setMapLoading,
+    setMapNetworkUnits,
+    setMapOpenMessages,
+    setMapPalitras,
+    setMapPalitrasLoaded,
+    setMapPalitrasLoadState,
+    setMapPoints,
+  } = params;
+
+  const invalidateCallsignGraph = useCallback(() => {
+    callsignGraphRequestRef.current += 1;
+    setCallsignGraph(null);
+    setCallsignGraphLoading(false);
+    setCallsignGraphLoadVersion((current) => current + 1);
+  }, [callsignGraphRequestRef, setCallsignGraph, setCallsignGraphLoading, setCallsignGraphLoadVersion]);
+
+  const refreshMapDateRange = useCallback(
+    async (range: { startDate: number; endDate: number }) => {
+      const inboxReq = buildInboxReq(queryState, optionsFreqs);
+      if (inboxReq == null) return;
+
+      const loadVersion = mapDateRangeLoadVersionRef.current + 1;
+      mapDateRangeLoadVersionRef.current = loadVersion;
+      setMapLoading(true);
+      setMapDateRange(range);
+
+      try {
+        const rsp = await fetchAnalysisMapPoints({
+          inboxItemsFilter: {
+            ...inboxReq,
+            sinceDateInclusiveMs: range.startDate,
+            tillDateInclusiveMs: range.endDate,
+            newestFirst,
+          },
+          mapFilter: null,
+          pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
+        });
+        if (mapDateRangeLoadVersionRef.current !== loadVersion) return;
+        setMapPoints(rsp.points ?? []);
+        setMapNetworkUnits(rsp.networkUnits ?? []);
+      } catch (loadError) {
+        if (mapDateRangeLoadVersionRef.current !== loadVersion) return;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      } finally {
+        if (mapDateRangeLoadVersionRef.current === loadVersion) setMapLoading(false);
+      }
+    },
+    [
+      mapDateRangeLoadVersionRef,
+      newestFirst,
+      onError,
+      onUnauthorized,
+      optionsFreqs,
+      queryState,
+      setMapDateRange,
+      setMapLoading,
+      setMapNetworkUnits,
+      setMapPoints,
+    ],
+  );
+
+  const loadMessagesForMap = useCallback(
+    async (messageIds: number[]) => {
+      const loadVersion = mapMessagesLoadVersionRef.current + 1;
+      mapMessagesLoadVersionRef.current = loadVersion;
+
+      try {
+        const nextMessages = await fetchMessagesByIds(messageIds);
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return;
+        setMapOpenMessages(nextMessages);
+      } catch (loadError) {
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      }
+    },
+    [mapMessagesLoadVersionRef, onError, onUnauthorized, setMapOpenMessages],
+  );
+
+  const loadMapPalitras = useCallback(async () => {
+    setMapPalitrasLoadState('loading');
+    setMapPalitrasLoaded(false);
+
+    try {
+      const palitras = await listPalitrasV2();
+      setMapPalitras(
+        palitras.map((palitraRead) => ({
+          ...palitraRead,
+          geometries: palitraRead.geometries.map((geometry) => ({ ...geometry, points: [] })),
+        })),
+      );
+      setMapPalitrasLoaded(true);
+      setMapPalitrasLoadState('success');
+    } catch (loadError) {
+      if (!onUnauthorized(loadError)) {
+        onError(`Не вдалося завантажити палітри: ${toErrorMessage(loadError)}`);
+      }
+      setMapPalitras([]);
+      setMapPalitrasLoaded(false);
+      setMapPalitrasLoadState('error');
+    }
+  }, [onError, onUnauthorized, setMapPalitras, setMapPalitrasLoaded, setMapPalitrasLoadState]);
+
+  const loadCorrelatedFreqs = useCallback(async () => {
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+    if (analysisReq == null || queryState.freqsSelected.length === 0) {
+      setCorrelatedFreqs([]);
+      return;
+    }
+
+    setCorrelatedFreqsLoading(true);
+    try {
+      const rsp = await fetchAnalysisCorrelatedFreqs(analysisReq);
+      setCorrelatedFreqs(rsp.freqs ?? []);
+    } catch (loadError) {
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+    } finally {
+      setCorrelatedFreqsLoading(false);
+    }
+  }, [onError, onUnauthorized, optionsFreqs, queryState, setCorrelatedFreqs, setCorrelatedFreqsLoading]);
+
+  const loadCallsignGraph = useCallback(async () => {
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+    if (analysisReq == null) return;
+
+    const requestId = callsignGraphRequestRef.current + 1;
+    callsignGraphRequestRef.current = requestId;
+    setCallsignGraphLoading(true);
+    try {
+      const rsp = await fetchAnalysisCallsignGraph({ ...analysisReq, nolimit: callsignGraphNolimit });
+      if (requestId !== callsignGraphRequestRef.current) return;
+      setCallsignGraph(rsp);
+    } catch (loadError) {
+      if (requestId !== callsignGraphRequestRef.current) return;
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+    } finally {
+      if (requestId !== callsignGraphRequestRef.current) return;
+      setCallsignGraphLoading(false);
+    }
+  }, [callsignGraphNolimit, callsignGraphRequestRef, onError, onUnauthorized, optionsFreqs, queryState, setCallsignGraph, setCallsignGraphLoading]);
+
+  const toggleCallsignGraphNolimit = useCallback(() => {
+    invalidateCallsignGraph();
+    setCallsignGraphNolimit((current) => !current);
+  }, [invalidateCallsignGraph, setCallsignGraphNolimit]);
+
+  const loadGroupsActivity = useCallback(
+    async (period?: AnalysisGroupsActivityPeriod) => {
+      const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+      const firstFreq = queryState.freqsSelected[0];
+      if (analysisReq == null || !firstFreq) {
+        setGroupsActivity(null);
+        setGroupsActivityLoadedFreq(null);
+        setGroupsActivityLoadedPeriod(null);
+        return;
+      }
+
+      const nextPeriod = period ?? groupsActivityPeriod;
+      const tillDateInclusiveMs = analysisReq.tillDateNoninclusiveMs;
+      const dayMs = 24 * 60 * 60 * 1000;
+      const sinceDateInclusiveMs =
+        nextPeriod === 'month'
+          ? tillDateInclusiveMs - 30 * dayMs
+          : nextPeriod === 'quarter'
+            ? tillDateInclusiveMs - 90 * dayMs
+            : nextPeriod === 'year'
+              ? tillDateInclusiveMs - 365 * dayMs
+              : analysisReq.sinceDateInclusiveMs;
+
+      setGroupsActivityLoading(true);
+      setGroupsActivityPeriod(nextPeriod);
+      try {
+        const rsp = await fetchFreqActivityDaily({ freq: firstFreq, sinceDateInclusiveMs, tillDateInclusiveMs });
+        setGroupsActivity(rsp);
+        setGroupsActivityLoadedFreq(firstFreq);
+        setGroupsActivityLoadedPeriod(nextPeriod);
+      } catch (loadError) {
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      } finally {
+        setGroupsActivityLoading(false);
+      }
+    },
+    [
+      groupsActivityPeriod,
+      onError,
+      onUnauthorized,
+      optionsFreqs,
+      queryState,
+      setGroupsActivity,
+      setGroupsActivityLoadedFreq,
+      setGroupsActivityLoadedPeriod,
+      setGroupsActivityLoading,
+      setGroupsActivityPeriod,
+    ],
+  );
+
+  const downloadSummaryXlsx = useCallback(async () => {
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+    if (analysisReq == null) {
+      onError('Перевірте дату та час перед експортом.');
+      return;
+    }
+    try {
+      const blob = await downloadAnalysisSummaryTableXlsx(analysisReq);
+      downloadBlob(blob, 'rer-analysis-summary.xlsx');
+    } catch (loadError) {
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+    }
+  }, [onError, onUnauthorized, optionsFreqs, queryState]);
+
+  const downloadKmz = useCallback(async () => {
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+    if (analysisReq == null) {
+      onError('Перевірте дату та час перед експортом.');
+      return;
+    }
+    try {
+      const blob = await downloadAnalysisKmz(analysisReq);
+      downloadBlob(blob, 'rer-analysis.kmz');
+    } catch (loadError) {
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+    }
+  }, [onError, onUnauthorized, optionsFreqs, queryState]);
+
+  const downloadGeojson = useCallback(async () => {
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
+    if (analysisReq == null) {
+      onError('Перевірте дату та час перед експортом.');
+      return;
+    }
+    try {
+      const blob = await downloadAnalysisGeojson(analysisReq);
+      downloadBlob(blob, 'rer-analysis.geojson');
+    } catch (loadError) {
+      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+    }
+  }, [onError, onUnauthorized, optionsFreqs, queryState]);
+
+  return {
+    downloadGeojson,
+    downloadKmz,
+    downloadSummaryXlsx,
+    invalidateCallsignGraph,
+    loadCallsignGraph,
+    loadCorrelatedFreqs,
+    loadGroupsActivity,
+    loadMapPalitras,
+    loadMessagesForMap,
+    refreshMapDateRange,
+    toggleCallsignGraphNolimit,
+  };
+}

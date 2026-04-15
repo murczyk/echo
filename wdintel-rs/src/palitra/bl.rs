@@ -796,6 +796,18 @@ where
 }
 
 pub fn normalize_palitra_folder(folder: &str) -> anyhow::Result<String> {
+    let normalized = normalize_palitra_folder_lookup(folder).c(h!())?;
+    // Intentional flat-folder semantics for new writes: slash-separated nested folder paths are unsupported.
+    // Legacy slash folders are handled only for lookup/mutation compatibility in existing data.
+    if normalized.contains('/') {
+        anyhow::bail!(
+            "Palitra folder may not contain '/': nested folders are unsupported"
+        );
+    }
+    Ok(normalized)
+}
+
+fn normalize_palitra_folder_lookup(folder: &str) -> anyhow::Result<String> {
     let trimmed = folder.trim();
     if trimmed.is_empty() {
         anyhow::bail!("Palitra folder may not be empty");
@@ -812,27 +824,26 @@ pub fn normalize_palitra_folder(folder: &str) -> anyhow::Result<String> {
 pub fn normalize_palitra_folder_from_db(
     folder: Option<String>,
 ) -> Option<String> {
-    folder.and_then(|folder| normalize_palitra_folder(&folder).ok())
+    folder.and_then(|folder| normalize_palitra_folder_lookup(&folder).ok())
 }
 
-fn folder_matches_prefix(folder: Option<&str>, prefix: &str) -> bool {
+fn folder_matches_exact(folder: Option<&str>, exact_folder: &str) -> bool {
     let Some(folder) = folder else {
         return false;
     };
-    folder == prefix || folder.starts_with(&format!("{prefix}/"))
+    folder == exact_folder
 }
 
-fn replace_folder_prefix(
+fn replace_folder_exact(
     folder: Option<&str>,
     from_folder: &str,
     to_folder: &str,
 ) -> Option<String> {
     let folder = folder?;
-    if folder == from_folder {
-        return Some(to_folder.to_string());
+    if folder != from_folder {
+        return None;
     }
-    let suffix = folder.strip_prefix(&format!("{from_folder}/"))?;
-    Some(format!("{to_folder}/{suffix}"))
+    Some(to_folder.to_string())
 }
 
 pub async fn update_accessible_palitra_archive_flag(
@@ -866,6 +877,7 @@ pub async fn assign_folder_to_accessible_palitras(
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
+    // Write path: only flat folder names are allowed for new assignments.
     let folder = normalize_palitra_folder(&folder).c(h!())?;
     let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
         .await
@@ -893,7 +905,9 @@ pub async fn rename_accessible_palitra_folder(
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
-    let from_folder = normalize_palitra_folder(&from_folder).c(h!())?;
+    // Lookup path keeps legacy slash folders operable as source values.
+    let from_folder = normalize_palitra_folder_lookup(&from_folder).c(h!())?;
+    // Write path for target folder remains flat-only.
     let to_folder = normalize_palitra_folder(&to_folder).c(h!())?;
     let mutable_palitras =
         collect_mutable_palitra_models_for_accessible_login(login, dbx)
@@ -906,7 +920,7 @@ pub async fn rename_accessible_palitra_folder(
     for palitra in mutable_palitras {
         let old_folder =
             normalize_palitra_folder_from_db(palitra.folder.clone());
-        let Some(new_folder) = replace_folder_prefix(
+        let Some(new_folder) = replace_folder_exact(
             old_folder.as_deref(),
             &from_folder,
             &to_folder,
@@ -1036,7 +1050,8 @@ pub async fn collect_accessible_palitra_ids_in_folder(
     folder: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
-    let folder = normalize_palitra_folder(&folder).c(h!())?;
+    // Lookup path accepts legacy slash folder names to keep existing data manageable.
+    let folder = normalize_palitra_folder_lookup(&folder).c(h!())?;
     let mut palitras = palitra::Entity::find()
         .filter(palitra::Column::Deleted.eq(false))
         .all(dbx)
@@ -1053,7 +1068,7 @@ pub async fn collect_accessible_palitra_ids_in_folder(
         .filter_map(|palitra| {
             let folder_value =
                 normalize_palitra_folder_from_db(palitra.folder.clone());
-            if folder_matches_prefix(folder_value.as_deref(), &folder) {
+            if folder_matches_exact(folder_value.as_deref(), &folder) {
                 Some(palitra.id)
             } else {
                 None
@@ -2408,8 +2423,10 @@ mod tests {
         mk_palitra_point,
     };
     use crate::palitra::bl::{
-        collect_accessible_palitra_ids, normalize_palitra_folder,
-        replace_folder_prefix, search_palitra_points_by_labels, update_palitra,
+        collect_accessible_palitra_ids,
+        collect_accessible_palitra_ids_in_folder, normalize_palitra_folder,
+        normalize_palitra_folder_from_db, normalize_palitra_folder_lookup,
+        replace_folder_exact, search_palitra_points_by_labels, update_palitra,
         update_palitra_v2,
     };
     use crate::palitra::types::{
@@ -2418,8 +2435,8 @@ mod tests {
     };
     use chrono::Utc;
     use sea_orm::{
-        ActiveModelTrait, ColumnTrait, EntityTrait, NotSet, QueryFilter, Set,
-        TransactionTrait,
+        ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, NotSet,
+        QueryFilter, Set, TransactionTrait,
     };
     use serial_test::serial;
 
@@ -2832,21 +2849,57 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_palitra_folder_rejects_empty_segments() {
+    fn test_normalize_palitra_folder_rejects_slash_and_empty_values() {
+        assert!(normalize_palitra_folder("foo/bar").is_err());
         assert!(normalize_palitra_folder("foo//bar").is_err());
         assert!(normalize_palitra_folder(" / ").is_err());
     }
 
     #[test]
-    fn test_replace_folder_prefix_handles_exact_and_nested_paths() {
+    fn test_normalize_palitra_folder_lookup_accepts_legacy_slash_paths() {
         assert_eq!(
-            replace_folder_prefix(Some("foo"), "foo", "bar"),
+            normalize_palitra_folder_lookup(" North / Sub ").unwrap(),
+            "North/Sub".to_string()
+        );
+        assert!(normalize_palitra_folder_lookup("foo//bar").is_err());
+        assert!(normalize_palitra_folder_lookup(" / ").is_err());
+        assert_eq!(
+            normalize_palitra_folder_from_db(Some("North/Sub".to_string())),
+            Some("North/Sub".to_string())
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_collect_accessible_palitra_ids_in_folder_supports_legacy_slash_folder_path(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let palitra_id = palitra.id;
+
+        let mut palitra = palitra.into_active_model();
+        palitra.folder = Set(Some("North/Sub".to_string()));
+        palitra.update(&env.dbx).await.unwrap();
+
+        let palitra_ids = collect_accessible_palitra_ids_in_folder(
+            login.login,
+            "North/Sub".to_string(),
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+
+        assert!(palitra_ids.contains(&palitra_id));
+    }
+
+    #[test]
+    fn test_replace_folder_exact_handles_only_exact_match() {
+        assert_eq!(
+            replace_folder_exact(Some("foo"), "foo", "bar"),
             Some("bar".to_string())
         );
-        assert_eq!(
-            replace_folder_prefix(Some("foo/baz"), "foo", "bar"),
-            Some("bar/baz".to_string())
-        );
-        assert_eq!(replace_folder_prefix(Some("foobar"), "foo", "bar"), None);
+        assert_eq!(replace_folder_exact(Some("foo/baz"), "foo", "bar"), None);
+        assert_eq!(replace_folder_exact(Some("foobar"), "foo", "bar"), None);
     }
 }

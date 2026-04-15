@@ -9,6 +9,7 @@ type BaseLayerName = 'openStreetMap' | 'googleHybrid';
 class AnalysisMapLayerSwitchElement extends HTMLElement {
   private root: Root | null = null;
   private currentLayer: BaseLayerName = 'googleHybrid';
+  private pendingUnmountHandle: number | null = null;
   private features: FeatureToggleState = {
     palitrasEnabled: true,
     kmzEnabled: true,
@@ -16,6 +17,11 @@ class AnalysisMapLayerSwitchElement extends HTMLElement {
   };
 
   connectedCallback() {
+    if (this.pendingUnmountHandle !== null) {
+      window.clearTimeout(this.pendingUnmountHandle);
+      this.pendingUnmountHandle = null;
+    }
+
     if (!this.root) {
       this.style.display = 'block';
       this.root = createRoot(this);
@@ -24,8 +30,7 @@ class AnalysisMapLayerSwitchElement extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.root?.unmount();
-    this.root = null;
+    this.scheduleRootUnmount();
   }
 
   setCurrentLayer(currentLayer: BaseLayerName) {
@@ -71,6 +76,28 @@ class AnalysisMapLayerSwitchElement extends HTMLElement {
         }}
       />,
     );
+  }
+
+  private scheduleRootUnmount() {
+    if (this.pendingUnmountHandle !== null) {
+      return;
+    }
+
+    const root = this.root;
+    if (!root) {
+      return;
+    }
+
+    this.pendingUnmountHandle = window.setTimeout(() => {
+      this.pendingUnmountHandle = null;
+
+      if (this.isConnected || this.root !== root) {
+        return;
+      }
+
+      root.unmount();
+      this.root = null;
+    }, 0);
   }
 }
 

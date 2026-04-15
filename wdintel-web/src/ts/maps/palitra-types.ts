@@ -10,6 +10,7 @@ export type Palitra = {
   id: number;
   api_palitra_id?: number;
   name: string;
+  folder?: string | null;
   color_hex: string;
   geometry: Geometry | null;
   source_file_name?: string;

@@ -4,12 +4,14 @@ import type { ComponentProps } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 
 import type {
+  CallsignInfoRes,
   Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
   Tag,
+  Unit,
 } from '../../../../Bindings';
 import type { TagsLayoutVariant } from './utils';
 import { profileLabel } from './utils';
@@ -74,6 +76,8 @@ export type FeedColumnProps = {
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
   networkMap: Record<number, Network>;
+  unitsMap: Record<number, Unit>;
+  callsignInfoMap: Record<string, CallsignInfoRes>;
   /** When true, empty network ids show "Не встановлена" only (no unit fallback). Server `featureStrictNetworks`. */
   featureStrictNetworks: boolean;
   tagsMap: Record<number, Tag>;
@@ -149,6 +153,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     copiedFeedbackId,
     networkDisplayMap,
     networkMap,
+    callsignInfoMap,
     featureStrictNetworks,
     tagsMap,
     tagIdsList,
@@ -189,6 +194,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     onArrowClick,
     onVisibleMessageIds,
     unreadCount = 0,
+    unitsMap,
   },
   ref,
 ) {
@@ -452,6 +458,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   copiedFeedbackId={copiedFeedbackId}
                   networkDisplayMap={networkDisplayMap}
                   networkMap={networkMap}
+                  unitsMap={unitsMap}
+                  callsignInfoMap={callsignInfoMap}
+                  networks={networkMap ? Object.values(networkMap) : undefined}
                   featureStrictNetworks={featureStrictNetworks}
                   tagsMap={tagsMap}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}

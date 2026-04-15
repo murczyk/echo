@@ -134,6 +134,12 @@ export function SearchInput(props: SearchInputProps) {
                 borderRadius: 2,
                 backgroundColor: 'background.paper',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                  WebkitTextFillColor: 'var(--bs-body-color)',
+                  WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
+                  transition: 'background-color 9999s ease-out 0s',
+                  caretColor: 'var(--bs-body-color)',
+                },
                 '& .MuiOutlinedInput-notchedOutline': {
                   borderColor: 'divider',
                 },
@@ -144,10 +150,23 @@ export function SearchInput(props: SearchInputProps) {
                   borderColor: 'primary.main',
                   borderWidth: 1,
                 },
+                '& .MuiInputBase-input::placeholder': {
+                  color: (theme) => (theme.palette.mode === 'light' ? 'rgba(31, 41, 55, 0.78)' : 'rgba(255, 255, 255, 0.68)'),
+                  opacity: 1,
+                },
+                '& .MuiInputBase-input.Mui-disabled': {
+                  WebkitTextFillColor: (theme) =>
+                    theme.palette.mode === 'light' ? 'rgba(31, 41, 55, 0.78)' : 'rgba(255, 255, 255, 0.68)',
+                },
+                '& .MuiInputBase-input.Mui-disabled::placeholder': {
+                  color: (theme) => (theme.palette.mode === 'light' ? 'rgba(31, 41, 55, 0.78)' : 'rgba(255, 255, 255, 0.68)'),
+                  opacity: 1,
+                },
               },
             }}
             slotProps={{
               input: {
+                autoComplete: 'new-password',
                 sx: {
                   height: 48,
                   '& .MuiInputBase-input': {

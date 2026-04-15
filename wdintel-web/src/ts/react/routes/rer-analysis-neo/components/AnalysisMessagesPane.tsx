@@ -1,7 +1,7 @@
 import { Alert, Box, Button } from '@mui/material';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
-import type { InboxMessage, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { MessageCard } from '../../rer-duty-neo/MessageCard';
@@ -30,6 +30,9 @@ type Props = {
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  unitsMap?: Record<number, Unit>;
 };
 
 type AnalysisMessageCardItemProps = {
@@ -49,6 +52,9 @@ type AnalysisMessageCardItemProps = {
   profiles: Record<string, SignalProfileEntry | null>;
   referenceTimeMs: number | null;
   tagsMap: Record<number, Tag>;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  unitsMap?: Record<number, Unit>;
 };
 
 const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
@@ -68,6 +74,9 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   profiles,
   referenceTimeMs,
   tagsMap,
+  callsignInfoMap,
+  networks,
+  unitsMap,
 }: AnalysisMessageCardItemProps) {
   return (
     <MessageCard
@@ -81,6 +90,9 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       copiedFeedbackId={copiedFeedbackId}
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
+      callsignInfoMap={callsignInfoMap}
+      networks={networks}
+      unitsMap={unitsMap}
       onBookmark={() => onToggleMessageBookmark(id, message.bookmarked)}
       onImportant={() => onToggleMessageImportant(id, message.important)}
       onCopyText={() => {
@@ -123,6 +135,9 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageTag,
   profiles,
   tagsMap,
+  callsignInfoMap,
+  networks,
+  unitsMap,
 }: Props) {
   const [commentDraft, setCommentDraft] = useState('');
   const [commentMessage, setCommentMessage] = useState<{ id: number; message: InboxMessage } | null>(null);
@@ -190,6 +205,9 @@ function AnalysisMessagesPaneComponent({
               profiles={profiles}
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}
+              callsignInfoMap={callsignInfoMap}
+              networks={networks}
+              unitsMap={unitsMap}
             />
           ))}
         </Box>
