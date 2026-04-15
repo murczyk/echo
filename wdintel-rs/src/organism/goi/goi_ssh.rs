@@ -205,8 +205,8 @@ fn goi_exec_command_for_session(
     let mut channel = session.channel_session().c(h!())?;
     channel.exec(command).c(h!())?;
 
-    let mut stdout = String::new();
-    channel.read_to_string(&mut stdout).c(h!())?;
+    let stdout_lines =
+        goi_read_stdout_lines(&mut channel, max_lines, fail_on_limit)?;
     let mut stderr = String::new();
     channel.stderr().read_to_string(&mut stderr).c(h!())?;
     channel.wait_close().c(h!())?;
@@ -224,27 +224,66 @@ fn goi_exec_command_for_session(
         )
         .context(h!()));
     }
+    Ok(stdout_lines)
+}
 
+fn goi_read_stdout_lines(
+    channel: &mut ssh2::Channel,
+    max_lines: Option<usize>,
+    fail_on_limit: bool,
+) -> anyhow::Result<Vec<String>> {
     let mut lines = Vec::new();
-    for line in stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-    {
-        if let Some(limit) = max_lines {
-            if lines.len() >= limit {
-                if fail_on_limit {
-                    return Err(anyhow::anyhow!(
-                        "remote command output exceeds line limit {limit}"
-                    )
-                    .context(h!()));
+    let mut current_line = Vec::new();
+    let mut ignore_remaining_stdout = false;
+    let mut buf = [0_u8; 8192];
+
+    loop {
+        let bytes_read = channel.read(&mut buf).c(h!())?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        for byte in &buf[..bytes_read] {
+            if ignore_remaining_stdout {
+                continue;
+            }
+
+            if let Some(limit) = max_lines {
+                if lines.len() >= limit {
+                    if fail_on_limit {
+                        return Err(anyhow::anyhow!(
+                            "remote command output exceeds line limit {limit}"
+                        )
+                        .context(h!()));
+                    }
+                    ignore_remaining_stdout = true;
+                    current_line.clear();
+                    continue;
                 }
-                break;
+            }
+
+            if *byte == b'\n' {
+                goi_push_stdout_line(&mut lines, &mut current_line);
+            } else {
+                current_line.push(*byte);
             }
         }
+    }
+
+    if !ignore_remaining_stdout {
+        goi_push_stdout_line(&mut lines, &mut current_line);
+    }
+
+    Ok(lines)
+}
+
+fn goi_push_stdout_line(lines: &mut Vec<String>, line_buf: &mut Vec<u8>) {
+    let line = String::from_utf8_lossy(line_buf);
+    let line = line.trim();
+    if !line.is_empty() {
         lines.push(line.to_string());
     }
-    Ok(lines)
+    line_buf.clear();
 }
 
 fn goi_connect_for_socket(
