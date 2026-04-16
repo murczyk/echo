@@ -321,39 +321,18 @@ function rerAnalysisNeoQueryStateFromMessage(msg: InboxMessage, search: string):
   const to = new Date(now);
   to.setDate(to.getDate() + 1);
   const freqStr = msg.freq != null ? String(msg.freq).trim() : '';
-  const freqsSelected = freqStr !== '' ? [freqStr] : [];
-  return {
+  const state: RerAnalysisQueryState = {
     dateFromStr: toDateStr(from),
     timeFromStr: '',
     dateToStr: toDateStr(to),
     timeToStr: '00:00',
-    aorsSelected: [],
-    groupsSelected: [],
-    sendersSelected: [],
-    freqsSelected,
-    callsignsSelected: [],
-    unitsSelected: [],
-    locationsSelected: [],
-    postsSelected: [],
-    networksSelected: [],
-    withoutNetwork: false,
-    orWithExtendedForm: false,
-    orBookmarked: false,
-    orImportant: false,
-    orWithCoords: false,
     search,
-    metadataCc: [],
-    metadataSender: [],
-    metadataReceiver: [],
-    metadataHash: [],
-    onlyWithMetadata: false,
-    withoutMetadata: false,
-    tags: [],
     includePelengLocations: false,
-    unitsExactMatchOnly: null,
-    adjacentFreqsRange: 0,
-    withoutModelTags: false,
   };
+  if (freqStr !== '') {
+    state.freqsSelected = [freqStr];
+  }
+  return state;
 }
 
 function buildRerAnalysisNeoHref(state: RerAnalysisQueryState, showMap: boolean): string {
