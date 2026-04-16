@@ -405,19 +405,17 @@ pub async fn goi_list_relative_files(
 
 pub async fn goi_move_file_to_folder(
     req: CheckOrganismGoiConnectionReq,
-    file_name: String,
+    source_file_names: Vec<String>,
+    target_file_name: String,
     target_folder: Option<String>,
     source_folder_hint: Option<String>,
 ) -> anyhow::Result<()> {
     goi_validate_connection_req(&req)?;
-    let file_name = file_name.trim().trim_start_matches('/').to_string();
-    if file_name.is_empty() {
-        anyhow::bail!("GOI file move failed: file name is empty");
-    }
     let mut entries = goi_list_relative_files(req.clone()).await.c(h!())?;
     goi_move_file_to_folder_with_entries(
         req,
-        file_name,
+        source_file_names,
+        target_file_name,
         target_folder,
         source_folder_hint,
         &mut entries,
@@ -427,25 +425,27 @@ pub async fn goi_move_file_to_folder(
 
 pub async fn goi_move_file_to_folder_with_entries(
     req: CheckOrganismGoiConnectionReq,
-    file_name: String,
+    source_file_names: Vec<String>,
+    target_file_name: String,
     target_folder: Option<String>,
     source_folder_hint: Option<String>,
     entries: &mut Vec<String>,
 ) -> anyhow::Result<()> {
     goi_validate_connection_req(&req)?;
-    let file_name = file_name.trim().trim_start_matches('/').to_string();
-    if file_name.is_empty() {
-        anyhow::bail!("GOI file move failed: file name is empty");
-    }
+    let source_file_names =
+        normalize_goi_file_names(source_file_names).c(h!())?;
+    let target_file_name = normalize_goi_file_name(target_file_name).c(h!())?;
     let current_rel_path = goi_find_source_relative_path(
         entries.as_slice(),
-        &file_name,
+        source_file_names.as_slice(),
         source_folder_hint.as_deref(),
     )
     .c(h!())?;
-    let target_rel_path =
-        goi_build_relative_path_checked(target_folder.as_deref(), &file_name)
-            .c(h!())?;
+    let target_rel_path = goi_build_relative_path_checked(
+        target_folder.as_deref(),
+        &target_file_name,
+    )
+    .c(h!())?;
     if current_rel_path == target_rel_path {
         return Ok(());
     }
@@ -506,99 +506,79 @@ fn goi_relative_path_exists(entries: &[String], rel_path: &str) -> bool {
 
 fn goi_find_source_relative_path(
     entries: &[String],
-    file_name: &str,
+    file_names: &[String],
     source_folder_hint: Option<&str>,
 ) -> anyhow::Result<String> {
-    let paths = entries
-        .iter()
-        .filter_map(|entry| {
-            goi_parse_relative_file_entry(entry).and_then(
-                |(entry_folder, entry_file_name)| {
-                    (entry_file_name == file_name).then_some(
-                        goi_build_relative_path(
-                            entry_folder.as_deref(),
-                            &entry_file_name,
-                        ),
-                    )
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    if let Some(source_folder_hint) = source_folder_hint {
-        let source_folder_hint =
-            source_folder_hint.trim().trim_matches('/').to_string();
-        let source_folder_hint = if source_folder_hint.is_empty() {
-            None
-        } else {
-            Some(source_folder_hint.as_str())
-        };
-        let hinted_source_rel_path =
-            goi_build_relative_path_checked(source_folder_hint, file_name)
-                .c(h!())?;
-        if paths.contains(&hinted_source_rel_path) {
-            return Ok(hinted_source_rel_path);
+    for file_name in file_names {
+        let paths = entries
+            .iter()
+            .filter_map(|entry| {
+                goi_parse_relative_file_entry(entry).and_then(
+                    |(entry_folder, entry_file_name)| {
+                        (entry_file_name == *file_name).then_some(
+                            goi_build_relative_path(
+                                entry_folder.as_deref(),
+                                &entry_file_name,
+                            ),
+                        )
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        if let Some(source_folder_hint) = source_folder_hint {
+            let source_folder_hint =
+                source_folder_hint.trim().trim_matches('/').to_string();
+            let source_folder_hint = if source_folder_hint.is_empty() {
+                None
+            } else {
+                Some(source_folder_hint.as_str())
+            };
+            let hinted_source_rel_path =
+                goi_build_relative_path_checked(source_folder_hint, file_name)
+                    .c(h!())?;
+            if paths.contains(&hinted_source_rel_path) {
+                return Ok(hinted_source_rel_path);
+            }
+        }
+        match paths.as_slice() {
+            [] => {}
+            [single] => return Ok(single.clone()),
+            _ => {
+                anyhow::bail!(
+                    "GOI file move failed: multiple source files named '{file_name}' were found: {:?}",
+                    paths
+                )
+            }
         }
     }
-    match paths.as_slice() {
-        [] => anyhow::bail!(
-            "GOI file move failed: source file '{file_name}' not found"
-        ),
-        [single] => Ok(single.clone()),
-        _ => anyhow::bail!(
-            "GOI file move failed: multiple source files named '{file_name}' were found: {:?}",
-            paths
-        ),
-    }
+    anyhow::bail!(
+        "GOI file move failed: none of the source file names were found: {:?}",
+        file_names
+    )
 }
 
-pub async fn goi_move_file_to_folder_loose(
-    req: CheckOrganismGoiConnectionReq,
-    file_name: String,
-    target_folder: Option<String>,
-    source_folder_hint: Option<String>,
-) {
-    let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
-    let file_name_for_log = file_name.clone();
-    let folder_for_log =
-        target_folder.clone().unwrap_or_else(|| ".".to_string());
-    if let Err(err) = goi_move_file_to_folder(
-        req,
-        file_name,
-        target_folder,
-        source_folder_hint,
-    )
-    .await
-    {
-        log::warn!(
-            "Skipping GOI file move for {ssh_target} {file_name_for_log} -> {folder_for_log}: {err:#}"
-        );
+fn normalize_goi_file_name(file_name: String) -> anyhow::Result<String> {
+    let file_name = file_name.trim().trim_start_matches('/').to_string();
+    if file_name.is_empty() {
+        anyhow::bail!("GOI file move failed: file name is empty");
     }
+    Ok(file_name)
 }
 
-pub async fn goi_move_file_to_folder_with_entries_loose(
-    req: CheckOrganismGoiConnectionReq,
-    file_name: String,
-    target_folder: Option<String>,
-    source_folder_hint: Option<String>,
-    entries: &mut Vec<String>,
-) {
-    let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
-    let file_name_for_log = file_name.clone();
-    let folder_for_log =
-        target_folder.clone().unwrap_or_else(|| ".".to_string());
-    if let Err(err) = goi_move_file_to_folder_with_entries(
-        req,
-        file_name,
-        target_folder,
-        source_folder_hint,
-        entries,
-    )
-    .await
-    {
-        log::warn!(
-            "Skipping GOI file move for {ssh_target} {file_name_for_log} -> {folder_for_log}: {err:#}"
-        );
+fn normalize_goi_file_names(
+    file_names: Vec<String>,
+) -> anyhow::Result<Vec<String>> {
+    let mut normalized = Vec::with_capacity(file_names.len());
+    for file_name in file_names {
+        let file_name = normalize_goi_file_name(file_name).c(h!())?;
+        if !normalized.contains(&file_name) {
+            normalized.push(file_name);
+        }
     }
+    if normalized.is_empty() {
+        anyhow::bail!("GOI file move failed: source file names are empty");
+    }
+    Ok(normalized)
 }
 
 pub(super) async fn goi_run_command(
@@ -1425,7 +1405,7 @@ mod tests {
         let entries = vec!["./folder_a/palitra.kmz".to_string()];
         let path = goi_find_source_relative_path(
             entries.as_slice(),
-            "palitra.kmz",
+            &["palitra.kmz".to_string()],
             None,
         )
         .unwrap();
@@ -1440,7 +1420,7 @@ mod tests {
         ];
         let path = goi_find_source_relative_path(
             entries.as_slice(),
-            "palitra.kmz",
+            &["palitra.kmz".to_string()],
             Some("folder_b"),
         )
         .unwrap();
@@ -1455,7 +1435,7 @@ mod tests {
         ];
         let path = goi_find_source_relative_path(
             entries.as_slice(),
-            "palitra.kmz",
+            &["palitra.kmz".to_string()],
             Some(""),
         )
         .unwrap();
@@ -1470,7 +1450,7 @@ mod tests {
         ];
         let err = goi_find_source_relative_path(
             entries.as_slice(),
-            "palitra.kmz",
+            &["palitra.kmz".to_string()],
             None,
         )
         .unwrap_err();

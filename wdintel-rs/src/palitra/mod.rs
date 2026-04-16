@@ -24,7 +24,6 @@ use sea_orm::*;
 use std::collections::{BTreeMap, HashSet};
 use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
-use std::time::Duration;
 use tempfile::tempdir;
 use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
@@ -34,9 +33,6 @@ mod kmz;
 pub mod oneoff;
 pub mod types;
 pub mod worker;
-
-const GOI_FOLDER_SYNC_RETRY_ATTEMPTS: usize = 3;
-const GOI_FOLDER_SYNC_RETRY_DELAY_SEC: u64 = 2;
 
 #[derive(Clone)]
 struct UserScope {
@@ -95,7 +91,7 @@ pub async fn create_palitra_with_kmz(
 
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
-    let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
+    let remote_filename = palitra_goi_remote_file_name(palitra.id);
     let upload = kmz::load_coordinates_from_file(
         multipart_payload.filename.clone(),
         multipart_payload.kmz_data.clone(),
@@ -230,15 +226,17 @@ pub async fn create_palitra_basic(
             .c(h!())?;
     }
 
-    let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
-    sync_upload_palitra_to_connected_organisms(
-        &env.dbx,
-        &access,
-        &remote_filename,
-        multipart_payload.kmz_data,
-    )
-    .await
-    .c(h!())?;
+    for palitra_id in &created_palitra_ids {
+        let remote_filename = palitra_goi_remote_file_name(*palitra_id);
+        sync_upload_palitra_to_connected_organisms(
+            &env.dbx,
+            &access,
+            &remote_filename,
+            multipart_payload.kmz_data.clone(),
+        )
+        .await
+        .c(h!())?;
+    }
     txn.commit().await.c(h!())?;
 
     let first_palitra_id = created_palitra_ids.first().copied().c(h!())?;
@@ -349,7 +347,7 @@ pub async fn create_palitra_basic_v2(
         .await
         .c(h!())?;
 
-    let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
+    let remote_filename = palitra_goi_remote_file_name(palitra.id);
     sync_upload_palitra_to_connected_organisms(
         &env.dbx,
         &access,
@@ -539,7 +537,7 @@ pub async fn upload_palitra_points(
         .await
         .c(h!())?;
 
-    let remote_filename = kmz_file_name_as_kmz(&filename);
+    let remote_filename = palitra_goi_remote_file_name(palitra.id);
     sync_upload_palitra_to_connected_organisms(
         &env.dbx,
         &existing_access,
@@ -788,13 +786,12 @@ pub async fn assign_palitra_folder(
     )
     .await
     .c(h!())?;
+    sync_move_palitra_files_to_connected_organisms(&txn, &sync_items)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     let palitra_ids =
         sync_items.iter().map(|item| item.palitra_id).collect_vec();
-    spawn_sync_move_palitra_files_to_connected_organisms_loose(
-        env.dbx.clone(),
-        sync_items,
-    );
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
 }
 
@@ -819,13 +816,12 @@ pub async fn rename_palitra_folder(
     )
     .await
     .c(h!())?;
+    sync_move_palitra_files_to_connected_organisms(&txn, &sync_items)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     let palitra_ids =
         sync_items.iter().map(|item| item.palitra_id).collect_vec();
-    spawn_sync_move_palitra_files_to_connected_organisms_loose(
-        env.dbx.clone(),
-        sync_items,
-    );
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
 }
 
@@ -1548,10 +1544,13 @@ async fn is_palitra_author_or_admin(
     Ok(is_admin || palitra.author.as_deref() == Some(login))
 }
 
-async fn read_palitra_access(
-    dbx: &DatabaseConnection,
+async fn read_palitra_access<'a, C>(
+    dbx: &'a C,
     palitra_id: i64,
-) -> anyhow::Result<PalitraAccess> {
+) -> anyhow::Result<PalitraAccess>
+where
+    C: ConnectionTrait + 'a,
+{
     let logins = bl::collect_palitra_access_logins(dbx, palitra_id)
         .await
         .c(h!())?;
@@ -1643,77 +1642,51 @@ async fn sync_upload_palitra_to_connected_organisms(
 
 async fn sync_delete_palitra_from_connected_organisms(
     dbx: &DatabaseConnection,
+    palitra_id: i64,
     access: &PalitraAccess,
     source_file_name: &Option<String>,
 ) -> anyhow::Result<()> {
     let PalitraAccess::ByOrganisms { organism_ids } = access else {
         return Ok(());
     };
-
-    let Some(source_file_name) = source_file_name else {
-        return Ok(());
-    };
-    let source_file_name = kmz_file_name_as_kmz(source_file_name);
     let goi_targets =
         collect_connected_goi_targets(dbx, organism_ids.as_slice())
             .await
             .c(h!())?;
+    let mut file_names = vec![palitra_goi_remote_file_name(palitra_id)];
+    if let Some(source_file_name) = source_file_name {
+        let legacy_file_name = kmz_file_name_as_kmz(source_file_name);
+        if !file_names.contains(&legacy_file_name) {
+            file_names.push(legacy_file_name);
+        }
+    }
 
     for target in goi_targets {
-        let remote_file_path =
-            compose_goi_palette_remote_path(&target.path, &source_file_name);
-        crate::organism::goi::goi_delete_file_loose(target, remote_file_path)
+        for file_name in &file_names {
+            let remote_file_path =
+                compose_goi_palette_remote_path(&target.path, file_name);
+            crate::organism::goi::goi_delete_file_loose(
+                target.clone(),
+                remote_file_path,
+            )
             .await;
+        }
     }
 
     Ok(())
 }
 
-async fn sync_move_palitra_files_to_connected_organisms_loose(
-    dbx: &DatabaseConnection,
+async fn sync_move_palitra_files_to_connected_organisms<'a, C>(
+    dbx: &'a C,
     sync_items: &[bl::PalitraFolderSyncItem],
-) {
-    for attempt in 1..=GOI_FOLDER_SYNC_RETRY_ATTEMPTS {
-        match sync_move_palitra_files_to_connected_organisms(dbx, sync_items)
-            .await
-        {
-            Ok(()) => return,
-            Err(err) if attempt == GOI_FOLDER_SYNC_RETRY_ATTEMPTS => {
-                log::warn!(
-                    "Skipping GOI file move sync for palitra folders after {attempt} attempts: {err:#}"
-                );
-            }
-            Err(err) => {
-                log::warn!(
-                    "GOI file move sync attempt {attempt}/{} failed: {err:#}",
-                    GOI_FOLDER_SYNC_RETRY_ATTEMPTS
-                );
-                tokio::time::sleep(Duration::from_secs(
-                    GOI_FOLDER_SYNC_RETRY_DELAY_SEC,
-                ))
-                .await;
-            }
-        }
-    }
-}
-
-fn spawn_sync_move_palitra_files_to_connected_organisms_loose(
-    dbx: DatabaseConnection,
-    sync_items: Vec<bl::PalitraFolderSyncItem>,
-) {
-    tokio::spawn(async move {
-        sync_move_palitra_files_to_connected_organisms_loose(&dbx, &sync_items)
-            .await;
-    });
-}
-
-async fn sync_move_palitra_files_to_connected_organisms(
-    dbx: &DatabaseConnection,
-    sync_items: &[bl::PalitraFolderSyncItem],
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
     #[derive(Clone, PartialEq, Eq)]
     struct GoiMoveTask {
-        file_name: String,
+        source_file_names: Vec<String>,
+        target_file_name: String,
         target_folder: Option<String>,
         source_folder_hint: Option<String>,
     }
@@ -1762,7 +1735,13 @@ async fn sync_move_palitra_files_to_connected_organisms(
         };
         let target_folder =
             bl::normalize_palitra_folder_from_db(palitra.folder.clone());
-        let file_name = kmz_file_name_as_kmz(&source_file_name);
+        let target_file_name = palitra_goi_remote_file_name(palitra.id);
+        let legacy_file_name = kmz_file_name_as_kmz(&source_file_name);
+        let source_file_names = if legacy_file_name == target_file_name {
+            vec![target_file_name.clone()]
+        } else {
+            vec![target_file_name.clone(), legacy_file_name]
+        };
         let goi_targets =
             collect_connected_goi_targets(dbx, organism_ids.as_slice())
                 .await
@@ -1773,7 +1752,8 @@ async fn sync_move_palitra_files_to_connected_organisms(
                 target.ssh_host, target.ssh_user, target.ssh_port, target.path
             );
             let task = GoiMoveTask {
-                file_name: file_name.clone(),
+                source_file_names: source_file_names.clone(),
+                target_file_name: target_file_name.clone(),
                 target_folder: target_folder.clone(),
                 source_folder_hint: source_folder_hint
                     .as_deref()
@@ -1785,15 +1765,14 @@ async fn sync_move_palitra_files_to_connected_organisms(
                 .or_insert_with(|| (target, Vec::new()))
                 .1;
             match task_list.iter().find(|existing| {
-                existing.file_name == task.file_name
-                    && existing.source_folder_hint == task.source_folder_hint
+                existing.target_file_name == task.target_file_name
             }) {
                 None => task_list.push(task),
                 Some(existing) if existing == &task => {}
                 Some(existing) => {
                     log::warn!(
-                        "Skipping GOI file move task with duplicate source path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
-                        task.file_name,
+                        "Skipping GOI file move task with duplicate target path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
+                        task.target_file_name,
                         existing.target_folder,
                         existing.source_folder_hint,
                         task.target_folder,
@@ -1805,40 +1784,34 @@ async fn sync_move_palitra_files_to_connected_organisms(
     }
 
     for (_, (target, tasks)) in tasks_by_target {
-        let mut entries = match crate::organism::goi::goi_list_relative_files(
-            target.clone(),
-        )
-        .await
-        {
-            Ok(entries) => entries,
-            Err(err) => {
-                let ssh_target =
-                    format!("{}:{}", target.ssh_host, target.ssh_port);
-                log::warn!(
-                    "Skipping GOI file move batch for {ssh_target}: listing remote files failed: {err:#}"
-                );
-                continue;
-            }
-        };
+        let mut entries =
+            crate::organism::goi::goi_list_relative_files(target.clone())
+                .await
+                .c(h!())?;
 
         for task in tasks {
-            crate::organism::goi::goi_move_file_to_folder_with_entries_loose(
+            crate::organism::goi::goi_move_file_to_folder_with_entries(
                 target.clone(),
-                task.file_name,
+                task.source_file_names,
+                task.target_file_name,
                 task.target_folder,
                 task.source_folder_hint,
                 &mut entries,
             )
-            .await;
+            .await
+            .c(h!())?;
         }
     }
     Ok(())
 }
 
-async fn collect_connected_goi_targets(
-    dbx: &DatabaseConnection,
+async fn collect_connected_goi_targets<'a, C>(
+    dbx: &'a C,
     organism_ids: &[i64],
-) -> anyhow::Result<Vec<CheckOrganismGoiConnectionReq>> {
+) -> anyhow::Result<Vec<CheckOrganismGoiConnectionReq>>
+where
+    C: ConnectionTrait + 'a,
+{
     if organism_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -1925,6 +1898,10 @@ pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
         Some("kmz") => format!("{stem}.kmz"),
         _ => format!("{stem}.kmz"),
     }
+}
+
+pub(crate) fn palitra_goi_remote_file_name(palitra_id: i64) -> String {
+    format!("palitra_{palitra_id:06}.kmz")
 }
 
 fn compose_goi_palette_remote_path(path: &str, file_name: &str) -> String {

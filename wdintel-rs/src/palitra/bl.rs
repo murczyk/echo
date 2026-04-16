@@ -731,6 +731,7 @@ pub async fn delete_palitra(
         palitra_geometry_ids.push(geometry.id);
         sync_delete_palitra_from_connected_organisms(
             &env.dbx, // even if transaction rolls back we must save these changes to db because they perform some changes to filesystem
+            id,
             &existing_access,
             &geometry.source_file_name,
         )

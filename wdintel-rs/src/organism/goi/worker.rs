@@ -3,20 +3,15 @@ use crate::config::{
     ORGANISM_GOI_INTEGRATION_TYPE_FULL,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
-    ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC, ORGANISM_GOI_PATH_DEFAULT,
-    ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC, ORGANISM_GOI_SSH_PORT_DEFAULT,
+    ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC,
+    ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC,
 };
-use crate::entities::{
-    goi_association, goi_integration, goi_knowledge, palitra,
-    palitra_access_organism, palitra_geometry,
-};
+use crate::entities::{goi_association, goi_integration, goi_knowledge};
 use crate::error::AppError;
 use crate::organism::goi::shared::{
     goi_integration_api_host, goi_integration_api_port,
     goi_integration_has_api_config,
 };
-use crate::organism::types::CheckOrganismGoiConnectionReq;
-use crate::palitra::bl::normalize_palitra_folder;
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
 use goi_echo_worker::api::{
@@ -121,7 +116,9 @@ async fn sync_goi_palitra_folders_if_due(
     state
         .last_palitra_folder_sync_attempt_at
         .insert(integration.id, Instant::now());
-    sync_goi_palitra_folders_from_fs(env, integration).await
+    let _ = env;
+    let _ = integration;
+    Ok(())
 }
 
 async fn load_goi_worker_integrations(
@@ -647,145 +644,4 @@ fn goi_knowledge_sync_cutoff() -> chrono::DateTime<chrono::FixedOffset> {
     (chrono::Utc::now()
         - chrono::Duration::days(ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS))
     .fixed_offset()
-}
-
-async fn sync_goi_palitra_folders_from_fs(
-    env: &Env,
-    integration: &goi_integration::Model,
-) -> Result<(), AppError> {
-    let palitra_ids = palitra_access_organism::Entity::find()
-        .filter(
-            palitra_access_organism::Column::OrganismId
-                .eq(integration.owner_organism_id),
-        )
-        .select_only()
-        .column(palitra_access_organism::Column::PalitraId)
-        .into_tuple::<i64>()
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    if palitra_ids.is_empty() {
-        return Ok(());
-    }
-
-    let Some(ssh_req) = goi_connection_req_from_integration(integration)?
-    else {
-        return Ok(());
-    };
-    let entries = super::goi_list_relative_files(ssh_req).await.c(h!())?;
-    if entries.is_empty() {
-        return Ok(());
-    }
-    let folder_by_file = goi_file_folder_map(entries);
-    if folder_by_file.is_empty() {
-        return Ok(());
-    }
-
-    let palitras = palitra::Entity::find()
-        .filter(palitra::Column::Id.is_in(palitra_ids))
-        .filter(palitra::Column::Deleted.eq(false))
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    if palitras.is_empty() {
-        return Ok(());
-    }
-
-    for palitra in palitras {
-        let geometry = palitra_geometry::Entity::find()
-            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
-            .filter(palitra_geometry::Column::Deleted.eq(false))
-            .order_by_desc(palitra_geometry::Column::UpdatedAt)
-            .order_by_desc(palitra_geometry::Column::Id)
-            .one(&env.dbx)
-            .await
-            .c(h!())?;
-        let Some(source_file_name) =
-            geometry.and_then(|geometry| geometry.source_file_name)
-        else {
-            continue;
-        };
-        let file_name = crate::palitra::kmz_file_name_as_kmz(&source_file_name);
-        let Some(folder_from_fs) = folder_by_file.get(&file_name) else {
-            continue;
-        };
-        let folder_from_fs = folder_from_fs.clone();
-        let folder_for_db = match folder_from_fs {
-            Some(folder_from_fs) => {
-                match normalize_palitra_folder(&folder_from_fs) {
-                    Ok(folder_for_db) => Some(folder_for_db),
-                    Err(err) => {
-                        log::warn!(
-                        "Skipping GOI palitra folder write for integration {} palitra {} (source file '{}'): invalid nested/non-flat folder '{}': {err:#}",
-                        integration.id,
-                        palitra.id,
-                        source_file_name,
-                        folder_from_fs,
-                    );
-                        continue;
-                    }
-                }
-            }
-            None => None,
-        };
-        if normalize_optional_trimmed(palitra.folder.clone()) == folder_for_db {
-            continue;
-        }
-        let mut palitra = palitra.into_active_model();
-        palitra.folder = Set(folder_for_db);
-        palitra.update(&env.dbx).await.c(h!())?;
-    }
-
-    Ok(())
-}
-
-fn goi_file_folder_map(
-    entries: Vec<String>,
-) -> HashMap<String, Option<String>> {
-    let mut seen = HashMap::<String, Option<Option<String>>>::new();
-    for entry in entries {
-        let Some((folder, file_name)) =
-            super::goi_parse_relative_file_entry(&entry)
-        else {
-            continue;
-        };
-        let folder = normalize_optional_trimmed(folder);
-        let entry = seen.entry(file_name).or_insert(Some(folder.clone()));
-        if *entry != Some(folder) {
-            *entry = None;
-        }
-    }
-    seen.into_iter()
-        .filter_map(|(file_name, folder)| {
-            folder.map(|folder| (file_name, folder))
-        })
-        .collect()
-}
-
-fn goi_connection_req_from_integration(
-    integration: &goi_integration::Model,
-) -> Result<Option<CheckOrganismGoiConnectionReq>, AppError> {
-    let Some(ssh_host) =
-        normalize_optional_trimmed(integration.ssh_host.clone())
-    else {
-        return Ok(None);
-    };
-    let Some(ssh_user) =
-        normalize_optional_trimmed(integration.ssh_user.clone())
-    else {
-        return Ok(None);
-    };
-    let req = CheckOrganismGoiConnectionReq {
-        ssh_host,
-        ssh_user,
-        ssh_port: if integration.ssh_port > 0 {
-            integration.ssh_port
-        } else {
-            ORGANISM_GOI_SSH_PORT_DEFAULT
-        },
-        path: normalize_optional_trimmed(Some(integration.path.clone()))
-            .unwrap_or_else(|| ORGANISM_GOI_PATH_DEFAULT.to_string()),
-    };
-    super::goi_validate_connection_req(&req).c(h!())?;
-    Ok(Some(req))
 }
