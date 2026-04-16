@@ -43,6 +43,16 @@ function toNullableList(values: string[]): string[] | null {
   return values.length > 0 ? values : null;
 }
 
+function buildUniqueDuplicateName(baseName: string, existingNames: Set<string>): string {
+  const defaultName = `${baseName} (копія)`;
+  if (!existingNames.has(defaultName)) return defaultName;
+  let index = 2;
+  while (existingNames.has(`${baseName} (копія ${index})`)) {
+    index += 1;
+  }
+  return `${baseName} (копія ${index})`;
+}
+
 export function SettingsDutySavedFiltersSection() {
   const {
     profiles,
@@ -112,10 +122,10 @@ export function SettingsDutySavedFiltersSection() {
     const normalized = normalizeFeed(selectedSaved.req as unknown as Record<string, unknown>);
     setDraftFilter(normalized);
     setRenameName(selectedSaved.name);
-    setGroupMode((prev) => (normalized.groupsDenied?.length ? 'exclude' : prev));
-    setSenderMode((prev) => (normalized.deniedSenders?.length ? 'exclude' : prev));
-    setFreqMode((prev) => (normalized.freqsDenied?.length ? 'exclude' : prev));
-    setPostMode((prev) => (normalized.postsDenied?.length ? 'exclude' : prev));
+    setGroupMode(normalized.groupsDenied?.length ? 'exclude' : 'include');
+    setSenderMode(normalized.deniedSenders?.length ? 'exclude' : 'include');
+    setFreqMode(normalized.freqsDenied?.length ? 'exclude' : 'include');
+    setPostMode(normalized.postsDenied?.length ? 'exclude' : 'include');
     setActionSuccess(null);
     setActionError(null);
   }, [selectedSaved]);
@@ -149,6 +159,11 @@ export function SettingsDutySavedFiltersSection() {
     if (!selectedSaved) return;
     const trimmed = duplicateName.trim();
     if (!trimmed) return;
+    const duplicateExists = savedFilters.some((filter) => filter.name === trimmed);
+    if (duplicateExists) {
+      setActionError(`Фільтр з назвою "${trimmed}" вже існує. Оберіть іншу назву.`);
+      return;
+    }
     setActionError(null);
     setActionSuccess(null);
     setActionLoading(true);
@@ -242,7 +257,8 @@ export function SettingsDutySavedFiltersSection() {
 
   const openDuplicateDialog = () => {
     if (!selectedSaved) return;
-    setDuplicateName(`${selectedSaved.name} (копія)`);
+    const existingNames = new Set(savedFilters.map((filter) => filter.name));
+    setDuplicateName(buildUniqueDuplicateName(selectedSaved.name, existingNames));
     setDuplicateDialogOpen(true);
   };
 
