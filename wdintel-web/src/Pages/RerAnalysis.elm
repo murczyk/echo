@@ -317,6 +317,7 @@ getInboxReq model =
     , onlyShowUnprocessed = Nothing
     , checkedOnly = Just False
     , selectedGroups = emptyToNothing model.groupsSelected
+    , deniedGroups = Nothing
     , selectedSenders = emptyToNothing model.sendersSelected
     , deniedSenders = Nothing
     , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)

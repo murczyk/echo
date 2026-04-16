@@ -112,6 +112,35 @@ where
     }
 }
 
+pub fn filter_denied_groups_with_access<Q>(
+    q: Q,
+    denied_groups: &Option<Vec<String>>,
+    allowed_groups: &[String],
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let Some(denied_groups) = denied_groups.as_ref() else {
+        return Ok(q);
+    };
+    if denied_groups.is_empty() {
+        return Ok(q);
+    }
+
+    let allowed: HashSet<&String> =
+        allowed_groups.iter().collect::<HashSet<_>>();
+    let filtered = denied_groups
+        .iter()
+        .filter(|key| allowed.contains(key))
+        .cloned()
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        return Ok(q);
+    }
+
+    Ok(q.filter(message_in_groups_exists(filtered).not()))
+}
+
 pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
     if keys.is_empty() {
         return Expr::cust("FALSE");

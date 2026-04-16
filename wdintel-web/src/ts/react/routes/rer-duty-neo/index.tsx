@@ -45,8 +45,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     loadFeedInitialMessages,
     loadFeedOlderMessages,
     applyFilter,
-    toggleGroup,
-    selectAllGroups,
     handleSaveFilter,
     handleApplySavedFilter,
     handleDeleteSavedFilter,
@@ -120,6 +118,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         {messageFeeds.map((w) => {
           const filterStable = {
             groupsSelected: w.filter.groupsSelected ?? [],
+            deniedGroups: w.filter.groupsDenied ?? [],
             sendersSelected: w.filter.sendersSelected ?? [],
             deniedSenders: w.filter.deniedSenders ?? [],
             freqsSelected: w.filter.freqsSelected ?? [],
@@ -173,8 +172,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               onLoadOlder={() => loadFeedOlderMessages(w.id)}
               onRemoveColumn={() => removeMessageFeed(w.id)}
               onApplyFilter={(f) => applyFilter(w.id, f)}
-              onSelectAllGroups={() => selectAllGroups(w.id)}
-              onToggleGroup={(key) => toggleGroup(w.id, key)}
+              onGroupsChange={(v) => applyFilter(w.id, { ...w.filter, groupsSelected: v.length ? v : null })}
+              onDeniedGroupsChange={(v) => applyFilter(w.id, { ...w.filter, groupsDenied: v.length ? v : null })}
               onSendersChange={(v) => applyFilter(w.id, { ...w.filter, sendersSelected: v.length ? v : null })}
               onDeniedSendersChange={(v) => applyFilter(w.id, { ...w.filter, deniedSenders: v.length ? v : null })}
               onFreqsChange={(v) => applyFilter(w.id, { ...w.filter, freqsSelected: v.length ? v : null })}

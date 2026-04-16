@@ -414,6 +414,7 @@ export type InboxMessagesReq = {
   onlyShowUnprocessed: boolean | null;
   checkedOnly: boolean | null;
   selectedGroups: Array<string> | null;
+  deniedGroups: Array<string> | null;
   selectedSenders: Array<string> | null;
   deniedSenders: Array<string> | null;
   selectedFreqs: Array<string> | null;
@@ -914,6 +915,7 @@ export type RerDutyQueryState = {
 
 export type RerDutyQueryStateWf = {
   groupsSelected: Array<string> | null;
+  groupsDenied: Array<string> | null;
   sendersSelected: Array<string> | null;
   deniedSenders: Array<string> | null;
   freqsSelected: Array<string> | null;
