@@ -43,6 +43,7 @@ export const DEFAULT_DUTY_TAGS_LAYOUT: TagsLayoutVariant = 'compact';
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
     groupsSelected: null,
+    groupsDenied: null,
     sendersSelected: null,
     deniedSenders: null,
     freqsSelected: null,
@@ -65,6 +66,7 @@ function optArrEqual(a: string[] | null | undefined, b: string[] | null | undefi
 export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterState): boolean {
   return (
     optArrEqual(a.groupsSelected, b.groupsSelected) &&
+    optArrEqual(a.groupsDenied, b.groupsDenied) &&
     optArrEqual(a.sendersSelected, b.sendersSelected) &&
     optArrEqual(a.deniedSenders, b.deniedSenders) &&
     optArrEqual(a.freqsSelected, b.freqsSelected) &&
@@ -124,6 +126,7 @@ export function buildInboxReq(opts: {
     onlyShowUnprocessed: null,
     checkedOnly: null,
     selectedGroups: emptyArrToNull(f.groupsSelected),
+    deniedGroups: emptyArrToNull(f.groupsDenied),
     selectedSenders: emptyArrToNull(f.sendersSelected),
     deniedSenders: emptyArrToNull(f.deniedSenders),
     selectedFreqs,
@@ -173,6 +176,7 @@ export function buildInboxReq(opts: {
 export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterState {
   return {
     groupsSelected: emptyArrToNull((raw.groupsSelected ?? raw.groups_selected ?? null) as string[] | null),
+    groupsDenied: emptyArrToNull((raw.groupsDenied ?? raw.groups_denied ?? null) as string[] | null),
     sendersSelected: emptyArrToNull((raw.sendersSelected ?? raw.senders_selected ?? null) as string[] | null),
     deniedSenders: emptyArrToNull((raw.deniedSenders ?? raw.denied_senders ?? null) as string[] | null),
     freqsSelected: emptyArrToNull((raw.freqsSelected ?? raw.freqs_selected ?? null) as string[] | null),

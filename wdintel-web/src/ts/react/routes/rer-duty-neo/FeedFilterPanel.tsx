@@ -20,12 +20,12 @@ import {
 import { useEffect, useState } from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
-import { PowerChip } from '../../components/PowerChip';
 
 export type FeedFilterPanelProps = {
   feedId: string;
   filterStable: {
     groupsSelected: string[];
+    deniedGroups: string[];
     sendersSelected: string[];
     deniedSenders: string[];
     freqsSelected: string[];
@@ -46,8 +46,8 @@ export type FeedFilterPanelProps = {
   selectedSavedId: number | null;
   saveFilterName: string;
   reloadFreqsLoading: boolean;
-  onSelectAllGroups: () => void;
-  onToggleGroup: (key: string) => void;
+  onGroupsChange: (v: string[]) => void;
+  onDeniedGroupsChange: (v: string[]) => void;
   onSendersChange: (v: string[]) => void;
   onDeniedSendersChange: (v: string[]) => void;
   onFreqsChange: (v: string[]) => void;
@@ -81,8 +81,8 @@ export function FeedFilterPanel({
   selectedSavedId,
   saveFilterName,
   reloadFreqsLoading,
-  onSelectAllGroups,
-  onToggleGroup,
+  onGroupsChange,
+  onDeniedGroupsChange,
   onSendersChange,
   onDeniedSendersChange,
   onFreqsChange,
@@ -99,6 +99,9 @@ export function FeedFilterPanel({
   onApplySavedFilter,
   onDeleteSavedFilter,
 }: FeedFilterPanelProps) {
+  const [groupMode, setGroupMode] = useState<'include' | 'exclude'>(() =>
+    filterStable.deniedGroups.length > 0 ? 'exclude' : 'include',
+  );
   const [senderMode, setSenderMode] = useState<'include' | 'exclude'>(() =>
     filterStable.deniedSenders.length > 0 ? 'exclude' : 'include',
   );
@@ -111,6 +114,15 @@ export function FeedFilterPanel({
     postsDenied.length > 0 ? 'exclude' : 'include',
   );
 
+  useEffect(() => {
+    setGroupMode((m) => {
+      const includeLen = filterStable.groupsSelected.length;
+      const excludeLen = filterStable.deniedGroups.length;
+      if (m === 'include' && includeLen === 0 && excludeLen > 0) return 'exclude';
+      if (m === 'exclude' && excludeLen === 0 && includeLen > 0) return 'include';
+      return m;
+    });
+  }, [filterStable.groupsSelected.length, filterStable.deniedGroups.length]);
   useEffect(() => {
     setSenderMode((m) => {
       const includeLen = filterStable.sendersSelected.length;
@@ -140,6 +152,8 @@ export function FeedFilterPanel({
   }, [postsSelected.length, postsDenied.length]);
 
   /** Stable deps for resync effects — parent uses `x ?? []` so empty filters get a new [] each render. */
+  const groupsSelectedKey = JSON.stringify(filterStable.groupsSelected);
+  const deniedGroupsKey = JSON.stringify(filterStable.deniedGroups);
   const sendersSelectedKey = JSON.stringify(filterStable.sendersSelected);
   const deniedSendersKey = JSON.stringify(filterStable.deniedSenders);
   const freqsSelectedKey = JSON.stringify(filterStable.freqsSelected);
@@ -159,17 +173,29 @@ export function FeedFilterPanel({
     });
   });
   const senderEmptyLabel = senderMode === 'include' ? 'всі' : 'ніхто';
+  const groupEmptyLabel = groupMode === 'include' ? 'всі' : 'ніяка';
 
   const freqValue = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
   const freqEmptyLabel = freqMode === 'include' ? 'всі' : 'ніяка';
   const [localFreqValue, setLocalFreqValue] = useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = useState<string[]>(() => postValue);
   const sortedGroupKeys = [...groupsList].sort((a, b) => (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b));
+  const [localGroupValue, setLocalGroupValue] = useState<string[]>(() =>
+    filterStable.deniedGroups?.length > 0 ? filterStable.deniedGroups : (filterStable.groupsSelected ?? []),
+  );
   const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
 
   // Resync local selections when *parent* filter changes. Do not depend on local* state: if local
   // is in deps, this runs after user picks an option but before the parent applies it, and would
   // overwrite the selection with the old filter → fight with writeback + MUI Autocomplete loop.
+  useEffect(() => {
+    const value = groupMode === 'include' ? filterStable.groupsSelected : filterStable.deniedGroups;
+    const next = value ?? [];
+    setLocalGroupValue((prev) => {
+      if (next.length === prev.length && next.every((v, i) => v === prev[i])) return prev;
+      return next;
+    });
+  }, [groupsSelectedKey, deniedGroupsKey, groupMode]);
   useEffect(() => {
     const ids =
       senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
@@ -199,6 +225,15 @@ export function FeedFilterPanel({
   }, [postsSelectedKey, postsDeniedKey, postMode]);
 
   // Push local selections to parent only when they differ from filterStable; avoid rewriting on mount
+  useEffect(() => {
+    const current = groupMode === 'include' ? filterStable.groupsSelected : filterStable.deniedGroups;
+    const next = localGroupValue;
+    if (current.length === next.length && current.every((v, i) => v === next[i])) return;
+    if (groupMode === 'include') onGroupsChange(next);
+    else onDeniedGroupsChange(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localGroupValue so writeback runs after resync
+  }, [localGroupValue]);
+
   useEffect(() => {
     const ids = localSenderValue.map((o) => o.id);
     const current = senderMode === 'include' ? filterStable.sendersSelected : filterStable.deniedSenders;
@@ -236,20 +271,49 @@ export function FeedFilterPanel({
           <Typography variant="subtitle2" className="mb-2 font-semibold">
             Групи
           </Typography>
-          <Box className="flex flex-wrap gap-1 items-center">
-            <PowerChip
-              label="всі"
+          <Box className="flex flex-wrap gap-2 items-center">
+            <ToggleButtonGroup
+              value={groupMode}
+              exclusive
+              onChange={(_, v) => {
+                if (v == null) return;
+                setGroupMode(v);
+                setLocalGroupValue([]);
+                if (v === 'include') onDeniedGroupsChange([]);
+                else onGroupsChange([]);
+              }}
               size="small"
-              selected={filterStable.groupsSelected.length === 0}
-              onClick={onSelectAllGroups}
+              sx={{
+                flexShrink: 0,
+                borderRadius: 3,
+                '& .MuiToggleButton-root': { borderRadius: 2, textTransform: 'lowercase' },
+              }}
+            >
+              <ToggleButton value="include">лише</ToggleButton>
+              <ToggleButton value="exclude">окрім</ToggleButton>
+            </ToggleButtonGroup>
+            <Autocomplete
+              multiple
+              size="small"
+              options={sortedGroupKeys}
+              getOptionLabel={(key) => groupInfos[key]?.name ?? key}
+              value={localGroupValue}
+              onChange={(_, value) => setLocalGroupValue(value)}
+              filterSelectedOptions
+              clearOnEscape
+              renderOption={(props, option, state) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={`${option}-${state.index}`}>
+                    {groupInfos[option]?.name ?? option}
+                  </li>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField {...params} placeholder={localGroupValue.length === 0 ? groupEmptyLabel : undefined} />
+              )}
+              className="min-w-[180px] flex-1"
             />
-            {sortedGroupKeys.map((key) => {
-              const name = groupInfos[key]?.name ?? key;
-              const selected = filterStable.groupsSelected.includes(key);
-              return (
-                <PowerChip key={key} label={name} size="small" selected={selected} onClick={() => onToggleGroup(key)} />
-              );
-            })}
           </Box>
         </Box>
 

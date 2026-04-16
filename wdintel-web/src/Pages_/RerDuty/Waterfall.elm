@@ -394,6 +394,7 @@ getBasicInboxParams model =
     , onlyShowUnprocessed = Nothing
     , checkedOnly = Just False
     , selectedGroups = emptyToNothing model.groupsSelected
+    , deniedGroups = Nothing
     , selectedSenders = emptyToNothing model.sendersSelect.selected
     , deniedSenders = emptyToNothing model.sendersDeniedSelect.selected
     , selectedFreqs = emptyToNothing (model.freqsSelect.selected ++ model.filterSelectedAdjacentFreqs)
@@ -851,6 +852,7 @@ updateFilters msg model =
                 reqParams : Filter a -> B.RerDutyQueryStateWf
                 reqParams m =
                     { groupsSelected = Just m.groupsSelected
+                    , groupsDenied = Nothing
                     , sendersSelected = Just m.sendersSelect.selected
                     , deniedSenders = Just m.sendersDeniedSelect.selected
                     , freqsSelected = Just m.freqsSelect.selected

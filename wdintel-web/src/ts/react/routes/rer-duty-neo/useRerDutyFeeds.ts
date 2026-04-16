@@ -46,7 +46,10 @@ function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [numb
 
 function mergeGroupsFromMessages(
   apiGroups: string[],
-  messageFeeds: { items: [number, { groupMasterKey?: string | null }][]; filter: { groupsSelected?: string[] | null } }[],
+  messageFeeds: {
+    items: [number, { groupMasterKey?: string | null }][];
+    filter: { groupsSelected?: string[] | null; groupsDenied?: string[] | null };
+  }[],
 ): string[] {
   const fromMsgs = new Set<string>();
   messageFeeds.forEach((feed) =>
@@ -56,6 +59,9 @@ function mergeGroupsFromMessages(
   );
   messageFeeds.forEach((feed) => {
     (feed.filter.groupsSelected ?? []).forEach((key) => {
+      if (key.trim() !== '') fromMsgs.add(key.trim());
+    });
+    (feed.filter.groupsDenied ?? []).forEach((key) => {
       if (key.trim() !== '') fromMsgs.add(key.trim());
     });
   });

@@ -301,6 +301,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const signature = JSON.stringify({
         filter: {
           groupsSelected: feed.filter.groupsSelected ?? null,
+          deniedGroups: feed.filter.groupsDenied ?? null,
           sendersSelected: feed.filter.sendersSelected ?? null,
           deniedSenders: feed.filter.deniedSenders ?? null,
           freqsSelected: feed.filter.freqsSelected ?? null,
