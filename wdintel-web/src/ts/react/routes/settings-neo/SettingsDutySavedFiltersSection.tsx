@@ -69,6 +69,8 @@ export function SettingsDutySavedFiltersSection() {
   const [draftFilter, setDraftFilter] = useState<RerDutyFeedFilterState>(EMPTY_FILTER);
   const [renameName, setRenameName] = useState('');
   const [duplicateName, setDuplicateName] = useState('');
+  const [renameDialogError, setRenameDialogError] = useState<string | null>(null);
+  const [duplicateDialogError, setDuplicateDialogError] = useState<string | null>(null);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
   const [groupMode, setGroupMode] = useState<'include' | 'exclude'>('include');
@@ -109,10 +111,12 @@ export function SettingsDutySavedFiltersSection() {
   }, [senderOptions]);
 
   useEffect(() => {
-    if (!selectedSaved) {
+    if (!selectedSavedId || !selectedSaved) {
       setDraftFilter(EMPTY_FILTER);
       setRenameName('');
       setDuplicateName('');
+      setRenameDialogError(null);
+      setDuplicateDialogError(null);
       setGroupMode('include');
       setSenderMode('include');
       setFreqMode('include');
@@ -126,9 +130,7 @@ export function SettingsDutySavedFiltersSection() {
     setSenderMode(normalized.deniedSenders?.length ? 'exclude' : 'include');
     setFreqMode(normalized.freqsDenied?.length ? 'exclude' : 'include');
     setPostMode(normalized.postsDenied?.length ? 'exclude' : 'include');
-    setActionSuccess(null);
-    setActionError(null);
-  }, [selectedSaved]);
+  }, [selectedSavedId, selectedSaved?.req]);
 
   const updateDraft = (next: Partial<RerDutyFeedFilterState>) => {
     setDraftFilter((prev) => ({ ...prev, ...next }));
@@ -161,9 +163,10 @@ export function SettingsDutySavedFiltersSection() {
     if (!trimmed) return;
     const duplicateExists = savedFilters.some((filter) => filter.name === trimmed);
     if (duplicateExists) {
-      setActionError(`Фільтр з назвою "${trimmed}" вже існує. Оберіть іншу назву.`);
+      setDuplicateDialogError(`Фільтр з назвою "${trimmed}" вже існує.`);
       return;
     }
+    setDuplicateDialogError(null);
     setActionError(null);
     setActionSuccess(null);
     setActionLoading(true);
@@ -171,6 +174,7 @@ export function SettingsDutySavedFiltersSection() {
       const list = await savedFilterUpsert({ name: trimmed, req: draftFilter });
       setSavedFilters(list);
       setDuplicateDialogOpen(false);
+      setDuplicateDialogError(null);
       setActionSuccess('Фільтр продубльовано');
     } catch (error) {
       setActionError(`Помилка дублювання: ${formatErrorMessage(error)}`);
@@ -215,6 +219,12 @@ export function SettingsDutySavedFiltersSection() {
     if (!selectedSaved) return;
     const trimmed = renameName.trim();
     if (!trimmed || trimmed === selectedSaved.name) return;
+    const duplicateExists = savedFilters.some((filter) => filter.id !== selectedSaved.id && filter.name === trimmed);
+    if (duplicateExists) {
+      setRenameDialogError(`Фільтр з назвою "${trimmed}" вже існує.`);
+      return;
+    }
+    setRenameDialogError(null);
     setActionError(null);
     setActionSuccess(null);
     setActionLoading(true);
@@ -222,6 +232,7 @@ export function SettingsDutySavedFiltersSection() {
       await savedFilterRename({ id: selectedSaved.id, name: trimmed });
       setSavedFilters((prev) => prev.map((f) => (f.id === selectedSaved.id ? { ...f, name: trimmed } : f)));
       setRenameDialogOpen(false);
+      setRenameDialogError(null);
       setActionSuccess('Назву змінено');
     } catch (error) {
       setActionError(`Помилка перейменування: ${formatErrorMessage(error)}`);
@@ -252,6 +263,7 @@ export function SettingsDutySavedFiltersSection() {
   const openRenameDialog = () => {
     if (!selectedSaved) return;
     setRenameName(selectedSaved.name);
+    setRenameDialogError(null);
     setRenameDialogOpen(true);
   };
 
@@ -259,6 +271,7 @@ export function SettingsDutySavedFiltersSection() {
     if (!selectedSaved) return;
     const existingNames = new Set(savedFilters.map((filter) => filter.name));
     setDuplicateName(buildUniqueDuplicateName(selectedSaved.name, existingNames));
+    setDuplicateDialogError(null);
     setDuplicateDialogOpen(true);
   };
 
@@ -284,7 +297,11 @@ export function SettingsDutySavedFiltersSection() {
                 labelId="settings-duty-saved-filter"
                 label="вибрати фільтр"
                 value={selectedSavedId ?? ''}
-                onChange={(e) => setSelectedSavedId(e.target.value === '' ? null : Number(e.target.value))}
+                onChange={(e) => {
+                  setActionSuccess(null);
+                  setActionError(null);
+                  setSelectedSavedId(e.target.value === '' ? null : Number(e.target.value));
+                }}
               >
                 <MenuItem value="">—</MenuItem>
                 {sortedSavedFilters.map((filter) => (
@@ -484,7 +501,15 @@ export function SettingsDutySavedFiltersSection() {
         </Box>
       </Stack>
 
-      <Dialog open={renameDialogOpen} onClose={() => setRenameDialogOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={renameDialogOpen}
+        onClose={() => {
+          setRenameDialogOpen(false);
+          setRenameDialogError(null);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Перейменувати фільтр</DialogTitle>
         <DialogContent>
           <TextField
@@ -493,11 +518,23 @@ export function SettingsDutySavedFiltersSection() {
             label="Нова назва"
             fullWidth
             value={renameName}
-            onChange={(e) => setRenameName(e.target.value)}
+            onChange={(e) => {
+              setRenameName(e.target.value);
+              setRenameDialogError(null);
+            }}
+            error={renameDialogError != null}
+            helperText={renameDialogError ?? ' '}
           />
         </DialogContent>
         <DialogActions>
-          <Button size="small" variant="text" onClick={() => setRenameDialogOpen(false)}>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => {
+              setRenameDialogOpen(false);
+              setRenameDialogError(null);
+            }}
+          >
             скасувати
           </Button>
           <Button
@@ -511,7 +548,15 @@ export function SettingsDutySavedFiltersSection() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={duplicateDialogOpen} onClose={() => setDuplicateDialogOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={duplicateDialogOpen}
+        onClose={() => {
+          setDuplicateDialogOpen(false);
+          setDuplicateDialogError(null);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Дублювати фільтр</DialogTitle>
         <DialogContent>
           <TextField
@@ -520,11 +565,23 @@ export function SettingsDutySavedFiltersSection() {
             label="Назва нового фільтра"
             fullWidth
             value={duplicateName}
-            onChange={(e) => setDuplicateName(e.target.value)}
+            onChange={(e) => {
+              setDuplicateName(e.target.value);
+              setDuplicateDialogError(null);
+            }}
+            error={duplicateDialogError != null}
+            helperText={duplicateDialogError ?? ' '}
           />
         </DialogContent>
         <DialogActions>
-          <Button size="small" variant="text" onClick={() => setDuplicateDialogOpen(false)}>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => {
+              setDuplicateDialogOpen(false);
+              setDuplicateDialogError(null);
+            }}
+          >
             скасувати
           </Button>
           <Button
