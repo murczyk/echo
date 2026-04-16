@@ -1,5 +1,6 @@
 use crate::config::{
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
+    ORGANISM_GOI_INTEGRATION_TYPE_FULL,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
     ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC, ORGANISM_GOI_PATH_DEFAULT,
@@ -127,14 +128,31 @@ async fn load_goi_worker_integrations(
     db: &DatabaseConnection,
     with_api_jobs: bool,
 ) -> Result<Vec<goi_integration::Model>, AppError> {
+    let is_full_integration = Condition::all().add(
+        goi_integration::Column::IntegrationType
+            .eq(ORGANISM_GOI_INTEGRATION_TYPE_FULL),
+    );
     let has_api_host = Condition::all()
         .add(goi_integration::Column::ApiHost.is_not_null())
         .add(goi_integration::Column::ApiHost.ne(""));
     let has_ssh_host = Condition::all()
         .add(goi_integration::Column::SshHost.is_not_null())
         .add(goi_integration::Column::SshHost.ne(""));
+    let has_host_for_api = Condition::any()
+        .add(has_api_host)
+        .add(has_ssh_host.clone());
+    let has_api_login = Condition::all()
+        .add(goi_integration::Column::ApiLogin.is_not_null())
+        .add(goi_integration::Column::ApiLogin.ne(""));
+    let has_api_password = Condition::all()
+        .add(goi_integration::Column::ApiPassword.is_not_null())
+        .add(goi_integration::Column::ApiPassword.ne(""));
     let filter = if with_api_jobs {
-        has_api_host
+        Condition::all()
+            .add(is_full_integration)
+            .add(has_host_for_api)
+            .add(has_api_login)
+            .add(has_api_password)
     } else {
         has_ssh_host
     };
