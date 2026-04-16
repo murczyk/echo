@@ -65,7 +65,9 @@ async fn goi_association_worker_step(
     state: &mut GoiWorkerState,
     with_api_jobs: bool,
 ) -> Result<(), AppError> {
-    let integrations = load_goi_worker_integrations(&env.dbx).await.c(h!())?;
+    let integrations = load_goi_worker_integrations(&env.dbx, with_api_jobs)
+        .await
+        .c(h!())?;
     if integrations.is_empty() {
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
@@ -123,6 +125,7 @@ async fn sync_goi_palitra_folders_if_due(
 
 async fn load_goi_worker_integrations(
     db: &DatabaseConnection,
+    with_api_jobs: bool,
 ) -> Result<Vec<goi_integration::Model>, AppError> {
     let has_api_host = Condition::all()
         .add(goi_integration::Column::ApiHost.is_not_null())
@@ -130,8 +133,13 @@ async fn load_goi_worker_integrations(
     let has_ssh_host = Condition::all()
         .add(goi_integration::Column::SshHost.is_not_null())
         .add(goi_integration::Column::SshHost.ne(""));
+    let filter = if with_api_jobs {
+        has_api_host
+    } else {
+        has_ssh_host
+    };
     Ok(goi_integration::Entity::find()
-        .filter(Condition::any().add(has_api_host).add(has_ssh_host))
+        .filter(filter)
         .all(db)
         .await
         .c(h!())?)

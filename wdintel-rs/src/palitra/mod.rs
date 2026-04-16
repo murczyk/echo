@@ -1711,7 +1711,7 @@ async fn sync_move_palitra_files_to_connected_organisms(
     dbx: &DatabaseConnection,
     sync_items: &[bl::PalitraFolderSyncItem],
 ) -> anyhow::Result<()> {
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq, Eq)]
     struct GoiMoveTask {
         file_name: String,
         target_folder: Option<String>,
@@ -1777,11 +1777,27 @@ async fn sync_move_palitra_files_to_connected_organisms(
                 target_folder: target_folder.clone(),
                 source_folder_hint: source_folder_hint.clone(),
             };
-            tasks_by_target
+            let task_list = &mut tasks_by_target
                 .entry(target_key)
                 .or_insert_with(|| (target, Vec::new()))
-                .1
-                .push(task);
+                .1;
+            match task_list
+                .iter()
+                .find(|existing| existing.file_name == task.file_name)
+            {
+                None => task_list.push(task),
+                Some(existing) if existing == &task => {}
+                Some(existing) => {
+                    log::warn!(
+                        "Skipping GOI file move task with duplicate remote file name '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
+                        task.file_name,
+                        existing.target_folder,
+                        existing.source_folder_hint,
+                        task.target_folder,
+                        task.source_folder_hint
+                    );
+                }
+            }
         }
     }
 
