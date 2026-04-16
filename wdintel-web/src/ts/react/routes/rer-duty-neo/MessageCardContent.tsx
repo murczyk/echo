@@ -2,10 +2,76 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Box, Button, Collapse, Stack, Tooltip, Typography } from '@mui/material';
 
-import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, Network, Tag, MessageMediaInfo, Unit } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from './utils';
 import { renderMarkedText } from './MarkedText';
+
+const PREVIEW_IMAGE_HEIGHT_PX = 100;
+
+function isImageMediaAttachment(m: MessageMediaInfo): boolean {
+  const ct = String(m.contentType ?? '').trim();
+  if (ct.startsWith('image/')) return true;
+  if (ct !== '') return false;
+  const href = String(m.href ?? '').toLowerCase();
+  return /\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
+}
+
+function collectMessageImageHrefs(msg: InboxMessage): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (h: string) => {
+    if (seen.has(h)) return;
+    seen.add(h);
+    out.push(h);
+  };
+  for (const u of msg.images ?? []) add(u);
+  for (const m of msg.media ?? []) {
+    if (isImageMediaAttachment(m)) add(m.href);
+  }
+  return out;
+}
+
+export function MessagePictureThumb({ href }: { href: string }) {
+  return (
+    <Box component="span" sx={{ display: 'inline-block', mr: 0.5, mb: 0.5, lineHeight: 0 }}>
+      <Box component="a" href={href} target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block' }}>
+        <Box
+          component="img"
+          src={href}
+          alt=""
+          sx={{
+            height: PREVIEW_IMAGE_HEIGHT_PX,
+            minHeight: PREVIEW_IMAGE_HEIGHT_PX,
+            width: 'auto',
+            maxWidth: '100%',
+            objectFit: 'contain',
+            verticalAlign: 'middle',
+          }}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo }) {
+  const displayName = attachment.fileName?.trim() || '<файл без назви>';
+  return (
+    <Button
+      component="a"
+      size="small"
+      variant="outlined"
+      href={attachment.href}
+      download={displayName}
+      target="_blank"
+      rel="noopener noreferrer"
+      sx={{ mb: 0.5, display: 'inline-flex', textTransform: 'none' }}
+      startIcon={<Box component="i" className="bi bi-download" sx={{ fontSize: 14 }} />}
+    >
+      {displayName}
+    </Button>
+  );
+}
 
 export function MessageCardWatermark({ authUserName }: { authUserName: string }) {
   return (
@@ -300,6 +366,9 @@ export function MessageCardMessageBody({
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
 }) {
+  const imageHrefs = useMemo(() => collectMessageImageHrefs(msg), [msg]);
+  const attachmentMedia = useMemo(() => (msg.media ?? []).filter((m) => !isImageMediaAttachment(m)), [msg.media]);
+
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const textPrimary =
     msg.textMarked && msg.textMarked.length > 0
@@ -316,6 +385,20 @@ export function MessageCardMessageBody({
 
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
+      {imageHrefs.length > 0 ? (
+        <Box className="m-1" sx={{ lineHeight: 0 }}>
+          {imageHrefs.map((href) => (
+            <MessagePictureThumb key={href} href={href} />
+          ))}
+        </Box>
+      ) : null}
+      {attachmentMedia.length > 0 ? (
+        <Box className="mt-1" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          {attachmentMedia.map((m) => (
+            <MessageMediaDownloadLink key={m.id} attachment={m} />
+          ))}
+        </Box>
+      ) : null}
       <Typography
         component="div"
         variant="body2"

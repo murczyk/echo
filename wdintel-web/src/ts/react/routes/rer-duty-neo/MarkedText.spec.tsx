@@ -9,11 +9,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CALLSIGN_TOOLTIP_ITEM_SX, renderMarkedText } from './MarkedText';
 import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../Bindings';
 
-function decodeMapHrefState(href: string | null): { search: string; freqs_selected?: string[] } {
-  const url = new URL(href!, 'https://example.test');
-  return JSON.parse(decodeURIComponent(url.searchParams.get('state')!)) as {
-    search: string;
-    freqs_selected?: string[];
+function decodeMapHrefState(href: string | null): { search: string; freqs_selected?: string[] } | null {
+  if (href == null || href === '') return null;
+  const url = new URL(href, 'https://example.test');
+  const legacy = url.searchParams.get('state');
+  if (legacy != null && legacy !== '') {
+    return JSON.parse(decodeURIComponent(legacy)) as { search: string; freqs_selected?: string[] };
+  }
+  const search = url.searchParams.get('search') ?? '';
+  const freqs = url.searchParams.getAll('freqs');
+  return {
+    search,
+    ...(freqs.length > 0 ? { freqs_selected: freqs } : {}),
   };
 }
 
@@ -105,6 +112,7 @@ const networks: Network[] = [
     postIds: [],
     descriptions: [],
     deleted: false,
+    status: 'NetworkActive',
   },
 ];
 
@@ -130,7 +138,9 @@ describe('MarkedText', () => {
 
   it('renders callsigns with the updated accent color and border width', async () => {
     await act(async () => {
-      root.render(<TestHost nodes={[{ CNCallsignC: { text: 'abCd', begin: 0, end: 4, etalon: 'abCd' } }]} bodyText="abCd" />);
+      root.render(
+        <TestHost nodes={[{ CNCallsignC: { text: 'abCd', begin: 0, end: 4, etalon: 'abCd' } }]} bodyText="abCd" />,
+      );
     });
 
     const link = container.querySelector('a.content-token--ADP');

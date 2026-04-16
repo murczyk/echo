@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, Network, Tag } from '../../../../Bindings';
+import { inboxMessageWithMockImages } from './inbox-message-mocks';
 import { MessageCard } from './MessageCard';
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
@@ -234,5 +235,22 @@ describe('MessageCard', () => {
     } finally {
       rectSpy.mockRestore();
     }
+  });
+
+  it('renders mock image thumbnails with links opening full image in a new tab', async () => {
+    const view = await renderCard({
+      msg: { ...buildMessage(), ...inboxMessageWithMockImages() },
+    });
+    rendered.push(view);
+
+    const imgs = view.container.querySelectorAll('img');
+    expect(imgs.length).toBe(2);
+    imgs.forEach((img) => {
+      const link = img.closest('a');
+      expect(link).not.toBeNull();
+      expect(link?.getAttribute('target')).toBe('_blank');
+      expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(link?.getAttribute('href')?.startsWith('data:image/svg+xml')).toBe(true);
+    });
   });
 });

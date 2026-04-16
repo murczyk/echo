@@ -97,17 +97,18 @@ describe('rer-duty utils', () => {
   });
 
   it('builds map search hrefs from deduplicated etalons and extracts point etalons', () => {
-    expect(buildAnalysisMapHrefWithSearch(['A1', 'A1', '', 'B2'])).toBe(
-      `/rer-analysis?state=${encodeURIComponent(JSON.stringify({ search: 'A1,B2' }))}&showMap=true`,
-    );
+    const hrefEtalonsOnly = buildAnalysisMapHrefWithSearch(['A1', 'A1', '', 'B2']);
+    const urlEtalons = new URL(hrefEtalonsOnly, 'https://example.test');
+    expect(urlEtalons.pathname).toBe('/rer-analysis-neo');
+    expect(urlEtalons.searchParams.get('search')).toBe('A1,B2');
+    expect(urlEtalons.searchParams.get('showMap')).toBe('true');
 
     const msgWithFreq = { freq: '123.45', messageUid: 'uid-1' } as InboxMessage;
     const hrefWithMsg = buildAnalysisMapHrefWithSearch(['P-1', 'P-2'], msgWithFreq);
-    const stateWithMsg = JSON.parse(
-      decodeURIComponent(new URL(hrefWithMsg, 'https://example.test').searchParams.get('state')!),
-    ) as { search: string; freqs_selected: string[] };
-    expect(stateWithMsg.search).toBe('P-1,P-2');
-    expect(stateWithMsg.freqs_selected).toEqual(['123.45']);
+    const urlMsg = new URL(hrefWithMsg, 'https://example.test');
+    expect(urlMsg.pathname).toBe('/rer-analysis-neo');
+    expect(urlMsg.searchParams.get('search')).toBe('P-1,P-2');
+    expect(urlMsg.searchParams.getAll('freqs')).toEqual(['123.45']);
 
     const fromTokens = getPointEtalonsFromMessage({
       pointTokens: [{ etalon: 'P-1' }, { etalon: 'P-2' }],

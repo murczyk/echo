@@ -9,6 +9,7 @@ import {
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
   queryStateComparisonKey,
+  shouldOpenAnalysisMapFromSearchParams,
 } from './helpers';
 import type { AnalysisPageViewModel, AnalysisQueryState, AnalysisSidebarTab } from './types';
 import { useAnalysisData } from './use-analysis-data';
@@ -107,6 +108,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       setRightPanelOpen(true);
     });
   }, [centerTab, leftPanelOpen, rightPanelOpen]);
+
+  const showMapDeepLinkAppliedRef = useRef(false);
+  useEffect(() => {
+    if (showMapDeepLinkAppliedRef.current) return;
+    if (typeof window === 'undefined') return;
+    if (!shouldOpenAnalysisMapFromSearchParams(new URLSearchParams(window.location.search))) return;
+    showMapDeepLinkAppliedRef.current = true;
+    setCenterTab('map');
+  }, [setCenterTab]);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
     setQueryState((current) => ({ ...current, ...patch }));
