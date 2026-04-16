@@ -1,0 +1,20 @@
+[Unit]
+Description=swapp alt service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echo
+WorkingDirectory=/etc/swapp-alt
+ExecStart=/etc/swapp-alt/swapp-npm-start.sh
+Restart=on-failure
+RestartSec=5s
+Environment=NODE_ENV=production
+Environment=NVM_DIR=/home/echo/.nvm
+Environment=HOST=127.0.0.1
+Environment=PORT=4003
+Environment=SWAPP_APP_DIR=/etc/swapp-alt
+
+[Install]
+WantedBy=multi-user.target

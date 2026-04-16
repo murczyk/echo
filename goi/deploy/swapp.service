@@ -13,7 +13,7 @@ RestartSec=5s
 Environment=NODE_ENV=production
 Environment=NVM_DIR=/home/echo/.nvm
 Environment=PORT=4002
-Environment=GOI_APP_DIR=/etc/swapp
+Environment=SWAPP_APP_DIR=/etc/swapp
 
 [Install]
 WantedBy=multi-user.target

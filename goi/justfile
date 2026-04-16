@@ -5,6 +5,7 @@ goi_app_dir := "/etc/goi"
 goi_timezone := "Europe/Kyiv"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
+swapp_alt_app_dir := "/etc/swapp-alt"
 goi_version := "1.2.8"
 
 default:
@@ -405,3 +406,129 @@ deploy-swapp server:
       sudo systemctl restart swapp.service
       sudo systemctl status swapp.service --no-pager
     "
+
+[arg('server', long='server')]
+update-nginx server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+
+    echo "Syncing nginx config on ${SERVER}..."
+    scp "{{ goi_dir }}/deploy/nginx/goi" "${SERVER}:/var/tmp/goi.nginx"
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo mv /var/tmp/goi.nginx /etc/nginx/sites-available/goi
+      sudo chown root:root /etc/nginx/sites-available/goi
+      sudo chmod 0644 /etc/nginx/sites-available/goi
+      sudo ln -sfn /etc/nginx/sites-available/goi /etc/nginx/sites-enabled/goi
+      sudo rm -f /etc/nginx/sites-enabled/default
+      sudo nginx -t
+      sudo systemctl reload nginx
+      sudo systemctl status nginx --no-pager
+    "
+
+[arg('server', long='server')]
+deploy-swapp-alt server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    APP_DIR="{{ swapp_alt_app_dir }}"
+    SRC_DIR="{{ goi_dir }}/swapp/"
+
+    echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo mkdir -p '${APP_DIR}'
+      sudo chown -R echo:echo '${APP_DIR}'
+    "
+
+    echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo rm -rf '${APP_DIR}/.next/node_modules'
+    "
+
+    echo "Syncing swapp source into ${SERVER}:${APP_DIR}..."
+    rsync -az --delete \
+      --delete-after \
+      --force \
+      --exclude '.git/' \
+      --exclude '.runtime/' \
+      --exclude '.bootstrap/' \
+      --exclude '.output/' \
+      --filter 'P swapp-npm-start.sh' \
+      --exclude '*.log' \
+      --exclude 'npm-debug.log*' \
+      --exclude 'yarn-debug.log*' \
+      --exclude 'yarn-error.log*' \
+      --exclude 'pnpm-debug.log*' \
+      "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
+
+    echo "Syncing swapp-alt service files..."
+    scp "{{ swapp_dir }}/deploy/swapp-npm-start.sh" "${SERVER}:${APP_DIR}/swapp-npm-start.sh"
+    scp "{{ swapp_dir }}/deploy/swapp-alt.service" "${SERVER}:/var/tmp/swapp-alt.service"
+    ssh ${SERVER} 'sudo mv /var/tmp/swapp-alt.service /etc/systemd/system/swapp-alt.service'
+    ssh ${SERVER} 'sudo apt-get update && sudo apt-get install -y \
+                     libnspr4 \
+                     libnss3 \
+                     libatk1.0-0 \
+                     libatk-bridge2.0-0 \
+                     libcups2 \
+                     libdrm2 \
+                     libxkbcommon0 \
+                     libxcomposite1 \
+                     libxdamage1 \
+                     libxfixes3 \
+                     libxrandr2 \
+                     libgbm1 \
+                     libasound2 \
+                     libpangocairo-1.0-0 \
+                     libpango-1.0-0 \
+                     libcairo2 \
+                     libatspi2.0-0 \
+                     libx11-6 \
+                     libx11-xcb1 \
+                     libxcb1 \
+                     libxext6 \
+                     libxrender1 \
+                     libxi6 \
+                     libxss1 \
+                     libxtst6 \
+                     ca-certificates \
+                     fonts-liberation'
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo chown echo:echo '${APP_DIR}/swapp-npm-start.sh'
+      sudo chmod 0755 '${APP_DIR}/swapp-npm-start.sh'
+      sudo chown root:root /etc/systemd/system/swapp-alt.service
+      sudo chmod 0644 /etc/systemd/system/swapp-alt.service
+    "
+
+    echo "Installing npm dependencies on ${SERVER}..."
+    ssh "$SERVER" "sudo -u echo bash -lc '
+      set -euo pipefail
+      export NVM_DIR=\"\$HOME/.nvm\"
+      . \"\$NVM_DIR/nvm.sh\"
+      nvm use --silent default >/dev/null
+      cd \"${APP_DIR}\"
+      if [[ ! -d .next ]]; then
+        echo \"missing .next in ${APP_DIR}; this deploy expects prebuilt Next.js artifacts\" >&2
+        exit 1
+      fi
+      if [[ -f package-lock.json ]]; then
+        npm ci --no-audit --no-fund
+      else
+        npm install --no-audit --no-fund
+      fi
+    '"
+
+    echo "Restarting swapp-alt.service on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo systemctl daemon-reload
+      sudo systemctl enable swapp-alt.service
+      sudo systemctl restart swapp-alt.service
+      sudo systemctl status swapp-alt.service --no-pager
+    "
+
+    echo "Updating nginx on ${SERVER}..."
+    just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
