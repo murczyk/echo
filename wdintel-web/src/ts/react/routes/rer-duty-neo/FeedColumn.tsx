@@ -388,7 +388,14 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             data={feed.items}
             firstItemIndex={feed.firstItemIndex ?? 0}
             computeItemKey={(_index, [id]) => String(id)}
-            initialTopMostItemIndex={Math.max(0, Math.floor(feed.items.length / 2) - 1)}
+            {...(feed.items.length > 0
+              ? {
+                  initialTopMostItemIndex: {
+                    index: feed.items.length - 1,
+                    align: 'end' as const,
+                  },
+                }
+              : {})}
             startReached={tryLoadOlder}
             rangeChanged={handleRangeChanged}
             atTopStateChange={(atTop) => {

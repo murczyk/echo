@@ -12,6 +12,7 @@ import {
   queryStateComparisonKey,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
+  shouldOpenAnalysisMapFromSearchParams,
 } from './helpers';
 import type { AnalysisQueryState } from './types';
 
@@ -222,5 +223,12 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(nextState.freqsSelected).toEqual(['123.4']);
     expect(nextState.adjacentFreqsRange).toBe(0);
+  });
+
+  it('detects showMap deep link for duty → analysis map tab', () => {
+    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=true'))).toBe(true);
+    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=1'))).toBe(false);
+    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams(''))).toBe(false);
+    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=false'))).toBe(false);
   });
 });

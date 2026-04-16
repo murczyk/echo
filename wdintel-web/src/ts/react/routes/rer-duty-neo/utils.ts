@@ -9,6 +9,8 @@ import type {
   Tag,
 } from '../../../../Bindings';
 import type { Network, Unit } from '../../../../Bindings';
+import type { RerAnalysisQueryState } from '../../../rer-analysis-query-state';
+import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-query-state';
 import { emptyArrToNull } from '../../utils/misc';
 
 export type RerDutyState = {
@@ -312,57 +314,43 @@ export function toDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** Full legacy Elm `state` object for /rer-analysis; `search` is message UID or map point query. */
-function rerAnalysisStateSnakeFromMessage(msg: InboxMessage, search: string) {
+/**
+ * Flat query state for `/rer-analysis-neo` (same window as legacy Elm duty links: date range, freq, search).
+ * `search` is message UID or comma-joined map point etalons.
+ */
+function rerAnalysisNeoQueryStateFromMessage(msg: InboxMessage, search: string): RerAnalysisQueryState {
   const now = new Date();
   const from = new Date(now);
   from.setDate(from.getDate() - 15);
   const to = new Date(now);
   to.setDate(to.getDate() + 1);
   const freqStr = msg.freq != null ? String(msg.freq).trim() : '';
-  const freqsSelected = freqStr !== '' ? [freqStr] : [];
-  return {
-    date_from_str: toDateStr(from),
-    time_from_str: '',
-    date_to_str: toDateStr(to),
-    time_to_str: '00:00',
-    aors_selected: [] as string[],
-    groups_selected: [] as string[],
-    senders_selected: [] as string[],
-    freqs_selected: freqsSelected,
-    callsigns_selected: [] as string[],
-    units_selected: [] as string[],
-    locations_selected: [] as string[],
-    posts_selected: [] as string[],
-    networks_selected: [] as string[],
-    without_network: false,
-    or_with_extended_form: false,
-    or_bookmarked: false,
-    or_important: false,
-    or_with_coords: false,
+  const state: RerAnalysisQueryState = {
+    dateFromStr: toDateStr(from),
+    timeFromStr: '',
+    dateToStr: toDateStr(to),
+    timeToStr: '00:00',
     search,
-    metadata_cc: [] as string[],
-    metadata_sender: [] as string[],
-    metadata_receiver: [] as string[],
-    metadata_hash: [] as string[],
-    only_with_metadata: false,
-    without_metadata: false,
-    tags: [] as number[],
-    include_peleng_locations: false,
-    units_exact_match_only: null as boolean | null,
-    adjacent_freqs_range: 0,
-    without_model_tags: false,
-    /** Required by Elm `rerAnalysisQueryStateDecoder`; omitting breaks decode and drops all filters. */
-    filter_tags_option: null,
-    report_tags_only_this_unit: null,
+    includePelengLocations: false,
   };
+  if (freqStr !== '') {
+    state.freqsSelected = [freqStr];
+  }
+  return state;
+}
+
+function buildRerAnalysisNeoHref(state: RerAnalysisQueryState, showMap: boolean): string {
+  const params = new URLSearchParams();
+  writeRerAnalysisQueryStateToSearchParams(params, state);
+  if (showMap) {
+    params.set('showMap', 'true');
+  }
+  const qs = params.toString();
+  return qs ? `/rer-analysis-neo?${qs}` : `/rer-analysis-neo${showMap ? '?showMap=true' : ''}`;
 }
 
 export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
-  const stateSnake = rerAnalysisStateSnakeFromMessage(msg, msg.messageUid ?? '');
-  const stateEnc = encodeURIComponent(JSON.stringify(stateSnake));
-  const base = `/rer-analysis?state=${stateEnc}`;
-  return showMap ? `${base}&showMap=true` : base;
+  return buildRerAnalysisNeoHref(rerAnalysisNeoQueryStateFromMessage(msg, msg.messageUid ?? ''), showMap);
 }
 
 export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
@@ -378,8 +366,8 @@ export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
 }
 
 /**
- * Map-focused analysis URL. When `msg` is passed, includes the same date range and `freqs_selected`
- * as other analysis links from this message (legacy `state` JSON for /rer-analysis).
+ * Map-focused analysis URL for `/rer-analysis-neo`. When `msg` is passed, includes the same date range
+ * and `freqs` as other analysis links from this message.
  */
 export function buildAnalysisMapHrefWithSearch(etalons: string | string[], msg?: InboxMessage): string {
   const searchStr = Array.isArray(etalons)
@@ -387,15 +375,12 @@ export function buildAnalysisMapHrefWithSearch(etalons: string | string[], msg?:
     : String(etalons).trim();
   if (!searchStr) {
     if (msg != null) return buildAnalysisHref(msg, true);
-    return '/rer-analysis?showMap=true';
+    return '/rer-analysis-neo?showMap=true';
   }
   if (msg != null) {
-    const stateSnake = rerAnalysisStateSnakeFromMessage(msg, searchStr);
-    const stateEnc = encodeURIComponent(JSON.stringify(stateSnake));
-    return `/rer-analysis?state=${stateEnc}&showMap=true`;
+    return buildRerAnalysisNeoHref(rerAnalysisNeoQueryStateFromMessage(msg, searchStr), true);
   }
-  const stateEnc = encodeURIComponent(JSON.stringify({ search: searchStr }));
-  return `/rer-analysis?state=${stateEnc}&showMap=true`;
+  return buildRerAnalysisNeoHref({ search: searchStr }, true);
 }
 
 export function messageHasPalitraTag(msg: InboxMessage, tagsMap: Record<number, Tag>): boolean {
