@@ -1775,21 +1775,24 @@ async fn sync_move_palitra_files_to_connected_organisms(
             let task = GoiMoveTask {
                 file_name: file_name.clone(),
                 target_folder: target_folder.clone(),
-                source_folder_hint: source_folder_hint.clone(),
+                source_folder_hint: source_folder_hint
+                    .as_deref()
+                    .map(str::trim)
+                    .map(|folder| folder.trim_matches('/').to_string()),
             };
             let task_list = &mut tasks_by_target
                 .entry(target_key)
                 .or_insert_with(|| (target, Vec::new()))
                 .1;
-            match task_list
-                .iter()
-                .find(|existing| existing.file_name == task.file_name)
-            {
+            match task_list.iter().find(|existing| {
+                existing.file_name == task.file_name
+                    && existing.source_folder_hint == task.source_folder_hint
+            }) {
                 None => task_list.push(task),
                 Some(existing) if existing == &task => {}
                 Some(existing) => {
                     log::warn!(
-                        "Skipping GOI file move task with duplicate remote file name '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
+                        "Skipping GOI file move task with duplicate source path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
                         task.file_name,
                         existing.target_folder,
                         existing.source_folder_hint,
