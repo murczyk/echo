@@ -1120,6 +1120,7 @@ type alias InboxMessagesReq =
     , onlyShowUnprocessed : Maybe Bool
     , checkedOnly : Maybe Bool
     , selectedGroups : Maybe (List String)
+    , deniedGroups : Maybe (List String)
     , selectedSenders : Maybe (List String)
     , deniedSenders : Maybe (List String)
     , selectedFreqs : Maybe (List String)
@@ -1176,6 +1177,7 @@ inboxMessagesReqEncoder struct =
         , ( "only_show_unprocessed", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.onlyShowUnprocessed )
         , ( "checked_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.checkedOnly )
         , ( "selected_groups", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.selectedGroups )
+        , ( "denied_groups", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.deniedGroups )
         , ( "selected_senders", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.selectedSenders )
         , ( "denied_senders", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.deniedSenders )
         , ( "selected_freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.selectedFreqs )
@@ -2398,6 +2400,7 @@ rerDutyQueryStateEncoder struct =
 
 type alias RerDutyQueryStateWf =
     { groupsSelected : Maybe (List String)
+    , groupsDenied : Maybe (List String)
     , sendersSelected : Maybe (List String)
     , deniedSenders : Maybe (List String)
     , freqsSelected : Maybe (List String)
@@ -2412,6 +2415,7 @@ rerDutyQueryStateWfEncoder : RerDutyQueryStateWf -> Json.Encode.Value
 rerDutyQueryStateWfEncoder struct =
     Json.Encode.object
         [ ( "groups_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.groupsSelected )
+        , ( "groups_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.groupsDenied )
         , ( "senders_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.sendersSelected )
         , ( "denied_senders", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.deniedSenders )
         , ( "freqs_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqsSelected )
@@ -8307,6 +8311,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_show_unprocessed" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "checked_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_groups" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_groups" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_senders" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_senders" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
@@ -8964,6 +8969,7 @@ rerDutyQueryStateWfDecoder : Json.Decode.Decoder RerDutyQueryStateWf
 rerDutyQueryStateWfDecoder =
     Json.Decode.succeed RerDutyQueryStateWf
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups_selected" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups_denied" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senders_selected" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_senders" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs_selected" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))

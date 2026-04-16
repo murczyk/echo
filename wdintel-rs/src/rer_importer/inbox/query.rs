@@ -69,6 +69,11 @@ pub(crate) async fn build_inbox_query(
         &req.selected_senders,
         &sigint_groups,
     )?;
+    let q = filter_denied_groups_with_access(
+        q,
+        &req.denied_groups,
+        &sigint_groups,
+    )?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
