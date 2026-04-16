@@ -11,6 +11,7 @@ import {
 } from '../rer-duty-neo/notifications';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { PowerAlert } from '../../components/PowerAlert';
+import { SettingsDutySavedFiltersSection } from './SettingsDutySavedFiltersSection';
 
 export type SettingsDutySectionProps = {
   loadInProgress: boolean;
@@ -178,6 +179,7 @@ export function SettingsDutySection({
             ) : null}
           </Stack>
         </Box>
+        <SettingsDutySavedFiltersSection />
       </Stack>
     </Box>
   );
