@@ -13,7 +13,7 @@ RestartSec=5s
 Environment=NODE_ENV=production
 Environment=NVM_DIR=/home/echo/.nvm
 Environment=HOST=127.0.0.1
-Environment=PORT=4003
+Environment=PORT=4004
 Environment=SWAPP_APP_DIR=/etc/swapp-alt
 
 [Install]

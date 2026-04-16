@@ -18,16 +18,23 @@ nvm use --silent default >/dev/null
 
 cd "$APP_DIR"
 
+NEXT_BIN="$APP_DIR/node_modules/.bin/next"
+
+if [[ ! -x "$NEXT_BIN" ]]; then
+  echo "next binary is not installed: $NEXT_BIN" >&2
+  exit 1
+fi
+
 if [[ -n "${HOST:-}" && -n "${PORT:-}" ]]; then
-  exec npm run start -- --hostname "${HOST}" --port "${PORT}"
+  exec "$NEXT_BIN" start --hostname "${HOST}" --port "${PORT}"
 fi
 
 if [[ -n "${HOST:-}" ]]; then
-  exec npm run start -- --hostname "${HOST}"
+  exec "$NEXT_BIN" start --hostname "${HOST}"
 fi
 
 if [[ -n "${PORT:-}" ]]; then
-  exec npm run start -- --port "${PORT}"
+  exec "$NEXT_BIN" start --port "${PORT}"
 fi
 
-exec npm run start
+exec "$NEXT_BIN" start
