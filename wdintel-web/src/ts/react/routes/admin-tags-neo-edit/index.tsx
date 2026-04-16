@@ -21,7 +21,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { createTag, deleteTagKeyword, getTagModelErrors, listTags, updateTag } from '../../services/api/tags';
 import type { TagModelErrorFE } from '../../services/api/tags';
 import { navigateWithinSpa } from '../../utils/browser';
@@ -276,10 +276,10 @@ function KeywordsTable(props: {
                 <td>{keyword.keywordNegativeForms.join(', ')}</td>
                 <td className="text-end">
                   <div className="flex gap-2 justify-end">
-                    <Button variant="outlined" size="small" onClick={() => props.onEdit(keyword.tagKeywordId)}>
+                    <PowerButton variant="outlined" size="small" onClick={() => props.onEdit(keyword.tagKeywordId)}>
                       Редагувати
-                    </Button>
-                    <Button
+                    </PowerButton>
+                    <PowerButton
                       variant="outlined"
                       color="error"
                       size="small"
@@ -287,7 +287,7 @@ function KeywordsTable(props: {
                       disabled={deleting}
                     >
                       {deleting ? 'Видалення...' : 'Видалити'}
-                    </Button>
+                    </PowerButton>
                   </div>
                 </td>
               </tr>
@@ -302,12 +302,12 @@ function KeywordsTable(props: {
 function TagActions(props: { isNew: boolean; saving: boolean; onSave: () => void; onBack: () => void }) {
   return (
     <div className="flex gap-3">
-      <Button variant="outlined" onClick={props.onBack} disabled={props.saving}>
+      <PowerButton variant="outlined" onClick={props.onBack} disabled={props.saving}>
         Повернутись
-      </Button>
-      <Button variant="contained" onClick={props.onSave} disabled={props.saving}>
+      </PowerButton>
+      <PowerButton variant="contained" onClick={props.onSave} disabled={props.saving}>
         {props.isNew ? 'Створити' : 'Зберегти'}
-      </Button>
+      </PowerButton>
     </div>
   );
 }
@@ -318,12 +318,12 @@ function KeywordDeleteDialog(props: { open: boolean; onClose: () => void; onConf
       <DialogTitle>Підтвердження видалення</DialogTitle>
       <DialogContent>Видалити ключове слово?</DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={props.onClose}>
+        <PowerButton onClick={props.onClose}>
           Скасувати
-        </Button>
-        <Button variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>
+        </PowerButton>
+        <PowerButton variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>
           Видалити
-        </Button>
+        </PowerButton>
       </DialogActions>
     </Dialog>
   );
@@ -505,9 +505,9 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
             <Typography variant="h6" className="!font-semibold">
               Ключові слова та відмітки
             </Typography>
-            <Button variant="contained" size="small" onClick={navigateToKeywordCreate} disabled={saving}>
+            <PowerButton variant="contained" size="small" onClick={navigateToKeywordCreate} disabled={saving}>
               Створити ключове слово
-            </Button>
+            </PowerButton>
           </div>
 
           <Tabs

@@ -17,7 +17,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
 
@@ -183,6 +183,7 @@ export function FeedFilterPanel({
   const [localGroupValue, setLocalGroupValue] = useState<string[]>(() =>
     filterStable.deniedGroups?.length > 0 ? filterStable.deniedGroups : (filterStable.groupsSelected ?? []),
   );
+  const pendingGroupResyncRef = useRef<string | null>(null);
   const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
 
   // Resync local selections when *parent* filter changes. Do not depend on local* state: if local
@@ -192,7 +193,9 @@ export function FeedFilterPanel({
     const value = groupMode === 'include' ? filterStable.groupsSelected : filterStable.deniedGroups;
     const next = value ?? [];
     setLocalGroupValue((prev) => {
+      const nextSignature = `${groupMode}:${JSON.stringify(next)}`;
       if (next.length === prev.length && next.every((v, i) => v === prev[i])) return prev;
+      pendingGroupResyncRef.current = nextSignature;
       return next;
     });
   }, [groupsSelectedKey, deniedGroupsKey, groupMode]);
@@ -226,13 +229,18 @@ export function FeedFilterPanel({
 
   // Push local selections to parent only when they differ from filterStable; avoid rewriting on mount
   useEffect(() => {
+    const nextSignature = `${groupMode}:${JSON.stringify(localGroupValue)}`;
+    if (pendingGroupResyncRef.current === nextSignature) {
+      pendingGroupResyncRef.current = null;
+      return;
+    }
     const current = groupMode === 'include' ? filterStable.groupsSelected : filterStable.deniedGroups;
     const next = localGroupValue;
     if (current.length === next.length && current.every((v, i) => v === next[i])) return;
     if (groupMode === 'include') onGroupsChange(next);
     else onDeniedGroupsChange(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localGroupValue so writeback runs after resync
-  }, [localGroupValue]);
+  }, [groupMode, localGroupValue]);
 
   useEffect(() => {
     const ids = localSenderValue.map((o) => o.id);

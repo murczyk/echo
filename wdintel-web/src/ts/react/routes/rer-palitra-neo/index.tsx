@@ -1,18 +1,4 @@
-import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  Stack,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import type { MRT_SortingState } from 'material-react-table';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
@@ -28,6 +14,7 @@ import {
   PalitraTable,
 } from './components/PalitraTable';
 import { useRerPalitraNeoPage } from './use-rer-palitra-neo-page';
+import { PowerAlert } from '../../components/PowerAlert';
 
 const DEFAULT_PALITRA_SORTING: MRT_SortingState = [{ id: 'lastUploadedAtTs', desc: true }];
 
@@ -122,7 +109,7 @@ function RerPalitraNeoPageBody() {
           }
         />
 
-        {page.status ? <Alert severity={page.status.kind}>{page.status.text}</Alert> : null}
+        {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <PalitraTable

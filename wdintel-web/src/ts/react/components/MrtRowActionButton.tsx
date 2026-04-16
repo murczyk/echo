@@ -4,8 +4,8 @@ import { SystemStyleObject } from '@mui/system';
 import { Children, isValidElement, useId, useState } from 'react';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
 
-import { IconButton } from './mui-customized/icon-button';
-import { Menu } from './mui-customized/menu';
+import { PowerIconButton } from './PowerIconButton';
+import { PowerMenu } from './PowerMenu';
 
 type Tone = 'default' | 'danger';
 type Layout = 'row' | 'grid';
@@ -84,7 +84,7 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
           {primaryAction}
           <Tooltip title="Інші дії">
             <span style={{ display: 'inline-flex' }}>
-              <IconButton
+              <PowerIconButton
                 id={menuLabelId}
                 size="small"
                 aria-label="Інші дії"
@@ -98,11 +98,11 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
                 sx={(theme) => actionButtonSx(theme, 'default')}
               >
                 <MoreVertIcon fontSize="small" />
-              </IconButton>
+              </PowerIconButton>
             </span>
           </Tooltip>
         </Stack>
-        <Menu
+        <PowerMenu
           id={menuButtonId}
           anchorEl={anchorEl}
           open={menuOpen}
@@ -116,7 +116,7 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
               onClose={() => setAnchorEl(null)}
             />
           ))}
-        </Menu>
+        </PowerMenu>
       </>
     );
   }
@@ -147,9 +147,9 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
 export function MrtRowActionButton({ label, onClick, icon, disabled = false, tone = 'default' }: Props) {
   const button = (
     <span style={{ display: 'inline-flex', cursor: disabled ? 'not-allowed' : undefined }}>
-      <IconButton size="small" onClick={onClick} disabled={disabled} aria-label={label} sx={(theme) => actionButtonSx(theme, tone)}>
+      <PowerIconButton size="small" onClick={onClick} disabled={disabled} aria-label={label} sx={(theme) => actionButtonSx(theme, tone)}>
         {icon}
-      </IconButton>
+      </PowerIconButton>
     </span>
   );
 

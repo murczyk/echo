@@ -19,6 +19,7 @@ import {
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { formatFolderActionPreviewLines, validateFolderPath } from '../helpers';
 import type { FolderActionDialogState, FolderActionKind } from '../types';
+import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
   state: FolderActionDialogState | null;
@@ -235,25 +236,25 @@ export function PalitraFolderActionDialog({
           </Stack>
 
           {state.kind !== 'assign' ? (
-            <Alert severity='info'>
+            <PowerAlert severity='info'>
               Дія застосовується до всіх доступних палітр у цій папці, включаючи архівні.
-            </Alert>
+            </PowerAlert>
           ) : null}
 
           {state.kind === 'delete' ? (
-            <Alert severity='error'>Ця дія видалить палітри, що зараз лежать у папці.</Alert>
+            <PowerAlert severity='error'>Ця дія видалить палітри, що зараз лежать у папці.</PowerAlert>
           ) : null}
 
           {state.kind === 'assign' && state.preview.unchangedCount > 0 ? (
-            <Alert severity='info'>Частина вибраних палітр уже лежить у цій папці.</Alert>
+            <PowerAlert severity='info'>Частина вибраних палітр уже лежить у цій папці.</PowerAlert>
           ) : null}
 
           {state.preview.modifiableCount === 0 ? (
-            <Alert severity='warning'>Немає доступних палітр для цієї дії.</Alert>
+            <PowerAlert severity='warning'>Немає доступних палітр для цієї дії.</PowerAlert>
           ) : null}
 
           {state.preview.skippedCount > 0 ? (
-            <Alert severity='warning'>Частина палітр недоступна для зміни й буде пропущена.</Alert>
+            <PowerAlert severity='warning'>Частина палітр недоступна для зміни й буде пропущена.</PowerAlert>
           ) : null}
         </Stack>
       </DialogContent>

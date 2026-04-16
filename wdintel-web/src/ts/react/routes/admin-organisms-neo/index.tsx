@@ -2,7 +2,7 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import { Alert, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -13,7 +13,7 @@ import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -39,6 +39,7 @@ import {
   updateOrganism,
 } from '../../services/api/organisms';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
+import { PowerAlert } from '../../components/PowerAlert';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 type StatusMessage = { kind: 'error' | 'success'; message: string } | null;
@@ -567,9 +568,9 @@ function DeleteOrganismDialog(props: {
       <DialogTitle>Підтвердження видалення</DialogTitle>
       <DialogContent className="space-y-3">
         {status ? (
-          <Alert severity={status.kind} onClose={() => setStatus(null)}>
+          <PowerAlert severity={status.kind} onClose={() => setStatus(null)}>
             {status.message}
-          </Alert>
+          </PowerAlert>
         ) : null}
 
         <Typography variant="body2" className="text-muted-foreground">
@@ -586,22 +587,22 @@ function DeleteOrganismDialog(props: {
         ) : null}
 
         {hasMultipleActiveUsers ? (
-          <Alert severity="warning">
+          <PowerAlert severity="warning">
             Для цього організму більше одного активного користувача. Видалення недоступне.
             {activeLogins && activeLogins.length > 0 ? ` Активні логіни: ${activeLogins.join(', ')}` : ''}
-          </Alert>
+          </PowerAlert>
         ) : null}
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={props.onClose} disabled={isSubmitting}>
+        <PowerButton onClick={props.onClose} disabled={isSubmitting}>
           Скасувати
-        </Button>
-        <Button variant="outlined" color="error" onClick={handleSoftDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
+        </PowerButton>
+        <PowerButton variant="outlined" color="error" onClick={handleSoftDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
           Видалити
-        </Button>
-        <Button variant="contained" color="error" onClick={handleHardDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
+        </PowerButton>
+        <PowerButton variant="contained" color="error" onClick={handleHardDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
           Видалити назавжди
-        </Button>
+        </PowerButton>
       </DialogActions>
     </Dialog>
   );
@@ -746,9 +747,9 @@ function AdminOrganismsNeoPageBody() {
     <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       {referenceStatus === 'error' ? (
-        <Alert severity="error" onClose={() => setReferenceError(null)}>
+        <PowerAlert severity="error" onClose={() => setReferenceError(null)}>
           {referenceError || 'Помилка завантаження довідників'}
-        </Alert>
+        </PowerAlert>
       ) : null}
 
       <TablePageToolbar
@@ -758,9 +759,9 @@ function AdminOrganismsNeoPageBody() {
         internalActionsDisabled={organismsStatus !== 'success'}
         actions={
           <div className="flex gap-3">
-            <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
+            <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
               Створити організм
-            </Button>
+            </PowerButton>
           </div>
         }
       />

@@ -2,7 +2,7 @@ import { Menu as MuiMenu, MenuProps as MuiMenuProps } from '@mui/material';
 import { forwardRef } from 'react';
 import type { ForwardedRef, KeyboardEvent } from 'react';
 
-export const Menu = forwardRef(function Menu(
+export const PowerMenu = forwardRef(function PowerMenu(
   { children, slotProps, sx, ...props }: MuiMenuProps,
   ref: ForwardedRef<HTMLDivElement>,
 ) {

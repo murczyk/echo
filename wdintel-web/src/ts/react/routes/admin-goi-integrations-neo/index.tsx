@@ -1,20 +1,9 @@
-import {
-  Alert,
-  Autocomplete,
-  Card,
-  CardActions,
-  CardContent,
-  CircularProgress,
-  MenuItem,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Autocomplete, Card, CardActions, CardContent, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import React from 'react';
 
 import { Organism } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import {
   checkGoiConnection,
   deleteGoiAdminIntegration,
@@ -25,6 +14,7 @@ import {
 } from '../../services/api/goi-admin';
 import { listLogins } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
+import { PowerAlert } from '../../components/PowerAlert';
 import {
   GOI_INTEGRATION_TYPE_FULL,
   GOI_INTEGRATION_TYPE_SIMPLE,
@@ -157,7 +147,10 @@ export function AdminGoiIntegrationsNeoPage() {
         ]);
         setIntegrations(nextIntegrations);
         setOrganisms(nextOrganisms);
-        setLogins(nextLogins.users.map((user) => user.login));
+        setLogins(
+          Array.from(new Set(nextLogins.users.map((user) => user.login)))
+            .sort((a, b) => a.localeCompare(b, 'uk')),
+        );
         if (nextIntegrations.length > 0) {
           setSelectedId(nextIntegrations[0].id);
           setForm(toForm(nextIntegrations[0]));
@@ -303,7 +296,7 @@ export function AdminGoiIntegrationsNeoPage() {
   }
 
   if (loading) {
-    return <Alert severity="info">Завантажую інтеграції ГОІ...</Alert>;
+    return <PowerAlert severity="info">Завантажую інтеграції ГОІ...</PowerAlert>;
   }
 
   const ownerOptions = organisms;
@@ -316,29 +309,29 @@ export function AdminGoiIntegrationsNeoPage() {
         titleInfo="Окремі інтеграції ГОІ з власником, доступом для організмів і логінів, та керуванням worker/SSH."
       />
 
-      {status ? <Alert severity={status.kind}>{status.message}</Alert> : null}
+      {status ? <PowerAlert severity={status.kind}>{status.message}</PowerAlert> : null}
 
       <Card variant="outlined">
         <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
           <Stack spacing={2}>
             <div className="flex flex-wrap gap-2">
-              <Button variant="contained" onClick={() => selectIntegration(null)} disabled={saving || checking || settingUpWorker}>
+              <PowerButton variant="contained" onClick={() => selectIntegration(null)} disabled={saving || checking || settingUpWorker}>
                 Нова інтеграція
-              </Button>
+              </PowerButton>
               {saving || checking || settingUpWorker ? <CircularProgress size={18} /> : null}
             </div>
             {integrations.length === 0 ? (
-              <Alert severity="info">Інтеграцій ГОІ ще немає.</Alert>
+              <PowerAlert severity="info">Інтеграцій ГОІ ще немає.</PowerAlert>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {integrations.map((integration) => (
-                  <Button
+                  <PowerButton
                     key={integration.id}
                     variant={integration.id === selectedId ? 'contained' : 'outlined'}
                     onClick={() => selectIntegration(integration.id)}
                   >
                     {integration.ownerOrganismName} / {integration.serverLabel}
-                  </Button>
+                  </PowerButton>
                 ))}
               </div>
             )}
@@ -359,6 +352,11 @@ export function AdminGoiIntegrationsNeoPage() {
               onChange={(_, option) => setForm((prev) => ({ ...prev, ownerOrganismId: option?.id ?? null }))}
               getOptionLabel={(option) => option.name || `ID ${option.id}`}
               isOptionEqualToValue={(option, value) => option.id === value.id}
+              renderOption={(props, option) => (
+                <li {...props} key={option.id}>
+                  {option.name || `ID ${option.id}`}
+                </li>
+              )}
               renderInput={(params) => <TextField {...params} label="Організм-власник" fullWidth />}
             />
 
@@ -418,26 +416,31 @@ export function AdminGoiIntegrationsNeoPage() {
               options={logins}
               value={form.accessLogins}
               onChange={(_, values) => setForm((prev) => ({ ...prev, accessLogins: values }))}
+              renderOption={(props, option) => (
+                <li {...props} key={option}>
+                  {option}
+                </li>
+              )}
               renderInput={(params) => <TextField {...params} label="Доступ для логінів" fullWidth />}
             />
           </Stack>
         </CardContent>
         <CardActions sx={{ px: 3, pb: 3, gap: 1, flexWrap: 'wrap' }}>
-          <Button variant="contained" onClick={handleSave} disabled={saving || checking || settingUpWorker}>
+          <PowerButton variant="contained" onClick={handleSave} disabled={saving || checking || settingUpWorker}>
             {form.id ? 'Зберегти' : 'Створити'}
-          </Button>
-          <Button variant="outlined" onClick={handleCheckConnection} disabled={saving || checking || settingUpWorker}>
+          </PowerButton>
+          <PowerButton variant="outlined" onClick={handleCheckConnection} disabled={saving || checking || settingUpWorker}>
             Перевірити з'єднання
-          </Button>
+          </PowerButton>
           {form.id ? (
-            <Button variant="outlined" onClick={handleSetupWorker} disabled={saving || checking || settingUpWorker}>
+            <PowerButton variant="outlined" onClick={handleSetupWorker} disabled={saving || checking || settingUpWorker}>
               Налаштувати воркер
-            </Button>
+            </PowerButton>
           ) : null}
           {form.id ? (
-            <Button variant="outlined" color="error" onClick={handleDelete} disabled={saving || checking || settingUpWorker}>
+            <PowerButton variant="outlined" color="error" onClick={handleDelete} disabled={saving || checking || settingUpWorker}>
               Видалити
-            </Button>
+            </PowerButton>
           ) : null}
         </CardActions>
       </Card>

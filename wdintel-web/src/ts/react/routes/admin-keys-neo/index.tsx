@@ -1,18 +1,5 @@
 import DeleteIcon from '@mui/icons-material/Delete';
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Autocomplete, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -23,7 +10,8 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
-import { Button } from '../../components/mui-customized/button';
+import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
 import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
@@ -385,9 +373,9 @@ function AdminKeysNeoPageBody() {
     <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       {organismsStatus === 'error' ? (
-        <Alert severity="error" onClose={() => setOrganismsError(null)}>
+        <PowerAlert severity="error" onClose={() => setOrganismsError(null)}>
           {organismsError || 'Помилка завантаження організацій'}
-        </Alert>
+        </PowerAlert>
       ) : null}
 
       <TablePageToolbar
@@ -407,9 +395,9 @@ function AdminKeysNeoPageBody() {
         internalActionsDisabled={status !== 'success'}
         actions={
           <div className="flex gap-3">
-            <Button variant="contained" onClick={openCreateDialog}>
+            <PowerButton variant="contained" onClick={openCreateDialog}>
               Додати політику
-            </Button>
+            </PowerButton>
           </div>
         }
       />
@@ -419,7 +407,7 @@ function AdminKeysNeoPageBody() {
       <Dialog open={createOpen} onClose={closeCreateDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Додати політику доступу</DialogTitle>
         <DialogContent className="space-y-3">
-          {createError ? <Alert severity="error">{createError}</Alert> : null}
+          {createError ? <PowerAlert severity="error">{createError}</PowerAlert> : null}
           <Autocomplete
             options={organismOptions}
             getOptionLabel={(option) => option.name}
@@ -474,12 +462,12 @@ function AdminKeysNeoPageBody() {
           />
         </DialogContent>
         <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-          <Button onClick={closeCreateDialog} disabled={createSaving}>
+          <PowerButton onClick={closeCreateDialog} disabled={createSaving}>
             Скасувати
-          </Button>
-          <Button variant="contained" onClick={handleCreate} disabled={createSaving}>
+          </PowerButton>
+          <PowerButton variant="contained" onClick={handleCreate} disabled={createSaving}>
             Зберегти
-          </Button>
+          </PowerButton>
         </DialogActions>
       </Dialog>
 
@@ -490,7 +478,7 @@ function AdminKeysNeoPageBody() {
         submitting={Boolean(deleteState?.isDeleting)}
         disabled={!deleteState}
       >
-          {deleteState?.error ? <Alert severity="error">{deleteState.error}</Alert> : null}
+          {deleteState?.error ? <PowerAlert severity="error">{deleteState.error}</PowerAlert> : null}
           <Typography variant="body2" className="text-muted-foreground">
             {deleteState
               ? `Видалити політику для ${getOrganismLabel(deleteState.policy.grantFrom, organismNames)} → ${getOrganismLabel(deleteState.policy.grantTo, organismNames)}?`

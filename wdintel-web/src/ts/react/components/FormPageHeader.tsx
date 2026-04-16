@@ -2,7 +2,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
-import { Button } from './mui-customized/button';
+import { PowerButton } from './PowerButton';
 
 type Props = {
   title: ReactNode;
@@ -24,9 +24,9 @@ export function FormPageHeader({ title, subtitle, onBack, backLabel = 'Наза�
           </Typography>
         ) : null}
       </Stack>
-      <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={onBack}>
+      <PowerButton variant="outlined" startIcon={<ArrowBackIcon />} onClick={onBack}>
         {backLabel}
-      </Button>
+      </PowerButton>
     </Stack>
   );
 }

@@ -15,7 +15,7 @@ vi.mock('@mui/material', () => ({
   },
 }));
 
-import { Menu } from './menu';
+import { PowerMenu } from '../PowerMenu';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -43,7 +43,7 @@ describe('Menu', () => {
 
     act(() => {
       root.render(
-        <Menu
+        <PowerMenu
           open
           anchorEl={document.createElement('button')}
           MenuListProps={{
@@ -51,7 +51,7 @@ describe('Menu', () => {
           }}
         >
           <div>items</div>
-        </Menu>,
+        </PowerMenu>,
       );
     });
 

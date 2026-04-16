@@ -1,22 +1,4 @@
-import {
-  Alert,
-  Backdrop,
-  Box,
-  Button,
-  Checkbox,
-  CircularProgress,
-  Drawer,
-  FormControlLabel,
-  Paper,
-  Stack,
-  Step,
-  StepButton,
-  Stepper,
-  Tab,
-  Tabs,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Backdrop, Box, Button, Checkbox, CircularProgress, Drawer, FormControlLabel, Paper, Stack, Step, StepButton, Stepper, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { memo, useEffect, useRef, useState } from 'react';
 
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
@@ -25,6 +7,7 @@ import { PowerChip } from '../../../components/PowerChip';
 import { isFormValid } from '../helpers';
 import { KmzColorOption, PalitraCreateMode, PalitraFormState } from '../types';
 import { PalitraFormFields } from './PalitraFormFields';
+import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
   open: boolean;
@@ -208,8 +191,8 @@ function CreatePalitraDrawerComponent({
                 </Typography>
               ) : null}
 
-              {kmzAnalysis ? <Alert severity="success">KMZ проаналізовано, кольорів: {kmzAnalysis.topColors.length}</Alert> : null}
-              {!referenceDataReady ? <Alert severity="info">Завантажуємо довідники (логіни, підрозділи, смуги)…</Alert> : null}
+              {kmzAnalysis ? <PowerAlert severity="success">KMZ проаналізовано, кольорів: {kmzAnalysis.topColors.length}</PowerAlert> : null}
+              {!referenceDataReady ? <PowerAlert severity="info">Завантажуємо довідники (логіни, підрозділи, смуги)…</PowerAlert> : null}
             </Stack>
           ) : null}
 

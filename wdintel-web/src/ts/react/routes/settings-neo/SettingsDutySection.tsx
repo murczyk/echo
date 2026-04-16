@@ -1,17 +1,7 @@
-import {
-  Alert,
-  Box,
-  CircularProgress,
-  FormControlLabel,
-  Stack,
-  Switch,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from '@mui/material';
+import { Box, CircularProgress, FormControlLabel, Stack, Switch, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { useEffect, useState, type FormEvent } from 'react';
 
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import {
   getBrowserNotificationPermission,
   getStoredDutyNotificationSettings,
@@ -20,6 +10,7 @@ import {
   setStoredDutyNotificationSettings,
 } from '../rer-duty-neo/notifications';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+import { PowerAlert } from '../../components/PowerAlert';
 
 export type SettingsDutySectionProps = {
   loadInProgress: boolean;
@@ -72,8 +63,8 @@ export function SettingsDutySection({
         >
           Оперативний
         </Typography>
-        {prefsLoadError ? <Alert severity="warning">{prefsLoadError}</Alert> : null}
-        {saveError ? <Alert severity="error">{saveError}</Alert> : null}
+        {prefsLoadError ? <PowerAlert severity="warning">{prefsLoadError}</PowerAlert> : null}
+        {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
         <Box component="form" onSubmit={onSave} noValidate>
           <Stack spacing={2}>
             <Box className="flex flex-col gap-0.5">
@@ -127,7 +118,7 @@ export function SettingsDutySection({
                   {saveSuccess}
                 </Typography>
               ) : null}
-              <Button
+              <PowerButton
                 variant="contained"
                 type="submit"
                 disabled={saveInProgress || !isDirty || loadInProgress}
@@ -135,7 +126,7 @@ export function SettingsDutySection({
                 sx={{ fontWeight: 500 }}
               >
                 зберегти
-              </Button>
+              </PowerButton>
             </Box>
           </Stack>
           <Stack spacing={2} sx={{ maxWidth: 560 }}>

@@ -2,7 +2,7 @@ import { IconButton as MuiIconButton, IconButtonProps } from '@mui/material';
 import { forwardRef, useRef } from 'react';
 import type { ForwardedRef, MouseEvent } from 'react';
 
-export const IconButton = forwardRef(function IconButton(
+export const PowerIconButton = forwardRef(function PowerIconButton(
   props: IconButtonProps,
   ref: ForwardedRef<HTMLButtonElement>,
 ) {

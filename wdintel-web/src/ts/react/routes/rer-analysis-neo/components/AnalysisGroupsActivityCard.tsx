@@ -1,8 +1,9 @@
-import { Alert, Button, CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Button, CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { createElement, useEffect, useId, useMemo, useRef } from 'react';
 
 import type { FreqDailyActivityCount } from '../../../../../Bindings';
 import type { AnalysisGroupsActivityPeriod } from '../types';
+import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
   groupsActivity: FreqDailyActivityCount | null;
@@ -130,12 +131,12 @@ export function AnalysisGroupsActivityCard({
         createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })
       ) : chartStatus === 'needs-freq' ? (
         <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <Alert
+          <PowerAlert
             severity="info"
             sx={{ width: '100%', pl: 0, '& .MuiAlert-message': { pl: 0 }, '& .MuiAlert-icon': { mr: 1 } }}
           >
             Оберіть частоту у фільтрі або скористайтесь швидким вибором нижче.
-          </Alert>
+          </PowerAlert>
           {suggestedFreqs.length > 0 ? (
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
               {suggestedFreqs.map((freq) => (
@@ -154,13 +155,13 @@ export function AnalysisGroupsActivityCard({
           </Typography>
         </Stack>
       ) : chartStatus === 'empty-period' ? (
-        <Alert severity="info">
+        <PowerAlert severity="info">
           {`Для частоти ${selectedFreq} за цей інтервал активності не знайдено.`}
-        </Alert>
+        </PowerAlert>
       ) : (
-        <Alert severity="info">
+        <PowerAlert severity="info">
           {`Для частоти ${selectedFreq} немає даних для побудови графіка.`}
-        </Alert>
+        </PowerAlert>
       )}
     </Paper>
   );

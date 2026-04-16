@@ -1,23 +1,9 @@
-import {
-  Alert,
-  Card,
-  CardContent,
-  CircularProgress,
-  FormControl,
-  MenuItem,
-  Select,
-  SelectChangeEvent,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Typography,
-} from '@mui/material';
+import { Card, CardContent, CircularProgress, FormControl, MenuItem, Select, SelectChangeEvent, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 
 import { PageLoadingState } from '../../components/PageLoadingState';
-import { Button } from '../../components/mui-customized/button';
+import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
 import {
   AorLocationConfigItem,
   listAorLocationConfigs,
@@ -150,7 +136,7 @@ export function AdminLocationConfigsNeoPage() {
           ) : null}
 
           {loadStatus === 'error' ? (
-            <Alert severity="error">{loadError || 'Помилка завантаження'}</Alert>
+            <PowerAlert severity="error">{loadError || 'Помилка завантаження'}</PowerAlert>
           ) : null}
 
           {loadStatus === 'success' ? (
@@ -206,13 +192,13 @@ export function AdminLocationConfigsNeoPage() {
                       </TableCell>
                       <TableCell sx={{ width: '10%' }}>
                         <div className="flex items-center gap-2">
-                          <Button
+                          <PowerButton
                             variant="contained"
                             disabled={!isChanged || row.isSaving}
                             onClick={() => onSave(row)}
                           >
                             {row.isSaving ? 'Збереження...' : 'Зберегти'}
-                          </Button>
+                          </PowerButton>
                           {row.saveError ? (
                             <Typography color="error" variant="caption">
                               {row.saveError}

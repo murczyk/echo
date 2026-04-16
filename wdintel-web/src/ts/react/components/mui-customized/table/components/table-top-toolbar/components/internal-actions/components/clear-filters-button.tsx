@@ -1,7 +1,7 @@
 import FilterAltOffIcon from '@mui/icons-material/FilterAltOff';
 import { Tooltip } from '@mui/material';
 
-import { IconButton } from '../../../../../../icon-button';
+import { PowerIconButton } from '../../../../../../../PowerIconButton';
 import { useTableStateContext } from '../../../../../table-state-provider';
 
 type ClearFiltersButtonProps = {
@@ -22,9 +22,9 @@ export function ClearFiltersButton(props: ClearFiltersButtonProps) {
 
   if (props.disabled) {
     return (
-      <IconButton disabled={props.disabled} size="small">
+      <PowerIconButton disabled={props.disabled} size="small">
         <FilterAltOffIcon />
-      </IconButton>
+      </PowerIconButton>
     );
   }
 
@@ -32,9 +32,9 @@ export function ClearFiltersButton(props: ClearFiltersButtonProps) {
     <Tooltip title="Очистити фільтри та сортування по стовпцях">
       <span className="relative">
         <div className="bg-red-500 absolute top-1 right-1 h-2 w-2 rounded-full z-10" />
-        <IconButton disabled={props.disabled} onClick={onClickClearFilters} size="small">
+        <PowerIconButton disabled={props.disabled} onClick={onClickClearFilters} size="small">
           <FilterAltOffIcon />
-        </IconButton>
+        </PowerIconButton>
       </span>
     </Tooltip>
   );

@@ -1,4 +1,4 @@
-import { Alert, Box, Stack } from '@mui/material';
+import { Box, Stack } from '@mui/material';
 
 import { TableContentState } from '../../components/TableContentState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -11,6 +11,7 @@ import {
   GoiKnowledgeTable,
 } from './GoiKnowledgeTable';
 import { useGoiKnowledgePage } from './use-goi-knowledge-page';
+import { PowerAlert } from '../../components/PowerAlert';
 
 function GoiKnowledgePageBody() {
   const page = useGoiKnowledgePage();
@@ -41,7 +42,7 @@ function GoiKnowledgePageBody() {
           internalActionsDisabled={page.status !== 'success' && page.rows.length === 0}
         />
 
-        {page.notice ? <Alert severity={page.notice.kind}>{page.notice.text}</Alert> : null}
+        {page.notice ? <PowerAlert severity={page.notice.kind}>{page.notice.text}</PowerAlert> : null}
 
         <Box
           sx={{

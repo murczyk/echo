@@ -1,7 +1,9 @@
 use crate::config::{
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
+    ORGANISM_GOI_INTEGRATION_TYPE_FULL,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
+    ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC,
 };
 use crate::entities::{goi_association, goi_integration, goi_knowledge};
@@ -31,12 +33,23 @@ const GOI_XLSX_CONTENT_TYPE: &str =
 struct GoiWorkerState {
     last_knowledge_sync_attempt_at: HashMap<i64, Instant>,
     last_report_push_attempt_at: HashMap<i64, Instant>,
+    last_palitra_folder_sync_attempt_at: HashMap<i64, Instant>,
 }
 
 pub async fn goi_association_worker_nofail(env: Arc<Env>) {
+    goi_worker_nofail(env, true).await;
+}
+
+pub async fn goi_folder_sync_worker_nofail(env: Arc<Env>) {
+    goi_worker_nofail(env, false).await;
+}
+
+async fn goi_worker_nofail(env: Arc<Env>, with_api_jobs: bool) {
     let mut state = GoiWorkerState::default();
     loop {
-        if let Err(err) = goi_association_worker_step(&env, &mut state).await {
+        if let Err(err) =
+            goi_association_worker_step(&env, &mut state, with_api_jobs).await
+        {
             log::warn!("GOI association worker step failed: {err:#}");
             tokio::time::sleep(goi_worker_sleep_duration()).await;
         }
@@ -46,60 +59,104 @@ pub async fn goi_association_worker_nofail(env: Arc<Env>) {
 async fn goi_association_worker_step(
     env: &Env,
     state: &mut GoiWorkerState,
+    with_api_jobs: bool,
 ) -> Result<(), AppError> {
-    let integrations = load_goi_api_integrations(&env.dbx).await.c(h!())?;
+    let integrations = load_goi_worker_integrations(&env.dbx, with_api_jobs)
+        .await
+        .c(h!())?;
     if integrations.is_empty() {
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
     }
 
     for integration in integrations {
-        if let Err(err) = sync_goi_associations(env, &integration).await {
-            let label = integration.server_label.clone();
-            log::warn!("Skipping GOI association sync for {label}: {err:#}");
+        if with_api_jobs && goi_integration_has_api_config(&integration) {
+            if let Err(err) = sync_goi_associations(env, &integration).await {
+                let label = integration.server_label.clone();
+                log::warn!(
+                    "Skipping GOI association sync for {label}: {err:#}"
+                );
+            }
+            if let Err(err) =
+                sync_goi_knowledge_if_due(env, &integration, state).await
+            {
+                let label = integration.server_label.clone();
+                log::warn!("Skipping GOI knowledge sync for {label}: {err:#}");
+            }
+            if let Err(err) =
+                push_goi_report_if_due(env, &integration, state).await
+            {
+                let label = integration.server_label.clone();
+                log::warn!("Skipping GOI report push for {label}: {err:#}");
+            }
         }
-        if let Err(err) =
-            sync_goi_knowledge_if_due(env, &integration, state).await
-        {
-            let label = integration.server_label.clone();
-            log::warn!("Skipping GOI knowledge sync for {label}: {err:#}");
-        }
-        if let Err(err) = push_goi_report_if_due(env, &integration, state).await
-        {
-            let label = integration.server_label.clone();
-            log::warn!("Skipping GOI report push for {label}: {err:#}");
+        if !with_api_jobs {
+            if let Err(err) =
+                sync_goi_palitra_folders_if_due(env, &integration, state).await
+            {
+                let label = integration.server_label.clone();
+                log::warn!(
+                    "Skipping GOI palitra folder sync for {label}: {err:#}"
+                );
+            }
         }
         tokio::time::sleep(goi_worker_sleep_duration()).await;
     }
     Ok(())
 }
 
-async fn load_goi_api_integrations(
+async fn sync_goi_palitra_folders_if_due(
+    env: &Env,
+    integration: &goi_integration::Model,
+    state: &mut GoiWorkerState,
+) -> Result<(), AppError> {
+    if !goi_palitra_folder_sync_is_due(state, integration.id) {
+        return Ok(());
+    }
+    state
+        .last_palitra_folder_sync_attempt_at
+        .insert(integration.id, Instant::now());
+    let _ = env;
+    let _ = integration;
+    Ok(())
+}
+
+async fn load_goi_worker_integrations(
     db: &DatabaseConnection,
+    with_api_jobs: bool,
 ) -> Result<Vec<goi_integration::Model>, AppError> {
+    let is_full_integration = Condition::all().add(
+        goi_integration::Column::IntegrationType
+            .eq(ORGANISM_GOI_INTEGRATION_TYPE_FULL),
+    );
     let has_api_host = Condition::all()
         .add(goi_integration::Column::ApiHost.is_not_null())
         .add(goi_integration::Column::ApiHost.ne(""));
     let has_ssh_host = Condition::all()
         .add(goi_integration::Column::SshHost.is_not_null())
         .add(goi_integration::Column::SshHost.ne(""));
+    let has_host_for_api =
+        Condition::any().add(has_api_host).add(has_ssh_host.clone());
     let has_api_login = Condition::all()
         .add(goi_integration::Column::ApiLogin.is_not_null())
         .add(goi_integration::Column::ApiLogin.ne(""));
     let has_api_password = Condition::all()
         .add(goi_integration::Column::ApiPassword.is_not_null())
         .add(goi_integration::Column::ApiPassword.ne(""));
-    let integrations = goi_integration::Entity::find()
-        .filter(Condition::any().add(has_api_host).add(has_ssh_host))
-        .filter(has_api_login)
-        .filter(has_api_password)
+    let filter = if with_api_jobs {
+        Condition::all()
+            .add(is_full_integration)
+            .add(has_host_for_api)
+            .add(has_api_login)
+            .add(has_api_password)
+    } else {
+        has_ssh_host
+    };
+    Ok(goi_integration::Entity::find()
+        .filter(filter)
         .all(db)
         .await
-        .c(h!())?;
-    Ok(integrations
-        .into_iter()
-        .filter(goi_integration_has_api_config)
-        .collect())
+        .c(h!())?)
 }
 
 async fn sync_goi_associations(
@@ -252,6 +309,18 @@ fn goi_knowledge_sync_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
         None => true,
         Some(last_attempt) => {
             last_attempt.elapsed() >= goi_knowledge_sync_interval()
+        }
+    }
+}
+
+fn goi_palitra_folder_sync_is_due(
+    state: &GoiWorkerState,
+    organism_id: i64,
+) -> bool {
+    match state.last_palitra_folder_sync_attempt_at.get(&organism_id) {
+        None => true,
+        Some(last_attempt) => {
+            last_attempt.elapsed() >= goi_palitra_folder_sync_interval()
         }
     }
 }
@@ -565,6 +634,10 @@ fn goi_report_push_interval() -> Duration {
 
 fn goi_knowledge_sync_interval() -> Duration {
     Duration::from_secs(ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC)
+}
+
+fn goi_palitra_folder_sync_interval() -> Duration {
+    Duration::from_secs(ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC)
 }
 
 fn goi_knowledge_sync_cutoff() -> chrono::DateTime<chrono::FixedOffset> {

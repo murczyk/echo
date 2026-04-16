@@ -1,14 +1,4 @@
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  Checkbox,
-  CircularProgress,
-  FormControlLabel,
-  MenuItem,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Autocomplete, Box, Checkbox, CircularProgress, FormControlLabel, MenuItem, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, CreateOrganismReq, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
@@ -18,7 +8,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { SectionErrorState } from '../../components/SectionErrorState';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { listAors } from '../../services/api/aor';
 import {
   addGroupToOrganism,
@@ -40,6 +30,7 @@ import {
   updateOrganism,
 } from '../../services/api/organisms';
 import { navigateWithinSpa } from '../../utils/browser';
+import { PowerAlert } from '../../components/PowerAlert';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 type StatusMessage = { kind: 'error' | 'success'; message: string } | null;
@@ -429,18 +420,18 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
         <Typography variant="h6" className="!font-semibold pb-3">
           ГОІ
         </Typography>
-        <Alert severity="info">
+        <PowerAlert severity="info">
           Керування інтеграціями ГОІ винесено в окрему адмін-панель. Тут налаштування організму більше не містять GOI
           конфігурацію.
-        </Alert>
+        </PowerAlert>
         <div>
-          <Button
+          <PowerButton
             variant="outlined"
             onClick={() => navigateWithinSpa('/admin/goi-integrations-neo')}
             disabled={isGoiBusy}
           >
             Відкрити панель ГОІ
-          </Button>
+          </PowerButton>
         </div>
       </Box>
     </div>
@@ -900,9 +891,9 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         />
 
         {status ? (
-          <Alert severity={status.kind} onClose={() => setStatus(null)}>
+          <PowerAlert severity={status.kind} onClose={() => setStatus(null)}>
             {status.message}
-          </Alert>
+          </PowerAlert>
         ) : null}
 
         <OrganismFormFields
@@ -927,20 +918,20 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         />
 
         <div className="flex justify-end gap-3">
-          <Button
+          <PowerButton
             variant="outlined"
             onClick={navigateBack}
             disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
           >
             Скасувати
-          </Button>
-          <Button
+          </PowerButton>
+          <PowerButton
             variant="contained"
             onClick={handleSubmit}
             disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
           >
             {isNew ? 'Створити' : 'Зберегти'}
-          </Button>
+          </PowerButton>
         </div>
       </div>
     </FormPageLayout>

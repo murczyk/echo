@@ -26,6 +26,7 @@ import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { CALLSIGN_FORM_HINT, RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, hasAnyDraftValue } from '../helpers';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignDraftRow } from '../types';
+import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
   open: boolean;
@@ -202,9 +203,9 @@ export function CreateCallsignsDrawer({
       </Box>
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
-          {validationError ? <Alert severity="error">{validationError}</Alert> : null}
+          {validationError ? <PowerAlert severity="error">{validationError}</PowerAlert> : null}
           {duplicateHints.length > 0 ? (
-            <Alert severity="warning">
+            <PowerAlert severity="warning">
               <Stack spacing={0.5}>
                 <Typography variant="body2" fontWeight={600}>
                   Можливо, такий позивний вже існує:
@@ -215,7 +216,7 @@ export function CreateCallsignsDrawer({
                   </Typography>
                 ))}
               </Stack>
-            </Alert>
+            </PowerAlert>
           ) : null}
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>

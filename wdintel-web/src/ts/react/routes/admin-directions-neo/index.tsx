@@ -1,23 +1,7 @@
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControlLabel,
-  Tab,
-  Switch,
-  Tabs,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Autocomplete, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Tab, Switch, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import {
   MRT_ColumnDef,
   MRT_RowData,
@@ -49,7 +33,7 @@ import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
-import { Button } from '../../components/mui-customized/button';
+import { PowerButton } from '../../components/PowerButton';
 import { PowerChip } from '../../components/PowerChip';
 import {
   CUSTOM_STYLES,
@@ -79,6 +63,7 @@ import {
   updateZoneDatasourceGroup,
 } from '../../services/api/zones';
 import { formatDate } from '../../utils/misc';
+import { PowerAlert } from '../../components/PowerAlert';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -1649,9 +1634,9 @@ function AdminDirectionsNeoPageBody() {
   return (
     <div className="flex h-full w-full min-w-0 flex-col gap-4 overflow-hidden">
       {error ? (
-        <Alert severity="error" onClose={() => setError(null)}>
+        <PowerAlert severity="error" onClose={() => setError(null)}>
           {error}
-        </Alert>
+        </PowerAlert>
       ) : null}
 
       <TablePageToolbar
@@ -1674,7 +1659,7 @@ function AdminDirectionsNeoPageBody() {
         <DialogTitle>Редагувати групу</DialogTitle>
         <DialogContent className="space-y-4">
           {editDialog?.error ? (
-            <Alert severity="error">{editDialog.error}</Alert>
+            <PowerAlert severity="error">{editDialog.error}</PowerAlert>
           ) : null}
           <div className="text-sm text-muted-foreground">
             Група: {editDialog?.groupName}
@@ -1759,20 +1744,20 @@ function AdminDirectionsNeoPageBody() {
           />
         </DialogContent>
         <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-          <Button
+          <PowerButton
             variant="outlined"
             onClick={() => setEditDialog(null)}
             disabled={editDialog?.isSaving}
           >
             Скасувати
-          </Button>
-          <Button
+          </PowerButton>
+          <PowerButton
             variant="contained"
             onClick={handleSaveGroupEdit}
             disabled={editDialog?.isSaving}
           >
             Зберегти
-          </Button>
+          </PowerButton>
         </DialogActions>
       </Dialog>
 
@@ -1785,7 +1770,7 @@ function AdminDirectionsNeoPageBody() {
         <DialogTitle>Редагувати орфан групу</DialogTitle>
         <DialogContent className="space-y-4">
           {orphanEditDialog?.error ? (
-            <Alert severity="error">{orphanEditDialog.error}</Alert>
+            <PowerAlert severity="error">{orphanEditDialog.error}</PowerAlert>
           ) : null}
           <div className="text-sm text-muted-foreground">
             Група: {orphanEditDialog?.groupName}
@@ -1847,20 +1832,20 @@ function AdminDirectionsNeoPageBody() {
           />
         </DialogContent>
         <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-          <Button
+          <PowerButton
             variant="outlined"
             onClick={() => setOrphanEditDialog(null)}
             disabled={orphanEditDialog?.isSaving}
           >
             Скасувати
-          </Button>
-          <Button
+          </PowerButton>
+          <PowerButton
             variant="contained"
             onClick={handleSaveOrphanEdit}
             disabled={orphanEditDialog?.isSaving}
           >
             Зберегти
-          </Button>
+          </PowerButton>
         </DialogActions>
       </Dialog>
 
@@ -1873,7 +1858,7 @@ function AdminDirectionsNeoPageBody() {
         <DialogTitle>Додати орфан групу до напрямків</DialogTitle>
         <DialogContent className="space-y-4">
           {assignDialog?.error ? (
-            <Alert severity="error">{assignDialog.error}</Alert>
+            <PowerAlert severity="error">{assignDialog.error}</PowerAlert>
           ) : null}
           <div className="text-sm text-muted-foreground">
             Група:{' '}
@@ -1931,20 +1916,20 @@ function AdminDirectionsNeoPageBody() {
           ) : null}
         </DialogContent>
         <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-          <Button
+          <PowerButton
             variant="outlined"
             onClick={() => setAssignDialog(null)}
             disabled={assignDialog?.isSaving}
           >
             Скасувати
-          </Button>
-          <Button
+          </PowerButton>
+          <PowerButton
             variant="contained"
             onClick={handleAssignOrphanGroup}
             disabled={assignDialog?.isSaving}
           >
             Додати
-          </Button>
+          </PowerButton>
         </DialogActions>
       </Dialog>
 
@@ -1956,7 +1941,7 @@ function AdminDirectionsNeoPageBody() {
         disabled={!deleteDialog}
       >
           {deleteDialog?.error ? (
-            <Alert severity="error">{deleteDialog.error}</Alert>
+            <PowerAlert severity="error">{deleteDialog.error}</PowerAlert>
           ) : null}
           <Typography variant="body2" className="text-muted-foreground">
             Ви впевнені, що хочете видалити групу {deleteDialog?.groupName}?
