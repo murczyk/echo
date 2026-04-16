@@ -138,9 +138,8 @@ async fn load_goi_worker_integrations(
     let has_ssh_host = Condition::all()
         .add(goi_integration::Column::SshHost.is_not_null())
         .add(goi_integration::Column::SshHost.ne(""));
-    let has_host_for_api = Condition::any()
-        .add(has_api_host)
-        .add(has_ssh_host.clone());
+    let has_host_for_api =
+        Condition::any().add(has_api_host).add(has_ssh_host.clone());
     let has_api_login = Condition::all()
         .add(goi_integration::Column::ApiLogin.is_not_null())
         .add(goi_integration::Column::ApiLogin.ne(""));

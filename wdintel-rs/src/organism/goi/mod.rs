@@ -449,6 +449,11 @@ pub async fn goi_move_file_to_folder_with_entries(
     if current_rel_path == target_rel_path {
         return Ok(());
     }
+    if goi_relative_path_exists(entries.as_slice(), &target_rel_path) {
+        anyhow::bail!(
+            "GOI file move failed: destination file '{target_rel_path}' already exists"
+        );
+    }
 
     let target_dir = goi_relative_parent_dir(&target_rel_path);
     let command = format!(
@@ -486,6 +491,17 @@ fn goi_replace_cached_relative_path(
         entries.remove(index);
     }
     entries.push(format!("./{target_rel_path}"));
+}
+
+fn goi_relative_path_exists(entries: &[String], rel_path: &str) -> bool {
+    entries.iter().any(|entry| {
+        goi_parse_relative_file_entry(entry)
+            .map(|(folder, file_name)| {
+                goi_build_relative_path(folder.as_deref(), &file_name)
+            })
+            .as_deref()
+            == Some(rel_path)
+    })
 }
 
 fn goi_find_source_relative_path(
@@ -1487,5 +1503,19 @@ mod tests {
         let err =
             goi_build_relative_path_checked(Some(".."), "p.kmz").unwrap_err();
         assert!(format!("{err:#}").contains("may not contain '.' or '..'"));
+    }
+
+    #[test]
+    fn goi_relative_path_exists_finds_nested_target_path() {
+        let entries =
+            vec!["./beta/p.kmz".to_string(), "./North/Sub/p.kmz".to_string()];
+        assert!(goi_relative_path_exists(
+            entries.as_slice(),
+            "North/Sub/p.kmz"
+        ));
+        assert!(!goi_relative_path_exists(
+            entries.as_slice(),
+            "North/Sub/other.kmz"
+        ));
     }
 }
