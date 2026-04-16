@@ -54,22 +54,55 @@ export function MessagePictureThumb({ href }: { href: string }) {
   );
 }
 
+function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
+  const raw = m as MessageMediaInfo & { file_name?: string | null };
+  const s = (m.fileName ?? raw.file_name ?? '').trim();
+  if (s !== '') return s;
+  return '<файл без назви>';
+}
+
 function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo }) {
-  const displayName = attachment.fileName?.trim() || '<файл без назви>';
+  const displayName = mediaAttachmentDisplayName(attachment);
+  const downloadAttr = displayName === '<файл без назви>' ? 'attachment' : displayName.replace(/[/\\]/g, '_');
   return (
-    <Button
-      component="a"
-      size="small"
-      variant="outlined"
-      href={attachment.href}
-      download={displayName}
-      target="_blank"
-      rel="noopener noreferrer"
-      sx={{ mb: 0.5, display: 'inline-flex', textTransform: 'none' }}
-      startIcon={<Box component="i" className="bi bi-download" sx={{ fontSize: 14 }} />}
-    >
-      {displayName}
-    </Button>
+    <Tooltip title={displayName} enterDelay={400}>
+      <Button
+        component="a"
+        size="small"
+        variant="outlined"
+        href={String(attachment.href ?? '')}
+        download={downloadAttr}
+        target="_blank"
+        rel="noopener noreferrer"
+        sx={{
+          mb: 0.5,
+          maxWidth: '100%',
+          minHeight: 26,
+          py: 0.25,
+          px: 0.75,
+          fontSize: 11,
+          lineHeight: 1.25,
+          textTransform: 'none',
+          fontWeight: 500,
+          '& .MuiButton-startIcon': { mr: 0.35, ml: -0.25, '& i': { fontSize: 12 } },
+        }}
+        startIcon={<Box component="i" className="bi bi-download" aria-hidden sx={{ fontStyle: 'normal' }} />}
+      >
+        <Box
+          component="span"
+          sx={{
+            maxWidth: 200,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'inline-block',
+            verticalAlign: 'bottom',
+          }}
+        >
+          {displayName}
+        </Box>
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -367,7 +400,17 @@ export function MessageCardMessageBody({
   unitsMap?: Record<number, Unit>;
 }) {
   const imageHrefs = useMemo(() => collectMessageImageHrefs(msg), [msg]);
-  const attachmentMedia = useMemo(() => (msg.media ?? []).filter((m) => !isImageMediaAttachment(m)), [msg.media]);
+  const imageHrefSet = useMemo(() => new Set(imageHrefs), [imageHrefs]);
+  /** Do not show download for the same URL already shown as a picture (`images` or image `media`). */
+  const attachmentMedia = useMemo(
+    () =>
+      (msg.media ?? []).filter((m) => {
+        const href = String(m.href ?? '');
+        if (imageHrefSet.has(href)) return false;
+        return !isImageMediaAttachment(m);
+      }),
+    [msg.media, imageHrefSet],
+  );
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const textPrimary =
