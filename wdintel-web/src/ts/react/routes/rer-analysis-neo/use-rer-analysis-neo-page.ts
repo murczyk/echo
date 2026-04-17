@@ -35,10 +35,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [error, setError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab>('stats');
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(null);
   const [centerTabPending, startCenterTabTransition] = useTransition();
-  const panelStateBeforeMapRef = useRef<{ leftPanelOpen: boolean; rightPanelOpen: boolean } | null>(null);
   const setPageError = useCallback((message: string) => setError(message || null), []);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
@@ -53,6 +52,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     newestFirst,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
+    shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState,
   });
 
@@ -65,13 +65,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
 
   const report = useAnalysisReport({
-    dateFrom: queryState.dateFromStr,
-    dateTo: queryState.dateToStr,
+    fromDateTimeStr: queryState.fromDateTimeStr,
     inboxReq: data.inboxReq,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    timeFrom: queryState.timeFromStr,
-    timeTo: queryState.timeToStr,
+    toDateTimeStr: queryState.toDateTimeStr,
   });
 
   const editor = useAnalysisMessageEditor({
@@ -89,25 +87,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const setCenterTab = useCallback((tab: 'messages' | 'map' | 'summary') => {
     startCenterTabTransition(() => {
       setCenterTabState(tab);
-      if (tab === 'map') {
-        if (centerTab !== 'map') {
-          panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
-        }
-        setLeftPanelOpen(false);
-        setRightPanelOpen(false);
-        return;
-      }
-      const panelStateBeforeMap = panelStateBeforeMapRef.current;
-      if (panelStateBeforeMap) {
-        setLeftPanelOpen(panelStateBeforeMap.leftPanelOpen);
-        setRightPanelOpen(panelStateBeforeMap.rightPanelOpen);
-        panelStateBeforeMapRef.current = null;
-        return;
-      }
-      setLeftPanelOpen(true);
-      setRightPanelOpen(true);
     });
-  }, [centerTab, leftPanelOpen, rightPanelOpen]);
+  }, []);
 
   const showMapDeepLinkAppliedRef = useRef(false);
   useEffect(() => {
@@ -174,22 +155,28 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
       setCenterTabState('map');
-      if (centerTab !== 'map') {
-        panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
-      }
-      setLeftPanelOpen(false);
-      setRightPanelOpen(false);
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
-  }, [centerTab, leftPanelOpen, rightPanelOpen]);
+  }, []);
 
   const toggleLeftPanel = useCallback(() => {
     setLeftPanelOpen((current) => !current);
   }, []);
 
   const toggleRightPanel = useCallback(() => {
-    setRightPanelOpen((current) => !current);
-  }, []);
+    setRightPanelOpen((current) => {
+      const next = !current;
+      if (next && rightSidebarTab == null) {
+        setRightSidebarTab('stats');
+      }
+      return next;
+    });
+  }, [rightSidebarTab]);
+
+  useEffect(() => {
+    if (!rightPanelOpen || rightSidebarTab !== 'newCallsigns') return;
+    void data.loadNewCallsigns();
+  }, [data.loadNewCallsigns, rightPanelOpen, rightSidebarTab]);
 
   const canResetFilters = useMemo(() => {
     const queryStateKey = queryStateComparisonKey(queryState);
@@ -274,6 +261,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadAllMessages: data.loadAllMessages,
     loadCorrelatedFreqs: data.loadCorrelatedFreqs,
     loadGroupsActivity: data.loadGroupsActivity,
+    loadNewCallsigns: data.loadNewCallsigns,
     loadMoreMessages: data.loadMoreMessages,
     loadMessagesForMap: data.loadMessagesForMap,
     toggleCallsignGraphNolimit: data.toggleCallsignGraphNolimit,

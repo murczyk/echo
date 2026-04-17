@@ -1,9 +1,10 @@
-import { Button, CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Button, CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { createElement, useEffect, useId, useMemo, useRef } from 'react';
 
 import type { FreqDailyActivityCount } from '../../../../../Bindings';
 import type { AnalysisGroupsActivityPeriod } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 
 type Props = {
   groupsActivity: FreqDailyActivityCount | null;
@@ -105,9 +106,9 @@ export function AnalysisGroupsActivityCard({
   return (
     <Paper ref={sectionRef} variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-        <Typography id={headingId} variant="subtitle1" component="h2" sx={{ fontWeight: 600 }}>
+        <CompactTitle id={headingId} component="h2">
           Активність по датах
-        </Typography>
+        </CompactTitle>
         {loading ? <CircularProgress size={18} /> : null}
       </Stack>
       <ToggleButtonGroup
@@ -124,9 +125,9 @@ export function AnalysisGroupsActivityCard({
         <ToggleButton value="quarter">{periodLabel('quarter')}</ToggleButton>
         <ToggleButton value="year">{periodLabel('year')}</ToggleButton>
       </ToggleButtonGroup>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+      <CompactText component="div" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
         {selectedFreq ? `Частота для графіка: ${selectedFreq}` : 'Для графіка потрібно обрати одну частоту.'}
-      </Typography>
+      </CompactText>
       {chartStatus === 'ready' ? (
         createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })
       ) : chartStatus === 'needs-freq' ? (
@@ -150,9 +151,9 @@ export function AnalysisGroupsActivityCard({
       ) : chartStatus === 'loading' ? (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
           <CircularProgress size={18} />
-          <Typography variant="body2" color="text.secondary">
+          <CompactText color="text.secondary">
             Завантажую активність по датах…
-          </Typography>
+          </CompactText>
         </Stack>
       ) : chartStatus === 'empty-period' ? (
         <PowerAlert severity="info">

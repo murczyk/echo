@@ -1,0 +1,254 @@
+import { Box, Button, Paper, Popover, Stack, TextField } from '@mui/material';
+import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import dayjs from 'dayjs';
+import 'dayjs/locale/uk';
+import type { Dayjs } from 'dayjs';
+import { useCallback, useId, useMemo, useState } from 'react';
+import type { MouseEvent } from 'react';
+
+dayjs.locale('uk');
+
+import { APP_DATETIME_INPUT_MIN } from '../utils/misc';
+import { CompactTitle } from './CompactTypography';
+
+export type DateTimeRangeValue = {
+  fromDateTimeStr: string;
+  toDateTimeStr: string;
+};
+
+export type DateTimeRangeControlProps = {
+  value: DateTimeRangeValue;
+  onChange: (value: DateTimeRangeValue) => void;
+  className?: string;
+  disabled?: boolean;
+};
+
+function formatDisplayValue(value: string): string {
+  if (!value) return '—';
+  const [datePart = '', timePart = ''] = value.split('T');
+  if (datePart === '' || timePart === '') return value;
+  const [year = '', month = '', day = ''] = datePart.split('-');
+  if (year === '' || month === '' || day === '') return value;
+  return `${day}.${month}.${year} ${timePart}`;
+}
+
+export function DateTimeRangeControl({ value, onChange, className, disabled = false }: DateTimeRangeControlProps) {
+  const anchorId = useId().replace(/:/g, '-');
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const open = Boolean(anchorEl);
+
+  const openPopover = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement) {
+        activeElement.blur();
+      }
+      setAnchorEl(event.currentTarget);
+    },
+    [],
+  );
+
+  const closePopover = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+    window.requestAnimationFrame(() => {
+      setAnchorEl(null);
+    });
+  }, []);
+
+  const intervalLabel = useMemo(
+    () => `${formatDisplayValue(value.fromDateTimeStr)} — ${formatDisplayValue(value.toDateTimeStr)}`,
+    [value.fromDateTimeStr, value.toDateTimeStr],
+  );
+
+  return (
+    <Stack className={className} direction="row" spacing={0} sx={{ minWidth: 0, width: '100%' }}>
+      <TextField
+        id={anchorId}
+        value={intervalLabel}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={openPopover}
+        aria-haspopup="dialog"
+        aria-expanded={open ? 'true' : 'false'}
+        disabled={disabled}
+        fullWidth
+        size="small"
+        placeholder="Інтервал"
+        inputProps={{
+          readOnly: true,
+        }}
+        InputProps={{
+          endAdornment: (
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', mx: 1.5, color: 'primary.main' }}>
+              <CalendarMonthOutlinedIcon sx={{ fontSize: 16 }} />
+            </Box>
+          ),
+        }}
+        sx={{
+          width: '100%',
+          minWidth: 0,
+          '& .MuiOutlinedInput-root': {
+            height: 40,
+            minHeight: 40,
+            cursor: 'pointer',
+            backgroundColor: 'transparent',
+            paddingRight: 0,
+            px: 0,
+            '& fieldset': {
+              borderColor: 'divider',
+            },
+            '&:hover fieldset': {
+              borderColor: 'text.secondary',
+            },
+            '&.Mui-focused fieldset': {
+              borderColor: 'primary.main',
+            },
+          },
+          '& .MuiInputBase-input': {
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+            fontWeight: 400,
+            color: 'text.primary',
+            py: 0,
+            pl: 1.25,
+            pr: 0,
+          },
+        }}
+      />
+      <Popover
+        open={open}
+        anchorEl={anchorEl}
+        onClose={closePopover}
+        disableAutoFocus
+        disableEnforceFocus
+        disableRestoreFocus
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        PaperProps={{
+          sx: {
+            width: { xs: 'calc(100vw - 24px)', md: 720 },
+            maxWidth: 'calc(100vw - 24px)',
+            p: 1.5,
+            mt: 1,
+          },
+        }}
+      >
+        <LocalizationProvider
+          dateAdapter={AdapterDayjs}
+          adapterLocale="uk"
+          localeText={{
+            cancelButtonLabel: 'Скасувати',
+            todayButtonLabel: 'Сьогодні',
+            okButtonLabel: 'ОК',
+          }}
+        >
+          <Stack spacing={1.5}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+              <CompactTitle component="strong">Інтервал</CompactTitle>
+              <Button size="small" onClick={closePopover}>
+                Закрити
+              </Button>
+            </Stack>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+              <Paper variant="outlined" sx={{ flex: 1, p: 1.25 }}>
+                <Stack spacing={1.25}>
+                  <CompactTitle component="div">Від</CompactTitle>
+                  <DateTimePicker
+                    value={value.fromDateTimeStr ? (dayjs(value.fromDateTimeStr) as Dayjs) : null}
+                    onChange={(nextValue) => {
+                      const fromDateTimeStr = nextValue ? nextValue.format('YYYY-MM-DDTHH:mm') : '';
+                      onChange({ ...value, fromDateTimeStr });
+                    }}
+                    minDateTime={dayjs(APP_DATETIME_INPUT_MIN) as Dayjs}
+                    format="DD.MM.YYYY HH:mm"
+                    ampm={false}
+                    slotProps={{
+                      textField: {
+                        size: 'small',
+                        fullWidth: true,
+                        InputLabelProps: { shrink: true },
+                        sx: {
+                          cursor: 'pointer',
+                          '& .MuiOutlinedInput-root': {
+                            height: 40,
+                            minHeight: 40,
+                            cursor: 'pointer',
+                            backgroundColor: 'transparent',
+                            '& input': {
+                              cursor: 'pointer',
+                              fontSize: '0.875rem',
+                            },
+                          },
+                        },
+                      },
+                      openPickerButton: {
+                        title: 'Відкрити календар',
+                        'aria-label': 'Відкрити календар',
+                        sx: { cursor: 'pointer' },
+                      },
+                      actionBar: {
+                        actions: ['today', 'cancel', 'accept'],
+                      },
+                    }}
+                    slots={{
+                      openPickerIcon: CalendarMonthOutlinedIcon,
+                    }}
+                  />
+                </Stack>
+              </Paper>
+              <Paper variant="outlined" sx={{ flex: 1, p: 1.25 }}>
+                <Stack spacing={1.25}>
+                  <CompactTitle component="div">До</CompactTitle>
+                  <DateTimePicker
+                    value={value.toDateTimeStr ? (dayjs(value.toDateTimeStr) as Dayjs) : null}
+                    onChange={(nextValue) => {
+                      const toDateTimeStr = nextValue ? nextValue.format('YYYY-MM-DDTHH:mm') : '';
+                      onChange({ ...value, toDateTimeStr });
+                    }}
+                    minDateTime={dayjs(APP_DATETIME_INPUT_MIN) as Dayjs}
+                    format="DD.MM.YYYY HH:mm"
+                    ampm={false}
+                    slotProps={{
+                      textField: {
+                        size: 'small',
+                        fullWidth: true,
+                        InputLabelProps: { shrink: true },
+                        sx: {
+                          '& .MuiOutlinedInput-root': {
+                            height: 40,
+                            minHeight: 40,
+                            backgroundColor: 'transparent',
+                            '& input': {
+                              cursor: 'pointer',
+                              fontSize: '0.875rem',
+                            },
+                          },
+                        },
+                      },
+                      openPickerButton: {
+                        title: 'Відкрити календар',
+                        'aria-label': 'Відкрити календар',
+                        sx: { cursor: 'pointer' },
+                      },
+                      actionBar: {
+                        actions: ['today', 'cancel', 'accept'],
+                      },
+                    }}
+                    slots={{
+                      openPickerIcon: CalendarMonthOutlinedIcon,
+                    }}
+                  />
+                </Stack>
+              </Paper>
+            </Stack>
+          </Stack>
+        </LocalizationProvider>
+      </Popover>
+    </Stack>
+  );
+}

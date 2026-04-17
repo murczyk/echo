@@ -79,6 +79,19 @@ function toNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function splitDateTimeStr(dateTimeStr: string | undefined): { dateStr: string; timeStr: string } | null {
+  if (typeof dateTimeStr !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) {
+    return null;
+  }
+
+  const [dateStr, timeStr] = dateTimeStr.split('T');
+  if (!dateStr || !timeStr) {
+    return null;
+  }
+
+  return { dateStr, timeStr };
+}
+
 function normalizeLegacyValue(field: LegacyKeyMapEntry, value: unknown): unknown {
   if (field.key === 'filterTagsOption' && typeof value === 'string') {
     return TAG_FILTER_OPTION_MAP[value] ?? value;
@@ -147,9 +160,25 @@ export function toLegacyRerAnalysisQueryState(state: unknown): RerAnalysisLegacy
   const normalized = normalizeRerAnalysisQueryState(state) ?? {};
   const legacyState: RerAnalysisLegacyState = {};
 
+  const fromDateTime = splitDateTimeStr(typeof normalized.fromDateTimeStr === 'string' ? normalized.fromDateTimeStr : undefined);
+  const toDateTime = splitDateTimeStr(typeof normalized.toDateTimeStr === 'string' ? normalized.toDateTimeStr : undefined);
+
   for (const field of LEGACY_QUERY_STATE_FIELDS) {
     const legacyKey = field.legacyKey ?? field.key;
-    const value = normalized[field.key];
+    let value = normalized[field.key];
+
+    if (field.key === 'dateFromStr' && fromDateTime != null) {
+      value = fromDateTime.dateStr;
+    }
+    if (field.key === 'timeFromStr' && fromDateTime != null) {
+      value = fromDateTime.timeStr;
+    }
+    if (field.key === 'dateToStr' && toDateTime != null) {
+      value = toDateTime.dateStr;
+    }
+    if (field.key === 'timeToStr' && toDateTime != null) {
+      value = toDateTime.timeStr;
+    }
 
     if (field.type === 'string') {
       legacyState[legacyKey] = typeof value === 'string' ? value : String(field.defaultValue);

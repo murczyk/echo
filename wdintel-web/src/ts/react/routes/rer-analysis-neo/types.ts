@@ -31,6 +31,12 @@ export type AnalysisAorEntry = {
 
 export type AnalysisGroupsActivityPeriod = 'selected' | 'month' | 'quarter' | 'year';
 export type AnalysisQueryState = RerAnalysisQueryState & {
+  fromDateTimeStr: string;
+  toDateTimeStr: string;
+  dateFromStr?: string;
+  timeFromStr?: string;
+  dateToStr?: string;
+  timeToStr?: string;
   filterTagsOption: TagFilterOption;
   includeOnlyNewFreqs: boolean;
   reportTagsOnlyThisUnit: boolean;
@@ -114,7 +120,7 @@ export type AnalysisPageState = {
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
   rightPanelOpen: boolean;
-  rightSidebarTab: AnalysisSidebarTab;
+  rightSidebarTab: AnalysisSidebarTab | null;
   report: AnalysisReportState;
   reportDownloadInFlight: boolean;
   saveInFlight: boolean;
@@ -143,6 +149,7 @@ export type AnalysisPageActions = {
   loadAllMessages: () => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => void;
+  loadNewCallsigns: () => Promise<void>;
   onDeleteMessage: (messageId: number) => void;
   onSaveMessageComment: (messageId: number, comment: string | null) => void;
   renameSummaryUnit: (freq: string, unit: string, unitNew: string) => Promise<void>;

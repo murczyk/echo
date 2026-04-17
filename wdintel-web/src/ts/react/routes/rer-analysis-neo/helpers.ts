@@ -8,9 +8,9 @@ import {
 } from '../../../rer-analysis-query-state';
 import {
   APP_TIME_ZONE,
+  combineDateTimeInputToMs,
   combineDateTimeToMs,
-  formatDateInputValueInTimeZone,
-  formatTimeInputValueInTimeZone,
+  formatDateTimeInputValueInTimeZone,
 } from '../../utils/misc';
 import type { AnalysisQueryState } from './types';
 
@@ -41,6 +41,8 @@ function findAllAdjacentFreqs(allFrequencies: string[], selectedFrequencies: str
 
 export function emptyQueryState(): AnalysisQueryState {
   return {
+    fromDateTimeStr: '',
+    toDateTimeStr: '',
     dateFromStr: '',
     timeFromStr: '',
     dateToStr: '',
@@ -98,16 +100,14 @@ export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),
 ): AnalysisQueryState {
-  if (parsed.dateFromStr !== '' && parsed.timeFromStr !== '' && parsed.dateToStr !== '' && parsed.timeToStr !== '') return parsed;
+  if (parsed.fromDateTimeStr !== '' && parsed.toDateTimeStr !== '') return parsed;
 
   const start = new Date(now.getTime() - 12 * 60 * 60 * 1000);
   return {
     ...emptyQueryState(),
     ...parsed,
-    dateFromStr: parsed.dateFromStr || formatDateInputValueInTimeZone(start, APP_TIME_ZONE),
-    timeFromStr: parsed.timeFromStr || formatTimeInputValueInTimeZone(start, APP_TIME_ZONE),
-    dateToStr: parsed.dateToStr || formatDateInputValueInTimeZone(now, APP_TIME_ZONE),
-    timeToStr: parsed.timeToStr || formatTimeInputValueInTimeZone(now, APP_TIME_ZONE),
+    fromDateTimeStr: parsed.fromDateTimeStr || formatDateTimeInputValueInTimeZone(start, APP_TIME_ZONE),
+    toDateTimeStr: parsed.toDateTimeStr || formatDateTimeInputValueInTimeZone(now, APP_TIME_ZONE),
   };
 }
 
@@ -158,8 +158,12 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
 export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: string[] = []): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
-  const sinceDateInclusiveMs = combineDateTimeToMs(query.dateFromStr, query.timeFromStr, APP_TIME_ZONE);
-  const tillDateNoninclusiveMs = combineDateTimeToMs(query.dateToStr, query.timeToStr, APP_TIME_ZONE);
+  const sinceDateInclusiveMs =
+    combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE) ??
+    (query.dateFromStr != null && query.timeFromStr != null ? combineDateTimeToMs(query.dateFromStr, query.timeFromStr, APP_TIME_ZONE) : null);
+  const tillDateNoninclusiveMs =
+    combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE) ??
+    (query.dateToStr != null && query.timeToStr != null ? combineDateTimeToMs(query.dateToStr, query.timeToStr, APP_TIME_ZONE) : null);
 
   if (sinceDateInclusiveMs == null || tillDateNoninclusiveMs == null) {
     return null;
@@ -354,6 +358,8 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
   return normalizeQueryState({
     ...emptyQueryState(),
     includeOnlyNewFreqs: false,
+    fromDateTimeStr: formatDateTimeInputValueInTimeZone(new Date(normalized.sinceDateInclusiveMs), APP_TIME_ZONE),
+    toDateTimeStr: formatDateTimeInputValueInTimeZone(new Date(normalized.tillDateNoninclusiveMs), APP_TIME_ZONE),
     aorsSelected: (normalized.selectedAors ?? []).map(String),
     groupsSelected: normalized.selectedGroups ?? [],
     sendersSelected: normalized.selectedSenders ?? [],
@@ -381,10 +387,6 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     withoutModelTags: normalized.withoutModelTags,
     filterTagsOption: normalized.filterTagsOption,
     reportTagsOnlyThisUnit: normalized.reportTagsOnlyThisUnit,
-    dateFromStr: formatDateInputValueInTimeZone(new Date(normalized.sinceDateInclusiveMs), APP_TIME_ZONE),
-    timeFromStr: formatTimeInputValueInTimeZone(new Date(normalized.sinceDateInclusiveMs), APP_TIME_ZONE),
-    dateToStr: formatDateInputValueInTimeZone(new Date(normalized.tillDateNoninclusiveMs), APP_TIME_ZONE),
-    timeToStr: formatTimeInputValueInTimeZone(new Date(normalized.tillDateNoninclusiveMs), APP_TIME_ZONE),
   });
 }
 

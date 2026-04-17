@@ -19,10 +19,8 @@ import type { AnalysisQueryState } from './types';
 function createQueryState(overrides: Partial<AnalysisQueryState> = {}): AnalysisQueryState {
   return {
     ...emptyQueryState(),
-    dateFromStr: '2026-03-30',
-    timeFromStr: '08:00',
-    dateToStr: '2026-03-31',
-    timeToStr: '08:00',
+    fromDateTimeStr: '2026-03-30T08:00',
+    toDateTimeStr: '2026-03-31T08:00',
     groupsSelected: ['Alpha'],
     search: 'signal',
     ...overrides,
@@ -129,10 +127,8 @@ describe('rer-analysis-neo helpers', () => {
   it('keeps the saved filter clean when only the date range differs', () => {
     const savedFilter = createSavedFilter(createQueryState());
     const currentState = createQueryState({
-      dateFromStr: '2026-03-31',
-      timeFromStr: '10:30',
-      dateToStr: '2026-03-31',
-      timeToStr: '12:30',
+      fromDateTimeStr: '2026-03-31T10:30',
+      toDateTimeStr: '2026-03-31T12:30',
     });
 
     expect(queryStateMatchesSavedFilter(currentState, savedFilter)).toBe(true);
@@ -170,27 +166,21 @@ describe('rer-analysis-neo helpers', () => {
   it('derives default analysis dates in the app timezone', () => {
     const state = createInitialQueryState(emptyQueryState(), new Date(Date.UTC(2026, 0, 15, 22, 30, 0)));
 
-    expect(state.dateToStr).toBe('2026-01-16');
-    expect(state.timeToStr).toBe('00:30');
-    expect(state.dateFromStr).toBe('2026-01-15');
-    expect(state.timeFromStr).toBe('12:30');
+    expect(state.fromDateTimeStr).toBe('2026-01-15T12:30');
+    expect(state.toDateTimeStr).toBe('2026-01-16T00:30');
   });
 
-  it('fills missing times when only analysis dates are restored', () => {
+  it('fills missing datetime bounds when only analysis dates are restored', () => {
     const state = createInitialQueryState(
       createQueryState({
-        dateFromStr: '2026-01-15',
-        timeFromStr: '',
-        dateToStr: '2026-01-16',
-        timeToStr: '',
+        fromDateTimeStr: '',
+        toDateTimeStr: '',
       }),
       new Date(Date.UTC(2026, 0, 16, 10, 30, 0)),
     );
 
-    expect(state.dateFromStr).toBe('2026-01-15');
-    expect(state.timeFromStr).toBe('00:30');
-    expect(state.dateToStr).toBe('2026-01-16');
-    expect(state.timeToStr).toBe('12:30');
+    expect(state.fromDateTimeStr).toBe('2026-01-16T00:30');
+    expect(state.toDateTimeStr).toBe('2026-01-16T12:30');
     expect(buildAnalysisReq(state)).not.toBeNull();
   });
 
@@ -198,7 +188,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(
       buildAnalysisReq(
         createQueryState({
-          timeFromStr: '24:99',
+          fromDateTimeStr: '2026-01-15T24:99',
         }),
       ),
     ).toBeNull();
@@ -206,7 +196,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(
       buildAnalysisReq(
         createQueryState({
-          timeToStr: '99:99',
+          toDateTimeStr: '2026-01-16T99:99',
         }),
       ),
     ).toBeNull();

@@ -59,8 +59,7 @@ describe('rer analysis query state', () => {
         }),
       ),
     ).toEqual({
-      dateFromStr: '2026-03-27',
-      timeFromStr: '21:52',
+      fromDateTimeStr: '2026-03-27T21:52',
       freqsSelected: ['123.4'],
       withoutNetwork: true,
       metadataCc: ['cc-1'],
@@ -92,10 +91,8 @@ describe('rer analysis query state', () => {
 
   it('compacts query state before persisting it', () => {
     const compacted = compactRerAnalysisQueryState({
-      dateFromStr: '2026-03-27',
-      timeFromStr: '21:52',
-      dateToStr: '2026-03-28',
-      timeToStr: '09:52',
+      fromDateTimeStr: '2026-03-27T21:52',
+      toDateTimeStr: '2026-03-28T09:52',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
       groupsSelected: [],
@@ -108,10 +105,8 @@ describe('rer analysis query state', () => {
     });
 
     expect(compacted).toEqual({
-      dateFromStr: '2026-03-27',
-      timeFromStr: '21:52',
-      dateToStr: '2026-03-28',
-      timeToStr: '09:52',
+      fromDateTimeStr: '2026-03-27T21:52',
+      toDateTimeStr: '2026-03-28T09:52',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
     });
@@ -191,10 +186,8 @@ describe('rer analysis query state', () => {
     const params = new URLSearchParams('foo=bar&state=%7B%22search%22%3A%22old%22%7D');
 
     writeRerAnalysisQueryStateToSearchParams(params, {
-      dateFromStr: '2026-03-27',
-      timeFromStr: '21:52',
-      dateToStr: '2026-03-28',
-      timeToStr: '09:52',
+      fromDateTimeStr: '2026-03-27T21:52',
+      toDateTimeStr: '2026-03-28T09:52',
       search: 'uid-1',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
@@ -203,7 +196,7 @@ describe('rer analysis query state', () => {
     });
 
     expect(params.toString()).toBe(
-      'foo=bar&dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&search=uid-1',
+      'foo=bar&fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&search=uid-1&dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52',
     );
   });
 
@@ -220,17 +213,30 @@ describe('rer analysis query state', () => {
 
   it('parses flat query params into canonical query state', () => {
     const params = new URLSearchParams(
-      'dateFrom=2026-03-27&timeFrom=21%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&withoutNetwork=true&tags=7&tags=11&filterTagsOption=AllTags',
+      'fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&withoutNetwork=true&tags=7&tags=11&filterTagsOption=AllTags',
     );
 
     expect(parseRerAnalysisQueryStateFromSearchParams(params)).toEqual({
-      dateFromStr: '2026-03-27',
-      timeFromStr: '21:52',
+      fromDateTimeStr: '2026-03-27T21:52',
+      toDateTimeStr: '2026-03-28T09:52',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
       withoutNetwork: true,
       tags: [7, 11],
       filterTagsOption: 'AllTags',
+    });
+    expect(hasRerAnalysisQueryStateParams(params)).toBe(true);
+  });
+
+  it('keeps backward compatibility with legacy datetime query params', () => {
+    const params = new URLSearchParams(
+      'dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52&search=uid-1',
+    );
+
+    expect(parseRerAnalysisQueryStateFromSearchParams(params)).toEqual({
+      fromDateTimeStr: '2026-03-27T21:52',
+      toDateTimeStr: '2026-03-28T09:52',
+      search: 'uid-1',
     });
     expect(hasRerAnalysisQueryStateParams(params)).toBe(true);
   });

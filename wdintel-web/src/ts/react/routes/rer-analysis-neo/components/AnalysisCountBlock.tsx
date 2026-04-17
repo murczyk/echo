@@ -1,7 +1,8 @@
-import { Box, Button, CircularProgress, List, ListItem, Paper, Skeleton, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, List, ListItem, Paper, Skeleton } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
 
 import type { AnalysisCountItem } from '../types';
+import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 
 type Props = {
   title: string;
@@ -30,15 +31,15 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
       <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, mb: 1.5, flexWrap: 'wrap' }}>
-        <Typography id={headingId} variant="subtitle1" component="h2" sx={{ fontWeight: 600 }}>
+        <CompactTitle id={headingId} component="h2">
           {title}
-        </Typography>
+        </CompactTitle>
         {loading && !showLoadingSkeletons ? (
           <CircularProgress size={16} />
         ) : summaryItem ? (
-          <Typography variant="body2" color="text.secondary">
+          <CompactText color="text.secondary">
             {`Повідомлень: ${summaryItem.count}`}
-          </Typography>
+          </CompactText>
         ) : null}
       </Box>
       <List
@@ -62,9 +63,9 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
         ) : visibleItems.length === 0 ? (
           <ListItem disablePadding>
             {summaryItem ? null : (
-              <Typography variant="body2" color="text.secondary">
+              <CompactText color="text.secondary">
                 Немає даних
-              </Typography>
+              </CompactText>
             )}
           </ListItem>
         ) : (
@@ -84,12 +85,12 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
                 }}
               >
                 <Box sx={{ minWidth: 0, width: '100%' }}>
-                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                  <CompactText component="div" sx={{ fontWeight: 500 }}>
                     {item.key}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  </CompactText>
+                  <CompactText color="text.secondary">
                     {`Повідомлень: ${item.count}`}
-                  </Typography>
+                  </CompactText>
                 </Box>
                 {hasAction ? (
                   <Button size="small" onClick={() => onItemAction(item.key)} sx={{ minWidth: 'auto', px: 1, alignSelf: 'center', justifySelf: 'end' }}>

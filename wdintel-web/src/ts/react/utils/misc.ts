@@ -73,6 +73,7 @@ export function formatDateTime24(value: number | null | undefined): string {
 }
 
 export const APP_DATE_INPUT_MIN = '2022-01-01';
+export const APP_DATETIME_INPUT_MIN = '2022-01-01T00:00';
 export const APP_DATE_INPUT_MIN_YEAR = 2022;
 export const APP_TIME_ZONE = 'Europe/Kiev';
 
@@ -95,6 +96,10 @@ export function formatDateInputValueInTimeZone(date: Date, timeZone: string = AP
 
 export function formatTimeInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
   return dayjs(date).tz(timeZone).format('HH:mm');
+}
+
+export function formatDateTimeInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
+  return dayjs(date).tz(timeZone).format('YYYY-MM-DDTHH:mm');
 }
 
 export function isValidDateInput(dateStr: string): boolean {
@@ -125,4 +130,10 @@ export function combineDateTimeToMs(dateStr: string, timeStr: string, timeZone: 
   const parsed = dayjs.tz(`${dateStr}T${timeStr}:00`, timeZone);
   const millis = parsed.valueOf();
   return Number.isFinite(millis) ? millis : null;
+}
+
+export function combineDateTimeInputToMs(dateTimeStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) return null;
+  const [dateStr, timeStr] = dateTimeStr.split('T');
+  return combineDateTimeToMs(dateStr, timeStr, timeZone);
 }

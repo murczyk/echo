@@ -77,7 +77,13 @@ import type {
   AnalysisPalitrasLoadState,
 } from './types';
 
-export function useAnalysisData({ newestFirst, onError, onUnauthorized, queryState }: UseAnalysisDataProps): UseAnalysisDataResult {
+export function useAnalysisData({
+  newestFirst,
+  onError,
+  onUnauthorized,
+  queryState,
+  shouldLoadNewCallsigns,
+}: UseAnalysisDataProps): UseAnalysisDataResult {
   const [countsLoading, setCountsLoading] = useState(false);
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -128,10 +134,17 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
+  const newCallsignsRequestRef = useRef(0);
+  const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
+  const newCallsignsLoadedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     optionsFreqsRef.current = options.freqs;
   }, [options.freqs]);
+
+  useEffect(() => {
+    shouldLoadNewCallsignsRef.current = shouldLoadNewCallsigns;
+  }, [shouldLoadNewCallsigns]);
 
   const invalidateMessagePaging = useCallback(() => {
     loadMoreMessagesRequestRef.current += 1;
@@ -181,6 +194,42 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     setMapPalitrasLoadState,
     setMapPoints,
   });
+
+  const loadNewCallsigns = useCallback(async () => {
+    const analysisReq = buildAnalysisReq(queryState, options.freqs);
+    if (analysisReq == null) {
+      setNewCallsigns(emptyNewCallsigns);
+      newCallsignsLoadedKeyRef.current = null;
+      return;
+    }
+
+    const requestKey = JSON.stringify(analysisReq);
+    if (newCallsignsLoadedKeyRef.current === requestKey && !newCallsignsLoading) {
+      return;
+    }
+
+    const requestId = newCallsignsRequestRef.current + 1;
+    newCallsignsRequestRef.current = requestId;
+    setNewCallsignsLoading(true);
+    setNewCallsigns(emptyNewCallsigns);
+    onError('');
+
+    try {
+      const newCallsignsRsp = await fetchAnalysisNewCallsigns(analysisReq);
+      if (requestId !== newCallsignsRequestRef.current) return;
+      setNewCallsigns(newCallsignsRsp);
+      newCallsignsLoadedKeyRef.current = requestKey;
+    } catch (loadError) {
+      if (requestId !== newCallsignsRequestRef.current) return;
+      if (!onUnauthorized(loadError)) {
+        onError(toErrorMessage(loadError));
+      }
+    } finally {
+      if (requestId === newCallsignsRequestRef.current) {
+        setNewCallsignsLoading(false);
+      }
+    }
+  }, [newCallsignsLoading, onError, onUnauthorized, options.freqs, queryState]);
 
   const { clearAnalysisResults, onUpdateLocalMessage, patchMessages } = useAnalysisDataStateUtils({
     emptyNewCallsigns,
@@ -243,6 +292,10 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       setNetworks,
       setNewCallsigns,
       setNewCallsignsLoading,
+      setNewCallsignsLoadedKey: (key) => {
+        newCallsignsLoadedKeyRef.current = key;
+      },
+      shouldLoadNewCallsigns: shouldLoadNewCallsignsRef.current,
       setNoMoreToLoad,
       setNolimitShown,
       setOptions,
@@ -399,6 +452,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     toggleCallsignGraphNolimit,
     loadCorrelatedFreqs,
     loadGroupsActivity,
+    loadNewCallsigns,
     loadMoreMessages,
     loadMessagesForMap,
     mapAttrs,

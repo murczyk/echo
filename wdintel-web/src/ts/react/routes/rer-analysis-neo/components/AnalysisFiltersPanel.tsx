@@ -1,4 +1,3 @@
-import SearchIcon from '@mui/icons-material/Search';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import {
   Accordion,
@@ -10,20 +9,18 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
-  InputAdornment,
   InputLabel,
   MenuItem,
   Paper,
   Select,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
-import { APP_DATE_INPUT_MIN, uppercaseStrings } from '../../../utils/misc';
+import { uppercaseStrings } from '../../../utils/misc';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 
@@ -115,40 +112,8 @@ function unitsExactMatchStateFromMode(value: UnitsExactMatchMode): boolean | nul
   return null;
 }
 
-function getInitialExpandedSections(queryState: AnalysisPageState['queryState']): Record<FilterSectionId, boolean> {
-  return {
-    ...defaultExpandedSections,
-    important:
-      defaultExpandedSections.important ||
-      queryState.orWithExtendedForm ||
-      queryState.orBookmarked ||
-      queryState.orImportant ||
-      queryState.orWithCoords,
-    tags:
-      queryState.tags.length > 0 ||
-      queryState.filterTagsOption !== 'OneOfTags' ||
-      queryState.withoutModelTags ||
-      queryState.reportTagsOnlyThisUnit,
-    networks: queryState.networksSelected.length > 0 || queryState.withoutNetwork,
-    aors: queryState.aorsSelected.length > 0,
-    groups: queryState.groupsSelected.length > 0,
-    senders: queryState.sendersSelected.length > 0,
-    freqs:
-      queryState.freqsSelected.length > 0 ||
-      queryState.adjacentFreqsRange > 0 ||
-      queryState.includeOnlyNewFreqs,
-    callsigns: queryState.callsignsSelected.length > 0,
-    units: queryState.unitsSelected.length > 0 || queryState.unitsExactMatchOnly !== null,
-    locations: queryState.locationsSelected.length > 0 || queryState.includePelengLocations === false,
-    posts: queryState.postsSelected.length > 0,
-    metadata:
-      queryState.metadataCc.length > 0 ||
-      queryState.metadataSender.length > 0 ||
-      queryState.metadataReceiver.length > 0 ||
-      queryState.metadataHash.length > 0 ||
-      queryState.onlyWithMetadata ||
-      queryState.withoutMetadata,
-  };
+function getInitialExpandedSections(): Record<FilterSectionId, boolean> {
+  return defaultExpandedSections;
 }
 
 function FilterSection({ title, expanded, onToggle, children }: FilterSectionProps) {
@@ -224,7 +189,7 @@ export function AnalysisFiltersPanel({
   updateExisting,
   updateQueryState,
 }: Props) {
-  const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections(queryState));
+  const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
 
   const unitsExactMatchHint =
     counts == null
@@ -272,13 +237,7 @@ export function AnalysisFiltersPanel({
       }}
     >
       <Stack spacing={1.5}>
-        <Stack
-          direction="row"
-          spacing={2}
-          alignItems="center"
-          justifyContent="space-between"
-          sx={{ pt: 0.5, pb: 1 }}
-        >
+        <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" sx={{ pt: 0.5, pb: 1 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
             Фільтри
           </Typography>
@@ -293,63 +252,6 @@ export function AnalysisFiltersPanel({
             Скинути
           </Button>
         </Stack>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-          <TextField
-            label="Дата від"
-            type="date"
-            size="small"
-            InputLabelProps={{ shrink: true }}
-            value={queryState.dateFromStr}
-            slotProps={{ htmlInput: { min: APP_DATE_INPUT_MIN } }}
-            onChange={(event) => updateQueryState({ dateFromStr: event.target.value })}
-            sx={{ flex: 1, minWidth: 0 }}
-          />
-          <TextField
-            label="Час від"
-            type="time"
-            size="small"
-            InputLabelProps={{ shrink: true }}
-            value={queryState.timeFromStr}
-            onChange={(event) => updateQueryState({ timeFromStr: event.target.value })}
-            sx={{ flex: 1, minWidth: 0 }}
-          />
-        </Stack>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-          <TextField
-            label="Дата до"
-            type="date"
-            size="small"
-            InputLabelProps={{ shrink: true }}
-            value={queryState.dateToStr}
-            slotProps={{ htmlInput: { min: APP_DATE_INPUT_MIN } }}
-            onChange={(event) => updateQueryState({ dateToStr: event.target.value })}
-            sx={{ flex: 1, minWidth: 0 }}
-          />
-          <TextField
-            label="Час до"
-            type="time"
-            size="small"
-            InputLabelProps={{ shrink: true }}
-            value={queryState.timeToStr}
-            onChange={(event) => updateQueryState({ timeToStr: event.target.value })}
-            sx={{ flex: 1, minWidth: 0 }}
-          />
-        </Stack>
-        <TextField
-          label="Пошук"
-          size="small"
-          value={queryState.search}
-          onChange={(event) => updateQueryState({ search: event.target.value })}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
         <Box>
           <FilterSection title="Важливе" expanded={expandedSections.important} onToggle={() => toggleSection('important')}>
             <FormControlLabel

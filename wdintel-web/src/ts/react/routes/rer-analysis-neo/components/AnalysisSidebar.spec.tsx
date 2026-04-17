@@ -81,6 +81,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     loadCallsignGraph: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
+    loadNewCallsigns: vi.fn(),
     newCallsigns: [],
     newCallsignsLoading: false,
     queryState: {
@@ -156,5 +157,13 @@ describe('AnalysisSidebar', () => {
     await click(newTab as HTMLButtonElement);
 
     expect(setRightSidebarTab).toHaveBeenCalledWith('newCallsigns');
+  });
+
+  it('allows a null tab while the right panel is closed', async () => {
+    const view = await renderComponent(buildProps({ rightPanelOpen: false, rightSidebarTab: null }));
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('overview-card');
+    expect(view.container.textContent).not.toContain('callsigns-cloud');
   });
 });

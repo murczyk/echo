@@ -25,6 +25,7 @@ export type UseAnalysisDataProps = {
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
+  shouldLoadNewCallsigns: boolean;
   queryState: import('./types').AnalysisQueryState;
 };
 
@@ -53,6 +54,7 @@ export type UseAnalysisDataResult = {
   toggleCallsignGraphNolimit: () => void;
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
+  loadNewCallsigns: () => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<void>;
   mapAttrs: AnalysisMapAttrs;

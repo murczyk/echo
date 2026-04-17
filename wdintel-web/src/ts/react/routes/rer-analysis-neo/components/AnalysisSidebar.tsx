@@ -17,11 +17,11 @@ type Props = Pick<
   | 'callsignGraphLoadVersion'
   | 'callsignGraphNolimit'
   | 'correlatedFreqs'
-  | 'correlatedFreqsLoading'
-  | 'counts'
-  | 'filtersLoading'
-  | 'groupsActivity'
-  | 'groupsActivityLoadedFreq'
+    | 'correlatedFreqsLoading'
+    | 'counts'
+    | 'filtersLoading'
+    | 'groupsActivity'
+    | 'groupsActivityLoadedFreq'
   | 'groupsActivityLoadedPeriod'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
@@ -83,24 +83,31 @@ export function AnalysisSidebar({
     >
       <Box sx={{ pt: 1 }}>
         <Tabs
-          value={rightSidebarTab}
-          onChange={(_event, value) => setRightSidebarTab(value)}
+          value={rightSidebarTab ?? false}
+          onChange={(_event, value) => setRightSidebarTab(value as 'stats' | 'callsigns' | 'newCallsigns')}
           variant="scrollable"
           allowScrollButtonsMobile
           aria-label="Вкладки правої панелі аналізу"
           sx={{
             minHeight: 0,
             width: '100%',
-            px: 2,
+            px: { xs: 0.5, sm: 1, md: 1.5 },
             '& .MuiTabs-flexContainer': { gap: 1 },
+            '& .MuiTabs-scroller': {
+              px: 0,
+            },
+            '& .MuiTabs-scrollButtons': {
+              width: 32,
+              flexShrink: 0,
+            },
             '& .MuiTab-root': {
               minHeight: 40,
-              px: 1,
+              px: 1.25,
               py: 0.5,
               whiteSpace: 'nowrap',
             },
             '& .MuiTab-iconWrapper': {
-              mr: 0.75,
+              mr: 1,
               mb: 0,
             },
           }}
