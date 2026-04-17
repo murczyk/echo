@@ -100,9 +100,11 @@ export type FeedColumnProps = {
   onReloadFreqs: () => void;
   onSavedFilterSelect: (id: number | '') => void;
   onSaveFilterNameChange: (value: string) => void;
-  onSaveFilter: () => void;
+  onSaveFilter: (feedId: string) => Promise<void>;
+  onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
+  onRenameSelectedSavedFilter: () => Promise<void>;
+  onDeleteSelectedSavedFilter: () => Promise<void>;
   onApplySavedFilter: (saved: SavedFilterDuty) => void;
-  onDeleteSavedFilter: (id: number) => void;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
@@ -177,8 +179,10 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     onSavedFilterSelect,
     onSaveFilterNameChange,
     onSaveFilter,
+    onUpdateSelectedSavedFilter,
+    onRenameSelectedSavedFilter,
+    onDeleteSelectedSavedFilter,
     onApplySavedFilter,
-    onDeleteSavedFilter,
     onMessageBookmark,
     onMessageImportant,
     onMessageCopy,
@@ -371,8 +375,10 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           onSavedFilterSelect={onSavedFilterSelect}
           onSaveFilterNameChange={onSaveFilterNameChange}
           onSaveFilter={onSaveFilter}
+          onUpdateSelectedSavedFilter={onUpdateSelectedSavedFilter}
+          onRenameSelectedSavedFilter={onRenameSelectedSavedFilter}
+          onDeleteSelectedSavedFilter={onDeleteSelectedSavedFilter}
           onApplySavedFilter={onApplySavedFilter}
-          onDeleteSavedFilter={onDeleteSavedFilter}
         />
       )}
 

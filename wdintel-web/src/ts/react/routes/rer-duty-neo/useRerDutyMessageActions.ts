@@ -21,6 +21,7 @@ import {
   inboxMessageTagsAdd,
   inboxMessageTagsRm,
   savedFilterDelete,
+  savedFilterRename,
   savedFilterUpsert,
 } from '../../services/api/inbox';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
@@ -101,38 +102,94 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   const handleSaveFilter = useCallback(
     async (feedId: string) => {
       if (!saveFilterName.trim()) return;
+      if (savedFilters.some((savedFilter) => savedFilter.name === saveFilterName.trim())) {
+        setError(`Фільтр з назвою "${saveFilterName.trim()}" вже існує`);
+        return;
+      }
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w) return;
       try {
         const list = await savedFilterUpsert({ name: saveFilterName.trim(), req: w.filter });
         setSavedFilters(list);
-        setSaveFilterName('');
+        const created = list.find((savedFilter) => savedFilter.name === saveFilterName.trim());
+        if (created != null) setSelectedSavedId(created.id);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [messageFeeds, saveFilterName, setSavedFilters, setSaveFilterName, setError],
+    [messageFeeds, saveFilterName, savedFilters, setSavedFilters, setSelectedSavedId, setError],
   );
 
   const handleApplySavedFilter = useCallback(
     (feedId: string, saved: SavedFilterDuty) => {
       setSelectedSavedId(saved.id);
+      setSaveFilterName(saved.name);
       applyFilter(feedId, normalizeFeed(saved.req as unknown as Record<string, unknown>));
     },
-    [applyFilter, setSelectedSavedId],
+    [applyFilter, setSelectedSavedId, setSaveFilterName],
   );
+
+  const handleUpdateSelectedSavedFilter = useCallback(
+    async (feedId: string) => {
+      if (selectedSavedId == null) return;
+      const selectedSaved = savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId);
+      if (!selectedSaved) return;
+      const feed = messageFeeds.find((item) => item.id === feedId);
+      if (!feed) return;
+      try {
+        const list = await savedFilterUpsert({ name: selectedSaved.name, req: feed.filter });
+        setSavedFilters(list);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [selectedSavedId, savedFilters, messageFeeds, setSavedFilters, setError],
+  );
+
+  const handleRenameSelectedSavedFilter = useCallback(async () => {
+    if (selectedSavedId == null) return;
+    const selectedSaved = savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId);
+    if (!selectedSaved) return;
+    const trimmed = saveFilterName.trim();
+    if (!trimmed || trimmed === selectedSaved.name) return;
+    if (savedFilters.some((savedFilter) => savedFilter.id !== selectedSaved.id && savedFilter.name === trimmed)) {
+      setError(`Фільтр з назвою "${trimmed}" вже існує`);
+      return;
+    }
+    try {
+      await savedFilterRename({ id: selectedSaved.id, name: trimmed });
+      setSavedFilters((prev) => prev.map((savedFilter) => (savedFilter.id === selectedSaved.id ? { ...savedFilter, name: trimmed } : savedFilter)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [selectedSavedId, savedFilters, saveFilterName, setSavedFilters, setError]);
+
+  const handleDeleteSelectedSavedFilter = useCallback(async () => {
+    if (selectedSavedId == null) return;
+    try {
+      await savedFilterDelete(selectedSavedId);
+      setSavedFilters((prev) => prev.filter((x) => x.id !== selectedSavedId));
+      setSelectedSavedId(null);
+      setSaveFilterName('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [selectedSavedId, setSavedFilters, setSelectedSavedId, setSaveFilterName, setError]);
 
   const handleDeleteSavedFilter = useCallback(
     async (id: number) => {
       try {
         await savedFilterDelete(id);
         setSavedFilters((prev) => prev.filter((x) => x.id !== id));
-        if (selectedSavedId === id) setSelectedSavedId(null);
+        if (selectedSavedId === id) {
+          setSelectedSavedId(null);
+          setSaveFilterName('');
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [selectedSavedId, setSavedFilters, setSelectedSavedId, setError],
+    [selectedSavedId, setSavedFilters, setSelectedSavedId, setSaveFilterName, setError],
   );
 
   const handleMessageBookmark = useCallback(
@@ -389,6 +446,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   return {
     handleSaveFilter,
     handleApplySavedFilter,
+    handleUpdateSelectedSavedFilter,
+    handleRenameSelectedSavedFilter,
+    handleDeleteSelectedSavedFilter,
     handleDeleteSavedFilter,
     handleMessageBookmark,
     handleMessageImportant,
