@@ -1,3 +1,5 @@
+import dayjs from 'dayjs';
+
 import type { AnalysisStatsReq, InboxMessagesReq, SavedFilter } from '../../../../Bindings';
 import {
   hasRerAnalysisQueryStateParams,
@@ -9,7 +11,6 @@ import {
 import {
   APP_TIME_ZONE,
   combineDateTimeInputToMs,
-  combineDateTimeToMs,
   formatDateTimeInputValueInTimeZone,
 } from '../../utils/misc';
 import type { AnalysisQueryState } from './types';
@@ -43,10 +44,6 @@ export function emptyQueryState(): AnalysisQueryState {
   return {
     fromDateTimeStr: '',
     toDateTimeStr: '',
-    dateFromStr: '',
-    timeFromStr: '',
-    dateToStr: '',
-    timeToStr: '',
     includeOnlyNewFreqs: false,
     aorsSelected: [],
     groupsSelected: [],
@@ -62,6 +59,7 @@ export function emptyQueryState(): AnalysisQueryState {
     orBookmarked: false,
     orImportant: false,
     orWithCoords: false,
+    orWithoutCoords: false,
     search: '',
     metadataCc: [],
     metadataSender: [],
@@ -81,11 +79,26 @@ export function emptyQueryState(): AnalysisQueryState {
   };
 }
 
+function getDefaultAnalysisDateRange(now: Date): { fromDateTimeStr: string; toDateTimeStr: string } {
+  const startOfTodayInAppTz = dayjs(now).tz(APP_TIME_ZONE).startOf('day');
+  const startOfTomorrowInAppTz = startOfTodayInAppTz.add(1, 'day');
+
+  return {
+    fromDateTimeStr: startOfTodayInAppTz.format('YYYY-MM-DDTHH:mm'),
+    toDateTimeStr: startOfTomorrowInAppTz.format('YYYY-MM-DDTHH:mm'),
+  };
+}
+
 export function parseQueryStateFromWindow(): AnalysisQueryState {
   if (typeof window === 'undefined') return emptyQueryState();
 
   const url = new URL(window.location.href);
   const flatStateFromUrl = parseRerAnalysisQueryStateFromSearchParams(url.searchParams);
+
+  // Startup order is intentional:
+  // 1) URL params win
+  // 2) persisted localStorage fills the gap when URL is empty
+  // 3) hard-coded defaults apply only when neither source has a value
   const storedState = loadRerAnalysisQueryState();
   const hasManagedStateInUrl = hasRerAnalysisQueryStateParams(url.searchParams);
 
@@ -102,12 +115,12 @@ export function createInitialQueryState(
 ): AnalysisQueryState {
   if (parsed.fromDateTimeStr !== '' && parsed.toDateTimeStr !== '') return parsed;
 
-  const start = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+  const defaultDateRange = getDefaultAnalysisDateRange(now);
   return {
     ...emptyQueryState(),
     ...parsed,
-    fromDateTimeStr: parsed.fromDateTimeStr || formatDateTimeInputValueInTimeZone(start, APP_TIME_ZONE),
-    toDateTimeStr: parsed.toDateTimeStr || formatDateTimeInputValueInTimeZone(now, APP_TIME_ZONE),
+    fromDateTimeStr: parsed.fromDateTimeStr || defaultDateRange.fromDateTimeStr,
+    toDateTimeStr: parsed.toDateTimeStr || defaultDateRange.toDateTimeStr,
   };
 }
 
@@ -153,17 +166,17 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
     next = { ...next, networksSelected: [] };
   }
 
+  if (next.orWithoutCoords) {
+    next = { ...next, orWithCoords: false };
+  }
+
   return next;
 }
 
 export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: string[] = []): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
-  const sinceDateInclusiveMs =
-    combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE) ??
-    (query.dateFromStr != null && query.timeFromStr != null ? combineDateTimeToMs(query.dateFromStr, query.timeFromStr, APP_TIME_ZONE) : null);
-  const tillDateNoninclusiveMs =
-    combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE) ??
-    (query.dateToStr != null && query.timeToStr != null ? combineDateTimeToMs(query.dateToStr, query.timeToStr, APP_TIME_ZONE) : null);
+  const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
+  const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
   if (sinceDateInclusiveMs == null || tillDateNoninclusiveMs == null) {
     return null;
@@ -189,6 +202,7 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
     orBookmarked: query.orBookmarked,
     orImportant: query.orImportant,
     orWithCoords: query.orWithCoords,
+    orWithoutCoords: query.orWithoutCoords,
     search: query.search.trim() === '' ? null : query.search.trim(),
     selectedTags: query.tags.length ? query.tags : null,
     selectedNetworks: query.withoutNetwork ? null : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
@@ -236,6 +250,7 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
     orBookmarked: req.orBookmarked,
     orImportant: req.orImportant,
     orWithCoords: req.orWithCoords,
+    orWithoutCoords: req.orWithoutCoords,
     newestFirst: true,
     search: req.search,
     highlightCallsigns: true,
@@ -302,6 +317,7 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
     orBookmarked: req.orBookmarked ?? false,
     orImportant: req.orImportant ?? false,
     orWithCoords: req.orWithCoords ?? false,
+    orWithoutCoords: req.orWithoutCoords ?? false,
     search: req.search ?? '',
     metadataCc: req.metadataCc ?? [],
     metadataSender: req.metadataSender ?? [],
@@ -316,6 +332,51 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
     filterTagsOption: req.filterTagsOption ?? 'OneOfTags',
     reportTagsOnlyThisUnit: req.reportTagsOnlyThisUnit ?? false,
   });
+}
+
+export function clearQueryStateFromSavedFilter(savedFilter: SavedFilter, current: AnalysisQueryState): AnalysisQueryState {
+  const req = savedFilter.req;
+  const next = { ...current };
+
+  const clearArrayField = (field: keyof Pick<AnalysisQueryState, 'aorsSelected' | 'groupsSelected' | 'sendersSelected' | 'freqsSelected' | 'callsignsSelected' | 'unitsSelected' | 'locationsSelected' | 'postsSelected' | 'networksSelected' | 'metadataCc' | 'metadataSender' | 'metadataReceiver' | 'metadataHash' | 'tags'>, values: string[] | number[]) => {
+    if (values.length === 0) return;
+    const currentValues = next[field];
+    if (!Array.isArray(currentValues)) return;
+    (next as Record<string, unknown>)[field] = currentValues.filter((value) => !values.includes(value as never));
+  };
+
+  clearArrayField('aorsSelected', (req.selectedAors ?? []).map(String));
+  clearArrayField('groupsSelected', req.selectedGroups ?? []);
+  clearArrayField('sendersSelected', req.selectedSenders ?? []);
+  clearArrayField('freqsSelected', req.selectedFreqs ?? []);
+  clearArrayField('callsignsSelected', req.selectedCallsigns ?? []);
+  clearArrayField('unitsSelected', req.selectedUnits ?? []);
+  clearArrayField('locationsSelected', req.selectedLocations ?? []);
+  clearArrayField('postsSelected', req.selectedPosts ?? []);
+  clearArrayField('networksSelected', (req.selectedNetworks ?? []).map(String));
+  clearArrayField('metadataCc', req.metadataCc ?? []);
+  clearArrayField('metadataSender', req.metadataSender ?? []);
+  clearArrayField('metadataReceiver', req.metadataReceiver ?? []);
+  clearArrayField('metadataHash', req.metadataHash ?? []);
+  clearArrayField('tags', req.selectedTags ?? []);
+
+  if (req.withoutNetwork != null && next.withoutNetwork === req.withoutNetwork) next.withoutNetwork = false;
+  if (req.orWithExtendedForm != null && next.orWithExtendedForm === req.orWithExtendedForm) next.orWithExtendedForm = false;
+  if (req.orBookmarked != null && next.orBookmarked === req.orBookmarked) next.orBookmarked = false;
+  if (req.orImportant != null && next.orImportant === req.orImportant) next.orImportant = false;
+  if (req.orWithCoords != null && next.orWithCoords === req.orWithCoords) next.orWithCoords = false;
+  if (req.orWithoutCoords != null && next.orWithoutCoords === req.orWithoutCoords) next.orWithoutCoords = false;
+  if (req.onlyWithMetadata != null && next.onlyWithMetadata === req.onlyWithMetadata) next.onlyWithMetadata = false;
+  if (req.withoutMetadata != null && next.withoutMetadata === req.withoutMetadata) next.withoutMetadata = false;
+  if (req.withoutModelTags != null && next.withoutModelTags === req.withoutModelTags) next.withoutModelTags = false;
+  if (req.reportTagsOnlyThisUnit != null && next.reportTagsOnlyThisUnit === req.reportTagsOnlyThisUnit) next.reportTagsOnlyThisUnit = false;
+
+  if (req.includePelengLocations != null && next.includePelengLocations === req.includePelengLocations) next.includePelengLocations = true;
+  if (req.unitsExactMatchOnly != null && next.unitsExactMatchOnly === req.unitsExactMatchOnly) next.unitsExactMatchOnly = null;
+  if (req.filterTagsOption != null && next.filterTagsOption === req.filterTagsOption) next.filterTagsOption = 'OneOfTags';
+
+  if (req.search != null && next.search === req.search) next.search = '';
+  return normalizeQueryState(next);
 }
 
 function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQueryState {
@@ -341,6 +402,9 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
   }
   if (normalized.orWithCoords == null) {
     normalized.orWithCoords = false;
+  }
+  if (normalized.orWithoutCoords == null) {
+    normalized.orWithoutCoords = false;
   }
   if (normalized.includePelengLocations == null) {
     normalized.includePelengLocations = true;
@@ -374,6 +438,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     orBookmarked: normalized.orBookmarked,
     orImportant: normalized.orImportant,
     orWithCoords: normalized.orWithCoords,
+    orWithoutCoords: normalized.orWithoutCoords,
     search: normalized.search ?? '',
     metadataCc: normalized.metadataCc ?? [],
     metadataSender: normalized.metadataSender ?? [],

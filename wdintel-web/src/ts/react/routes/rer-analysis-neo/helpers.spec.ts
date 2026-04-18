@@ -6,6 +6,7 @@ import {
   buildAnalysisReq,
   createInitialQueryState,
   buildInboxReq,
+  clearQueryStateFromSavedFilter,
   parseQueryStateFromWindow,
   emptyQueryState,
   normalizeQueryState,
@@ -83,7 +84,7 @@ describe('rer-analysis-neo helpers', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
-  it('ignores legacy state params on the neo page', () => {
+  it('uses stored query state when managed url params are absent', () => {
     const storage = new Map<string, string>();
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
@@ -163,11 +164,11 @@ describe('rer-analysis-neo helpers', () => {
     ]);
   });
 
-  it('derives default analysis dates in the app timezone', () => {
+  it('derives default analysis dates from today to tomorrow in the app timezone', () => {
     const state = createInitialQueryState(emptyQueryState(), new Date(Date.UTC(2026, 0, 15, 22, 30, 0)));
 
-    expect(state.fromDateTimeStr).toBe('2026-01-15T12:30');
-    expect(state.toDateTimeStr).toBe('2026-01-16T00:30');
+    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
+    expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
   });
 
   it('fills missing datetime bounds when only analysis dates are restored', () => {
@@ -179,8 +180,8 @@ describe('rer-analysis-neo helpers', () => {
       new Date(Date.UTC(2026, 0, 16, 10, 30, 0)),
     );
 
-    expect(state.fromDateTimeStr).toBe('2026-01-16T00:30');
-    expect(state.toDateTimeStr).toBe('2026-01-16T12:30');
+    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
+    expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
     expect(buildAnalysisReq(state)).not.toBeNull();
   });
 
@@ -213,6 +214,57 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(nextState.freqsSelected).toEqual(['123.4']);
     expect(nextState.adjacentFreqsRange).toBe(0);
+  });
+
+  it('clears only saved filter values while preserving later user changes', () => {
+    const baseState = createQueryState({
+      freqsSelected: [],
+      postsSelected: [],
+      orBookmarked: false,
+    });
+    const savedFilter = createSavedFilter(
+      createQueryState({
+        freqsSelected: ['123.4'],
+        postsSelected: [],
+        orBookmarked: true,
+      }),
+    );
+    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
+    const currentState = {
+      ...appliedState,
+      postsSelected: ['post-1'],
+    };
+
+    const nextState = clearQueryStateFromSavedFilter(savedFilter, currentState);
+
+    expect(nextState.freqsSelected).toEqual([]);
+    expect(nextState.orBookmarked).toBe(false);
+    expect(nextState.postsSelected).toEqual(['post-1']);
+  });
+
+  it('restores current-state changes that were added after applying a saved filter', () => {
+    const baseState = createQueryState({
+      freqsSelected: [],
+      postsSelected: [],
+    });
+    const savedFilter = createSavedFilter(
+      createQueryState({
+        freqsSelected: ['130.3500'],
+        postsSelected: [],
+      }),
+    );
+    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
+    const currentState = {
+      ...appliedState,
+      postsSelected: ['post-1'],
+    };
+
+    const nextState = clearQueryStateFromSavedFilter(savedFilter, currentState);
+
+    expect(nextState.freqsSelected).toEqual([]);
+    expect(nextState.postsSelected).toEqual(['post-1']);
+    expect(nextState.fromDateTimeStr).toBe(baseState.fromDateTimeStr);
+    expect(nextState.toDateTimeStr).toBe(baseState.toDateTimeStr);
   });
 
   it('detects showMap deep link for duty → analysis map tab', () => {

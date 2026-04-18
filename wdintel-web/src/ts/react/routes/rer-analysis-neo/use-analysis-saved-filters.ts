@@ -1,9 +1,15 @@
 import type { SavedFilter } from '../../../../Bindings';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
-import { buildAnalysisReq, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
+import {
+  buildAnalysisReq,
+  clearQueryStateFromSavedFilter,
+  pushQueryStateToUrl,
+  queryStateFromSavedFilter,
+  queryStateMatchesSavedFilter,
+} from './helpers';
 import type { AnalysisQueryState } from './types';
 
 type Props = {
@@ -38,11 +44,21 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
   const [savedFilterName, setSavedFilterName] = useState('');
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const queryStateRef = useRef(queryState);
+  const loadedSavedFilterRef = useRef<SavedFilter | null>(null);
 
   const loadedSavedFilter = useMemo(
     () => savedFilters.find((savedFilter) => savedFilter.id === loadedSavedFilterId) ?? null,
     [loadedSavedFilterId, savedFilters],
   );
+
+  useEffect(() => {
+    queryStateRef.current = queryState;
+  }, [queryState]);
+
+  useEffect(() => {
+    loadedSavedFilterRef.current = loadedSavedFilter;
+  }, [loadedSavedFilter]);
 
   const isDirty = useMemo(() => {
     if (!loadedSavedFilter) return false;
@@ -69,12 +85,22 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
 
   const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
-      setLoadedSavedFilterId(savedFilter?.id ?? null);
       if (savedFilter == null) {
+        const current = queryStateRef.current;
+        const snapshot = loadedSavedFilterRef.current;
+        const nextState = snapshot == null ? current : clearQueryStateFromSavedFilter(snapshot, current);
+        setQueryState(nextState);
+        pushQueryStateToUrl(nextState);
+        setLoadedSavedFilterId(null);
+        setSavedFilterName('');
         return;
       }
+
+      setLoadedSavedFilterId(savedFilter?.id ?? null);
       setSavedFilterName(savedFilter.name);
-      setQueryState((current) => queryStateFromSavedFilter(savedFilter, current));
+      const nextState = queryStateFromSavedFilter(savedFilter, queryStateRef.current);
+      setQueryState(nextState);
+      pushQueryStateToUrl(nextState);
     },
     [setQueryState],
   );

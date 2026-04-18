@@ -349,6 +349,7 @@ pub async fn get_inbox_messages_report_network(
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
+        &req.or_without_coords,
         &Some(false),
         &req.filter_tags_option,
         &req.without_model_tags,

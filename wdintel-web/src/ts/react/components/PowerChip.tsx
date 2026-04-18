@@ -7,6 +7,7 @@ type PowerChipProps = {
   color?: ChipProps['color'];
   selected?: boolean;
   onClick?: () => void;
+  onDelete?: () => void;
   interactive?: boolean;
   backgroundColor?: string;
   selectedBackgroundColor?: string;
@@ -43,6 +44,7 @@ export function PowerChip({
   color = 'primary',
   selected = false,
   onClick,
+  onDelete,
   interactive,
   backgroundColor,
   selectedBackgroundColor,
@@ -63,7 +65,7 @@ export function PowerChip({
   size = 'small',
   title,
 }: PowerChipProps) {
-  const isInteractive = interactive ?? Boolean(onClick);
+  const isInteractive = interactive ?? Boolean(onClick || onDelete);
   const hasExplicitPalette =
     backgroundColor !== undefined ||
     selectedBackgroundColor !== undefined ||
@@ -103,6 +105,7 @@ export function PowerChip({
       label={label}
       title={title}
       onClick={isInteractive ? onClick : undefined}
+      onDelete={onDelete}
       variant={variant}
       sx={[
         {

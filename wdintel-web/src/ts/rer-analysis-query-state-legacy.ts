@@ -37,6 +37,7 @@ const LEGACY_QUERY_STATE_FIELDS: LegacyKeyMapEntry[] = [
   { key: 'orBookmarked', legacyKey: 'or_bookmarked', defaultValue: false, type: 'boolean' },
   { key: 'orImportant', legacyKey: 'or_important', defaultValue: false, type: 'boolean' },
   { key: 'orWithCoords', legacyKey: 'or_with_coords', defaultValue: false, type: 'boolean' },
+  { key: 'orWithoutCoords', legacyKey: 'or_without_coords', defaultValue: false, type: 'boolean' },
   { key: 'search', defaultValue: '', type: 'string' },
   { key: 'metadataCc', legacyKey: 'metadata_cc', defaultValue: [], type: 'string[]' },
   { key: 'metadataSender', legacyKey: 'metadata_sender', defaultValue: [], type: 'string[]' },
@@ -77,6 +78,18 @@ function toNullableBoolean(value: unknown): boolean | null {
 
 function toNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function composeLegacyDateTime(dateStr: unknown, timeStr: unknown): string | undefined {
+  if (typeof dateStr !== 'string' || typeof timeStr !== 'string') {
+    return undefined;
+  }
+
+  if (dateStr === '' || timeStr === '') {
+    return undefined;
+  }
+
+  return `${dateStr}T${timeStr}`;
 }
 
 function splitDateTimeStr(dateTimeStr: string | undefined): { dateStr: string; timeStr: string } | null {
@@ -142,6 +155,21 @@ export function parseRerAnalysisLegacyState(stateParam: string | null): RerAnaly
     const value = getLegacyFieldValue(rawState, field);
     if (value === undefined) continue;
     canonicalState[field.key] = normalizeLegacyValue(field, value);
+  }
+
+  // Legacy storage still stores split datetime fields; Neo intentionally does not.
+  if (canonicalState.fromDateTimeStr == null) {
+    const fromDateTimeStr = composeLegacyDateTime(canonicalState.dateFromStr, canonicalState.timeFromStr);
+    if (fromDateTimeStr != null) {
+      canonicalState.fromDateTimeStr = fromDateTimeStr;
+    }
+  }
+
+  if (canonicalState.toDateTimeStr == null) {
+    const toDateTimeStr = composeLegacyDateTime(canonicalState.dateToStr, canonicalState.timeToStr);
+    if (toDateTimeStr != null) {
+      canonicalState.toDateTimeStr = toDateTimeStr;
+    }
   }
 
   const normalized = normalizeRerAnalysisQueryState(canonicalState);

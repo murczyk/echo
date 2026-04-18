@@ -287,6 +287,10 @@ fn message_has_peleng_exists() -> SimpleExpr {
     Expr::exists(subquery)
 }
 
+fn message_has_no_peleng_exists() -> SimpleExpr {
+    message_has_peleng_exists().not()
+}
+
 pub fn filter_selected_posts<Q>(
     q: Q,
     selected_posts: &Option<Vec<String>>,
@@ -748,6 +752,7 @@ pub fn filter_selected_tags<Q>(
     or_bookmarked: &Option<bool>,
     or_important: &Option<bool>,
     or_with_coords: &Option<bool>,
+    or_without_coords: &Option<bool>,
     or_with_extended_form: &Option<bool>,
     filter_tags_option: &Option<TagFilterOption>,
     without_model_tags: &Option<bool>,
@@ -816,6 +821,11 @@ where
     }
     if or_with_coords == &Some(true) {
         let y = message_has_peleng_exists();
+        m_inner_expr =
+            m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
+    }
+    if or_without_coords == &Some(true) {
+        let y = message_has_no_peleng_exists();
         m_inner_expr =
             m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
     }
@@ -1642,6 +1652,7 @@ pub async fn summary_table_freq_1(
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
+        &req.or_without_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
@@ -2246,6 +2257,7 @@ pub async fn edit_freq_unit_name(
         &None,
         &None,
         &None,
+        &None,
         &req.filter_tags_option,
         &reqan.without_model_tags,
         &user.id().c(h!())?,
@@ -2619,6 +2631,7 @@ pub async fn bi_new_callsigns(
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
+        &req.or_without_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
@@ -2703,6 +2716,7 @@ pub async fn bi_new_callsigns(
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
+        &req.or_without_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,

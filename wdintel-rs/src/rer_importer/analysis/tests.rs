@@ -75,6 +75,7 @@ fn mk_analysis_stats_req(
         or_bookmarked: None,
         or_important: None,
         or_with_coords: None,
+        or_without_coords: None,
         search: None,
         selected_tags: None,
         selected_networks: None,

@@ -196,7 +196,7 @@ describe('rer analysis query state', () => {
     });
 
     expect(params.toString()).toBe(
-      'foo=bar&fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&search=uid-1&dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52',
+      'foo=bar&fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&search=uid-1',
     );
   });
 
@@ -228,16 +228,10 @@ describe('rer analysis query state', () => {
     expect(hasRerAnalysisQueryStateParams(params)).toBe(true);
   });
 
-  it('keeps backward compatibility with legacy datetime query params', () => {
-    const params = new URLSearchParams(
-      'dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52&search=uid-1',
-    );
+  it('does not treat legacy split datetime query params as supported neo query state', () => {
+    const params = new URLSearchParams('dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52');
 
-    expect(parseRerAnalysisQueryStateFromSearchParams(params)).toEqual({
-      fromDateTimeStr: '2026-03-27T21:52',
-      toDateTimeStr: '2026-03-28T09:52',
-      search: 'uid-1',
-    });
-    expect(hasRerAnalysisQueryStateParams(params)).toBe(true);
+    expect(parseRerAnalysisQueryStateFromSearchParams(params)).toBeNull();
+    expect(hasRerAnalysisQueryStateParams(params)).toBe(false);
   });
 });

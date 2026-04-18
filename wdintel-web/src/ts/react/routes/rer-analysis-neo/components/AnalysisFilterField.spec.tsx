@@ -13,7 +13,10 @@ vi.mock('@mui/material', () => ({
     autocompleteSpy(props);
     return <div data-testid="autocomplete" />;
   },
+  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Chip: ({ label, title }: { label?: ReactNode; title?: string }) => <div title={title}>{label}</div>,
   TextField: ({ label }: { label?: ReactNode }) => <label>{label}</label>,
+  Typography: ({ children, title }: { children: ReactNode; title?: string }) => <span title={title}>{children}</span>,
 }));
 
 import { AnalysisFilterField } from './AnalysisFilterField';
@@ -32,14 +35,32 @@ describe('AnalysisFilterField', () => {
 
   function latestAutocompleteProps() {
     return autocompleteSpy.mock.calls.at(-1)?.[0] as {
-      onChange: (_event: unknown, next: Array<{ value: string; label: string; values: string[] }>) => void;
-      options: Array<{ value: string; label: string; values: string[] }>;
-      value: Array<{ value: string; label: string; values: string[] }>;
+      disableCloseOnSelect?: boolean;
+      onChange: (_event: unknown, next: Array<{ value: string; label: string; count: number; values: string[] }>) => void;
+      renderOption: (props: { key: string; [key: string]: unknown }, option: { key: string; value: string; label: string; count: number; values: string[] }) => unknown;
+      renderTags: (
+        value: Array<{ key: string; value: string; label: string; count: number; values: string[] }>,
+        getTagProps: (_args: { index: number }) => { key: string; [key: string]: unknown },
+      ) => Array<{ props: { title?: string; label?: unknown } }>;
+      options: Array<{ value: string; label: string; count: number; values: string[] }>;
+      value: Array<{ value: string; label: string; count: number; values: string[] }>;
+      loading?: boolean;
+      loadingText?: string;
+      noOptionsText?: string;
     };
   }
 
   it('preserves caller-provided option order', () => {
-    const { root } = renderFilterField({ label: 'Частоти', options: ['1.000', '2.000', '10.000'], value: [], onChange: vi.fn() });
+    const { root } = renderFilterField({
+      label: 'Частоти',
+      options: [
+        { value: '1.000', label: '1.000', count: 1 },
+        { value: '2.000', label: '2.000', count: 2 },
+        { value: '10.000', label: '10.000', count: 10 },
+      ],
+      value: [],
+      onChange: vi.fn(),
+    });
     const props = latestAutocompleteProps();
 
     expect(props.options.map((option) => option.value)).toEqual(['1.000', '2.000', '10.000']);
@@ -53,7 +74,7 @@ describe('AnalysisFilterField', () => {
     const onChange = vi.fn();
     const { root } = renderFilterField({
       label: 'Позивні',
-      options: [{ value: 'ALPHA', label: 'ALPHA', values: ['alpha', 'ALPHA'] }],
+      options: [{ value: 'ALPHA', label: 'ALPHA', count: 2, values: ['alpha', 'ALPHA'] }],
       value: ['ALPHA'],
       onChange,
     });
@@ -65,6 +86,73 @@ describe('AnalysisFilterField', () => {
 
     props.onChange(null, props.options);
     expect(onChange).toHaveBeenCalledWith(['alpha', 'ALPHA']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('keeps unknown selected values visible with a safe fallback label and zero count', () => {
+    const { root } = renderFilterField({
+      label: 'Мережі',
+      options: [{ value: '12', label: 'Мережа 12', count: 4 }],
+      value: ['99'],
+      onChange: vi.fn(),
+    });
+    const props = latestAutocompleteProps();
+
+    expect(props.value).toEqual([
+      { key: '99', value: '99', label: '99', count: 0, values: ['99'] },
+    ]);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('shows loading state text while options are still loading', () => {
+    const { root } = renderFilterField({
+      label: 'Мережі',
+      options: [],
+      value: [],
+      loading: true,
+      onChange: vi.fn(),
+    });
+    const props = latestAutocompleteProps();
+
+    expect(props.disableCloseOnSelect).toBe(true);
+    expect(props.loading).toBe(true);
+    expect(props.loadingText).toBe('Завантаження...');
+    expect(props.noOptionsText).toBe('Завантаження...');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('exposes full labels on hovered options and selected chips', () => {
+    const { root } = renderFilterField({
+      label: 'Мережі',
+      options: [{ value: '12', label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)', count: 30 }],
+      value: ['12'],
+      onChange: vi.fn(),
+    });
+    const props = latestAutocompleteProps();
+
+    const optionElement = props.renderOption({ key: 'opt-12' }, {
+      key: '12',
+      value: '12',
+      label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)',
+      count: 30,
+      values: ['12'],
+    }) as { props: { title?: string; children?: unknown } };
+    expect(optionElement.props.title).toBe('р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)');
+
+    const chipElements = props.renderTags(
+      [{ key: '12', value: '12', label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)', count: 30, values: ['12'] }],
+      ({ index }) => ({ key: `tag-${index}` }),
+    ) as Array<{ props: { title?: string } }>;
+    expect(chipElements[0]?.props.title).toBe('р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)');
 
     act(() => {
       root.unmount();

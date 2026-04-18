@@ -6,14 +6,19 @@ import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { SignalGroupEntry } from '../../../../../Bindings';
+import type { SavedFilter, SignalGroupEntry } from '../../../../../Bindings';
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { emptyQueryState } from '../helpers';
 
 const analysisFilterFieldSpy = vi.fn();
+const accordionSpy = vi.fn();
+const powerChipSpy = vi.fn();
 
 vi.mock('@mui/material', () => ({
-  Accordion: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Accordion: (props: { children: ReactNode; onChange?: (event: unknown, nextExpanded: boolean) => void }) => {
+    accordionSpy(props);
+    return <div>{props.children}</div>;
+  },
   AccordionDetails: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   AccordionSummary: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -86,6 +91,17 @@ vi.mock('./AnalysisSavedFiltersCard', () => ({
   AnalysisSavedFiltersCard: () => <div data-testid="saved-filters-card" />,
 }));
 
+vi.mock('../../../components/PowerChip', () => ({
+  PowerChip: (props: { label: ReactNode; onDelete?: () => void }) => {
+    powerChipSpy(props);
+    return (
+      <button type="button" data-testid="saved-filter-chip" onClick={props.onDelete}>
+        {props.label}
+      </button>
+    );
+  },
+}));
+
 import { AnalysisFiltersPanel } from './AnalysisFiltersPanel';
 
 type Rendered = {
@@ -94,17 +110,19 @@ type Rendered = {
 };
 
 function buildOptions(): AnalysisPageState['options'] {
+  const option = (value: string, label: string, count = 1) => ({ value, label, count });
   return {
-    aors: [],
+    tags: [],
+    aors: [option('1', '1')],
     groups: [],
     senders: [],
-    freqs: ['100.0000'],
-    newFreqs: ['100.0000'],
+    freqs: [option('100.0000', '100.0000')],
+    newFreqs: [option('100.0000', '100.0000')],
     callsigns: [],
     units: [],
     locations: [],
     posts: [],
-    networks: ['12'],
+    networks: [option('12', '12')],
     metadataCcs: [],
     metadataSenders: [],
     metadataReceivers: [],
@@ -123,15 +141,43 @@ function buildGroupInfo(masterKey: string, name: string): SignalGroupEntry {
   };
 }
 
+function buildNetwork(id: number, name: string): AnalysisPageState['networks'][number] {
+  return {
+    id,
+    freqs: [],
+    unitIds: [1, 2],
+    aorIds: [],
+    name,
+    location: 'KYIV',
+    radioStation: null,
+    createdAt: 0,
+    purpose: null,
+    operationMode: null,
+    operationType: null,
+    operationPeriod: null,
+    lastUpdatedAt: 0,
+    lastUpdatedBy: null,
+    activeFrom: null,
+    activeTo: null,
+    postIds: [],
+    descriptions: [],
+    deleted: false,
+    status: 'NetworkActive',
+  };
+}
+
 function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPanel>> = {}): ComponentProps<typeof AnalysisFiltersPanel> {
   return {
     isDirty: false,
     canResetFilters: false,
     counts: null,
+    aorEntries: [],
     includeOnlyNewFreqs: false,
     loadedSavedFilter: null,
+    networkDisplayMap: {},
     options: buildOptions(),
     groupInfos: {},
+    networks: [],
     queryState: emptyQueryState(),
     saveInFlight: false,
     savedFilterName: '',
@@ -144,6 +190,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
     saveAsNew: vi.fn(),
     setIncludeOnlyNewFreqs: vi.fn(),
     setSavedFilterName: vi.fn(),
+    loadFilterSection: vi.fn(),
     updateExisting: vi.fn(),
     updateQueryState: vi.fn(),
     ...overrides,
@@ -202,6 +249,8 @@ describe('AnalysisFiltersPanel', () => {
 
   beforeEach(() => {
     analysisFilterFieldSpy.mockClear();
+    accordionSpy.mockClear();
+    powerChipSpy.mockClear();
   });
 
   afterEach(() => {
@@ -255,6 +304,41 @@ describe('AnalysisFiltersPanel', () => {
     expect(groupsField?.loading).toBe(true);
   });
 
+  it('shows loading state for an opened lazy section instead of an empty-options message', async () => {
+    let resolveLoad: (() => void) | null = null;
+    const loadFilterSection = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+
+    const view = await renderComponent(
+      buildProps({
+        loadFilterSection,
+      }),
+    );
+    rendered.push(view);
+
+    const tagsAccordion = accordionSpy.mock.calls
+      .map(([callProps]) => callProps as { 'data-section-id'?: string; onChange?: (event: unknown, nextExpanded: boolean) => void })
+      .find((callProps) => callProps['data-section-id'] === 'Теги' && typeof callProps.onChange === 'function');
+    await act(async () => {
+      tagsAccordion?.onChange?.(null, true);
+    });
+
+    expect(
+      analysisFilterFieldSpy.mock.calls.some(
+        ([callProps]) => (callProps as { label: string; loading?: boolean }).label === 'Теги' && (callProps as { label: string; loading?: boolean }).loading === true,
+      ),
+    ).toBe(true);
+    expect(loadFilterSection).toHaveBeenCalledWith('tags');
+
+    await act(async () => {
+      resolveLoad?.();
+    });
+  });
+
   it('passes group master keys as filter values while keeping duplicate group names as labels', async () => {
     const props = buildProps({
       groupInfos: {
@@ -263,7 +347,10 @@ describe('AnalysisFiltersPanel', () => {
       },
       options: {
         ...buildOptions(),
-        groups: ['group-a', 'group-b'],
+        groups: [
+          { value: 'group-a', label: 'group-a', count: 1 },
+          { value: 'group-b', label: 'group-b', count: 1 },
+        ],
       },
       queryState: {
         ...emptyQueryState(),
@@ -274,14 +361,224 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const groupsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string }>; value: string[] })
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }>; value: string[] })
       .find((callProps) => callProps.label === 'Групи');
 
     expect(groupsField?.options).toEqual([
-      { value: 'group-a', label: 'Грак Пл' },
-      { value: 'group-b', label: 'Грак Пл' },
+      { value: 'group-a', label: 'Грак Пл', count: 1 },
+      { value: 'group-b', label: 'Грак Пл', count: 1 },
     ]);
     expect(groupsField?.value).toEqual(['group-b']);
+  });
+
+  it('uses the network stats label and sorts networks by it', async () => {
+    const props = buildProps({
+      networks: [buildNetwork(12, 'управління'), buildNetwork(13, 'відділ')],
+      options: {
+        ...buildOptions(),
+        networks: [
+          { value: '12', label: 'р/м управління 2 гсад', count: 6 },
+          { value: '13', label: 'р/м відділ 1 мсб', count: 3 },
+        ],
+      },
+    });
+
+    rendered.push(await renderComponent(props));
+
+    const networksField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Мережі');
+
+    expect(networksField?.options).toEqual([
+      { value: '13', label: 'р/м відділ 1 мсб', count: 3 },
+      { value: '12', label: 'р/м управління 2 гсад', count: 6 },
+    ]);
+  });
+
+  it('sorts the requested filters alphabetically and keeps special entries first', async () => {
+    const props = buildProps({
+      aorEntries: [
+        { id: 1, name: 'Смуга Б' },
+        { id: 2, name: 'Смуга А' },
+        { id: 3, name: 'Вся смуга' },
+      ],
+      tagsMap: {
+        1: { label: 'Бета', extra: false, ord: null, keywords: null, isPalitra: false },
+        2: { label: 'Альфа', extra: false, ord: null, keywords: null, isPalitra: false },
+      } as AnalysisPageState['tagsMap'],
+      options: {
+        ...buildOptions(),
+        tags: [
+          { value: '1', label: '1', count: 2 },
+          { value: '2', label: '2', count: 1 },
+        ],
+        aors: [
+          { value: '2', label: '2', count: 1 },
+          { value: '3', label: '3', count: 7 },
+          { value: '1', label: '1', count: 4 },
+        ],
+        locations: [
+          { value: 'ivanivka', label: 'Іванівка', count: 18 },
+          { value: 'empty', label: '', count: 1674 },
+          { value: 'ambarne', label: 'Амбарне', count: 7 },
+        ],
+        posts: [
+          { value: '2', label: 'Пост Б', count: 2 },
+          { value: '1', label: 'Пост А', count: 3 },
+        ],
+        units: [
+          { value: 'u2', label: '3 мсб 121 мсп', count: 11 },
+          { value: 'u1', label: '344 мсп 69 мсд 6 а', count: 22 },
+          { value: 'u3', label: '128 омсбр', count: 8 },
+        ],
+        metadataCcs: [
+          { value: 'z', label: 'Зет', count: 1 },
+          { value: 'a', label: 'Альфа', count: 2 },
+        ],
+        metadataSenders: [
+          { value: '7', label: '7', count: 1 },
+          { value: '1', label: '1', count: 1 },
+          { value: '856', label: '856', count: 1 },
+        ],
+        metadataReceivers: [
+          { value: 'c', label: 'c', count: 1 },
+          { value: 'a', label: 'a', count: 1 },
+          { value: 'b', label: 'b', count: 1 },
+        ],
+        groups: [
+          { value: 'group2', label: 'group2', count: 1 },
+          { value: 'group1', label: 'group1', count: 2 },
+        ],
+      },
+      groupInfos: {
+        group1: buildGroupInfo('group1', 'Група Б'),
+        group2: buildGroupInfo('group2', 'Група А'),
+      },
+      queryState: {
+        ...emptyQueryState(),
+        tags: [2],
+        aorsSelected: ['1'],
+        groupsSelected: ['group1'],
+        locationsSelected: ['ambarne'],
+        postsSelected: ['1'],
+      },
+    });
+
+    rendered.push(await renderComponent(props));
+
+    const tagsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Теги');
+    const aorsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Смуги');
+    const groupsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Групи');
+    const locationsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Локації');
+    const postsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Пости');
+    const unitsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Підрозділи');
+    const metadataCcsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Метадані CC');
+    const metadataSendersField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Метадані відправника');
+    const metadataReceiversField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .find((callProps) => callProps.label === 'Метадані отримувача');
+
+    expect(tagsField?.options.map((option) => option.label)).toEqual(['Альфа', 'Бета']);
+    expect(aorsField?.options.map((option) => option.label)).toEqual(['Вся смуга', 'Смуга А', 'Смуга Б']);
+    expect(groupsField?.options.map((option) => option.label)).toEqual(['Група А', 'Група Б']);
+    expect(unitsField?.options.map((option) => option.label)).toEqual(['3 мсб 121 мсп', '128 омсбр', '344 мсп 69 мсд 6 а']);
+    expect(locationsField?.options.map((option) => option.label)).toEqual(['<Не вказано>', 'Амбарне', 'Іванівка']);
+    expect(postsField?.options.map((option) => option.label)).toEqual(['Пост А', 'Пост Б']);
+    expect(metadataCcsField?.options.map((option) => option.label)).toEqual(['Альфа', 'Зет']);
+    expect(metadataSendersField?.options.map((option) => option.label)).toEqual(['1', '7', '856']);
+    expect(metadataReceiversField?.options.map((option) => option.label)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('shows collapsed section counts like the old analysis sidebar', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 57,
+          sendersCount: 83,
+          freqsCount: 305,
+          callsignsCount: 624,
+          unitsCount: 142,
+          locationsCount: 239,
+          postsCount: 50,
+          tagsCount: 15,
+          aorsCount: 7,
+          networksCount: 155,
+          unitsExactMatchesCount: 0,
+          unitsNonExactMatchesCount: 0,
+        } as AnalysisPageState['counts'],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('7');
+    expect(view.container.textContent).toContain('155');
+  });
+
+  it('keeps reset available while the initial filters load is still in flight', async () => {
+    const view = await renderComponent(
+      buildProps({
+        canResetFilters: true,
+        filtersLoading: true,
+      }),
+    );
+    rendered.push(view);
+
+    const resetButton = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes('Скинути'));
+    expect(resetButton).toBeTruthy();
+    expect((resetButton as HTMLButtonElement | undefined)?.disabled ?? true).toBe(false);
+  });
+
+  it('reloads an already open section after filter invalidation completes', async () => {
+    const loadFilterSection = vi.fn();
+    const props = buildProps({
+      filtersLoading: true,
+      loadFilterSection,
+    });
+
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    const tagsAccordion = accordionSpy.mock.calls
+      .map(([callProps]) => callProps as { 'data-section-id'?: string; onChange?: (event: unknown, nextExpanded: boolean) => void })
+      .find((callProps) => callProps['data-section-id'] === 'Теги' && typeof callProps.onChange === 'function');
+    expect(tagsAccordion?.onChange).toBeTypeOf('function');
+
+    await act(async () => {
+      tagsAccordion?.onChange?.(null, true);
+    });
+    expect(loadFilterSection).toHaveBeenCalledWith('tags');
+
+    loadFilterSection.mockClear();
+    await act(async () => {
+      view.root.render(
+        <AnalysisFiltersPanel
+          {...buildProps({
+            filtersLoading: false,
+            loadFilterSection,
+          })}
+        />,
+      );
+    });
+
+    expect(loadFilterSection).toHaveBeenCalledWith('tags');
   });
 
   it('uppercases callsign labels without changing filter values sent to the API state', async () => {
@@ -290,7 +587,10 @@ describe('AnalysisFiltersPanel', () => {
       updateQueryState,
       options: {
         ...buildOptions(),
-        callsigns: ['alpha', 'ALPHA'],
+        callsigns: [
+          { value: 'alpha', label: 'alpha', count: 1 },
+          { value: 'ALPHA', label: 'ALPHA', count: 1 },
+        ],
       },
       queryState: {
         ...emptyQueryState(),
@@ -301,12 +601,12 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const callsignsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; values: string[] }>; value: string[]; onChange: (next: string[]) => void })
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number; values: string[] }>; value: string[]; onChange: (next: string[]) => void })
       .find((callProps) => callProps.label === 'Позивні');
 
     expect(callsignsField?.options).toEqual([
-      { value: 'ALPHA', label: 'ALPHA', values: ['alpha', 'ALPHA'] },
-      { value: 'BRAVO', label: 'BRAVO', values: ['Bravo'] },
+      { value: 'ALPHA', label: 'ALPHA', count: 2, values: ['alpha', 'ALPHA'] },
+      { value: 'BRAVO', label: 'BRAVO', count: 0, values: ['Bravo'] },
     ]);
     expect(callsignsField?.value).toEqual(['Bravo']);
 
@@ -328,13 +628,15 @@ describe('AnalysisFiltersPanel', () => {
     await setChecked(findLabelInput(view.container, 'Тільки нові частоти'), true);
     await setChecked(findLabelInput(view.container, 'Лише теги мого підрозділу'), true);
     await setChecked(findLabelInput(view.container, 'Тільки без мережі'), true);
+    await setChecked(findLabelInput(view.container, 'Без пеленга'), true);
 
     expect(setIncludeOnlyNewFreqs).toHaveBeenCalledWith(true);
     expect(updateQueryState).toHaveBeenCalledWith({ reportTagsOnlyThisUnit: true });
     expect(updateQueryState).toHaveBeenCalledWith({ withoutNetwork: true });
+    expect(updateQueryState).toHaveBeenCalledWith({ orWithoutCoords: true, orWithCoords: false });
   });
 
-  it('shows the explicit server-default hint chip when the tri-state filter is unset', async () => {
+  it('uses the lighter default label for the units exact-match selector without an extra hint chip', async () => {
     const view = await renderComponent(
       buildProps({
         counts: {
@@ -361,10 +663,11 @@ describe('AnalysisFiltersPanel', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('режим: серверний дефолт');
+    expect(view.container.textContent).toContain('За замовчуванням');
+    expect(view.container.textContent).not.toContain('режим:');
   });
 
-  it('shows the Elm-style exact-match hint chip when count stats are available', async () => {
+  it('does not render the removed exact-match hint chip when count stats are available', async () => {
     const view = await renderComponent(
       buildProps({
         counts: {
@@ -391,7 +694,8 @@ describe('AnalysisFiltersPanel', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('неточних збігів: 7');
+    expect(view.container.textContent).toContain('За замовчуванням');
+    expect(view.container.textContent).not.toContain('неточних збігів: 7');
   });
 
   it('updates the tri-state units match filter explicitly', async () => {
@@ -432,5 +736,77 @@ describe('AnalysisFiltersPanel', () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
     button?.click();
     expect(resetFilters).not.toHaveBeenCalled();
+  });
+
+  it('renders the loaded saved filter as a closable chip above the important section and orders sections alphabetically', async () => {
+    const onApplySavedFilter = vi.fn();
+    const loadedSavedFilter: SavedFilter = {
+      id: 7,
+      name: 'Saved filter',
+      req: {
+        sinceDateInclusiveMs: 1,
+        tillDateNoninclusiveMs: 2,
+        selectedGroups: null,
+        selectedSenders: null,
+        selectedFreqs: null,
+        selectedPosts: null,
+        selectedCallsigns: null,
+        selectedUnits: null,
+        selectedLocations: null,
+        selectedAors: null,
+        orWithExtendedForm: null,
+        orBookmarked: null,
+        orImportant: null,
+        orWithCoords: null,
+        orWithoutCoords: null,
+        search: null,
+        selectedTags: null,
+        selectedNetworks: null,
+        withoutNetwork: null,
+        metadataCc: null,
+        metadataSender: null,
+        metadataReceiver: null,
+        metadataHash: null,
+        onlyWithMetadata: null,
+        withoutMetadata: null,
+        includePelengLocations: null,
+        unitsExactMatchOnly: null,
+        filterTagsOption: null,
+        withoutModelTags: null,
+        reportTagsOnlyThisUnit: null,
+      },
+    };
+    const view = await renderComponent(
+      buildProps({
+        loadedSavedFilter,
+        applySavedFilter: onApplySavedFilter,
+      }),
+    );
+    rendered.push(view);
+
+    const chipProps = powerChipSpy.mock.calls.at(-1)?.[0] as { onDelete?: () => void } | undefined;
+    expect(chipProps?.onDelete).toBeTypeOf('function');
+    chipProps?.onDelete?.();
+    expect(onApplySavedFilter).toHaveBeenCalledWith(null);
+
+    expect(
+      accordionSpy.mock.calls
+        .map(([props]) => String((props as { 'data-section-id'?: string })['data-section-id']))
+        .filter((value) => value !== 'undefined')
+        .slice(0, 12),
+    ).toEqual([
+      'important',
+      'Відправники',
+      'Групи',
+      'Локації',
+      'Мережі',
+      'Метадані',
+      'Підрозділи',
+      'Позивні',
+      'Пости',
+      'Смуги',
+      'Теги',
+      'Частоти',
+    ]);
   });
 });

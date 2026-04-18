@@ -17,6 +17,7 @@ import type {
   AnalysisAorEntry,
   AnalysisCountItem,
   AnalysisFilterOptions,
+  AnalysisFilterSectionId,
   AnalysisGroupsActivityPeriod,
   AnalysisMapAttrs,
 } from './types';
@@ -51,6 +52,8 @@ export type UseAnalysisDataResult = {
   inboxReq: ReturnType<typeof buildInboxReq>;
   loadCallsignGraph: () => Promise<void>;
   loadAllMessages: () => Promise<void>;
+  loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
+  invalidateFilterSectionLoads: () => void;
   toggleCallsignGraphNolimit: () => void;
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;

@@ -72,6 +72,7 @@ function buildSavedFilter(id: number, name: string): SavedFilter {
       orBookmarked: null,
       orImportant: null,
       orWithCoords: null,
+      orWithoutCoords: null,
       search: null,
       selectedTags: null,
       selectedNetworks: null,

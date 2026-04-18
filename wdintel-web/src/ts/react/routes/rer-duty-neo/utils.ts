@@ -20,15 +20,18 @@ export type RerDutyState = {
 /** Network display text: "р/м " + name + " " + unit names + optional " (LOCATION)". */
 export function createMasterUnitText(network: Network, unitsMap: Record<number, Unit>): string {
   const unitIds = network.unitIds ?? [];
-  const unitNames = unitIds.map((id) => {
-    const u = unitsMap[id];
-    return u?.name ?? `Невідомий підрозділ (id=${id})`;
-  });
+  const networkName = network.name.trim();
+  const unitNames = unitIds
+    .map((id) => unitsMap[id]?.name?.trim() ?? '')
+    .filter((name) => name !== '');
   const locationPart =
     network.location && network.location.trim() !== ''
       ? ` (${network.location.trim().toUpperCase()})`
       : '';
-  return `р/м ${network.name} ${unitNames.join(', ')}${locationPart}`;
+  if (unitNames.length === 0) {
+    return networkName !== '' ? `р/м ${networkName}${locationPart}` : `р/м${locationPart}`;
+  }
+  return `р/м ${networkName} ${unitNames.join(', ')}${locationPart}`;
 }
 
 export const PAGE_ID = 'rer-duty-neo';
@@ -143,6 +146,7 @@ export function buildInboxReq(opts: {
     orBookmarked: null,
     orImportant: null,
     orWithCoords: null,
+    orWithoutCoords: null,
     newestFirst: null,
     search: null,
     highlightCallsigns: true,
@@ -332,6 +336,7 @@ function rerAnalysisNeoQueryStateFromMessage(msg: InboxMessage, search: string):
     timeToStr: '00:00',
     search,
     includePelengLocations: false,
+    orWithoutCoords: false,
   };
   if (freqStr !== '') {
     state.freqsSelected = [freqStr];

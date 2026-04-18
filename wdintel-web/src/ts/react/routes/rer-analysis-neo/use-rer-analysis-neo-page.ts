@@ -55,9 +55,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState,
   });
+  const dataFreqValues = useMemo(() => data.options.freqs.map((option) => option.value), [data.options.freqs]);
+  const dataNewFreqValues = useMemo(() => data.options.newFreqs.map((option) => option.value), [data.options.newFreqs]);
 
   const savedFilters = useAnalysisSavedFilters({
-    allFrequencies: data.options.freqs,
+    allFrequencies: dataFreqValues,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     queryState,
@@ -100,31 +102,39 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [setCenterTab]);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
+    data.invalidateFilterSectionLoads();
     setQueryState((current) => ({ ...current, ...patch }));
-  }, []);
+  }, [data.invalidateFilterSectionLoads]);
+
+  useEffect(() => {
+    pushQueryStateToUrl(queryState);
+  }, [queryState]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
     if (!unitName) return;
+    data.invalidateFilterSectionLoads();
     setQueryState((current) => ({
       ...current,
       unitsSelected: current.unitsSelected.includes(unitName)
         ? current.unitsSelected.filter((item) => item !== unitName)
         : [...current.unitsSelected, unitName],
     }));
-  }, []);
+  }, [data.invalidateFilterSectionLoads]);
 
   const resetFilters = useCallback(() => {
     const nextState = createResetQueryState();
+    data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState);
-  }, []);
+  }, [data]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
+      data.invalidateFilterSectionLoads();
       setQueryState((current) => {
-        const freqsSelected = value ? data.options.newFreqs : [];
+        const freqsSelected = value ? dataNewFreqValues : [];
         if (current.includeOnlyNewFreqs === value && stringArraysEqual(current.freqsSelected, freqsSelected)) {
           return current;
         }
@@ -135,29 +145,31 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         };
       });
     },
-    [data.options.newFreqs],
+    [data.invalidateFilterSectionLoads, dataNewFreqValues],
   );
 
   useEffect(() => {
     if (!queryState.includeOnlyNewFreqs) return;
     setQueryState((current) => {
-      if (!current.includeOnlyNewFreqs || stringArraysEqual(current.freqsSelected, data.options.newFreqs)) {
+      if (!current.includeOnlyNewFreqs || stringArraysEqual(current.freqsSelected, dataNewFreqValues)) {
         return current;
       }
-      return { ...current, freqsSelected: data.options.newFreqs };
+      return { ...current, freqsSelected: dataNewFreqValues };
     });
-  }, [data.options.newFreqs, queryState.includeOnlyNewFreqs]);
+  }, [dataNewFreqValues, queryState.includeOnlyNewFreqs]);
 
   const selectOnlyFreq = useCallback((freq: string) => {
+    data.invalidateFilterSectionLoads();
     setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
-  }, []);
+  }, [data.invalidateFilterSectionLoads]);
 
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
+      data.invalidateFilterSectionLoads();
       setCenterTabState('map');
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
-  }, []);
+  }, [data.invalidateFilterSectionLoads]);
 
   const toggleLeftPanel = useCallback(() => {
     setLeftPanelOpen((current) => !current);
@@ -259,6 +271,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     renameExistingSavedFilter: savedFilters.renameExisting,
     loadCallsignGraph: data.loadCallsignGraph,
     loadAllMessages: data.loadAllMessages,
+    loadFilterSection: data.loadFilterSection,
     loadCorrelatedFreqs: data.loadCorrelatedFreqs,
     loadGroupsActivity: data.loadGroupsActivity,
     loadNewCallsigns: data.loadNewCallsigns,

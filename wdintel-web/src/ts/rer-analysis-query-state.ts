@@ -5,10 +5,6 @@ export type RerAnalysisQueryState = {
 
 export const RER_ANALYSIS_QUERY_STATE_KEY = 'rer-analysis-neo-query-state';
 export const RER_ANALYSIS_LEGACY_STATE_PARAM = 'state';
-const RER_ANALYSIS_LEGACY_DATE_FROM_PARAM = 'dateFrom';
-const RER_ANALYSIS_LEGACY_TIME_FROM_PARAM = 'timeFrom';
-const RER_ANALYSIS_LEGACY_DATE_TO_PARAM = 'dateTo';
-const RER_ANALYSIS_LEGACY_TIME_TO_PARAM = 'timeTo';
 
 type QueryStateFieldType = 'string' | 'string[]' | 'boolean' | 'boolean?' | 'number' | 'number[]';
 
@@ -19,6 +15,8 @@ type QueryStateFieldConfig = {
 };
 
 const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
+  // Neo intentionally persists only combined datetime params.
+  // The legacy split date/time fields are supported only by the old analysis adapter.
   { key: 'fromDateTimeStr', param: 'fromDateTime', type: 'string' },
   { key: 'toDateTimeStr', param: 'toDateTime', type: 'string' },
   { key: 'includeOnlyNewFreqs', param: 'onlyNewFreqs', type: 'boolean' },
@@ -36,6 +34,7 @@ const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
   { key: 'orBookmarked', param: 'orBookmarked', type: 'boolean' },
   { key: 'orImportant', param: 'orImportant', type: 'boolean' },
   { key: 'orWithCoords', param: 'orWithCoords', type: 'boolean' },
+  { key: 'orWithoutCoords', param: 'orWithoutCoords', type: 'boolean' },
   { key: 'search', param: 'search', type: 'string' },
   { key: 'metadataCc', param: 'metadataCc', type: 'string[]' },
   { key: 'metadataSender', param: 'metadataSender', type: 'string[]' },
@@ -77,6 +76,7 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   orBookmarked: false,
   orImportant: false,
   orWithCoords: false,
+  orWithoutCoords: false,
   search: '',
   metadataCc: [],
   metadataSender: [],
@@ -126,14 +126,6 @@ function parseNumberList(values: string[]): number[] {
     .filter((value): value is number => value != null);
 }
 
-function composeDateTimeStr(dateStr: string | undefined, timeStr: string | undefined): string | undefined {
-  if (dateStr == null || timeStr == null || dateStr === '' || timeStr === '') {
-    return undefined;
-  }
-
-  return `${dateStr}T${timeStr}`;
-}
-
 export function normalizeRerAnalysisQueryState(state: unknown): RerAnalysisQueryState | null {
   if (!isPlainObject(state)) {
     return null;
@@ -145,26 +137,6 @@ export function normalizeRerAnalysisQueryState(state: unknown): RerAnalysisQuery
     const value = state[key];
     if (value !== undefined) {
       normalized[key] = value;
-    }
-  }
-
-  if (!normalized.fromDateTimeStr) {
-    const legacyFromDateTimeStr = composeDateTimeStr(
-      typeof state.dateFromStr === 'string' ? state.dateFromStr : undefined,
-      typeof state.timeFromStr === 'string' ? state.timeFromStr : undefined,
-    );
-    if (legacyFromDateTimeStr != null) {
-      normalized.fromDateTimeStr = legacyFromDateTimeStr;
-    }
-  }
-
-  if (!normalized.toDateTimeStr) {
-    const legacyToDateTimeStr = composeDateTimeStr(
-      typeof state.dateToStr === 'string' ? state.dateToStr : undefined,
-      typeof state.timeToStr === 'string' ? state.timeToStr : undefined,
-    );
-    if (legacyToDateTimeStr != null) {
-      normalized.toDateTimeStr = legacyToDateTimeStr;
     }
   }
 
@@ -224,43 +196,17 @@ export function parseRerAnalysisQueryStateFromSearchParams(params: URLSearchPara
     }
   }
 
-  const legacyFromDateTimeStr = composeDateTimeStr(
-    params.get(RER_ANALYSIS_LEGACY_DATE_FROM_PARAM) ?? undefined,
-    params.get(RER_ANALYSIS_LEGACY_TIME_FROM_PARAM) ?? undefined,
-  );
-  if (legacyFromDateTimeStr != null && !parsed.fromDateTimeStr) {
-    parsed.fromDateTimeStr = legacyFromDateTimeStr;
-  }
-
-  const legacyToDateTimeStr = composeDateTimeStr(
-    params.get(RER_ANALYSIS_LEGACY_DATE_TO_PARAM) ?? undefined,
-    params.get(RER_ANALYSIS_LEGACY_TIME_TO_PARAM) ?? undefined,
-  );
-  if (legacyToDateTimeStr != null && !parsed.toDateTimeStr) {
-    parsed.toDateTimeStr = legacyToDateTimeStr;
-  }
-
   return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
 export function hasRerAnalysisQueryStateParams(params: URLSearchParams): boolean {
-  return (
-    QUERY_STATE_FIELD_CONFIGS.some((field) => params.has(field.param)) ||
-    params.has(RER_ANALYSIS_LEGACY_DATE_FROM_PARAM) ||
-    params.has(RER_ANALYSIS_LEGACY_TIME_FROM_PARAM) ||
-    params.has(RER_ANALYSIS_LEGACY_DATE_TO_PARAM) ||
-    params.has(RER_ANALYSIS_LEGACY_TIME_TO_PARAM)
-  );
+  return QUERY_STATE_FIELD_CONFIGS.some((field) => params.has(field.param));
 }
 
 export function clearRerAnalysisQueryStateSearchParams(params: URLSearchParams): void {
   for (const paramName of MANAGED_QUERY_PARAM_NAMES) {
     params.delete(paramName);
   }
-  params.delete(RER_ANALYSIS_LEGACY_DATE_FROM_PARAM);
-  params.delete(RER_ANALYSIS_LEGACY_TIME_FROM_PARAM);
-  params.delete(RER_ANALYSIS_LEGACY_DATE_TO_PARAM);
-  params.delete(RER_ANALYSIS_LEGACY_TIME_TO_PARAM);
 }
 
 export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams, state: unknown): void {
@@ -306,23 +252,6 @@ export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams
     }
   }
 
-  const fromDateTimeStr = compactState.fromDateTimeStr;
-  if (typeof fromDateTimeStr === 'string' && fromDateTimeStr !== '') {
-    const [dateFromStr, timeFromStr] = fromDateTimeStr.split('T');
-    if (dateFromStr && timeFromStr) {
-      params.set(RER_ANALYSIS_LEGACY_DATE_FROM_PARAM, dateFromStr);
-      params.set(RER_ANALYSIS_LEGACY_TIME_FROM_PARAM, timeFromStr);
-    }
-  }
-
-  const toDateTimeStr = compactState.toDateTimeStr;
-  if (typeof toDateTimeStr === 'string' && toDateTimeStr !== '') {
-    const [dateToStr, timeToStr] = toDateTimeStr.split('T');
-    if (dateToStr && timeToStr) {
-      params.set(RER_ANALYSIS_LEGACY_DATE_TO_PARAM, dateToStr);
-      params.set(RER_ANALYSIS_LEGACY_TIME_TO_PARAM, timeToStr);
-    }
-  }
 }
 
 export function saveRerAnalysisQueryState(state: unknown): void {

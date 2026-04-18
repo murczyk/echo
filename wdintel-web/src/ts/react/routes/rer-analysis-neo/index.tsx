@@ -104,9 +104,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 variant="outlined"
                 component="aside"
                 aria-label="Панель фільтрів"
-                aria-disabled="true"
                 sx={{
-                  gridColumn: { lg: 1 },
                   minHeight: 0,
                   height: { xs: 'auto', lg: '100%' },
                   overflow: 'hidden',
@@ -120,26 +118,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     borderRight: '1px solid',
                     borderColor: 'divider',
                     overflow: 'hidden',
-                    display: { xs: 'block', lg: 'block' },
+                    display: { xs: 'block', lg: page.leftPanelOpen ? 'block' : 'none' },
                   }}
                 >
-                  <Box sx={{ p: 2 }}>
-                    <Stack spacing={2}>
-                      <Skeleton variant="text" width={160} height={36} />
-                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                        <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
-                        <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
-                      </Stack>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                        <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
-                        <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
-                      </Stack>
-                      <Skeleton variant="rounded" height={56} />
-                      {Array.from({ length: 8 }).map((_, index) => (
-                        <Skeleton key={index} variant="rounded" height={56} />
-                      ))}
-                    </Stack>
-                  </Box>
+                  <AnalysisFiltersPanel {...page} />
                 </Box>
                 <Box
                   sx={{
@@ -155,27 +137,32 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     bgcolor: 'background.paper',
                   }}
                 >
-                  <Box
-                    sx={{
-                      width: 56,
-                      height: 56,
-                      flexShrink: 0,
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <IconButton size="small" disabled aria-label="Панель фільтрів" sx={{ width: 56, height: 56, p: 0, borderRadius: 0 }}>
-                      <Box component="i" className="bi bi-chevron-left" sx={{ fontSize: 18, color: 'text.secondary' }} />
+                  <Tooltip title={page.leftPanelOpen ? 'Згорнути панель фільтрів' : 'Розгорнути панель фільтрів'} arrow placement="right">
+                    <IconButton
+                      size="small"
+                      onClick={page.toggleLeftPanel}
+                      aria-label={page.leftPanelOpen ? 'Згорнути панель фільтрів' : 'Розгорнути панель фільтрів'}
+                      sx={{ width: 56, height: 56, p: 0, borderRadius: 0 }}
+                    >
+                      <Box
+                        component="i"
+                        className={page.leftPanelOpen ? 'bi bi-chevron-left' : 'bi bi-chevron-right'}
+                        sx={{ fontSize: 18, color: 'text.secondary' }}
+                      />
                     </IconButton>
-                  </Box>
-                  <Box sx={{ pt: 1.25, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', opacity: 0.7 }}>
-                    <Badge color="error" variant="dot" invisible>
-                      <Box component="i" className="bi bi-funnel" sx={{ fontSize: 20, color: 'text.secondary' }} />
-                    </Badge>
-                  </Box>
+                  </Tooltip>
+                  <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
+                  <Tooltip title={page.canResetFilters ? 'Є незбережені зміни' : 'Фільтри'} arrow placement="right">
+                    <Box sx={{ pt: 1.25, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Badge color="error" variant="dot" invisible={!page.canResetFilters}>
+                        <Box
+                          component="i"
+                          className="bi bi-funnel"
+                          sx={{ fontSize: 20, color: page.canResetFilters ? 'primary.main' : 'text.secondary' }}
+                        />
+                      </Badge>
+                    </Box>
+                  </Tooltip>
                 </Box>
               </Paper>
 

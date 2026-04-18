@@ -38,7 +38,21 @@ function formatDisplayValue(value: string): string {
 export function DateTimeRangeControl({ value, onChange, className, disabled = false }: DateTimeRangeControlProps) {
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [activePreset, setActivePreset] = useState<'custom' | 1 | 3 | 7 | 14 | 30>('custom');
   const open = Boolean(anchorEl);
+
+  const applyPreset = useCallback(
+    (days: 1 | 3 | 7 | 14 | 30) => {
+      const to = dayjs();
+      const from = to.subtract(days, 'day');
+      setActivePreset(days);
+      onChange({
+        fromDateTimeStr: from.format('YYYY-MM-DDTHH:mm'),
+        toDateTimeStr: to.format('YYYY-MM-DDTHH:mm'),
+      });
+    },
+    [onChange],
+  );
 
   const openPopover = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -115,7 +129,7 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
             fontWeight: 400,
             color: 'text.primary',
             py: 0,
-            pl: 1.25,
+            pl: 1.5,
             pr: 0,
           },
         }}
@@ -154,6 +168,20 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
                 Закрити
               </Button>
             </Stack>
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+              {([1, 3, 7, 14, 30] as const).map((days) => (
+                <Button
+                  key={days}
+                  size="small"
+                  variant={activePreset === days ? 'contained' : 'outlined'}
+                  onClick={() => applyPreset(days)}
+                  disabled={disabled}
+                  sx={{ minWidth: 0, flexShrink: 0 }}
+                >
+                  {days} дн
+                </Button>
+              ))}
+            </Stack>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
               <Paper variant="outlined" sx={{ flex: 1, p: 1.25 }}>
                 <Stack spacing={1.25}>
@@ -162,6 +190,7 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
                     value={value.fromDateTimeStr ? (dayjs(value.fromDateTimeStr) as Dayjs) : null}
                     onChange={(nextValue) => {
                       const fromDateTimeStr = nextValue ? nextValue.format('YYYY-MM-DDTHH:mm') : '';
+                      setActivePreset('custom');
                       onChange({ ...value, fromDateTimeStr });
                     }}
                     minDateTime={dayjs(APP_DATETIME_INPUT_MIN) as Dayjs}
@@ -208,6 +237,7 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
                     value={value.toDateTimeStr ? (dayjs(value.toDateTimeStr) as Dayjs) : null}
                     onChange={(nextValue) => {
                       const toDateTimeStr = nextValue ? nextValue.format('YYYY-MM-DDTHH:mm') : '';
+                      setActivePreset('custom');
                       onChange({ ...value, toDateTimeStr });
                     }}
                     minDateTime={dayjs(APP_DATETIME_INPUT_MIN) as Dayjs}

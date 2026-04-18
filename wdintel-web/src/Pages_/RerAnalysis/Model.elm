@@ -55,6 +55,7 @@ type alias Model =
     , orBookmarked : Bool
     , orImportant : Bool
     , orWithCoords : Bool
+    , orWithoutCoords : Bool
     , unfoldAorsFilter : Bool
     , unfoldGroupsFilter : Bool
     , unfoldSendersFilter : Bool

@@ -64,7 +64,7 @@ import { buildNetworkDisplayMap } from './message-utils';
 import { buildSummaryCallsignsInfo, mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { useAnalysisDataLoaders } from './use-analysis-data.loaders';
 import { useAnalysisDataMessageActions } from './use-analysis-data.message-actions';
-import { reloadAnalysisData } from './use-analysis-data.reload';
+import { buildAnalysisReqForFilterSection, filterSectionsForQueryState, loadFilterSectionData, reloadAnalysisData } from './use-analysis-data.reload';
 import { emptyNewCallsigns, emptyOptions, toErrorMessage, topItems } from './use-analysis-data.shared';
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
@@ -72,6 +72,7 @@ import type {
   AnalysisAorEntry,
   AnalysisCountItem,
   AnalysisFilterOptions,
+  AnalysisFilterSectionId,
   AnalysisGroupsActivityPeriod,
   AnalysisMapAttrs,
   AnalysisPalitrasLoadState,
@@ -134,22 +135,109 @@ export function useAnalysisData({
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
+  const filterSectionLoadVersionRef = useRef(0);
+  const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>({} as Record<AnalysisFilterSectionId, string>);
   const newCallsignsRequestRef = useRef(0);
   const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
   const newCallsignsLoadedKeyRef = useRef<string | null>(null);
+  const optionsFreqValues = useMemo(() => options.freqs.map((option) => option.value), [options.freqs]);
 
   useEffect(() => {
-    optionsFreqsRef.current = options.freqs;
-  }, [options.freqs]);
+    optionsFreqsRef.current = optionsFreqValues;
+  }, [optionsFreqValues]);
 
   useEffect(() => {
     shouldLoadNewCallsignsRef.current = shouldLoadNewCallsigns;
   }, [shouldLoadNewCallsigns]);
 
+  useEffect(() => {
+    setNetworkDisplayMap(buildNetworkDisplayMap(networks, unitsMap));
+  }, [networks, unitsMap]);
+
   const invalidateMessagePaging = useCallback(() => {
     loadMoreMessagesRequestRef.current += 1;
     setMessagesPaging(false);
   }, []);
+
+  const invalidateFilterSectionLoads = useCallback(() => {
+    filterSectionLoadVersionRef.current += 1;
+    loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
+  }, []);
+
+  const loadFilterSection = useCallback(
+    async (section: AnalysisFilterSectionId) => {
+      const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
+      if (analysisReq == null) return;
+      const sectionAnalysisReq = buildAnalysisReqForFilterSection(section, analysisReq);
+
+      const requestKey = JSON.stringify(sectionAnalysisReq);
+      if (loadedFilterSectionKeyRef.current[section] === requestKey) return;
+
+      const loadVersion = filterSectionLoadVersionRef.current;
+      try {
+        await loadFilterSectionData(section, {
+          analysisReq: sectionAnalysisReq,
+          loadVersion,
+          loadVersionRef: filterSectionLoadVersionRef,
+          setAorEntries,
+          setGroupInfos,
+          setNetworks,
+          setNetworkDisplayMap,
+          setOptions,
+          setProfiles,
+          setTagsMap,
+          unitsMap,
+        });
+        if (loadVersion !== filterSectionLoadVersionRef.current) return;
+        loadedFilterSectionKeyRef.current[section] = requestKey;
+      } catch (loadError) {
+        if (loadVersion !== filterSectionLoadVersionRef.current) return;
+        if (!onUnauthorized(loadError)) {
+          onError(toErrorMessage(loadError));
+        }
+      }
+    },
+    [onError, onUnauthorized, optionsFreqValues, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap, unitsMap],
+  );
+
+  const loadInitialFilterSections = useCallback(
+    async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => {
+      const requestKey = JSON.stringify(analysisReq);
+      const sections = filterSectionsForQueryState(queryState);
+      if (sections.length === 0) return;
+
+      // Shared section loads can run in parallel; stale results are guarded by the version ref.
+      await Promise.all(
+        sections.map(async (section) => {
+          if (loadedFilterSectionKeyRef.current[section] === requestKey) return;
+          const loadVersion = filterSectionLoadVersionRef.current;
+          try {
+            await loadFilterSectionData(section, {
+              analysisReq: buildAnalysisReqForFilterSection(section, analysisReq),
+              loadVersion,
+              loadVersionRef: filterSectionLoadVersionRef,
+              setAorEntries,
+              setGroupInfos,
+              setNetworks,
+              setNetworkDisplayMap,
+              setOptions,
+              setProfiles,
+              setTagsMap,
+              unitsMap,
+            });
+            if (loadVersion !== filterSectionLoadVersionRef.current) return;
+            loadedFilterSectionKeyRef.current[section] = requestKey;
+          } catch (loadError) {
+            if (loadVersion !== filterSectionLoadVersionRef.current) return;
+            if (!onUnauthorized(loadError)) {
+              onError(toErrorMessage(loadError));
+            }
+          }
+        }),
+      );
+    },
+    [onError, onUnauthorized, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap, unitsMap],
+  );
 
   const {
     downloadGeojson,
@@ -172,7 +260,7 @@ export function useAnalysisData({
     newestFirst,
     onError,
     onUnauthorized,
-    optionsFreqs: options.freqs,
+    optionsFreqs: optionsFreqValues,
     queryState,
     setCallsignGraph,
     setCallsignGraphLoading,
@@ -196,7 +284,7 @@ export function useAnalysisData({
   });
 
   const loadNewCallsigns = useCallback(async () => {
-    const analysisReq = buildAnalysisReq(queryState, options.freqs);
+    const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (analysisReq == null) {
       setNewCallsigns(emptyNewCallsigns);
       newCallsignsLoadedKeyRef.current = null;
@@ -229,7 +317,7 @@ export function useAnalysisData({
         setNewCallsignsLoading(false);
       }
     }
-  }, [newCallsignsLoading, onError, onUnauthorized, options.freqs, queryState]);
+  }, [newCallsignsLoading, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   const { clearAnalysisResults, onUpdateLocalMessage, patchMessages } = useAnalysisDataStateUtils({
     emptyNewCallsigns,
@@ -280,6 +368,7 @@ export function useAnalysisData({
       setCounts,
       setCountsLoading,
       setFiltersLoading,
+      invalidateFilterSectionLoads,
       setGroupInfos,
       setMapLoading,
       setMapDateRange,
@@ -309,8 +398,19 @@ export function useAnalysisData({
       setTopLocations,
       setTopUnits,
       setUnitsMap,
+      loadInitialFilterSections,
     });
-  }, [clearAnalysisResults, invalidateCallsignGraph, invalidateMessagePaging, newestFirst, onError, onUnauthorized, queryState]);
+  }, [
+    clearAnalysisResults,
+    invalidateCallsignGraph,
+    invalidateFilterSectionLoads,
+    invalidateMessagePaging,
+    loadInitialFilterSections,
+    newestFirst,
+    onError,
+    onUnauthorized,
+    queryState,
+  ]);
 
   const {
     messageActionCount,
@@ -323,7 +423,7 @@ export function useAnalysisData({
   } = useAnalysisDataMessageActions({
     messages,
     mapOpenMessages,
-    optionsFreqs: options.freqs,
+    optionsFreqs: optionsFreqValues,
     onError,
     onUnauthorized,
     patchMessages,
@@ -336,7 +436,7 @@ export function useAnalysisData({
   });
 
   const loadAllMessages = useCallback(async () => {
-    const inboxReq = buildInboxReq(queryState, options.freqs);
+    const inboxReq = buildInboxReq(queryState, optionsFreqValues);
     if (inboxReq == null) return;
 
     setMessagesPaging(true);
@@ -353,10 +453,10 @@ export function useAnalysisData({
     } finally {
       setMessagesPaging(false);
     }
-  }, [newestFirst, onError, onUnauthorized, options.freqs, queryState]);
+  }, [newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   const loadMoreMessages = useCallback(async () => {
-    const inboxReq = buildInboxReq(queryState, options.freqs);
+    const inboxReq = buildInboxReq(queryState, optionsFreqValues);
     const lastMessage = messages.at(-1);
     if (inboxReq == null || lastMessage == null) return;
 
@@ -391,7 +491,7 @@ export function useAnalysisData({
         setMessagesPaging(false);
       }
     }
-  }, [messages, newestFirst, onError, onUnauthorized, options.freqs, queryState]);
+  }, [messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   useEffect(() => {
     void reload();
@@ -446,9 +546,11 @@ export function useAnalysisData({
     groupsActivityLoadedFreq,
     groupsActivityLoadedPeriod,
     groupsActivityLoading,
-    inboxReq: buildInboxReq(queryState, options.freqs),
+    inboxReq: buildInboxReq(queryState, optionsFreqValues),
     loadCallsignGraph,
     loadAllMessages,
+    loadFilterSection,
+    invalidateFilterSectionLoads,
     toggleCallsignGraphNolimit,
     loadCorrelatedFreqs,
     loadGroupsActivity,

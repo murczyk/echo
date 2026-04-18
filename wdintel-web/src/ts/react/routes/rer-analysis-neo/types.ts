@@ -24,40 +24,56 @@ export type AnalysisCountItem = {
   count: number;
 };
 
+export type AnalysisFilterOption = {
+  value: string;
+  label: string;
+  count: number;
+  values?: string[];
+};
+
 export type AnalysisAorEntry = {
   id: number;
   name: string;
 };
 
 export type AnalysisGroupsActivityPeriod = 'selected' | 'month' | 'quarter' | 'year';
-export type AnalysisQueryState = RerAnalysisQueryState & {
+export type AnalysisQueryState = Omit<RerAnalysisQueryState, 'dateFromStr' | 'timeFromStr' | 'dateToStr' | 'timeToStr'> & {
   fromDateTimeStr: string;
   toDateTimeStr: string;
-  dateFromStr?: string;
-  timeFromStr?: string;
-  dateToStr?: string;
-  timeToStr?: string;
   filterTagsOption: TagFilterOption;
   includeOnlyNewFreqs: boolean;
   reportTagsOnlyThisUnit: boolean;
 };
 
 export type AnalysisFilterOptions = {
-  aors: string[];
-  groups: string[];
-  senders: string[];
-  freqs: string[];
-  newFreqs: string[];
-  callsigns: string[];
-  units: string[];
-  locations: string[];
-  posts: string[];
-  networks: string[];
-  metadataCcs: string[];
-  metadataSenders: string[];
-  metadataReceivers: string[];
-  metadataHashes: string[];
+  tags: AnalysisFilterOption[];
+  aors: AnalysisFilterOption[];
+  groups: AnalysisFilterOption[];
+  senders: AnalysisFilterOption[];
+  freqs: AnalysisFilterOption[];
+  newFreqs: AnalysisFilterOption[];
+  callsigns: AnalysisFilterOption[];
+  units: AnalysisFilterOption[];
+  locations: AnalysisFilterOption[];
+  posts: AnalysisFilterOption[];
+  networks: AnalysisFilterOption[];
+  metadataCcs: AnalysisFilterOption[];
+  metadataSenders: AnalysisFilterOption[];
+  metadataReceivers: AnalysisFilterOption[];
+  metadataHashes: AnalysisFilterOption[];
 };
+
+export type AnalysisFilterSectionId =
+  | 'tags'
+  | 'aors'
+  | 'groups'
+  | 'senders'
+  | 'callsigns'
+  | 'units'
+  | 'locations'
+  | 'posts'
+  | 'networks'
+  | 'metadata';
 
 export type AnalysisPalitrasLoadState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -147,6 +163,7 @@ export type AnalysisPageActions = {
   loadCorrelatedFreqs: () => void;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
   loadAllMessages: () => Promise<void>;
+  loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => void;
   loadNewCallsigns: () => Promise<void>;
