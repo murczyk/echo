@@ -152,11 +152,18 @@ export function MessageCardWatermark({ authUserName }: { authUserName: string })
 }
 
 const TAG_CHIP_GAP_PX = 4;
-/** Reserve width for expand/collapse text button + chevron (collapsed row). */
-const COMPACT_EXPAND_BTN_RESERVE_PX = 72;
+/** Reserve for «розгорнути» + chevron (collapsed row). */
+const COMPACT_EXPAND_BTN_RESERVE_PX = 92;
+/**
+ * Contribution badge is `absolute` to the right of the chip — only the **last** chip in the row
+ * needs extra slack toward the expand control; adding this for every chip over-counts and wastes space.
+ */
+const COMPACT_LAST_CHIP_BADGE_OVERFLOW_PX = 44;
+/** Compact: every chip outer wrapper; full layout: only when `showBadge`. Expand button uses the same in compact. */
+const TAG_CHIP_BADGE_TOP_PADDING_THEME = 1.75;
 
 function estimateTagChipWidthPx(label: string): number {
-  return Math.min(180, Math.max(28, label.length * 6 + 24));
+  return Math.min(180, Math.max(28, Math.round(label.length * 6.5 + 26)));
 }
 
 function MessageCardTagChips({
@@ -248,13 +255,21 @@ function MessageCardTagChips({
       }
 
       const btn = COMPACT_EXPAND_BTN_RESERVE_PX;
-      let used = 0;
+      const widthFirstKChips = (k: number) => {
+        if (k <= 0) return 0;
+        let u = 0;
+        for (let j = 0; j < k; j++) {
+          u += (j > 0 ? TAG_CHIP_GAP_PX : 0) + estimateTagChipWidthPx(packing[j].label);
+        }
+        if (packing[k - 1].showBadge) {
+          u += COMPACT_LAST_CHIP_BADGE_OVERFLOW_PX;
+        }
+        return u;
+      };
       let count = 0;
       for (let i = 0; i < packing.length; i++) {
-        const add = (count > 0 ? TAG_CHIP_GAP_PX : 0) + estimateTagChipWidthPx(packing[i].label);
-        if (used + add + btn > w) break;
-        used += add;
-        count++;
+        if (widthFirstKChips(i + 1) + btn > w) break;
+        count = i + 1;
       }
       const atLeastOne = count === 0 && packing.length > 0 ? 1 : count;
       const next = atLeastOne >= packing.length ? packing.length : atLeastOne;
@@ -285,39 +300,48 @@ function MessageCardTagChips({
     const humanContribsLen = row.humanContribsLen;
     return (
       <Tooltip key={row.tagId} title={row.tip} placement="top">
-        <Box component="span" className="relative inline-flex shrink-0 max-w-full">
-          <PowerChip
-            label={row.label}
-            selected={row.isSet}
-            onClick={() => onToggleTag(Number(row.tagId))}
-            size="small"
-            fontSize="0.875rem"
-            unselectedBackgroundColor="var(--color-background)"
-            unselectedBorderColor="var(--text-color)"
-            unselectedTextColor="var(--text-color)"
-            selectedBackgroundColor="var(--color-tag-selected)"
-            selectedBorderColor="var(--color-border-selected)"
-            selectedTextColor="var(--neutral-900)"
-          />
-          {row.showBadge && (
-            <span
-              className="absolute -top-[12px] -right-1 flex items-center gap-1 text-[10px] bg-card border border-border rounded-full px-1.5 py-0.5 shadow-sm"
-              aria-hidden
-            >
-              {botContribsLen > 0 && (
-                <span className="flex items-center gap-0.5" title="Боти">
-                  <i className="bi bi-robot" />
-                  <span>{botContribsLen}</span>
-                </span>
-              )}
-              {humanContribsLen > 0 && (
-                <span className="flex items-center gap-0.5" title="Користувачі">
-                  <i className="bi bi-person-fill" />
-                  <span>{humanContribsLen}</span>
-                </span>
-              )}
-            </span>
-          )}
+        <Box
+          component="span"
+          sx={{
+            display: 'inline-block',
+            maxWidth: '100%',
+            ...(tagsLayout === 'compact' || row.showBadge ? { pt: TAG_CHIP_BADGE_TOP_PADDING_THEME } : {}),
+          }}
+        >
+          <Box component="span" className="relative inline-flex shrink-0 max-w-full">
+            <PowerChip
+              label={row.label}
+              selected={row.isSet}
+              onClick={() => onToggleTag(Number(row.tagId))}
+              size="small"
+              fontSize="0.875rem"
+              unselectedBackgroundColor="var(--color-background)"
+              unselectedBorderColor="var(--text-color)"
+              unselectedTextColor="var(--text-color)"
+              selectedBackgroundColor="var(--color-tag-selected)"
+              selectedBorderColor="var(--color-border-selected)"
+              selectedTextColor="var(--neutral-900)"
+            />
+            {row.showBadge && (
+              <span
+                className="absolute -top-[12px] -right-1 flex items-center gap-1 text-[10px] bg-card border border-border rounded-full px-1.5 py-0.5 shadow-sm"
+                aria-hidden
+              >
+                {botContribsLen > 0 && (
+                  <span className="flex items-center gap-0.5" title="Боти">
+                    <i className="bi bi-robot" />
+                    <span>{botContribsLen}</span>
+                  </span>
+                )}
+                {humanContribsLen > 0 && (
+                  <span className="flex items-center gap-0.5" title="Користувачі">
+                    <i className="bi bi-person-fill" />
+                    <span>{humanContribsLen}</span>
+                  </span>
+                )}
+              </span>
+            )}
+          </Box>
         </Box>
       </Tooltip>
     );
@@ -355,7 +379,7 @@ function MessageCardTagChips({
     return (
       <Box className="flex w-full min-w-0 flex-wrap items-start gap-1">
         {compactOrderedRows.map((row) => renderOneChip(row))}
-        {expandToggleButton}
+        <Box sx={{ flexShrink: 0, pt: TAG_CHIP_BADGE_TOP_PADDING_THEME }}>{expandToggleButton}</Box>
       </Box>
     );
   }
@@ -371,10 +395,20 @@ function MessageCardTagChips({
   return (
     <Box ref={compactMeasureRef} className="w-full min-w-0">
       <Box className="flex w-full min-w-0 items-center gap-1">
-        <Box className="flex min-h-[27px] min-w-0 flex-1 items-center gap-1">
+        <Box className="flex min-h-[27px] min-w-0 flex-1 items-center gap-1 overflow-x-hidden">
           {row1Chips.map((row) => renderOneChip(row))}
         </Box>
-        <Box sx={{ flexShrink: 0, alignSelf: 'flex-center' }}>{expandToggleButton}</Box>
+        <Box
+          sx={{
+            flexShrink: 0,
+            alignSelf: 'center',
+            position: 'relative',
+            zIndex: 1,
+            pt: TAG_CHIP_BADGE_TOP_PADDING_THEME,
+          }}
+        >
+          {expandToggleButton}
+        </Box>
       </Box>
     </Box>
   );

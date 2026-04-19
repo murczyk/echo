@@ -1,4 +1,4 @@
-import { Box, Button, Paper } from '@mui/material';
+import { Box, Button, Paper, useMediaQuery, useTheme } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
@@ -13,7 +13,20 @@ export type RerDutyNeoPageProps = {
   authUserName?: string | null;
 };
 
+function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
+  if (narrow) return '100%';
+  if (feedCount >= 4) return 'calc((100% - 2rem) / 4)';
+  if (feedCount === 3) return 'calc((100% - 2rem) / 3)';
+  if (feedCount === 2) return 'calc((90% - 2rem) / 2)';
+  return '45%';
+}
+
+/** Below `sm`: scales subtree ~12.5%; height is divided so the zoomed box still fits the viewport. */
+const DUTY_MOBILE_ROOT_ZOOM = 1.125;
+
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
+  const theme = useTheme();
+  const narrowScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const authUserName = authUserNameProp ?? null;
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   useEffect(() => {
@@ -105,7 +118,22 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   }, [dutyTabUnreadTotal]);
 
   return (
-    <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 54px)', minHeight: 0, overflow: 'hidden' }}>
+    <Box
+      className="flex flex-col w-full min-h-0"
+      sx={{
+        zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
+        height: narrowScreen
+          ? `calc((100vh - 54px) / ${DUTY_MOBILE_ROOT_ZOOM})`
+          : 'calc(100vh - 54px)',
+        '@supports (height: 100dvh)': {
+          height: narrowScreen
+            ? `calc((100dvh - 54px) / ${DUTY_MOBILE_ROOT_ZOOM})`
+            : 'calc(100dvh - 54px)',
+        },
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
       {error && (
@@ -114,7 +142,14 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         </Paper>
       )}
 
-      <Box className="flex flex-1 flex-nowrap gap-2 overflow-x-auto justify-center w-full min-h-0">
+      <Box
+        className="flex flex-1 flex-nowrap gap-2 overflow-x-auto justify-center w-full min-h-0"
+        sx={{
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorX: 'contain',
+          scrollSnapType: narrowScreen ? 'x mandatory' : 'none',
+        }}
+      >
         {messageFeeds.map((w) => {
           const filterStable = {
             groupsSelected: w.filter.groupsSelected ?? [],
@@ -132,6 +167,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               ref={(el) => {
                 columnRefsRef.current[w.id] = el;
               }}
+              narrowScreen={narrowScreen}
               feed={w}
               feedCount={messageFeeds.length}
               unreadCount={feedColumnUnreadDisplayed(w)}
@@ -151,15 +187,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               saveFilterName={saveFilterName}
               reloadFreqsLoading={reloadFreqsLoading}
               canRemove={messageFeeds.length > 1}
-              maxWidth={
-                messageFeeds.length >= 4
-                  ? 'calc((100% - 2rem) / 4)'
-                  : messageFeeds.length === 3
-                    ? 'calc((100% - 2rem) / 3)'
-                    : messageFeeds.length === 2
-                      ? 'calc((90% - 2rem) / 2)'
-                      : '45%'
-              }
+              maxWidth={dutyFeedColumnMaxWidth(messageFeeds.length, narrowScreen)}
               authUserName={authUserName}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
@@ -239,7 +267,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
             />
           );
         })}
-        {messageFeeds.length < MAX_MESSAGE_FEEDS && (
+        {!narrowScreen && messageFeeds.length < MAX_MESSAGE_FEEDS && (
           <Button
             size="large"
             variant="text"

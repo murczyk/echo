@@ -320,7 +320,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localGroupValue.length === 0 ? groupEmptyLabel : undefined} />
               )}
-              className="min-w-[180px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[180px] min-[600px]:flex-1"
             />
           </Box>
         </Box>
@@ -372,7 +372,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localSenderValue.length === 0 ? senderEmptyLabel : undefined} />
               )}
-              className="min-w-[180px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[180px] min-[600px]:flex-1"
             />
           </Box>
         </Box>
@@ -441,7 +441,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localFreqValue.length === 0 ? freqEmptyLabel : undefined} />
               )}
-              className="min-w-[160px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[160px] min-[600px]:flex-1"
             />
           </Box>
           <Box className="flex flex-wrap gap-2 justify-end mt-1">
@@ -515,7 +515,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localPostValue.length === 0 ? postEmptyLabel : undefined} />
               )}
-              className="min-w-[160px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[160px] min-[600px]:flex-1"
             />
           </Box>
         </Box>
@@ -553,7 +553,7 @@ export function FeedFilterPanel({
             Збережені фільтри
           </Typography>
           <Box className="flex flex-wrap gap-2 items-center">
-            <FormControl size="small" className="min-w-[180px]">
+            <FormControl size="small" className="min-w-0 w-full min-[600px]:min-w-[180px]">
               <InputLabel>вибрати фільтр</InputLabel>
               <Select
                 label="вибрати фільтр"
