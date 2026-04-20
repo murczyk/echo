@@ -35,6 +35,7 @@ import {
 import { getUnitsList } from '../../services/api/units';
 import { sortFrequenciesNumerically } from '../../utils/misc';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq, shouldRebuildAnalysisRequests } from './helpers';
+import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import { emptyNewCallsigns, emptyOptions, normalizeFilterLabel, toErrorMessage, topItems } from './use-analysis-data.shared';
 import { buildNetworkDisplayMap, buildSenderFilterOptions } from './message-utils';
 import type {
@@ -60,8 +61,12 @@ type FilterSectionLoadContext = {
   unitsMap: Record<number, Unit>;
 };
 
-function filterSectionLoadKey(section: AnalysisFilterSectionId, requestKey: string): string {
+export function filterSectionLoadKey(section: AnalysisFilterSectionId, requestKey: string): string {
   return `${section}:${requestKey}`;
+}
+
+export function filterSectionCacheKey(section: AnalysisFilterSectionId, analysisReq: AnalysisStatsReq): string {
+  return filterSectionLoadKey(section, JSON.stringify(analysisReq));
 }
 
 function mergeNetworks(existing: Network[], next: Network[]): Network[] {
@@ -140,8 +145,6 @@ export function buildAnalysisReqForFilterSection(
 }
 
 export async function loadFilterSectionData(section: AnalysisFilterSectionId, context: FilterSectionLoadContext): Promise<void> {
-  const requestKey = JSON.stringify(context.analysisReq);
-  void filterSectionLoadKey(section, requestKey);
   const isStale = () => context.loadVersion !== context.loadVersionRef.current;
 
   switch (section) {
@@ -402,6 +405,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       if (isStaleReload()) return null;
 
       params.setMessages(inboxRsp.inboxItems ?? []);
+      params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(inboxRsp.callsigns, null));
       params.setHasLoadedInitialMessages(true);
       params.setMessagesLoading(false);
 
@@ -424,6 +428,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             const rebuiltInboxRsp = await fetchInboxMessages({ ...rebuiltInboxReq, newestFirst: params.newestFirst });
             if (isStaleReload()) return null;
             params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
+            params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(rebuiltInboxRsp.callsigns, null));
             resolvedInboxRsp = rebuiltInboxRsp;
           } catch (loadError) {
             if (isStaleReload()) return null;

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnalysisFilterSectionId } from './types';
 import { emptyQueryState } from './helpers';
 import { buildAnalysisReqForFilterSection, filterSectionsForInitialLoad, reloadAnalysisData } from './use-analysis-data.reload';
+import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 
 const mocks = vi.hoisted(() => ({
   fetchAnalysisAors: vi.fn(),
@@ -173,7 +174,7 @@ describe('filterSectionsForInitialLoad', () => {
 
 describe('reloadAnalysisData', () => {
   it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
-    const inboxDeferred = deferred<{ inboxItems: Array<[number, unknown]> }>();
+    const inboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
     const freqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
 
     mocks.fetchInboxMessages.mockImplementationOnce(() => inboxDeferred.promise);
@@ -192,6 +193,7 @@ describe('reloadAnalysisData', () => {
     });
 
     const setHasLoadedInitialMessages = vi.fn();
+    const setSummaryCallsignsInfo = vi.fn();
 
     const queryState = {
       ...emptyQueryState(),
@@ -233,7 +235,7 @@ describe('reloadAnalysisData', () => {
       setNolimitShown: vi.fn(),
       setOptions: vi.fn(),
       setProfiles: vi.fn(),
-      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryCallsignsInfo,
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
@@ -248,17 +250,108 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
     expect(messagesLoadingTransitions).toContain(true);
 
-    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]] });
+    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
     await flushPromises();
 
     expect(setHasLoadedInitialMessages).toHaveBeenCalledWith(true);
     expect(messagesLoadingTransitions).toContain(false);
     expect(mocks.fetchAnalysisCount).not.toHaveBeenCalled();
+    expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
 
     freqsDeferred.resolve({ freqs: [] });
     await reloadPromise;
     await flushPromises();
 
     expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes summary callsign info after rebuilt inbox data arrives', async () => {
+    const inboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
+    const rebuiltInboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
+    const freqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
+
+    mocks.fetchInboxMessages
+      .mockImplementationOnce(() => inboxDeferred.promise)
+      .mockImplementationOnce(() => rebuiltInboxDeferred.promise);
+    mocks.fetchAnalysisFreqs.mockImplementationOnce(() =>
+      freqsDeferred.promise,
+    );
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+    mocks.fetchNetworksByIds.mockResolvedValue([]);
+    mocks.getUnitsList.mockResolvedValue([]);
+
+    const setSummaryCallsignsInfo = vi.fn();
+
+    const reloadPromise = reloadAnalysisData({
+      clearAnalysisResults: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+        freqsSelected: ['150.100'],
+        adjacentFreqsRange: 0.002,
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: vi.fn(),
+      setCounts: vi.fn(),
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworkDisplayMap: vi.fn(),
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
+      setNewCallsigns: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading: vi.fn(),
+      setNewCallsignsLoadedKey: vi.fn(),
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions: vi.fn(),
+      setProfiles: vi.fn(),
+      setSummaryCallsignsInfo,
+      setSummaryLoading: vi.fn(),
+      setSummaryRows: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTopCallsigns: vi.fn(),
+      setTopFreqs: vi.fn(),
+      setTopLocations: vi.fn(),
+      setTopUnits: vi.fn(),
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+    });
+
+    await flushPromises();
+    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    await flushPromises();
+    freqsDeferred.resolve({
+      freqs: [
+        { freq: '150.099', count: 1, isNew: false },
+        { freq: '150.100', count: 1, isNew: false },
+        { freq: '150.101', count: 1, isNew: false },
+      ],
+    });
+    await flushPromises();
+    rebuiltInboxDeferred.resolve({ inboxItems: [[2, { networkIds: [] }]], callsigns: [{ callsign: 'bravo', res: [] }] });
+    await reloadPromise;
+    await flushPromises();
+
+    expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
+    expect(setSummaryCallsignsInfo).toHaveBeenLastCalledWith(buildSummaryCallsignsInfo([{ callsign: 'bravo', res: [] }], null));
   });
 });

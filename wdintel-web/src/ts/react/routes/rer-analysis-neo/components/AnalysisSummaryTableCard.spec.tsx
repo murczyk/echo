@@ -346,4 +346,29 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
+
+  it('collapses callsigns after the first five and expands on demand', async () => {
+    const view = await renderComponent(
+      buildProps({
+        rows: [
+          buildRow({
+            callsigns: ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf'],
+          }),
+        ],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('ALPHA');
+    expect(view.container.textContent).toContain('ECHO');
+    expect(view.container.textContent).not.toContain('FOXTROT');
+    expect(view.container.textContent).not.toContain('GOLF');
+    expect(view.container.textContent).toContain('Показати ще (2)');
+
+    await click(getButton(view.container, 'Показати ще (2)'));
+
+    expect(view.container.textContent).toContain('FOXTROT');
+    expect(view.container.textContent).toContain('GOLF');
+    expect(view.container.textContent).toContain('Згорнути');
+  });
 });

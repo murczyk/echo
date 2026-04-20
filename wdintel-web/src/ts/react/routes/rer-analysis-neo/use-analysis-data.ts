@@ -64,7 +64,7 @@ import { buildNetworkDisplayMap } from './message-utils';
 import { buildSummaryCallsignsInfo, mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { useAnalysisDataLoaders } from './use-analysis-data.loaders';
 import { useAnalysisDataMessageActions } from './use-analysis-data.message-actions';
-import { buildAnalysisReqForFilterSection, filterSectionsForInitialLoad, loadFilterSectionData, reloadAnalysisData } from './use-analysis-data.reload';
+import { buildAnalysisReqForFilterSection, filterSectionCacheKey, filterSectionsForInitialLoad, loadFilterSectionData, reloadAnalysisData } from './use-analysis-data.reload';
 import { emptyNewCallsigns, emptyOptions, toErrorMessage, topItems } from './use-analysis-data.shared';
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
@@ -175,8 +175,7 @@ export function useAnalysisData({
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
       if (analysisReq == null) return;
       const sectionAnalysisReq = buildAnalysisReqForFilterSection(section, analysisReq);
-
-      const requestKey = JSON.stringify(sectionAnalysisReq);
+      const requestKey = filterSectionCacheKey(section, analysisReq);
       if (loadedFilterSectionKeyRef.current[section] === requestKey) return;
 
       const loadVersion = filterSectionLoadVersionRef.current;
@@ -208,14 +207,14 @@ export function useAnalysisData({
 
   const loadInitialFilterSections = useCallback(
     async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => {
-      const requestKey = JSON.stringify(analysisReq);
       const sections = filterSectionsForInitialLoad(queryState);
       if (sections.length === 0) return;
 
       // Shared section loads can run in parallel; stale results are guarded by the version ref.
       await Promise.all(
         sections.map(async (section) => {
-          if (loadedFilterSectionKeyRef.current[section] === requestKey) return;
+          const sectionKey = filterSectionCacheKey(section, analysisReq);
+          if (loadedFilterSectionKeyRef.current[section] === sectionKey) return;
           const loadVersion = filterSectionLoadVersionRef.current;
           try {
             await loadFilterSectionData(section, {
@@ -232,7 +231,7 @@ export function useAnalysisData({
               unitsMap: unitsMapRef.current,
             });
             if (loadVersion !== filterSectionLoadVersionRef.current) return;
-            loadedFilterSectionKeyRef.current[section] = requestKey;
+            loadedFilterSectionKeyRef.current[section] = sectionKey;
           } catch (loadError) {
             if (loadVersion !== filterSectionLoadVersionRef.current) return;
             if (!onUnauthorized(loadError)) {

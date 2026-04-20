@@ -118,6 +118,62 @@ function CompactListCell({
   );
 }
 
+function CallsignChipsCell({
+  callsigns,
+  expanded,
+  onToggleExpanded,
+}: {
+  callsigns: AnalysisSummaryTableRowView['callsignChips'];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+}) {
+  if (callsigns.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        —
+      </Typography>
+    );
+  }
+
+  const visibleCallsigns = expanded ? callsigns : callsigns.slice(0, 5);
+  const hiddenCount = callsigns.length - visibleCallsigns.length;
+
+  return (
+    <Stack spacing={0.75} alignItems="flex-start">
+      <Stack direction="row" gap={0.5} flexWrap="wrap" sx={{ maxWidth: '100%' }}>
+        {visibleCallsigns.map((entry, index) => {
+          const chip = (
+            <PowerChip
+              label={
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {entry.tooltip && entry.iconClass ? <i className={`bi ${entry.iconClass}`} /> : null}
+                  <span>{entry.callsign.toUpperCase()}</span>
+                </span>
+              }
+              size="small"
+              color={entry.tooltip ? 'primary' : 'default'}
+              selected={entry.isHighlighted}
+            />
+          );
+
+          return entry.tooltip ? (
+            <Tooltip key={`${entry.callsign}-${index}`} title={entry.tooltip} placement="top">
+              <span>{chip}</span>
+            </Tooltip>
+          ) : (
+            <Fragment key={`${entry.callsign}-${index}`}>{chip}</Fragment>
+          );
+        })}
+      </Stack>
+      {hiddenCount > 0 ? (
+        <Button size="small" variant="text" onClick={onToggleExpanded} sx={{ minWidth: 0, px: 0 }}>
+          {expanded ? 'Згорнути' : `Показати ще (${hiddenCount})`}
+        </Button>
+      ) : null}
+    </Stack>
+  );
+}
+
 function AnalysisSummaryTableCardInner({
   callsignInfoMap,
   networkDisplayMap,
@@ -139,6 +195,7 @@ function AnalysisSummaryTableCardInner({
   const [renameDialog, setRenameDialog] = useState<RenameDialogState | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
+  const [expandedCallsignRows, setExpandedCallsignRows] = useState<Record<string, boolean>>({});
 
   const data = useMemo(
     () =>
@@ -149,7 +206,7 @@ function AnalysisSummaryTableCardInner({
         unitsMap,
         callsignInfoMap,
       }),
-    [callsignInfoMap, networkDisplayMap, networks, rows, unitsMap],
+    [callsignInfoMap, expandedCallsignRows, networkDisplayMap, networks, rows, toggleExpandedCallsigns, unitsMap],
   );
 
   useEffect(() => {
@@ -165,6 +222,13 @@ function AnalysisSummaryTableCardInner({
     if (renameSaving) return;
     setRenameDialog(null);
   }, [renameSaving]);
+
+  const toggleExpandedCallsigns = useCallback((freq: string) => {
+    setExpandedCallsignRows((current) => ({
+      ...current,
+      [freq]: !current[freq],
+    }));
+  }, []);
 
   const openRenameDialog = useCallback((row: AnalysisSummaryTableRowView) => {
     if (row.editableUnits.length === 0) return;
@@ -232,33 +296,11 @@ function AnalysisSummaryTableCardInner({
         id: 'callsignSearchText',
         size: 320,
         Cell: ({ row }) => (
-          <Stack direction="row" gap={0.5} flexWrap="wrap">
-            {row.original.callsignChips.length === 0
-              ? '—'
-              : row.original.callsignChips.map((entry, index) => {
-                  const chip = (
-                    <PowerChip
-                      label={
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          {entry.tooltip && entry.iconClass ? <i className={`bi ${entry.iconClass}`} /> : null}
-                          <span>{entry.callsign.toUpperCase()}</span>
-                        </span>
-                      }
-                      size="small"
-                      color={entry.tooltip ? 'primary' : 'default'}
-                      selected={entry.isHighlighted}
-                    />
-                  );
-
-                  return entry.tooltip ? (
-                    <Tooltip key={`${row.original.freq}-${entry.callsign}-${index}`} title={entry.tooltip} placement="top">
-                      <span>{chip}</span>
-                    </Tooltip>
-                  ) : (
-                    <Fragment key={`${row.original.freq}-${entry.callsign}-${index}`}>{chip}</Fragment>
-                  );
-                })}
-          </Stack>
+          <CallsignChipsCell
+            callsigns={row.original.callsignChips}
+            expanded={expandedCallsignRows[row.original.freq] ?? false}
+            onToggleExpanded={() => toggleExpandedCallsigns(row.original.freq)}
+          />
         ),
       },
       {
