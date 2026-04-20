@@ -43,6 +43,7 @@ type alias Props msg =
     , isNavbarVisible : Bool
     , openDropdown : Maybe String
     , onDropdownToggle : Maybe String -> msg
+    , onCloseDropdownOnly : msg
     , mobileNavOpen : Bool
     , onToggleMobileNav : msg
     }
@@ -465,7 +466,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
 
         toggleMsg =
             if isOpen then
-                props.onDropdownToggle Nothing
+                props.onCloseDropdownOnly
 
             else
                 props.onDropdownToggle (Just activeNameExp)

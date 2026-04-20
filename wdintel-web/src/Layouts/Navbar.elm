@@ -78,6 +78,7 @@ type Msg
     | ToggleNavbarVisibility
     | ToggleMobileNav
     | SetOpenDropdown (Maybe String)
+    | CloseDropdownOnly
     | ToastMsg Toast.Msg
 
 
@@ -154,6 +155,9 @@ update route msg model =
             , E.none
             )
 
+        CloseDropdownOnly ->
+            ( { model | openDropdown = Nothing }, E.none )
+
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
 
@@ -200,6 +204,7 @@ view user activeName shared route { toContentMsg, model, content } =
             , isNavbarVisible = model.isNavbarVisible
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
+            , onCloseDropdownOnly = CloseDropdownOnly
             , mobileNavOpen = model.mobileNavOpen
             , onToggleMobileNav = ToggleMobileNav
             }
