@@ -1,4 +1,4 @@
-use crate::config::RER_DUTY_TEST_WINDOW_MINUTES;
+use crate::config::RER_DUTY_REPLAY_RECENT_WINDOW_MINUTES;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::event_stream::fanout;
@@ -88,7 +88,8 @@ async fn run_rer_duty_historical_interceptions_worker_once(
         *source_since_ms = Some(since_ms);
     }
     let since = crate::utils::dt_from_millis(since_ms).c(h!())?;
-    let till = since + Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES);
+    let till =
+        since + Duration::minutes(config.rer_duty_test_source_window_minutes());
     let limit = settings.rer_duty_test_limit.max(1) as u64;
 
     let mut sources =
@@ -427,7 +428,7 @@ async fn replay_source_message(
 
 fn random_replay_timestamp() -> NaiveDateTime {
     let now = Utc::now().naive_utc();
-    let max_offset_sec = (RER_DUTY_TEST_WINDOW_MINUTES * 60).max(1);
+    let max_offset_sec = (RER_DUTY_REPLAY_RECENT_WINDOW_MINUTES * 60).max(1);
     let offset_sec = rand::rng().random_range(0..=max_offset_sec);
     now - Duration::seconds(offset_sec)
 }

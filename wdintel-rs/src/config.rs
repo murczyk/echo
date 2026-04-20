@@ -41,7 +41,8 @@ pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 pub const CLEANUP_REPORT_DAYS: u64 = 30;
 pub const RER_REPORT_ERROR_CODE_HEADER_NAME: &str = "x-echo-error-code";
 pub const RER_REPORT_PERMISSION_DENIED_ERROR_CODE: &str = "8125378";
-pub const RER_DUTY_TEST_WINDOW_MINUTES: i64 = 10;
+pub const RER_DUTY_TEST_SOURCE_WINDOW_MINUTES_DEFAULT: i64 = 10;
+pub const RER_DUTY_REPLAY_RECENT_WINDOW_MINUTES: i64 = 10;
 // for xlsx import
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const SIGINT_SOURCE_RO_ID: i32 = 2;
@@ -205,6 +206,7 @@ pub struct Config {
     pub whatsapp_api_phone: String,
     pub signal_import_group_name: String,
     pub signal_import_fiven_name: String,
+    pub rer_duty_test_source_window_minutes: Option<i64>,
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
@@ -294,6 +296,12 @@ impl Config {
 
     pub fn settlement_paths(&self) -> Result<Vec<String>> {
         get_settlement_paths(self.settlements_sources.clone())
+    }
+
+    pub fn rer_duty_test_source_window_minutes(&self) -> i64 {
+        self.rer_duty_test_source_window_minutes
+            .unwrap_or(RER_DUTY_TEST_SOURCE_WINDOW_MINUTES_DEFAULT)
+            .max(1)
     }
 }
 
