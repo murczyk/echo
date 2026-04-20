@@ -348,7 +348,7 @@ navBar user shared activeName props =
                     [ id "app-navbar-links-panel"
                     , class <|
                         String.join " "
-                            [ "app-navbar-links w-full min-w-0 basis-full border-t border-white/10 pt-2 mt-1"
+                            [ "app-navbar-links w-full min-w-0 basis-full border-t border-white/10"
                             , "lg:mt-0 lg:flex lg:w-auto lg:min-w-0 lg:flex-1 lg:basis-0 lg:border-t-0 lg:pt-0"
                             , if props.mobileNavOpen then
                                 "flex"
@@ -608,10 +608,10 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                 ]
                 []
             ]
-        , div [ class "absolute left-0 right-0 z-[3001] pt-2 lg:right-auto" ]
+        , div [ class "app-navbar-submenu-wrap" ]
             [ ul
                 [ id dropdownMenuId
-                , class "min-w-0 w-full max-w-[min(100vw-2rem,16rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg transition-all duration-200 lg:w-64 lg:max-w-none"
+                , class "app-navbar-submenu-list min-w-0 w-full max-w-[min(100vw-2rem,16rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg transition-all duration-200 lg:w-64 lg:max-w-none"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )
