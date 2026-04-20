@@ -17,6 +17,7 @@ import type {
   PostStatsRsp,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
+  SavedFilterRenameReq,
   SavedFilterDutyUpsertReq,
   SignalGroupEntry,
   SignalGroupStats,
@@ -342,6 +343,10 @@ export async function savedFilterUpsert(
 
 export async function savedFilterDelete(filterId: number): Promise<void> {
   await postVoid('/api/rer/duty/saved-filter-delete', filterId);
+}
+
+export async function savedFilterRename(req: SavedFilterRenameReq): Promise<void> {
+  await postVoid('/api/rer/duty/saved-filter-rename', transformCamelToSnake(req));
 }
 
 // --- Filter metadata (tags, senders, frequencies, groups) ---

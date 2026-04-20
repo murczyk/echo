@@ -1,4 +1,5 @@
 import {
+  Alert,
   Autocomplete,
   Box,
   Button,
@@ -7,7 +8,6 @@ import {
   FormControl,
   FormControlLabel,
   IconButton,
-  InputLabel,
   MenuItem,
   Paper,
   Select,
@@ -19,7 +19,7 @@ import {
 } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
-import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
+import { ADJACENT_FREQS_RANGE_OPTIONS, normalizeFeed } from './utils';
 
 export type FeedFilterPanelProps = {
   feedId: string;
@@ -60,9 +60,11 @@ export type FeedFilterPanelProps = {
   onReloadFreqs: () => void;
   onSavedFilterSelect: (id: number | '') => void;
   onSaveFilterNameChange: (value: string) => void;
-  onSaveFilter: () => void;
+  onSaveFilter: (feedId: string) => Promise<void>;
+  onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
+  onRenameSelectedSavedFilter: () => Promise<void>;
+  onDeleteSelectedSavedFilter: () => Promise<void>;
   onApplySavedFilter: (saved: SavedFilterDuty) => void;
-  onDeleteSavedFilter: (id: number) => void;
 };
 
 export function FeedFilterPanel({
@@ -96,8 +98,10 @@ export function FeedFilterPanel({
   onSavedFilterSelect,
   onSaveFilterNameChange,
   onSaveFilter,
+  onUpdateSelectedSavedFilter,
+  onRenameSelectedSavedFilter,
+  onDeleteSelectedSavedFilter,
   onApplySavedFilter,
-  onDeleteSavedFilter,
 }: FeedFilterPanelProps) {
   const [groupMode, setGroupMode] = useState<'include' | 'exclude'>(() =>
     filterStable.deniedGroups.length > 0 ? 'exclude' : 'include',
@@ -179,12 +183,43 @@ export function FeedFilterPanel({
   const freqEmptyLabel = freqMode === 'include' ? 'всі' : 'ніяка';
   const [localFreqValue, setLocalFreqValue] = useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = useState<string[]>(() => postValue);
+  const [saveInFlight, setSaveInFlight] = useState(false);
   const sortedGroupKeys = [...groupsList].sort((a, b) => (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b));
   const [localGroupValue, setLocalGroupValue] = useState<string[]>(() =>
     filterStable.deniedGroups?.length > 0 ? filterStable.deniedGroups : (filterStable.groupsSelected ?? []),
   );
   const pendingGroupResyncRef = useRef<string | null>(null);
   const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
+  const loadedSavedFilter = selectedSavedId == null ? null : savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null;
+  const trimmedSavedFilterName = saveFilterName.trim();
+  const hasLoadedFilter = loadedSavedFilter != null;
+  const isRenaming = hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
+  const loadedFilterNormalized = loadedSavedFilter == null ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>);
+  const isDirty =
+    loadedFilterNormalized != null &&
+    !(
+      JSON.stringify(filterStable.groupsSelected) === JSON.stringify(loadedFilterNormalized.groupsSelected ?? []) &&
+      JSON.stringify(filterStable.deniedGroups) === JSON.stringify(loadedFilterNormalized.groupsDenied ?? []) &&
+      JSON.stringify(filterStable.sendersSelected) === JSON.stringify(loadedFilterNormalized.sendersSelected ?? []) &&
+      JSON.stringify(filterStable.deniedSenders) === JSON.stringify(loadedFilterNormalized.deniedSenders ?? []) &&
+      JSON.stringify(filterStable.freqsSelected) === JSON.stringify(loadedFilterNormalized.freqsSelected ?? []) &&
+      JSON.stringify(filterStable.freqsDenied) === JSON.stringify(loadedFilterNormalized.freqsDenied ?? []) &&
+      JSON.stringify(filterStable.postsSelected ?? []) === JSON.stringify(loadedFilterNormalized.postsSelected ?? []) &&
+      JSON.stringify(filterStable.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? [])
+    );
+  const canUpdateExisting = !saveInFlight && hasLoadedFilter && isDirty;
+  const canRenameExisting =
+    !saveInFlight && hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
+
+  const runSavedFilterAction = async (action: () => Promise<void>) => {
+    if (saveInFlight) return;
+    setSaveInFlight(true);
+    try {
+      await action();
+    } finally {
+      setSaveInFlight(false);
+    }
+  };
 
   // Resync local selections when *parent* filter changes. Do not depend on local* state: if local
   // is in deps, this runs after user picks an option but before the parent applies it, and would
@@ -552,53 +587,87 @@ export function FeedFilterPanel({
           <Typography variant="subtitle2" className="mb-2 font-semibold">
             Збережені фільтри
           </Typography>
-          <Box className="flex flex-wrap gap-2 items-center">
-            <FormControl size="small" className="min-w-[180px]">
-              <InputLabel>вибрати фільтр</InputLabel>
-              <Select
-                label="вибрати фільтр"
-                className="min-w-[110px]"
-                value={selectedSavedId ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value as number | '';
-                  onSavedFilterSelect(id);
-                  if (id !== '') {
-                    const saved = savedFilters.find((s) => s.id === id);
-                    if (saved) onApplySavedFilter(saved);
+          <Box className="flex flex-col gap-2">
+            {sortedSavedFilters.length > 0 ? (
+              <Autocomplete
+                size="small"
+                options={sortedSavedFilters}
+                getOptionLabel={(option) => option.name}
+                value={loadedSavedFilter}
+                onChange={(_event, next) => {
+                  if (next == null) {
+                    onSavedFilterSelect('');
+                    return;
                   }
+                  onSavedFilterSelect(next.id);
+                  onApplySavedFilter(next);
                 }}
-              >
-                <MenuItem value="">—</MenuItem>
-                {sortedSavedFilters.map((s) => (
-                  <MenuItem key={s.id} value={s.id}>
-                    {s.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                openText="Відкрити"
+                closeText="Закрити"
+                clearText="Очистити"
+                noOptionsText="Немає варіантів"
+                renderOption={(props, option) => {
+                  const { key: _unusedKey, ...optionProps } = props;
+                  return (
+                    <li {...optionProps} key={option.id}>
+                      {option.name}
+                    </li>
+                  );
+                }}
+                renderInput={(params) => <TextField {...params} label="Збережений фільтр" />}
+              />
+            ) : null}
             <TextField
               size="small"
-              placeholder="назва"
+              label="Назва фільтра"
               value={saveFilterName}
               onChange={(e) => onSaveFilterNameChange(e.target.value)}
-              className="w-[140px]"
             />
-            <Button size="small" variant="outlined" onClick={onSaveFilter} disabled={!saveFilterName.trim()}>
-              додати
-            </Button>
-            {selectedSavedId != null && (
+            {loadedSavedFilter ? (
+              <Alert severity={isDirty ? 'warning' : 'info'} sx={{ py: 0.5 }}>
+                {isRenaming
+                  ? `Фільтр "${loadedSavedFilter.name}": змінено назву.`
+                  : isDirty
+                    ? `Фільтр "${loadedSavedFilter.name}": є незбережені зміни.`
+                    : `Вибрано фільтр "${loadedSavedFilter.name}".`}
+              </Alert>
+            ) : null}
+            <Box className="flex flex-col gap-2">
+              <Button
+                size="small"
+                variant={hasLoadedFilter ? 'contained' : 'outlined'}
+                onClick={() => runSavedFilterAction(() => onUpdateSelectedSavedFilter(_feedId))}
+                disabled={!canUpdateExisting}
+              >
+                Оновити вибраний
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => runSavedFilterAction(onRenameSelectedSavedFilter)}
+                disabled={!canRenameExisting}
+              >
+                Перейменувати
+              </Button>
+              <Button
+                size="small"
+                variant={hasLoadedFilter ? 'outlined' : 'contained'}
+                onClick={() => runSavedFilterAction(() => onSaveFilter(_feedId))}
+                disabled={saveInFlight || trimmedSavedFilterName === ''}
+              >
+                Зберегти як новий
+              </Button>
               <Button
                 size="small"
                 color="error"
                 variant="outlined"
-                onClick={() => {
-                  const s = savedFilters.find((x) => x.id === selectedSavedId);
-                  if (s) onDeleteSavedFilter(s.id);
-                }}
+                onClick={() => runSavedFilterAction(onDeleteSelectedSavedFilter)}
+                disabled={saveInFlight || !hasLoadedFilter}
               >
-                <i className="bi bi-trash" />
+                Видалити
               </Button>
-            )}
+            </Box>
           </Box>
         </Box>
       </Box>
