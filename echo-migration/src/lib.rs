@@ -231,6 +231,7 @@ mod m20260329_184900_add_palitra_line_strings;
 mod m20260331_230927_add_palitra_s3_id;
 mod m20260406_194408_palitra_archive_and_folder;
 mod m20260406_210334_add_goi_integrations;
+mod m20260420_114249_add_aor_order_for_report;
 
 pub struct Migrator;
 
@@ -471,6 +472,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260325_120000_add_user_settings::Migration),
             Box::new(m20260329_184900_add_palitra_line_strings::Migration),
             Box::new(m20260406_194408_palitra_archive_and_folder::Migration),
+            Box::new(m20260420_114249_add_aor_order_for_report::Migration),
         ]
     }
 }

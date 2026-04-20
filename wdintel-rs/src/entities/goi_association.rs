@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub integration_id: i64,
     pub organism_id: i64,
     pub source_association_id: i64,
     pub source_created_at: DateTimeWithTimeZone,
@@ -43,6 +42,7 @@ pub struct Model {
     pub source_created_at_ms: Option<i64>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub palettes: Option<Json>,
+    pub integration_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

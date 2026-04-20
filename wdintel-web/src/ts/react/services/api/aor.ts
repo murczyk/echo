@@ -1,9 +1,11 @@
 import {
   AorCoordinates,
   AreaOfResponsibility,
+  AreaOfResponsibilityReportOrder,
   AreaOfResponsibilityInsert,
   DeleteAreaOfResponsibilityReq,
   ListAreasOfResponsibilityReq,
+  UpdateAreaOfResponsibilityReportOrderReq,
   UpdateAreaOfResponsibilityReq,
 } from '../../../../Bindings';
 
@@ -35,6 +37,8 @@ type AreaOfResponsibilityLike = {
   description?: string | null;
   isTopLevel?: boolean;
   is_top_level?: boolean;
+  orderForReport?: number | string | null;
+  order_for_report?: number | string | null;
   leftBound?: number | string | null;
   left_bound?: number | string | null;
   rightBound?: number | string | null;
@@ -60,6 +64,15 @@ type AreaOfResponsibilityInsertBody = {
 type UpdateAreaOfResponsibilityReqBody = {
   id: number;
   insert: AreaOfResponsibilityInsertBody;
+};
+
+type AreaOfResponsibilityReportOrderBody = {
+  id: number;
+  order_for_report: number;
+};
+
+type UpdateAreaOfResponsibilityReportOrderReqBody = {
+  items: AreaOfResponsibilityReportOrderBody[];
 };
 
 type DeleteAreaOfResponsibilityReqBody = {
@@ -88,6 +101,7 @@ function normalizeAor(raw: AreaOfResponsibilityLike): AreaOfResponsibility {
     name: raw.name ?? '',
     description: raw.description ?? null,
     isTopLevel: raw.isTopLevel ?? raw.is_top_level ?? false,
+    orderForReport: normalizeNumber(raw.orderForReport ?? raw.order_for_report),
     leftBound: normalizeNumber(raw.leftBound ?? raw.left_bound),
     rightBound: normalizeNumber(raw.rightBound ?? raw.right_bound),
     leftCoordinates: normalizeCoordinates(raw.leftCoordinates ?? raw.left_coordinates),
@@ -125,6 +139,23 @@ function toUpdateAreaOfResponsibilityReqBody(req: UpdateAreaOfResponsibilityReq)
   };
 }
 
+function toAreaOfResponsibilityReportOrderBody(
+  req: AreaOfResponsibilityReportOrder,
+): AreaOfResponsibilityReportOrderBody {
+  return {
+    id: req.id,
+    order_for_report: req.orderForReport,
+  };
+}
+
+function toUpdateAreaOfResponsibilityReportOrderReqBody(
+  req: UpdateAreaOfResponsibilityReportOrderReq,
+): UpdateAreaOfResponsibilityReportOrderReqBody {
+  return {
+    items: req.items.map(toAreaOfResponsibilityReportOrderBody),
+  };
+}
+
 function toDeleteAreaOfResponsibilityReqBody(req: DeleteAreaOfResponsibilityReq): DeleteAreaOfResponsibilityReqBody {
   return { id: req.id };
 }
@@ -142,6 +173,16 @@ export async function createAor(req: AreaOfResponsibilityInsert): Promise<AreaOf
 export async function updateAor(req: UpdateAreaOfResponsibilityReq): Promise<AreaOfResponsibility> {
   const data = await postJson<AreaOfResponsibilityLike>('/api/sigint/aor/update', toUpdateAreaOfResponsibilityReqBody(req));
   return normalizeAor(data);
+}
+
+export async function updateAorReportOrders(
+  req: UpdateAreaOfResponsibilityReportOrderReq,
+): Promise<AreaOfResponsibility[]> {
+  const data = await postJson<AreaOfResponsibilityLike[]>(
+    '/api/sigint/aor/update-report-order',
+    toUpdateAreaOfResponsibilityReportOrderReqBody(req),
+  );
+  return (data || []).map(normalizeAor);
 }
 
 export async function deleteAor(req: DeleteAreaOfResponsibilityReq): Promise<void> {

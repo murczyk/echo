@@ -760,6 +760,7 @@ pub async fn main_server(
             .service(crate::sigint::aor::aor_list)
             .service(crate::sigint::aor::create_aor)
             .service(crate::sigint::aor::update_aor)
+            .service(crate::sigint::aor::update_aor_report_order)
             .service(crate::sigint::aor::delete_aor)
             .service(crate::sigint::etalonka::report_networks)
             .service(crate::sigint::etalonka::report_networks_batch_id)
