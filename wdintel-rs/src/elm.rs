@@ -7,6 +7,10 @@ const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER: &str = r#"|> Json.Decode.andT
 const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" Json.Decode.bool, Json.Decode.succeed False ]))"#;
 const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.bool)))"#;
 const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
+const FILTER_TAGS_OPTION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))"#;
+const FILTER_TAGS_OPTION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))"#;
+const FILTER_TAGS_OPTION_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder))))"#;
+const FILTER_TAGS_OPTION_COMPAT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder)), Json.Decode.succeed Nothing ]))"#;
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT: &str =
     r#"Json.Decode.field "rer_duty_test_since_ms" Json.Decode.int"#;
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str =
@@ -396,6 +400,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::aor::types::AreaOfResponsibilityInsert,
             crate::sigint::aor::types::UpdateAreaOfResponsibilityReq,
             crate::sigint::aor::types::DeleteAreaOfResponsibilityReq,
+            crate::sigint::aor::types::AreaOfResponsibilityReportOrder,
+            crate::sigint::aor::types::UpdateAreaOfResponsibilityReportOrderReq,
             crate::sigint::aor::types::ListAreasOfResponsibilitySortBy,
             crate::sigint::aor::types::ListAreasOfResponsibilityReq,
             crate::sigint::key::admin::SigintKeySharePolicy,
@@ -753,6 +759,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::aor::types::AreaOfResponsibilityInsert,
             crate::sigint::aor::types::UpdateAreaOfResponsibilityReq,
             crate::sigint::aor::types::DeleteAreaOfResponsibilityReq,
+            crate::sigint::aor::types::AreaOfResponsibilityReportOrder,
+            crate::sigint::aor::types::UpdateAreaOfResponsibilityReportOrderReq,
             crate::rer_importer::reports::types::ReoReportFileType,
             crate::sigint::aor::types::ListAreasOfResponsibilitySortBy,
             crate::sigint::aor::types::ListAreasOfResponsibilityReq,
@@ -847,6 +855,14 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER,
             RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER,
+        )
+        .replace(
+            FILTER_TAGS_OPTION_STRICT_DECODER_RAW,
+            FILTER_TAGS_OPTION_COMPAT_DECODER_RAW,
+        )
+        .replace(
+            FILTER_TAGS_OPTION_STRICT_DECODER,
+            FILTER_TAGS_OPTION_COMPAT_DECODER,
         )
         .replace(
             RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT,

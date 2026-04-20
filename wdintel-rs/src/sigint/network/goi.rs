@@ -93,7 +93,7 @@ fn write_goi_report_sheet(
 
 async fn get_goi_report_freqs(
     env: &Env,
-) -> Result<HashMap<String, Vec<NetworkFreq>>, AppError> {
+) -> Result<Vec<(String, Vec<NetworkFreq>)>, AppError> {
     let today = Utc::now().with_timezone(&get_tz()).date_naive();
     let today_start_local = today.and_hms_opt(0, 0, 0).unwrap_or_default();
     let today_start = get_tz()
@@ -153,6 +153,7 @@ async fn get_goi_report_freqs(
                     .gt(Expr::val(today_start)),
                 ),
         )
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
         .filter(area_of_responsibility::Column::IsDefault.eq(false))
         .filter(
@@ -160,6 +161,7 @@ async fn get_goi_report_freqs(
                 .add(sigint_unit::Column::Deleted.eq(false))
                 .add(sigint_unit::Column::Deleted.is_null()),
         )
+        .order_by_asc(area_of_responsibility::Column::OrderForReport)
         .order_by_asc(area_of_responsibility::Column::Name)
         .order_by_asc(sigint_network_freq::Column::Freq);
 
@@ -170,10 +172,15 @@ async fn get_goi_report_freqs(
 
     let freqs = q.into_model::<NetworkFreq>().all(&env.dbx).await.c(h!())?;
 
-    let mut grouped: HashMap<String, Vec<NetworkFreq>> = HashMap::new();
-
-    for f in freqs {
-        grouped.entry(f.aor_name.clone()).or_default().push(f);
+    let mut grouped: Vec<(String, Vec<NetworkFreq>)> = Vec::new();
+    for freq in freqs {
+        if let Some((aor_name, aor_freqs)) = grouped.last_mut() {
+            if aor_name == &freq.aor_name {
+                aor_freqs.push(freq);
+                continue;
+            }
+        }
+        grouped.push((freq.aor_name.clone(), vec![freq]));
     }
 
     Ok(grouped)

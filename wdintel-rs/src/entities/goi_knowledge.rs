@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub integration_id: i64,
     pub organism_id: i64,
     pub source_knowledge_id: i64,
     pub source_created_at: DateTimeWithTimeZone,
@@ -34,6 +33,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub formation: Option<String>,
     pub deleted_at: Option<DateTimeWithTimeZone>,
+    pub integration_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

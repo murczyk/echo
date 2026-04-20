@@ -7599,6 +7599,7 @@ type alias AreaOfResponsibility =
     , name : String
     , description : Maybe String
     , isTopLevel : Bool
+    , orderForReport : Float
     , leftBound : Float
     , rightBound : Float
     , leftCoordinates : Maybe AorCoordinates
@@ -7614,6 +7615,7 @@ areaOfResponsibilityEncoder struct =
         , ( "name", Json.Encode.string struct.name )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
         , ( "is_top_level", Json.Encode.bool struct.isTopLevel )
+        , ( "order_for_report", Json.Encode.float struct.orderForReport )
         , ( "left_bound", Json.Encode.float struct.leftBound )
         , ( "right_bound", Json.Encode.float struct.rightBound )
         , ( "left_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map aorCoordinatesEncoder) struct.leftCoordinates )
@@ -7685,6 +7687,32 @@ deleteAreaOfResponsibilityReqEncoder : DeleteAreaOfResponsibilityReq -> Json.Enc
 deleteAreaOfResponsibilityReqEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
+        ]
+
+
+type alias AreaOfResponsibilityReportOrder =
+    { id : Int
+    , orderForReport : Float
+    }
+
+
+areaOfResponsibilityReportOrderEncoder : AreaOfResponsibilityReportOrder -> Json.Encode.Value
+areaOfResponsibilityReportOrderEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "order_for_report", Json.Encode.float struct.orderForReport )
+        ]
+
+
+type alias UpdateAreaOfResponsibilityReportOrderReq =
+    { items : List AreaOfResponsibilityReportOrder
+    }
+
+
+updateAreaOfResponsibilityReportOrderReqEncoder : UpdateAreaOfResponsibilityReportOrderReq -> Json.Encode.Value
+updateAreaOfResponsibilityReportOrderReqEncoder struct =
+    Json.Encode.object
+        [ ( "items", Json.Encode.list areaOfResponsibilityReportOrderEncoder struct.items )
         ]
 
 
@@ -8833,15 +8861,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
-        |> Json.Decode.andThen
-            (\x ->
-                Json.Decode.map x
-                    (Json.Decode.oneOf
-                        [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)
-                        , Json.Decode.succeed Nothing
-                        ]
-                    )
-            )
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
@@ -12106,6 +12126,7 @@ areaOfResponsibilityDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_top_level" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "order_for_report" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_bound" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_bound" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_coordinates" (Json.Decode.nullable aorCoordinatesDecoder)))
@@ -12144,6 +12165,19 @@ deleteAreaOfResponsibilityReqDecoder : Json.Decode.Decoder DeleteAreaOfResponsib
 deleteAreaOfResponsibilityReqDecoder =
     Json.Decode.succeed DeleteAreaOfResponsibilityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+
+
+areaOfResponsibilityReportOrderDecoder : Json.Decode.Decoder AreaOfResponsibilityReportOrder
+areaOfResponsibilityReportOrderDecoder =
+    Json.Decode.succeed AreaOfResponsibilityReportOrder
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "order_for_report" Json.Decode.float))
+
+
+updateAreaOfResponsibilityReportOrderReqDecoder : Json.Decode.Decoder UpdateAreaOfResponsibilityReportOrderReq
+updateAreaOfResponsibilityReportOrderReqDecoder =
+    Json.Decode.succeed UpdateAreaOfResponsibilityReportOrderReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list areaOfResponsibilityReportOrderDecoder)))
 
 
 reoReportFileTypeDecoder : Json.Decode.Decoder ReoReportFileType
