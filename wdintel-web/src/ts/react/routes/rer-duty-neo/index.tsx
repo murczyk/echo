@@ -62,7 +62,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     applyFilter,
     handleSaveFilter,
     handleApplySavedFilter,
-    handleDeleteSavedFilter,
+    handleUpdateSelectedSavedFilter,
+    handleRenameSelectedSavedFilter,
+    handleDeleteSelectedSavedFilter,
     handleMessageBookmark,
     handleMessageImportant,
     handleMessageCopy,
@@ -224,9 +226,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               onReloadFreqs={reloadLatestFrequencies}
               onSavedFilterSelect={(id) => setSelectedSavedId(id === '' ? null : id)}
               onSaveFilterNameChange={setSaveFilterName}
-              onSaveFilter={() => handleSaveFilter(w.id)}
+              onSaveFilter={handleSaveFilter}
+              onUpdateSelectedSavedFilter={handleUpdateSelectedSavedFilter}
+              onRenameSelectedSavedFilter={handleRenameSelectedSavedFilter}
+              onDeleteSelectedSavedFilter={handleDeleteSelectedSavedFilter}
               onApplySavedFilter={(saved) => handleApplySavedFilter(w.id, saved)}
-              onDeleteSavedFilter={handleDeleteSavedFilter}
               onMessageBookmark={(msgId, currentlyBookmarked) =>
                 handleMessageBookmark(w.id, msgId, currentlyBookmarked)
               }
