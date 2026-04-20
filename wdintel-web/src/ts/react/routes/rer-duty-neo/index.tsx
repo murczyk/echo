@@ -23,6 +23,8 @@ function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
 
 /** Below `sm`: scales subtree ~12.5%; height is divided so the zoomed box still fits the viewport. */
 const DUTY_MOBILE_ROOT_ZOOM = 1.125;
+const DUTY_VIEWPORT_HEIGHT = 'calc(100vh - var(--app-shell-total-offset, 0px))';
+const DUTY_VIEWPORT_HEIGHT_DVH = 'calc(100dvh - var(--app-shell-total-offset, 0px))';
 
 export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const theme = useTheme();
@@ -123,12 +125,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       sx={{
         zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
         height: narrowScreen
-          ? `calc((100vh - 54px) / ${DUTY_MOBILE_ROOT_ZOOM})`
-          : 'calc(100vh - 54px)',
+          ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})`
+          : DUTY_VIEWPORT_HEIGHT,
         '@supports (height: 100dvh)': {
           height: narrowScreen
-            ? `calc((100dvh - 54px) / ${DUTY_MOBILE_ROOT_ZOOM})`
-            : 'calc(100dvh - 54px)',
+            ? `calc((${DUTY_VIEWPORT_HEIGHT_DVH}) / ${DUTY_MOBILE_ROOT_ZOOM})`
+            : DUTY_VIEWPORT_HEIGHT_DVH,
         },
         minHeight: 0,
         overflow: 'hidden',
