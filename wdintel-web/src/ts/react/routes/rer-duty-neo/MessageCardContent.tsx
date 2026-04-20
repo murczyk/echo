@@ -33,6 +33,11 @@ function collectMessageImageHrefs(msg: InboxMessage): string[] {
 }
 
 export function MessagePictureThumb({ href }: { href: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  if (failed) return null;
+
   return (
     <Box component="span" sx={{ display: 'inline-block', mr: 0.5, mb: 0.5, lineHeight: 0 }}>
       <Box component="a" href={href} target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block' }}>
@@ -40,7 +45,10 @@ export function MessagePictureThumb({ href }: { href: string }) {
           component="img"
           src={href}
           alt=""
+          onLoad={() => setLoaded(true)}
+          onError={() => setFailed(true)}
           sx={{
+            display: loaded ? 'block' : 'none',
             height: PREVIEW_IMAGE_HEIGHT_PX,
             minHeight: PREVIEW_IMAGE_HEIGHT_PX,
             width: 'auto',

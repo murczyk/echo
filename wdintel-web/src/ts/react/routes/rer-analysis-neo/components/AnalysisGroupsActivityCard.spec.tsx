@@ -81,23 +81,10 @@ async function renderComponent(props: ComponentProps<typeof AnalysisGroupsActivi
   return { container, root };
 }
 
-async function click(element: HTMLElement): Promise<void> {
-  await act(async () => {
-    element.click();
-  });
-}
-
 describe('AnalysisGroupsActivityCard', () => {
   const rendered: Rendered[] = [];
-  const scrollIntoView = vi.fn();
-
-  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-    configurable: true,
-    value: scrollIntoView,
-  });
 
   afterEach(() => {
-    scrollIntoView.mockReset();
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
@@ -106,9 +93,8 @@ describe('AnalysisGroupsActivityCard', () => {
     }
   });
 
-  it('offers a quick frequency selection when no frequency is selected', async () => {
+  it('shows a hint when no frequency is selected', async () => {
     const onLoad = vi.fn();
-    const onSelectFreq = vi.fn();
     const view = await renderComponent({
       groupsActivity: null,
       groupsActivityLoadedFreq: null,
@@ -116,23 +102,12 @@ describe('AnalysisGroupsActivityCard', () => {
       loading: false,
       period: 'selected',
       selectedFreq: null,
-      suggestedFreqs: ['100.100', '101.100', '102.100'],
       onLoad,
-      onSelectFreq,
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('100.100');
-    expect(view.container.textContent).toContain('101.100');
-    expect(view.container.textContent).toContain('102.100');
-
-    const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent === '101.100');
-    expect(button).toBeTruthy();
-
-    await click(button as HTMLButtonElement);
-
     expect(onLoad).not.toHaveBeenCalled();
-    expect(onSelectFreq).toHaveBeenCalledWith('101.100');
+    expect(view.container.textContent).toContain('Оберіть частоту вище, щоб завантажити графік активності по датах.');
   });
 
   it('loads activity automatically when a frequency is already selected', async () => {
@@ -144,9 +119,7 @@ describe('AnalysisGroupsActivityCard', () => {
       loading: false,
       period: 'selected',
       selectedFreq: '100.100',
-      suggestedFreqs: ['100.100', '101.100'],
       onLoad,
-      onSelectFreq: vi.fn(),
     });
     rendered.push(view);
 
@@ -166,9 +139,7 @@ describe('AnalysisGroupsActivityCard', () => {
       loading: false,
       period: 'month',
       selectedFreq: '100.100',
-      suggestedFreqs: ['100.100'],
       onLoad: vi.fn(),
-      onSelectFreq: vi.fn(),
     });
     rendered.push(view);
 
@@ -188,9 +159,7 @@ describe('AnalysisGroupsActivityCard', () => {
       loading: true,
       period: 'selected',
       selectedFreq: '100.100',
-      suggestedFreqs: ['100.100'],
       onLoad: vi.fn(),
-      onSelectFreq: vi.fn(),
     });
     rendered.push(view);
 
@@ -198,65 +167,4 @@ describe('AnalysisGroupsActivityCard', () => {
     expect(view.container.textContent).not.toContain('Завантажую активність по датах…');
   });
 
-  it('scrolls the card into view when the chart becomes ready', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    rendered.push({ container, root });
-
-    const baseProps: ComponentProps<typeof AnalysisGroupsActivityCard> = {
-      groupsActivity: null,
-      groupsActivityLoadedFreq: null,
-      groupsActivityLoadedPeriod: null,
-      loading: true,
-      period: 'selected',
-      selectedFreq: '100.100',
-      suggestedFreqs: ['100.100'],
-      onLoad: vi.fn(),
-      onSelectFreq: vi.fn(),
-    };
-
-    await act(async () => {
-      root.render(<AnalysisGroupsActivityCard {...baseProps} />);
-    });
-
-    await act(async () => {
-      root.render(
-        <AnalysisGroupsActivityCard
-          {...baseProps}
-          groupsActivity={{
-            dataPerDate: {
-              '2026-03-31': { countByGroupName: { Alpha: 3 } },
-            },
-          }}
-          groupsActivityLoadedFreq="100.100"
-          groupsActivityLoadedPeriod="selected"
-          loading={false}
-        />,
-      );
-    });
-
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' });
-  });
-
-  it('does not scroll on the initial render when the chart is already ready', async () => {
-    const view = await renderComponent({
-      groupsActivity: {
-        dataPerDate: {
-          '2026-03-31': { countByGroupName: { Alpha: 3 } },
-        },
-      },
-      groupsActivityLoadedFreq: '100.100',
-      groupsActivityLoadedPeriod: 'selected',
-      loading: false,
-      period: 'selected',
-      selectedFreq: '100.100',
-      suggestedFreqs: ['100.100'],
-      onLoad: vi.fn(),
-      onSelectFreq: vi.fn(),
-    });
-    rendered.push(view);
-
-    expect(scrollIntoView).not.toHaveBeenCalled();
-  });
 });

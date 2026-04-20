@@ -51,6 +51,7 @@ type Params = {
   setTopLocations: Setter<AnalysisCountItem[]>;
   setTopUnits: Setter<AnalysisCountItem[]>;
   setUnitsMap: Setter<Record<number, Unit>>;
+  setHasLoadedInitialMessages: Setter<boolean>;
 };
 
 export function useAnalysisDataStateUtils(params: Params) {
@@ -86,6 +87,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setTopLocations,
     setTopUnits,
     setUnitsMap,
+    setHasLoadedInitialMessages,
   } = params;
 
   const patchMessages = useCallback(
@@ -118,6 +120,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setNetworkDisplayMap({});
     setSummaryCallsignsInfo({});
     setMapDateRange({ startDate: 0, endDate: 0 });
+    setHasLoadedInitialMessages(false);
     setMapPoints([]);
     setMapNetworkUnits([]);
     setMapOpenMessages([]);

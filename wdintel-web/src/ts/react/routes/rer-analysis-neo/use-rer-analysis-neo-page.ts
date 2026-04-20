@@ -223,6 +223,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
     groupsActivityLoadedPeriod: data.groupsActivityLoadedPeriod,
     groupsActivityLoading: data.groupsActivityLoading,
+    hasLoadedInitialMessages: data.hasLoadedInitialMessages,
     includeOnlyNewFreqs: queryState.includeOnlyNewFreqs,
     inboxReq: data.inboxReq,
     isDirty: savedFilters.isDirty,

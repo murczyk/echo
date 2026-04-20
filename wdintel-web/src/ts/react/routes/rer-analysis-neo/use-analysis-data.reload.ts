@@ -32,6 +32,7 @@ import {
   getLatestSenders,
   getTagsMapForDisplay,
 } from '../../services/api/analysis';
+import { getUnitsList } from '../../services/api/units';
 import { sortFrequenciesNumerically } from '../../utils/misc';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq, shouldRebuildAnalysisRequests } from './helpers';
 import { emptyNewCallsigns, emptyOptions, normalizeFilterLabel, toErrorMessage, topItems } from './use-analysis-data.shared';
@@ -63,6 +64,17 @@ function filterSectionLoadKey(section: AnalysisFilterSectionId, requestKey: stri
   return `${section}:${requestKey}`;
 }
 
+function mergeNetworks(existing: Network[], next: Network[]): Network[] {
+  const merged = new Map<number, Network>();
+  existing.forEach((network) => {
+    merged.set(network.id, network);
+  });
+  next.forEach((network) => {
+    merged.set(network.id, network);
+  });
+  return Array.from(merged.values());
+}
+
 export function filterSectionsForQueryState(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
   const sections: AnalysisFilterSectionId[] = [];
   if (queryState.tags.length > 0) sections.push('tags');
@@ -78,6 +90,10 @@ export function filterSectionsForQueryState(queryState: AnalysisQueryState): Ana
     sections.push('metadata');
   }
   return sections;
+}
+
+export function filterSectionsForInitialLoad(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
+  return filterSectionsForQueryState(queryState);
 }
 
 function toFilterOptions<T>(
@@ -256,7 +272,7 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       const networksById = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
       if (isStale()) return;
       const networkNamesById = Object.fromEntries(networksStatsRsp.networkNames.map((network) => [network.id, network.name]));
-      context.setNetworks(networksById);
+      context.setNetworks((current) => mergeNetworks(current, networksById));
       context.setNetworkDisplayMap(buildNetworkDisplayMap(networksById, context.unitsMap));
       context.setOptions((current) => ({
         ...current,
@@ -310,7 +326,9 @@ type ReloadParams = {
   setMessagesLoading: Setter<boolean>;
   setNetworkDisplayMap: Setter<Record<number, string>>;
   setNetworks: Setter<Network[]>;
+  setUnitsMap: Setter<Record<number, Unit>>;
   setNewCallsigns: Setter<NewCallsignsRes>;
+  setHasLoadedInitialMessages: Setter<boolean>;
   setNewCallsignsLoading: Setter<boolean>;
   setNewCallsignsLoadedKey: (key: string | null) => void;
   shouldLoadNewCallsigns: boolean;
@@ -326,7 +344,6 @@ type ReloadParams = {
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
   setTopUnits: Setter<AnalysisCountItem[]>;
-  setUnitsMap: Setter<Record<number, Unit>>;
   loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
 };
@@ -370,8 +387,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         return null;
       }
 
-      const [nextCounts, inboxRsp, freqsRsp] = await Promise.all([
-        fetchAnalysisCount(analysisReq),
+      const [inboxRsp, freqsRsp] = await Promise.all([
         fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst }),
         fetchAnalysisFreqs(analysisReq),
       ]);
@@ -383,8 +399,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         return loadCriticalData(nextFrequencies);
       }
 
-      params.setCounts(nextCounts);
       params.setMessages(inboxRsp.inboxItems ?? []);
+      params.setHasLoadedInitialMessages(true);
       const nextFreqCountsByValue = new Map(freqsRsp.freqs.map((item) => [item.freq, item.count]));
       const nextFreqOptions = sortFrequenciesNumerically(nextFrequencies).map((freq) => ({
         value: freq,
@@ -414,8 +430,38 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     if (criticalData == null || isStaleReload()) return;
 
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
-    params.setCountsLoading(false);
     params.setMessagesLoading(false);
+
+    const loadCountsData = async () => {
+      try {
+        const countsRsp = await fetchAnalysisCount(criticalData.analysisReq);
+        if (isStaleReload()) return;
+        params.setCounts(countsRsp);
+      } catch (loadError) {
+        if (isStaleReload()) return;
+        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      } finally {
+        if (!isStaleReload()) params.setCountsLoading(false);
+      }
+    };
+
+    const loadReferenceData = async () => {
+      try {
+        const messageNetworkIds = Array.from(
+          new Set((criticalData.inboxRsp.inboxItems ?? []).flatMap(([, message]) => message.networkIds ?? [])),
+        );
+        const [units, networksByMessageIds] = await Promise.all([
+          getUnitsList(),
+          messageNetworkIds.length > 0 ? fetchNetworksByIds(messageNetworkIds) : Promise.resolve([]),
+        ]);
+        if (isStaleReload()) return;
+        params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
+        params.setNetworks((current) => mergeNetworks(current, networksByMessageIds));
+      } catch (loadError) {
+        if (isStaleReload()) return;
+        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      }
+    };
 
     const loadSummaryData = async () => {
       try {
@@ -451,6 +497,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
     startedSecondaryLoads = true;
     const secondaryLoads = [
+      loadCountsData(),
+      loadReferenceData(),
       (async () => {
         try {
           await params.loadInitialFilterSections(criticalData.analysisReq);
@@ -488,9 +536,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
   } finally {
     if (!isStaleReload()) {
-      params.setCountsLoading(false);
       params.setMessagesLoading(false);
       if (!startedSecondaryLoads) {
+        params.setCountsLoading(false);
         params.setFiltersLoading(false);
         params.setSummaryLoading(false);
         params.setNewCallsignsLoading(false);

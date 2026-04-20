@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 
 import type {
   CorrelatedFreq,
@@ -91,6 +91,8 @@ export function useAnalysisDataLoaders(params: Params) {
     setMapPalitrasLoadState,
     setMapPoints,
   } = params;
+  const correlatedFreqsRequestRef = useRef(0);
+  const correlatedFreqsRequestKeyRef = useRef<string | null>(null);
 
   const invalidateCallsignGraph = useCallback(() => {
     callsignGraphRequestRef.current += 1;
@@ -188,17 +190,29 @@ export function useAnalysisDataLoaders(params: Params) {
   const loadCorrelatedFreqs = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
     if (analysisReq == null || queryState.freqsSelected.length === 0) {
+      correlatedFreqsRequestRef.current += 1;
+      correlatedFreqsRequestKeyRef.current = null;
       setCorrelatedFreqs([]);
       return;
     }
 
+    const requestKey = JSON.stringify(analysisReq);
+    if (correlatedFreqsRequestKeyRef.current === requestKey) return;
+
+    const requestId = correlatedFreqsRequestRef.current + 1;
+    correlatedFreqsRequestRef.current = requestId;
+    correlatedFreqsRequestKeyRef.current = requestKey;
     setCorrelatedFreqsLoading(true);
     try {
       const rsp = await fetchAnalysisCorrelatedFreqs(analysisReq);
+      if (requestId !== correlatedFreqsRequestRef.current) return;
       setCorrelatedFreqs(rsp.freqs ?? []);
     } catch (loadError) {
+      if (requestId !== correlatedFreqsRequestRef.current) return;
+      correlatedFreqsRequestKeyRef.current = null;
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
+      if (requestId !== correlatedFreqsRequestRef.current) return;
       setCorrelatedFreqsLoading(false);
     }
   }, [onError, onUnauthorized, optionsFreqs, queryState, setCorrelatedFreqs, setCorrelatedFreqsLoading]);

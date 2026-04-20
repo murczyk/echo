@@ -4,11 +4,10 @@ import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined
 import { Box, Tab, Tabs } from '@mui/material';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
-import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
 import { AnalysisCallsignGraphCard } from './AnalysisCallsignGraphCard';
 import { AnalysisChartsPanel } from './AnalysisChartsPanel';
+import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
-import { AnalysisOverviewCard } from './AnalysisOverviewCard';
 
 type Props = Pick<
   AnalysisPageState,
@@ -17,11 +16,10 @@ type Props = Pick<
   | 'callsignGraphLoadVersion'
   | 'callsignGraphNolimit'
   | 'correlatedFreqs'
-    | 'correlatedFreqsLoading'
-    | 'counts'
-    | 'filtersLoading'
-    | 'groupsActivity'
-    | 'groupsActivityLoadedFreq'
+  | 'correlatedFreqsLoading'
+  | 'filtersLoading'
+  | 'groupsActivity'
+  | 'groupsActivityLoadedFreq'
   | 'groupsActivityLoadedPeriod'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
@@ -52,7 +50,6 @@ export function AnalysisSidebar({
   callsignGraphNolimit,
   correlatedFreqs,
   correlatedFreqsLoading,
-  counts,
   filtersLoading,
   groupsActivity,
   groupsActivityLoadedFreq,
@@ -139,9 +136,6 @@ export function AnalysisSidebar({
       >
         {rightSidebarTab === 'stats' ? (
           <>
-            <Box>
-              <AnalysisOverviewCard counts={counts} />
-            </Box>
             <Box>
               <AnalysisChartsPanel
                 correlatedFreqs={correlatedFreqs}

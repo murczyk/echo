@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-
+import { useMemo } from 'react';
 import type { CallsignInfoRes, InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
 import { MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
@@ -82,6 +82,11 @@ export function MessageCard({
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
   const compactLayout = feedCount >= 3;
+  const derivedNetworkMap = useMemo(() => {
+    if (Object.keys(networkMap).length > 0) return networkMap;
+    if (!networks) return {};
+    return Object.fromEntries(networks.map((network) => [network.id, network]));
+  }, [networkMap, networks]);
   const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
   const mapHref =
@@ -100,7 +105,7 @@ export function MessageCard({
     senderName,
     networkIds,
     networkDisplayMap,
-    networkMap,
+    networkMap: derivedNetworkMap,
     etalonNoNetworkLabel,
     relativeTimeMs,
     rightInsetPx: rightHeaderInsetPx,

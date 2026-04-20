@@ -49,6 +49,7 @@ export type UseAnalysisDataResult = {
   groupsActivityLoadedFreq: string | null;
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
+  hasLoadedInitialMessages: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
   loadCallsignGraph: () => Promise<void>;
   loadAllMessages: () => Promise<void>;

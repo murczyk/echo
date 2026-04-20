@@ -120,6 +120,7 @@ export type AnalysisPageState = {
   groupsActivityLoadedFreq: string | null;
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
+  hasLoadedInitialMessages: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   messagesLoading: boolean;

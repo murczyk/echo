@@ -64,7 +64,7 @@ import { buildNetworkDisplayMap } from './message-utils';
 import { buildSummaryCallsignsInfo, mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { useAnalysisDataLoaders } from './use-analysis-data.loaders';
 import { useAnalysisDataMessageActions } from './use-analysis-data.message-actions';
-import { buildAnalysisReqForFilterSection, filterSectionsForQueryState, loadFilterSectionData, reloadAnalysisData } from './use-analysis-data.reload';
+import { buildAnalysisReqForFilterSection, filterSectionsForInitialLoad, loadFilterSectionData, reloadAnalysisData } from './use-analysis-data.reload';
 import { emptyNewCallsigns, emptyOptions, toErrorMessage, topItems } from './use-analysis-data.shared';
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
@@ -88,6 +88,7 @@ export function useAnalysisData({
   const [countsLoading, setCountsLoading] = useState(false);
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState(false);
   const [messagesPaging, setMessagesPaging] = useState(false);
   const [counts, setCounts] = useState<CountStatsRsp | null>(null);
   const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
@@ -140,6 +141,7 @@ export function useAnalysisData({
   const newCallsignsRequestRef = useRef(0);
   const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
   const newCallsignsLoadedKeyRef = useRef<string | null>(null);
+  const unitsMapRef = useRef(unitsMap);
   const optionsFreqValues = useMemo(() => options.freqs.map((option) => option.value), [options.freqs]);
 
   useEffect(() => {
@@ -153,6 +155,10 @@ export function useAnalysisData({
   useEffect(() => {
     setNetworkDisplayMap(buildNetworkDisplayMap(networks, unitsMap));
   }, [networks, unitsMap]);
+
+  useEffect(() => {
+    unitsMapRef.current = unitsMap;
+  }, [unitsMap]);
 
   const invalidateMessagePaging = useCallback(() => {
     loadMoreMessagesRequestRef.current += 1;
@@ -186,7 +192,7 @@ export function useAnalysisData({
           setOptions,
           setProfiles,
           setTagsMap,
-          unitsMap,
+          unitsMap: unitsMapRef.current,
         });
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
         loadedFilterSectionKeyRef.current[section] = requestKey;
@@ -197,13 +203,13 @@ export function useAnalysisData({
         }
       }
     },
-    [onError, onUnauthorized, optionsFreqValues, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap, unitsMap],
+    [onError, onUnauthorized, optionsFreqValues, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap],
   );
 
   const loadInitialFilterSections = useCallback(
     async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => {
       const requestKey = JSON.stringify(analysisReq);
-      const sections = filterSectionsForQueryState(queryState);
+      const sections = filterSectionsForInitialLoad(queryState);
       if (sections.length === 0) return;
 
       // Shared section loads can run in parallel; stale results are guarded by the version ref.
@@ -223,7 +229,7 @@ export function useAnalysisData({
               setOptions,
               setProfiles,
               setTagsMap,
-              unitsMap,
+              unitsMap: unitsMapRef.current,
             });
             if (loadVersion !== filterSectionLoadVersionRef.current) return;
             loadedFilterSectionKeyRef.current[section] = requestKey;
@@ -236,7 +242,7 @@ export function useAnalysisData({
         }),
       );
     },
-    [onError, onUnauthorized, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap, unitsMap],
+    [onError, onUnauthorized, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap],
   );
 
   const {
@@ -351,6 +357,7 @@ export function useAnalysisData({
     setTopLocations,
     setTopUnits,
     setUnitsMap,
+    setHasLoadedInitialMessages,
   });
 
   const reload = useCallback(async () => {
@@ -398,6 +405,7 @@ export function useAnalysisData({
       setTopLocations,
       setTopUnits,
       setUnitsMap,
+      setHasLoadedInitialMessages,
       loadInitialFilterSections,
     });
   }, [
@@ -546,6 +554,7 @@ export function useAnalysisData({
     groupsActivityLoadedFreq,
     groupsActivityLoadedPeriod,
     groupsActivityLoading,
+    hasLoadedInitialMessages,
     inboxReq: buildInboxReq(queryState, optionsFreqValues),
     loadCallsignGraph,
     loadAllMessages,

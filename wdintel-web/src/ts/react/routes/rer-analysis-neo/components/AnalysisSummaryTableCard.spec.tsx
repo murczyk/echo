@@ -320,7 +320,28 @@ describe('AnalysisSummaryTableCard', () => {
     rendered.push(view);
 
     await click(getButton(view.container, 'Редагувати підрозділ'));
-    await changeInput(getInput(view.container, 'Нова назва підрозділу для частоти 100.100'), '77 обрмп');
+    await changeInput(getInput(view.container, 'Назва підрозділу для частоти 100.100'), '77 обрмп');
+    await click(getButton(view.container, 'Зберегти'));
+
+    expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
+  });
+
+  it('uses a single editable field when only one unit is available', async () => {
+    const onRenameUnit = vi.fn().mockResolvedValue(undefined);
+    const view = await renderComponent(
+      buildProps({
+        onRenameUnit,
+        rows: [buildRow({ units: ['1 обрмп'] })],
+      }),
+    );
+    rendered.push(view);
+
+    await click(getButton(view.container, 'Редагувати підрозділ'));
+
+    expect(view.container.querySelector('select')).toBeNull();
+    expect(getInput(view.container, 'Назва підрозділу для частоти 100.100')).toBeTruthy();
+
+    await changeInput(getInput(view.container, 'Назва підрозділу для частоти 100.100'), '77 обрмп');
     await click(getButton(view.container, 'Зберегти'));
 
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AnalysisFilterSectionId } from './types';
-import { buildAnalysisReqForFilterSection } from './use-analysis-data.reload';
+import { emptyQueryState } from './helpers';
+import { buildAnalysisReqForFilterSection, filterSectionsForInitialLoad } from './use-analysis-data.reload';
 
 function buildBaseReq() {
   return {
+    ...emptyQueryState(),
     sinceDateInclusiveMs: 1,
     tillDateNoninclusiveMs: 2,
     selectedGroups: ['g1'],
@@ -38,6 +40,16 @@ function buildBaseReq() {
   };
 }
 
+function buildQueryState() {
+  return {
+    ...emptyQueryState(),
+    fromDateTimeStr: '2026-03-30T08:00',
+    toDateTimeStr: '2026-03-31T08:00',
+    groupsSelected: ['Alpha'],
+    search: 'signal',
+  };
+}
+
 describe('buildAnalysisReqForFilterSection', () => {
   it('removes the section own selection so the option list stays multi-selectable', () => {
     const cases: Array<[AnalysisFilterSectionId, string]> = [
@@ -65,5 +77,22 @@ describe('buildAnalysisReqForFilterSection', () => {
 
       expect(req[key as keyof typeof req]).toBeNull();
     }
+  });
+});
+
+describe('filterSectionsForInitialLoad', () => {
+  it('mirrors the query-driven sections for the initial load', () => {
+    expect(filterSectionsForInitialLoad(buildQueryState())).toEqual(['groups']);
+  });
+
+  it('keeps user-selected sections from the query state', () => {
+    const sections = filterSectionsForInitialLoad({
+      ...buildQueryState(),
+      tags: [11],
+      unitsSelected: ['u1'],
+      networksSelected: ['n1'],
+    });
+
+    expect(sections).toEqual(expect.arrayContaining(['tags', 'groups', 'units', 'networks']));
   });
 });

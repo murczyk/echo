@@ -1,4 +1,4 @@
-import { Button, CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { createElement, useEffect, useId, useMemo, useRef } from 'react';
 
 import type { FreqDailyActivityCount } from '../../../../../Bindings';
@@ -13,9 +13,7 @@ type Props = {
   loading: boolean;
   period: AnalysisGroupsActivityPeriod;
   selectedFreq: string | null;
-  suggestedFreqs: string[];
   onLoad: (period?: AnalysisGroupsActivityPeriod) => void;
-  onSelectFreq: (freq: string) => void;
 };
 
 function periodLabel(period: AnalysisGroupsActivityPeriod): string {
@@ -44,13 +42,9 @@ export function AnalysisGroupsActivityCard({
   loading,
   period,
   selectedFreq,
-  suggestedFreqs,
   onLoad,
-  onSelectFreq,
 }: Props) {
-  const sectionRef = useRef<HTMLElement | null>(null);
   const hostRef = useRef<HTMLElement | null>(null);
-  const previousChartStatusRef = useRef<'needs-freq' | 'loading' | 'ready' | 'empty-period' | 'empty' | null>(null);
   const headingId = useId().replace(/:/g, '-');
   const hasTimeline = Object.keys(groupsActivity?.dataPerDate ?? {}).length > 0;
   const canRenderChart = hasRenderableData(groupsActivity);
@@ -64,18 +58,6 @@ export function AnalysisGroupsActivityCard({
     if (hasTimeline) return 'empty-period' as const;
     return 'empty' as const;
   }, [canRenderCurrentChart, hasTimeline, loading, selectedFreq]);
-
-  useEffect(() => {
-    const previousChartStatus = previousChartStatusRef.current;
-    previousChartStatusRef.current = chartStatus;
-    if (previousChartStatus == null || chartStatus !== 'ready' || previousChartStatus === 'ready') return;
-    const section = sectionRef.current;
-    if (!section) return;
-    const frameId = window.requestAnimationFrame(() => {
-      section.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    });
-    return () => window.cancelAnimationFrame(frameId);
-  }, [chartStatus]);
 
   useEffect(() => {
     if (!selectedFreq) return;
@@ -104,7 +86,7 @@ export function AnalysisGroupsActivityCard({
   }, [canRenderCurrentChart, groupsActivity, period]);
 
   return (
-    <Paper ref={sectionRef} variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
+    <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
         <CompactTitle id={headingId} component="h2">
           Активність по датах
@@ -131,23 +113,9 @@ export function AnalysisGroupsActivityCard({
       {chartStatus === 'ready' ? (
         createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })
       ) : chartStatus === 'needs-freq' ? (
-        <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <PowerAlert
-            severity="info"
-            sx={{ width: '100%', pl: 0, '& .MuiAlert-message': { pl: 0 }, '& .MuiAlert-icon': { mr: 1 } }}
-          >
-            Оберіть частоту у фільтрі або скористайтесь швидким вибором нижче.
-          </PowerAlert>
-          {suggestedFreqs.length > 0 ? (
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-              {suggestedFreqs.map((freq) => (
-                <Button key={freq} variant="outlined" size="small" onClick={() => onSelectFreq(freq)}>
-                  {freq}
-                </Button>
-              ))}
-            </Stack>
-          ) : null}
-        </Stack>
+        <CompactText color="text.secondary">
+          Оберіть частоту вище, щоб завантажити графік активності по датах.
+        </CompactText>
       ) : chartStatus === 'loading' ? (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
           <CircularProgress size={18} />

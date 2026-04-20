@@ -53,7 +53,7 @@ describe('buildNetworkDisplayMap', () => {
     };
 
     expect(buildNetworkDisplayMap([network], unitsMap)).toEqual({
-      12: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА, 2 гсад 60 сап 69 мсд 6 ЗА',
+      12: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА, 2 гсад 60 сап 69 мсд 6 ЗА (KYIV)',
     });
   });
 
@@ -61,7 +61,7 @@ describe('buildNetworkDisplayMap', () => {
     const network = buildNetwork(12, 'управління', [1, 2]);
 
     expect(buildNetworkDisplayMap([network], {} as Record<number, Unit>)).toEqual({
-      12: 'р/м управління',
+      12: 'р/м управління (KYIV)',
     });
   });
 });

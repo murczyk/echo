@@ -468,34 +468,36 @@ function AnalysisSummaryTableCardInner({
             <Typography variant="body2" color="text.secondary">
               {renameDialog ? `Частота ${renameDialog.freq}` : ''}
             </Typography>
-            <FormControl size="small" fullWidth disabled={renameSaving}>
-              <InputLabel id={`${headingId}-rename-unit-label`}>Підрозділ</InputLabel>
-              <Select
-                labelId={`${headingId}-rename-unit-label`}
-                label="Підрозділ"
-                value={renameDialog?.selectedUnit ?? ''}
-                onChange={(event) => {
-                  const selectedUnit = String(event.target.value);
-                  setRenameDialog((current) => (current ? { ...current, selectedUnit } : current));
-                  setRenameValue(selectedUnit);
-                }}
-              >
-                {(renameDialog?.units ?? []).map((unit, index) => (
-                  <MenuItem key={`${unit}-${index}`} value={unit}>
-                    {unit}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {renameDialog?.units.length === 1 ? null : (
+              <FormControl size="small" fullWidth disabled={renameSaving}>
+                <InputLabel id={`${headingId}-rename-unit-label`}>Підрозділ</InputLabel>
+                <Select
+                  labelId={`${headingId}-rename-unit-label`}
+                  label="Підрозділ"
+                  value={renameDialog?.selectedUnit ?? ''}
+                  onChange={(event) => {
+                    const selectedUnit = String(event.target.value);
+                    setRenameDialog((current) => (current ? { ...current, selectedUnit } : current));
+                    setRenameValue(selectedUnit);
+                  }}
+                >
+                  {(renameDialog?.units ?? []).map((unit, index) => (
+                    <MenuItem key={`${unit}-${index}`} value={unit}>
+                      {unit}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
             <TextField
-              autoFocus
+              autoFocus={renameDialog?.units.length === 1}
               size="small"
               fullWidth
-              label="Нова назва"
+              label={renameDialog?.units.length === 1 ? 'Поточна назва підрозділу' : 'Нова назва'}
               value={renameValue}
               disabled={renameSaving}
               onChange={(event) => setRenameValue(event.target.value)}
-              aria-label={renameDialog ? `Нова назва підрозділу для частоти ${renameDialog.freq}` : 'Нова назва підрозділу'}
+              aria-label={renameDialog ? `Назва підрозділу для частоти ${renameDialog.freq}` : 'Назва підрозділу'}
             />
           </Stack>
         </DialogContent>

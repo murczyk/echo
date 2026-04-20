@@ -1,4 +1,4 @@
-import { Button, CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
+import { CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
 import { useId } from 'react';
 
 import type { CorrelatedFreq } from '../../../../../Bindings';
@@ -8,10 +8,10 @@ import { CompactText, CompactTitle } from '../../../components/CompactTypography
 type Props = {
   correlatedFreqs: CorrelatedFreq[];
   loading: boolean;
-  onLoad: () => void;
+  selectedFreq: string | null;
 };
 
-export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, onLoad }: Props) {
+export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, selectedFreq }: Props) {
   const headingId = useId().replace(/:/g, '-');
 
   return (
@@ -20,11 +20,19 @@ export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, onLoad }
         <CompactTitle id={headingId} component="h2">
           Суміжні частоти
         </CompactTitle>
-        <Button size="small" onClick={onLoad} disabled={loading}>
-          {loading ? <CircularProgress size={14} /> : 'Завантажити'}
-        </Button>
       </Stack>
-      {correlatedFreqs.length === 0 ? (
+      {!selectedFreq ? (
+        <CompactText color="text.secondary">
+          Оберіть частоту вище, щоб завантажити суміжні частоти.
+        </CompactText>
+      ) : loading ? (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
+          <CircularProgress size={18} />
+          <CompactText color="text.secondary">
+            Завантажую суміжні частоти…
+          </CompactText>
+        </Stack>
+      ) : correlatedFreqs.length === 0 ? (
         <CompactText color="text.secondary">
           Немає даних
         </CompactText>

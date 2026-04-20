@@ -1,6 +1,7 @@
 import type { AnalysisStatsSender, InboxMessage, Network, SignalProfileEntry, Unit } from '../../../../Bindings';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { AnalysisFilterOption } from './types';
+import { createMasterUnitText } from '../rer-duty-neo/utils';
 
 export function buildSenderLabel(profile: SignalProfileEntry | null | undefined, fallback: string | null): string | null {
   const parts = [profile?.givenName, profile?.familyName].filter(Boolean);
@@ -20,12 +21,7 @@ function senderDisplayName(profile: SignalProfileEntry | null | undefined, fallb
 export function buildNetworkDisplayMap(networks: Network[], unitsMap: Record<number, Unit>): Record<number, string> {
   const next: Record<number, string> = {};
   networks.forEach((network) => {
-    const unitNames = (network.unitIds ?? [])
-      .map((id) => unitsMap[id]?.name?.trim() ?? '')
-      .filter((name) => name !== '');
-    const networkName = network.name.trim();
-    const unitPart = unitNames.length > 0 ? ` ${unitNames.join(', ')}` : '';
-    next[network.id] = networkName !== '' ? `р/м ${networkName}${unitPart}` : `р/м${unitPart}`;
+    next[network.id] = createMasterUnitText(network, unitsMap);
   });
   return next;
 }
