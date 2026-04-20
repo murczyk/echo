@@ -70,21 +70,24 @@ export function SettingsReportsSection({ active, userRoles }: Props) {
   );
 
   useEffect(() => {
-    if (!active || !canRead || loadStatus !== 'idle') return;
+    if (!active || !canRead) return;
 
-    let cancelled = false;
+    const abortController = new AbortController();
 
     async function load() {
       setLoadStatus('loading');
       setLoadError(null);
 
       try {
-        const aors = await listAors({ sortBy: 'AreaOfResponsibilityNameAsc' });
-        if (cancelled) return;
+        const aors = await listAors(
+          { sortBy: 'AreaOfResponsibilityNameAsc' },
+          abortController.signal,
+        );
+        if (abortController.signal.aborted) return;
         setRows(toRows(aors));
         setLoadStatus('ready');
       } catch (error) {
-        if (cancelled) return;
+        if (abortController.signal.aborted) return;
         if (isUnauthorizedError(error)) {
           window.location.assign('/login');
           return;
@@ -97,9 +100,9 @@ export function SettingsReportsSection({ active, userRoles }: Props) {
     load();
 
     return () => {
-      cancelled = true;
+      abortController.abort();
     };
-  }, [active, canRead, loadStatus]);
+  }, [active, canRead]);
 
   const hasInvalidRows = rows.some((row) => parseOrderInput(row.orderInput) == null);
   const isDirty = rows.some((row) => parseOrderInput(row.orderInput) !== row.initialOrder);

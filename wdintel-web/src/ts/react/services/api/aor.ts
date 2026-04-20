@@ -160,8 +160,15 @@ function toDeleteAreaOfResponsibilityReqBody(req: DeleteAreaOfResponsibilityReq)
   return { id: req.id };
 }
 
-export async function listAors(req: ListAreasOfResponsibilityReq): Promise<AreaOfResponsibility[]> {
-  const data = await postJson<AreaOfResponsibilityLike[]>('/api/sigint/aor', toListAreasOfResponsibilityReqBody(req));
+export async function listAors(
+  req: ListAreasOfResponsibilityReq,
+  signal?: AbortSignal,
+): Promise<AreaOfResponsibility[]> {
+  const data = await postJson<AreaOfResponsibilityLike[]>(
+    '/api/sigint/aor',
+    toListAreasOfResponsibilityReqBody(req),
+    { signal },
+  );
   return (data || []).map(normalizeAor);
 }
 
