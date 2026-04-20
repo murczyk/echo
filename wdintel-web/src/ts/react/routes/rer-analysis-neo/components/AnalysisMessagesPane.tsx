@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { CallsignInfoRes, InboxMessage, Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
-import { MessageCard } from '../../rer-duty-neo/MessageCard';
+import { AnalysisMessageCard } from '../../rer-duty-neo/MessageCard';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildSenderLabel, copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -25,6 +25,7 @@ type Props = {
   onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
   onSaveEditor: (message: InboxMessage) => void;
+  onSaveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
   onSaveMessageComment: (messageId: number, comment: string | null) => void;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
@@ -47,6 +48,7 @@ type AnalysisMessageCardItemProps = {
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
   onOpenEditor: (messageId: number) => void;
+  onSaveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
@@ -69,6 +71,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onCopyFeedback,
   onDeleteOpen,
   onOpenEditor,
+  onSaveMessageUpdate,
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
@@ -79,11 +82,15 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   networks,
   unitsMap,
 }: AnalysisMessageCardItemProps) {
+  const normalizeCallsign = (value: string) => value.trim().toUpperCase();
+  const saveCallsignPatch = (updater: (message: InboxMessage) => InboxMessage) => {
+    return onSaveMessageUpdate(id, updater);
+  };
+
   return (
-    <MessageCard
+    <AnalysisMessageCard
       id={id}
       msg={message}
-      displayMode="analysis"
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
       groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
@@ -110,6 +117,30 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={() => onOpenEditor(id)}
       onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}
+      analysisCallsignActions={{
+        onAddCallsign: async (callsign) => {
+          return saveCallsignPatch((current) => {
+            const currentCallsigns = current.callsigns ?? [];
+            const nextCallsign = normalizeCallsign(callsign);
+            if (currentCallsigns.some((item) => normalizeCallsign(item) === nextCallsign)) return current;
+            return { ...current, callsigns: [...currentCallsigns, nextCallsign] };
+          });
+        },
+        onRemoveCallsign: async (callsign) => {
+          return saveCallsignPatch((current) => ({
+            ...current,
+            callsigns: (current.callsigns ?? []).filter((item) => normalizeCallsign(item) !== normalizeCallsign(callsign)),
+          }));
+        },
+        onAddSuggestedCallsign: async (callsign) => {
+          return saveCallsignPatch((current) => {
+            const currentCallsigns = current.callsigns ?? [];
+            const nextCallsign = normalizeCallsign(callsign);
+            if (currentCallsigns.some((item) => normalizeCallsign(item) === nextCallsign)) return current;
+            return { ...current, callsigns: [...currentCallsigns, nextCallsign] };
+          });
+        },
+      }}
     />
   );
 });
@@ -130,6 +161,7 @@ function AnalysisMessagesPaneComponent({
   onLoadMoreMessages,
   onOpenEditor,
   onSaveEditor,
+  onSaveMessageUpdate,
   onSaveMessageComment,
   onToggleMessageBookmark,
   onToggleMessageImportant,
@@ -185,7 +217,25 @@ function AnalysisMessagesPaneComponent({
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: 0, position: 'relative' }}>
-      <Box sx={{ height: '100%', overflow: 'auto' }}>
+      <Box
+        sx={{
+          height: '100%',
+          overflow: 'auto',
+          borderRight: '1px solid',
+          borderColor: 'divider',
+          scrollbarColor: 'rgba(255, 255, 255, 0.38) transparent',
+          '&::-webkit-scrollbar': {
+            width: 12,
+            height: 12,
+          },
+          '&::-webkit-scrollbar-track': {
+            backgroundColor: 'transparent',
+          },
+          '&::-webkit-scrollbar-corner': {
+            backgroundColor: 'transparent',
+          },
+        }}
+      >
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
           {messages.map(([id, message]) => (
             <AnalysisMessageCardItem
@@ -200,6 +250,7 @@ function AnalysisMessagesPaneComponent({
               onCopyFeedback={showCopiedFeedback}
               onDeleteOpen={setDeleteMessageId}
               onOpenEditor={onOpenEditor}
+              onSaveMessageUpdate={onSaveMessageUpdate}
               onToggleMessageBookmark={onToggleMessageBookmark}
               onToggleMessageImportant={onToggleMessageImportant}
               onToggleMessageTag={onToggleMessageTag}

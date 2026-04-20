@@ -93,7 +93,9 @@ export function filterSectionsForQueryState(queryState: AnalysisQueryState): Ana
 }
 
 export function filterSectionsForInitialLoad(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
-  return filterSectionsForQueryState(queryState);
+  const sections = new Set<AnalysisFilterSectionId>(['tags']);
+  filterSectionsForQueryState(queryState).forEach((section) => sections.add(section));
+  return Array.from(sections);
 }
 
 function toFilterOptions<T>(
@@ -387,20 +389,51 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         return null;
       }
 
-      const [inboxRsp, freqsRsp] = await Promise.all([
-        fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst }),
-        fetchAnalysisFreqs(analysisReq),
-      ]);
-      if (isStaleReload()) return null;
+      const inboxPromise = fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst });
+      const freqsPromise = fetchAnalysisFreqs(analysisReq);
 
-      const nextFrequencies = freqsRsp.freqs.map((item) => item.freq);
-      if (shouldRebuildAnalysisRequests(params.queryState, allFrequencies, nextFrequencies)) {
-        params.optionsFreqsRef.current = nextFrequencies;
-        return loadCriticalData(nextFrequencies);
+      let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
+      try {
+        inboxRsp = await inboxPromise;
+      } catch (loadError) {
+        void freqsPromise.catch(() => undefined);
+        throw loadError;
       }
+      if (isStaleReload()) return null;
 
       params.setMessages(inboxRsp.inboxItems ?? []);
       params.setHasLoadedInitialMessages(true);
+      params.setMessagesLoading(false);
+
+      const freqsRsp = await freqsPromise;
+      if (isStaleReload()) return null;
+
+      const nextFrequencies = freqsRsp.freqs.map((item) => item.freq);
+      let resolvedAnalysisReq = analysisReq;
+      let resolvedInboxReq = inboxReq;
+      let resolvedInboxRsp = inboxRsp;
+
+      if (shouldRebuildAnalysisRequests(params.queryState, allFrequencies, nextFrequencies)) {
+        params.optionsFreqsRef.current = nextFrequencies;
+        const rebuiltAnalysisReq = buildAnalysisReq(params.queryState, nextFrequencies);
+        const rebuiltInboxReq = buildInboxReq(params.queryState, nextFrequencies);
+        if (rebuiltAnalysisReq != null && rebuiltInboxReq != null) {
+          resolvedAnalysisReq = rebuiltAnalysisReq;
+          resolvedInboxReq = rebuiltInboxReq;
+          try {
+            const rebuiltInboxRsp = await fetchInboxMessages({ ...rebuiltInboxReq, newestFirst: params.newestFirst });
+            if (isStaleReload()) return null;
+            params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
+            resolvedInboxRsp = rebuiltInboxRsp;
+          } catch (loadError) {
+            if (isStaleReload()) return null;
+            if (!params.onUnauthorized(loadError)) {
+              params.onError(toErrorMessage(loadError));
+            }
+          }
+        }
+      }
+
       const nextFreqCountsByValue = new Map(freqsRsp.freqs.map((item) => [item.freq, item.count]));
       const nextFreqOptions = sortFrequenciesNumerically(nextFrequencies).map((freq) => ({
         value: freq,
@@ -419,11 +452,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       });
       params.setTopFreqs(topItems(freqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
-        startDate: inboxReq.sinceDateInclusiveMs ?? 0,
-        endDate: inboxReq.tillDateInclusiveMs ?? 0,
+        startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
+        endDate: resolvedInboxReq.tillDateInclusiveMs ?? 0,
       });
       params.invalidateCallsignGraph();
-      return { analysisReq, inboxReq, inboxRsp, freqsRsp };
+      return { analysisReq: resolvedAnalysisReq, inboxReq: resolvedInboxReq, inboxRsp: resolvedInboxRsp, freqsRsp };
     };
 
     const criticalData = await loadCriticalData(params.optionsFreqsRef.current);

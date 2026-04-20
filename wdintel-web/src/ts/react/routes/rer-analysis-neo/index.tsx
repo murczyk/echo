@@ -506,6 +506,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     onLoadMoreMessages={page.loadMoreMessages}
                     onOpenEditor={page.openEditor}
                     onSaveEditor={page.saveEditor}
+                    onSaveMessageUpdate={page.saveMessageUpdate}
                     onSaveMessageComment={page.onSaveMessageComment}
                     onToggleMessageBookmark={page.onToggleMessageBookmark}
                     onToggleMessageImportant={page.onToggleMessageImportant}

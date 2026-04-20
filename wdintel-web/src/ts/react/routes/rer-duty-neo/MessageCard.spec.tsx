@@ -19,6 +19,7 @@ function omitMuiLayoutProps(props: Record<string, unknown>) {
   delete clone.direction;
   delete clone.alignItems;
   delete clone.justifyContent;
+  delete clone.fullWidth;
   delete clone.useFlexGap;
   delete clone.flexWrap;
   delete clone.divider;
@@ -27,6 +28,8 @@ function omitMuiLayoutProps(props: Record<string, unknown>) {
   delete clone.variant;
   delete clone.underline;
   delete clone.color;
+  delete clone.onChange;
+  delete clone.onKeyDown;
   return clone;
 }
 
@@ -61,6 +64,18 @@ vi.mock('@mui/material', () => ({
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
   },
   Collapse: ({ children, in: open }: { children?: ReactNode; in?: boolean }) => (open ? <>{children}</> : null),
+  Chip: ({ label, onClick, onDelete }: { label?: ReactNode; onClick?: () => void; onDelete?: () => void }) => (
+    <span>
+      <button type="button" onClick={onClick}>
+        {label}
+      </button>
+      {onDelete ? (
+        <button type="button" onClick={onDelete} aria-label={`delete-${String(label)}`}>
+          delete
+        </button>
+      ) : null}
+    </span>
+  ),
   IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <button {...omitMuiLayoutProps(props)}>{children}</button>
   ),
@@ -74,6 +89,34 @@ vi.mock('@mui/material', () => ({
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
   },
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TextField: ({
+    label,
+    value,
+    onChange,
+    onKeyDown,
+    placeholder,
+    inputProps,
+    ...props
+  }: {
+    label?: ReactNode;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+    onKeyDown?: (event: { key: string; preventDefault: () => void }) => void;
+    placeholder?: string;
+    inputProps?: Record<string, unknown>;
+  } & Record<string, unknown>) => (
+    <label>
+      <span>{label}</span>
+      <input
+        placeholder={placeholder}
+        value={value ?? ''}
+        onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
+        onKeyDown={(event) => onKeyDown?.({ key: event.key, preventDefault: () => event.preventDefault() })}
+        {...(inputProps ?? {})}
+        {...omitMuiLayoutProps(props)}
+      />
+    </label>
+  ),
   Typography: ({ children, component, ...props }: PrimitiveProps) => {
     const Component = component ?? 'div';
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
@@ -81,9 +124,27 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('../../components/PowerChip', () => ({
-  PowerChip: ({ label, onClick }: { label: ReactNode; onClick?: () => void }) => (
-    <button onClick={onClick}>{label}</button>
-  ),
+  PowerChip: ({
+    label,
+    onDelete,
+    onClick,
+  }: {
+    label: ReactNode;
+    onClick?: () => void;
+    onDelete?: () => void;
+  }) =>
+    (
+      <span>
+        <button type="button" onClick={onClick}>
+          {label}
+        </button>
+        {onDelete ? (
+          <button type="button" onClick={onDelete} aria-label={`delete-${String(label)}`}>
+            delete
+          </button>
+        ) : null}
+      </span>
+    ),
 }));
 
 vi.mock('./useRelativeTimeDisplayMs', () => ({
@@ -114,6 +175,8 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
     timestamp: 1_709_999_940_000,
     time: '02:45',
     date: '2026-03-23',
+    callsigns: ['ALPHA'],
+    callsignsAlg2: ['ALPHA', 'BRAVO'],
     location: 'ЛИМАН ПЕРШИЙ',
     pointTokens: [],
     textMarked: [],
@@ -175,6 +238,14 @@ async function click(element: HTMLElement): Promise<void> {
   });
 }
 
+async function setInputValue(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
 describe('MessageCard', () => {
   const rendered: Rendered[] = [];
 
@@ -197,7 +268,77 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Повідомлення для перевірки вузького макета');
     expect(view.container.textContent).toContain('Коментар');
     expect(view.container.textContent).toContain('переміщення');
-    expect(view.container.querySelectorAll('a').length).toBeGreaterThanOrEqual(2);
+    expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).not.toBeNull();
+  });
+
+  it('renders duty actions with timer and new-tab links', async () => {
+    const view = await renderCard();
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('1 хв');
+    expect(view.container.textContent).not.toContain('Відкрити аналіз');
+    expect(view.container.textContent).not.toContain('Відкрити мапу');
+    expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).not.toBeNull();
+  });
+
+  it('renders analysis actions without timer and with analysis-only callsign controls', async () => {
+    const onAddCallsign = vi.fn().mockResolvedValue(true);
+    const onRemoveCallsign = vi.fn().mockResolvedValue(true);
+    const onAddSuggestedCallsign = vi.fn().mockResolvedValue(true);
+    const view = await renderCard({
+      displayMode: 'analysis',
+      analysisCallsignActions: {
+        onAddCallsign,
+        onRemoveCallsign,
+        onAddSuggestedCallsign,
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('1 хв');
+    expect(view.container.textContent).not.toContain('Відкрити аналіз');
+    expect(view.container.textContent).not.toContain('Відкрити мапу тут');
+    expect(view.container.textContent).not.toContain('Відкрити мапу в новому вікні');
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу тут"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу в новому вікні"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('Запропоновані позивні');
+    expect(view.container.textContent).toContain('Позивні');
+    expect(view.container.textContent).toContain('ALPHA');
+    expect(view.container.textContent).toContain('BRAVO');
+    expect(view.container.textContent).toContain('перевірки вузького макета');
+
+    const input = view.container.querySelector('input');
+    if (!(input instanceof HTMLInputElement)) throw new Error('callsign input not found');
+    await setInputValue(input, 'charlie');
+
+    const addButton = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.getAttribute('aria-label') === 'Додати позивний',
+    );
+    if (addButton == null) throw new Error('add button not found');
+
+    const removeButton = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.getAttribute('aria-label') === 'delete-ALPHA',
+    );
+    if (removeButton == null) throw new Error('remove button not found');
+    await click(removeButton);
+    expect(onRemoveCallsign).toHaveBeenCalledWith('ALPHA');
+
+    const suggestedButton = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('BRAVO'),
+    );
+    if (suggestedButton == null) throw new Error('suggested button not found');
+    await click(suggestedButton);
+    expect(onAddSuggestedCallsign).toHaveBeenCalledWith('BRAVO');
+  });
+
+  it('does not render analysis-only callsign controls in duty mode', async () => {
+    const view = await renderCard();
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('Позивні ще не додані');
+    expect(view.container.textContent).not.toContain('Додати позивний');
   });
 
   it('shows selected tags first and can reveal the rest on demand', async () => {

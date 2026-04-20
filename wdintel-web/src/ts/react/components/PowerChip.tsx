@@ -3,6 +3,7 @@ import { SxProps, Theme, getContrastRatio } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 
 type PowerChipProps = {
+  href?: string;
   label: ReactNode;
   color?: ChipProps['color'];
   selected?: boolean;
@@ -40,6 +41,7 @@ function getReadableTextColor(backgroundColor: string): string {
 }
 
 export function PowerChip({
+  href,
   label,
   color = 'primary',
   selected = false,
@@ -65,7 +67,8 @@ export function PowerChip({
   size = 'small',
   title,
 }: PowerChipProps) {
-  const isInteractive = interactive ?? Boolean(onClick || onDelete);
+  const isInteractive = interactive ?? Boolean(onClick || onDelete || href);
+  const isClickable = interactive ?? Boolean(onClick || href);
   const hasExplicitPalette =
     backgroundColor !== undefined ||
     selectedBackgroundColor !== undefined ||
@@ -101,10 +104,11 @@ export function PowerChip({
   return (
     <Chip
       size={size}
+      {...(href != null ? { component: 'a' as const, href } : {})}
       color={hasExplicitPalette ? undefined : color}
       label={label}
       title={title}
-      onClick={isInteractive ? onClick : undefined}
+      onClick={isInteractive && href == null ? onClick : undefined}
       onDelete={onDelete}
       variant={variant}
       sx={[
@@ -119,7 +123,7 @@ export function PowerChip({
           fontFamily,
           minWidth,
           opacity: selected ? 1 : inactiveOpacity,
-          cursor: isInteractive ? 'pointer' : 'text',
+          cursor: isClickable ? 'pointer' : 'text',
           '& .MuiChip-label': {
             px: labelPaddingX,
             py: labelPaddingY,
@@ -127,7 +131,10 @@ export function PowerChip({
             alignItems: 'center',
             lineHeight: 'normal',
           },
-          ...(isInteractive
+          '& .MuiChip-deleteIcon': {
+            cursor: onDelete != null ? 'pointer' : 'inherit',
+          },
+          ...(isClickable
             ? {
                 '&:hover': {
                   opacity: 1,

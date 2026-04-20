@@ -184,6 +184,7 @@ function CallsignWithHint({
   unitsMap,
   freq,
   networkIds,
+  linkCallsigns = true,
 }: {
   text: string;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -191,9 +192,14 @@ function CallsignWithHint({
   unitsMap?: Record<number, Unit>;
   freq?: string | null;
   networkIds?: number[] | null;
+  linkCallsigns?: boolean;
 }) {
   const displayText = text.toUpperCase();
   const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
+
+  if (!linkCallsigns) {
+    return <span>{displayText}</span>;
+  }
 
   // If we don't have networks or unitsMap, just render as plain link
   if (!networks || !unitsMap) {
@@ -340,6 +346,7 @@ export function renderMarkedText(
   messagePointEtalons?: string[],
   options?: {
     showPointLinks?: boolean;
+    linkCallsigns?: boolean;
     message?: InboxMessage;
     callsignInfoMap?: Record<string, CallsignInfoRes>;
     networks?: Network[];
@@ -349,6 +356,7 @@ export function renderMarkedText(
   },
 ): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
+  const linkCallsigns = options?.linkCallsigns !== false;
   const messageForMap = options?.message;
   const fromNodes = collectPointEtalons(nodes);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
@@ -375,6 +383,7 @@ export function renderMarkedText(
           unitsMap={options?.unitsMap}
           freq={options?.freq}
           networkIds={options?.networkIds}
+          linkCallsigns={linkCallsigns}
         />
       );
     }

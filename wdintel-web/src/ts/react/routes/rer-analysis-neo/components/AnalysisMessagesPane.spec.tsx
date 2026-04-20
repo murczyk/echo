@@ -21,11 +21,12 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('../../rer-duty-neo/MessageCard', () => ({
-  MessageCard: (props: {
+  AnalysisMessageCard: (props: {
     id: number;
     onComment: () => void;
     onDelete: () => void;
     onEditDetails: () => void;
+    analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
     <div data-testid={`message-card-${props.id}`}>
       <button type="button" onClick={props.onComment}>
@@ -37,6 +38,12 @@ vi.mock('../../rer-duty-neo/MessageCard', () => ({
       <button type="button" onClick={props.onEditDetails}>
         edit-{props.id}
       </button>
+      {props.analysisCallsignActions != null ? <span>analysis-callsigns</span> : null}
+      {props.analysisCallsignActions != null ? (
+        <button type="button" onClick={() => props.analysisCallsignActions?.onRemoveCallsign('ALPHA')}>
+          remove-callsign
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -115,6 +122,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     onLoadMoreMessages: vi.fn(),
     onOpenEditor: vi.fn(),
     onSaveEditor: vi.fn(),
+    onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
     onSaveMessageComment: vi.fn(),
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
@@ -235,5 +243,37 @@ describe('AnalysisMessagesPane', () => {
     await click(getButton(view.container, 'edit-7'));
 
     expect(onOpenEditor).toHaveBeenCalledWith(7);
+  });
+
+  it('passes analysis-only message update wiring into cards', async () => {
+    const onSaveMessageUpdate = vi.fn().mockResolvedValue(true);
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage()]],
+        onSaveMessageUpdate,
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('analysis-callsigns');
+  });
+
+  it('normalizes callsigns when removing them through the analysis card', async () => {
+    const onSaveMessageUpdate = vi.fn(async (_messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
+      const updated = updater(buildMessage({ callsigns: ['Alpha'] }));
+      expect(updated.callsigns).toEqual([]);
+      return true;
+    });
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage({ callsigns: ['Alpha'] })]],
+        onSaveMessageUpdate,
+      }),
+    );
+    rendered.push(view);
+
+    await click(getButton(view.container, 'remove-callsign'));
+
+    expect(onSaveMessageUpdate).toHaveBeenCalled();
   });
 });

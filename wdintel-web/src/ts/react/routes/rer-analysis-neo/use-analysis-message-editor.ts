@@ -16,6 +16,7 @@ type Result = {
   closeEditor: () => void;
   openEditor: (messageId: number) => void;
   saveEditor: (message: InboxMessage) => Promise<void>;
+  saveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
 };
 
 function toErrorMessage(error: unknown): string {
@@ -45,22 +46,43 @@ export function useAnalysisMessageEditor({
     setEditorMessage(null);
   }, []);
 
-  const saveEditor = useCallback(async (message: InboxMessage) => {
-    if (editorMessage == null) return;
-    setEditorSaveInFlight(true);
-    onError('');
-    try {
-      await submitAnalysisInboxMessages({ messages: [[editorMessage.id, message]] });
-      onUpdateLocalMessage(editorMessage.id, () => message);
-      setEditorMessage(null);
-    } catch (error) {
-      if (!onUnauthorized(error)) {
-        onError(toErrorMessage(error));
+  const saveMessageUpdate = useCallback(
+    async (messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
+      const entry = messages.find(([id]) => id === messageId) ?? null;
+      if (entry == null) return false;
+      const nextMessage = updater(entry[1]);
+      if (nextMessage === entry[1]) return true;
+
+      onError('');
+      try {
+        await submitAnalysisInboxMessages({ messages: [[messageId, nextMessage]] });
+        onUpdateLocalMessage(messageId, () => nextMessage);
+        return true;
+      } catch (error) {
+        if (!onUnauthorized(error)) {
+          onError(toErrorMessage(error));
+        }
+        return false;
       }
-    } finally {
-      setEditorSaveInFlight(false);
-    }
-  }, [editorMessage, onError, onUnauthorized, onUpdateLocalMessage]);
+    },
+    [messages, onError, onUnauthorized, onUpdateLocalMessage],
+  );
+
+  const saveEditor = useCallback(
+    async (message: InboxMessage) => {
+      if (editorMessage == null) return;
+      setEditorSaveInFlight(true);
+      try {
+        const saved = await saveMessageUpdate(editorMessage.id, () => message);
+        if (saved) {
+          setEditorMessage(null);
+        }
+      } finally {
+        setEditorSaveInFlight(false);
+      }
+    },
+    [editorMessage, saveMessageUpdate],
+  );
 
   return {
     editorMessage,
@@ -68,5 +90,6 @@ export function useAnalysisMessageEditor({
     closeEditor,
     openEditor,
     saveEditor,
+    saveMessageUpdate,
   };
 }

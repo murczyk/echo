@@ -303,6 +303,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     toggleRightPanel,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,
+    saveMessageUpdate: editor.saveMessageUpdate,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Box, Button, Collapse, Stack, Tooltip, Typography } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import { Box, Button, Chip, CircularProgress, Collapse, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
 
 import type { CallsignInfoRes, InboxMessage, Network, Tag, MessageMediaInfo, Unit } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
@@ -8,6 +9,12 @@ import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVarian
 import { renderMarkedText } from './MarkedText';
 
 const PREVIEW_IMAGE_HEIGHT_PX = 100;
+
+export type AnalysisCallsignActions = {
+  onAddCallsign: (callsign: string) => Promise<boolean> | boolean;
+  onRemoveCallsign: (callsign: string) => Promise<boolean> | boolean;
+  onAddSuggestedCallsign: (callsign: string) => Promise<boolean> | boolean;
+};
 
 function isImageMediaAttachment(m: MessageMediaInfo): boolean {
   const ct = String(m.contentType ?? '').trim();
@@ -67,6 +74,162 @@ function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   const s = (m.fileName ?? raw.file_name ?? '').trim();
   if (s !== '') return s;
   return '<файл без назви>';
+}
+
+function normalizeCallsign(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function uniqueNormalizedCallsigns(values: string[]): string[] {
+  return values.reduce<string[]>((acc, value) => {
+    const normalized = normalizeCallsign(value);
+    if (normalized === '' || acc.includes(normalized)) return acc;
+    acc.push(normalized);
+    return acc;
+  }, []);
+}
+
+function buildSuggestedCallsigns(msg: InboxMessage): string[] {
+  const current = new Set(uniqueNormalizedCallsigns(msg.callsigns ?? []));
+  return uniqueNormalizedCallsigns(msg.callsignsAlg2 ?? []).filter((callsign) => callsign.length <= 12 && !current.has(callsign));
+}
+
+function AnalysisCallsignsSection({
+  msg,
+  actions,
+}: {
+  msg: InboxMessage;
+  actions: AnalysisCallsignActions;
+}) {
+  const [callsignDraft, setCallsignDraft] = useState('');
+  const [addingCallsign, setAddingCallsign] = useState(false);
+  const currentCallsigns = useMemo(() => uniqueNormalizedCallsigns(msg.callsigns ?? []), [msg.callsigns]);
+  const proposedCallsigns = useMemo(() => buildSuggestedCallsigns(msg), [msg]);
+  const messageResetKey = msg.messageUid ?? `${msg.timestamp ?? ''}-${msg.text ?? ''}`;
+
+  useEffect(() => {
+    setCallsignDraft('');
+  }, [messageResetKey]);
+
+  const addCallsign = async () => {
+    if (addingCallsign) return;
+    const callsign = normalizeCallsign(callsignDraft);
+    if (callsign === '') return;
+    if (currentCallsigns.includes(callsign)) {
+      setCallsignDraft('');
+      return;
+    }
+    setAddingCallsign(true);
+    try {
+      const saved = await actions.onAddCallsign(callsign);
+      if (saved) setCallsignDraft('');
+    } finally {
+      setAddingCallsign(false);
+    }
+  };
+
+  return (
+    <Stack spacing={0.75} sx={{ minWidth: 0 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.4 }}>
+        Позивні
+      </Typography>
+      <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
+        {currentCallsigns.length > 0
+          ? currentCallsigns.map((callsign) => (
+              <PowerChip
+                key={callsign}
+                label={callsign}
+                onDelete={() => void actions.onRemoveCallsign(callsign)}
+                color="primary"
+                size="small"
+                sx={{
+                  height: 28,
+                  '& .MuiChip-label': {
+                    px: 1,
+                    py: 0,
+                  },
+                  '& .MuiChip-deleteIcon': {
+                    fontSize: 18,
+                    ml: 0.25,
+                    mr: 0.5,
+                  },
+                }}
+              />
+            ))
+          : null}
+        <TextField
+          size="small"
+          value={callsignDraft}
+          placeholder="Новий"
+          autoComplete="off"
+          onChange={(event) => setCallsignDraft(event.target.value.toUpperCase())}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void addCallsign();
+            }
+          }}
+          inputProps={{
+            autoComplete: 'off',
+            spellCheck: false,
+            maxLength: 12,
+          }}
+          sx={{
+            width: { xs: '100%', sm: 132 },
+            minWidth: 108,
+            flex: '0 1 132px',
+            '& .MuiInputBase-root': {
+              height: 30,
+              borderRadius: 1,
+              fontSize: 12,
+            },
+            '& .MuiInputBase-input': {
+              py: 0,
+              px: 1,
+              lineHeight: '30px',
+            },
+            '& .MuiInputBase-input:-webkit-autofill, & .MuiInputBase-input:-webkit-autofill:hover, & .MuiInputBase-input:-webkit-autofill:focus, & .MuiInputBase-input:-webkit-autofill:active': {
+              WebkitBoxShadow: '0 0 0 1000px var(--color-card) inset',
+              WebkitTextFillColor: 'inherit',
+              transition: 'background-color 9999s ease-out 0s',
+              caretColor: 'inherit',
+            },
+          }}
+        />
+        <Tooltip title="Додати позивний" enterDelay={300}>
+          <span>
+            <IconButton
+              aria-label="Додати позивний"
+              onClick={() => void addCallsign()}
+              disabled={normalizeCallsign(callsignDraft) === '' || addingCallsign}
+              size="small"
+              sx={{ width: 30, height: 30, flexShrink: 0, ml: 0.25 }}
+            >
+              {addingCallsign ? <CircularProgress size={16} thickness={5} color="inherit" /> : <AddIcon fontSize="small" />}
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Stack>
+
+      {proposedCallsigns.length > 0 ? (
+        <Stack spacing={0.75}>
+          <Typography variant="caption" color="text.secondary">
+            Запропоновані позивні
+          </Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            {proposedCallsigns.map((callsign) => (
+              <Chip
+                key={callsign}
+                label={callsign}
+                onClick={() => void actions.onAddSuggestedCallsign(callsign)}
+                variant="filled"
+              />
+            ))}
+          </Stack>
+        </Stack>
+      ) : null}
+    </Stack>
+  );
 }
 
 function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo }) {
@@ -394,6 +557,7 @@ export function MessageCardMessageBody({
   tagsMap,
   onToggleTag,
   tagsLayout = 'full',
+  analysisCallsignActions,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -403,6 +567,7 @@ export function MessageCardMessageBody({
   tagsMap: Record<number, Tag>;
   onToggleTag: (tagId: number) => void;
   tagsLayout?: TagsLayoutVariant;
+  analysisCallsignActions?: AnalysisCallsignActions;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -421,10 +586,12 @@ export function MessageCardMessageBody({
   );
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
+  const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
   const textPrimary =
     msg.textMarked && msg.textMarked.length > 0
-      ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
+          ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
           showPointLinks,
+          linkCallsigns: analysisCallsignActions == null,
           message: msg,
           callsignInfoMap,
           networks,
@@ -471,13 +638,16 @@ export function MessageCardMessageBody({
           </Typography>
         </Stack>
       ) : null}
-      <Box sx={{ pt: 0.25, minWidth: 0 }}>
-        {tagsLayout !== 'hidden' && (
+      {hasTags ? (
+        <Box sx={{ pt: 0.25, minWidth: 0 }}>
           <span className="inline-flex flex-wrap gap-1 min-w-0 w-full">
             <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
           </span>
-        )}{' '}
-      </Box>
+        </Box>
+      ) : null}
+      {analysisCallsignActions != null ? <AnalysisCallsignsSection msg={msg} actions={analysisCallsignActions} /> : null}
     </Stack>
   );
 }
+
+export const MessageCardContent = MessageCardMessageBody;

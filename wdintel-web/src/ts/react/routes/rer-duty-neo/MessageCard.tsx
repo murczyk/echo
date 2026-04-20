@@ -1,7 +1,10 @@
-import { Box } from '@mui/material';
+import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
+import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useMemo } from 'react';
 import type { CallsignInfoRes, InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
-import { MessageCardMessageBody, MessageCardWatermark } from './MessageCardContent';
+import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import {
@@ -9,6 +12,7 @@ import {
   buildAnalysisMapHrefWithSearch,
   etalonFallbackWhenNoNetworks,
   getPointEtalonsFromMessage,
+  messageRenderDistance,
   type TagsLayoutVariant,
 } from './utils';
 
@@ -49,6 +53,7 @@ export type MessageCardProps = {
   onEditDetails?: () => void;
   onToggleTag: (tagId: number) => void;
   rightHeaderInsetPx?: number;
+  analysisCallsignActions?: AnalysisCallsignActions;
 };
 
 export function MessageCard({
@@ -78,6 +83,7 @@ export function MessageCard({
   onEditDetails,
   onToggleTag,
   rightHeaderInsetPx = 0,
+  analysisCallsignActions,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
@@ -92,6 +98,51 @@ export function MessageCard({
   const mapHref =
     pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons, msg) : buildAnalysisHref(msg, true);
   const watermarkUserName = authUserName?.trim() ?? '';
+  const timeDistance =
+    msg.timestamp != null && relativeTimeMs != null ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
+
+  const topRight =
+    displayMode === 'duty' ? (
+      timeDistance != null ? (
+        <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+            {timeDistance}
+          </Typography>
+        </Box>
+      ) : (
+        <Box sx={{ minHeight: 28 }} />
+      )
+    ) : (
+      <Box sx={{ minHeight: 28 }} />
+    );
+
+  const actionsRight =
+    displayMode === 'duty' ? (
+      <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
+        <CardActionLink
+          href={mapHref}
+          icon={<MapOutlinedIcon aria-hidden />}
+          label="Відкрити мапу"
+          target="_blank"
+        />
+        <CardActionLink
+          href={buildAnalysisHref(msg, false)}
+          icon={<BarChartOutlinedIcon aria-hidden />}
+          label="Відкрити аналіз"
+          target="_blank"
+        />
+      </Stack>
+    ) : (
+      <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
+        <CardActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Відкрити мапу тут" />
+        <CardActionLink
+          href={mapHref}
+          icon={<OpenInNewOutlinedIcon aria-hidden />}
+          label="Відкрити мапу в новому вікні"
+          target="_blank"
+        />
+      </Stack>
+    );
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
@@ -99,7 +150,6 @@ export function MessageCard({
     networkRowContentWidthPct: MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT,
     id,
     msg,
-    mapHref,
     copiedFeedbackId,
     groupName,
     senderName,
@@ -107,8 +157,9 @@ export function MessageCard({
     networkDisplayMap,
     networkMap: derivedNetworkMap,
     etalonNoNetworkLabel,
-    relativeTimeMs,
     rightInsetPx: rightHeaderInsetPx,
+    topRight,
+    actionsRight,
     onBookmark,
     onImportant,
     onComment,
@@ -161,8 +212,80 @@ export function MessageCard({
           </Box>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardMessageBody msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} callsignInfoMap={callsignInfoMap} networks={networks} unitsMap={unitsMap} />
+        <MessageCardContent
+          msg={msg}
+          tagsMap={tagsMap}
+          onToggleTag={onToggleTag}
+          tagsLayout={tagsLayout}
+          analysisCallsignActions={analysisCallsignActions}
+          callsignInfoMap={callsignInfoMap}
+          networks={networks}
+          unitsMap={unitsMap}
+        />
       </Box>
     </Box>
+  );
+}
+
+type BaseMessageCardProps = Omit<MessageCardProps, 'displayMode'>;
+
+export function DutyMessageCard(props: BaseMessageCardProps) {
+  return <MessageCard {...props} displayMode="duty" />;
+}
+
+export function AnalysisMessageCard(props: BaseMessageCardProps) {
+  return <MessageCard {...props} displayMode="analysis" />;
+}
+
+function CardActionLink({
+  href,
+  icon,
+  label,
+  target,
+}: {
+  href: string;
+  icon: JSX.Element;
+  label: string;
+  target?: '_blank';
+}) {
+  return (
+    <Tooltip title={label} enterDelay={300}>
+      <IconButton
+        component="a"
+        href={href}
+        target={target}
+        rel={target === '_blank' ? 'noopener noreferrer' : undefined}
+        aria-label={label}
+        size="small"
+        color="inherit"
+      sx={{
+        width: 30,
+        height: 30,
+        borderRadius: 999,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'color-mix(in srgb, var(--color-card) 88%, white 12%)',
+        color: 'text.primary',
+        transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease',
+        '& .MuiSvgIcon-root': {
+          fontSize: 16,
+          color: 'var(--color-icons)',
+          flexShrink: 0,
+        },
+        '&:hover': {
+          bgcolor: 'action.hover',
+          borderColor: 'var(--message-callsign-color)',
+          color: 'var(--message-callsign-color)',
+          textDecoration: 'none',
+        },
+        '&:focus-visible': {
+          outline: '2px solid var(--message-callsign-color)',
+          outlineOffset: '2px',
+        },
+      }}
+      >
+        {icon}
+      </IconButton>
+    </Tooltip>
   );
 }

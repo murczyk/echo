@@ -7,7 +7,6 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
-import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PriorityHighOutlinedIcon from '@mui/icons-material/PriorityHighOutlined';
@@ -15,9 +14,10 @@ import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Box, Button, ButtonGroup, CircularProgress, Link, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import type { InboxMessage, Network } from '../../../../Bindings';
-import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
+import { formatDateNoYear, formatTime } from './utils';
 
 /** Where the card is shown: duty columns use a 4-wide action grid when stacked; analysis uses 3. */
 export type MessageCardDisplayMode = 'duty' | 'analysis';
@@ -357,9 +357,8 @@ function NetworkEtalonSection({
   const geoButton = hasLocationDetails ? (
     <Tooltip title={location} placement="top">
       <Box
-        component="button"
-        type="button"
-        aria-label={`Показати локацію: ${location}`}
+        component="span"
+        aria-label={`Локація: ${location}`}
         sx={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -368,21 +367,13 @@ function NetworkEtalonSection({
           width: 18,
           height: 18,
           p: 0,
-          border: '1px solid',
-          borderColor: 'var(--color-icons)',
+          border: '1px solid transparent',
           borderRadius: '50%',
-          bgcolor: 'transparent',
           color: 'var(--color-icons)',
-          cursor: 'help',
           flexShrink: 0,
           alignSelf: 'center',
           '&:hover': {
             color: 'var(--message-callsign-color)',
-            borderColor: 'var(--message-callsign-color)',
-          },
-          '&:focus-visible': {
-            outline: '2px solid var(--message-callsign-color)',
-            outlineOffset: '2px',
           },
         }}
       >
@@ -538,63 +529,13 @@ function NetworkEtalonSection({
   );
 }
 
-function AnalysisActionLink({ href, icon, label }: { href: string; icon: JSX.Element; label: string }) {
-  return (
-    <Link
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      underline="none"
-      color="inherit"
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 0.75,
-        minHeight: 28,
-        px: 1,
-        py: 0.5,
-        borderRadius: 999,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'color-mix(in srgb, var(--color-card) 88%, white 12%)',
-        color: 'text.primary',
-        fontSize: 12,
-        fontWeight: 600,
-        lineHeight: 1,
-        whiteSpace: 'nowrap',
-        textDecoration: 'none',
-        transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease',
-        '& .MuiSvgIcon-root': {
-          fontSize: 16,
-          color: 'var(--color-icons)',
-          flexShrink: 0,
-        },
-        '&:hover': {
-          bgcolor: 'action.hover',
-          borderColor: 'var(--message-callsign-color)',
-          color: 'var(--message-callsign-color)',
-          textDecoration: 'none',
-        },
-        '&:focus-visible': {
-          outline: '2px solid var(--message-callsign-color)',
-          outlineOffset: '2px',
-        },
-      }}
-    >
-      {icon}
-      <Box component="span">{label}</Box>
-    </Link>
-  );
-}
-
 export type MessageCardHeaderProps = {
   compact?: boolean;
   displayMode: MessageCardDisplayMode;
-  /** Width % of the bottom header row for the network / etalon block (remainder for relative time). */
+  /** Width % of the bottom header row for the network / etalon block. */
   networkRowContentWidthPct?: number;
   id: number;
   msg: InboxMessage;
-  mapHref: string;
   copiedFeedbackId: string | null;
   groupName: string | null;
   senderName: string | null;
@@ -602,8 +543,9 @@ export type MessageCardHeaderProps = {
   networkDisplayMap: Record<number, string>;
   networkMap: Record<number, Network>;
   etalonNoNetworkLabel: string | null;
-  relativeTimeMs: number | null;
   rightInsetPx?: number;
+  topRight?: ReactNode;
+  actionsRight?: ReactNode;
   onBookmark: () => void;
   onImportant: () => void;
   onComment: () => void;
@@ -619,7 +561,6 @@ export function MessageCardHeader({
   networkRowContentWidthPct = 80,
   id,
   msg,
-  mapHref,
   copiedFeedbackId,
   groupName,
   senderName,
@@ -627,8 +568,9 @@ export function MessageCardHeader({
   networkDisplayMap,
   networkMap,
   etalonNoNetworkLabel,
-  relativeTimeMs,
   rightInsetPx = 0,
+  topRight,
+  actionsRight,
   onBookmark,
   onImportant,
   onComment,
@@ -637,9 +579,6 @@ export function MessageCardHeader({
   onDelete,
   onEditDetails,
 }: MessageCardHeaderProps) {
-  const timeDistance =
-    msg.timestamp != null && relativeTimeMs != null ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
-
   const dateTimeBlock = (
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       <Stack direction="row" spacing={0.5} alignItems="center">
@@ -676,24 +615,6 @@ export function MessageCardHeader({
           />
         }
       />
-    ) : null;
-
-  const analysisLink = (
-    <AnalysisActionLink
-      href={buildAnalysisHref(msg, false)}
-      icon={<BarChartOutlinedIcon aria-hidden />}
-      label="Аналіз"
-    />
-  );
-
-  const mapLink = <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />;
-  const timeDistanceBlock =
-    timeDistance != null ? (
-      <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-          {timeDistance}
-        </Typography>
-      </Box>
     ) : null;
 
   if (compact) {
@@ -751,7 +672,9 @@ export function MessageCardHeader({
             gridRow: 1,
           }}
         >
-          {analysisLink}
+          {topRight ?? (
+            <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />
+          )}
         </Box>
         <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
           <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
@@ -802,7 +725,7 @@ export function MessageCardHeader({
             gridRow: 2,
           }}
         >
-          {mapLink}
+          {actionsRight ?? null}
         </Box>
         <Box
           sx={{
@@ -815,7 +738,7 @@ export function MessageCardHeader({
             columnGap: 1,
             pr: `${rightInsetPx}px`,
           }}
-        >
+          >
           <Box
             sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}
           >
@@ -827,7 +750,6 @@ export function MessageCardHeader({
               location={msg.location}
             />
           </Box>
-          {timeDistanceBlock}
         </Box>
       </Box>
     );
@@ -875,7 +797,7 @@ export function MessageCardHeader({
           gridRow: 1,
         }}
       >
-        {analysisLink}
+        {topRight ?? <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />}
       </Box>
       <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
         <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
@@ -919,7 +841,7 @@ export function MessageCardHeader({
           gridRow: 2,
         }}
       >
-        {mapLink}
+        {actionsRight ?? null}
       </Box>
       <Box
         sx={{
@@ -933,7 +855,7 @@ export function MessageCardHeader({
           pr: `${rightInsetPx}px`,
         }}
       >
-        <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
+          <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
           <NetworkEtalonSection
             networkIds={networkIds}
             networkDisplayMap={networkDisplayMap}
@@ -942,7 +864,6 @@ export function MessageCardHeader({
             location={msg.location}
           />
         </Box>
-        {timeDistanceBlock}
       </Box>
     </Box>
   );

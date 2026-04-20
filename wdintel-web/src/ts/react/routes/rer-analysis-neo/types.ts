@@ -201,6 +201,7 @@ export type AnalysisPageActions = {
   updateExisting: () => void;
   updateQueryState: (patch: Partial<AnalysisQueryState>) => void;
   saveEditor: (message: InboxMessage) => void;
+  saveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
 };
 
 export type AnalysisPageViewModel = AnalysisPageState & AnalysisPageActions;
