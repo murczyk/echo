@@ -513,6 +513,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     onToggleMessageTag={page.onToggleMessageTag}
                     profiles={page.profiles}
                     tagsMap={page.tagsMap}
+                    tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
                     callsignInfoMap={page.summaryCallsignsInfo}
                     networks={page.networks}
                     unitsMap={page.unitsMap}

@@ -126,12 +126,6 @@ navBar user shared activeName props =
             else
                 "Звичайний режим"
 
-        menuWithSubs =
-            menuItemWithSubs props activeName
-
-        menuRoute =
-            menuItemRoute props activeName
-
         operationalSubs =
             [ internalMenu Route.Path.RerDuty "rer-duty" "Класичний"
             , internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "Новий"
@@ -161,7 +155,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
             ]
 
-        etalonkaSubs =
+        databaseSubs =
             [ internalMenu Route.Path.RerNetworks "networks" "Мережі"
             , internalMenu Route.Path.RerPalitra "palitra" "Палітри"
             , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
@@ -237,26 +231,37 @@ navBar user shared activeName props =
             ]
 
         menuItems =
-            List.concat
-                [ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+            if shared.serverInfo == Nothing then
+                []
+
+            else
+                let
+                    menuWithSubs =
+                        menuItemWithSubs props activeName
+
+                    menuRoute =
+                        menuItemRoute props activeName
+                in
+                List.concat
+                    [ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "operational" "Оперативний" operationalSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menuWithSubs "analysis" "Аналіз" analysisSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menuWithSubs "etalonka" "Еталонка" etalonkaSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
-                    [ menuWithSubs "goi" "ГОІ" goiSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
-                    [ menuWithSubs "import" "Імпорт" importSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
-                    [ menuWithSubs "other" "Конвертери" converterSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
-                    [ menuWithSubs "other-tools" "Інше" otherSubs ]
-                , ifOrEmpty (hasRole "Basic" user)
-                    [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "general" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
-                , ifOrEmpty (hasRole "Admin" user)
-                    [ menuWithSubs "admin" "Адмін" adminSubs ]
-                ]
+                    , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                        [ menuWithSubs "analysis" "Аналіз" analysisSubs ]
+                    , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                        [ menuWithSubs "database" "База даних" databaseSubs ]
+                    , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
+                        [ menuWithSubs "goi" "ГОІ" goiSubs ]
+                    , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
+                        [ menuWithSubs "import" "Імпорт" importSubs ]
+                    , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
+                        [ menuWithSubs "other" "Конвертери" converterSubs ]
+                    , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
+                        [ menuWithSubs "other-tools" "Інше" otherSubs ]
+                    , ifOrEmpty (hasRole "Basic" user)
+                        [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "general" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
+                    , ifOrEmpty (hasRole "Admin" user)
+                        [ menuWithSubs "admin" "Адмін" adminSubs ]
+                    ]
 
         navbarStyles =
             [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"

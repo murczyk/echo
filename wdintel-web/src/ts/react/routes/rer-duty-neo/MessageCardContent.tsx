@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import { Box, Button, Chip, CircularProgress, Collapse, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
@@ -97,13 +98,21 @@ function buildSuggestedCallsigns(msg: InboxMessage): string[] {
 function AnalysisCallsignsSection({
   msg,
   actions,
+  callsignInfoMap,
 }: {
   msg: InboxMessage;
   actions: AnalysisCallsignActions;
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
 }) {
   const [callsignDraft, setCallsignDraft] = useState('');
   const [addingCallsign, setAddingCallsign] = useState(false);
   const currentCallsigns = useMemo(() => uniqueNormalizedCallsigns(msg.callsigns ?? []), [msg.callsigns]);
+  const analysisVisibleCallsigns = useMemo(() => {
+    if (!callsignInfoMap) return currentCallsigns;
+    // Analysis-only UX: keep in the bottom "Позивні" section only catalog-backed callsigns.
+    // This intentionally excludes plain body-only tokens so case 4 does not duplicate there.
+    return currentCallsigns.filter((callsign) => (callsignInfoMap[callsign.toLowerCase()]?.res?.length ?? 0) > 0);
+  }, [callsignInfoMap, currentCallsigns]);
   const proposedCallsigns = useMemo(() => buildSuggestedCallsigns(msg), [msg]);
   const messageResetKey = msg.messageUid ?? `${msg.timestamp ?? ''}-${msg.text ?? ''}`;
 
@@ -134,8 +143,8 @@ function AnalysisCallsignsSection({
         Позивні
       </Typography>
       <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
-        {currentCallsigns.length > 0
-          ? currentCallsigns.map((callsign) => (
+        {analysisVisibleCallsigns.length > 0
+          ? analysisVisibleCallsigns.map((callsign) => (
               <PowerChip
                 key={callsign}
                 label={callsign}
@@ -247,6 +256,8 @@ function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo
         rel="noopener noreferrer"
         sx={{
           mb: 0.5,
+          width: 'fit-content',
+          minWidth: 0,
           maxWidth: '100%',
           minHeight: 26,
           py: 0.25,
@@ -255,18 +266,22 @@ function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo
           lineHeight: 1.25,
           textTransform: 'none',
           fontWeight: 500,
-          '& .MuiButton-startIcon': { mr: 0.35, ml: -0.25, '& i': { fontSize: 12 } },
+          alignSelf: 'flex-start',
+          overflow: 'hidden',
+          justifyContent: 'flex-start',
+          '& .MuiButton-startIcon': { mr: 0.35, ml: -0.25, '& svg': { fontSize: 14 } },
         }}
-        startIcon={<Box component="i" className="bi bi-download" aria-hidden sx={{ fontStyle: 'normal' }} />}
-      >
-        <Box
+        startIcon={<DownloadOutlinedIcon aria-hidden />}
+        >
+          <Box
           component="span"
           sx={{
-            maxWidth: 200,
+            display: 'block',
+            minWidth: 0,
+            width: '100%',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            display: 'inline-block',
             verticalAlign: 'bottom',
           }}
         >
@@ -555,6 +570,7 @@ export function MessageCardMessageBody({
   compact = false,
   msg,
   tagsMap,
+  tagsLoading = false,
   onToggleTag,
   tagsLayout = 'full',
   analysisCallsignActions,
@@ -565,6 +581,7 @@ export function MessageCardMessageBody({
   compact?: boolean;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
+  tagsLoading?: boolean;
   onToggleTag: (tagId: number) => void;
   tagsLayout?: TagsLayoutVariant;
   analysisCallsignActions?: AnalysisCallsignActions;
@@ -587,19 +604,27 @@ export function MessageCardMessageBody({
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
-  const textPrimary =
-    msg.textMarked && msg.textMarked.length > 0
+  const textPrimary = useMemo(
+    () =>
+      msg.textMarked && msg.textMarked.length > 0
           ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
-          showPointLinks,
-          linkCallsigns: analysisCallsignActions == null,
-          message: msg,
-          callsignInfoMap,
-          networks,
-          unitsMap,
-          freq: msg.freq ?? null,
-          networkIds: msg.networkIds ?? null,
-        })
-      : msg.text || '—';
+            showPointLinks,
+            message: msg,
+            callsignInfoMap,
+            networks,
+            unitsMap,
+            freq: msg.freq ?? null,
+            networkIds: msg.networkIds ?? null,
+            hideLeadingDuplicateCallsigns: analysisCallsignActions != null ? msg.callsigns ?? [] : null,
+          })
+        : (() => {
+            const text = msg.text?.trim() ?? '';
+            if (text === '' || text === '—' || text === '-') return null;
+            return msg.text;
+          })(),
+    [analysisCallsignActions, callsignInfoMap, msg, networks, showPointLinks, tagsMap, unitsMap],
+  );
+  const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => node != null) : textPrimary != null;
 
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
@@ -617,14 +642,16 @@ export function MessageCardMessageBody({
           ))}
         </Box>
       ) : null}
-      <Typography
-        component="div"
-        variant="body2"
-        className={msg.textMarked && msg.textMarked.length > 0 ? 'text-marked' : undefined}
-        sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.35 }}
-      >
-        {textPrimary}
-      </Typography>
+      {hasTextPrimary ? (
+        <Typography
+          component="div"
+          variant="body2"
+          className={msg.textMarked && msg.textMarked.length > 0 ? 'text-marked' : undefined}
+          sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.35 }}
+        >
+          {textPrimary}
+        </Typography>
+      ) : null}
       {msg.extendedForm != null && msg.extendedForm.trim() !== '' ? (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
           <Box
@@ -638,14 +665,20 @@ export function MessageCardMessageBody({
           </Typography>
         </Stack>
       ) : null}
-      {hasTags ? (
+      {tagsLoading ? (
+        <Box sx={{ pt: 0.25, minHeight: 34, display: 'flex', alignItems: 'center' }} aria-label="Завантаження тегів">
+          <CircularProgress size={14} />
+        </Box>
+      ) : hasTags ? (
         <Box sx={{ pt: 0.25, minWidth: 0 }}>
           <span className="inline-flex flex-wrap gap-1 min-w-0 w-full">
             <MessageCardTagChips msg={msg} tagsMap={tagsMap} onToggleTag={onToggleTag} tagsLayout={tagsLayout} />
           </span>
         </Box>
       ) : null}
-      {analysisCallsignActions != null ? <AnalysisCallsignsSection msg={msg} actions={analysisCallsignActions} /> : null}
+      {analysisCallsignActions != null ? (
+        <AnalysisCallsignsSection msg={msg} actions={analysisCallsignActions} callsignInfoMap={callsignInfoMap} />
+      ) : null}
     </Stack>
   );
 }

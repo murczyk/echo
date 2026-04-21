@@ -1117,7 +1117,7 @@ contentBlock user shared network model =
             [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
             ]
         , div [ class "flex gap-[8px]" ]
-            [ Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+            [ Button.new { label = "Звіт \"Еталонний опис\"", onClick = ReportModalOpenedByUser } |> Button.view
             , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
                     |> Button.withStyleDanger
@@ -1211,8 +1211,8 @@ view user shared model =
                         , isDownloading = model.reportDownloadInProgress
                         , reportType = model.report
                         , reportFormConfig = reportFormConfig
-                        , title = "Звіт \"Еталонка\""
-                        , description = "Еталонка для мережі"
+                        , title = "Звіт \"Еталонний опис\""
+                        , description = "Еталонний опис для мережі"
                         }
                   in
                   ReportModal.view modalConfig

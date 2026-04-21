@@ -28,6 +28,7 @@ export type MessageCardProps = {
   displayMode?: MessageCardDisplayMode;
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
+  tagsLoading?: boolean;
   /** Baseline "now" when the card is off-screen; while visible, relative time updates every minute. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
@@ -62,6 +63,7 @@ export function MessageCard({
   feedCount = 1,
   displayMode = 'duty',
   tagsLayout = 'full',
+  tagsLoading = false,
   referenceTimeMs,
   authUserName,
   groupName,
@@ -215,6 +217,7 @@ export function MessageCard({
         <MessageCardContent
           msg={msg}
           tagsMap={tagsMap}
+          tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           tagsLayout={tagsLayout}
           analysisCallsignActions={analysisCallsignActions}

@@ -129,6 +129,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     onToggleMessageTag: vi.fn(),
     profiles: {},
     tagsMap: {},
+    tagsLoading: false,
     ...overrides,
   };
 }

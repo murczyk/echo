@@ -1716,8 +1716,8 @@ filterPanel user shared model =
                 , isDownloading = model.reportDownloadInProgress
                 , reportType = model.report
                 , reportFormConfig = reportFormConfig
-                , title = "Звіт \"Еталонка\""
-                , description = "Еталонка по фільтру частота/підрозділ/смуга"
+                , title = "Звіт \"Еталонний опис\""
+                , description = "Еталонний опис по фільтру частота/підрозділ/смуга"
                 }
           in
           ReportModal.view modalConfig
@@ -1869,7 +1869,7 @@ view _ shared user model =
                         ]
                     , let
                         reportButton =
-                            Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+                            Button.new { label = "Звіт \"Еталонний опис\"", onClick = ReportModalOpenedByUser } |> Button.view
 
                         goiButton =
                             Button.new { label = "Звіт \"ГОІ\"", onClick = GoiReportDownloadClickedByUser }

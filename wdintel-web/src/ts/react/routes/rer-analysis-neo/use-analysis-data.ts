@@ -324,6 +324,37 @@ export function useAnalysisData({
     }
   }, [newCallsignsLoading, onError, onUnauthorized, optionsFreqValues, queryState]);
 
+  const loadMissingNetworksForMessages = useCallback(
+    async (messageItems: Array<[number, InboxMessage]>) => {
+      const existingNetworkIds = new Set(networks.map((network) => network.id));
+      const missingNetworkIds = Array.from(
+        new Set(messageItems.flatMap(([, message]) => message.networkIds ?? [])),
+      ).filter((networkId) => !existingNetworkIds.has(networkId));
+      if (missingNetworkIds.length === 0) return;
+
+      try {
+        const loadedNetworks = await fetchNetworksByIds(missingNetworkIds);
+        if (loadedNetworks.length === 0) return;
+        const mergedNetworks = [...networks];
+        loadedNetworks.forEach((network) => {
+          const index = mergedNetworks.findIndex((current) => current.id === network.id);
+          if (index >= 0) {
+            mergedNetworks[index] = network;
+          } else {
+            mergedNetworks.push(network);
+          }
+        });
+        setNetworks(mergedNetworks);
+        setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
+      } catch (loadError) {
+        if (!onUnauthorized(loadError)) {
+          onError(toErrorMessage(loadError));
+        }
+      }
+    },
+    [networks, onError, onUnauthorized, setNetworkDisplayMap, setNetworks, unitsMap],
+  );
+
   const { clearAnalysisResults, onUpdateLocalMessage, patchMessages } = useAnalysisDataStateUtils({
     emptyNewCallsigns,
     emptyOptions,
@@ -451,6 +482,7 @@ export function useAnalysisData({
       const rsp = await fetchInboxMessages({ ...inboxReq, nolimit: true, newestFirst });
       setMessages(rsp.inboxItems ?? []);
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
+      await loadMissingNetworksForMessages(rsp.inboxItems ?? []);
       setNolimitShown(true);
       setNoMoreToLoad(true);
     } catch (loadError) {
@@ -460,7 +492,7 @@ export function useAnalysisData({
     } finally {
       setMessagesPaging(false);
     }
-  }, [newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
+  }, [loadMissingNetworksForMessages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   const loadMoreMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, optionsFreqValues);
@@ -483,6 +515,7 @@ export function useAnalysisData({
       const nextMessages = rsp.inboxItems ?? [];
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       setMessages((current) => [...current, ...nextMessages]);
+      await loadMissingNetworksForMessages(nextMessages);
       if (nextMessages.length === 0) {
         setNoMoreToLoad(true);
       }
@@ -498,7 +531,7 @@ export function useAnalysisData({
         setMessagesPaging(false);
       }
     }
-  }, [messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
+  }, [loadMissingNetworksForMessages, messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   useEffect(() => {
     void reload();

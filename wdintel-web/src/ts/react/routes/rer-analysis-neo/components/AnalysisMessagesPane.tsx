@@ -32,6 +32,7 @@ type Props = {
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
+  tagsLoading: boolean;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -55,6 +56,7 @@ type AnalysisMessageCardItemProps = {
   profiles: Record<string, SignalProfileEntry | null>;
   referenceTimeMs: number | null;
   tagsMap: Record<number, Tag>;
+  tagsLoading: boolean;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -78,6 +80,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   profiles,
   referenceTimeMs,
   tagsMap,
+  tagsLoading,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -98,6 +101,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       copiedFeedbackId={copiedFeedbackId}
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
+      tagsLoading={tagsLoading}
       callsignInfoMap={callsignInfoMap}
       networks={networks}
       unitsMap={unitsMap}
@@ -168,6 +172,7 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageTag,
   profiles,
   tagsMap,
+  tagsLoading,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -257,6 +262,7 @@ function AnalysisMessagesPaneComponent({
               profiles={profiles}
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}
+              tagsLoading={tagsLoading}
               callsignInfoMap={callsignInfoMap}
               networks={networks}
               unitsMap={unitsMap}

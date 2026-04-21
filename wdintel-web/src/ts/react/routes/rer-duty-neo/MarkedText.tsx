@@ -6,7 +6,7 @@ import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 
 import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../Bindings';
 import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
-import { formatCallsignHintTooltipData, getCallsignHintResult } from '../rer-analysis-neo/callsign-hints';
+import { formatCallsignHintTooltipData, getCallsignHintResult, isCallsignRelatedToNetworks } from '../rer-analysis-neo/callsign-hints';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
@@ -61,6 +61,36 @@ function callsignLinkStyle(): CSSProperties {
     borderBottom: '2px solid var(--message-callsign-color)',
     textDecoration: 'none',
   };
+}
+
+function renderPlainCallsign(
+  displayText: string,
+  options?: { muted?: boolean; title?: string; testId?: string; tinted?: boolean },
+) {
+  return (
+    <Box
+      component="span"
+      data-testid={options?.testId}
+      title={options?.title}
+      sx={{
+        color: options?.muted ? 'text.secondary' : 'inherit',
+        ...(options?.tinted
+          ? {
+              color: 'var(--message-callsign-color)',
+              textDecoration: 'underline',
+              textDecorationColor: 'var(--message-callsign-color)',
+              textDecorationThickness: '2px',
+              textUnderlineOffset: '2px',
+            }
+          : {}),
+        borderBottom: 'none',
+        textDecoration: 'none',
+        fontWeight: 600,
+      }}
+    >
+      {displayText}
+    </Box>
+  );
 }
 
 function PointToken({
@@ -196,23 +226,42 @@ function CallsignWithHint({
 }) {
   const displayText = text.toUpperCase();
   const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
-
-  if (!linkCallsigns) {
-    return <span>{displayText}</span>;
-  }
+  const callsignInfo = callsignInfoMap?.[displayText.toLowerCase()]?.res ?? null;
+  const hasCatalogMatch = (callsignInfo?.length ?? 0) > 0;
+  const isNetworkRelated = hasCatalogMatch && !!networks && !!unitsMap && isCallsignRelatedToNetworks(callsignInfo, networks, unitsMap);
+  const hasMessageNetworks = (networkIds?.length ?? 0) > 0;
+  // Behavior change: callsign highlighting is intentionally split into 4 UX states.
+  // States 1-3 stay clickable; state 4 is intentionally plain text.
+  // Exact network matches keep the badge/tooltip, catalog-only callsigns keep the badge/tooltip,
+  // and network-related non-exact callsigns remain clickable plain links.
 
   // If we don't have networks or unitsMap, just render as plain link
   if (!networks || !unitsMap) {
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="content-token--ADP hover:cursor-pointer"
-        style={callsignLinkStyle()}
-      >
-        {displayText}
-      </a>
+  return (
+      linkCallsigns ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="content-token--ADP hover:cursor-pointer"
+          style={callsignLinkStyle()}
+        >
+          {displayText}
+        </a>
+      ) : (
+        <Box
+          component="span"
+          className="content-token--ADP"
+          sx={{
+            color: 'inherit',
+            textDecoration: 'none',
+            borderBottom: 'none',
+            fontWeight: 600,
+          }}
+        >
+          {displayText}
+        </Box>
+      )
     );
   }
 
@@ -228,19 +277,40 @@ function CallsignWithHint({
 
   const tooltipText = formatCallsignHintTooltipData(hintResult);
   const isNetworkHint = hintResult.strategy === 'network';
+  const shouldLinkCallsign = linkCallsigns && (tooltipText != null || hasCatalogMatch);
+  const callsignDisplay = shouldLinkCallsign ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="content-token--ADP hover:cursor-pointer"
+      style={callsignLinkStyle()}
+    >
+      {displayText}
+    </a>
+  ) : (
+    <Box
+      component="span"
+      className="content-token--ADP"
+      sx={{
+        color: 'inherit',
+        textDecoration: 'none',
+        borderBottom: 'none',
+        fontWeight: 600,
+      }}
+    >
+      {displayText}
+    </Box>
+  );
 
-  if (!tooltipText) {
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="content-token--ADP hover:cursor-pointer"
-        style={callsignLinkStyle()}
-      >
-        {displayText}
-      </a>
-    );
+  if (tooltipText == null) {
+    if (hasMessageNetworks) {
+      if (!hasCatalogMatch) {
+        return renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' });
+      }
+      return callsignDisplay;
+    }
+    return shouldLinkCallsign ? callsignDisplay : renderPlainCallsign(displayText);
   }
 
   return (
@@ -325,15 +395,7 @@ function CallsignWithHint({
         }}
       >
         <Box component="span" sx={{ display: 'inline-block', pr: '8px' }}>
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="content-token--ADP hover:cursor-pointer"
-            style={callsignLinkStyle()}
-          >
-            {displayText}
-          </a>
+          {callsignDisplay}
         </Box>
       </Badge>
     </Tooltip>
@@ -353,28 +415,73 @@ export function renderMarkedText(
     unitsMap?: Record<number, Unit>;
     freq?: string | null;
     networkIds?: number[] | null;
+    hideLeadingDuplicateCallsigns?: string[] | null;
   },
 ): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
   const linkCallsigns = options?.linkCallsigns !== false;
   const messageForMap = options?.message;
+  const duplicateCallsigns = new Set((options?.hideLeadingDuplicateCallsigns ?? []).map((callsign) => callsign.trim().toUpperCase()).filter((callsign) => callsign !== ''));
   const fromNodes = collectPointEtalons(nodes);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
     messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
   );
-  return nodes.map((node, i) => {
+  const renderedNodes: ReactNode[] = [];
+  let duplicateBlockOpen = false;
+  let previousWasLineBreak = true;
+  const isDuplicateCallsignText = (text: string) => {
+    const normalized = text.trim().toUpperCase();
+    return normalized !== '' && duplicateCallsigns.has(normalized);
+  };
+  const isDuplicateCallsignTextNode = (node: ContentNode) =>
+    typeof node !== 'string' && 'CNTextC' in node && node.CNTextC.text.trim() !== '' && node.CNTextC.text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '').every(isDuplicateCallsignText);
+  const isDuplicateCallsignNode = (node: ContentNode) => typeof node !== 'string' && 'CNCallsignC' in node && isDuplicateCallsignText(node.CNCallsignC.text);
+  const shouldOpenDuplicateBlock = (node: ContentNode) =>
+    duplicateCallsigns.size > 0 &&
+    previousWasLineBreak &&
+    (isDuplicateCallsignNode(node) || isDuplicateCallsignTextNode(node));
+
+  for (let i = 0; i < nodes.length; i += 1) {
+    const node = nodes[i];
+
+    if (duplicateBlockOpen) {
+      if (typeof node === 'string' && node === 'CNNewlineC') {
+        previousWasLineBreak = true;
+        continue;
+      }
+      if (isDuplicateCallsignNode(node) || isDuplicateCallsignTextNode(node)) {
+        previousWasLineBreak = false;
+        continue;
+      }
+      duplicateBlockOpen = false;
+    }
+
+    if (shouldOpenDuplicateBlock(node)) {
+      duplicateBlockOpen = true;
+      previousWasLineBreak = false;
+      continue;
+    }
+
     if (typeof node === 'string') {
-      if (node === 'CNNewlineC') return <br key={i} />;
-      return null;
+      if (node === 'CNNewlineC') {
+        previousWasLineBreak = true;
+        renderedNodes.push(<br key={i} />);
+      }
+      continue;
     }
+
     if ('CNTextC' in node) {
-      return <span key={i}>{node.CNTextC.text}</span>;
+      previousWasLineBreak = node.CNTextC.text.endsWith('\n');
+      renderedNodes.push(<span key={i}>{node.CNTextC.text}</span>);
+      continue;
     }
+
     if ('CNCallsignC' in node) {
       const { text } = node.CNCallsignC;
       const callsignText = text.trim();
-      if (callsignText === '') return null;
-      return (
+      previousWasLineBreak = false;
+      if (callsignText === '') continue;
+      renderedNodes.push(
         <CallsignWithHint
           key={i}
           text={callsignText}
@@ -384,32 +491,39 @@ export function renderMarkedText(
           freq={options?.freq}
           networkIds={options?.networkIds}
           linkCallsigns={linkCallsigns}
-        />
+        />,
       );
+      continue;
     }
+
     if ('CNHighlightC' in node) {
       const { text } = node.CNHighlightC;
-      if (text.trim() === '') return null;
-      return <KeywordToken key={i} text={text} />;
+      previousWasLineBreak = false;
+      if (text.trim() === '') continue;
+      renderedNodes.push(<KeywordToken key={i} text={text} />);
+      continue;
     }
+
     if ('CNSignalC' in node) {
       const { text } = node.CNSignalC;
-      if (text.trim() === '') return null;
-      return (
+      previousWasLineBreak = false;
+      if (text.trim() === '') continue;
+      renderedNodes.push(
         <span key={i} className="content-token--ADV">
           {text}
-        </span>
+        </span>,
       );
+      continue;
     }
+
     if ('CNPointC' in node) {
       const { etalon, text } = node.CNPointC;
-      if (text.trim() === '') return null;
+      previousWasLineBreak = false;
+      if (text.trim() === '') continue;
       const cleanEtalon = String(etalon ?? '').trim();
-      if (!showPointLinks) {
-        return <span key={i}>{text}</span>;
-      }
-      if (cleanEtalon === '') {
-        return <span key={i}>{text}</span>;
+      if (!showPointLinks || cleanEtalon === '') {
+        renderedNodes.push(<span key={i}>{text}</span>);
+        continue;
       }
       const etalonsForUrl = allPointEtalons.length > 0 ? allPointEtalons : [etalon];
       const hrefAll = buildAnalysisMapHrefWithSearch(etalonsForUrl, messageForMap);
@@ -418,7 +532,7 @@ export function renderMarkedText(
         allPointEtalons.length > 1
           ? `Відкрити на мапі аналізу: ${allPointEtalons.join(', ')}`
           : `Відкрити на мапі аналізу: ${cleanEtalon}`;
-      return (
+      renderedNodes.push(
         <PointToken
           key={i}
           text={text}
@@ -426,9 +540,10 @@ export function renderMarkedText(
           hrefSingle={hrefSingle}
           title={title}
           hasMultiplePoints={allPointEtalons.length > 1}
-        />
+        />,
       );
     }
-    return null;
-  });
+  }
+
+  return renderedNodes;
 }

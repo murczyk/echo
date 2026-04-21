@@ -349,10 +349,11 @@ function NetworkEtalonSection({
   networkDisplayMap: Record<number, string>;
   networkMap: Record<number, Network>;
   /** When `networkIds` is empty: unit / «Не встановлена» / «—». */
-  fallbackEtalonLabel: string;
+  fallbackEtalonLabel: string | null;
   location: string | null | undefined;
 }) {
   const hasLocationDetails = location != null && location !== '' && location !== 'Не встановлена';
+  const fallbackLabel = fallbackEtalonLabel?.trim() ?? '';
 
   const geoButton = hasLocationDetails ? (
     <Tooltip title={location} placement="top">
@@ -419,12 +420,116 @@ function NetworkEtalonSection({
     );
   });
 
+  if (uniqueRenderedNetworks.length === 0 && fallbackLabel === '' && geoButton == null) {
+    return null;
+  }
+
+  const showNetworkFallback = networkIds.length > 0;
+  const networkContent =
+    uniqueRenderedNetworks.length > 0 ? (
+      <Box
+        sx={{
+          minWidth: 0,
+          maxWidth: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          rowGap: 0.25,
+          alignItems: 'flex-start',
+        }}
+      >
+        {uniqueRenderedNetworks.map(({ networkId, label, badge }) => (
+          <Box
+            key={networkId}
+            sx={{
+              minWidth: 0,
+              maxWidth: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              flexWrap: 'nowrap',
+              lineHeight: 1.1,
+            }}
+          >
+            <Link
+              href={`/rer-networks/${networkId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Відкрити мережу в новій вкладці"
+              underline="none"
+              color="inherit"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                maxWidth: '100%',
+                verticalAlign: 'top',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+                '&:hover': { color: 'var(--message-callsign-color)' },
+                '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
+              }}
+            >
+              <Box component="span" sx={{ fontWeight: 700 }}>
+                {label}
+              </Box>
+              {badge ? (
+                <Box
+                  component="span"
+                  className="badge badge-no-unit-sm"
+                  sx={{
+                    ml: '0.35em',
+                    verticalAlign: 'middle',
+                    position: 'relative',
+                    top: '-0.06em',
+                  }}
+                >
+                  в дорозвідці
+                </Box>
+              ) : null}
+              <OpenInNewOutlinedIcon
+                sx={{
+                  fontSize: '1.2em',
+                  width: '1.2em',
+                  height: '1.2em',
+                  verticalAlign: 'middle',
+                  ml: '0.2em',
+                  color: 'var(--color-icons)',
+                  opacity: 0.75,
+                  display: 'inline-block',
+                  position: 'relative',
+                  top: '-0.05em',
+                }}
+                aria-hidden
+              />
+            </Link>
+          </Box>
+        ))}
+      </Box>
+    ) : fallbackLabel !== '' ? (
+      <Typography
+        component="span"
+        variant="body2"
+        sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, display: 'inline-flex', alignItems: 'center' }}
+      >
+        {fallbackLabel}
+      </Typography>
+    ) : showNetworkFallback ? (
+      <Typography
+        component="span"
+        variant="body2"
+        sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, display: 'inline-flex', alignItems: 'center' }}
+      >
+        —
+      </Typography>
+    ) : null;
+
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}>
-      <PeopleOutlineOutlinedIcon
-        sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0, alignSelf: 'center', mt: '1px' }}
-        titleAccess="Еталонна прив'язка"
-      />
+      {uniqueRenderedNetworks.length > 0 || fallbackLabel !== '' || showNetworkFallback ? (
+        <PeopleOutlineOutlinedIcon
+          sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0, alignSelf: 'center', mt: '1px' }}
+          titleAccess="Еталонна прив'язка"
+        />
+      ) : null}
       <Box
         sx={{
           minWidth: 0,
@@ -434,95 +539,7 @@ function NetworkEtalonSection({
           alignItems: 'flex-start',
         }}
       >
-        {uniqueRenderedNetworks.length > 0 ? (
-          <>
-            <Box
-              sx={{
-                minWidth: 0,
-                maxWidth: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                rowGap: 0.25,
-                alignItems: 'flex-start',
-              }}
-            >
-              {uniqueRenderedNetworks.map(({ networkId, label, badge }) => (
-                <Box
-                  key={networkId}
-                  sx={{
-                    minWidth: 0,
-                    maxWidth: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.5,
-                    flexWrap: 'nowrap',
-                    lineHeight: 1.1,
-                  }}
-                >
-                  <Link
-                    href={`/rer-networks/${networkId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Відкрити мережу в новій вкладці"
-                    underline="none"
-                    color="inherit"
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      maxWidth: '100%',
-                      verticalAlign: 'top',
-                      overflowWrap: 'anywhere',
-                      wordBreak: 'break-word',
-                      '&:hover': { color: 'var(--message-callsign-color)' },
-                      '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
-                    }}
-                  >
-                    <Box component="span" sx={{ fontWeight: 700 }}>
-                      {label}
-                    </Box>
-                    {badge ? (
-                      <Box
-                        component="span"
-                        className="badge badge-no-unit-sm"
-                        sx={{
-                          ml: '0.35em',
-                          verticalAlign: 'middle',
-                          position: 'relative',
-                          top: '-0.06em',
-                        }}
-                      >
-                        в дорозвідці
-                      </Box>
-                    ) : null}
-                    <OpenInNewOutlinedIcon
-                      sx={{
-                        fontSize: '1.2em',
-                        width: '1.2em',
-                        height: '1.2em',
-                        verticalAlign: 'middle',
-                        ml: '0.2em',
-                        color: 'var(--color-icons)',
-                        opacity: 0.75,
-                        display: 'inline-block',
-                        position: 'relative',
-                        top: '-0.05em',
-                      }}
-                      aria-hidden
-                    />
-                  </Link>
-                </Box>
-              ))}
-            </Box>
-          </>
-        ) : networkIds.length > 0 ? (
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 18 }}>
-            <CircularProgress size={14} sx={{ color: 'var(--color-icons)' }} />
-          </Box>
-        ) : (
-          <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-            {fallbackEtalonLabel}
-          </Typography>
-        )}
+        {networkContent}
       </Box>
       {geoButton}
     </Stack>
@@ -741,15 +758,15 @@ export function MessageCardHeader({
           >
           <Box
             sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}
-          >
-            <NetworkEtalonSection
-              networkIds={networkIds}
-              networkDisplayMap={networkDisplayMap}
-              networkMap={networkMap}
-              fallbackEtalonLabel={etalonNoNetworkLabel ?? '—'}
-              location={msg.location}
-            />
-          </Box>
+        >
+          <NetworkEtalonSection
+            networkIds={networkIds}
+            networkDisplayMap={networkDisplayMap}
+            networkMap={networkMap}
+            fallbackEtalonLabel={etalonNoNetworkLabel}
+            location={msg.location}
+          />
+        </Box>
         </Box>
       </Box>
     );
@@ -854,13 +871,13 @@ export function MessageCardHeader({
           columnGap: 1,
           pr: `${rightInsetPx}px`,
         }}
-      >
+        >
           <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
           <NetworkEtalonSection
             networkIds={networkIds}
             networkDisplayMap={networkDisplayMap}
             networkMap={networkMap}
-            fallbackEtalonLabel={etalonNoNetworkLabel ?? '—'}
+            fallbackEtalonLabel={etalonNoNetworkLabel}
             location={msg.location}
           />
         </Box>

@@ -60,7 +60,7 @@ function filterCallsignsByNetworkUnits(callsigns: CallsignInfo[], unitsMap: Reco
   return callsigns.filter((callsign) => unitsWithSameRegiment.some((unit) => unit.id === callsign.unitId));
 }
 
-function isCallsignRelatedToNetworks(callsignInfo: CallsignInfo[] | null, networks: Network[], unitsMap: Record<number, Unit>): boolean {
+export function isCallsignRelatedToNetworks(callsignInfo: CallsignInfo[] | null, networks: Network[], unitsMap: Record<number, Unit>): boolean {
   if (!callsignInfo || callsignInfo.length === 0) return false;
   const networkUnits = getUnitsInfoByIds(getAllUnitIdsForNetworks(networks), unitsMap);
   const callsignUnits = findCallsignUnits(callsignInfo, unitsMap);
