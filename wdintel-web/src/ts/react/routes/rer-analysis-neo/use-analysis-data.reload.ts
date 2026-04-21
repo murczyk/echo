@@ -14,6 +14,7 @@ import type { AnalysisStatsReq } from '../../../../Bindings';
 import {
   fetchAnalysisAors,
   fetchAnalysisCallsigns,
+  fetchAnalysisCallsignInfos,
   fetchAnalysisCount,
   fetchAnalysisFreqs,
   fetchAnalysisGroups,
@@ -487,16 +488,16 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
     const loadReferenceData = async () => {
       try {
-        const messageNetworkIds = Array.from(
-          new Set((criticalData.inboxRsp.inboxItems ?? []).flatMap(([, message]) => message.networkIds ?? [])),
-        );
-        const [units, networksByMessageIds] = await Promise.all([
+        const [units, networksStatsRsp] = await Promise.all([
           getUnitsList(),
-          messageNetworkIds.length > 0 ? fetchNetworksByIds(messageNetworkIds) : Promise.resolve([]),
+          fetchAnalysisNetworks(criticalData.analysisReq),
         ]);
         if (isStaleReload()) return;
         params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
-        params.setNetworks((current) => mergeNetworks(current, networksByMessageIds));
+        const networkIds = networksStatsRsp.networks.map((item) => item.networkId);
+        const networksByAnalysisIds = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
+        if (isStaleReload()) return;
+        params.setNetworks((current) => mergeNetworks(current, networksByAnalysisIds));
       } catch (loadError) {
         if (isStaleReload()) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
@@ -527,6 +528,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.setTopCallsigns(topItems(callsignsRsp.callsigns, (item) => item.callsign, (item) => item.count));
         params.setTopUnits(topItems(unitsRsp.units, (item) => item.unit, (item) => item.count));
         params.setTopLocations(topItems(locationsRsp.locations, (item) => item.location, (item) => item.count));
+        const callsignInfos = await fetchAnalysisCallsignInfos(callsignsRsp.callsigns.map((item) => item.callsign));
+        if (isStaleReload()) return;
+        params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(criticalData.inboxRsp.callsigns, callsignInfos));
       } catch (loadError) {
         if (isStaleReload()) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));

@@ -279,7 +279,7 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
-    expect(container.querySelector('span.content-token--ADP')?.textContent).toBe('WOLF');
+    expect(container.textContent).toContain('WOLF');
   });
 
   it('renders a linked network-related callsign without a direct message-network match', async () => {
@@ -411,7 +411,7 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
-    expect(container.querySelector('span.content-token--ADP')?.textContent).toBe('FOX');
+    expect(container.textContent).toContain('FOX');
   });
 
   it('renders a plain attention state for callsigns that are not in the network etalon catalog', async () => {
@@ -433,6 +433,7 @@ describe('MarkedText', () => {
     expect(muted?.textContent).toBe('GHOST');
     expect(muted?.getAttribute('title')).toBeNull();
     expect(container.querySelector('a.content-token--ADP')).toBeNull();
+    expect(container.querySelector('span.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AnalysisFilterSectionId } from './types';
 import { emptyQueryState } from './helpers';
@@ -8,6 +8,7 @@ import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 const mocks = vi.hoisted(() => ({
   fetchAnalysisAors: vi.fn(),
   fetchAnalysisCallsigns: vi.fn(),
+  fetchAnalysisCallsignInfos: vi.fn(),
   fetchAnalysisCount: vi.fn(),
   fetchAnalysisFreqs: vi.fn(),
   fetchAnalysisGroups: vi.fn(),
@@ -31,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisAors: mocks.fetchAnalysisAors,
   fetchAnalysisCallsigns: mocks.fetchAnalysisCallsigns,
+  fetchAnalysisCallsignInfos: mocks.fetchAnalysisCallsignInfos,
   fetchAnalysisCount: mocks.fetchAnalysisCount,
   fetchAnalysisFreqs: mocks.fetchAnalysisFreqs,
   fetchAnalysisGroups: mocks.fetchAnalysisGroups,
@@ -77,6 +79,14 @@ async function flushPromises(): Promise<void> {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+beforeEach(() => {
+  mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
+  mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
+  mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
+  mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
+  mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
 });
 
 function buildBaseReq() {
@@ -376,6 +386,7 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+    mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
     mocks.fetchNetworksByIds.mockResolvedValue([]);
     mocks.getUnitsList.mockResolvedValue([]);
 
@@ -451,7 +462,105 @@ describe('reloadAnalysisData', () => {
 
     expect(setMessages).toHaveBeenCalledTimes(1);
     expect(setMessages).toHaveBeenCalledWith([[1, { networkIds: [] }]]);
-    expect(setSummaryCallsignsInfo).toHaveBeenCalledTimes(1);
+    expect(setSummaryCallsignsInfo).toHaveBeenCalled();
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
+  });
+
+  it('hydrates summary hints and network metadata from the full analysis scope', async () => {
+    mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [{ callsign: 'alpha', count: 11 }, { callsign: 'beta', count: 7 }] });
+    mocks.fetchAnalysisCallsignInfos.mockResolvedValue([{ callsign: 'beta', res: [{ id: 1, comment: '', position: '', unit1: '', unit2: '', networkIdsReportedIn: [] }] }]);
+    mocks.fetchAnalysisUnits.mockResolvedValue({ units: [{ unit: 'UNIT-1', count: 12 }] });
+    mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [{ location: 'LOC-1', count: 13 }] });
+    mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [{ networkId: 11, count: 2 }], networkNames: [{ id: 11, name: 'Network 11' }] });
+    mocks.fetchNetworksByIds.mockResolvedValue([{ id: 11, name: 'Network 11' }]);
+    mocks.getUnitsList.mockResolvedValue([{ id: 1, name: 'Unit One' }]);
+    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [11] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    mocks.fetchAnalysisFreqs.mockResolvedValue({
+      freqs: [{ freq: '150.100', count: 1, isNew: false }],
+    });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+
+    const setSummaryCallsignsInfo = vi.fn();
+    const setTopCallsigns = vi.fn();
+    const setTopUnits = vi.fn();
+    const setTopLocations = vi.fn();
+    const setNetworks = vi.fn();
+    const setUnitsMap = vi.fn();
+
+    const reloadPromise = reloadAnalysisData({
+      clearAnalysisResults: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+        freqsSelected: ['150.100'],
+        adjacentFreqsRange: 0.002,
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: vi.fn(),
+      setCounts: vi.fn(),
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworkDisplayMap: vi.fn(),
+      setNetworks,
+      setUnitsMap,
+      setNewCallsigns: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading: vi.fn(),
+      setNewCallsignsLoadedKey: vi.fn(),
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions: vi.fn(),
+      setProfiles: vi.fn(),
+      setSummaryCallsignsInfo,
+      setSummaryLoading: vi.fn(),
+      setSummaryRows: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTopCallsigns,
+      setTopFreqs: vi.fn(),
+      setTopLocations,
+      setTopUnits,
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+    });
+
+    await reloadPromise;
+    await flushPromises();
+
+    expect(mocks.fetchAnalysisCallsignInfos).toHaveBeenCalledWith(['alpha', 'beta']);
+    expect(setTopCallsigns).toHaveBeenCalledWith([
+      { key: 'alpha', count: 11 },
+      { key: 'beta', count: 7 },
+    ]);
+    expect(setTopUnits).toHaveBeenCalledWith([{ key: 'UNIT-1', count: 12 }]);
+    expect(setTopLocations).toHaveBeenCalledWith([{ key: 'LOC-1', count: 13 }]);
+    expect(mocks.fetchAnalysisNetworks).toHaveBeenCalled();
+    expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11]);
+    expect(setUnitsMap).toHaveBeenCalledWith({ 1: { id: 1, name: 'Unit One' } });
+    expect(setNetworks).toHaveBeenCalled();
+    expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
+    expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
+      buildSummaryCallsignsInfo(
+        [{ callsign: 'alpha', res: [] }],
+        [{ callsign: 'beta', res: [{ id: 1, comment: '', position: '', unit1: '', unit2: '', networkIdsReportedIn: [] }] }],
+      ),
+    );
   });
 });

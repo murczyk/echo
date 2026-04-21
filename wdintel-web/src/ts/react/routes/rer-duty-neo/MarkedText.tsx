@@ -63,6 +63,15 @@ function callsignLinkStyle(): CSSProperties {
   };
 }
 
+function callsignPlainStyle(): CSSProperties {
+  return {
+    color: 'inherit',
+    textDecoration: 'none',
+    borderBottom: 'none',
+    fontWeight: 600,
+  };
+}
+
 function renderPlainCallsign(
   displayText: string,
   options?: { muted?: boolean; title?: string; testId?: string; tinted?: boolean },
@@ -251,13 +260,7 @@ function CallsignWithHint({
       ) : (
         <Box
           component="span"
-          className="content-token--ADP"
-          sx={{
-            color: 'inherit',
-            textDecoration: 'none',
-            borderBottom: 'none',
-            fontWeight: 600,
-          }}
+          sx={callsignPlainStyle()}
         >
           {displayText}
         </Box>
@@ -289,16 +292,7 @@ function CallsignWithHint({
       {displayText}
     </a>
   ) : (
-    <Box
-      component="span"
-      className="content-token--ADP"
-      sx={{
-        color: 'inherit',
-        textDecoration: 'none',
-        borderBottom: 'none',
-        fontWeight: 600,
-      }}
-    >
+    <Box component="span" sx={callsignPlainStyle()}>
       {displayText}
     </Box>
   );
