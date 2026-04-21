@@ -9,6 +9,7 @@ pub struct AreaOfResponsibility {
     pub name: String,
     pub description: Option<String>,
     pub is_top_level: bool,
+    pub order_for_report: f64,
     pub left_bound: f64,
     pub right_bound: f64,
     pub left_coordinates: Option<AorCoordinates>,
@@ -66,4 +67,19 @@ pub struct UpdateAreaOfResponsibilityReq {
 )]
 pub struct DeleteAreaOfResponsibilityReq {
     pub id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AreaOfResponsibilityReportOrder {
+    pub id: i64,
+    pub order_for_report: f64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateAreaOfResponsibilityReportOrderReq {
+    pub items: Vec<AreaOfResponsibilityReportOrder>,
 }

@@ -118,6 +118,7 @@ function buildAorLoadingRows(): AorRow[] {
     leftCoordinates: null,
     rightCoordinates: null,
     isTopLevel: false,
+    orderForReport: 100,
     createdAt: 0,
     locationConfigs: [],
   }));

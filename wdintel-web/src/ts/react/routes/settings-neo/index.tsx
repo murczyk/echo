@@ -14,11 +14,12 @@ import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-ne
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { PowerAlert } from '../../components/PowerAlert';
+import { SettingsReportsSection } from './SettingsReportsSection';
 
 type ZonePair = [number, SigintZone];
 type ZoneOption = { id: number; label: string };
 
-export type SettingsSection = 'general' | 'duty' | 'analysis';
+export type SettingsSection = 'general' | 'duty' | 'analysis' | 'reports';
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
@@ -37,7 +38,7 @@ function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
 }
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === 'duty' || section === 'analysis') return section;
+  if (section === 'duty' || section === 'analysis' || section === 'reports') return section;
   return 'general';
 }
 
@@ -57,6 +58,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [zoneId, setZoneId] = useState<number | null>(null);
   const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
   const [versionText, setVersionText] = useState<string>('невідома версія');
+  const [userRoles, setUserRoles] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadInProgress, setLoadInProgress] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -113,6 +115,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         setZones(zonesData);
         setZoneId(user.sigintZoneId);
         setInitialZoneId(user.sigintZoneId);
+        setUserRoles(user.roles ?? []);
 
         setDutyPrefsLoadError(null);
         if (prefsRsp == null) {
@@ -266,6 +269,13 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               aria-controls="settings-neo-panel-analysis"
               sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
+            <Tab
+              value="reports"
+              label="ЗВІТИ"
+              id="settings-neo-tab-reports"
+              aria-controls="settings-neo-panel-reports"
+              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
+            />
           </Tabs>
 
           {settingsSection === 'general' ? (
@@ -396,6 +406,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 </Stack>
               </Box>
             </Box>
+          ) : null}
+
+          {settingsSection === 'reports' ? (
+            <SettingsReportsSection active={settingsSection === 'reports'} userRoles={userRoles} />
           ) : null}
         </Card>
       </Stack>

@@ -27,10 +27,14 @@ export function AdminSystemSettingsNeoPage() {
   const [initialExactMatchOnlyDefault, setInitialExactMatchOnlyDefault] =
     useState(true);
   const [draftDutyTestEnabled, setDraftDutyTestEnabled] = useState(false);
+  const [draftDutyInsertHistoricalInterceptions, setDraftDutyInsertHistoricalInterceptions] =
+    useState(false);
   const [draftDutyTestSinceMs, setDraftDutyTestSinceMs] = useState(0);
   const [draftDutyTestLimit, setDraftDutyTestLimit] = useState(1);
   const [draftDutyPollIntervalSec, setDraftDutyPollIntervalSec] = useState(1);
   const [initialDutyTestEnabled, setInitialDutyTestEnabled] = useState(false);
+  const [initialDutyInsertHistoricalInterceptions, setInitialDutyInsertHistoricalInterceptions] =
+    useState(false);
   const [initialDutyTestSinceMs, setInitialDutyTestSinceMs] = useState(0);
   const [initialDutyTestLimit, setInitialDutyTestLimit] = useState(1);
   const [initialDutyPollIntervalSec, setInitialDutyPollIntervalSec] = useState(1);
@@ -53,10 +57,16 @@ export function AdminSystemSettingsNeoPage() {
         setDraftExactMatchOnlyDefault(nextValue);
         setInitialExactMatchOnlyDefault(nextValue);
         setDraftDutyTestEnabled(activeSettings?.rerDutyTestEnabled ?? false);
+        setDraftDutyInsertHistoricalInterceptions(
+          activeSettings?.rerDutyInsertHistoricalInterceptions ?? false,
+        );
         setDraftDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
         setDraftDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
         setDraftDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
         setInitialDutyTestEnabled(activeSettings?.rerDutyTestEnabled ?? false);
+        setInitialDutyInsertHistoricalInterceptions(
+          activeSettings?.rerDutyInsertHistoricalInterceptions ?? false,
+        );
         setInitialDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
         setInitialDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
         setInitialDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
@@ -79,6 +89,8 @@ export function AdminSystemSettingsNeoPage() {
   const isDirty =
     draftExactMatchOnlyDefault !== initialExactMatchOnlyDefault ||
     draftDutyTestEnabled !== initialDutyTestEnabled ||
+    draftDutyInsertHistoricalInterceptions !==
+      initialDutyInsertHistoricalInterceptions ||
     draftDutyTestSinceMs !== initialDutyTestSinceMs ||
     draftDutyTestLimit !== initialDutyTestLimit ||
     draftDutyPollIntervalSec !== initialDutyPollIntervalSec;
@@ -104,6 +116,7 @@ export function AdminSystemSettingsNeoPage() {
       await createSystemSettings(
         draftExactMatchOnlyDefault,
         draftDutyTestEnabled,
+        draftDutyInsertHistoricalInterceptions,
         testSinceMs,
         testLimit,
         pollIntervalSec,
@@ -113,6 +126,9 @@ export function AdminSystemSettingsNeoPage() {
       setDraftDutyPollIntervalSec(pollIntervalSec);
       setInitialExactMatchOnlyDefault(draftExactMatchOnlyDefault);
       setInitialDutyTestEnabled(draftDutyTestEnabled);
+      setInitialDutyInsertHistoricalInterceptions(
+        draftDutyInsertHistoricalInterceptions,
+      );
       setInitialDutyTestSinceMs(testSinceMs);
       setInitialDutyTestLimit(testLimit);
       setInitialDutyPollIntervalSec(pollIntervalSec);
@@ -191,6 +207,18 @@ export function AdminSystemSettingsNeoPage() {
                     />
                   }
                   label="Увімкнути тестову вибірку повідомлень"
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={draftDutyInsertHistoricalInterceptions}
+                      onChange={(_, checked) => {
+                        setSaveSuccess(null);
+                        setDraftDutyInsertHistoricalInterceptions(checked);
+                      }}
+                    />
+                  }
+                  label="Вставляти історичні перехоплення"
                 />
                 <TextField
                   label="Дата старту (timestamp ms)"

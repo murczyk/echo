@@ -4,6 +4,7 @@ type SystemSettingsItemRaw = {
   id: number;
   rer_analysis_units_exact_match_only_default: boolean;
   rer_duty_test_enabled: boolean;
+  rer_duty_insert_historical_interceptions: boolean;
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
@@ -17,6 +18,7 @@ type SystemSettingsCurrentRspRaw = {
   id: number | null;
   rer_analysis_units_exact_match_only_default: boolean;
   rer_duty_test_enabled: boolean;
+  rer_duty_insert_historical_interceptions: boolean;
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
@@ -29,6 +31,7 @@ type SystemSettingsListRspRaw = {
 type CreateSystemSettingsReqRaw = {
   rer_analysis_units_exact_match_only_default: boolean;
   rer_duty_test_enabled: boolean;
+  rer_duty_insert_historical_interceptions: boolean;
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
@@ -42,6 +45,7 @@ export type SystemSettingsItem = {
   id: number;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
   rerDutyTestEnabled: boolean;
+  rerDutyInsertHistoricalInterceptions: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
@@ -55,6 +59,7 @@ export type SystemSettingsCurrent = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
   rerDutyTestEnabled: boolean;
+  rerDutyInsertHistoricalInterceptions: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
@@ -66,6 +71,8 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     rerAnalysisUnitsExactMatchOnlyDefault:
       raw.rer_analysis_units_exact_match_only_default,
     rerDutyTestEnabled: raw.rer_duty_test_enabled,
+    rerDutyInsertHistoricalInterceptions:
+      raw.rer_duty_insert_historical_interceptions,
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
@@ -82,6 +89,8 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerAnalysisUnitsExactMatchOnlyDefault:
       raw.rer_analysis_units_exact_match_only_default,
     rerDutyTestEnabled: raw.rer_duty_test_enabled,
+    rerDutyInsertHistoricalInterceptions:
+      raw.rer_duty_insert_historical_interceptions,
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
@@ -98,6 +107,7 @@ export async function listSystemSettings(): Promise<SystemSettingsItem[]> {
 export async function createSystemSettings(
   rerAnalysisUnitsExactMatchOnlyDefault: boolean,
   rerDutyTestEnabled: boolean,
+  rerDutyInsertHistoricalInterceptions: boolean,
   rerDutyTestSinceMs: number,
   rerDutyTestLimit: number,
   rerDutyPollIntervalSec: number,
@@ -106,6 +116,8 @@ export async function createSystemSettings(
     rer_analysis_units_exact_match_only_default:
       rerAnalysisUnitsExactMatchOnlyDefault,
     rer_duty_test_enabled: rerDutyTestEnabled,
+    rer_duty_insert_historical_interceptions:
+      rerDutyInsertHistoricalInterceptions,
     rer_duty_test_since_ms: rerDutyTestSinceMs,
     rer_duty_test_limit: rerDutyTestLimit,
     rer_duty_poll_interval_sec: rerDutyPollIntervalSec,

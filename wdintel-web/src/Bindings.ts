@@ -2876,6 +2876,7 @@ export type AreaOfResponsibility = {
   name: string;
   description: string | null;
   isTopLevel: boolean;
+  orderForReport: number;
   leftBound: number;
   rightBound: number;
   leftCoordinates: AorCoordinates | null;
@@ -2906,6 +2907,15 @@ export type UpdateAreaOfResponsibilityReq = {
 
 export type DeleteAreaOfResponsibilityReq = {
   id: number;
+};
+
+export type AreaOfResponsibilityReportOrder = {
+  id: number;
+  orderForReport: number;
+};
+
+export type UpdateAreaOfResponsibilityReportOrderReq = {
+  items: Array<AreaOfResponsibilityReportOrder>;
 };
 
 export type ListAreasOfResponsibilitySortBy =

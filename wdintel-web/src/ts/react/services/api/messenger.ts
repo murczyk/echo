@@ -90,6 +90,8 @@ type GroupEntryF1Like = {
     description?: string | null;
     isTopLevel?: boolean;
     is_top_level?: boolean;
+    orderForReport?: number | string | null;
+    order_for_report?: number | string | null;
     leftBound?: number | string | null;
     left_bound?: number | string | null;
     rightBound?: number | string | null;
@@ -107,6 +109,8 @@ type GroupEntryF1Like = {
     description?: string | null;
     isTopLevel?: boolean;
     is_top_level?: boolean;
+    orderForReport?: number | string | null;
+    order_for_report?: number | string | null;
     leftBound?: number | string | null;
     left_bound?: number | string | null;
     rightBound?: number | string | null;
@@ -207,6 +211,7 @@ function normalizeGroupEntry(raw: GroupEntryF1Like): GroupEntryF1 {
         name: aor.name ?? '',
         description: aor.description ?? null,
         isTopLevel: aor.isTopLevel ?? aor.is_top_level ?? false,
+        orderForReport: normalizeNumber(aor.orderForReport ?? aor.order_for_report ?? 100),
         leftBound: normalizeNumber(aor.leftBound ?? aor.left_bound),
         rightBound: normalizeNumber(aor.rightBound ?? aor.right_bound),
         leftCoordinates: normalizeCoordinates(aor.leftCoordinates ?? aor.left_coordinates),
