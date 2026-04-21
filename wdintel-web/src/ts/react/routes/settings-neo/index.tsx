@@ -246,6 +246,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               borderBottom: 1,
               borderColor: 'divider',
               flexShrink: 0,
+              '& .MuiTab-root': {
+                minHeight: 48,
+                alignItems: 'center',
+                textAlign: 'center',
+              },
             }}
           >
             <Tab
@@ -253,28 +258,24 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               label="ЗАГАЛЬНІ"
               id="settings-neo-tab-general"
               aria-controls="settings-neo-panel-general"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
             <Tab
               value="duty"
               label="ОПЕРАТИВНИЙ"
               id="settings-neo-tab-duty"
               aria-controls="settings-neo-panel-duty"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
             <Tab
               value="analysis"
               label="АНАЛІЗ"
               id="settings-neo-tab-analysis"
               aria-controls="settings-neo-panel-analysis"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
             <Tab
               value="reports"
               label="ЗВІТИ"
               id="settings-neo-tab-reports"
               aria-controls="settings-neo-panel-reports"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
           </Tabs>
 
@@ -409,7 +410,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           ) : null}
 
           {settingsSection === 'reports' ? (
-            <SettingsReportsSection active={settingsSection === 'reports'} userRoles={userRoles} />
+            <SettingsReportsSection
+              active={settingsSection === 'reports'}
+              userRoles={userRoles}
+              rolesLoading={loadInProgress}
+            />
           ) : null}
         </Card>
       </Stack>

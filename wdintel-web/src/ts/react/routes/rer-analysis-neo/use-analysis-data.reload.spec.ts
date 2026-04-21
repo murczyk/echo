@@ -279,13 +279,14 @@ describe('reloadAnalysisData', () => {
     const inboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
     const rebuiltInboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
     const freqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
+    const rebuiltFreqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
 
     mocks.fetchInboxMessages
       .mockImplementationOnce(() => inboxDeferred.promise)
       .mockImplementationOnce(() => rebuiltInboxDeferred.promise);
-    mocks.fetchAnalysisFreqs.mockImplementationOnce(() =>
-      freqsDeferred.promise,
-    );
+    mocks.fetchAnalysisFreqs
+      .mockImplementationOnce(() => freqsDeferred.promise)
+      .mockImplementationOnce(() => rebuiltFreqsDeferred.promise);
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
@@ -297,6 +298,7 @@ describe('reloadAnalysisData', () => {
 
     const setSummaryCallsignsInfo = vi.fn();
     const setTopCallsigns = vi.fn();
+    const setTopFreqs = vi.fn();
     const setTopUnits = vi.fn();
     const setTopLocations = vi.fn();
 
@@ -345,7 +347,7 @@ describe('reloadAnalysisData', () => {
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
       setTopCallsigns,
-      setTopFreqs: vi.fn(),
+      setTopFreqs,
       setTopLocations,
       setTopUnits,
       loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
@@ -364,12 +366,24 @@ describe('reloadAnalysisData', () => {
     });
     await flushPromises();
     rebuiltInboxDeferred.resolve({ inboxItems: [[2, { networkIds: [] }]], callsigns: [{ callsign: 'bravo', res: [] }] });
+    await flushPromises();
+    rebuiltFreqsDeferred.resolve({
+      freqs: [
+        { freq: '150.199', count: 9, isNew: true },
+        { freq: '150.200', count: 8, isNew: false },
+      ],
+    });
     await reloadPromise;
     await flushPromises();
 
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
     expect(setSummaryCallsignsInfo).toHaveBeenLastCalledWith(buildSummaryCallsignsInfo([{ callsign: 'bravo', res: [] }], null));
     expect(setTopCallsigns).toHaveBeenCalledWith([{ key: 'ALPHA', count: 11 }]);
+    expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
+    expect(setTopFreqs).toHaveBeenLastCalledWith([
+      { key: '150.199', count: 9 },
+      { key: '150.200', count: 8 },
+    ]);
     expect(setTopUnits).toHaveBeenCalledWith([{ key: 'UNIT-1', count: 12 }]);
     expect(setTopLocations).toHaveBeenCalledWith([{ key: 'LOC-1', count: 13 }]);
   });

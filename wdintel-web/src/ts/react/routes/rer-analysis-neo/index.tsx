@@ -45,7 +45,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
-  const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.counts == null;
+  const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.messagesLoading;
   const [mountedTabs, setMountedTabs] = useState<Record<'messages' | 'map' | 'summary', boolean>>({
     messages: true,
     map: false,

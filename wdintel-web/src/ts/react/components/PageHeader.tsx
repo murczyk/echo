@@ -2,8 +2,6 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, Tooltip, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
-import { PowerIconButton } from './PowerIconButton';
-
 type Props = {
   title: ReactNode;
   titleInfo?: ReactNode;
@@ -31,9 +29,13 @@ export function PageHeader({ title, titleInfo, middle, actions, className, title
         </Typography>
         {titleInfo ? (
           <Tooltip title={titleInfo} arrow placement="right-start">
-            <PowerIconButton size="small" aria-label="Інформація про сторінку" sx={{ p: 0.25, alignSelf: 'center', display: 'inline-flex' }}>
+            <Box
+              component="span"
+              aria-label="Інформація про сторінку"
+              sx={{ ml: 0.75, display: 'inline-flex', alignSelf: 'center', lineHeight: 0, cursor: 'default' }}
+            >
               <InfoOutlinedIcon fontSize="small" />
-            </PowerIconButton>
+            </Box>
           </Tooltip>
         ) : null}
       </Box>

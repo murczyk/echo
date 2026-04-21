@@ -417,6 +417,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       let resolvedAnalysisReq = analysisReq;
       let resolvedInboxReq = inboxReq;
       let resolvedInboxRsp = inboxRsp;
+      let resolvedFreqsRsp = freqsRsp;
 
       if (shouldRebuildAnalysisRequests(params.queryState, allFrequencies, nextFrequencies)) {
         params.optionsFreqsRef.current = nextFrequencies;
@@ -425,14 +426,16 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         if (rebuiltAnalysisReq != null && rebuiltInboxReq != null) {
           try {
             const rebuiltInboxRsp = await fetchInboxMessages({ ...rebuiltInboxReq, newestFirst: params.newestFirst });
+            const rebuiltFreqsRsp = await fetchAnalysisFreqs(rebuiltAnalysisReq);
             if (isStaleReload()) return null;
-            params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
-            params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(rebuiltInboxRsp.callsigns, null));
             // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
             // rebuilt summary/count/map data with the old inbox response.
+            params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
+            params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(rebuiltInboxRsp.callsigns, null));
             resolvedAnalysisReq = rebuiltAnalysisReq;
             resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltInboxRsp;
+            resolvedFreqsRsp = rebuiltFreqsRsp;
           } catch (loadError) {
             if (isStaleReload()) return null;
             if (!params.onUnauthorized(loadError)) {
@@ -442,13 +445,15 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         }
       }
 
-      const nextFreqCountsByValue = new Map(freqsRsp.freqs.map((item) => [item.freq, item.count]));
-      const nextFreqOptions = sortFrequenciesNumerically(nextFrequencies).map((freq) => ({
+      const effectiveFreqsRsp = resolvedFreqsRsp;
+      const effectiveFrequencies = effectiveFreqsRsp.freqs.map((item) => item.freq);
+      const nextFreqCountsByValue = new Map(effectiveFreqsRsp.freqs.map((item) => [item.freq, item.count]));
+      const nextFreqOptions = sortFrequenciesNumerically(effectiveFrequencies).map((freq) => ({
         value: freq,
         label: normalizeFilterLabel(freq),
         count: nextFreqCountsByValue.get(freq) ?? 0,
       }));
-      const nextNewFreqs = sortFrequenciesNumerically(freqsRsp.freqs.filter((item) => item.isNew).map((item) => item.freq)).map((freq) => ({
+      const nextNewFreqs = sortFrequenciesNumerically(effectiveFreqsRsp.freqs.filter((item) => item.isNew).map((item) => item.freq)).map((freq) => ({
         value: freq,
         label: normalizeFilterLabel(freq),
         count: nextFreqCountsByValue.get(freq) ?? 0,
@@ -458,13 +463,13 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         freqs: nextFreqOptions,
         newFreqs: nextNewFreqs,
       });
-      params.setTopFreqs(topItems(freqsRsp.freqs, (item) => item.freq, (item) => item.count));
+      params.setTopFreqs(topItems(effectiveFreqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
         endDate: resolvedInboxReq.tillDateInclusiveMs ?? 0,
       });
       params.invalidateCallsignGraph();
-      return { analysisReq: resolvedAnalysisReq, inboxReq: resolvedInboxReq, inboxRsp: resolvedInboxRsp, freqsRsp };
+      return { analysisReq: resolvedAnalysisReq, inboxReq: resolvedInboxReq, inboxRsp: resolvedInboxRsp, freqsRsp: resolvedFreqsRsp };
     };
 
     const criticalData = await loadCriticalData(params.optionsFreqsRef.current);
