@@ -49,9 +49,18 @@ vi.mock('../../rer-duty-neo/MessageCard', () => ({
 }));
 
 vi.mock('../../rer-duty-neo/dialogs', () => ({
-  CommentDialog: (props: { open: boolean; onSave: () => void; onClose: () => void }) =>
+  CommentDialog: (props: { open: boolean; messagePreview?: { text?: string | null; freq?: string | null; groupMasterKey?: string | null; sender?: string | null } | null; onSave: () => void; onClose: () => void }) =>
     props.open ? (
       <div data-testid="comment-dialog">
+        <div data-testid="comment-preview">
+          {props.messagePreview?.freq ?? ''}
+          {' '}
+          {props.messagePreview?.groupMasterKey ?? ''}
+          {' '}
+          {props.messagePreview?.sender ?? ''}
+          {' '}
+          {props.messagePreview?.text ?? ''}
+        </div>
         <button type="button" onClick={props.onSave}>
           save-comment
         </button>
@@ -210,6 +219,10 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(view);
 
     await click(getButton(view.container, 'comment-7'));
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('100.000');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('group-1');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('sender-1');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('hello');
     await click(getButton(view.container, 'save-comment'));
 
     expect(onSaveMessageComment).toHaveBeenCalledWith(7, 'saved note');

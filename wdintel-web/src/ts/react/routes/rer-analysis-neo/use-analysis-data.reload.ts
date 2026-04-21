@@ -99,7 +99,7 @@ export function filterSectionsForQueryState(queryState: AnalysisQueryState): Ana
 }
 
 export function filterSectionsForInitialLoad(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
-  const sections = new Set<AnalysisFilterSectionId>(['tags']);
+  const sections = new Set<AnalysisFilterSectionId>(['tags', 'groups']);
   filterSectionsForQueryState(queryState).forEach((section) => sections.add(section));
   return Array.from(sections);
 }

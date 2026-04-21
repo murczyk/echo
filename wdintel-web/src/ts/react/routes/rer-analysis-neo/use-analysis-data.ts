@@ -89,6 +89,14 @@ export function mergeNetworksById(existing: Network[], loaded: Network[]): Netwo
   return Array.from(merged.values());
 }
 
+export function shouldSkipNewCallsignsLoad(
+  loadedKey: string | null,
+  pendingKey: string | null,
+  requestKey: string,
+): boolean {
+  return loadedKey === requestKey || pendingKey === requestKey;
+}
+
 export function useAnalysisData({
   newestFirst,
   onError,
@@ -153,6 +161,7 @@ export function useAnalysisData({
   const newCallsignsRequestRef = useRef(0);
   const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
   const newCallsignsLoadedKeyRef = useRef<string | null>(null);
+  const newCallsignsPendingKeyRef = useRef<string | null>(null);
   const unitsMapRef = useRef(unitsMap);
   const optionsFreqValues = useMemo(() => options.freqs.map((option) => option.value), [options.freqs]);
 
@@ -310,16 +319,18 @@ export function useAnalysisData({
     if (analysisReq == null) {
       setNewCallsigns(emptyNewCallsigns);
       newCallsignsLoadedKeyRef.current = null;
+      newCallsignsPendingKeyRef.current = null;
       return;
     }
 
     const requestKey = JSON.stringify(analysisReq);
-    if (newCallsignsLoadedKeyRef.current === requestKey && !newCallsignsLoading) {
+    if (shouldSkipNewCallsignsLoad(newCallsignsLoadedKeyRef.current, newCallsignsPendingKeyRef.current, requestKey)) {
       return;
     }
 
     const requestId = newCallsignsRequestRef.current + 1;
     newCallsignsRequestRef.current = requestId;
+    newCallsignsPendingKeyRef.current = requestKey;
     setNewCallsignsLoading(true);
     setNewCallsigns(emptyNewCallsigns);
     onError('');
@@ -336,10 +347,11 @@ export function useAnalysisData({
       }
     } finally {
       if (requestId === newCallsignsRequestRef.current) {
+        newCallsignsPendingKeyRef.current = null;
         setNewCallsignsLoading(false);
       }
     }
-  }, [newCallsignsLoading, onError, onUnauthorized, optionsFreqValues, queryState]);
+  }, [onError, onUnauthorized, optionsFreqValues, queryState]);
 
   const loadMissingNetworksForMessages = useCallback(
     async (messageItems: Array<[number, InboxMessage]>) => {

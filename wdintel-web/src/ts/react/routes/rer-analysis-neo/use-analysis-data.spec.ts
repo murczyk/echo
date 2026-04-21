@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CallsignInfoRes, Network } from '../../../../Bindings';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
-import { mergeNetworksById } from './use-analysis-data';
+import { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data';
 
 function callsignInfoRow(overrides: Partial<CallsignInfoRes['res'][number]> = {}): CallsignInfoRes['res'][number] {
   return {
@@ -106,5 +106,13 @@ describe('mergeNetworksById', () => {
     );
 
     expect(merged.map((network) => network.id)).toEqual([1, 3, 2]);
+  });
+});
+
+describe('shouldSkipNewCallsignsLoad', () => {
+  it('skips duplicate requests for the same in-flight or already loaded key', () => {
+    expect(shouldSkipNewCallsignsLoad('loaded', null, 'loaded')).toBe(true);
+    expect(shouldSkipNewCallsignsLoad(null, 'pending', 'pending')).toBe(true);
+    expect(shouldSkipNewCallsignsLoad('loaded', 'pending', 'other')).toBe(false);
   });
 });

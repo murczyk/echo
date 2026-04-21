@@ -284,6 +284,7 @@ function AnalysisMessagesPaneComponent({
 
       <CommentDialog
         open={commentMessage != null}
+        messagePreview={commentMessage?.message ?? null}
         commentText={commentDraft}
         onCommentTextChange={setCommentDraft}
         onClose={() => setCommentMessage(null)}
