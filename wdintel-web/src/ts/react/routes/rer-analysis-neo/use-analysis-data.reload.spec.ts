@@ -281,8 +281,14 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
     mocks.fetchNetworksByIds.mockResolvedValue([]);
     mocks.getUnitsList.mockResolvedValue([]);
+    mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [{ callsign: 'ALPHA', count: 11 }] });
+    mocks.fetchAnalysisUnits.mockResolvedValue({ units: [{ unit: 'UNIT-1', count: 12 }] });
+    mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [{ location: 'LOC-1', count: 13 }] });
 
     const setSummaryCallsignsInfo = vi.fn();
+    const setTopCallsigns = vi.fn();
+    const setTopUnits = vi.fn();
+    const setTopLocations = vi.fn();
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
@@ -328,10 +334,10 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
-      setTopCallsigns: vi.fn(),
+      setTopCallsigns,
       setTopFreqs: vi.fn(),
-      setTopLocations: vi.fn(),
-      setTopUnits: vi.fn(),
+      setTopLocations,
+      setTopUnits,
       loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
       invalidateFilterSectionLoads: vi.fn(),
     });
@@ -353,6 +359,9 @@ describe('reloadAnalysisData', () => {
 
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
     expect(setSummaryCallsignsInfo).toHaveBeenLastCalledWith(buildSummaryCallsignsInfo([{ callsign: 'bravo', res: [] }], null));
+    expect(setTopCallsigns).toHaveBeenCalledWith([{ key: 'ALPHA', count: 11 }]);
+    expect(setTopUnits).toHaveBeenCalledWith([{ key: 'UNIT-1', count: 12 }]);
+    expect(setTopLocations).toHaveBeenCalledWith([{ key: 'LOC-1', count: 13 }]);
   });
 
   it('keeps the original inbox state when rebuilt inbox fetch fails', async () => {

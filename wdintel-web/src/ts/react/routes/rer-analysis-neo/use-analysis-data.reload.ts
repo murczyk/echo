@@ -516,6 +516,23 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       }
     };
 
+    const loadTopSidebarData = async () => {
+      try {
+        const [callsignsRsp, unitsRsp, locationsRsp] = await Promise.all([
+          fetchAnalysisCallsigns(criticalData.analysisReq),
+          fetchAnalysisUnits(criticalData.analysisReq),
+          fetchAnalysisLocations(criticalData.analysisReq),
+        ]);
+        if (isStaleReload()) return;
+        params.setTopCallsigns(topItems(callsignsRsp.callsigns, (item) => item.callsign, (item) => item.count));
+        params.setTopUnits(topItems(unitsRsp.units, (item) => item.unit, (item) => item.count));
+        params.setTopLocations(topItems(locationsRsp.locations, (item) => item.location, (item) => item.count));
+      } catch (loadError) {
+        if (isStaleReload()) return;
+        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      }
+    };
+
     const loadMapData = async () => {
       try {
         const mapRsp = await fetchAnalysisMapPoints({
@@ -539,6 +556,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     const secondaryLoads = [
       loadCountsData(),
       loadReferenceData(),
+      loadTopSidebarData(),
       (async () => {
         try {
           await params.loadInitialFilterSections(criticalData.analysisReq);

@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  buildAnalysisHref,
   PAGE_ID,
   buildAnalysisMapHrefWithSearch,
   buildSenderOptions,
@@ -42,6 +43,27 @@ describe('rer-duty utils', () => {
     } as Record<number, Unit>;
 
     expect(createMasterUnitText(network, unitsMap)).toBe('р/м Alpha Unit One, Unit Two (KYIV)');
+  });
+
+  it('builds analysis deep links with combined datetime params', () => {
+    const now = new Date('2026-04-21T10:00:00.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      const msg = { freq: '154.845', messageUid: 'uid-1' } as InboxMessage;
+      const href = buildAnalysisHref(msg, false);
+      const url = new URL(href, 'https://example.test');
+
+      expect(url.pathname).toBe('/rer-analysis-neo');
+      expect(url.searchParams.get('fromDateTime')).toBe('2026-04-06T00:00');
+      expect(url.searchParams.get('toDateTime')).toBe('2026-04-22T00:00');
+      expect(url.searchParams.has('dateFrom')).toBe(false);
+      expect(url.searchParams.has('timeFrom')).toBe(false);
+      expect(url.searchParams.has('dateTo')).toBe(false);
+      expect(url.searchParams.has('timeTo')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('distinguishes null and empty arrays when comparing filters', () => {

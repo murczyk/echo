@@ -330,10 +330,9 @@ function rerAnalysisNeoQueryStateFromMessage(msg: InboxMessage, search: string):
   to.setDate(to.getDate() + 1);
   const freqStr = msg.freq != null ? String(msg.freq).trim() : '';
   const state: RerAnalysisQueryState = {
-    dateFromStr: toDateStr(from),
-    timeFromStr: '',
-    dateToStr: toDateStr(to),
-    timeToStr: '00:00',
+    // Neo deep links must use the combined datetime keys; the legacy split keys are no longer parsed.
+    fromDateTimeStr: `${toDateStr(from)}T00:00`,
+    toDateTimeStr: `${toDateStr(to)}T00:00`,
     search,
     includePelengLocations: false,
     orWithoutCoords: false,
