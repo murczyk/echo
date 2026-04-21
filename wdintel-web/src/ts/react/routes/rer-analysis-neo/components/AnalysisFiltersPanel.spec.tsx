@@ -339,6 +339,38 @@ describe('AnalysisFiltersPanel', () => {
     });
   });
 
+  it('keeps the tags section counter scoped to tag controls only', async () => {
+    const view = await renderComponent(
+      buildProps({
+        options: {
+          ...buildOptions(),
+          tags: [
+            { value: '1', label: '1', count: 1 },
+            { value: '2', label: '2', count: 1 },
+            { value: '3', label: '3', count: 1 },
+            { value: '4', label: '4', count: 1 },
+          ],
+        },
+        queryState: {
+          ...emptyQueryState(),
+          tags: [1],
+          filterTagsOption: 'AllTags',
+          withoutModelTags: true,
+          reportTagsOnlyThisUnit: true,
+          orWithExtendedForm: true,
+          orBookmarked: true,
+          orImportant: true,
+          orWithCoords: true,
+          orWithoutCoords: true,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent ?? '').toContain('4 з 4');
+    expect(view.container.textContent ?? '').not.toContain('8 з 4');
+  });
+
   it('passes group master keys as filter values while keeping duplicate group names as labels', async () => {
     const props = buildProps({
       groupInfos: {

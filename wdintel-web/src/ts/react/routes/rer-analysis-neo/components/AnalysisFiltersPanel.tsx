@@ -385,11 +385,7 @@ export function AnalysisFiltersPanel({
     Number(queryState.reportTagsOnlyThisUnit);
   const tagsSelectedCount =
     queryState.tags.length +
-    Number(queryState.orWithExtendedForm) +
-    Number(queryState.orBookmarked) +
-    Number(queryState.orImportant) +
-    Number(queryState.orWithCoords) +
-    Number(queryState.orWithoutCoords) +
+    Number(queryState.filterTagsOption !== 'OneOfTags') +
     Number(queryState.withoutModelTags) +
     Number(queryState.reportTagsOnlyThisUnit);
   const aorsSelectedCount = queryState.aorsSelected.length;

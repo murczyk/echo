@@ -422,13 +422,15 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const rebuiltAnalysisReq = buildAnalysisReq(params.queryState, nextFrequencies);
         const rebuiltInboxReq = buildInboxReq(params.queryState, nextFrequencies);
         if (rebuiltAnalysisReq != null && rebuiltInboxReq != null) {
-          resolvedAnalysisReq = rebuiltAnalysisReq;
-          resolvedInboxReq = rebuiltInboxReq;
           try {
             const rebuiltInboxRsp = await fetchInboxMessages({ ...rebuiltInboxReq, newestFirst: params.newestFirst });
             if (isStaleReload()) return null;
             params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
             params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(rebuiltInboxRsp.callsigns, null));
+            // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
+            // rebuilt summary/count/map data with the old inbox response.
+            resolvedAnalysisReq = rebuiltAnalysisReq;
+            resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltInboxRsp;
           } catch (loadError) {
             if (isStaleReload()) return null;

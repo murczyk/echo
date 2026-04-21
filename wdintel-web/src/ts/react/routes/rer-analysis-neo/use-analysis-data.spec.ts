@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CallsignInfoRes } from '../../../../Bindings';
+import type { CallsignInfoRes, Network } from '../../../../Bindings';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
+import { mergeNetworksById } from './use-analysis-data';
 
 function callsignInfoRow(overrides: Partial<CallsignInfoRes['res'][number]> = {}): CallsignInfoRes['res'][number] {
   return {
@@ -91,5 +92,19 @@ describe('mergeAnalysisCallsignInfoMap', () => {
         networkIdsReportedIn: [503],
       }),
     ]);
+  });
+});
+
+describe('mergeNetworksById', () => {
+  it('keeps concurrently updated networks when merging async-loaded items', () => {
+    const merged = mergeNetworksById(
+      [
+        { id: 1, name: 'one' } as Network,
+        { id: 3, name: 'three' } as Network,
+      ],
+      [{ id: 2, name: 'two' } as Network],
+    );
+
+    expect(merged.map((network) => network.id)).toEqual([1, 3, 2]);
   });
 });

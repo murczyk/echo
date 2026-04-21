@@ -78,6 +78,17 @@ import type {
   AnalysisPalitrasLoadState,
 } from './types';
 
+export function mergeNetworksById(existing: Network[], loaded: Network[]): Network[] {
+  const merged = new Map<number, Network>();
+  existing.forEach((network) => {
+    merged.set(network.id, network);
+  });
+  loaded.forEach((network) => {
+    merged.set(network.id, network);
+  });
+  return Array.from(merged.values());
+}
+
 export function useAnalysisData({
   newestFirst,
   onError,
@@ -128,6 +139,7 @@ export function useAnalysisData({
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
   const [networks, setNetworks] = useState<Network[]>([]);
+  const networksRef = useRef(networks);
   const mapMessagesLoadVersionRef = useRef(0);
   const mapDateRangeLoadVersionRef = useRef(0);
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
@@ -155,6 +167,11 @@ export function useAnalysisData({
   useEffect(() => {
     setNetworkDisplayMap(buildNetworkDisplayMap(networks, unitsMap));
   }, [networks, unitsMap]);
+
+  useEffect(() => {
+    // Async network hydration reads the latest snapshot from here to avoid stale closure races.
+    networksRef.current = networks;
+  }, [networks]);
 
   useEffect(() => {
     unitsMapRef.current = unitsMap;
@@ -326,7 +343,7 @@ export function useAnalysisData({
 
   const loadMissingNetworksForMessages = useCallback(
     async (messageItems: Array<[number, InboxMessage]>) => {
-      const existingNetworkIds = new Set(networks.map((network) => network.id));
+      const existingNetworkIds = new Set(networksRef.current.map((network) => network.id));
       const missingNetworkIds = Array.from(
         new Set(messageItems.flatMap(([, message]) => message.networkIds ?? [])),
       ).filter((networkId) => !existingNetworkIds.has(networkId));
@@ -335,24 +352,18 @@ export function useAnalysisData({
       try {
         const loadedNetworks = await fetchNetworksByIds(missingNetworkIds);
         if (loadedNetworks.length === 0) return;
-        const mergedNetworks = [...networks];
-        loadedNetworks.forEach((network) => {
-          const index = mergedNetworks.findIndex((current) => current.id === network.id);
-          if (index >= 0) {
-            mergedNetworks[index] = network;
-          } else {
-            mergedNetworks.push(network);
-          }
+        setNetworks((currentNetworks) => {
+          const mergedNetworks = mergeNetworksById(currentNetworks, loadedNetworks);
+          setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
+          return mergedNetworks;
         });
-        setNetworks(mergedNetworks);
-        setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
       } catch (loadError) {
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
       }
     },
-    [networks, onError, onUnauthorized, setNetworkDisplayMap, setNetworks, unitsMap],
+    [onError, onUnauthorized, setNetworkDisplayMap, setNetworks, unitsMap],
   );
 
   const { clearAnalysisResults, onUpdateLocalMessage, patchMessages } = useAnalysisDataStateUtils({

@@ -1,5 +1,5 @@
 import type { InboxMessage } from '../../../../Bindings';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 
@@ -24,6 +24,36 @@ function toErrorMessage(error: unknown): string {
   return 'Сталася помилка під час збереження повідомлення.';
 }
 
+export function buildMessageDraftMap(messages: Array<[number, InboxMessage]>): Map<number, InboxMessage> {
+  return new Map(messages);
+}
+
+export function prepareQueuedMessageUpdate(
+  draftMap: Map<number, InboxMessage>,
+  messages: Array<[number, InboxMessage]>,
+  messageId: number,
+  updater: (message: InboxMessage) => InboxMessage,
+): { currentMessage: InboxMessage | null; nextMessage: InboxMessage | null } {
+  const currentMessage = draftMap.get(messageId) ?? messages.find(([id]) => id === messageId)?.[1] ?? null;
+  if (currentMessage == null) return { currentMessage: null, nextMessage: null };
+  const nextMessage = updater(currentMessage);
+  if (nextMessage !== currentMessage) {
+    draftMap.set(messageId, nextMessage);
+  }
+  return { currentMessage, nextMessage };
+}
+
+export function enqueueMessageSave<T>(
+  queue: Map<number, Promise<void>>,
+  messageId: number,
+  task: () => Promise<T>,
+): Promise<T> {
+  const previous = queue.get(messageId) ?? Promise.resolve();
+  const current = previous.then(() => task());
+  queue.set(messageId, current.then(() => undefined, () => undefined));
+  return current;
+}
+
 export function useAnalysisMessageEditor({
   messages,
   onError,
@@ -32,6 +62,14 @@ export function useAnalysisMessageEditor({
 }: Props): Result {
   const [editorMessage, setEditorMessage] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [editorSaveInFlight, setEditorSaveInFlight] = useState(false);
+  const messagesRef = useRef(messages);
+  const messageDraftsRef = useRef(buildMessageDraftMap(messages));
+  const saveQueueRef = useRef(new Map<number, Promise<void>>());
+
+  useEffect(() => {
+    messagesRef.current = messages;
+    messageDraftsRef.current = buildMessageDraftMap(messages);
+  }, [messages]);
 
   const openEditor = useCallback(
     (messageId: number) => {
@@ -48,24 +86,31 @@ export function useAnalysisMessageEditor({
 
   const saveMessageUpdate = useCallback(
     async (messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
-      const entry = messages.find(([id]) => id === messageId) ?? null;
-      if (entry == null) return false;
-      const nextMessage = updater(entry[1]);
-      if (nextMessage === entry[1]) return true;
+      return enqueueMessageSave(saveQueueRef.current, messageId, async () => {
+        const { currentMessage, nextMessage } = prepareQueuedMessageUpdate(
+          messageDraftsRef.current,
+          messagesRef.current,
+          messageId,
+          updater,
+        );
+        if (currentMessage == null || nextMessage == null) return false;
+        if (nextMessage === currentMessage) return true;
 
-      onError('');
-      try {
-        await submitAnalysisInboxMessages({ messages: [[messageId, nextMessage]] });
-        onUpdateLocalMessage(messageId, () => nextMessage);
-        return true;
-      } catch (error) {
-        if (!onUnauthorized(error)) {
-          onError(toErrorMessage(error));
+        onError('');
+        try {
+          await submitAnalysisInboxMessages({ messages: [[messageId, nextMessage]] });
+          onUpdateLocalMessage(messageId, () => nextMessage);
+          return true;
+        } catch (error) {
+          messageDraftsRef.current.set(messageId, currentMessage);
+          if (!onUnauthorized(error)) {
+            onError(toErrorMessage(error));
+          }
+          return false;
         }
-        return false;
-      }
+      });
     },
-    [messages, onError, onUnauthorized, onUpdateLocalMessage],
+    [onError, onUnauthorized, onUpdateLocalMessage],
   );
 
   const saveEditor = useCallback(
