@@ -80,28 +80,28 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
 
     return (
       <>
-        <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" useFlexGap>
-          {primaryAction}
-          <Tooltip title="Інші дії">
-            <span style={{ display: 'inline-flex' }}>
-              <PowerIconButton
-                id={menuLabelId}
-                size="small"
-                aria-label="Інші дії"
-                aria-controls={menuOpen ? menuButtonId : undefined}
-                aria-expanded={menuOpen ? 'true' : undefined}
-                aria-haspopup="menu"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setAnchorEl(event.currentTarget);
-                }}
-                sx={(theme) => actionButtonSx(theme, 'default')}
-              >
-                <MoreVertIcon fontSize="small" />
-              </PowerIconButton>
-            </span>
-          </Tooltip>
-        </Stack>
+      <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" useFlexGap>
+        {primaryAction}
+        <Tooltip title="Інші дії">
+          <span style={{ display: 'inline-flex' }}>
+            <PowerIconButton
+              id={menuLabelId}
+              size="small"
+              aria-label="Інші дії"
+              aria-controls={menuOpen ? menuButtonId : undefined}
+              aria-expanded={menuOpen ? 'true' : undefined}
+              aria-haspopup="menu"
+              onClick={(event) => {
+                event.stopPropagation();
+                setAnchorEl(event.currentTarget);
+              }}
+              sx={(theme) => actionButtonSx(theme, 'default')}
+            >
+              <MoreVertIcon fontSize="small" />
+            </PowerIconButton>
+          </span>
+        </Tooltip>
+      </Stack>
         <PowerMenu
           id={menuButtonId}
           anchorEl={anchorEl}
@@ -147,7 +147,17 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
 export function MrtRowActionButton({ label, onClick, icon, disabled = false, tone = 'default' }: Props) {
   const button = (
     <span style={{ display: 'inline-flex', cursor: disabled ? 'not-allowed' : undefined }}>
-      <PowerIconButton size="small" onClick={onClick} disabled={disabled} aria-label={label} sx={(theme) => actionButtonSx(theme, tone)}>
+      <PowerIconButton
+        size="small"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        title={label}
+        sx={(theme) => ({
+          ...actionButtonSx(theme, tone),
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        })}
+      >
         {icon}
       </PowerIconButton>
     </span>

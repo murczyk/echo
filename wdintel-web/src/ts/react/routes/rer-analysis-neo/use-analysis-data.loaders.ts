@@ -27,6 +27,10 @@ import type { AnalysisGroupsActivityPeriod, AnalysisPalitrasLoadState, AnalysisQ
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
+export function normalizeMapMessageIds(messageIds: readonly unknown[]): number[] {
+  return Array.from(new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))));
+}
+
 type Params = {
   callsignGraphNolimit: boolean;
   callsignGraphRequestRef: React.MutableRefObject<number>;
@@ -148,11 +152,14 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
+      const cleanMessageIds = normalizeMapMessageIds(messageIds);
+      if (cleanMessageIds.length === 0) return;
+
       const loadVersion = mapMessagesLoadVersionRef.current + 1;
       mapMessagesLoadVersionRef.current = loadVersion;
 
       try {
-        const nextMessages = await fetchMessagesByIds(messageIds);
+        const nextMessages = await fetchMessagesByIds(cleanMessageIds);
         if (mapMessagesLoadVersionRef.current !== loadVersion) return;
         setMapOpenMessages(nextMessages);
       } catch (loadError) {

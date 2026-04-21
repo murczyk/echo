@@ -433,7 +433,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       label="Таблиця: Частоти"
                     />
                   </Tabs>
-                  {page.centerTab === 'map' ? null : (
+                  {page.centerTab === 'map' || page.centerTab === 'summary' ? null : (
                     <Stack
                       direction="row"
                       spacing={1.5}
@@ -560,7 +560,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     overflow: "hidden",
                   }}
                 >
-                  {mountedTabs.summary ? (
+                  {page.centerTab === 'summary' ? (
                     <AnalysisSummaryTableCard
                       callsignInfoMap={page.summaryCallsignsInfo}
                       networkDisplayMap={page.networkDisplayMap}

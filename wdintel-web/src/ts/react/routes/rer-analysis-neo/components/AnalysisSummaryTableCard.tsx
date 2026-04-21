@@ -19,6 +19,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  Skeleton,
 } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import { MRT_ColumnDef, type MRT_SortingState, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
@@ -120,13 +121,11 @@ function CompactListCell({
 
 function CallsignChipsCell({
   callsigns,
-  expanded,
-  onToggleExpanded,
 }: {
   callsigns: AnalysisSummaryTableRowView['callsignChips'];
-  expanded: boolean;
-  onToggleExpanded: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (callsigns.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -136,6 +135,7 @@ function CallsignChipsCell({
   }
 
   const visibleCallsigns = expanded ? callsigns : callsigns.slice(0, 5);
+  const hasExpandableOverflow = callsigns.length > 5;
   const hiddenCount = callsigns.length - visibleCallsigns.length;
 
   return (
@@ -156,20 +156,44 @@ function CallsignChipsCell({
             />
           );
 
-          return entry.tooltip ? (
-            <Tooltip key={`${entry.callsign}-${index}`} title={entry.tooltip} placement="top">
-              <span>{chip}</span>
-            </Tooltip>
-          ) : (
-            <Fragment key={`${entry.callsign}-${index}`}>{chip}</Fragment>
+          return (
+            <Fragment key={`${entry.callsign}-${index}`}>
+              {entry.tooltip ? (
+                <Tooltip title={entry.tooltip} placement="top">
+                  <span>{chip}</span>
+                </Tooltip>
+              ) : (
+                chip
+              )}
+            </Fragment>
           );
         })}
       </Stack>
-      {hiddenCount > 0 ? (
-        <Button size="small" variant="text" onClick={onToggleExpanded} sx={{ minWidth: 0, px: 0 }}>
+      {hasExpandableOverflow ? (
+        <Button size="small" variant="text" onClick={() => setExpanded((current) => !current)} sx={{ minWidth: 0, px: 0 }}>
           {expanded ? 'Згорнути' : `Показати ще (${hiddenCount})`}
         </Button>
       ) : null}
+    </Stack>
+  );
+}
+
+function SummaryTableLoadingState() {
+  return (
+    <Stack spacing={1.5} sx={{ px: 2, py: 2, minHeight: 0, flex: 1, overflow: 'hidden' }}>
+      <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center" justifyContent="space-between">
+        <Skeleton variant="rounded" width={280} height={40} />
+        <Stack direction="row" spacing={1.5} flexWrap="wrap" justifyContent="flex-end">
+          <Skeleton variant="rounded" width={92} height={32} />
+          <Skeleton variant="rounded" width={92} height={32} />
+          <Skeleton variant="rounded" width={92} height={32} />
+        </Stack>
+      </Stack>
+      <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0 }}>
+        {Array.from({ length: 8 }).map((_, index) => (
+          <Skeleton key={index} variant="rounded" height={72} />
+        ))}
+      </Stack>
     </Stack>
   );
 }
@@ -195,7 +219,6 @@ function AnalysisSummaryTableCardInner({
   const [renameDialog, setRenameDialog] = useState<RenameDialogState | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
-  const [expandedCallsignRows, setExpandedCallsignRows] = useState<Record<string, boolean>>({});
 
   const data = useMemo(
     () =>
@@ -206,8 +229,10 @@ function AnalysisSummaryTableCardInner({
         unitsMap,
         callsignInfoMap,
       }),
-    [callsignInfoMap, expandedCallsignRows, networkDisplayMap, networks, rows, toggleExpandedCallsigns, unitsMap],
+    [callsignInfoMap, networkDisplayMap, networks, rows, unitsMap],
   );
+  const isFirstLoad = loading && data.length === 0;
+  const isReloading = loading && data.length > 0;
 
   useEffect(() => {
     if (!renameDialog) {
@@ -222,13 +247,6 @@ function AnalysisSummaryTableCardInner({
     if (renameSaving) return;
     setRenameDialog(null);
   }, [renameSaving]);
-
-  const toggleExpandedCallsigns = useCallback((freq: string) => {
-    setExpandedCallsignRows((current) => ({
-      ...current,
-      [freq]: !current[freq],
-    }));
-  }, []);
 
   const openRenameDialog = useCallback((row: AnalysisSummaryTableRowView) => {
     if (row.editableUnits.length === 0) return;
@@ -295,13 +313,7 @@ function AnalysisSummaryTableCardInner({
         accessorFn: (row) => row.callsignChips.map((entry) => entry.callsign).join(' '),
         id: 'callsignSearchText',
         size: 320,
-        Cell: ({ row }) => (
-          <CallsignChipsCell
-            callsigns={row.original.callsignChips}
-            expanded={expandedCallsignRows[row.original.freq] ?? false}
-            onToggleExpanded={() => toggleExpandedCallsigns(row.original.freq)}
-          />
-        ),
+        Cell: ({ row }) => <CallsignChipsCell callsigns={row.original.callsignChips} />,
       },
       {
         header: 'Підрозділи',
@@ -378,8 +390,8 @@ function AnalysisSummaryTableCardInner({
     getRowId: (row) => row.freq,
     enableSorting: true,
     enableSortingRemoval: false,
-    enablePagination: false,
-    enableBottomToolbar: false,
+    enablePagination: true,
+    enableBottomToolbar: true,
     enableTopToolbar: false,
     enableColumnActions: true,
     enableColumnFilters: false,
@@ -430,6 +442,10 @@ function AnalysisSummaryTableCardInner({
       density: 'compact',
       sorting: DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING,
       showGlobalFilter: true,
+      pagination: {
+        pageIndex: 0,
+        pageSize: 25,
+      },
     },
     displayColumnDefOptions: {
       ...defaultMRTOptions.displayColumnDefOptions,
@@ -450,6 +466,17 @@ function AnalysisSummaryTableCardInner({
     },
     muiTableContainerProps: {
       sx: mrtContainerSx,
+    },
+    muiBottomToolbarProps: {
+      sx: {
+        position: 'sticky',
+        bottom: 0,
+        zIndex: 2,
+        backgroundColor: 'var(--bs-body-bg)',
+      },
+    },
+    muiPaginationProps: {
+      rowsPerPageOptions: [25, 50, 100],
     },
     muiTableProps: {
       'aria-label': 'Таблиця частот аналізу',
@@ -496,8 +523,8 @@ function AnalysisSummaryTableCardInner({
 
       <Box sx={outerTableContainerSx}>
         <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <MaterialReactTable table={table} />
-          {loading ? (
+          {isFirstLoad ? <SummaryTableLoadingState /> : <MaterialReactTable table={table} />}
+          {isReloading ? (
             <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} />
           ) : null}
         </Box>
