@@ -183,7 +183,7 @@ export function MessageCard({
         pr: 0,
         pb: 1.5,
         mb: 0,
-        fontSize: 12,
+        fontSize: 14,
       }}
     >
       <Box
@@ -199,12 +199,12 @@ export function MessageCard({
           bgcolor: 'var(--color-card)',
           color: 'text.primary',
           overflow: 'hidden',
-          fontSize: 12,
+          fontSize: 14,
           '& .MuiTypography-root': {
-            fontSize: 12,
+            fontSize: 14,
           },
           '& a': {
-            fontSize: 12,
+            fontSize: 14,
           },
         }}
       >

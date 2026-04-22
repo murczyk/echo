@@ -410,7 +410,18 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       params.setHasLoadedInitialMessages(true);
       params.setMessagesLoading(false);
 
-      const freqsRsp = await freqsPromise;
+      let freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
+      try {
+        freqsRsp = await freqsPromise;
+      } catch (loadError) {
+        if (isStaleReload()) return null;
+        params.setCounts(null);
+        params.setNewCallsigns(emptyNewCallsigns);
+        params.setNewCallsignsLoadedKey(null);
+        params.setOptions(emptyOptions);
+        params.setTopFreqs([]);
+        throw loadError;
+      }
       if (isStaleReload()) return null;
 
       const nextFrequencies = freqsRsp.freqs.map((item) => item.freq);

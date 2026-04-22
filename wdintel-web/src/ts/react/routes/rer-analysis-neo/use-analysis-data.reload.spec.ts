@@ -4,6 +4,7 @@ import type { AnalysisFilterSectionId } from './types';
 import { emptyQueryState } from './helpers';
 import { buildAnalysisReqForFilterSection, filterSectionsForInitialLoad, reloadAnalysisData } from './use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
+import { emptyNewCallsigns, emptyOptions } from './use-analysis-data.shared';
 
 const mocks = vi.hoisted(() => ({
   fetchAnalysisAors: vi.fn(),
@@ -644,5 +645,75 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
 
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
+  });
+
+  it('clears frequency-derived state when the frequency request fails after inbox loads', async () => {
+    mocks.fetchAnalysisFreqs.mockRejectedValue(new Error('freqs failed'));
+    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+
+    const setCounts = vi.fn();
+    const setNewCallsigns = vi.fn();
+    const setNewCallsignsLoadedKey = vi.fn();
+    const setOptions = vi.fn();
+    const setTopFreqs = vi.fn();
+
+    await reloadAnalysisData({
+      clearAnalysisResults: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: vi.fn(),
+      setCounts,
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworkDisplayMap: vi.fn(),
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
+      setNewCallsigns,
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading: vi.fn(),
+      setNewCallsignsLoadedKey,
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions,
+      setProfiles: vi.fn(),
+      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryLoading: vi.fn(),
+      setSummaryRows: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTopCallsigns: vi.fn(),
+      setTopFreqs,
+      setTopLocations: vi.fn(),
+      setTopUnits: vi.fn(),
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+    });
+
+    expect(setCounts).toHaveBeenCalledWith(null);
+    expect(setNewCallsigns).toHaveBeenCalledWith(emptyNewCallsigns);
+    expect(setNewCallsignsLoadedKey).toHaveBeenCalledWith(null);
+    expect(setOptions).toHaveBeenCalledWith(emptyOptions);
+    expect(setTopFreqs).toHaveBeenCalledWith([]);
   });
 });
