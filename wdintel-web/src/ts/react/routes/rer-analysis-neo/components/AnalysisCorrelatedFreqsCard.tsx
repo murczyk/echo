@@ -1,32 +1,41 @@
-import { Button, CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
 import { useId } from 'react';
 
 import type { CorrelatedFreq } from '../../../../../Bindings';
-import { PowerChip } from '../../../components/PowerChip';
+import { CompactPowerChip } from '../../../components/CompactPowerChip';
+import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 
 type Props = {
   correlatedFreqs: CorrelatedFreq[];
   loading: boolean;
-  onLoad: () => void;
+  selectedFreq: string | null;
 };
 
-export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, onLoad }: Props) {
+export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, selectedFreq }: Props) {
   const headingId = useId().replace(/:/g, '-');
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-        <Typography id={headingId} variant="subtitle1" component="h2" sx={{ fontWeight: 600 }}>
+        <CompactTitle id={headingId} component="h2">
           Суміжні частоти
-        </Typography>
-        <Button size="small" onClick={onLoad} disabled={loading}>
-          {loading ? <CircularProgress size={14} /> : 'Завантажити'}
-        </Button>
+        </CompactTitle>
       </Stack>
-      {correlatedFreqs.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
+      {!selectedFreq ? (
+        <CompactText color="text.secondary">
+          Оберіть частоту вище, щоб завантажити суміжні частоти.
+        </CompactText>
+      ) : loading ? (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
+          <CircularProgress size={18} />
+          <CompactText color="text.secondary">
+            Завантажую суміжні частоти…
+          </CompactText>
+        </Stack>
+      ) : correlatedFreqs.length === 0 ? (
+        <CompactText color="text.secondary">
           Немає даних
-        </Typography>
+        </CompactText>
       ) : (
         <Table size="small" aria-label="Таблиця суміжних частот">
           <TableHead>
@@ -44,7 +53,7 @@ export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, onLoad }
                     {item.commonCallsigns.length === 0
                       ? 'Без позивних'
                       : item.commonCallsigns.slice(0, 6).map((callsign) => (
-                          <PowerChip key={`${item.freq}-${callsign}`} label={callsign} size="small" color="default" />
+                          <CompactPowerChip key={`${item.freq}-${callsign}`} label={callsign} size="small" color="default" />
                         ))}
                   </Stack>
                 </TableCell>

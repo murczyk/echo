@@ -35,10 +35,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [error, setError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab>('stats');
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(null);
   const [centerTabPending, startCenterTabTransition] = useTransition();
-  const panelStateBeforeMapRef = useRef<{ leftPanelOpen: boolean; rightPanelOpen: boolean } | null>(null);
   const setPageError = useCallback((message: string) => setError(message || null), []);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
@@ -53,11 +52,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     newestFirst,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
+    shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState,
   });
+  const dataFreqValues = useMemo(() => data.options.freqs.map((option) => option.value), [data.options.freqs]);
+  const dataNewFreqValues = useMemo(() => data.options.newFreqs.map((option) => option.value), [data.options.newFreqs]);
 
   const savedFilters = useAnalysisSavedFilters({
-    allFrequencies: data.options.freqs,
+    allFrequencies: dataFreqValues,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     queryState,
@@ -65,13 +67,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
 
   const report = useAnalysisReport({
-    dateFrom: queryState.dateFromStr,
-    dateTo: queryState.dateToStr,
+    fromDateTimeStr: queryState.fromDateTimeStr,
     inboxReq: data.inboxReq,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    timeFrom: queryState.timeFromStr,
-    timeTo: queryState.timeToStr,
+    toDateTimeStr: queryState.toDateTimeStr,
   });
 
   const editor = useAnalysisMessageEditor({
@@ -89,25 +89,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const setCenterTab = useCallback((tab: 'messages' | 'map' | 'summary') => {
     startCenterTabTransition(() => {
       setCenterTabState(tab);
-      if (tab === 'map') {
-        if (centerTab !== 'map') {
-          panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
-        }
-        setLeftPanelOpen(false);
-        setRightPanelOpen(false);
-        return;
-      }
-      const panelStateBeforeMap = panelStateBeforeMapRef.current;
-      if (panelStateBeforeMap) {
-        setLeftPanelOpen(panelStateBeforeMap.leftPanelOpen);
-        setRightPanelOpen(panelStateBeforeMap.rightPanelOpen);
-        panelStateBeforeMapRef.current = null;
-        return;
-      }
-      setLeftPanelOpen(true);
-      setRightPanelOpen(true);
     });
-  }, [centerTab, leftPanelOpen, rightPanelOpen]);
+  }, []);
 
   const showMapDeepLinkAppliedRef = useRef(false);
   useEffect(() => {
@@ -119,31 +102,46 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [setCenterTab]);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
+    data.invalidateFilterSectionLoads();
     setQueryState((current) => ({ ...current, ...patch }));
-  }, []);
+  }, [data.invalidateFilterSectionLoads]);
+
+  const applySavedFilter = useCallback(
+    (savedFilter: Parameters<typeof savedFilters.applySavedFilter>[0]) => {
+      savedFilters.applySavedFilter(savedFilter);
+    },
+    [savedFilters],
+  );
+
+  useEffect(() => {
+    pushQueryStateToUrl(queryState);
+  }, [queryState]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
     if (!unitName) return;
+    data.invalidateFilterSectionLoads();
     setQueryState((current) => ({
       ...current,
       unitsSelected: current.unitsSelected.includes(unitName)
         ? current.unitsSelected.filter((item) => item !== unitName)
         : [...current.unitsSelected, unitName],
     }));
-  }, []);
+  }, [data.invalidateFilterSectionLoads]);
 
   const resetFilters = useCallback(() => {
     const nextState = createResetQueryState();
+    data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState);
-  }, []);
+  }, [data]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
+      data.invalidateFilterSectionLoads();
       setQueryState((current) => {
-        const freqsSelected = value ? data.options.newFreqs : [];
+        const freqsSelected = value ? dataNewFreqValues : [];
         if (current.includeOnlyNewFreqs === value && stringArraysEqual(current.freqsSelected, freqsSelected)) {
           return current;
         }
@@ -154,42 +152,50 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         };
       });
     },
-    [data.options.newFreqs],
+    [data.invalidateFilterSectionLoads, dataNewFreqValues],
   );
 
   useEffect(() => {
     if (!queryState.includeOnlyNewFreqs) return;
     setQueryState((current) => {
-      if (!current.includeOnlyNewFreqs || stringArraysEqual(current.freqsSelected, data.options.newFreqs)) {
+      if (!current.includeOnlyNewFreqs || stringArraysEqual(current.freqsSelected, dataNewFreqValues)) {
         return current;
       }
-      return { ...current, freqsSelected: data.options.newFreqs };
+      return { ...current, freqsSelected: dataNewFreqValues };
     });
-  }, [data.options.newFreqs, queryState.includeOnlyNewFreqs]);
+  }, [dataNewFreqValues, queryState.includeOnlyNewFreqs]);
 
   const selectOnlyFreq = useCallback((freq: string) => {
+    data.invalidateFilterSectionLoads();
     setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
-  }, []);
+  }, [data.invalidateFilterSectionLoads]);
 
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
+      data.invalidateFilterSectionLoads();
       setCenterTabState('map');
-      if (centerTab !== 'map') {
-        panelStateBeforeMapRef.current = { leftPanelOpen, rightPanelOpen };
-      }
-      setLeftPanelOpen(false);
-      setRightPanelOpen(false);
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
-  }, [centerTab, leftPanelOpen, rightPanelOpen]);
+  }, [data.invalidateFilterSectionLoads]);
 
   const toggleLeftPanel = useCallback(() => {
     setLeftPanelOpen((current) => !current);
   }, []);
 
   const toggleRightPanel = useCallback(() => {
-    setRightPanelOpen((current) => !current);
-  }, []);
+    setRightPanelOpen((current) => {
+      const next = !current;
+      if (next && rightSidebarTab == null) {
+        setRightSidebarTab('stats');
+      }
+      return next;
+    });
+  }, [rightSidebarTab]);
+
+  useEffect(() => {
+    if (!rightPanelOpen || rightSidebarTab !== 'newCallsigns') return;
+    void data.loadNewCallsigns();
+  }, [data.loadNewCallsigns, rightPanelOpen, rightSidebarTab]);
 
   const canResetFilters = useMemo(() => {
     const queryStateKey = queryStateComparisonKey(queryState);
@@ -224,6 +230,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
     groupsActivityLoadedPeriod: data.groupsActivityLoadedPeriod,
     groupsActivityLoading: data.groupsActivityLoading,
+    hasLoadedInitialMessages: data.hasLoadedInitialMessages,
     includeOnlyNewFreqs: queryState.includeOnlyNewFreqs,
     inboxReq: data.inboxReq,
     isDirty: savedFilters.isDirty,
@@ -267,13 +274,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     topLocations: data.topLocations,
     topUnits: data.topUnits,
     validationError,
-    applySavedFilter: savedFilters.applySavedFilter,
+    applySavedFilter,
     deleteLoadedSavedFilter: savedFilters.deleteLoadedSavedFilter,
     renameExistingSavedFilter: savedFilters.renameExisting,
     loadCallsignGraph: data.loadCallsignGraph,
     loadAllMessages: data.loadAllMessages,
+    loadFilterSection: data.loadFilterSection,
     loadCorrelatedFreqs: data.loadCorrelatedFreqs,
     loadGroupsActivity: data.loadGroupsActivity,
+    loadNewCallsigns: data.loadNewCallsigns,
     loadMoreMessages: data.loadMoreMessages,
     loadMessagesForMap: data.loadMessagesForMap,
     toggleCallsignGraphNolimit: data.toggleCallsignGraphNolimit,
@@ -301,6 +310,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     toggleRightPanel,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,
+    saveMessageUpdate: editor.saveMessageUpdate,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

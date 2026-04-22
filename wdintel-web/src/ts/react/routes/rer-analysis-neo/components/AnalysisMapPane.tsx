@@ -24,7 +24,8 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
       onDateRangeChange((event as CustomEvent<{ startDate: number; endDate: number }>).detail);
     };
     const handleLoadMessages = (event: Event) => {
-      onLoadMessages((event as CustomEvent<{ messageIds: number[] }>).detail.messageIds ?? []);
+      const messageIds = (event as CustomEvent<{ messageIds: Array<number | null | undefined> }>).detail.messageIds ?? [];
+      onLoadMessages(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId)));
     };
     const handleUnitClick = (event: Event) => {
       onUnitClick((event as CustomEvent<{ networkUnitName: string | null }>).detail.networkUnitName ?? null);

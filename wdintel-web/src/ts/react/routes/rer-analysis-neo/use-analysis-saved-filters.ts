@@ -3,7 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
-import { buildAnalysisReq, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
+import {
+  buildAnalysisReq,
+  queryStateFromSavedFilter,
+  queryStateMatchesSavedFilter,
+} from './helpers';
 import type { AnalysisQueryState } from './types';
 
 type Props = {
@@ -69,14 +73,19 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
 
   const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
-      setLoadedSavedFilterId(savedFilter?.id ?? null);
       if (savedFilter == null) {
+        setLoadedSavedFilterId(null);
+        setSavedFilterName('');
         return;
       }
+
+      const current = queryState;
+      const nextState = queryStateFromSavedFilter(savedFilter, current);
+      setLoadedSavedFilterId(savedFilter?.id ?? null);
       setSavedFilterName(savedFilter.name);
-      setQueryState((current) => queryStateFromSavedFilter(savedFilter, current));
+      setQueryState(nextState);
     },
-    [setQueryState],
+    [queryState, setQueryState],
   );
 
   const saveAsNew = useCallback(async () => {

@@ -17,7 +17,7 @@ import type { TagsLayoutVariant } from './utils';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
 import { FeedFilterPanel } from './FeedFilterPanel';
-import { MessageCard } from './MessageCard';
+import { DutyMessageCard } from './MessageCard';
 import { PowerChip } from '../../components/PowerChip';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
@@ -32,11 +32,36 @@ const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function 
   ref,
 ) {
   return (
-    <div
+    <Box
       ref={ref}
       data-virtuoso-scroller
+      component="div"
       style={style}
+      sx={{
+        pl: '12px',
+        scrollbarGutter: 'stable',
+        boxSizing: 'border-box',
+      }}
       className={[className, 'rer-duty-feed-scroll'].filter(Boolean).join(' ')}
+      {...props}
+    />
+  );
+});
+
+const FeedList = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function FeedList(
+  { style, className, ...props },
+  ref,
+) {
+  return (
+    <Box
+      ref={ref}
+      component="div"
+      style={style}
+      sx={{
+        pr: '12px',
+        boxSizing: 'border-box',
+      }}
+      className={className}
       {...props}
     />
   );
@@ -464,13 +489,14 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   Немає повідомлень
                 </Typography>
               ),
+              List: FeedList,
             }}
-            className="m-0 pl-3 pr-0 list-none rer-duty pt-2"
+            className="m-0 list-none rer-duty pt-2"
             itemContent={(_index, [id, msg]) => {
               const senderName = msg.sender != null ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
               const groupName = msg.groupMasterKey != null ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
               const card = (
-                <MessageCard
+                <DutyMessageCard
                   id={id}
                   msg={msg}
                   feedCount={feedCount}
@@ -493,7 +519,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
                   onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
                   onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
-                  rightHeaderInsetPx={12}
+                  rightHeaderInsetPx={0}
                 />
               );
               return card;

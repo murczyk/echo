@@ -11,13 +11,11 @@ import {
 } from './report-helpers';
 
 type Props = {
-  dateFrom: string;
-  dateTo: string;
+  fromDateTimeStr: string;
   inboxReq: InboxMessagesReq | null;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
-  timeFrom: string;
-  timeTo: string;
+  toDateTimeStr: string;
 };
 
 type Result = {
@@ -35,13 +33,11 @@ function toErrorMessage(error: unknown): string {
 }
 
 export function useAnalysisReport({
-  dateFrom,
-  dateTo,
+  fromDateTimeStr,
   inboxReq,
   onError,
   onUnauthorized,
-  timeFrom,
-  timeTo,
+  toDateTimeStr,
 }: Props): Result {
   const [report, setReport] = useState(createDefaultReportState);
   const [reportDownloadInFlight, setReportDownloadInFlight] = useState(false);
@@ -65,7 +61,7 @@ export function useAnalysisReport({
     onError('');
     try {
       const blob = await downloadAnalysisReport(buildReportRequest(report, inboxReq));
-      downloadBlob(blob, buildReportFilename(report, dateFrom, timeFrom, dateTo, timeTo));
+      downloadBlob(blob, buildReportFilename(report, fromDateTimeStr, toDateTimeStr));
     } catch (error) {
       if (!onUnauthorized(error)) {
         onError(toErrorMessage(error));
@@ -73,7 +69,7 @@ export function useAnalysisReport({
     } finally {
       setReportDownloadInFlight(false);
     }
-  }, [dateFrom, dateTo, inboxReq, onError, onUnauthorized, report, timeFrom, timeTo]);
+  }, [fromDateTimeStr, inboxReq, onError, onUnauthorized, report, toDateTimeStr]);
 
   return {
     report,

@@ -18,69 +18,45 @@ import type {
 } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  fetchAnalysisAors,
-  fetchAnalysisCallsignGraph,
-  fetchAnalysisCallsigns,
-  fetchAnalysisCallsignInfos,
-  fetchAnalysisCorrelatedFreqs,
-  fetchAnalysisCount,
-  fetchAnalysisFreqs,
-  fetchAnalysisGroups,
-  fetchAnalysisLocations,
-  fetchAnalysisMapPoints,
-  fetchAnalysisMetadata,
-  fetchAnalysisNetworks,
-  fetchAnalysisNewCallsigns,
-  fetchAnalysisPosts,
-  fetchAnalysisSenders,
-  fetchAnalysisSummaryTable,
-  fetchAnalysisTags,
-  fetchAnalysisUnits,
-  fetchUnitsByIds,
-  fetchNetworksByIds,
-  fetchFreqActivityDaily,
-  fetchInboxMessages,
-  fetchMessagesByIds,
-  getGroupInfosBatch,
-  getLatestSenders,
-  getTagsMapForDisplay,
-  downloadAnalysisGeojson,
-  downloadAnalysisKmz,
-  downloadAnalysisSummaryTableXlsx,
-} from '../../services/api/analysis';
-import { listPalitrasV2 } from '../../services/api/palitra';
-import { downloadBlob } from '../../utils/download-blob';
-import { sortFrequenciesNumerically, sortStringsAlphabetically } from '../../utils/misc';
-import {
-  ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
-  buildAnalysisReq,
-  buildInboxReq,
-  pushQueryStateToUrl,
-  shouldRebuildAnalysisRequests,
-} from './helpers';
+import { fetchInboxMessages } from '../../services/api/analysis';
+import { buildInboxReq } from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { buildNetworkDisplayMap } from './message-utils';
-import { buildSummaryCallsignsInfo, mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
+import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
+import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useAnalysisDataLoaders } from './use-analysis-data.loaders';
 import { useAnalysisDataMessageActions } from './use-analysis-data.message-actions';
 import { reloadAnalysisData } from './use-analysis-data.reload';
-import { emptyNewCallsigns, emptyOptions, toErrorMessage, topItems } from './use-analysis-data.shared';
+import { emptyNewCallsigns, emptyOptions, toErrorMessage } from './use-analysis-data.shared';
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
+import {
+  useLoadMissingNetworksForMessages,
+  useLoadNewCallsigns,
+  mergeNetworksById,
+  shouldSkipNewCallsignsLoad,
+} from './use-analysis-data.support';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
 import type {
   AnalysisAorEntry,
   AnalysisCountItem,
   AnalysisFilterOptions,
   AnalysisGroupsActivityPeriod,
-  AnalysisMapAttrs,
   AnalysisPalitrasLoadState,
 } from './types';
 
-export function useAnalysisData({ newestFirst, onError, onUnauthorized, queryState }: UseAnalysisDataProps): UseAnalysisDataResult {
+export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
+
+export function useAnalysisData({
+  newestFirst,
+  onError,
+  onUnauthorized,
+  queryState,
+  shouldLoadNewCallsigns,
+}: UseAnalysisDataProps): UseAnalysisDataResult {
   const [countsLoading, setCountsLoading] = useState(false);
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState(false);
   const [messagesPaging, setMessagesPaging] = useState(false);
   const [counts, setCounts] = useState<CountStatsRsp | null>(null);
   const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
@@ -120,6 +96,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
   const [networks, setNetworks] = useState<Network[]>([]);
+  const networksRef = useRef(networks);
   const mapMessagesLoadVersionRef = useRef(0);
   const mapDateRangeLoadVersionRef = useRef(0);
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
@@ -128,20 +105,59 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
+  const newCallsignsRequestRef = useRef(0);
+  const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
+  const newCallsignsLoadedKeyRef = useRef<string | null>(null);
+  const newCallsignsPendingKeyRef = useRef<string | null>(null);
+  const unitsMapRef = useRef(unitsMap);
+  const optionsFreqValues = useMemo(() => options.freqs.map((option) => option.value), [options.freqs]);
 
   useEffect(() => {
-    optionsFreqsRef.current = options.freqs;
-  }, [options.freqs]);
+    optionsFreqsRef.current = optionsFreqValues;
+  }, [optionsFreqValues]);
+
+  useEffect(() => {
+    shouldLoadNewCallsignsRef.current = shouldLoadNewCallsigns;
+  }, [shouldLoadNewCallsigns]);
+
+  useEffect(() => {
+    setNetworkDisplayMap(buildNetworkDisplayMap(networks, unitsMap));
+  }, [networks, unitsMap]);
+
+  useEffect(() => {
+    // Async network hydration reads the latest snapshot from here to avoid stale closure races.
+    networksRef.current = networks;
+  }, [networks]);
+
+  useEffect(() => {
+    unitsMapRef.current = unitsMap;
+  }, [unitsMap]);
 
   const invalidateMessagePaging = useCallback(() => {
     loadMoreMessagesRequestRef.current += 1;
     setMessagesPaging(false);
   }, []);
 
+  const { invalidateFilterSectionLoads, loadFilterSection, loadInitialFilterSections } = useAnalysisFilterSections({
+    queryState,
+    optionsFreqValues,
+    unitsMapRef,
+    onError,
+    onUnauthorized,
+    setAorEntries,
+    setGroupInfos,
+    setNetworkDisplayMap,
+    setNetworks,
+    setOptions,
+    setProfiles,
+    setTagsMap,
+  });
+
   const {
     downloadGeojson,
     downloadKmz,
     downloadSummaryXlsx,
+    invalidateCorrelatedFreqsCache,
     invalidateCallsignGraph,
     loadCallsignGraph,
     loadCorrelatedFreqs,
@@ -159,7 +175,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     newestFirst,
     onError,
     onUnauthorized,
-    optionsFreqs: options.freqs,
+    optionsFreqs: optionsFreqValues,
     queryState,
     setCallsignGraph,
     setCallsignGraphLoading,
@@ -180,6 +196,27 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     setMapPalitrasLoaded,
     setMapPalitrasLoadState,
     setMapPoints,
+  });
+
+  const loadNewCallsigns = useLoadNewCallsigns({
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+    setNewCallsigns,
+    setNewCallsignsLoading,
+    newCallsignsRequestRef,
+    newCallsignsLoadedKeyRef,
+    newCallsignsPendingKeyRef,
+  });
+
+  const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
+    networksRef,
+    onError,
+    onUnauthorized,
+    setNetworkDisplayMap,
+    setNetworks,
+    unitsMap,
   });
 
   const { clearAnalysisResults, onUpdateLocalMessage, patchMessages } = useAnalysisDataStateUtils({
@@ -214,12 +251,14 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     setTopLocations,
     setTopUnits,
     setUnitsMap,
+    setHasLoadedInitialMessages,
   });
 
   const reload = useCallback(async () => {
     await reloadAnalysisData({
       clearAnalysisResults,
       invalidateCallsignGraph,
+      invalidateCorrelatedFreqsCache,
       invalidateMessagePaging,
       newestFirst,
       onError,
@@ -227,10 +266,14 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       optionsFreqsRef,
       queryState,
       reloadRequestRef,
+      newCallsignsRequestRef,
+      newCallsignsLoadedKeyRef,
+      newCallsignsPendingKeyRef,
       setAorEntries,
       setCounts,
       setCountsLoading,
       setFiltersLoading,
+      invalidateFilterSectionLoads,
       setGroupInfos,
       setMapLoading,
       setMapDateRange,
@@ -243,6 +286,10 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       setNetworks,
       setNewCallsigns,
       setNewCallsignsLoading,
+      setNewCallsignsLoadedKey: (key) => {
+        newCallsignsLoadedKeyRef.current = key;
+      },
+      shouldLoadNewCallsigns: shouldLoadNewCallsignsRef.current,
       setNoMoreToLoad,
       setNolimitShown,
       setOptions,
@@ -256,8 +303,21 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       setTopLocations,
       setTopUnits,
       setUnitsMap,
+      setHasLoadedInitialMessages,
+      loadInitialFilterSections,
     });
-  }, [clearAnalysisResults, invalidateCallsignGraph, invalidateMessagePaging, newestFirst, onError, onUnauthorized, queryState]);
+  }, [
+    clearAnalysisResults,
+    invalidateCallsignGraph,
+    invalidateCorrelatedFreqsCache,
+    invalidateFilterSectionLoads,
+    invalidateMessagePaging,
+    loadInitialFilterSections,
+    newestFirst,
+    onError,
+    onUnauthorized,
+    queryState,
+  ]);
 
   const {
     messageActionCount,
@@ -270,7 +330,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   } = useAnalysisDataMessageActions({
     messages,
     mapOpenMessages,
-    optionsFreqs: options.freqs,
+    optionsFreqs: optionsFreqValues,
     onError,
     onUnauthorized,
     patchMessages,
@@ -283,7 +343,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
   });
 
   const loadAllMessages = useCallback(async () => {
-    const inboxReq = buildInboxReq(queryState, options.freqs);
+    const inboxReq = buildInboxReq(queryState, optionsFreqValues);
     if (inboxReq == null) return;
 
     setMessagesPaging(true);
@@ -291,6 +351,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       const rsp = await fetchInboxMessages({ ...inboxReq, nolimit: true, newestFirst });
       setMessages(rsp.inboxItems ?? []);
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
+      await loadMissingNetworksForMessages(rsp.inboxItems ?? []);
       setNolimitShown(true);
       setNoMoreToLoad(true);
     } catch (loadError) {
@@ -300,10 +361,10 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     } finally {
       setMessagesPaging(false);
     }
-  }, [newestFirst, onError, onUnauthorized, options.freqs, queryState]);
+  }, [loadMissingNetworksForMessages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   const loadMoreMessages = useCallback(async () => {
-    const inboxReq = buildInboxReq(queryState, options.freqs);
+    const inboxReq = buildInboxReq(queryState, optionsFreqValues);
     const lastMessage = messages.at(-1);
     if (inboxReq == null || lastMessage == null) return;
 
@@ -323,6 +384,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
       const nextMessages = rsp.inboxItems ?? [];
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       setMessages((current) => [...current, ...nextMessages]);
+      await loadMissingNetworksForMessages(nextMessages);
       if (nextMessages.length === 0) {
         setNoMoreToLoad(true);
       }
@@ -338,7 +400,7 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
         setMessagesPaging(false);
       }
     }
-  }, [messages, newestFirst, onError, onUnauthorized, options.freqs, queryState]);
+  }, [loadMissingNetworksForMessages, messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   useEffect(() => {
     void reload();
@@ -393,12 +455,16 @@ export function useAnalysisData({ newestFirst, onError, onUnauthorized, querySta
     groupsActivityLoadedFreq,
     groupsActivityLoadedPeriod,
     groupsActivityLoading,
-    inboxReq: buildInboxReq(queryState, options.freqs),
+    hasLoadedInitialMessages,
+    inboxReq: buildInboxReq(queryState, optionsFreqValues),
     loadCallsignGraph,
     loadAllMessages,
+    loadFilterSection,
+    invalidateFilterSectionLoads,
     toggleCallsignGraphNolimit,
     loadCorrelatedFreqs,
     loadGroupsActivity,
+    loadNewCallsigns,
     loadMoreMessages,
     loadMessagesForMap,
     mapAttrs,

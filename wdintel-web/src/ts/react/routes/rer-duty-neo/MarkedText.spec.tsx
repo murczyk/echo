@@ -5,6 +5,7 @@ import React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createTheme } from '@mui/material/styles';
 
 import { CALLSIGN_TOOLTIP_ITEM_SX, renderMarkedText } from './MarkedText';
 import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../Bindings';
@@ -29,6 +30,7 @@ function TestHost(props: {
   bodyText: string;
   messagePointEtalons?: string[];
   showPointLinks?: boolean;
+  linkCallsigns?: boolean;
   message?: InboxMessage;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -38,6 +40,7 @@ function TestHost(props: {
     <div>
       {renderMarkedText(props.nodes, props.bodyText, props.messagePointEtalons, {
         showPointLinks: props.showPointLinks,
+        linkCallsigns: props.linkCallsigns,
         message: props.message,
         callsignInfoMap: props.callsignInfoMap,
         networks: props.networks,
@@ -116,6 +119,63 @@ const networks: Network[] = [
   },
 ];
 
+const LIGHT_CARD_BG = '#F8F9FB';
+const DARK_CARD_BG = '#2C2C2E';
+const LIGHT_CALLSIGN_COLOR = '#1565c0';
+const DARK_CALLSIGN_COLOR = '#90caf9';
+
+function normalizeCssColor(value: string): { r: number; g: number; b: number; a: number } {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('#')) {
+    const hex = trimmed.slice(1);
+    const normalized = hex.length === 3 ? hex.split('').map((part) => part + part).join('') : hex;
+    return {
+      r: Number.parseInt(normalized.slice(0, 2), 16),
+      g: Number.parseInt(normalized.slice(2, 4), 16),
+      b: Number.parseInt(normalized.slice(4, 6), 16),
+      a: 1,
+    };
+  }
+  const rgbaMatch = trimmed.match(/^rgba?\(([^)]+)\)$/i);
+  if (!rgbaMatch) throw new Error(`Unsupported color format: ${value}`);
+  const parts = rgbaMatch[1].split(',').map((part) => part.trim());
+  return {
+    r: Number.parseFloat(parts[0]),
+    g: Number.parseFloat(parts[1]),
+    b: Number.parseFloat(parts[2]),
+    a: parts[3] != null ? Number.parseFloat(parts[3]) : 1,
+  };
+}
+
+function compositeOver(fg: { r: number; g: number; b: number; a: number }, bg: { r: number; g: number; b: number; a: number }) {
+  const alpha = fg.a + bg.a * (1 - fg.a);
+  return {
+    r: Math.round((fg.r * fg.a + bg.r * bg.a * (1 - fg.a)) / alpha),
+    g: Math.round((fg.g * fg.a + bg.g * bg.a * (1 - fg.a)) / alpha),
+    b: Math.round((fg.b * fg.a + bg.b * bg.a * (1 - fg.a)) / alpha),
+    a: alpha,
+  };
+}
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+  const srgb = [r, g, b].map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+}
+
+function contrastRatio(fg: string, bg: string): number {
+  const foreground = normalizeCssColor(fg);
+  const background = normalizeCssColor(bg);
+  const composed = foreground.a < 1 ? compositeOver(foreground, background) : foreground;
+  const fgLum = relativeLuminance(composed);
+  const bgLum = relativeLuminance(background);
+  const lighter = Math.max(fgLum, bgLum);
+  const darker = Math.min(fgLum, bgLum);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 describe('MarkedText', () => {
   const originalGetComputedStyle = window.getComputedStyle;
   let container: HTMLElement;
@@ -179,29 +239,126 @@ describe('MarkedText', () => {
       );
     });
 
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
 
-  it('does not render a badge for callsigns that exist only outside message networks', async () => {
+  it('renders the filled-badge network state without linking when callsign links are disabled', async () => {
     await act(async () => {
       root.render(
         <TestHost
-          nodes={[{ CNCallsignC: { text: 'lone', begin: 0, end: 4, etalon: 'lone' } }]}
-          bodyText="lone"
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          linkCallsigns={false}
           message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
           callsignInfoMap={{
-            lone: {
-              callsign: 'lone',
+            wolf: {
+              callsign: 'wolf',
+              res: [
+                {
+                  id: 1,
+                  callsign: 'wolf',
+                  position: 'cmd',
+                  comment: 'prio',
+                  unit1: 'u1',
+                  unit2: 'u2',
+                  unitId: 1,
+                  networkIdsReportedIn: [10],
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
+    expect(container.textContent).toContain('WOLF');
+  });
+
+  it('renders a linked network-related callsign without a direct message-network match', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            wolf: {
+              callsign: 'wolf',
               res: [
                 {
                   id: 2,
-                  callsign: 'lone',
+                  callsign: 'wolf',
                   position: 'sys',
                   comment: 'catalog',
                   unit1: 'u',
                   unit2: 'v',
-                  unitId: 2,
+                  unitId: 1,
+                  networkIdsReportedIn: [999],
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
+    expect(container.querySelector('a.content-token--ADP')?.getAttribute('href')).toBe('/rer-callsigns-neo?callsign=WOLF');
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+  });
+
+  it('renders duplicate callsigns verbatim', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[
+            { CNTextC: { text: 'УКХ р/м управління 4 мср 2 мсб', begin: 0, end: 29 } },
+            'CNNewlineC',
+            { CNCallsignC: { text: 'тихий', begin: 0, end: 5, etalon: 'тихий' } },
+            'CNNewlineC',
+            { CNCallsignC: { text: 'почта', begin: 6, end: 11, etalon: 'почта' } },
+            'CNNewlineC',
+            { CNTextC: { text: 'Базовий текст', begin: 12, end: 24 } },
+          ]}
+          bodyText="УКХ р/м управління 4 мср 2 мсб\nТИХИЙ\nПОЧТА\nБазовий текст"
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('УКХ р/м управління 4 мср 2 мсб');
+    expect(container.textContent).toContain('Базовий текст');
+    expect(container.textContent).toContain('ТИХИЙ');
+    expect(container.textContent).toContain('ПОЧТА');
+  });
+
+  it('renders an outlined badge for catalog-only callsigns without message networks', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'fox', begin: 0, end: 3, etalon: 'fox' } }]}
+          bodyText="fox"
+          message={{ freq: null, networkIds: null } as InboxMessage}
+          callsignInfoMap={{
+            fox: {
+              callsign: 'fox',
+              res: [
+                {
+                  id: 3,
+                  callsign: 'fox',
+                  position: 'sys',
+                  comment: 'catalog',
+                  unit1: 's1',
+                  unit2: 's2',
+                  unitId: 1,
                   networkIdsReportedIn: [20],
                 },
               ],
@@ -213,17 +370,18 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('LONE');
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
 
-  it('renders an outlined badge for catalog-only callsigns without message networks', async () => {
+  it('renders the outlined-badge catalog state without linking when callsign links are disabled', async () => {
     await act(async () => {
       root.render(
         <TestHost
           nodes={[{ CNCallsignC: { text: 'fox', begin: 0, end: 3, etalon: 'fox' } }]}
           bodyText="fox"
+          linkCallsigns={false}
           message={{ freq: null, networkIds: null } as InboxMessage}
           callsignInfoMap={{
             fox: {
@@ -248,8 +406,33 @@ describe('MarkedText', () => {
       );
     });
 
+    expect(container.querySelector('a.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
+    expect(container.textContent).toContain('FOX');
+  });
+
+  it('renders a plain attention state for callsigns that are not in the network etalon catalog', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'ghost', begin: 0, end: 5, etalon: 'ghost' } }]}
+          bodyText="ghost"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{}}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    const muted = container.querySelector('[data-testid="callsign-hint-plain-missing"]');
+    expect(muted).not.toBeNull();
+    expect(muted?.textContent).toBe('GHOST');
+    expect(muted?.getAttribute('title')).toBeNull();
+    expect(container.querySelector('a.content-token--ADP')).toBeNull();
+    expect(container.querySelector('span.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
 
   it('uses multiline wrapping styles for long tooltip rows', async () => {
@@ -287,6 +470,18 @@ describe('MarkedText', () => {
     expect(CALLSIGN_TOOLTIP_ITEM_SX.whiteSpace).toBe('normal');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.overflowWrap).toBe('anywhere');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.wordBreak).toBe('break-word');
+  });
+
+  it('keeps callsign contrast above WCAG AA in light and dark themes', () => {
+    const lightTheme = createTheme({ palette: { mode: 'light' } });
+    const darkTheme = createTheme({ palette: { mode: 'dark' } });
+
+    expect(contrastRatio(LIGHT_CALLSIGN_COLOR, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(DARK_CALLSIGN_COLOR, DARK_CARD_BG)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(lightTheme.palette.text.primary, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(darkTheme.palette.text.primary, DARK_CARD_BG)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(lightTheme.palette.text.secondary, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(darkTheme.palette.text.secondary, DARK_CARD_BG)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('renders highlighted keywords as non-interactive orange badges with black text', async () => {

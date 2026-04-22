@@ -14,26 +14,30 @@ import {
   MenuItem,
   Paper,
   Select,
-  type SxProps,
   Stack,
   TextField,
-  Tooltip,
-  Typography,
+  type SxProps,
 } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
-import { MRT_ColumnDef, type MRT_SortingState, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import { Fragment, memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
-import { PowerChip } from '../../../components/PowerChip';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../../components/dialogStyles';
 import { FULL_WIDTH_TABLE_PAPER_SX, getPageScrollTableContainerSx } from '../../../components/mui-customized/table/custom-styles';
-import { buildDefaultColumnOrder, getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../../components/mui-customized/table/get-default-table-options';
+import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
-import { TableToolbarControls } from '../../../components/TableToolbarControls';
-import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
+import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
+import { TableToolbarControls } from '../../../components/TableToolbarControls';
+import {
+  buildAnalysisSummaryTableColumns,
+  DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_ORDER,
+  DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY,
+  DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING,
+} from './analysis-summary-table-columns';
+import { SummaryTableLoadingState } from './analysis-summary-table-cells';
 import { buildAnalysisSummaryTableRows, type AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
 
 type Props = {
@@ -62,60 +66,9 @@ type RenameDialogState = {
 
 const defaultMRTOptions = getDefaultMRTOptions<AnalysisSummaryTableRowView>();
 
-export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY = {
-  freq: true,
-  count: true,
-  coordinateLabels: true,
-  callsignSearchText: true,
-  unitSearchText: true,
-  locationSearchText: true,
-};
-
-export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['freq', 'count', 'coordinateLabels', 'callsignSearchText', 'unitSearchText', 'locationSearchText'],
-  withRowNumbers: true,
-  withRowActions: true,
-});
-
-const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [{ id: 'count', desc: true }] satisfies MRT_SortingState;
-
 function mergeSx(sx?: SxProps<Theme>): SxProps<Theme>[] {
   if (Array.isArray(sx)) return sx;
   return sx ? [sx] : [];
-}
-
-function CompactListCell({
-  items,
-  maxVisible = 3,
-}: {
-  items: string[];
-  maxVisible?: number;
-}) {
-  if (items.length === 0) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        —
-      </Typography>
-    );
-  }
-
-  const visibleItems = items.slice(0, maxVisible);
-  const hiddenCount = items.length - visibleItems.length;
-
-  return (
-    <Stack spacing={0.5}>
-      {visibleItems.map((item, index) => (
-        <Typography key={`${item}-${index}`} variant="body2" title={item} sx={{ lineHeight: 1.35 }}>
-          {item}
-        </Typography>
-      ))}
-      {hiddenCount > 0 ? (
-        <Typography variant="caption" color="text.secondary">
-          +{hiddenCount} ще
-        </Typography>
-      ) : null}
-    </Stack>
-  );
 }
 
 function AnalysisSummaryTableCardInner({
@@ -151,6 +104,9 @@ function AnalysisSummaryTableCardInner({
       }),
     [callsignInfoMap, networkDisplayMap, networks, rows, unitsMap],
   );
+  const columns = useMemo(() => buildAnalysisSummaryTableColumns(), []);
+  const isFirstLoad = loading && data.length === 0;
+  const isReloading = loading && data.length > 0;
 
   useEffect(() => {
     if (!renameDialog) {
@@ -194,95 +150,11 @@ function AnalysisSummaryTableCardInner({
     }
   }, [onRenameUnit, renameDialog, renameValue]);
 
-  const columns = useMemo<MRT_ColumnDef<AnalysisSummaryTableRowView>[]>(
-    () => [
-      {
-        header: 'Частота',
-        accessorKey: 'freq',
-        id: 'freq',
-        size: 150,
-        grow: false,
-        enableSorting: true,
-        Cell: ({ row }) => (
-          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            {row.original.freq}
-          </Typography>
-        ),
-      },
-      {
-        header: 'К-сть',
-        accessorKey: 'count',
-        id: 'count',
-        size: 84,
-        grow: false,
-        enableSorting: true,
-        muiTableHeadCellProps: { align: 'right' },
-        muiTableBodyCellProps: { align: 'right' },
-      },
-      {
-        header: 'Координати',
-        accessorFn: (row) => row.coordinateLabels.join(' '),
-        id: 'coordinateLabels',
-        size: 180,
-        Cell: ({ row }) => <CompactListCell items={row.original.coordinateLabels} />,
-      },
-      {
-        header: 'Позивні',
-        accessorFn: (row) => row.callsignChips.map((entry) => entry.callsign).join(' '),
-        id: 'callsignSearchText',
-        size: 320,
-        Cell: ({ row }) => (
-          <Stack direction="row" gap={0.5} flexWrap="wrap">
-            {row.original.callsignChips.length === 0
-              ? '—'
-              : row.original.callsignChips.map((entry, index) => {
-                  const chip = (
-                    <PowerChip
-                      label={
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          {entry.tooltip && entry.iconClass ? <i className={`bi ${entry.iconClass}`} /> : null}
-                          <span>{entry.callsign.toUpperCase()}</span>
-                        </span>
-                      }
-                      size="small"
-                      color={entry.tooltip ? 'primary' : 'default'}
-                      selected={entry.isHighlighted}
-                    />
-                  );
-
-                  return entry.tooltip ? (
-                    <Tooltip key={`${row.original.freq}-${entry.callsign}-${index}`} title={entry.tooltip} placement="top">
-                      <span>{chip}</span>
-                    </Tooltip>
-                  ) : (
-                    <Fragment key={`${row.original.freq}-${entry.callsign}-${index}`}>{chip}</Fragment>
-                  );
-                })}
-          </Stack>
-        ),
-      },
-      {
-        header: 'Підрозділи',
-        accessorFn: (row) => row.unitLabels.join(' '),
-        id: 'unitSearchText',
-        size: 320,
-        Cell: ({ row }) => <CompactListCell items={row.original.unitLabels} maxVisible={4} />,
-      },
-      {
-        header: 'Локації',
-        accessorFn: (row) => row.locationLabels.join(' '),
-        id: 'locationSearchText',
-        size: 220,
-        Cell: ({ row }) => <CompactListCell items={row.original.locationLabels} />,
-      },
-    ],
-    [],
-  );
-
   const paperSx = useMemo<SxProps<Theme>>(
     () => [{ p: 2, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2 }, ...mergeSx(sx)] as SxProps<Theme>,
     [sx],
   );
+
   const outerTableContainerSx = useMemo<SxProps<Theme>>(
     () =>
       [
@@ -319,6 +191,7 @@ function AnalysisSummaryTableCardInner({
       ] as SxProps<Theme>,
     [tableContainerSx],
   );
+
   const mrtContainerSx = useMemo<SxProps<Theme>>(
     () =>
       getPageScrollTableContainerSx({
@@ -336,8 +209,8 @@ function AnalysisSummaryTableCardInner({
     getRowId: (row) => row.freq,
     enableSorting: true,
     enableSortingRemoval: false,
-    enablePagination: false,
-    enableBottomToolbar: false,
+    enablePagination: true,
+    enableBottomToolbar: true,
     enableTopToolbar: false,
     enableColumnActions: true,
     enableColumnFilters: false,
@@ -361,16 +234,8 @@ function AnalysisSummaryTableCardInner({
     renderRowActions: ({ row }) => (
       <Box sx={{ display: 'flex', justifyContent: 'center' }}>
         <MrtRowActions>
-          <MrtRowActionButton
-            label="У фільтр"
-            onClick={() => onSelectFreq(row.original.freq)}
-            icon={<FilterAltIcon fontSize="small" />}
-          />
-          <MrtRowActionButton
-            label="На мапі"
-            onClick={() => onShowFreqOnMap(row.original.freq)}
-            icon={<MapIcon fontSize="small" />}
-          />
+          <MrtRowActionButton label="У фільтр" onClick={() => onSelectFreq(row.original.freq)} icon={<FilterAltIcon fontSize="small" />} />
+          <MrtRowActionButton label="На мапі" onClick={() => onShowFreqOnMap(row.original.freq)} icon={<MapIcon fontSize="small" />} />
           <MrtRowActionButton
             label="Редагувати підрозділ"
             onClick={() => openRenameDialog(row.original)}
@@ -388,6 +253,10 @@ function AnalysisSummaryTableCardInner({
       density: 'compact',
       sorting: DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING,
       showGlobalFilter: true,
+      pagination: {
+        pageIndex: 0,
+        pageSize: 25,
+      },
     },
     displayColumnDefOptions: {
       ...defaultMRTOptions.displayColumnDefOptions,
@@ -408,6 +277,17 @@ function AnalysisSummaryTableCardInner({
     },
     muiTableContainerProps: {
       sx: mrtContainerSx,
+    },
+    muiBottomToolbarProps: {
+      sx: {
+        position: 'sticky',
+        bottom: 0,
+        zIndex: 2,
+        backgroundColor: 'var(--bs-body-bg)',
+      },
+    },
+    muiPaginationProps: {
+      rowsPerPageOptions: [25, 50, 100],
     },
     muiTableProps: {
       'aria-label': 'Таблиця частот аналізу',
@@ -443,21 +323,15 @@ function AnalysisSummaryTableCardInner({
             <Button startIcon={<DownloadIcon />} onClick={onDownloadGeojson} variant="outlined" aria-label="GEOJSON" title="GEOJSON">
               GEOJSON
             </Button>
-            <InternalTableActions
-              table={table}
-              filtersHidden
-              rowNumberAppearanceControl
-            />
+            <InternalTableActions table={table} filtersHidden rowNumberAppearanceControl />
           </Stack>
         }
       />
 
       <Box sx={outerTableContainerSx}>
         <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <MaterialReactTable table={table} />
-          {loading ? (
-            <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} />
-          ) : null}
+          {isFirstLoad ? <SummaryTableLoadingState /> : <MaterialReactTable table={table} />}
+          {isReloading ? <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} /> : null}
         </Box>
       </Box>
 
@@ -465,37 +339,37 @@ function AnalysisSummaryTableCardInner({
         <DialogTitle>Редагувати підрозділ</DialogTitle>
         <DialogContent>
           <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
-            <Typography variant="body2" color="text.secondary">
-              {renameDialog ? `Частота ${renameDialog.freq}` : ''}
-            </Typography>
-            <FormControl size="small" fullWidth disabled={renameSaving}>
-              <InputLabel id={`${headingId}-rename-unit-label`}>Підрозділ</InputLabel>
-              <Select
-                labelId={`${headingId}-rename-unit-label`}
-                label="Підрозділ"
-                value={renameDialog?.selectedUnit ?? ''}
-                onChange={(event) => {
-                  const selectedUnit = String(event.target.value);
-                  setRenameDialog((current) => (current ? { ...current, selectedUnit } : current));
-                  setRenameValue(selectedUnit);
-                }}
-              >
-                {(renameDialog?.units ?? []).map((unit, index) => (
-                  <MenuItem key={`${unit}-${index}`} value={unit}>
-                    {unit}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Box sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>{renameDialog ? `Частота ${renameDialog.freq}` : ''}</Box>
+            {renameDialog?.units.length === 1 ? null : (
+              <FormControl size="small" fullWidth disabled={renameSaving}>
+                <InputLabel id={`${headingId}-rename-unit-label`}>Підрозділ</InputLabel>
+                <Select
+                  labelId={`${headingId}-rename-unit-label`}
+                  label="Підрозділ"
+                  value={renameDialog?.selectedUnit ?? ''}
+                  onChange={(event) => {
+                    const selectedUnit = String(event.target.value);
+                    setRenameDialog((current) => (current ? { ...current, selectedUnit } : current));
+                    setRenameValue(selectedUnit);
+                  }}
+                >
+                  {(renameDialog?.units ?? []).map((unit, index) => (
+                    <MenuItem key={`${unit}-${index}`} value={unit}>
+                      {unit}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
             <TextField
-              autoFocus
+              autoFocus={renameDialog?.units.length === 1}
               size="small"
               fullWidth
-              label="Нова назва"
+              label={renameDialog?.units.length === 1 ? 'Поточна назва підрозділу' : 'Нова назва'}
               value={renameValue}
               disabled={renameSaving}
               onChange={(event) => setRenameValue(event.target.value)}
-              aria-label={renameDialog ? `Нова назва підрозділу для частоти ${renameDialog.freq}` : 'Нова назва підрозділу'}
+              aria-label={renameDialog ? `Назва підрозділу для частоти ${renameDialog.freq}` : 'Назва підрозділу'}
             />
           </Stack>
         </DialogContent>

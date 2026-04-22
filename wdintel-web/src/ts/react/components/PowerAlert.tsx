@@ -3,20 +3,22 @@ import Alert, { AlertProps } from '@mui/material/Alert';
 
 type PowerAlertProps = AlertProps & {
   autoHideDuration?: number | null;
+  dismissible?: boolean;
 };
 
 const DEFAULT_SUCCESS_AUTO_HIDE_MS = 6000;
 
 export function PowerAlert(props: PowerAlertProps) {
-  const { autoHideDuration, onClose, severity = 'success', children, ...rest } = props;
+  const { autoHideDuration, dismissible, onClose, severity = 'success', children, ...rest } = props;
   const [open, setOpen] = React.useState(true);
+  const isDismissible = dismissible ?? severity !== 'success';
 
   React.useEffect(() => {
     setOpen(true);
   }, [children, severity]);
 
   const resolvedAutoHideDuration =
-    autoHideDuration === undefined ? (severity === 'success' && onClose ? DEFAULT_SUCCESS_AUTO_HIDE_MS : null) : autoHideDuration;
+    autoHideDuration === undefined ? (severity === 'success' ? DEFAULT_SUCCESS_AUTO_HIDE_MS : null) : autoHideDuration;
 
   const handleClose = React.useCallback(
     (event?: React.SyntheticEvent) => {
@@ -44,7 +46,7 @@ export function PowerAlert(props: PowerAlertProps) {
     return null;
   }
 
-  const alertOnClose = onClose
+  const alertOnClose = isDismissible || onClose
     ? (event: React.SyntheticEvent) => {
         handleClose(event);
       }

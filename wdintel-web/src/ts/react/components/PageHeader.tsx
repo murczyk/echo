@@ -1,49 +1,62 @@
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Tooltip, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
-
-import { PowerIconButton } from './PowerIconButton';
 
 type Props = {
   title: ReactNode;
   titleInfo?: ReactNode;
+  middle?: ReactNode;
   actions?: ReactNode;
   className?: string;
   titleClassName?: string;
 };
 
-export function PageHeader({ title, titleInfo, actions, className, titleClassName }: Props) {
+export function PageHeader({ title, titleInfo, middle, actions, className, titleClassName }: Props) {
   return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      justifyContent="space-between"
-      flexWrap="wrap"
-      gap={2}
+    <Box
       className={className}
+      sx={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 2,
+        width: '100%',
+      }}
     >
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ minHeight: 40 }}>
-        <Typography
-          component="h1"
-          variant="h5"
-          sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
-          className={titleClassName}
-        >
+      <Box sx={{ minHeight: 48, display: 'flex', alignItems: 'center', flexShrink: 0, minWidth: 0 }}>
+        <Typography component="h1" variant="h5" sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }} className={titleClassName}>
           {title}
         </Typography>
         {titleInfo ? (
           <Tooltip title={titleInfo} arrow placement="right-start">
-            <PowerIconButton
-              size="small"
+            <Box
+              component="span"
               aria-label="Інформація про сторінку"
-              sx={{ p: 0.25, alignSelf: 'center', display: 'inline-flex' }}
+              sx={{ ml: 0.75, display: 'inline-flex', alignSelf: 'center', lineHeight: 0, cursor: 'default' }}
             >
               <InfoOutlinedIcon fontSize="small" />
-            </PowerIconButton>
+            </Box>
           </Tooltip>
         ) : null}
-      </Stack>
-      {actions ?? null}
-    </Stack>
+      </Box>
+      {middle ? (
+        <Box
+          sx={{
+            minWidth: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            width: 'fit-content',
+            maxWidth: '100%',
+            flexShrink: 0,
+          }}
+        >
+          {middle}
+        </Box>
+      ) : null}
+      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+        {actions ?? null}
+      </Box>
+    </Box>
   );
 }

@@ -15,10 +15,10 @@ type QueryStateFieldConfig = {
 };
 
 const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
-  { key: 'dateFromStr', param: 'dateFrom', type: 'string' },
-  { key: 'timeFromStr', param: 'timeFrom', type: 'string' },
-  { key: 'dateToStr', param: 'dateTo', type: 'string' },
-  { key: 'timeToStr', param: 'timeTo', type: 'string' },
+  // Neo intentionally persists only combined datetime params.
+  // The legacy split date/time fields are supported only by the old analysis adapter.
+  { key: 'fromDateTimeStr', param: 'fromDateTime', type: 'string' },
+  { key: 'toDateTimeStr', param: 'toDateTime', type: 'string' },
   { key: 'includeOnlyNewFreqs', param: 'onlyNewFreqs', type: 'boolean' },
   { key: 'aorsSelected', param: 'aors', type: 'string[]' },
   { key: 'groupsSelected', param: 'groups', type: 'string[]' },
@@ -34,6 +34,7 @@ const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
   { key: 'orBookmarked', param: 'orBookmarked', type: 'boolean' },
   { key: 'orImportant', param: 'orImportant', type: 'boolean' },
   { key: 'orWithCoords', param: 'orWithCoords', type: 'boolean' },
+  { key: 'orWithoutCoords', param: 'orWithoutCoords', type: 'boolean' },
   { key: 'search', param: 'search', type: 'string' },
   { key: 'metadataCc', param: 'metadataCc', type: 'string[]' },
   { key: 'metadataSender', param: 'metadataSender', type: 'string[]' },
@@ -58,10 +59,8 @@ const MANAGED_QUERY_PARAM_NAMES = new Set<string>([
 ]);
 
 const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
-  dateFromStr: '',
-  timeFromStr: '',
-  dateToStr: '',
-  timeToStr: '',
+  fromDateTimeStr: '',
+  toDateTimeStr: '',
   includeOnlyNewFreqs: false,
   aorsSelected: [],
   groupsSelected: [],
@@ -77,6 +76,7 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   orBookmarked: false,
   orImportant: false,
   orWithCoords: false,
+  orWithoutCoords: false,
   search: '',
   metadataCc: [],
   metadataSender: [],
@@ -251,6 +251,7 @@ export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams
       }
     }
   }
+
 }
 
 export function saveRerAnalysisQueryState(state: unknown): void {

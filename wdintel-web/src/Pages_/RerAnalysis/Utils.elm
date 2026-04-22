@@ -295,6 +295,7 @@ metadataHref dateFromStr dateToStr metadataFilter =
             , orBookmarked = False
             , orImportant = False
             , orWithCoords = False
+            , orWithoutCoords = False
             , search = ""
             , metadataCc = []
             , metadataSender = []

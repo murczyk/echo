@@ -17,6 +17,7 @@ import type {
   AnalysisAorEntry,
   AnalysisCountItem,
   AnalysisFilterOptions,
+  AnalysisFilterSectionId,
   AnalysisGroupsActivityPeriod,
   AnalysisMapAttrs,
 } from './types';
@@ -25,6 +26,7 @@ export type UseAnalysisDataProps = {
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
+  shouldLoadNewCallsigns: boolean;
   queryState: import('./types').AnalysisQueryState;
 };
 
@@ -47,12 +49,16 @@ export type UseAnalysisDataResult = {
   groupsActivityLoadedFreq: string | null;
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
+  hasLoadedInitialMessages: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
   loadCallsignGraph: () => Promise<void>;
   loadAllMessages: () => Promise<void>;
+  loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
+  invalidateFilterSectionLoads: () => void;
   toggleCallsignGraphNolimit: () => void;
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
+  loadNewCallsigns: () => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<void>;
   mapAttrs: AnalysisMapAttrs;

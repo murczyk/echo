@@ -1,5 +1,5 @@
 import { Autocomplete, Box, Card, CircularProgress, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, SyntheticEvent } from 'react';
 
 import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
@@ -12,6 +12,7 @@ import { fetchUserSettings, saveUserSettings as saveUserDutySettings } from '../
 import { listSigintZones } from '../../services/api/zones';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsDutySection } from './SettingsDutySection';
+import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SettingsReportsSection } from './SettingsReportsSection';
 
@@ -75,7 +76,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
   const [dutySaveError, setDutySaveError] = useState<string | null>(null);
   const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
-  const [dutySaveInProgress, setDutySaveInProgress] = useState(false);
+  const dutySavePendingRef = useRef<{ tagsLayout: TagsLayoutVariant; disableAutoScroll: boolean } | null>(null);
+  const dutySaveRunningRef = useRef(false);
 
   const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
 
@@ -159,30 +161,44 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
-  const isDutyDirty = tagsLayout !== initialTagsLayout || dutyDisableAutoScroll !== initialDutyDisableAutoScroll;
-
-  async function handleDutySave(event?: FormEvent) {
-    event?.preventDefault();
-    if (dutySaveInProgress) return;
-    if (!isDutyDirty) return;
-
+  function scheduleDutySave(nextSettings: { tagsLayout: TagsLayoutVariant; disableAutoScroll: boolean }) {
     setDutySaveError(null);
     setDutySaveSuccess(null);
-    setDutySaveInProgress(true);
+    dutySavePendingRef.current = nextSettings;
+    void flushDutySaveQueue();
+  }
+
+  async function flushDutySaveQueue() {
+    if (dutySaveRunningRef.current) return;
+    dutySaveRunningRef.current = true;
+    let shouldRetryPendingSave = true;
 
     try {
-      await saveUserDutySettings({ tagsLayout, disableAutoScroll: dutyDisableAutoScroll });
-      setInitialTagsLayout(tagsLayout);
-      setInitialDutyDisableAutoScroll(dutyDisableAutoScroll);
-      setDutySaveSuccess('Збережено');
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        window.location.assign('/login');
-        return;
+      while (dutySavePendingRef.current != null) {
+        const nextSettings = dutySavePendingRef.current;
+        dutySavePendingRef.current = null;
+
+        try {
+          await saveUserDutySettings(nextSettings);
+          setInitialTagsLayout(nextSettings.tagsLayout);
+          setInitialDutyDisableAutoScroll(nextSettings.disableAutoScroll);
+          setDutySaveSuccess('Збережено');
+        } catch (error) {
+          if (isUnauthorizedError(error)) {
+            shouldRetryPendingSave = false;
+            window.location.assign('/login');
+            return;
+          }
+          setDutySaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
+          break;
+        }
       }
-      setDutySaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
     } finally {
-      setDutySaveInProgress(false);
+      dutySaveRunningRef.current = false;
+      // Retry any queued write after a transient failure; a newer payload may have arrived while the failed save was in flight.
+      if (shouldRetryPendingSave && dutySavePendingRef.current != null) {
+        void flushDutySaveQueue();
+      }
     }
   }
 
@@ -236,6 +252,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               borderBottom: 1,
               borderColor: 'divider',
               flexShrink: 0,
+              '& .MuiTab-root': {
+                minHeight: 48,
+                alignItems: 'center',
+                textAlign: 'center',
+              },
             }}
           >
             <Tab
@@ -243,28 +264,24 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               label="ЗАГАЛЬНІ"
               id="settings-neo-tab-general"
               aria-controls="settings-neo-panel-general"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
             <Tab
               value="duty"
               label="ОПЕРАТИВНИЙ"
               id="settings-neo-tab-duty"
               aria-controls="settings-neo-panel-duty"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
             <Tab
               value="analysis"
               label="АНАЛІЗ"
               id="settings-neo-tab-analysis"
               aria-controls="settings-neo-panel-analysis"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
             <Tab
               value="reports"
               label="ЗВІТИ"
               id="settings-neo-tab-reports"
               aria-controls="settings-neo-panel-reports"
-              sx={{ alignItems: 'flex-start', textAlign: 'left', minHeight: 48 }}
             />
           </Tabs>
 
@@ -363,19 +380,14 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               saveSuccess={dutySaveSuccess}
               tagsLayout={tagsLayout}
               onTagsLayoutChange={(layout) => {
-                setDutySaveSuccess(null);
-                setDutySaveError(null);
                 setTagsLayout(layout);
+                scheduleDutySave({ tagsLayout: layout, disableAutoScroll: dutyDisableAutoScroll });
               }}
               disableAutoScroll={dutyDisableAutoScroll}
               onDisableAutoScrollChange={(value) => {
-                setDutySaveSuccess(null);
-                setDutySaveError(null);
                 setDutyDisableAutoScroll(value);
+                scheduleDutySave({ tagsLayout, disableAutoScroll: value });
               }}
-              onSave={handleDutySave}
-              isDirty={isDutyDirty}
-              saveInProgress={dutySaveInProgress}
             />
           ) : null}
 
@@ -384,16 +396,31 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               id="settings-neo-panel-analysis"
               role="tabpanel"
               aria-labelledby="settings-neo-tab-analysis"
-              sx={{ p: 3 }}
             >
-              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 960 }}>
-                Налаштування аналізу з’являться тут
-              </Typography>
+              <Box sx={{ p: 3 }}>
+                <Stack spacing={3} sx={{ maxWidth: 960 }}>
+                  <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
+                    Аналіз
+                  </Typography>
+                  <SettingsSharedTagsLayoutCard
+                    tagsLayout={tagsLayout}
+                    onTagsLayoutChange={(layout) => {
+                      setTagsLayout(layout);
+                      scheduleDutySave({ tagsLayout: layout, disableAutoScroll: dutyDisableAutoScroll });
+                    }}
+                    loadInProgress={loadInProgress}
+                  />
+                </Stack>
+              </Box>
             </Box>
           ) : null}
 
           {settingsSection === 'reports' ? (
-            <SettingsReportsSection active={settingsSection === 'reports'} userRoles={userRoles} />
+            <SettingsReportsSection
+              active={settingsSection === 'reports'}
+              userRoles={userRoles}
+              rolesLoading={loadInProgress}
+            />
           ) : null}
         </Card>
       </Stack>

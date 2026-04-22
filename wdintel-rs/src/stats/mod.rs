@@ -247,6 +247,9 @@ fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
     if req.or_with_coords.unwrap_or(false) {
         return false;
     }
+    if req.or_without_coords.unwrap_or(false) {
+        return false;
+    }
     if req.or_with_extended_form.unwrap_or(false) {
         return false;
     }
@@ -3306,6 +3309,7 @@ mod tests {
             or_bookmarked: None,
             or_important: None,
             or_with_coords: None,
+            or_without_coords: None,
             search: None,
             selected_tags: None,
             selected_networks: None,
@@ -3406,6 +3410,11 @@ mod tests {
             },
             AnalysisStatsReq {
                 or_with_coords: Some(true),
+                or_without_coords: None,
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                or_without_coords: Some(true),
                 ..analysis_stats_req0()
             },
             AnalysisStatsReq {

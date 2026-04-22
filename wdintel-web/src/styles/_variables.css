@@ -269,7 +269,8 @@
     --watermark-color: var(--neutral-400);
 
     --action-color: var(--teal-blue-normal);
-    --message-callsign-color: #1976d2;
+    /* WCAG AA contrast on the light card background. */
+    --message-callsign-color: #1565c0;
     --action-hovered-color: var(--teal-blue-normal-hover);
     --button-text-color: white;
     --toggle-color: white;

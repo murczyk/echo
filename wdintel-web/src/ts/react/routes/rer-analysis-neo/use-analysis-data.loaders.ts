@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 
 import type {
   CorrelatedFreq,
@@ -26,6 +26,14 @@ import { toErrorMessage } from './use-analysis-data.shared';
 import type { AnalysisGroupsActivityPeriod, AnalysisPalitrasLoadState, AnalysisQueryState } from './types';
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
+
+export function normalizeMapMessageIds(messageIds: readonly unknown[]): number[] {
+  return Array.from(new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))));
+}
+
+export function shouldClearMapOpenMessages(messageIds: readonly unknown[]): boolean {
+  return normalizeMapMessageIds(messageIds).length === 0;
+}
 
 type Params = {
   callsignGraphNolimit: boolean;
@@ -91,6 +99,13 @@ export function useAnalysisDataLoaders(params: Params) {
     setMapPalitrasLoadState,
     setMapPoints,
   } = params;
+  const correlatedFreqsRequestRef = useRef(0);
+  const correlatedFreqsRequestKeyRef = useRef<string | null>(null);
+
+  const invalidateCorrelatedFreqsCache = useCallback(() => {
+    correlatedFreqsRequestRef.current += 1;
+    correlatedFreqsRequestKeyRef.current = null;
+  }, []);
 
   const invalidateCallsignGraph = useCallback(() => {
     callsignGraphRequestRef.current += 1;
@@ -146,11 +161,18 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
+      const cleanMessageIds = normalizeMapMessageIds(messageIds);
+      if (cleanMessageIds.length === 0) {
+        mapMessagesLoadVersionRef.current += 1;
+        setMapOpenMessages([]);
+        return;
+      }
+
       const loadVersion = mapMessagesLoadVersionRef.current + 1;
       mapMessagesLoadVersionRef.current = loadVersion;
 
       try {
-        const nextMessages = await fetchMessagesByIds(messageIds);
+        const nextMessages = await fetchMessagesByIds(cleanMessageIds);
         if (mapMessagesLoadVersionRef.current !== loadVersion) return;
         setMapOpenMessages(nextMessages);
       } catch (loadError) {
@@ -188,17 +210,29 @@ export function useAnalysisDataLoaders(params: Params) {
   const loadCorrelatedFreqs = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
     if (analysisReq == null || queryState.freqsSelected.length === 0) {
+      correlatedFreqsRequestRef.current += 1;
+      correlatedFreqsRequestKeyRef.current = null;
       setCorrelatedFreqs([]);
       return;
     }
 
+    const requestKey = JSON.stringify(analysisReq);
+    if (correlatedFreqsRequestKeyRef.current === requestKey) return;
+
+    const requestId = correlatedFreqsRequestRef.current + 1;
+    correlatedFreqsRequestRef.current = requestId;
+    correlatedFreqsRequestKeyRef.current = requestKey;
     setCorrelatedFreqsLoading(true);
     try {
       const rsp = await fetchAnalysisCorrelatedFreqs(analysisReq);
+      if (requestId !== correlatedFreqsRequestRef.current) return;
       setCorrelatedFreqs(rsp.freqs ?? []);
     } catch (loadError) {
+      if (requestId !== correlatedFreqsRequestRef.current) return;
+      correlatedFreqsRequestKeyRef.current = null;
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
+      if (requestId !== correlatedFreqsRequestRef.current) return;
       setCorrelatedFreqsLoading(false);
     }
   }, [onError, onUnauthorized, optionsFreqs, queryState, setCorrelatedFreqs, setCorrelatedFreqsLoading]);
@@ -324,6 +358,7 @@ export function useAnalysisDataLoaders(params: Params) {
     downloadGeojson,
     downloadKmz,
     downloadSummaryXlsx,
+    invalidateCorrelatedFreqsCache,
     invalidateCallsignGraph,
     loadCallsignGraph,
     loadCorrelatedFreqs,

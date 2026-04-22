@@ -78,6 +78,7 @@ pub async fn rer_analysis_download_kmz(
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
+        &req.or_without_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
