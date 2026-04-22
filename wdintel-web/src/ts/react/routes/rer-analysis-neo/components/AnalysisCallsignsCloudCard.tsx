@@ -1,8 +1,9 @@
-import { Button, Paper, Stack, Typography } from '@mui/material';
+import { Button, Paper, Stack } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
 
-import { PowerChip } from '../../../components/PowerChip';
+import { CompactPowerChip } from '../../../components/CompactPowerChip';
 import type { AnalysisCountItem } from '../types';
+import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 
 type Props = {
   items: AnalysisCountItem[];
@@ -24,19 +25,19 @@ export function AnalysisCallsignsCloudCard({ items }: Props) {
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
-      <Typography id={headingId} variant="subtitle2" component="h2" sx={{ mb: 1.5 }}>
+      <CompactTitle id={headingId} component="h2" sx={{ mb: 1.5 }}>
         Хмара позивних
-      </Typography>
+      </CompactTitle>
       <Stack direction="row" gap={1} flexWrap="wrap" role="list" aria-label="Хмара позивних">
         {visibleItems.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
+          <CompactText color="text.secondary">
             Немає даних
-          </Typography>
+          </CompactText>
         ) : (
           visibleItems.map((item) => {
             const weight = maxCount === 0 ? 0 : item.count / maxCount;
             return (
-              <PowerChip
+              <CompactPowerChip
                 key={item.key}
                 color={weight > 0.66 ? 'primary' : 'default'}
                 label={`${item.key} (${item.count})`}

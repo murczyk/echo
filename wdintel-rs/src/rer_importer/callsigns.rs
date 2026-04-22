@@ -1371,6 +1371,7 @@ pub async fn callsigns_graph(
         or_bookmarked: req.or_bookmarked,
         or_important: req.or_important,
         or_with_coords: req.or_with_coords,
+        or_without_coords: req.or_without_coords,
         search: req.search.clone(),
         selected_tags: req.selected_tags.clone(),
         metadata_cc: req.metadata_cc.clone(),

@@ -431,6 +431,7 @@ export type InboxMessagesReq = {
   orBookmarked: boolean | null;
   orImportant: boolean | null;
   orWithCoords: boolean | null;
+  orWithoutCoords: boolean | null;
   newestFirst: boolean | null;
   search: string | null;
   highlightCallsigns: boolean | null;
@@ -632,6 +633,7 @@ export type AnalysisStatsReq = {
   orBookmarked: boolean | null;
   orImportant: boolean | null;
   orWithCoords: boolean | null;
+  orWithoutCoords: boolean | null;
   search: string | null;
   selectedTags: Array<number> | null;
   selectedNetworks: Array<number> | null;
@@ -766,6 +768,7 @@ export type CallsignsGraphReq = {
   orBookmarked: boolean | null;
   orImportant: boolean | null;
   orWithCoords: boolean | null;
+  orWithoutCoords: boolean | null;
   nolimit: boolean | null;
   search: string | null;
   selectedTags: Array<number> | null;
@@ -856,6 +859,7 @@ export type RerAnalysisQueryState = {
   orBookmarked: boolean;
   orImportant: boolean;
   orWithCoords: boolean;
+  orWithoutCoords: boolean;
   search: string;
   metadataCc: Array<string>;
   metadataSender: Array<string>;

@@ -1137,6 +1137,7 @@ type alias InboxMessagesReq =
     , orBookmarked : Maybe Bool
     , orImportant : Maybe Bool
     , orWithCoords : Maybe Bool
+    , orWithoutCoords : Maybe Bool
     , newestFirst : Maybe Bool
     , search : Maybe String
     , highlightCallsigns : Maybe Bool
@@ -1194,6 +1195,7 @@ inboxMessagesReqEncoder struct =
         , ( "or_bookmarked", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orBookmarked )
         , ( "or_important", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orImportant )
         , ( "or_with_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orWithCoords )
+        , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orWithoutCoords )
         , ( "newest_first", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.newestFirst )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "highlight_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightCallsigns )
@@ -1673,6 +1675,7 @@ type alias AnalysisStatsReq =
     , orBookmarked : Maybe Bool
     , orImportant : Maybe Bool
     , orWithCoords : Maybe Bool
+    , orWithoutCoords : Maybe Bool
     , search : Maybe String
     , selectedTags : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
@@ -1708,6 +1711,7 @@ analysisStatsReqEncoder struct =
         , ( "or_bookmarked", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orBookmarked )
         , ( "or_important", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orImportant )
         , ( "or_with_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orWithCoords )
+        , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orWithoutCoords )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
@@ -2014,6 +2018,7 @@ type alias CallsignsGraphReq =
     , orBookmarked : Maybe Bool
     , orImportant : Maybe Bool
     , orWithCoords : Maybe Bool
+    , orWithoutCoords : Maybe Bool
     , nolimit : Maybe Bool
     , search : Maybe String
     , selectedTags : Maybe (List Int)
@@ -2050,6 +2055,7 @@ callsignsGraphReqEncoder struct =
         , ( "or_bookmarked", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orBookmarked )
         , ( "or_important", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orImportant )
         , ( "or_with_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orWithCoords )
+        , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orWithoutCoords )
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.nolimit )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
@@ -2233,6 +2239,7 @@ type alias RerAnalysisQueryState =
     , orBookmarked : Bool
     , orImportant : Bool
     , orWithCoords : Bool
+    , orWithoutCoords : Bool
     , search : String
     , metadataCc : List String
     , metadataSender : List String
@@ -2271,6 +2278,7 @@ rerAnalysisQueryStateEncoder struct =
         , ( "or_bookmarked", Json.Encode.bool struct.orBookmarked )
         , ( "or_important", Json.Encode.bool struct.orImportant )
         , ( "or_with_coords", Json.Encode.bool struct.orWithCoords )
+        , ( "or_without_coords", Json.Encode.bool struct.orWithoutCoords )
         , ( "search", Json.Encode.string struct.search )
         , ( "metadata_cc", Json.Encode.list Json.Encode.string struct.metadataCc )
         , ( "metadata_sender", Json.Encode.list Json.Encode.string struct.metadataSender )
@@ -8356,6 +8364,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_bookmarked" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_first" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_callsigns" (Json.Decode.nullable Json.Decode.bool)))
@@ -8548,6 +8557,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_bookmarked" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
@@ -8718,6 +8728,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_bookmarked" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
@@ -8849,6 +8860,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_bookmarked" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.list Json.Decode.string)))

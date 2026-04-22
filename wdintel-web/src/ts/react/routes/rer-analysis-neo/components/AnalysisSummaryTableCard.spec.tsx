@@ -320,9 +320,55 @@ describe('AnalysisSummaryTableCard', () => {
     rendered.push(view);
 
     await click(getButton(view.container, 'Редагувати підрозділ'));
-    await changeInput(getInput(view.container, 'Нова назва підрозділу для частоти 100.100'), '77 обрмп');
+    await changeInput(getInput(view.container, 'Назва підрозділу для частоти 100.100'), '77 обрмп');
     await click(getButton(view.container, 'Зберегти'));
 
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
+  });
+
+  it('uses a single editable field when only one unit is available', async () => {
+    const onRenameUnit = vi.fn().mockResolvedValue(undefined);
+    const view = await renderComponent(
+      buildProps({
+        onRenameUnit,
+        rows: [buildRow({ units: ['1 обрмп'] })],
+      }),
+    );
+    rendered.push(view);
+
+    await click(getButton(view.container, 'Редагувати підрозділ'));
+
+    expect(view.container.querySelector('select')).toBeNull();
+    expect(getInput(view.container, 'Назва підрозділу для частоти 100.100')).toBeTruthy();
+
+    await changeInput(getInput(view.container, 'Назва підрозділу для частоти 100.100'), '77 обрмп');
+    await click(getButton(view.container, 'Зберегти'));
+
+    expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
+  });
+
+  it('collapses callsigns after the first five and expands on demand', async () => {
+    const view = await renderComponent(
+      buildProps({
+        rows: [
+          buildRow({
+            callsigns: ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf'],
+          }),
+        ],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('ALPHA');
+    expect(view.container.textContent).toContain('ECHO');
+    expect(view.container.textContent).not.toContain('FOXTROT');
+    expect(view.container.textContent).not.toContain('GOLF');
+    expect(view.container.textContent).toContain('Показати ще (2)');
+
+    await click(getButton(view.container, 'Показати ще (2)'));
+
+    expect(view.container.textContent).toContain('FOXTROT');
+    expect(view.container.textContent).toContain('GOLF');
+    expect(view.container.textContent).toContain('Згорнути');
   });
 });

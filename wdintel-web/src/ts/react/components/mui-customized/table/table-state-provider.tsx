@@ -1,5 +1,5 @@
 import dayjs, { Dayjs } from 'dayjs';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 
 import { useLocalStorage } from '../../../hooks/use-local-storage';
@@ -221,7 +221,8 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   const localStorage = useLocalStorage();
   const [searchParams, setSearchParams] = useSearchParamsState();
 
-  const [tableInstance, setTableInstance] = useState<MRT_TableInstance<any> | null>(null);
+  const tableInstanceRef = useRef<MRT_TableInstance<any> | null>(null);
+  const [tableInstanceReady, setTableInstanceReady] = useState(false);
 
   const [date, setDate] = useState<Dayjs | null>(() => {
     return parseDateFromSearchParams(searchParams, props.defaultDate);
@@ -532,7 +533,14 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   const dateForRequest = isDateEqualToDefault ? undefined : date?.format('YYYY-MM-DD');
 
   function onTableInitialized(table: MRT_TableInstance<any>) {
-    setTableInstance(table);
+    if (tableInstanceRef.current == null) {
+      tableInstanceRef.current = table;
+      if (!tableInstanceReady) {
+        setTableInstanceReady(true);
+      }
+    } else {
+      tableInstanceRef.current = table;
+    }
     // TOOLTIP SCROLL HACK
     if (table.refs['tableContainerRef'].current) {
       table.refs['tableContainerRef'].current.addEventListener('scroll', () => {
@@ -584,7 +592,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
         date,
         dateForRequest,
         onChangeDate,
-        tableInstance,
+        tableInstance: tableInstanceReady ? tableInstanceRef.current : null,
         onTableInitialized,
         columnVisibility,
         columnVisibilityTouched,

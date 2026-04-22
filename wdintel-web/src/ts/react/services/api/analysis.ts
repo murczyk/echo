@@ -68,10 +68,35 @@ type PostStatsRsp = { posts: AnalysisStatsPost[] };
 type FreqStatsRsp = { freqs: AnalysisStatsFreq[] };
 type CallsignStatsRsp = { callsigns: AnalysisStatsCallsign[] };
 type TagStatsRsp = { tags: AnalysisStatsTag[] };
-type NetworkStatsRsp = { networks: AnalysisStatsNetwork[] };
+type NetworkStatsRsp = { networks: AnalysisStatsNetwork[]; networkNames: Array<{ id: number; name: string }> };
 type AreaOfResponsibilityStatsRsp = { aors: AnalysisStatsAor[]; aorNames: AreaOfResponsibilityEntry[] };
 type MessageIdsRsp = { messages: Array<[number, InboxMessage]> };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
+
+const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
+  _c_n_text_c: 'CNTextC',
+  _c_n_newline_c: 'CNNewlineC',
+  _c_n_callsign_c: 'CNCallsignC',
+  _c_n_highlight_c: 'CNHighlightC',
+  _c_n_signal_c: 'CNSignalC',
+  _c_n_point_c: 'CNPointC',
+};
+
+function restoreContentNodeVariantKeys<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => restoreContentNodeVariantKeys(item)) as T;
+  }
+  if (typeof value !== 'object') return value;
+
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(obj)) {
+    const restoredKey = CONTENT_NODE_VARIANT_KEY_MAP[key] ?? key;
+    out[restoredKey] = restoreContentNodeVariantKeys(obj[key]);
+  }
+  return out as T;
+}
 
 function normalizeReq(req: AnalysisStatsReq): AnalysisStatsReq {
   let normalized = req;
@@ -241,7 +266,8 @@ export async function downloadAnalysisReport(req: ReportPreviewReq): Promise<Blo
 }
 
 export async function submitAnalysisInboxMessages(req: InboxSubmitReq): Promise<void> {
-  await postVoid('/api/rer-importer/inbox/submit', transformCamelToSnake(req));
+  const snakeBody = transformCamelToSnake(req) as JsonValue;
+  await postVoid('/api/rer-importer/inbox/submit', restoreContentNodeVariantKeys(snakeBody));
 }
 
 export async function editAnalysisFreqUnitName(req: EditFreqUnitNameReq): Promise<void> {

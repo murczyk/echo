@@ -6,10 +6,13 @@ import { describe, expect, it } from 'vitest';
 import {
   APP_DATE_INPUT_MIN,
   APP_DATE_INPUT_MIN_YEAR,
+  APP_DATETIME_INPUT_MIN,
   APP_TIME_ZONE,
   combineDateTimeToMs,
+  combineDateTimeInputToMs,
   formatDate,
   formatDateTime24,
+  formatDateTimeInputValueInTimeZone,
   formatDateInputValueInTimeZone,
   formatLocalDateInputValue,
   formatTimeInputValueInTimeZone,
@@ -72,6 +75,7 @@ describe('misc utils', () => {
 
   it('shares native date input bounds and parsing helpers', () => {
     expect(APP_DATE_INPUT_MIN).toBe('2022-01-01');
+    expect(APP_DATETIME_INPUT_MIN).toBe('2022-01-01T00:00');
     expect(APP_DATE_INPUT_MIN_YEAR).toBe(2022);
     expect(formatLocalDateInputValue(new Date(2026, 2, 23))).toBe('2026-03-23');
     expect(isValidDateInput('2021-12-31')).toBe(false);
@@ -86,5 +90,8 @@ describe('misc utils', () => {
     expect(millis).toBe(Date.UTC(2026, 0, 15, 10, 0, 0));
     expect(formatDateInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('2026-01-15');
     expect(formatTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('12:00');
+    expect(formatDateTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('2026-01-15T12:00');
+    expect(combineDateTimeInputToMs('2026-01-15T12:00', APP_TIME_ZONE)).toBe(Date.UTC(2026, 0, 15, 10, 0, 0));
+    expect(combineDateTimeInputToMs('2026-01-15 12:00', APP_TIME_ZONE)).toBeNull();
   });
 });

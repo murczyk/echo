@@ -91,7 +91,7 @@ viewWithHintResults hintResultsDict signals networks mFreq bodyText pointTokenCl
                         B.CnTextC obj ->
                             let
                                 textLength =
-                                    String.length obj.text
+                                    charCount obj.text
 
                                 nextIndex =
                                     currentIndex + textLength
@@ -204,7 +204,7 @@ viewWithHintResults hintResultsDict signals networks mFreq bodyText pointTokenCl
                 B.CnPointC obj ->
                     let
                         sliceText =
-                            String.slice obj.begin obj.end bodyText
+                            sliceByChars obj.begin obj.end bodyText
                     in
                     case pointTokenClickUrl of
                         Just toUrl ->
@@ -269,7 +269,7 @@ renderTextSegment segmentStart segmentText metadataLinks =
         metadataLink :: rest ->
             let
                 segmentLength =
-                    String.length segmentText
+                    charCount segmentText
 
                 segmentEndExclusive =
                     segmentStart + segmentLength
@@ -288,16 +288,16 @@ renderTextSegment segmentStart segmentText metadataLinks =
                             (metadataLink.endIndex - segmentStart + 1)
 
                     prefixText =
-                        String.slice 0 linkStartInSegment segmentText
+                        sliceByChars 0 linkStartInSegment segmentText
 
                     highlightedText =
-                        String.slice
+                        sliceByChars
                             linkStartInSegment
                             linkEndExclusiveInSegment
                             segmentText
 
                     suffixText =
-                        String.slice
+                        sliceByChars
                             linkEndExclusiveInSegment
                             segmentLength
                             segmentText
@@ -336,3 +336,21 @@ metadataLinkNode href_ linkText =
             ]
             [ text linkText ]
         ]
+
+
+charCount : String -> Int
+charCount =
+    String.toList >> List.length
+
+
+sliceByChars : Int -> Int -> String -> String
+sliceByChars start end text =
+    let
+        length =
+            Basics.max 0 (end - start)
+    in
+    text
+        |> String.toList
+        |> List.drop start
+        |> List.take length
+        |> String.fromList

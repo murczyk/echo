@@ -414,6 +414,7 @@ getBasicInboxParams model =
     , orBookmarked = Nothing
     , orImportant = Nothing
     , orWithCoords = Nothing
+    , orWithoutCoords = Nothing
     , newestFirst = Nothing
     , search = Nothing
     , highlightCallsigns = Just True

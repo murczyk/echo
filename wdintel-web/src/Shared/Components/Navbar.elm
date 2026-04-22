@@ -126,12 +126,6 @@ navBar user shared activeName props =
             else
                 "Звичайний режим"
 
-        menuWithSubs =
-            menuItemWithSubs props activeName
-
-        menuRoute =
-            menuItemRoute props activeName
-
         operationalSubs =
             [ internalMenu Route.Path.RerDuty "rer-duty" "Класичний"
             , internalMenu Route.Path.RerDutyNeo "rer-duty-neo" "Новий"
@@ -161,7 +155,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
             ]
 
-        etalonkaSubs =
+        databaseSubs =
             [ internalMenu Route.Path.RerNetworks "networks" "Мережі"
             , internalMenu Route.Path.RerPalitra "palitra" "Палітри"
             , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
@@ -237,13 +231,20 @@ navBar user shared activeName props =
             ]
 
         menuItems =
+            let
+                menuWithSubs =
+                    menuItemWithSubs props activeName
+
+                menuRoute =
+                    menuItemRoute props activeName
+            in
             List.concat
                 [ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "operational" "Оперативний" operationalSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "analysis" "Аналіз" analysisSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menuWithSubs "etalonka" "Еталонка" etalonkaSubs ]
+                    [ menuWithSubs "database" "База даних" databaseSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
                     [ menuWithSubs "goi" "ГОІ" goiSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)

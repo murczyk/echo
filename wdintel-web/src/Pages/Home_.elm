@@ -59,6 +59,42 @@ loadInboxGroupsActivityInterval =
     10000
 
 
+hasInboxGroupsActivityData : Model -> Bool
+hasInboxGroupsActivityData model =
+    case model.inboxGroupsActivityStats of
+        Success resp ->
+            hasRenderableInboxGroupsActivityData resp
+
+        NeedsReload resp ->
+            hasRenderableInboxGroupsActivityData resp
+
+        _ ->
+            False
+
+
+hasRenderableInboxGroupsActivityData : B.InboxByGroupDigestRsp -> Bool
+hasRenderableInboxGroupsActivityData resp =
+    List.any
+        (\minute ->
+            Dict.values minute.stats
+                |> List.any (\groupStats -> groupStats.count > 0)
+        )
+        resp.statsPerMinute
+
+
+hasEmptyInboxGroupsActivityData : Model -> Bool
+hasEmptyInboxGroupsActivityData model =
+    case model.inboxGroupsActivityStats of
+        Success resp ->
+            not (hasRenderableInboxGroupsActivityData resp)
+
+        NeedsReload resp ->
+            not (hasRenderableInboxGroupsActivityData resp)
+
+        _ ->
+            False
+
+
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
@@ -136,14 +172,36 @@ view _ user model =
                                 ]
                                 [ text "Активність груп" ]
                             , div [ class "flex-1 min-h-0 min-w-0 overflow-hidden", Attr.style "margin-top" "20px" ]
-                                [ Html.node "bar-chart-2"
-                                    [ class "min-w-0"
-                                    , Attr.property "data" <|
-                                        B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
-                                    , Attr.attribute "margin-left" "30"
-                                    , Attr.attribute "margin-bottom" "30"
-                                    ]
-                                    []
+                                [ if hasInboxGroupsActivityData model then
+                                    Html.node "bar-chart-2"
+                                        [ class "min-w-0"
+                                        , Attr.property "data" <|
+                                            B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
+                                        , Attr.attribute "margin-left" "30"
+                                        , Attr.attribute "margin-bottom" "30"
+                                        ]
+                                        []
+
+                                  else if hasEmptyInboxGroupsActivityData model then
+                                    div
+                                        [ class "h-full w-full flex items-center justify-center px-6" ]
+                                        [ div
+                                            [ class "max-w-sm w-full px-6 py-8 text-center" ]
+                                            [ div
+                                                [ class "mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--ochre-normal)]/15 text-[var(--ochre-normal)]" ]
+                                                [ i [ class "bi bi-activity text-xl" ] []
+                                                ]
+                                            , p
+                                                [ class "m-0 text-base font-semibold text-gray-700 dark:text-gray-200" ]
+                                                [ text "Відсутня активність по групам" ]
+                                            , p
+                                                [ class "m-0 mt-2 text-sm text-gray-600 dark:text-gray-400" ]
+                                                [ text "Зараз тут немає помітної активності" ]
+                                            ]
+                                        ]
+
+                                  else
+                                    text ""
                                 ]
                             , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
                                 span [ class "absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2" ] [ Shared.Components.Spinner.loadingSpinner ]

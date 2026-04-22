@@ -37,6 +37,7 @@ const LEGACY_QUERY_STATE_FIELDS: LegacyKeyMapEntry[] = [
   { key: 'orBookmarked', legacyKey: 'or_bookmarked', defaultValue: false, type: 'boolean' },
   { key: 'orImportant', legacyKey: 'or_important', defaultValue: false, type: 'boolean' },
   { key: 'orWithCoords', legacyKey: 'or_with_coords', defaultValue: false, type: 'boolean' },
+  { key: 'orWithoutCoords', legacyKey: 'or_without_coords', defaultValue: false, type: 'boolean' },
   { key: 'search', defaultValue: '', type: 'string' },
   { key: 'metadataCc', legacyKey: 'metadata_cc', defaultValue: [], type: 'string[]' },
   { key: 'metadataSender', legacyKey: 'metadata_sender', defaultValue: [], type: 'string[]' },
@@ -77,6 +78,31 @@ function toNullableBoolean(value: unknown): boolean | null {
 
 function toNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function composeLegacyDateTime(dateStr: unknown, timeStr: unknown): string | undefined {
+  if (typeof dateStr !== 'string' || typeof timeStr !== 'string') {
+    return undefined;
+  }
+
+  if (dateStr === '' || timeStr === '') {
+    return undefined;
+  }
+
+  return `${dateStr}T${timeStr}`;
+}
+
+function splitDateTimeStr(dateTimeStr: string | undefined): { dateStr: string; timeStr: string } | null {
+  if (typeof dateTimeStr !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) {
+    return null;
+  }
+
+  const [dateStr, timeStr] = dateTimeStr.split('T');
+  if (!dateStr || !timeStr) {
+    return null;
+  }
+
+  return { dateStr, timeStr };
 }
 
 function normalizeLegacyValue(field: LegacyKeyMapEntry, value: unknown): unknown {
@@ -131,6 +157,21 @@ export function parseRerAnalysisLegacyState(stateParam: string | null): RerAnaly
     canonicalState[field.key] = normalizeLegacyValue(field, value);
   }
 
+  // Legacy storage still stores split datetime fields; Neo intentionally does not.
+  if (canonicalState.fromDateTimeStr == null) {
+    const fromDateTimeStr = composeLegacyDateTime(canonicalState.dateFromStr, canonicalState.timeFromStr);
+    if (fromDateTimeStr != null) {
+      canonicalState.fromDateTimeStr = fromDateTimeStr;
+    }
+  }
+
+  if (canonicalState.toDateTimeStr == null) {
+    const toDateTimeStr = composeLegacyDateTime(canonicalState.dateToStr, canonicalState.timeToStr);
+    if (toDateTimeStr != null) {
+      canonicalState.toDateTimeStr = toDateTimeStr;
+    }
+  }
+
   const normalized = normalizeRerAnalysisQueryState(canonicalState);
   if (normalized == null) {
     return null;
@@ -147,9 +188,25 @@ export function toLegacyRerAnalysisQueryState(state: unknown): RerAnalysisLegacy
   const normalized = normalizeRerAnalysisQueryState(state) ?? {};
   const legacyState: RerAnalysisLegacyState = {};
 
+  const fromDateTime = splitDateTimeStr(typeof normalized.fromDateTimeStr === 'string' ? normalized.fromDateTimeStr : undefined);
+  const toDateTime = splitDateTimeStr(typeof normalized.toDateTimeStr === 'string' ? normalized.toDateTimeStr : undefined);
+
   for (const field of LEGACY_QUERY_STATE_FIELDS) {
     const legacyKey = field.legacyKey ?? field.key;
-    const value = normalized[field.key];
+    let value = normalized[field.key];
+
+    if (field.key === 'dateFromStr' && fromDateTime != null) {
+      value = fromDateTime.dateStr;
+    }
+    if (field.key === 'timeFromStr' && fromDateTime != null) {
+      value = fromDateTime.timeStr;
+    }
+    if (field.key === 'dateToStr' && toDateTime != null) {
+      value = toDateTime.dateStr;
+    }
+    if (field.key === 'timeToStr' && toDateTime != null) {
+      value = toDateTime.timeStr;
+    }
 
     if (field.type === 'string') {
       legacyState[legacyKey] = typeof value === 'string' ? value : String(field.defaultValue);

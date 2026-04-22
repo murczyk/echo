@@ -134,7 +134,7 @@ export function reportDownloadMeta(state: AnalysisReportState): { extension: str
   }
 }
 
-export function buildReportFilename(state: AnalysisReportState, dateFrom: string, timeFrom: string, dateTo: string, timeTo: string) {
+export function buildReportFilename(state: AnalysisReportState, fromDateTimeStr: string, toDateTimeStr: string) {
   const { extension } = reportDownloadMeta(state);
-  return `report_${dateFrom}T${timeFrom}_${dateTo}T${timeTo}.${extension}`;
+  return `report_${fromDateTimeStr}_${toDateTimeStr}.${extension}`;
 }

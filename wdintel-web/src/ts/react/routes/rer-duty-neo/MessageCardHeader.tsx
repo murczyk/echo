@@ -7,17 +7,17 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
-import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PriorityHighOutlinedIcon from '@mui/icons-material/PriorityHighOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import { Box, Button, ButtonGroup, Link, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
+import { Box, Button, ButtonGroup, CircularProgress, Link, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import type { InboxMessage, Network } from '../../../../Bindings';
-import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
+import { formatDateNoYear, formatTime } from './utils';
 
 /** Where the card is shown: duty columns use a 4-wide action grid when stacked; analysis uses 3. */
 export type MessageCardDisplayMode = 'duty' | 'analysis';
@@ -349,17 +349,17 @@ function NetworkEtalonSection({
   networkDisplayMap: Record<number, string>;
   networkMap: Record<number, Network>;
   /** When `networkIds` is empty: unit / «Не встановлена» / «—». */
-  fallbackEtalonLabel: string;
+  fallbackEtalonLabel: string | null;
   location: string | null | undefined;
 }) {
   const hasLocationDetails = location != null && location !== '' && location !== 'Не встановлена';
+  const fallbackLabel = fallbackEtalonLabel?.trim() ?? '';
 
   const geoButton = hasLocationDetails ? (
     <Tooltip title={location} placement="top">
       <Box
-        component="button"
-        type="button"
-        aria-label={`Показати локацію: ${location}`}
+        component="span"
+        aria-label={`Локація: ${location}`}
         sx={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -368,22 +368,13 @@ function NetworkEtalonSection({
           width: 18,
           height: 18,
           p: 0,
-          mt: '2px',
-          border: '1px solid',
-          borderColor: 'var(--color-icons)',
+          border: '1px solid transparent',
           borderRadius: '50%',
-          bgcolor: 'transparent',
           color: 'var(--color-icons)',
-          cursor: 'help',
           flexShrink: 0,
-          alignSelf: 'flex-start',
+          alignSelf: 'center',
           '&:hover': {
             color: 'var(--message-callsign-color)',
-            borderColor: 'var(--message-callsign-color)',
-          },
-          '&:focus-visible': {
-            outline: '2px solid var(--message-callsign-color)',
-            outlineOffset: '2px',
           },
         }}
       >
@@ -397,165 +388,165 @@ function NetworkEtalonSection({
     </Tooltip>
   ) : null;
 
-  return (
-    <Stack direction="row" spacing={0.75} sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}>
-      <PeopleOutlineOutlinedIcon
-        sx={{ mt: '2px', fontSize: 18, color: 'var(--color-icons)', flexShrink: 0 }}
-        titleAccess="Еталонна прив'язка"
-      />
+  const renderedNetworks: Array<
+    | {
+        networkId: number;
+        network: Network | undefined;
+        label: string;
+        badge: boolean;
+      }
+    | null
+  > = networkIds.map((networkId) => {
+      const network = networkMap[networkId];
+      const label = networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : null);
+      if (label == null || label.trim() === '') return null;
+      return {
+        networkId,
+        network,
+        label,
+        badge: networkNeedsInvestigationBadge(network),
+      };
+    });
+  const renderedNetworksFiltered = renderedNetworks.filter(
+    (item): item is Exclude<(typeof renderedNetworks)[number], null> => item != null,
+  );
+  const uniqueRenderedNetworks = renderedNetworksFiltered.filter((item, index, all) => {
+    return index === all.findIndex((other) => other.networkId === item.networkId);
+  });
+
+  if (uniqueRenderedNetworks.length === 0 && fallbackLabel === '' && geoButton == null) {
+    return null;
+  }
+
+  const showNetworkFallback = networkIds.length > 0;
+  const networkContent =
+    uniqueRenderedNetworks.length > 0 ? (
       <Box
         sx={{
           minWidth: 0,
-          flex: 1,
+          maxWidth: '100%',
           display: 'flex',
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          columnGap: 0.75,
-          rowGap: 0.5,
+          flexDirection: 'column',
+          rowGap: 0.25,
+          alignItems: 'flex-start',
         }}
       >
-        <Box sx={{ minWidth: 0, flex: '0 1 auto', maxWidth: '100%' }}>
-          {networkIds.length > 0 ? (
-            <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-              {networkIds.map((networkId) => {
-                const network = networkMap[networkId];
-                const label =
-                  networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : 'Невідома мережа');
-                const badge = networkNeedsInvestigationBadge(network);
-                const hasNetworkLink = network != null;
-                return (
-                  <Box key={networkId} sx={{ minWidth: 0, width: '100%' }}>
-                    {hasNetworkLink ? (
-                      <Link
-                        href={`/rer-networks/${networkId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Відкрити мережу в новій вкладці"
-                        underline="none"
-                        color="inherit"
-                        sx={{
-                          /* Inline flow: chip + icon sit after the last word of the name, not the row edge. */
-                          display: 'inline-block',
-                          maxWidth: '100%',
-                          verticalAlign: 'top',
-                          overflowWrap: 'anywhere',
-                          wordBreak: 'break-word',
-                          '&:hover': { color: 'var(--message-callsign-color)' },
-                          '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
-                        }}
-                      >
-                        <Box component="span" sx={{ fontWeight: 700 }}>
-                          {label}
-                        </Box>
-                        {badge ? (
-                          <Box
-                            component="span"
-                            className="badge badge-no-unit-sm"
-                            sx={{
-                              ml: '0.35em',
-                              verticalAlign: 'middle',
-                              position: 'relative',
-                              top: '-0.06em',
-                            }}
-                          >
-                            в дорозвідці
-                          </Box>
-                        ) : null}
-                        <OpenInNewOutlinedIcon
-                          sx={{
-                            fontSize: '1.2em',
-                            width: '1.2em',
-                            height: '1.2em',
-                            verticalAlign: 'middle',
-                            ml: '0.2em',
-                            color: 'var(--color-icons)',
-                            opacity: 0.75,
-                            display: 'inline-block',
-                            position: 'relative',
-                            top: '-0.05em',
-                          }}
-                          aria-hidden
-                        />
-                      </Link>
-                    ) : (
-                      <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-                        {label}
-                      </Typography>
-                    )}
-                  </Box>
-                );
-              })}
-            </Stack>
-          ) : (
-            <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400 }}>
-              {fallbackEtalonLabel}
-            </Typography>
-          )}
-        </Box>
-        {geoButton}
+        {uniqueRenderedNetworks.map(({ networkId, label, badge }) => (
+          <Box
+            key={networkId}
+            sx={{
+              minWidth: 0,
+              maxWidth: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              flexWrap: 'nowrap',
+              lineHeight: 1.1,
+            }}
+          >
+            <Link
+              href={`/rer-networks/${networkId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Відкрити мережу в новій вкладці"
+              underline="none"
+              color="inherit"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                maxWidth: '100%',
+                verticalAlign: 'top',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+                '&:hover': { color: 'var(--message-callsign-color)' },
+                '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
+              }}
+            >
+              <Box component="span" sx={{ fontWeight: 700 }}>
+                {label}
+              </Box>
+              {badge ? (
+                <Box
+                  component="span"
+                  className="badge badge-no-unit-sm"
+                  sx={{
+                    ml: '0.35em',
+                    verticalAlign: 'middle',
+                    position: 'relative',
+                    top: '-0.06em',
+                  }}
+                >
+                  в дорозвідці
+                </Box>
+              ) : null}
+              <OpenInNewOutlinedIcon
+                sx={{
+                  fontSize: '1.2em',
+                  width: '1.2em',
+                  height: '1.2em',
+                  verticalAlign: 'middle',
+                  ml: '0.2em',
+                  color: 'var(--color-icons)',
+                  opacity: 0.75,
+                  display: 'inline-block',
+                  position: 'relative',
+                  top: '-0.05em',
+                }}
+                aria-hidden
+              />
+            </Link>
+          </Box>
+        ))}
       </Box>
-    </Stack>
-  );
-}
+    ) : fallbackLabel !== '' ? (
+      <Typography
+        component="span"
+        variant="body2"
+        sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, display: 'inline-flex', alignItems: 'center' }}
+      >
+        {fallbackLabel}
+      </Typography>
+    ) : showNetworkFallback ? (
+      <Typography
+        component="span"
+        variant="body2"
+        sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, display: 'inline-flex', alignItems: 'center' }}
+      >
+        —
+      </Typography>
+    ) : null;
 
-function AnalysisActionLink({ href, icon, label }: { href: string; icon: JSX.Element; label: string }) {
   return (
-    <Link
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      underline="none"
-      color="inherit"
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 0.75,
-        minHeight: 28,
-        px: 1,
-        py: 0.5,
-        borderRadius: 999,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'color-mix(in srgb, var(--color-card) 88%, white 12%)',
-        color: 'text.primary',
-        fontSize: 12,
-        fontWeight: 600,
-        lineHeight: 1,
-        whiteSpace: 'nowrap',
-        textDecoration: 'none',
-        transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease',
-        '& .MuiSvgIcon-root': {
-          fontSize: 16,
-          color: 'var(--color-icons)',
-          flexShrink: 0,
-        },
-        '&:hover': {
-          bgcolor: 'action.hover',
-          borderColor: 'var(--message-callsign-color)',
-          color: 'var(--message-callsign-color)',
-          textDecoration: 'none',
-        },
-        '&:focus-visible': {
-          outline: '2px solid var(--message-callsign-color)',
-          outlineOffset: '2px',
-        },
-      }}
-    >
-      {icon}
-      <Box component="span">{label}</Box>
-    </Link>
+    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}>
+      {uniqueRenderedNetworks.length > 0 || fallbackLabel !== '' || showNetworkFallback ? (
+        <PeopleOutlineOutlinedIcon
+          sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0, alignSelf: 'center', mt: '1px' }}
+          titleAccess="Еталонна прив'язка"
+        />
+      ) : null}
+      <Box
+        sx={{
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          rowGap: 0.25,
+          alignItems: 'flex-start',
+        }}
+      >
+        {networkContent}
+      </Box>
+      {geoButton}
+    </Stack>
   );
 }
 
 export type MessageCardHeaderProps = {
   compact?: boolean;
   displayMode: MessageCardDisplayMode;
-  /** Width % of the bottom header row for the network / etalon block (remainder for relative time). */
+  /** Width % of the bottom header row for the network / etalon block. */
   networkRowContentWidthPct?: number;
   id: number;
   msg: InboxMessage;
-  mapHref: string;
   copiedFeedbackId: string | null;
   groupName: string | null;
   senderName: string | null;
@@ -563,8 +554,9 @@ export type MessageCardHeaderProps = {
   networkDisplayMap: Record<number, string>;
   networkMap: Record<number, Network>;
   etalonNoNetworkLabel: string | null;
-  relativeTimeMs: number | null;
   rightInsetPx?: number;
+  topRight?: ReactNode;
+  actionsRight?: ReactNode;
   onBookmark: () => void;
   onImportant: () => void;
   onComment: () => void;
@@ -580,7 +572,6 @@ export function MessageCardHeader({
   networkRowContentWidthPct = 80,
   id,
   msg,
-  mapHref,
   copiedFeedbackId,
   groupName,
   senderName,
@@ -588,8 +579,9 @@ export function MessageCardHeader({
   networkDisplayMap,
   networkMap,
   etalonNoNetworkLabel,
-  relativeTimeMs,
   rightInsetPx = 0,
+  topRight,
+  actionsRight,
   onBookmark,
   onImportant,
   onComment,
@@ -598,9 +590,6 @@ export function MessageCardHeader({
   onDelete,
   onEditDetails,
 }: MessageCardHeaderProps) {
-  const timeDistance =
-    msg.timestamp != null && relativeTimeMs != null ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
-
   const dateTimeBlock = (
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       <Stack direction="row" spacing={0.5} alignItems="center">
@@ -638,16 +627,6 @@ export function MessageCardHeader({
         }
       />
     ) : null;
-
-  const analysisLink = (
-    <AnalysisActionLink
-      href={buildAnalysisHref(msg, false)}
-      icon={<BarChartOutlinedIcon aria-hidden />}
-      label="Аналіз"
-    />
-  );
-
-  const mapLink = <AnalysisActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Карта" />;
 
   if (compact) {
     return (
@@ -704,7 +683,9 @@ export function MessageCardHeader({
             gridRow: 1,
           }}
         >
-          {analysisLink}
+          {topRight ?? (
+            <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />
+          )}
         </Box>
         <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
           <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
@@ -755,7 +736,7 @@ export function MessageCardHeader({
             gridRow: 2,
           }}
         >
-          {mapLink}
+          {actionsRight ?? null}
         </Box>
         <Box
           sx={{
@@ -768,25 +749,18 @@ export function MessageCardHeader({
             columnGap: 1,
             pr: `${rightInsetPx}px`,
           }}
-        >
+          >
           <Box
             sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}
-          >
-            <NetworkEtalonSection
-              networkIds={networkIds}
-              networkDisplayMap={networkDisplayMap}
-              networkMap={networkMap}
-              fallbackEtalonLabel={etalonNoNetworkLabel ?? '—'}
-              location={msg.location}
-            />
-          </Box>
-          <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
-            {timeDistance != null ? (
-              <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-                {timeDistance}
-              </Typography>
-            ) : null}
-          </Box>
+        >
+          <NetworkEtalonSection
+            networkIds={networkIds}
+            networkDisplayMap={networkDisplayMap}
+            networkMap={networkMap}
+            fallbackEtalonLabel={etalonNoNetworkLabel}
+            location={msg.location}
+          />
+        </Box>
         </Box>
       </Box>
     );
@@ -834,7 +808,7 @@ export function MessageCardHeader({
           gridRow: 1,
         }}
       >
-        {analysisLink}
+        {topRight ?? <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />}
       </Box>
       <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
         <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
@@ -878,7 +852,7 @@ export function MessageCardHeader({
           gridRow: 2,
         }}
       >
-        {mapLink}
+        {actionsRight ?? null}
       </Box>
       <Box
         sx={{
@@ -891,22 +865,15 @@ export function MessageCardHeader({
           columnGap: 1,
           pr: `${rightInsetPx}px`,
         }}
-      >
-        <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
+        >
+          <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
           <NetworkEtalonSection
             networkIds={networkIds}
             networkDisplayMap={networkDisplayMap}
             networkMap={networkMap}
-            fallbackEtalonLabel={etalonNoNetworkLabel ?? '—'}
+            fallbackEtalonLabel={etalonNoNetworkLabel}
             location={msg.location}
           />
-        </Box>
-        <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
-          {timeDistance != null ? (
-            <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-              {timeDistance}
-            </Typography>
-          ) : null}
         </Box>
       </Box>
     </Box>

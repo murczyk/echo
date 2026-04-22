@@ -36,10 +36,6 @@ vi.mock('@mui/material', () => ({
   ),
 }));
 
-vi.mock('./AnalysisOverviewCard', () => ({
-  AnalysisOverviewCard: () => <div>overview-card</div>,
-}));
-
 vi.mock('./AnalysisChartsPanel', () => ({
   AnalysisChartsPanel: () => <div>charts-panel</div>,
 }));
@@ -71,7 +67,6 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     callsignGraphNolimit: false,
     correlatedFreqs: [],
     correlatedFreqsLoading: false,
-    counts: null,
     filtersLoading: false,
     groupsActivity: null,
     groupsActivityLoadedFreq: null,
@@ -131,7 +126,6 @@ describe('AnalysisSidebar', () => {
     const view = await renderComponent(buildProps({ rightSidebarTab: 'stats' }));
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('overview-card');
     expect(view.container.textContent).toContain('charts-panel');
     expect(view.container.textContent).not.toContain('callsigns-cloud');
   });
@@ -156,5 +150,12 @@ describe('AnalysisSidebar', () => {
     await click(newTab as HTMLButtonElement);
 
     expect(setRightSidebarTab).toHaveBeenCalledWith('newCallsigns');
+  });
+
+  it('allows a null tab while the right panel is closed', async () => {
+    const view = await renderComponent(buildProps({ rightPanelOpen: false, rightSidebarTab: null }));
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('callsigns-cloud');
   });
 });

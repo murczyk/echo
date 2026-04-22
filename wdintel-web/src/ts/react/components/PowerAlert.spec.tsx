@@ -54,7 +54,7 @@ describe('PowerAlert', () => {
     expect(view.container.textContent).not.toContain('done');
   });
 
-  it('does not auto-hide success alert by default when onClose is not provided', () => {
+  it('auto-hides success alert by default', () => {
     vi.useFakeTimers();
 
     const view = renderComponent(
@@ -66,17 +66,17 @@ describe('PowerAlert', () => {
       vi.advanceTimersByTime(7000);
     });
 
-    expect(view.container.textContent).toContain('done');
+    expect(view.container.textContent).not.toContain('done');
   });
 
-  it('shows close button only when onClose is provided', () => {
+  it('shows close button for warning and error alerts', () => {
     const withoutOnClose = renderComponent(
       <PowerAlert severity="error">error</PowerAlert>,
     );
     rendered.push(withoutOnClose);
     expect(
       withoutOnClose.container.querySelector('button[aria-label="Close"]'),
-    ).toBeNull();
+    ).not.toBeNull();
 
     const withOnClose = renderComponent(
       <PowerAlert severity="error" onClose={() => {}}>
