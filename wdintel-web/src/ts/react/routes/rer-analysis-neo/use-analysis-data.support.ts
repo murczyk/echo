@@ -35,6 +35,23 @@ type UseLoadNewCallsignsParams = {
   newCallsignsPendingKeyRef: MutableRefObject<string | null>;
 };
 
+export function invalidateNewCallsignsLoadState({
+  setNewCallsigns,
+  setNewCallsignsLoading,
+  newCallsignsRequestRef,
+  newCallsignsLoadedKeyRef,
+  newCallsignsPendingKeyRef,
+}: Pick<
+  UseLoadNewCallsignsParams,
+  'setNewCallsigns' | 'setNewCallsignsLoading' | 'newCallsignsRequestRef' | 'newCallsignsLoadedKeyRef' | 'newCallsignsPendingKeyRef'
+>) {
+  setNewCallsigns(emptyNewCallsigns);
+  setNewCallsignsLoading(false);
+  newCallsignsLoadedKeyRef.current = null;
+  newCallsignsPendingKeyRef.current = null;
+  newCallsignsRequestRef.current += 1;
+}
+
 export function useLoadNewCallsigns({
   onError,
   onUnauthorized,
@@ -49,10 +66,13 @@ export function useLoadNewCallsigns({
   return useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (analysisReq == null) {
-      setNewCallsigns(emptyNewCallsigns);
-      newCallsignsLoadedKeyRef.current = null;
-      newCallsignsPendingKeyRef.current = null;
-      newCallsignsRequestRef.current += 1;
+      invalidateNewCallsignsLoadState({
+        setNewCallsigns,
+        setNewCallsignsLoading,
+        newCallsignsRequestRef,
+        newCallsignsLoadedKeyRef,
+        newCallsignsPendingKeyRef,
+      });
       return;
     }
 
