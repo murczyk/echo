@@ -268,6 +268,29 @@ describe('rer-analysis-neo helpers', () => {
     expect(nextState.postsSelected).toEqual(['post-1']);
   });
 
+  it('restores adjacent frequency range when clearing a saved filter that changed it', () => {
+    const baseState = createQueryState({
+      adjacentFreqsRange: 0,
+      freqsSelected: [],
+    });
+    const savedFilter = createSavedFilter(
+      createQueryState({
+        adjacentFreqsRange: 0.005,
+        freqsSelected: ['130.3500'],
+      }),
+    );
+    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
+    const currentState = {
+      ...appliedState,
+      freqsSelected: ['130.3500', '130.3550'],
+    };
+
+    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
+
+    expect(nextState.adjacentFreqsRange).toBe(0);
+    expect(nextState.freqsSelected).toEqual(['130.3550']);
+  });
+
   it('restores current-state changes that were added after applying a saved filter', () => {
     const baseState = createQueryState({
       freqsSelected: [],

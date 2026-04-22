@@ -390,7 +390,7 @@ describe('MessageCard', () => {
     expect(onAddSuggestedCallsign).toHaveBeenCalledWith('BRAVO');
   });
 
-  it('hides analysis-only callsign chips that have no catalog match', async () => {
+  it('keeps analysis-only callsign chips visible even without a catalog match', async () => {
     const view = await renderCard({
       displayMode: 'analysis',
       msg: {
@@ -413,7 +413,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('ALPHA');
     expect(view.container.textContent).toContain('BRAVO');
     expect(view.container.textContent).toContain('CHARLIE');
-    expect(view.container.textContent).not.toContain('GHOST');
+    expect(view.container.textContent).toContain('GHOST');
   });
 
   it('does not render analysis-only callsign controls in duty mode', async () => {

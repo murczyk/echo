@@ -373,7 +373,7 @@ export function clearQueryStateFromSavedFilter(
   clearArrayField('metadataHash', applied.metadataHash);
   clearArrayField('tags', applied.tags);
 
-  const clearScalarField = <T,>(field: keyof Pick<AnalysisQueryState, 'withoutNetwork' | 'orWithExtendedForm' | 'orBookmarked' | 'orImportant' | 'orWithCoords' | 'orWithoutCoords' | 'onlyWithMetadata' | 'withoutMetadata' | 'withoutModelTags' | 'reportTagsOnlyThisUnit' | 'includePelengLocations' | 'unitsExactMatchOnly' | 'filterTagsOption' | 'search'>) => {
+  const clearScalarField = <T,>(field: keyof Pick<AnalysisQueryState, 'adjacentFreqsRange' | 'withoutNetwork' | 'orWithExtendedForm' | 'orBookmarked' | 'orImportant' | 'orWithCoords' | 'orWithoutCoords' | 'onlyWithMetadata' | 'withoutMetadata' | 'withoutModelTags' | 'reportTagsOnlyThisUnit' | 'includePelengLocations' | 'unitsExactMatchOnly' | 'filterTagsOption' | 'search'>) => {
     const currentValue = next[field] as T;
     const baseValue = base[field] as T;
     const appliedValue = applied[field] as T;
@@ -382,6 +382,7 @@ export function clearQueryStateFromSavedFilter(
     }
   };
 
+  clearScalarField<number>('adjacentFreqsRange');
   clearScalarField<boolean>('withoutNetwork');
   clearScalarField<boolean>('orWithExtendedForm');
   clearScalarField<boolean>('orBookmarked');

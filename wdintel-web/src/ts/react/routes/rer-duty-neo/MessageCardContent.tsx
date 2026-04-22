@@ -109,9 +109,8 @@ function AnalysisCallsignsSection({
   const currentCallsigns = useMemo(() => uniqueNormalizedCallsigns(msg.callsigns ?? []), [msg.callsigns]);
   const analysisVisibleCallsigns = useMemo(() => {
     if (!callsignInfoMap) return currentCallsigns;
-    // Analysis-only UX: keep in the bottom "Позивні" section only catalog-backed callsigns.
-    // This intentionally excludes plain body-only tokens so case 4 does not duplicate there.
-    return currentCallsigns.filter((callsign) => (callsignInfoMap[callsign.toLowerCase()]?.res?.length ?? 0) > 0);
+    // Analysis-only UX: keep all user-managed callsigns visible so operators can remove/correct them inline.
+    return currentCallsigns;
   }, [callsignInfoMap, currentCallsigns]);
   const proposedCallsigns = useMemo(() => buildSuggestedCallsigns(msg), [msg]);
   const messageResetKey = msg.messageUid ?? `${msg.timestamp ?? ''}-${msg.text ?? ''}`;
