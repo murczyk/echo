@@ -102,6 +102,11 @@ export function useAnalysisDataLoaders(params: Params) {
   const correlatedFreqsRequestRef = useRef(0);
   const correlatedFreqsRequestKeyRef = useRef<string | null>(null);
 
+  const invalidateCorrelatedFreqsCache = useCallback(() => {
+    correlatedFreqsRequestRef.current += 1;
+    correlatedFreqsRequestKeyRef.current = null;
+  }, []);
+
   const invalidateCallsignGraph = useCallback(() => {
     callsignGraphRequestRef.current += 1;
     setCallsignGraph(null);
@@ -353,6 +358,7 @@ export function useAnalysisDataLoaders(params: Params) {
     downloadGeojson,
     downloadKmz,
     downloadSummaryXlsx,
+    invalidateCorrelatedFreqsCache,
     invalidateCallsignGraph,
     loadCallsignGraph,
     loadCorrelatedFreqs,

@@ -316,6 +316,27 @@ describe('rer-analysis-neo helpers', () => {
     expect(nextState.toDateTimeStr).toBe(baseState.toDateTimeStr);
   });
 
+  it('restores base array selections when clearing a saved filter', () => {
+    const baseState = createQueryState({
+      groupsSelected: ['Alpha'],
+    });
+    const savedFilter = createSavedFilter(
+      createQueryState({
+        groupsSelected: ['Bravo'],
+      }),
+    );
+    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
+    const currentState = {
+      ...appliedState,
+      postsSelected: ['post-1'],
+    };
+
+    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
+
+    expect(nextState.groupsSelected).toEqual(['Alpha']);
+    expect(nextState.postsSelected).toEqual(['post-1']);
+  });
+
   it('detects showMap deep link for duty → analysis map tab', () => {
     expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=true'))).toBe(true);
     expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=1'))).toBe(false);

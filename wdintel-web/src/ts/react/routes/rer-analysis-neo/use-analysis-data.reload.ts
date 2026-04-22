@@ -310,6 +310,7 @@ type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type ReloadParams = {
   clearAnalysisResults: () => void;
+  invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
   newestFirst: boolean;
@@ -362,6 +363,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
   params.onError('');
   params.invalidateMessagePaging();
+  params.invalidateCorrelatedFreqsCache();
   params.setCountsLoading(true);
   params.setMessagesLoading(true);
   params.setFiltersLoading(true);

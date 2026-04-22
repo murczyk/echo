@@ -203,6 +203,7 @@ describe('reloadAnalysisData', () => {
       messagesLoadingTransitions.push(messagesLoadingState);
     });
 
+    const invalidateCorrelatedFreqsCache = vi.fn();
     const setHasLoadedInitialMessages = vi.fn();
     const setSummaryCallsignsInfo = vi.fn();
 
@@ -214,6 +215,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache,
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
       newestFirst: true,
@@ -274,6 +276,7 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
 
     expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
+    expect(invalidateCorrelatedFreqsCache).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes summary callsign info after rebuilt inbox data arrives', async () => {
@@ -305,6 +308,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
       newestFirst: true,
@@ -410,6 +414,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
       newestFirst: true,
@@ -506,6 +511,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
       newestFirst: true,
@@ -593,6 +599,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
       newestFirst: true,
@@ -662,6 +669,7 @@ describe('reloadAnalysisData', () => {
 
     await reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
       newestFirst: true,

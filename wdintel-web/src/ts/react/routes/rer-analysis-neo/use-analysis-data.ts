@@ -157,6 +157,7 @@ export function useAnalysisData({
     downloadGeojson,
     downloadKmz,
     downloadSummaryXlsx,
+    invalidateCorrelatedFreqsCache,
     invalidateCallsignGraph,
     loadCallsignGraph,
     loadCorrelatedFreqs,
@@ -257,6 +258,7 @@ export function useAnalysisData({
     await reloadAnalysisData({
       clearAnalysisResults,
       invalidateCallsignGraph,
+      invalidateCorrelatedFreqsCache,
       invalidateMessagePaging,
       newestFirst,
       onError,
@@ -304,6 +306,7 @@ export function useAnalysisData({
   }, [
     clearAnalysisResults,
     invalidateCallsignGraph,
+    invalidateCorrelatedFreqsCache,
     invalidateFilterSectionLoads,
     invalidateMessagePaging,
     loadInitialFilterSections,

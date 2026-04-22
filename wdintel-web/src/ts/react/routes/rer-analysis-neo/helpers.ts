@@ -355,7 +355,11 @@ export function clearQueryStateFromSavedFilter(
       (appliedValues as T[]).filter((value) => !(baseValues as T[]).includes(value)),
     );
     if (removableValues.size === 0) return;
-    (next as Record<string, unknown>)[field] = (currentValues as T[]).filter((value) => !removableValues.has(value));
+    const restoredBaseValues = (baseValues as T[]).filter((value) => !removableValues.has(value));
+    const preservedCurrentValues = (currentValues as T[]).filter(
+      (value) => !removableValues.has(value) && !(restoredBaseValues as T[]).includes(value),
+    );
+    (next as Record<string, unknown>)[field] = [...restoredBaseValues, ...preservedCurrentValues];
   };
 
   clearArrayField('aorsSelected', applied.aorsSelected);
