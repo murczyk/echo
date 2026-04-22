@@ -106,6 +106,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setQueryState((current) => ({ ...current, ...patch }));
   }, [data.invalidateFilterSectionLoads]);
 
+  const applySavedFilter = useCallback(
+    (savedFilter: Parameters<typeof savedFilters.applySavedFilter>[0]) => {
+      savedFilters.applySavedFilter(savedFilter);
+    },
+    [savedFilters],
+  );
+
   useEffect(() => {
     pushQueryStateToUrl(queryState);
   }, [queryState]);
@@ -267,7 +274,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     topLocations: data.topLocations,
     topUnits: data.topUnits,
     validationError,
-    applySavedFilter: savedFilters.applySavedFilter,
+    applySavedFilter,
     deleteLoadedSavedFilter: savedFilters.deleteLoadedSavedFilter,
     renameExistingSavedFilter: savedFilters.renameExisting,
     loadCallsignGraph: data.loadCallsignGraph,

@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   Checkbox,
+  CircularProgress,
   Divider,
   FormControl,
   FormControlLabel,
@@ -101,7 +102,7 @@ const compactCheckboxLabelSx = {
 type FilterSectionProps = {
   sectionId?: FilterSectionId;
   title: string;
-  countLabel?: string | null;
+  countLabel?: ReactNode;
   expanded: boolean;
   onToggle: () => void;
   onLoad?: () => void;
@@ -181,11 +182,7 @@ function FilterSection({ sectionId, title, countLabel, expanded, onToggle, onLoa
           <Typography variant="subtitle2" sx={{ fontWeight: 700, minWidth: 0 }} noWrap>
             {title}
           </Typography>
-          {countLabel ? (
-            <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary', flexShrink: 0 }}>
-              {countLabel}
-            </Typography>
-          ) : null}
+          {countLabel ? <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, mr: 0.75 }}>{countLabel}</Box> : null}
         </Box>
       </AccordionSummary>
       <AccordionDetails sx={{ px: 1.5, pb: 1.25, pt: 0 }}>
@@ -292,6 +289,7 @@ export function AnalysisFiltersPanel({
   ]);
 
   const isSectionLoading = (section: FilterSectionId): boolean => filtersLoading || loadingSections[section] === true;
+  const loadingIndicator = <CircularProgress size={14} thickness={5} />;
 
   const groupOptions = sortFilterOptionsByLabel(
     options.groups.map((option) => ({
@@ -500,7 +498,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Відправники"
-            countLabel={sectionCountLabel(sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
+            countLabel={isSectionLoading('senders') ? loadingIndicator : sectionCountLabel(sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
             expanded={expandedSections.senders}
             onToggle={() => toggleSection('senders')}
             onLoad={() => void loadFilterSectionWithSpinner('senders')}
@@ -516,7 +514,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Групи"
-            countLabel={sectionCountLabel(groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
+            countLabel={isSectionLoading('groups') ? loadingIndicator : sectionCountLabel(groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
             expanded={expandedSections.groups}
             onToggle={() => toggleSection('groups')}
             onLoad={() => void loadFilterSectionWithSpinner('groups')}
@@ -532,7 +530,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Локації"
-            countLabel={sectionCountLabel(locationsSelectedCount, counts?.locationsCount ?? options.locations.length)}
+            countLabel={isSectionLoading('locations') ? loadingIndicator : sectionCountLabel(locationsSelectedCount, counts?.locationsCount ?? options.locations.length)}
             expanded={expandedSections.locations}
             onToggle={() => toggleSection('locations')}
             onLoad={() => void loadFilterSectionWithSpinner('locations')}
@@ -555,7 +553,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Мережі"
-            countLabel={sectionCountLabel(networksSelectedCount, counts?.networksCount ?? options.networks.length)}
+            countLabel={isSectionLoading('networks') ? loadingIndicator : sectionCountLabel(networksSelectedCount, counts?.networksCount ?? options.networks.length)}
             expanded={expandedSections.networks}
             onToggle={() => toggleSection('networks')}
             onLoad={() => void loadFilterSectionWithSpinner('networks')}
@@ -579,7 +577,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Метадані"
-            countLabel={sectionCountLabel(metadataSelectedCount, null)}
+            countLabel={isSectionLoading('metadata') ? loadingIndicator : sectionCountLabel(metadataSelectedCount, null)}
             expanded={expandedSections.metadata}
             onToggle={() => toggleSection('metadata')}
             onLoad={() => void loadFilterSectionWithSpinner('metadata')}
@@ -634,7 +632,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Підрозділи"
-            countLabel={sectionCountLabel(unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
+            countLabel={isSectionLoading('units') ? loadingIndicator : sectionCountLabel(unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
             expanded={expandedSections.units}
             onToggle={() => toggleSection('units')}
             onLoad={() => void loadFilterSectionWithSpinner('units')}
@@ -669,7 +667,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Позивні"
-            countLabel={sectionCountLabel(callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
+            countLabel={isSectionLoading('callsigns') ? loadingIndicator : sectionCountLabel(callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
             expanded={expandedSections.callsigns}
             onToggle={() => toggleSection('callsigns')}
             onLoad={() => void loadFilterSectionWithSpinner('callsigns')}
@@ -685,7 +683,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Пости"
-            countLabel={sectionCountLabel(postsSelectedCount, counts?.postsCount ?? options.posts.length)}
+            countLabel={isSectionLoading('posts') ? loadingIndicator : sectionCountLabel(postsSelectedCount, counts?.postsCount ?? options.posts.length)}
             expanded={expandedSections.posts}
             onToggle={() => toggleSection('posts')}
             onLoad={() => void loadFilterSectionWithSpinner('posts')}
@@ -703,7 +701,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Смуги"
-            countLabel={sectionCountLabel(aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
+            countLabel={isSectionLoading('aors') ? loadingIndicator : sectionCountLabel(aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
             expanded={expandedSections.aors}
             onToggle={() => toggleSection('aors')}
             onLoad={() => void loadFilterSectionWithSpinner('aors')}
@@ -719,7 +717,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Теги"
-            countLabel={sectionCountLabel(tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
+            countLabel={isSectionLoading('tags') ? loadingIndicator : sectionCountLabel(tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
             expanded={expandedSections.tags}
             onToggle={() => toggleSection('tags')}
             onLoad={() => void loadFilterSectionWithSpinner('tags')}
@@ -761,7 +759,7 @@ export function AnalysisFiltersPanel({
 
           <FilterSection
             title="Частоти"
-            countLabel={sectionCountLabel(freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
+            countLabel={isSectionLoading('freqs') ? loadingIndicator : sectionCountLabel(freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
             expanded={expandedSections.freqs}
             onToggle={() => toggleSection('freqs')}
           >

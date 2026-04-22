@@ -217,7 +217,13 @@ function AnalysisMessagesPaneComponent({
   }, []);
 
   if (messages.length === 0 && !loading) {
-    return <PowerAlert severity="info">Немає жодного повідомлення для аналізу.</PowerAlert>;
+    return (
+      <Box sx={{ flex: 1, minHeight: 0, px: 0 }}>
+        <PowerAlert severity="info" sx={{ width: '100%', boxSizing: 'border-box' }}>
+          Немає жодного повідомлення для аналізу.
+        </PowerAlert>
+      </Box>
+    );
   }
 
   return (

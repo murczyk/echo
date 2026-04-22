@@ -334,48 +334,68 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
   });
 }
 
-export function clearQueryStateFromSavedFilter(savedFilter: SavedFilter, current: AnalysisQueryState): AnalysisQueryState {
-  const req = savedFilter.req;
+export function clearQueryStateFromSavedFilter(
+  current: AnalysisQueryState,
+  base: AnalysisQueryState,
+  applied: AnalysisQueryState,
+): AnalysisQueryState {
   const next = { ...current };
 
-  const clearArrayField = (field: keyof Pick<AnalysisQueryState, 'aorsSelected' | 'groupsSelected' | 'sendersSelected' | 'freqsSelected' | 'callsignsSelected' | 'unitsSelected' | 'locationsSelected' | 'postsSelected' | 'networksSelected' | 'metadataCc' | 'metadataSender' | 'metadataReceiver' | 'metadataHash' | 'tags'>, values: string[] | number[]) => {
+  const clearArrayField = <T extends string | number>(
+    field: keyof Pick<AnalysisQueryState, 'aorsSelected' | 'groupsSelected' | 'sendersSelected' | 'freqsSelected' | 'callsignsSelected' | 'unitsSelected' | 'locationsSelected' | 'postsSelected' | 'networksSelected' | 'metadataCc' | 'metadataSender' | 'metadataReceiver' | 'metadataHash' | 'tags'>,
+    values: readonly T[],
+  ) => {
     if (values.length === 0) return;
     const currentValues = next[field];
-    if (!Array.isArray(currentValues)) return;
-    (next as Record<string, unknown>)[field] = currentValues.filter((value) => !values.includes(value as never));
+    const baseValues = base[field];
+    const appliedValues = applied[field];
+    if (!Array.isArray(currentValues) || !Array.isArray(baseValues) || !Array.isArray(appliedValues)) return;
+
+    const removableValues = new Set(
+      (appliedValues as T[]).filter((value) => !(baseValues as T[]).includes(value)),
+    );
+    if (removableValues.size === 0) return;
+    (next as Record<string, unknown>)[field] = (currentValues as T[]).filter((value) => !removableValues.has(value));
   };
 
-  clearArrayField('aorsSelected', (req.selectedAors ?? []).map(String));
-  clearArrayField('groupsSelected', req.selectedGroups ?? []);
-  clearArrayField('sendersSelected', req.selectedSenders ?? []);
-  clearArrayField('freqsSelected', req.selectedFreqs ?? []);
-  clearArrayField('callsignsSelected', req.selectedCallsigns ?? []);
-  clearArrayField('unitsSelected', req.selectedUnits ?? []);
-  clearArrayField('locationsSelected', req.selectedLocations ?? []);
-  clearArrayField('postsSelected', req.selectedPosts ?? []);
-  clearArrayField('networksSelected', (req.selectedNetworks ?? []).map(String));
-  clearArrayField('metadataCc', req.metadataCc ?? []);
-  clearArrayField('metadataSender', req.metadataSender ?? []);
-  clearArrayField('metadataReceiver', req.metadataReceiver ?? []);
-  clearArrayField('metadataHash', req.metadataHash ?? []);
-  clearArrayField('tags', req.selectedTags ?? []);
+  clearArrayField('aorsSelected', applied.aorsSelected);
+  clearArrayField('groupsSelected', applied.groupsSelected);
+  clearArrayField('sendersSelected', applied.sendersSelected);
+  clearArrayField('freqsSelected', applied.freqsSelected);
+  clearArrayField('callsignsSelected', applied.callsignsSelected);
+  clearArrayField('unitsSelected', applied.unitsSelected);
+  clearArrayField('locationsSelected', applied.locationsSelected);
+  clearArrayField('postsSelected', applied.postsSelected);
+  clearArrayField('networksSelected', applied.networksSelected);
+  clearArrayField('metadataCc', applied.metadataCc);
+  clearArrayField('metadataSender', applied.metadataSender);
+  clearArrayField('metadataReceiver', applied.metadataReceiver);
+  clearArrayField('metadataHash', applied.metadataHash);
+  clearArrayField('tags', applied.tags);
 
-  if (req.withoutNetwork != null && next.withoutNetwork === req.withoutNetwork) next.withoutNetwork = false;
-  if (req.orWithExtendedForm != null && next.orWithExtendedForm === req.orWithExtendedForm) next.orWithExtendedForm = false;
-  if (req.orBookmarked != null && next.orBookmarked === req.orBookmarked) next.orBookmarked = false;
-  if (req.orImportant != null && next.orImportant === req.orImportant) next.orImportant = false;
-  if (req.orWithCoords != null && next.orWithCoords === req.orWithCoords) next.orWithCoords = false;
-  if (req.orWithoutCoords != null && next.orWithoutCoords === req.orWithoutCoords) next.orWithoutCoords = false;
-  if (req.onlyWithMetadata != null && next.onlyWithMetadata === req.onlyWithMetadata) next.onlyWithMetadata = false;
-  if (req.withoutMetadata != null && next.withoutMetadata === req.withoutMetadata) next.withoutMetadata = false;
-  if (req.withoutModelTags != null && next.withoutModelTags === req.withoutModelTags) next.withoutModelTags = false;
-  if (req.reportTagsOnlyThisUnit != null && next.reportTagsOnlyThisUnit === req.reportTagsOnlyThisUnit) next.reportTagsOnlyThisUnit = false;
+  const clearScalarField = <T,>(field: keyof Pick<AnalysisQueryState, 'withoutNetwork' | 'orWithExtendedForm' | 'orBookmarked' | 'orImportant' | 'orWithCoords' | 'orWithoutCoords' | 'onlyWithMetadata' | 'withoutMetadata' | 'withoutModelTags' | 'reportTagsOnlyThisUnit' | 'includePelengLocations' | 'unitsExactMatchOnly' | 'filterTagsOption' | 'search'>) => {
+    const currentValue = next[field] as T;
+    const baseValue = base[field] as T;
+    const appliedValue = applied[field] as T;
+    if (currentValue === appliedValue && appliedValue !== baseValue) {
+      (next as Record<string, unknown>)[field] = baseValue;
+    }
+  };
 
-  if (req.includePelengLocations != null && next.includePelengLocations === req.includePelengLocations) next.includePelengLocations = true;
-  if (req.unitsExactMatchOnly != null && next.unitsExactMatchOnly === req.unitsExactMatchOnly) next.unitsExactMatchOnly = null;
-  if (req.filterTagsOption != null && next.filterTagsOption === req.filterTagsOption) next.filterTagsOption = 'OneOfTags';
-
-  if (req.search != null && next.search === req.search) next.search = '';
+  clearScalarField<boolean>('withoutNetwork');
+  clearScalarField<boolean>('orWithExtendedForm');
+  clearScalarField<boolean>('orBookmarked');
+  clearScalarField<boolean>('orImportant');
+  clearScalarField<boolean>('orWithCoords');
+  clearScalarField<boolean>('orWithoutCoords');
+  clearScalarField<boolean>('onlyWithMetadata');
+  clearScalarField<boolean>('withoutMetadata');
+  clearScalarField<boolean>('withoutModelTags');
+  clearScalarField<boolean>('reportTagsOnlyThisUnit');
+  clearScalarField<boolean>('includePelengLocations');
+  clearScalarField<AnalysisQueryState['unitsExactMatchOnly']>('unitsExactMatchOnly');
+  clearScalarField<AnalysisQueryState['filterTagsOption']>('filterTagsOption');
+  clearScalarField<string>('search');
   return normalizeQueryState(next);
 }
 

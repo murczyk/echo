@@ -6,7 +6,6 @@ import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSave
 import {
   buildAnalysisReq,
   clearQueryStateFromSavedFilter,
-  pushQueryStateToUrl,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
 } from './helpers';
@@ -34,6 +33,11 @@ type Result = {
   updateExisting: () => Promise<void>;
 };
 
+type AppliedSavedFilterSnapshot = {
+  baseQueryState: AnalysisQueryState;
+  savedFilter: SavedFilter;
+};
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return 'Сталася помилка під час роботи зі збереженими фільтрами.';
@@ -44,21 +48,12 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
   const [savedFilterName, setSavedFilterName] = useState('');
   const [saveInFlight, setSaveInFlight] = useState(false);
-  const queryStateRef = useRef(queryState);
-  const loadedSavedFilterRef = useRef<SavedFilter | null>(null);
+  const loadedSavedFilterSnapshotRef = useRef<AppliedSavedFilterSnapshot | null>(null);
 
   const loadedSavedFilter = useMemo(
     () => savedFilters.find((savedFilter) => savedFilter.id === loadedSavedFilterId) ?? null,
     [loadedSavedFilterId, savedFilters],
   );
-
-  useEffect(() => {
-    queryStateRef.current = queryState;
-  }, [queryState]);
-
-  useEffect(() => {
-    loadedSavedFilterRef.current = loadedSavedFilter;
-  }, [loadedSavedFilter]);
 
   const isDirty = useMemo(() => {
     if (!loadedSavedFilter) return false;
@@ -86,23 +81,33 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
       if (savedFilter == null) {
-        const current = queryStateRef.current;
-        const snapshot = loadedSavedFilterRef.current;
-        const nextState = snapshot == null ? current : clearQueryStateFromSavedFilter(snapshot, current);
-        setQueryState(nextState);
-        pushQueryStateToUrl(nextState);
+        const snapshot = loadedSavedFilterSnapshotRef.current;
+        setQueryState((current) =>
+          snapshot == null
+            ? current
+            : clearQueryStateFromSavedFilter(
+                current,
+                snapshot.baseQueryState,
+                queryStateFromSavedFilter(snapshot.savedFilter, snapshot.baseQueryState),
+              ),
+        );
         setLoadedSavedFilterId(null);
         setSavedFilterName('');
+        loadedSavedFilterSnapshotRef.current = null;
         return;
       }
 
+      const current = queryState;
+      const nextState = queryStateFromSavedFilter(savedFilter, current);
+      loadedSavedFilterSnapshotRef.current = {
+        baseQueryState: current,
+        savedFilter,
+      };
       setLoadedSavedFilterId(savedFilter?.id ?? null);
       setSavedFilterName(savedFilter.name);
-      const nextState = queryStateFromSavedFilter(savedFilter, queryStateRef.current);
       setQueryState(nextState);
-      pushQueryStateToUrl(nextState);
     },
-    [setQueryState],
+    [queryState, setQueryState],
   );
 
   const saveAsNew = useCallback(async () => {
@@ -173,6 +178,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
       const next = await loadSavedFilters();
       setLoadedSavedFilterId(null);
       setSavedFilterName('');
+      loadedSavedFilterSnapshotRef.current = null;
       setSavedFilters(next);
     } catch (deleteError) {
       if (!onUnauthorized(deleteError)) {

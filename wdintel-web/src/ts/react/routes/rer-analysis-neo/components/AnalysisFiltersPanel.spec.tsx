@@ -34,6 +34,7 @@ vi.mock('@mui/material', () => ({
       onChange={(event) => props.onChange?.(event.nativeEvent, event.currentTarget.checked)}
     />
   ),
+  CircularProgress: () => <span data-testid="spinner" />,
   Divider: () => <hr />,
   FormControl: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
@@ -768,6 +769,17 @@ describe('AnalysisFiltersPanel', () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
     button?.click();
     expect(resetFilters).not.toHaveBeenCalled();
+  });
+
+  it('shows loading spinners in section headers while filters are loading', async () => {
+    const view = await renderComponent(
+      buildProps({
+        filtersLoading: true,
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelectorAll('[data-testid="spinner"]').length).toBeGreaterThan(0);
   });
 
   it('renders the loaded saved filter as a closable chip above the important section and orders sections alphabetically', async () => {

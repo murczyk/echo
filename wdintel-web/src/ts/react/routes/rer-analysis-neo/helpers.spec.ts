@@ -235,10 +235,36 @@ describe('rer-analysis-neo helpers', () => {
       postsSelected: ['post-1'],
     };
 
-    const nextState = clearQueryStateFromSavedFilter(savedFilter, currentState);
+    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
 
     expect(nextState.freqsSelected).toEqual([]);
     expect(nextState.orBookmarked).toBe(false);
+    expect(nextState.postsSelected).toEqual(['post-1']);
+  });
+
+  it('preserves preexisting saved filter values when clearing the saved filter', () => {
+    const baseState = createQueryState({
+      freqsSelected: ['130.3500'],
+      orBookmarked: true,
+      postsSelected: [],
+    });
+    const savedFilter = createSavedFilter(
+      createQueryState({
+        freqsSelected: ['130.3500'],
+        orBookmarked: true,
+        postsSelected: [],
+      }),
+    );
+    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
+    const currentState = {
+      ...appliedState,
+      postsSelected: ['post-1'],
+    };
+
+    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
+
+    expect(nextState.freqsSelected).toEqual(['130.3500']);
+    expect(nextState.orBookmarked).toBe(true);
     expect(nextState.postsSelected).toEqual(['post-1']);
   });
 
@@ -259,7 +285,7 @@ describe('rer-analysis-neo helpers', () => {
       postsSelected: ['post-1'],
     };
 
-    const nextState = clearQueryStateFromSavedFilter(savedFilter, currentState);
+    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
 
     expect(nextState.freqsSelected).toEqual([]);
     expect(nextState.postsSelected).toEqual(['post-1']);

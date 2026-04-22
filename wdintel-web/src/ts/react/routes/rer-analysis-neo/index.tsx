@@ -7,6 +7,7 @@ import {
   Badge,
   Box,
   Button,
+  CircularProgress,
   FormControlLabel,
   IconButton,
   Paper,
@@ -458,11 +459,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         justifyContent="flex-end"
                         sx={{ ml: 'auto', width: { xs: '100%', sm: 'auto' } }}
                       >
-                        {page.countsLoading && page.counts == null ? (
-                          <>
-                            <Skeleton variant="rounded" width={110} height={32} />
-                            <Skeleton variant="rounded" width={110} height={32} />
-                          </>
+                        {page.countsLoading ? (
+                          <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 32, px: 1.5 }}>
+                            <CircularProgress size={18} thickness={5} />
+                          </Box>
                         ) : (
                           <>
                             <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
