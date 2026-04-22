@@ -18,84 +18,33 @@ import type {
 } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  fetchAnalysisAors,
-  fetchAnalysisCallsignGraph,
-  fetchAnalysisCallsigns,
-  fetchAnalysisCallsignInfos,
-  fetchAnalysisCorrelatedFreqs,
-  fetchAnalysisCount,
-  fetchAnalysisFreqs,
-  fetchAnalysisGroups,
-  fetchAnalysisLocations,
-  fetchAnalysisMapPoints,
-  fetchAnalysisMetadata,
-  fetchAnalysisNetworks,
-  fetchAnalysisNewCallsigns,
-  fetchAnalysisPosts,
-  fetchAnalysisSenders,
-  fetchAnalysisSummaryTable,
-  fetchAnalysisTags,
-  fetchAnalysisUnits,
-  fetchUnitsByIds,
-  fetchNetworksByIds,
-  fetchFreqActivityDaily,
-  fetchInboxMessages,
-  fetchMessagesByIds,
-  getGroupInfosBatch,
-  getLatestSenders,
-  getTagsMapForDisplay,
-  downloadAnalysisGeojson,
-  downloadAnalysisKmz,
-  downloadAnalysisSummaryTableXlsx,
-} from '../../services/api/analysis';
-import { listPalitrasV2 } from '../../services/api/palitra';
-import { downloadBlob } from '../../utils/download-blob';
-import { sortFrequenciesNumerically, sortStringsAlphabetically } from '../../utils/misc';
-import {
-  ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
-  buildAnalysisReq,
-  buildInboxReq,
-  pushQueryStateToUrl,
-  shouldRebuildAnalysisRequests,
-} from './helpers';
+import { fetchInboxMessages } from '../../services/api/analysis';
+import { buildInboxReq } from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { buildNetworkDisplayMap } from './message-utils';
-import { buildSummaryCallsignsInfo, mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
+import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
+import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useAnalysisDataLoaders } from './use-analysis-data.loaders';
 import { useAnalysisDataMessageActions } from './use-analysis-data.message-actions';
-import { buildAnalysisReqForFilterSection, filterSectionCacheKey, filterSectionsForInitialLoad, loadFilterSectionData, reloadAnalysisData } from './use-analysis-data.reload';
-import { emptyNewCallsigns, emptyOptions, toErrorMessage, topItems } from './use-analysis-data.shared';
+import { reloadAnalysisData } from './use-analysis-data.reload';
+import { emptyNewCallsigns, emptyOptions, toErrorMessage } from './use-analysis-data.shared';
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
+import {
+  useLoadMissingNetworksForMessages,
+  useLoadNewCallsigns,
+  mergeNetworksById,
+  shouldSkipNewCallsignsLoad,
+} from './use-analysis-data.support';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
 import type {
   AnalysisAorEntry,
   AnalysisCountItem,
   AnalysisFilterOptions,
-  AnalysisFilterSectionId,
   AnalysisGroupsActivityPeriod,
-  AnalysisMapAttrs,
   AnalysisPalitrasLoadState,
 } from './types';
 
-export function mergeNetworksById(existing: Network[], loaded: Network[]): Network[] {
-  const merged = new Map<number, Network>();
-  existing.forEach((network) => {
-    merged.set(network.id, network);
-  });
-  loaded.forEach((network) => {
-    merged.set(network.id, network);
-  });
-  return Array.from(merged.values());
-}
-
-export function shouldSkipNewCallsignsLoad(
-  loadedKey: string | null,
-  pendingKey: string | null,
-  requestKey: string,
-): boolean {
-  return loadedKey === requestKey || pendingKey === requestKey;
-}
+export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
 export function useAnalysisData({
   newestFirst,
@@ -156,8 +105,6 @@ export function useAnalysisData({
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
-  const filterSectionLoadVersionRef = useRef(0);
-  const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>({} as Record<AnalysisFilterSectionId, string>);
   const newCallsignsRequestRef = useRef(0);
   const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
   const newCallsignsLoadedKeyRef = useRef<string | null>(null);
@@ -191,84 +138,20 @@ export function useAnalysisData({
     setMessagesPaging(false);
   }, []);
 
-  const invalidateFilterSectionLoads = useCallback(() => {
-    filterSectionLoadVersionRef.current += 1;
-    loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
-  }, []);
-
-  const loadFilterSection = useCallback(
-    async (section: AnalysisFilterSectionId) => {
-      const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
-      if (analysisReq == null) return;
-      const sectionAnalysisReq = buildAnalysisReqForFilterSection(section, analysisReq);
-      const requestKey = filterSectionCacheKey(section, analysisReq);
-      if (loadedFilterSectionKeyRef.current[section] === requestKey) return;
-
-      const loadVersion = filterSectionLoadVersionRef.current;
-      try {
-        await loadFilterSectionData(section, {
-          analysisReq: sectionAnalysisReq,
-          loadVersion,
-          loadVersionRef: filterSectionLoadVersionRef,
-          setAorEntries,
-          setGroupInfos,
-          setNetworks,
-          setNetworkDisplayMap,
-          setOptions,
-          setProfiles,
-          setTagsMap,
-          unitsMap: unitsMapRef.current,
-        });
-        if (loadVersion !== filterSectionLoadVersionRef.current) return;
-        loadedFilterSectionKeyRef.current[section] = requestKey;
-      } catch (loadError) {
-        if (loadVersion !== filterSectionLoadVersionRef.current) return;
-        if (!onUnauthorized(loadError)) {
-          onError(toErrorMessage(loadError));
-        }
-      }
-    },
-    [onError, onUnauthorized, optionsFreqValues, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap],
-  );
-
-  const loadInitialFilterSections = useCallback(
-    async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => {
-      const sections = filterSectionsForInitialLoad(queryState);
-      if (sections.length === 0) return;
-
-      // Shared section loads can run in parallel; stale results are guarded by the version ref.
-      await Promise.all(
-        sections.map(async (section) => {
-          const sectionKey = filterSectionCacheKey(section, analysisReq);
-          if (loadedFilterSectionKeyRef.current[section] === sectionKey) return;
-          const loadVersion = filterSectionLoadVersionRef.current;
-          try {
-            await loadFilterSectionData(section, {
-              analysisReq: buildAnalysisReqForFilterSection(section, analysisReq),
-              loadVersion,
-              loadVersionRef: filterSectionLoadVersionRef,
-              setAorEntries,
-              setGroupInfos,
-              setNetworks,
-              setNetworkDisplayMap,
-              setOptions,
-              setProfiles,
-              setTagsMap,
-              unitsMap: unitsMapRef.current,
-            });
-            if (loadVersion !== filterSectionLoadVersionRef.current) return;
-            loadedFilterSectionKeyRef.current[section] = sectionKey;
-          } catch (loadError) {
-            if (loadVersion !== filterSectionLoadVersionRef.current) return;
-            if (!onUnauthorized(loadError)) {
-              onError(toErrorMessage(loadError));
-            }
-          }
-        }),
-      );
-    },
-    [onError, onUnauthorized, queryState, setAorEntries, setGroupInfos, setNetworkDisplayMap, setNetworks, setOptions, setProfiles, setTagsMap],
-  );
+  const { invalidateFilterSectionLoads, loadFilterSection, loadInitialFilterSections } = useAnalysisFilterSections({
+    queryState,
+    optionsFreqValues,
+    unitsMapRef,
+    onError,
+    onUnauthorized,
+    setAorEntries,
+    setGroupInfos,
+    setNetworkDisplayMap,
+    setNetworks,
+    setOptions,
+    setProfiles,
+    setTagsMap,
+  });
 
   const {
     downloadGeojson,
@@ -314,69 +197,26 @@ export function useAnalysisData({
     setMapPoints,
   });
 
-  const loadNewCallsigns = useCallback(async () => {
-    const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
-    if (analysisReq == null) {
-      setNewCallsigns(emptyNewCallsigns);
-      newCallsignsLoadedKeyRef.current = null;
-      newCallsignsPendingKeyRef.current = null;
-      return;
-    }
+  const loadNewCallsigns = useLoadNewCallsigns({
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+    setNewCallsigns,
+    setNewCallsignsLoading,
+    newCallsignsRequestRef,
+    newCallsignsLoadedKeyRef,
+    newCallsignsPendingKeyRef,
+  });
 
-    const requestKey = JSON.stringify(analysisReq);
-    if (shouldSkipNewCallsignsLoad(newCallsignsLoadedKeyRef.current, newCallsignsPendingKeyRef.current, requestKey)) {
-      return;
-    }
-
-    const requestId = newCallsignsRequestRef.current + 1;
-    newCallsignsRequestRef.current = requestId;
-    newCallsignsPendingKeyRef.current = requestKey;
-    setNewCallsignsLoading(true);
-    setNewCallsigns(emptyNewCallsigns);
-    onError('');
-
-    try {
-      const newCallsignsRsp = await fetchAnalysisNewCallsigns(analysisReq);
-      if (requestId !== newCallsignsRequestRef.current) return;
-      setNewCallsigns(newCallsignsRsp);
-      newCallsignsLoadedKeyRef.current = requestKey;
-    } catch (loadError) {
-      if (requestId !== newCallsignsRequestRef.current) return;
-      if (!onUnauthorized(loadError)) {
-        onError(toErrorMessage(loadError));
-      }
-    } finally {
-      if (requestId === newCallsignsRequestRef.current) {
-        newCallsignsPendingKeyRef.current = null;
-        setNewCallsignsLoading(false);
-      }
-    }
-  }, [onError, onUnauthorized, optionsFreqValues, queryState]);
-
-  const loadMissingNetworksForMessages = useCallback(
-    async (messageItems: Array<[number, InboxMessage]>) => {
-      const existingNetworkIds = new Set(networksRef.current.map((network) => network.id));
-      const missingNetworkIds = Array.from(
-        new Set(messageItems.flatMap(([, message]) => message.networkIds ?? [])),
-      ).filter((networkId) => !existingNetworkIds.has(networkId));
-      if (missingNetworkIds.length === 0) return;
-
-      try {
-        const loadedNetworks = await fetchNetworksByIds(missingNetworkIds);
-        if (loadedNetworks.length === 0) return;
-        setNetworks((currentNetworks) => {
-          const mergedNetworks = mergeNetworksById(currentNetworks, loadedNetworks);
-          setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
-          return mergedNetworks;
-        });
-      } catch (loadError) {
-        if (!onUnauthorized(loadError)) {
-          onError(toErrorMessage(loadError));
-        }
-      }
-    },
-    [onError, onUnauthorized, setNetworkDisplayMap, setNetworks, unitsMap],
-  );
+  const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
+    networksRef,
+    onError,
+    onUnauthorized,
+    setNetworkDisplayMap,
+    setNetworks,
+    unitsMap,
+  });
 
   const { clearAnalysisResults, onUpdateLocalMessage, patchMessages } = useAnalysisDataStateUtils({
     emptyNewCallsigns,
