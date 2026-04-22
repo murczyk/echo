@@ -1,4 +1,4 @@
-import type { SavedFilter } from '../../../../Bindings';
+import type { AnalysisStatsReq, SavedFilter } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -37,6 +37,21 @@ type AppliedSavedFilterSnapshot = {
   baseQueryState: AnalysisQueryState;
   savedFilter: SavedFilter;
 };
+
+export function refreshAppliedSavedFilterSnapshot(
+  snapshot: AppliedSavedFilterSnapshot | null,
+  queryState: AnalysisQueryState,
+  savedFilter: SavedFilter,
+  req: AnalysisStatsReq,
+): AppliedSavedFilterSnapshot {
+  return {
+    baseQueryState: snapshot?.baseQueryState ?? queryState,
+    savedFilter: {
+      ...savedFilter,
+      req,
+    },
+  };
+}
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -160,6 +175,13 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
       const next = await upsertAnalysisSavedFilter({ name: loadedSavedFilter.name, req });
       setSavedFilters(next);
       setLoadedSavedFilterId(loadedSavedFilter.id);
+      // Keep the clear snapshot in sync with the saved request so "clear" can fully revert later edits.
+      loadedSavedFilterSnapshotRef.current = refreshAppliedSavedFilterSnapshot(
+        loadedSavedFilterSnapshotRef.current,
+        queryState,
+        loadedSavedFilter,
+        req,
+      );
     } catch (saveError) {
       if (!onUnauthorized(saveError)) {
         onError(toErrorMessage(saveError));

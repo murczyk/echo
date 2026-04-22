@@ -31,6 +31,10 @@ export function normalizeMapMessageIds(messageIds: readonly unknown[]): number[]
   return Array.from(new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))));
 }
 
+export function shouldClearMapOpenMessages(messageIds: readonly unknown[]): boolean {
+  return normalizeMapMessageIds(messageIds).length === 0;
+}
+
 type Params = {
   callsignGraphNolimit: boolean;
   callsignGraphRequestRef: React.MutableRefObject<number>;
@@ -153,7 +157,11 @@ export function useAnalysisDataLoaders(params: Params) {
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
       const cleanMessageIds = normalizeMapMessageIds(messageIds);
-      if (cleanMessageIds.length === 0) return;
+      if (cleanMessageIds.length === 0) {
+        mapMessagesLoadVersionRef.current += 1;
+        setMapOpenMessages([]);
+        return;
+      }
 
       const loadVersion = mapMessagesLoadVersionRef.current + 1;
       mapMessagesLoadVersionRef.current = loadVersion;

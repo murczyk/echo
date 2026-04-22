@@ -99,7 +99,7 @@ export function filterSectionsForQueryState(queryState: AnalysisQueryState): Ana
 }
 
 export function filterSectionsForInitialLoad(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
-  const sections = new Set<AnalysisFilterSectionId>(['tags', 'groups']);
+  const sections = new Set<AnalysisFilterSectionId>(['tags', 'groups', 'senders']);
   filterSectionsForQueryState(queryState).forEach((section) => sections.add(section));
   return Array.from(sections);
 }
@@ -533,9 +533,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.setTopCallsigns(topItems(callsignsRsp.callsigns, (item) => item.callsign, (item) => item.count));
         params.setTopUnits(topItems(unitsRsp.units, (item) => item.unit, (item) => item.count));
         params.setTopLocations(topItems(locationsRsp.locations, (item) => item.location, (item) => item.count));
-        const callsignInfos = await fetchAnalysisCallsignInfos(callsignsRsp.callsigns.map((item) => item.callsign));
-        if (isStaleReload()) return;
-        params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(criticalData.inboxRsp.callsigns, callsignInfos));
+        const callsignIds = callsignsRsp.callsigns.map((item) => item.callsign);
+        if (callsignIds.length > 0) {
+          const callsignInfos = await fetchAnalysisCallsignInfos(callsignIds);
+          if (isStaleReload()) return;
+          params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(criticalData.inboxRsp.callsigns, callsignInfos));
+        }
       } catch (loadError) {
         if (isStaleReload()) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
