@@ -411,13 +411,7 @@ function NetworkEtalonSection({
     (item): item is Exclude<(typeof renderedNetworks)[number], null> => item != null,
   );
   const uniqueRenderedNetworks = renderedNetworksFiltered.filter((item, index, all) => {
-    const normalizedLabel = item.label.trim().toLowerCase();
-    return (
-      index ===
-      all.findIndex(
-        (other) => other.networkId === item.networkId || other.label.trim().toLowerCase() === normalizedLabel,
-      )
-    );
+    return index === all.findIndex((other) => other.networkId === item.networkId);
   });
 
   if (uniqueRenderedNetworks.length === 0 && fallbackLabel === '' && geoButton == null) {

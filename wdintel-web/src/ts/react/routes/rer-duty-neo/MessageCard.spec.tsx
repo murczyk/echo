@@ -340,6 +340,22 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).not.toBeNull();
   });
 
+  it('keeps distinct network ids visible even when the rendered labels match', async () => {
+    const view = await renderCard({
+      msg: { ...buildMessage(), networkIds: [7, 8] },
+      networkMap: {
+        7: { id: 7, name: 'Alpha', unitIds: [], location: null } as Network,
+        8: { id: 8, name: 'Alpha', unitIds: [], location: null } as Network,
+      },
+      networkDisplayMap: { 7: 'р/м Alpha', 8: 'р/м Alpha' },
+    });
+    rendered.push(view);
+
+    const networkLinks = Array.from(view.container.querySelectorAll('a[href^="/rer-networks/"]'));
+    expect(networkLinks).toHaveLength(2);
+    expect(networkLinks.map((link) => link.getAttribute('href'))).toEqual(['/rer-networks/7', '/rer-networks/8']);
+  });
+
   it('renders analysis actions without timer and with analysis-only callsign controls', async () => {
     const onAddCallsign = vi.fn().mockResolvedValue(true);
     const onRemoveCallsign = vi.fn().mockResolvedValue(true);
