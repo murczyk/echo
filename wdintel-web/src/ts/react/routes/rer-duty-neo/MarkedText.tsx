@@ -409,67 +409,26 @@ export function renderMarkedText(
     unitsMap?: Record<number, Unit>;
     freq?: string | null;
     networkIds?: number[] | null;
-    hideLeadingDuplicateCallsigns?: string[] | null;
   },
 ): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
   const linkCallsigns = options?.linkCallsigns !== false;
   const messageForMap = options?.message;
-  const duplicateCallsigns = new Set((options?.hideLeadingDuplicateCallsigns ?? []).map((callsign) => callsign.trim().toUpperCase()).filter((callsign) => callsign !== ''));
   const fromNodes = collectPointEtalons(nodes);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
     messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
   );
   const renderedNodes: ReactNode[] = [];
-  let duplicateBlockOpen = false;
-  let previousWasLineBreak = true;
-  let duplicateBlockSeen = false;
-  const isDuplicateCallsignText = (text: string) => {
-    const normalized = text.trim().toUpperCase();
-    return normalized !== '' && duplicateCallsigns.has(normalized);
-  };
-  const isDuplicateCallsignTextNode = (node: ContentNode) =>
-    typeof node !== 'string' && 'CNTextC' in node && node.CNTextC.text.trim() !== '' && node.CNTextC.text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '').every(isDuplicateCallsignText);
-  const isDuplicateCallsignNode = (node: ContentNode) => typeof node !== 'string' && 'CNCallsignC' in node && isDuplicateCallsignText(node.CNCallsignC.text);
-  // Intentional: trim only the first leading duplicate block in analysis messages.
-  const shouldOpenDuplicateBlock = (node: ContentNode) =>
-    duplicateCallsigns.size > 0 &&
-    !duplicateBlockSeen &&
-    previousWasLineBreak &&
-    (isDuplicateCallsignNode(node) || isDuplicateCallsignTextNode(node));
 
   for (let i = 0; i < nodes.length; i += 1) {
     const node = nodes[i];
 
-    if (duplicateBlockOpen) {
-      if (typeof node === 'string' && node === 'CNNewlineC') {
-        previousWasLineBreak = true;
-        continue;
-      }
-      if (isDuplicateCallsignNode(node) || isDuplicateCallsignTextNode(node)) {
-        previousWasLineBreak = false;
-        continue;
-      }
-      duplicateBlockOpen = false;
-      duplicateBlockSeen = true;
-    }
-
-    if (shouldOpenDuplicateBlock(node)) {
-      duplicateBlockOpen = true;
-      previousWasLineBreak = false;
-      continue;
-    }
-
     if (typeof node === 'string') {
-      if (node === 'CNNewlineC') {
-        previousWasLineBreak = true;
-        renderedNodes.push(<br key={i} />);
-      }
+      if (node === 'CNNewlineC') renderedNodes.push(<br key={i} />);
       continue;
     }
 
     if ('CNTextC' in node) {
-      previousWasLineBreak = node.CNTextC.text.endsWith('\n');
       renderedNodes.push(<span key={i}>{node.CNTextC.text}</span>);
       continue;
     }
@@ -477,7 +436,6 @@ export function renderMarkedText(
     if ('CNCallsignC' in node) {
       const { text } = node.CNCallsignC;
       const callsignText = text.trim();
-      previousWasLineBreak = false;
       if (callsignText === '') continue;
       renderedNodes.push(
         <CallsignWithHint
@@ -496,7 +454,6 @@ export function renderMarkedText(
 
     if ('CNHighlightC' in node) {
       const { text } = node.CNHighlightC;
-      previousWasLineBreak = false;
       if (text.trim() === '') continue;
       renderedNodes.push(<KeywordToken key={i} text={text} />);
       continue;
@@ -504,7 +461,6 @@ export function renderMarkedText(
 
     if ('CNSignalC' in node) {
       const { text } = node.CNSignalC;
-      previousWasLineBreak = false;
       if (text.trim() === '') continue;
       renderedNodes.push(
         <span key={i} className="content-token--ADV">
@@ -516,7 +472,6 @@ export function renderMarkedText(
 
     if ('CNPointC' in node) {
       const { etalon, text } = node.CNPointC;
-      previousWasLineBreak = false;
       if (text.trim() === '') continue;
       const cleanEtalon = String(etalon ?? '').trim();
       if (!showPointLinks || cleanEtalon === '') {

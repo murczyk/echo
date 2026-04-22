@@ -724,4 +724,72 @@ describe('reloadAnalysisData', () => {
     expect(setOptions).toHaveBeenCalledWith(emptyOptions);
     expect(setTopFreqs).toHaveBeenCalledWith([]);
   });
+
+  it('invalidates pending new callsign loads when the query state cannot be built', async () => {
+    const clearAnalysisResults = vi.fn();
+    const setNewCallsignsLoading = vi.fn();
+    const newCallsignsRequestRef = { current: 9 };
+    const newCallsignsLoadedKeyRef = { current: 'loaded-key' };
+    const newCallsignsPendingKeyRef = { current: 'pending-key' };
+
+    await reloadAnalysisData({
+      clearAnalysisResults,
+      invalidateCorrelatedFreqsCache: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: 'invalid',
+        toDateTimeStr: '2026-04-02T00:00',
+      },
+      reloadRequestRef: { current: 0 },
+      newCallsignsRequestRef,
+      newCallsignsLoadedKeyRef,
+      newCallsignsPendingKeyRef,
+      setAorEntries: vi.fn(),
+      setCounts: vi.fn(),
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworkDisplayMap: vi.fn(),
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
+      setNewCallsigns: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading,
+      setNewCallsignsLoadedKey: vi.fn(),
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions: vi.fn(),
+      setProfiles: vi.fn(),
+      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryLoading: vi.fn(),
+      setSummaryRows: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTopCallsigns: vi.fn(),
+      setTopFreqs: vi.fn(),
+      setTopLocations: vi.fn(),
+      setTopUnits: vi.fn(),
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+    });
+
+    expect(clearAnalysisResults).toHaveBeenCalledTimes(1);
+    expect(setNewCallsignsLoading).toHaveBeenCalledWith(false);
+    expect(newCallsignsRequestRef.current).toBe(10);
+    expect(newCallsignsLoadedKeyRef.current).toBeNull();
+    expect(newCallsignsPendingKeyRef.current).toBeNull();
+  });
 });

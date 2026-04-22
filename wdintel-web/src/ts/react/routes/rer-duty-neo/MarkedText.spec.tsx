@@ -31,7 +31,6 @@ function TestHost(props: {
   messagePointEtalons?: string[];
   showPointLinks?: boolean;
   linkCallsigns?: boolean;
-  hideLeadingDuplicateCallsigns?: string[] | null;
   message?: InboxMessage;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -48,7 +47,6 @@ function TestHost(props: {
         unitsMap: props.unitsMap,
         freq: props.message?.freq ?? null,
         networkIds: props.message?.networkIds ?? null,
-        hideLeadingDuplicateCallsigns: props.hideLeadingDuplicateCallsigns ?? null,
       })}
     </div>
   );
@@ -318,7 +316,7 @@ describe('MarkedText', () => {
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
 
-  it('hides leading duplicate callsigns only when analysis asks for it', async () => {
+  it('renders duplicate callsigns verbatim', async () => {
     await act(async () => {
       root.render(
         <TestHost
@@ -332,36 +330,13 @@ describe('MarkedText', () => {
             { CNTextC: { text: 'Базовий текст', begin: 12, end: 24 } },
           ]}
           bodyText="УКХ р/м управління 4 мср 2 мсб\nТИХИЙ\nПОЧТА\nБазовий текст"
-          hideLeadingDuplicateCallsigns={['ТИХИЙ', 'ПОЧТА']}
         />,
       );
     });
 
     expect(container.textContent).toContain('УКХ р/м управління 4 мср 2 мсб');
     expect(container.textContent).toContain('Базовий текст');
-    expect(container.textContent).not.toContain('ТИХИЙ');
-    expect(container.textContent).not.toContain('ПОЧТА');
-  });
-
-  it('keeps duplicate callsigns that appear after the leading block', async () => {
-    await act(async () => {
-      root.render(
-        <TestHost
-          nodes={[
-            { CNCallsignC: { text: 'тихий', begin: 0, end: 5, etalon: 'тихий' } },
-            'CNNewlineC',
-            { CNTextC: { text: 'Базовий текст', begin: 6, end: 18 } },
-            'CNNewlineC',
-            { CNCallsignC: { text: 'почта', begin: 19, end: 24, etalon: 'почта' } },
-          ]}
-          bodyText="ТИХИЙ\nБазовий текст\nПОЧТА"
-          hideLeadingDuplicateCallsigns={['ТИХИЙ', 'ПОЧТА']}
-        />,
-      );
-    });
-
-    expect(container.textContent).not.toContain('ТИХИЙ');
-    expect(container.textContent).toContain('Базовий текст');
+    expect(container.textContent).toContain('ТИХИЙ');
     expect(container.textContent).toContain('ПОЧТА');
   });
 

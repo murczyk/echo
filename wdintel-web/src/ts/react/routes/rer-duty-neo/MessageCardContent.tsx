@@ -606,7 +606,7 @@ export function MessageCardMessageBody({
   const textPrimary = useMemo(
     () =>
       msg.textMarked && msg.textMarked.length > 0
-          ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
+        ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
             showPointLinks,
             message: msg,
             callsignInfoMap,
@@ -614,7 +614,6 @@ export function MessageCardMessageBody({
             unitsMap,
             freq: msg.freq ?? null,
             networkIds: msg.networkIds ?? null,
-            hideLeadingDuplicateCallsigns: analysisCallsignActions != null ? msg.callsigns ?? [] : null,
           })
         : (() => {
             const text = msg.text?.trim() ?? '';

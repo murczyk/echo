@@ -38,6 +38,7 @@ import { sortFrequenciesNumerically } from '../../utils/misc';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq, shouldRebuildAnalysisRequests } from './helpers';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import { emptyNewCallsigns, emptyOptions, normalizeFilterLabel, toErrorMessage, topItems } from './use-analysis-data.shared';
+import { invalidateNewCallsignsLoadState } from './use-analysis-data.support';
 import { buildNetworkDisplayMap, buildSenderFilterOptions } from './message-utils';
 import type {
   AnalysisAorEntry,
@@ -319,6 +320,9 @@ type ReloadParams = {
   optionsFreqsRef: React.MutableRefObject<string[]>;
   queryState: AnalysisQueryState;
   reloadRequestRef: React.MutableRefObject<number>;
+  newCallsignsRequestRef?: React.MutableRefObject<number>;
+  newCallsignsLoadedKeyRef?: React.MutableRefObject<string | null>;
+  newCallsignsPendingKeyRef?: React.MutableRefObject<string | null>;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<CountStatsRsp | null>;
   setCountsLoading: Setter<boolean>;
@@ -392,6 +396,19 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
       if (analysisReq == null || inboxReq == null) {
         params.clearAnalysisResults();
+        if (
+          params.newCallsignsRequestRef != null &&
+          params.newCallsignsLoadedKeyRef != null &&
+          params.newCallsignsPendingKeyRef != null
+        ) {
+          invalidateNewCallsignsLoadState({
+            setNewCallsigns: params.setNewCallsigns,
+            setNewCallsignsLoading: params.setNewCallsignsLoading,
+            newCallsignsRequestRef: params.newCallsignsRequestRef,
+            newCallsignsLoadedKeyRef: params.newCallsignsLoadedKeyRef,
+            newCallsignsPendingKeyRef: params.newCallsignsPendingKeyRef,
+          });
+        }
         return null;
       }
 
