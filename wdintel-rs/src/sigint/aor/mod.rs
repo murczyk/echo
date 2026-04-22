@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::{Data, Json};
+use chrono::Utc;
 use milgeo_rs::coord_util::LatLng;
 use milgeo_rs::MilGeo;
 use sea_orm::*;
@@ -113,6 +114,39 @@ pub async fn delete_aor(
     Ok(Json(()))
 }
 
+#[post("/api/sigint/aor/update-report-order")]
+pub async fn update_aor_report_order(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<UpdateAreaOfResponsibilityReportOrderReq>,
+) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
+    let user_id = user.id().c(h!())?;
+    crate::users::has_any_role(&env.dbx, &user_id, vec!["Admin", "Rer"])
+        .await
+        .c(h!())?;
+
+    let txn = env.dbx.begin().await.c(h!())?;
+    let mut updated_aors = Vec::with_capacity(req.items.len());
+    for item in &req.items {
+        let aor = area_of_responsibility::Entity::find_by_id(item.id)
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .one(&txn)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        let mut aor = aor.into_active_model();
+        aor.order_for_report = Set(item.order_for_report);
+        aor.updated_by = Set(Some(user_id.clone()));
+        aor.updated_at = Set(Utc::now().naive_utc());
+        updated_aors.push(aor.update(&txn).await.c(h!())?);
+    }
+    txn.commit().await.c(h!())?;
+
+    Ok(Json(
+        updated_aors.into_iter().map(render_aor).collect::<Vec<_>>(),
+    ))
+}
+
 pub async fn load_default_aor<'a, 'async_trait, C>(
     txn: &'a C,
 ) -> anyhow::Result<area_of_responsibility::Model>
@@ -187,6 +221,7 @@ pub fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
         right_bound: aor.right_bound,
         created_at: aor.created_at.and_utc().timestamp_millis(),
         is_top_level: aor.is_top_level,
+        order_for_report: aor.order_for_report,
         left_coordinates,
         right_coordinates,
     }
@@ -258,6 +293,7 @@ async fn map_insert(
         created_at: NotSet,
         deleted: Set(false),
         is_top_level: Set(req.is_top_level),
+        order_for_report: NotSet,
         is_default: NotSet,
         sigint_origin_id: NotSet,
         original_id: NotSet,

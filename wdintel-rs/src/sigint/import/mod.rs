@@ -815,6 +815,7 @@ where
             right_settlement: Set(rec.right_settlement),
             updated_by: Set(Some(SYSTEM_LOGIN_NAME.to_string())),
             updated_at: Set(rec.updated_at),
+            order_for_report: Set(rec.order_for_report),
             is_default: Set(rec.is_default),
             sigint_origin_id: Set(Some(origin_id)),
         };

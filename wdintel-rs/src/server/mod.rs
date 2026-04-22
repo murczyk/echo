@@ -332,6 +332,13 @@ fn spawn_background_workers(
     spawn_named_worker("operator_inbox_worker", bg_set, async move {
         crate::operator::worker::run_operator_inbox_worker_nofail(mode).await;
     });
+    spawn_named_worker(
+        "rer_duty_historical_interceptions_worker",
+        bg_set,
+        async move {
+            crate::system_settings::worker::run_rer_duty_historical_interceptions_worker_nofail(mode).await;
+        },
+    );
     spawn_named_worker("echo_im_cleanup", bg_set, async move {
         crate::messenger::worker::cleanup::run_cleanup_worker(mode).await;
     });
@@ -760,6 +767,7 @@ pub async fn main_server(
             .service(crate::sigint::aor::aor_list)
             .service(crate::sigint::aor::create_aor)
             .service(crate::sigint::aor::update_aor)
+            .service(crate::sigint::aor::update_aor_report_order)
             .service(crate::sigint::aor::delete_aor)
             .service(crate::sigint::etalonka::report_networks)
             .service(crate::sigint::etalonka::report_networks_batch_id)

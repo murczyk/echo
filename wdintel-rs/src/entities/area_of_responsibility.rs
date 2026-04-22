@@ -39,6 +39,8 @@ pub struct Model {
     pub is_default: bool,
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
+    #[sea_orm(column_type = "Double")]
+    pub order_for_report: f64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

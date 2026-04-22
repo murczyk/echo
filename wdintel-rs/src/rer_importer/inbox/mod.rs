@@ -45,7 +45,8 @@ async fn apply_test_inbox_settings(
     {
         let since_ms = settings.rer_duty_test_since_ms.max(0);
         let window_ms =
-            Duration::minutes(RER_DUTY_TEST_WINDOW_MINUTES).num_milliseconds();
+            Duration::minutes(env.config.rer_duty_test_source_window_minutes())
+                .num_milliseconds();
         req.since_date_inclusive_ms = Some(since_ms);
         req.till_date_inclusive_ms = Some(since_ms + window_ms);
     }

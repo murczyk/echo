@@ -240,6 +240,7 @@ async fn bl_restore_network(
     let mut network = network.into_active_model();
     network.active_from = Set(Some(Utc::now().naive_utc()));
     network.active_to = Set(None);
+    network.deleted = Set(false);
     let result = network.update(txn).await.context(h!())?;
     Ok(result)
 }

@@ -28,16 +28,16 @@ import Set
 import Shared
 import Shared.CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
-import String
 import Shared.Components.DateTime
 import Shared.Components.DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
+import String
 import Utils.Api.ErrorHandling
-import Utils.NetworksUtils as NetworksUtils
 import Utils.Modulations as Modulations
+import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import View exposing (View)
@@ -637,8 +637,20 @@ update shared msg model =
                     else
                         Just model.editAorSelect.selected
 
+                restoreNetwork =
+                    case model.network of
+                        Success network ->
+                            if network.deleted && editState.status == B.NetworkActive then
+                                Just True
+
+                            else
+                                editState.restoreNetwork
+
+                        _ ->
+                            editState.restoreNetwork
+
                 editWithAors =
-                    { editState | areaOfResponsibilityIds = aorIds }
+                    { editState | areaOfResponsibilityIds = aorIds, restoreNetwork = restoreNetwork }
             in
             ( model, E.updateNetwork NetworkUpdatedByApi editWithAors )
 

@@ -82,6 +82,8 @@ type AreaOfResponsibilityLike = {
   description?: string | null;
   isTopLevel?: boolean;
   is_top_level?: boolean;
+  orderForReport?: number | string | null;
+  order_for_report?: number | string | null;
   leftBound?: number | string | null;
   left_bound?: number | string | null;
   rightBound?: number | string | null;
@@ -193,6 +195,7 @@ function normalizeAor(raw: AreaOfResponsibilityLike): AreaOfResponsibility {
     name: raw.name ?? '',
     description: raw.description ?? null,
     isTopLevel: raw.isTopLevel ?? raw.is_top_level ?? false,
+    orderForReport: normalizeNumber(raw.orderForReport ?? raw.order_for_report ?? 100),
     leftBound: normalizeNumber(raw.leftBound ?? raw.left_bound),
     rightBound: normalizeNumber(raw.rightBound ?? raw.right_bound),
     leftCoordinates: normalizeCoordinates(raw.leftCoordinates ?? raw.left_coordinates),
