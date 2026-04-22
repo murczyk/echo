@@ -1,50 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AnalysisStatsReq, SavedFilter } from '../../../../Bindings';
-import { emptyQueryState } from './helpers';
-import { refreshAppliedSavedFilterSnapshot } from './use-analysis-saved-filters';
+import { emptyQueryState, queryStateFromSavedFilter } from './helpers';
 
-describe('refreshAppliedSavedFilterSnapshot', () => {
-  it('keeps the original base query state while refreshing the saved request', () => {
-    const baseQueryState = {
-      ...emptyQueryState(),
-      search: 'before',
-    };
+describe('use-analysis-saved-filters support', () => {
+  it('applies a saved filter as a full replacement of the relevant query state', () => {
     const currentQueryState = {
       ...emptyQueryState(),
-      search: 'after',
+      groupsSelected: ['A'],
+      freqsSelected: ['130.3500'],
     };
     const savedFilter = {
       id: 1,
       name: 'Saved filter',
-      req: { marker: 'old' },
-    } as unknown as SavedFilter;
+      req: {
+        selectedGroups: ['B'],
+        selectedFreqs: ['145.5000'],
+      },
+    } as never;
 
-    const next = refreshAppliedSavedFilterSnapshot(
-      { baseQueryState, savedFilter },
-      currentQueryState,
-      savedFilter,
-      { marker: 'new' } as AnalysisStatsReq,
-    );
+    const next = queryStateFromSavedFilter(savedFilter, currentQueryState);
 
-    expect(next.baseQueryState).toBe(baseQueryState);
-    expect(next.savedFilter.req).toEqual({ marker: 'new' });
-  });
-
-  it('uses the current query state as the base when there is no existing snapshot', () => {
-    const currentQueryState = {
-      ...emptyQueryState(),
-      search: 'current',
-    };
-    const savedFilter = {
-      id: 1,
-      name: 'Saved filter',
-      req: { marker: 'old' },
-    } as unknown as SavedFilter;
-
-    const next = refreshAppliedSavedFilterSnapshot(null, currentQueryState, savedFilter, { marker: 'new' } as AnalysisStatsReq);
-
-    expect(next.baseQueryState).toBe(currentQueryState);
-    expect(next.savedFilter.req).toEqual({ marker: 'new' });
+    expect(next.groupsSelected).toEqual(['B']);
+    expect(next.freqsSelected).toEqual(['145.5000']);
   });
 });

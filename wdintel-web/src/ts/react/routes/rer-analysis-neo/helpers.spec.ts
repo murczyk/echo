@@ -6,7 +6,6 @@ import {
   buildAnalysisReq,
   createInitialQueryState,
   buildInboxReq,
-  clearQueryStateFromSavedFilter,
   parseQueryStateFromWindow,
   emptyQueryState,
   normalizeQueryState,
@@ -214,127 +213,6 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(nextState.freqsSelected).toEqual(['123.4']);
     expect(nextState.adjacentFreqsRange).toBe(0);
-  });
-
-  it('clears only saved filter values while preserving later user changes', () => {
-    const baseState = createQueryState({
-      freqsSelected: [],
-      postsSelected: [],
-      orBookmarked: false,
-    });
-    const savedFilter = createSavedFilter(
-      createQueryState({
-        freqsSelected: ['123.4'],
-        postsSelected: [],
-        orBookmarked: true,
-      }),
-    );
-    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
-    const currentState = {
-      ...appliedState,
-      postsSelected: ['post-1'],
-    };
-
-    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
-
-    expect(nextState.freqsSelected).toEqual([]);
-    expect(nextState.orBookmarked).toBe(false);
-    expect(nextState.postsSelected).toEqual(['post-1']);
-  });
-
-  it('preserves preexisting saved filter values when clearing the saved filter', () => {
-    const baseState = createQueryState({
-      freqsSelected: ['130.3500'],
-      orBookmarked: true,
-      postsSelected: [],
-    });
-    const savedFilter = createSavedFilter(
-      createQueryState({
-        freqsSelected: ['130.3500'],
-        orBookmarked: true,
-        postsSelected: [],
-      }),
-    );
-    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
-    const currentState = {
-      ...appliedState,
-      postsSelected: ['post-1'],
-    };
-
-    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
-
-    expect(nextState.freqsSelected).toEqual(['130.3500']);
-    expect(nextState.orBookmarked).toBe(true);
-    expect(nextState.postsSelected).toEqual(['post-1']);
-  });
-
-  it('restores adjacent frequency range when clearing a saved filter that changed it', () => {
-    const baseState = createQueryState({
-      adjacentFreqsRange: 0,
-      freqsSelected: [],
-    });
-    const savedFilter = createSavedFilter(
-      createQueryState({
-        adjacentFreqsRange: 0.005,
-        freqsSelected: ['130.3500'],
-      }),
-    );
-    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
-    const currentState = {
-      ...appliedState,
-      freqsSelected: ['130.3500', '130.3550'],
-    };
-
-    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
-
-    expect(nextState.adjacentFreqsRange).toBe(0);
-    expect(nextState.freqsSelected).toEqual(['130.3550']);
-  });
-
-  it('restores current-state changes that were added after applying a saved filter', () => {
-    const baseState = createQueryState({
-      freqsSelected: [],
-      postsSelected: [],
-    });
-    const savedFilter = createSavedFilter(
-      createQueryState({
-        freqsSelected: ['130.3500'],
-        postsSelected: [],
-      }),
-    );
-    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
-    const currentState = {
-      ...appliedState,
-      postsSelected: ['post-1'],
-    };
-
-    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
-
-    expect(nextState.freqsSelected).toEqual([]);
-    expect(nextState.postsSelected).toEqual(['post-1']);
-    expect(nextState.fromDateTimeStr).toBe(baseState.fromDateTimeStr);
-    expect(nextState.toDateTimeStr).toBe(baseState.toDateTimeStr);
-  });
-
-  it('restores base array selections when clearing a saved filter', () => {
-    const baseState = createQueryState({
-      groupsSelected: ['Alpha'],
-    });
-    const savedFilter = createSavedFilter(
-      createQueryState({
-        groupsSelected: ['Bravo'],
-      }),
-    );
-    const appliedState = queryStateFromSavedFilter(savedFilter, baseState);
-    const currentState = {
-      ...appliedState,
-      postsSelected: ['post-1'],
-    };
-
-    const nextState = clearQueryStateFromSavedFilter(currentState, baseState, appliedState);
-
-    expect(nextState.groupsSelected).toEqual(['Alpha']);
-    expect(nextState.postsSelected).toEqual(['post-1']);
   });
 
   it('detects showMap deep link for duty → analysis map tab', () => {

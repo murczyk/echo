@@ -145,7 +145,6 @@ export function AnalysisFiltersPanel({
           {loadedSavedFilter ? (
             <PowerChip
               label={loadedSavedFilter.name}
-              onDelete={() => applySavedFilter(null)}
               selected
               color="default"
               sx={{ alignSelf: 'flex-start', mb: 1 }}

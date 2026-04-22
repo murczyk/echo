@@ -96,7 +96,7 @@ vi.mock('../../../components/PowerChip', () => ({
   PowerChip: (props: { label: ReactNode; onDelete?: () => void }) => {
     powerChipSpy(props);
     return (
-      <button type="button" data-testid="saved-filter-chip" onClick={props.onDelete}>
+      <button type="button" data-testid="saved-filter-chip">
         {props.label}
       </button>
     );
@@ -781,8 +781,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.querySelectorAll('[data-testid="spinner"]').length).toBeGreaterThan(0);
   });
 
-  it('renders the loaded saved filter as a closable chip above the important section and orders sections alphabetically', async () => {
-    const onApplySavedFilter = vi.fn();
+  it('renders the loaded saved filter as a status chip above the important section and orders sections alphabetically', async () => {
     const loadedSavedFilter: SavedFilter = {
       id: 7,
       name: 'Saved filter',
@@ -822,15 +821,13 @@ describe('AnalysisFiltersPanel', () => {
     const view = await renderComponent(
       buildProps({
         loadedSavedFilter,
-        applySavedFilter: onApplySavedFilter,
       }),
     );
     rendered.push(view);
 
     const chipProps = powerChipSpy.mock.calls.at(-1)?.[0] as { onDelete?: () => void } | undefined;
-    expect(chipProps?.onDelete).toBeTypeOf('function');
-    chipProps?.onDelete?.();
-    expect(onApplySavedFilter).toHaveBeenCalledWith(null);
+    expect(chipProps?.onDelete).toBeUndefined();
+    expect(view.container.querySelector('[data-testid="saved-filter-chip"]')?.textContent).toBe('Saved filter');
 
     expect(
       accordionSpy.mock.calls

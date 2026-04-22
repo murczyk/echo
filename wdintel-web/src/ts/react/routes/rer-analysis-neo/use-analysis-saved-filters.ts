@@ -1,11 +1,10 @@
-import type { AnalysisStatsReq, SavedFilter } from '../../../../Bindings';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { SavedFilter } from '../../../../Bindings';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
 import {
   buildAnalysisReq,
-  clearQueryStateFromSavedFilter,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
 } from './helpers';
@@ -33,26 +32,6 @@ type Result = {
   updateExisting: () => Promise<void>;
 };
 
-type AppliedSavedFilterSnapshot = {
-  baseQueryState: AnalysisQueryState;
-  savedFilter: SavedFilter;
-};
-
-export function refreshAppliedSavedFilterSnapshot(
-  snapshot: AppliedSavedFilterSnapshot | null,
-  queryState: AnalysisQueryState,
-  savedFilter: SavedFilter,
-  req: AnalysisStatsReq,
-): AppliedSavedFilterSnapshot {
-  return {
-    baseQueryState: snapshot?.baseQueryState ?? queryState,
-    savedFilter: {
-      ...savedFilter,
-      req,
-    },
-  };
-}
-
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return 'Сталася помилка під час роботи зі збереженими фільтрами.';
@@ -63,7 +42,6 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
   const [savedFilterName, setSavedFilterName] = useState('');
   const [saveInFlight, setSaveInFlight] = useState(false);
-  const loadedSavedFilterSnapshotRef = useRef<AppliedSavedFilterSnapshot | null>(null);
 
   const loadedSavedFilter = useMemo(
     () => savedFilters.find((savedFilter) => savedFilter.id === loadedSavedFilterId) ?? null,
@@ -96,28 +74,13 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
       if (savedFilter == null) {
-        const snapshot = loadedSavedFilterSnapshotRef.current;
-        setQueryState((current) =>
-          snapshot == null
-            ? current
-            : clearQueryStateFromSavedFilter(
-                current,
-                snapshot.baseQueryState,
-                queryStateFromSavedFilter(snapshot.savedFilter, snapshot.baseQueryState),
-              ),
-        );
         setLoadedSavedFilterId(null);
         setSavedFilterName('');
-        loadedSavedFilterSnapshotRef.current = null;
         return;
       }
 
       const current = queryState;
       const nextState = queryStateFromSavedFilter(savedFilter, current);
-      loadedSavedFilterSnapshotRef.current = {
-        baseQueryState: current,
-        savedFilter,
-      };
       setLoadedSavedFilterId(savedFilter?.id ?? null);
       setSavedFilterName(savedFilter.name);
       setQueryState(nextState);
@@ -175,13 +138,6 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
       const next = await upsertAnalysisSavedFilter({ name: loadedSavedFilter.name, req });
       setSavedFilters(next);
       setLoadedSavedFilterId(loadedSavedFilter.id);
-      // Keep the clear snapshot in sync with the saved request so "clear" can fully revert later edits.
-      loadedSavedFilterSnapshotRef.current = refreshAppliedSavedFilterSnapshot(
-        loadedSavedFilterSnapshotRef.current,
-        queryState,
-        loadedSavedFilter,
-        req,
-      );
     } catch (saveError) {
       if (!onUnauthorized(saveError)) {
         onError(toErrorMessage(saveError));
@@ -200,7 +156,6 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
       const next = await loadSavedFilters();
       setLoadedSavedFilterId(null);
       setSavedFilterName('');
-      loadedSavedFilterSnapshotRef.current = null;
       setSavedFilters(next);
     } catch (deleteError) {
       if (!onUnauthorized(deleteError)) {
