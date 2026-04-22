@@ -621,8 +621,8 @@ describe('AnalysisFiltersPanel', () => {
       options: {
         ...buildOptions(),
         callsigns: [
-          { value: 'alpha', label: 'alpha', count: 1 },
-          { value: 'ALPHA', label: 'ALPHA', count: 1 },
+          { value: 'alpha', label: 'alpha', count: 1, values: ['alpha', 'Alpha'] },
+          { value: 'ALPHA', label: 'ALPHA', count: 1, values: ['ALPHA'] },
         ],
       },
       queryState: {
@@ -638,8 +638,7 @@ describe('AnalysisFiltersPanel', () => {
       .find((callProps) => callProps.label === 'Позивні');
 
     expect(callsignsField?.options).toEqual([
-      { value: 'ALPHA', label: 'ALPHA', count: 2, values: ['alpha', 'ALPHA'] },
-      { value: 'BRAVO', label: 'BRAVO', count: 0, values: ['Bravo'] },
+      { value: 'ALPHA', label: 'ALPHA', count: 2, values: ['alpha', 'Alpha', 'ALPHA'] },
     ]);
     expect(callsignsField?.value).toEqual(['Bravo']);
 

@@ -22,7 +22,6 @@ import type { ReactNode } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
-import { uppercaseStrings } from '../../../utils/misc';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 import type { AnalysisFilterSectionId } from '../types';
@@ -297,17 +296,16 @@ export function AnalysisFiltersPanel({
       label: normalizeFilterLabel(groupInfos[option.value]?.name ?? option.label ?? option.value),
     })),
   );
-  const callsignValues = Array.from(new Set([...options.callsigns.map((option) => option.value), ...queryState.callsignsSelected]));
-  const callsignLabels = uppercaseStrings(callsignValues);
-  const callsignsOptions = callsignValues.reduce<Array<{ value: string; label: string; count: number; values: string[] }>>((acc, callsign, index) => {
-    const label = callsignLabels[index] ?? callsign;
-    const existingOption = acc.find((option) => option.label === label);
+  const callsignsOptions = options.callsigns.reduce<Array<{ value: string; label: string; count: number; values: string[] }>>((acc, option) => {
+    const label = (option.label ?? option.value).toUpperCase();
+    const values = Array.from(new Set(option.values ?? [option.value]));
+    const existingOption = acc.find((item) => item.label === label);
     if (existingOption != null) {
-      existingOption.values.push(callsign);
-      existingOption.count += options.callsigns.find((option) => option.value === callsign)?.count ?? 0;
+      existingOption.values = Array.from(new Set([...existingOption.values, ...values]));
+      existingOption.count += option.count;
       return acc;
     }
-    acc.push({ value: label, label, count: options.callsigns.find((option) => option.value === callsign)?.count ?? 0, values: [callsign] });
+    acc.push({ value: label, label, count: option.count, values });
     return acc;
   }, []);
   const aorNamesById = Object.fromEntries(aorEntries.map((aor) => [String(aor.id), aor.name]));

@@ -343,6 +343,28 @@ describe('MarkedText', () => {
     expect(container.textContent).not.toContain('ПОЧТА');
   });
 
+  it('keeps duplicate callsigns that appear after the leading block', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[
+            { CNCallsignC: { text: 'тихий', begin: 0, end: 5, etalon: 'тихий' } },
+            'CNNewlineC',
+            { CNTextC: { text: 'Базовий текст', begin: 6, end: 18 } },
+            'CNNewlineC',
+            { CNCallsignC: { text: 'почта', begin: 19, end: 24, etalon: 'почта' } },
+          ]}
+          bodyText="ТИХИЙ\nБазовий текст\nПОЧТА"
+          hideLeadingDuplicateCallsigns={['ТИХИЙ', 'ПОЧТА']}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('ТИХИЙ');
+    expect(container.textContent).toContain('Базовий текст');
+    expect(container.textContent).toContain('ПОЧТА');
+  });
+
   it('renders an outlined badge for catalog-only callsigns without message networks', async () => {
     await act(async () => {
       root.render(

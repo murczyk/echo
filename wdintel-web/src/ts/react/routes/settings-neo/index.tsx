@@ -171,6 +171,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   async function flushDutySaveQueue() {
     if (dutySaveRunningRef.current) return;
     dutySaveRunningRef.current = true;
+    let shouldRetryPendingSave = true;
 
     try {
       while (dutySavePendingRef.current != null) {
@@ -184,15 +185,20 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           setDutySaveSuccess('Збережено');
         } catch (error) {
           if (isUnauthorizedError(error)) {
+            shouldRetryPendingSave = false;
             window.location.assign('/login');
             return;
           }
           setDutySaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
-          return;
+          break;
         }
       }
     } finally {
       dutySaveRunningRef.current = false;
+      // Retry any queued write after a transient failure; a newer payload may have arrived while the failed save was in flight.
+      if (shouldRetryPendingSave && dutySavePendingRef.current != null) {
+        void flushDutySaveQueue();
+      }
     }
   }
 

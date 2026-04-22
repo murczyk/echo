@@ -423,6 +423,7 @@ export function renderMarkedText(
   const renderedNodes: ReactNode[] = [];
   let duplicateBlockOpen = false;
   let previousWasLineBreak = true;
+  let duplicateBlockSeen = false;
   const isDuplicateCallsignText = (text: string) => {
     const normalized = text.trim().toUpperCase();
     return normalized !== '' && duplicateCallsigns.has(normalized);
@@ -430,8 +431,10 @@ export function renderMarkedText(
   const isDuplicateCallsignTextNode = (node: ContentNode) =>
     typeof node !== 'string' && 'CNTextC' in node && node.CNTextC.text.trim() !== '' && node.CNTextC.text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '').every(isDuplicateCallsignText);
   const isDuplicateCallsignNode = (node: ContentNode) => typeof node !== 'string' && 'CNCallsignC' in node && isDuplicateCallsignText(node.CNCallsignC.text);
+  // Intentional: trim only the first leading duplicate block in analysis messages.
   const shouldOpenDuplicateBlock = (node: ContentNode) =>
     duplicateCallsigns.size > 0 &&
+    !duplicateBlockSeen &&
     previousWasLineBreak &&
     (isDuplicateCallsignNode(node) || isDuplicateCallsignTextNode(node));
 
@@ -448,6 +451,7 @@ export function renderMarkedText(
         continue;
       }
       duplicateBlockOpen = false;
+      duplicateBlockSeen = true;
     }
 
     if (shouldOpenDuplicateBlock(node)) {
