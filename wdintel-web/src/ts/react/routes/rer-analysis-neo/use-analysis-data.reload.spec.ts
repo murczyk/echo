@@ -492,9 +492,15 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisUnits.mockResolvedValue({ units: [{ unit: 'UNIT-1', count: 12 }] });
     mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [{ location: 'LOC-1', count: 13 }] });
     mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [{ networkId: 11, count: 2 }], networkNames: [{ id: 11, name: 'Network 11' }] });
-    mocks.fetchNetworksByIds.mockResolvedValue([{ id: 11, name: 'Network 11' }]);
+    mocks.fetchNetworksByIds.mockResolvedValue([
+      { id: 11, name: 'Network 11' },
+      { id: 12, name: 'Network 12' },
+    ]);
     mocks.getUnitsList.mockResolvedValue([{ id: 1, name: 'Unit One' }]);
-    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [11] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    mocks.fetchInboxMessages.mockResolvedValue({
+      inboxItems: [[1, { networkIds: [12] }]],
+      callsigns: [{ callsign: 'alpha', res: [] }],
+    });
     mocks.fetchAnalysisFreqs.mockResolvedValue({
       freqs: [{ freq: '150.100', count: 1, isNew: false }],
     });
@@ -573,7 +579,7 @@ describe('reloadAnalysisData', () => {
     expect(setTopUnits).toHaveBeenCalledWith([{ key: 'UNIT-1', count: 12 }]);
     expect(setTopLocations).toHaveBeenCalledWith([{ key: 'LOC-1', count: 13 }]);
     expect(mocks.fetchAnalysisNetworks).toHaveBeenCalled();
-    expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11]);
+    expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11, 12]);
     expect(setUnitsMap).toHaveBeenCalledWith({ 1: { id: 1, name: 'Unit One' } });
     expect(setNetworks).toHaveBeenCalled();
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));

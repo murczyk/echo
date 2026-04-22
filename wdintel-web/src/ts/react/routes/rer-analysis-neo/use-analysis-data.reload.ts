@@ -529,7 +529,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         ]);
         if (isStaleReload()) return;
         params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
-        const networkIds = networksStatsRsp.networks.map((item) => item.networkId);
+        const networkIds = Array.from(
+          new Set([
+            ...networksStatsRsp.networks.map((item) => item.networkId),
+            ...(criticalData.inboxRsp.inboxItems ?? []).flatMap(([, message]) => message.networkIds ?? []),
+          ]),
+        );
         const networksByAnalysisIds = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
         if (isStaleReload()) return;
         params.setNetworks((current) => mergeNetworks(current, networksByAnalysisIds));
