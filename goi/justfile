@@ -6,7 +6,7 @@ goi_timezone := "Europe/Kyiv"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.3.2"
+goi_version := "1.3.3"
 
 default:
     @just --list
@@ -536,6 +536,7 @@ deploy-swapp-alt server:
 deploy-all:
    just deploy --server goi-stg
    just deploy --server goi-jf
+   just deploy --server goi-tsur
    just deploy --server goi-prod-01
    just deploy --server goi-prod-02
    just deploy --server goi-prod-03
