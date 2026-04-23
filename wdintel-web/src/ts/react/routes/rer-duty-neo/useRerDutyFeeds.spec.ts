@@ -11,6 +11,7 @@ import { useRerDutyFeeds } from './useRerDutyFeeds';
 const hoisted = vi.hoisted(() => ({
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchUserSettings: vi.fn(),
+  USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   currentSystemSettings: vi.fn(),
   attachDutyNotificationAudioPrimingListeners: vi.fn(),
   mergeResolvedCallsigns: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock('../../services/api/analysis', () => ({
 
 vi.mock('../../services/api/user-settings', () => ({
   fetchUserSettings: hoisted.fetchUserSettings,
+  USER_SETTINGS_UPDATED_EVENT: hoisted.USER_SETTINGS_UPDATED_EVENT,
 }));
 
 vi.mock('../../services/api/system-settings', () => ({

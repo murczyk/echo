@@ -1,4 +1,5 @@
 import type { CallsignInfoRes } from '../../../../Bindings';
+import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 
 export function mergeAnalysisCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {
   if (current == null) return incoming;
@@ -39,7 +40,7 @@ export function mergeAnalysisCallsignInfoMap(
   const overwrite = options?.overwrite ?? false;
   const next = { ...prev };
   items.forEach((item) => {
-    const key = item.callsign.toLowerCase();
+    const key = normalizeCallsignLookupValue(item.callsign);
     if (overwrite || next[key] == null) {
       next[key] = item;
       return;

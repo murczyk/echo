@@ -12,23 +12,26 @@ vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: (props: { children: ReactNode; onClick?: () => void; type?: 'button' | 'submit' | 'reset' }) => (
+  Button: (props: { children: ReactNode; onClick?: () => void; type?: 'button' | 'submit' | 'reset'; startIcon?: ReactNode }) => (
     <button type={props.type ?? 'button'} onClick={props.onClick}>
+      {props.startIcon}
       {props.children}
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
 }));
 
-vi.mock('../../rer-duty-neo/MessageCard', () => ({
+vi.mock('../../shared/message-card/MessageCard', () => ({
   AnalysisMessageCard: (props: {
     id: number;
     onComment: () => void;
     onDelete: () => void;
     onEditDetails: () => void;
+    tagsLayout?: string;
     analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
     <div data-testid={`message-card-${props.id}`}>
+      <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
       <button type="button" onClick={props.onComment}>
         comment-{props.id}
       </button>
@@ -139,6 +142,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     profiles: {},
     tagsMap: {},
     tagsLoading: false,
+    tagsLayout: 'full',
     ...overrides,
   };
 }
@@ -206,6 +210,33 @@ describe('AnalysisMessagesPane', () => {
     await click(getButton(view.container, 'Завантажити ще'));
 
     expect(onLoadMoreMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the tags layout through to analysis message cards', async () => {
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage()]],
+        tagsLayout: 'hidden',
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="tags-layout-7"]')?.textContent).toBe('hidden');
+  });
+
+  it('shows the loading spinner while loading more messages', async () => {
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage()]],
+        noMoreToLoad: false,
+        paginationLoading: true,
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('loading');
+    expect(view.container.textContent).not.toContain('Завантажити ще');
+    expect(view.container.textContent).not.toContain('Завантаження...');
   });
 
   it('wires comment save into the page callback', async () => {

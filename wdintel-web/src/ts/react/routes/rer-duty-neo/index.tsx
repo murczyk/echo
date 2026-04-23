@@ -6,7 +6,7 @@ import { setDutyNeoDocumentTitleUnreadCount, startDutyNeoDocumentTitleTracking }
 import { FeedColumn } from './FeedColumn';
 import { feedColumnUnreadDisplayed, DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
-import { fetchUserSettings } from '../../services/api/user-settings';
+import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -46,6 +46,18 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     loadLayout();
     return () => {
       cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    const onSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ tagsLayout?: TagsLayoutVariant }>).detail;
+      if (!detail?.tagsLayout) return;
+      setTagsLayout(detail.tagsLayout);
+    };
+
+    window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
+    return () => {
+      window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
     };
   }, []);
   const {

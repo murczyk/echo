@@ -12,6 +12,7 @@ import type { Network, Unit } from '../../../../Bindings';
 import type { RerAnalysisQueryState } from '../../../rer-analysis-query-state';
 import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-query-state';
 import { emptyArrToNull } from '../../utils/misc';
+import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 
 export type RerDutyState = {
   messageFeeds: [string, RerDutyFeedFilterState][];
@@ -423,7 +424,7 @@ function extractCallsignsFromNodes(nodes: ContentNode[] | null | undefined): str
   const callsigns: string[] = [];
   for (const node of nodes) {
     if (typeof node !== 'string' && 'CNCallsignC' in node) {
-      const callsign = node.CNCallsignC.text.trim().toLowerCase();
+      const callsign = normalizeCallsignLookupValue(node.CNCallsignC.text);
       if (callsign !== '') callsigns.push(callsign);
     }
   }
@@ -449,7 +450,7 @@ export function mergeCallsignInfoResponses(
   if (nextItems.length === 0) return prev;
   const next = { ...prev };
   nextItems.forEach((item) => {
-    const callsign = item.callsign.trim().toLowerCase();
+    const callsign = normalizeCallsignLookupValue(item.callsign);
     if (callsign !== '') {
       next[callsign] = item;
     }

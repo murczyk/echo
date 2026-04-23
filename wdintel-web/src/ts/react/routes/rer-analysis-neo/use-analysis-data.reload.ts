@@ -37,7 +37,14 @@ import { getUnitsList } from '../../services/api/units';
 import { sortFrequenciesNumerically } from '../../utils/misc';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq, shouldRebuildAnalysisRequests } from './helpers';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
-import { emptyNewCallsigns, emptyOptions, normalizeFilterLabel, toErrorMessage, topItems } from './use-analysis-data.shared';
+import {
+  emptyNewCallsigns,
+  emptyOptions,
+  isAnalysisInboxPageExhausted,
+  normalizeFilterLabel,
+  toErrorMessage,
+  topItems,
+} from './use-analysis-data.shared';
 import { invalidateNewCallsignsLoadState } from './use-analysis-data.support';
 import { buildNetworkDisplayMap, buildSenderFilterOptions } from './message-utils';
 import type {
@@ -426,6 +433,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
       params.setMessages(inboxRsp.inboxItems ?? []);
       params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(inboxRsp.callsigns, null));
+      params.setNoMoreToLoad(isAnalysisInboxPageExhausted(inboxRsp.inboxItems));
       params.setHasLoadedInitialMessages(true);
       params.setMessagesLoading(false);
 
@@ -462,6 +470,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             // rebuilt summary/count/map data with the old inbox response.
             params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
             params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(rebuiltInboxRsp.callsigns, null));
+            params.setNoMoreToLoad(isAnalysisInboxPageExhausted(rebuiltInboxRsp.inboxItems));
             resolvedAnalysisReq = rebuiltAnalysisReq;
             resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltInboxRsp;

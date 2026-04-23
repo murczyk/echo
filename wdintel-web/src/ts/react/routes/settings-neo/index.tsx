@@ -8,7 +8,11 @@ import { PowerButton } from '../../components/PowerButton';
 import { isUnauthorizedError } from '../../services/api/client';
 import { fetchServerInfo } from '../../services/api/server-info';
 import { fetchCurrentUser, saveUserSettings as saveAccountSettings } from '../../services/api/user';
-import { fetchUserSettings, saveUserSettings as saveUserDutySettings } from '../../services/api/user-settings';
+import {
+  USER_SETTINGS_UPDATED_EVENT,
+  fetchUserSettings,
+  saveUserSettings as saveUserDutySettings,
+} from '../../services/api/user-settings';
 import { listSigintZones } from '../../services/api/zones';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsDutySection } from './SettingsDutySection';
@@ -182,6 +186,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           await saveUserDutySettings(nextSettings);
           setInitialTagsLayout(nextSettings.tagsLayout);
           setInitialDutyDisableAutoScroll(nextSettings.disableAutoScroll);
+          window.dispatchEvent(new CustomEvent(USER_SETTINGS_UPDATED_EVENT, { detail: nextSettings }));
           setDutySaveSuccess('Збережено');
         } catch (error) {
           if (isUnauthorizedError(error)) {

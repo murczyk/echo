@@ -205,6 +205,7 @@ describe('reloadAnalysisData', () => {
 
     const invalidateCorrelatedFreqsCache = vi.fn();
     const setHasLoadedInitialMessages = vi.fn();
+    const setNoMoreToLoad = vi.fn();
     const setSummaryCallsignsInfo = vi.fn();
 
     const queryState = {
@@ -244,7 +245,7 @@ describe('reloadAnalysisData', () => {
       setNewCallsignsLoading: vi.fn(),
       setNewCallsignsLoadedKey: vi.fn(),
       shouldLoadNewCallsigns: false,
-      setNoMoreToLoad: vi.fn(),
+      setNoMoreToLoad,
       setNolimitShown: vi.fn(),
       setOptions: vi.fn(),
       setProfiles: vi.fn(),
@@ -270,6 +271,7 @@ describe('reloadAnalysisData', () => {
     expect(messagesLoadingTransitions).toContain(false);
     expect(mocks.fetchAnalysisCount).not.toHaveBeenCalled();
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
+    expect(setNoMoreToLoad).toHaveBeenCalledWith(true);
 
     freqsDeferred.resolve({ freqs: [] });
     await reloadPromise;

@@ -1,10 +1,12 @@
-import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
+import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import { Box, Tab, Tabs, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { AnalysisMapPane } from './AnalysisMapPane';
 import { AnalysisCallsignGraphCard } from './AnalysisCallsignGraphCard';
 import { AnalysisChartsPanel } from './AnalysisChartsPanel';
 import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
@@ -24,6 +26,7 @@ type Props = Pick<
   | 'groupsActivityLoadedPeriod'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
+  | 'mapAttrs'
   | 'newCallsigns'
   | 'newCallsignsLoading'
   | 'queryState'
@@ -33,15 +36,18 @@ type Props = Pick<
   | 'topFreqs'
   | 'topLocations'
   | 'topUnits'
-> &
+  > &
   Pick<
     AnalysisPageActions,
     | 'loadCallsignGraph'
     | 'loadCorrelatedFreqs'
     | 'loadGroupsActivity'
+    | 'loadMessagesForMap'
     | 'selectOnlyFreq'
     | 'setRightSidebarTab'
+    | 'refreshMapDateRange'
     | 'toggleCallsignGraphNolimit'
+    | 'toggleUnitFromMap'
   >;
 
 export function AnalysisSidebar({
@@ -57,9 +63,11 @@ export function AnalysisSidebar({
   groupsActivityLoadedPeriod,
   groupsActivityPeriod,
   groupsActivityLoading,
+  mapAttrs,
   loadCallsignGraph,
   loadCorrelatedFreqs,
   loadGroupsActivity,
+  loadMessagesForMap,
   newCallsigns,
   newCallsignsLoading,
   queryState,
@@ -71,7 +79,9 @@ export function AnalysisSidebar({
   topFreqs,
   topLocations,
   topUnits,
+  refreshMapDateRange,
   toggleCallsignGraphNolimit,
+  toggleUnitFromMap,
 }: Props) {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
@@ -85,7 +95,7 @@ export function AnalysisSidebar({
       <Box sx={{ pt: 1 }}>
         <Tabs
           value={rightSidebarTab ?? false}
-          onChange={(_event, value) => setRightSidebarTab(value as 'stats' | 'callsigns' | 'newCallsigns')}
+          onChange={(_event, value) => setRightSidebarTab(value as 'map' | 'stats' | 'callsigns' | 'newCallsigns')}
           variant="scrollable"
           scrollButtons={isMobileLayout ? false : 'auto'}
           aria-label="Вкладки правої панелі аналізу"
@@ -120,9 +130,10 @@ export function AnalysisSidebar({
             },
           }}
         >
+          <Tab value="map" icon={<MapOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Мапа" />
           <Tab value="stats" icon={<BarChartOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Зведення" />
           <Tab value="callsigns" icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Позивні" />
-          <Tab value="newCallsigns" icon={<AccountCircleOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Нові" />
+          <Tab value="newCallsigns" icon={<PersonAddOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Нові" />
         </Tabs>
       </Box>
       <Box
@@ -145,6 +156,19 @@ export function AnalysisSidebar({
           },
         }}
       >
+        {rightPanelOpen ? (
+          <Box sx={{ height: '100%', minHeight: 0, display: rightSidebarTab === 'map' ? 'flex' : 'none' }}>
+            <AnalysisMapPane
+              mapAttrs={mapAttrs}
+              search={queryState.search}
+              visible={rightSidebarTab === 'map'}
+              onDateRangeChange={refreshMapDateRange}
+              onExit={() => setRightSidebarTab('stats')}
+              onLoadMessages={loadMessagesForMap}
+              onUnitClick={toggleUnitFromMap}
+            />
+          </Box>
+        ) : null}
         {rightSidebarTab === 'stats' ? (
           <>
             <Box>

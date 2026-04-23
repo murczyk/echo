@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes } from '../../../../Bindings';
+import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 
 function normalizeDutyCallsignText(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
@@ -54,7 +55,7 @@ export function mergeDutyCallsignInfoMap(
 
   const next = { ...prev };
   items.forEach((item) => {
-    const key = item.callsign.toLowerCase();
+    const key = normalizeCallsignLookupValue(item.callsign);
     next[key] = mergeDutyCallsignInfoEntry(next[key], item);
   });
   return next;
@@ -87,7 +88,7 @@ export function updateDutyResolvedCallsignInfoMap(
 
   const next = { ...prev };
   items.forEach((item) => {
-    const key = item.callsign.toLowerCase();
+    const key = normalizeCallsignLookupValue(item.callsign);
     if (item.res.length === 0) {
       delete next[key];
       return;

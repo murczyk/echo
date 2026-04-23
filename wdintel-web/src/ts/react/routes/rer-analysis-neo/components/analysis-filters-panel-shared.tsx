@@ -52,7 +52,7 @@ export type FilterSectionId =
   | 'metadata';
 
 const defaultExpandedSections: Record<FilterSectionId, boolean> = {
-  important: true,
+  important: false,
   tags: false,
   networks: false,
   aors: false,

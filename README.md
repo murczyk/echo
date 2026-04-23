@@ -180,3 +180,36 @@ it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
 Доповідь про радіоелектронну обстановку.
 - неприв'язані мережі: показуємо лише топ 90% активних за кількістю сеансів зв'язку, групуємо по частотах в межах +-12.5КГц
 - на неприв'язаних частотах показуємо лише позивні які б'ються із білим списком [callsigns_whitelist.txt](wdintel-rs/data/callsigns_whitelist.txt). він генеруєжться в модулі callsign-crawler проету milgeo-rs: https://github.com/echoua/milgeo-rs/tree/main/callsigns_crawler
+
+## Message card highlights
+
+The same message card is used in both the new duty page and the analysis page.
+
+It can show four visual kinds of content:
+
+- Keywords are shown as orange text highlights.
+- Map points are shown as orange clickable labels with a map menu.
+- Callsigns are shown as blue links when they are recognized in the catalog.
+- Unrecognized but relevant callsigns are shown as plain white text.
+
+Callsigns have four product states:
+
+1. The callsign is in the radio-network catalog and matches the current message network.
+   - Blue link
+   - Filled info hint
+2. The callsign is in the general callsign catalog, but has no radio-network affiliation.
+   - Blue link
+   - Outlined info hint
+3. The callsign is in the radio-network catalog, but does not belong to the current message network.
+   - Blue link
+   - No hint
+4. The callsign does not fit the catalog rules above, but should still be noticed.
+   - White text
+   - No link
+   - No hint
+
+Search results are highlighted separately from the callsign state:
+
+- Search matches use a flat translucent orange background.
+- If a search match is also a callsign, it keeps the normal blue link styling and gets the search highlight on top.
+- Search highlighting does not change the callsign state or hint rules.

@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2263](https://github.com/echoua/echo/issues/2263) ✅🐞 Аналіз (нова): виправлення та покращення.
 - [#2260](https://github.com/echoua/echo/issues/2260) ✅🐞 Аналіз (нова): покращений вигляд на малих екранах.
 - [#2166](https://github.com/echoua/echo/issues/2166) ✅ Навігація, Оперативний (нова): адаптовано під перегляд з телефона.
 - [#2238](https://github.com/echoua/echo/issues/2238) ✅🐞 Аналіз (нова): виправлення та покращення.

@@ -1,8 +1,13 @@
-import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
+import ChevronLeftOutlinedIcon from '@mui/icons-material/ChevronLeftOutlined';
+import ChevronRightOutlinedIcon from '@mui/icons-material/ChevronRightOutlined';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
+import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 import {
   Badge,
   Box,
@@ -19,7 +24,7 @@ import {
   Tooltip,
   useMediaQuery,
 } from '@mui/material';
-import { useEffect, useId, useState } from 'react';
+import { useId } from 'react';
 import { useTheme } from '@mui/material/styles';
 
 import { PageHeader } from '../../components/PageHeader';
@@ -27,13 +32,13 @@ import { PowerChip } from '../../components/PowerChip';
 import { PowerAlert } from '../../components/PowerAlert';
 import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
-import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { AnalysisSidebar } from './components/AnalysisSidebar';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+import type { AnalysisSidebarTab } from './types';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -45,31 +50,26 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
-  const mapTabId = `${centerTabsId}-map-tab`;
   const summaryTabId = `${centerTabsId}-summary-tab`;
   const messagesPanelId = `${centerTabsId}-messages-panel`;
-  const mapPanelId = `${centerTabsId}-map-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.messagesLoading;
-  const [mountedTabs, setMountedTabs] = useState<Record<'messages' | 'map' | 'summary', boolean>>({
-    messages: true,
-    map: false,
-    summary: false,
-  });
   const fixedPanelWidth = '400px';
   const collapsedPanelWidth = '56px';
   const leftColumnWidth = page.leftPanelOpen ? fixedPanelWidth : collapsedPanelWidth;
   const rightColumnWidth = page.rightPanelOpen ? 'minmax(0,1fr)' : collapsedPanelWidth;
-  const activeTabId = page.centerTab === 'messages' ? messagesTabId : page.centerTab === 'map' ? mapTabId : summaryTabId;
+  const activeTabId = page.centerTab === 'messages' ? messagesTabId : summaryTabId;
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
   const gridTemplateColumns = {
     xs: '1fr',
     lg: [leftColumnWidth, 'minmax(0,1fr)', rightColumnWidth].join(' '),
   };
-
-  useEffect(() => {
-    setMountedTabs((current) => (current[page.centerTab] ? current : { ...current, [page.centerTab]: true }));
-  }, [page.centerTab]);
+  const openRightSidebarTab = (tab: AnalysisSidebarTab) => {
+    if (!page.rightPanelOpen) {
+      page.toggleRightPanel();
+    }
+    page.setRightSidebarTab(tab);
+  };
 
   return (
     <Box
@@ -93,7 +93,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             size="small"
             onClick={page.openReport}
             title="Відкрити конструктор звітів"
-            startIcon={<Box component="i" className="bi bi-journal-text" sx={{ fontSize: 14 }} />}
+            startIcon={<DescriptionOutlinedIcon sx={{ fontSize: 18 }} />}
             sx={{ height: 36, px: 1.25, display: { xs: 'inline-flex', md: 'none' }, whiteSpace: 'nowrap' }}
           >
             Конструктор
@@ -191,20 +191,18 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       aria-label={page.leftPanelOpen ? 'Згорнути панель фільтрів' : 'Розгорнути панель фільтрів'}
                       sx={{ width: 56, height: 56, p: 0, borderRadius: 0 }}
                     >
-                      <Box
-                        component="i"
-                        className={page.leftPanelOpen ? 'bi bi-chevron-left' : 'bi bi-chevron-right'}
-                        sx={{ fontSize: 18, color: 'text.secondary' }}
-                      />
+                      {page.leftPanelOpen ? (
+                        <ChevronLeftOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      ) : (
+                        <ChevronRightOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      )}
                     </IconButton>
                   </Tooltip>
                   <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
                   <Tooltip title={page.canResetFilters ? 'Є незбережені зміни' : 'Фільтри'} arrow placement="right">
                     <Box sx={{ pt: 1.25, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Badge color="error" variant="dot" invisible={!page.canResetFilters}>
-                        <Box
-                          component="i"
-                          className="bi bi-funnel"
+                        <FilterAltOutlinedIcon
                           sx={{ fontSize: 20, color: page.canResetFilters ? 'primary.main' : 'text.secondary' }}
                         />
                       </Badge>
@@ -284,16 +282,17 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       justifyContent: 'center',
                       alignItems: 'center',
                     }}
-                  >
+                    >
                     <IconButton size="small" disabled aria-label="Права секція" sx={{ width: 56, height: 56, p: 0, borderRadius: 0 }}>
-                      <Box component="i" className="bi bi-chevron-left" sx={{ fontSize: 18, color: 'text.secondary' }} />
+                      <ChevronLeftOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
                     </IconButton>
                   </Box>
                   <Stack spacing={0.75} alignItems="center" sx={{ pt: 1.25 }}>
                     {[
-                      { tab: 'stats' as const, icon: 'bi bi-bar-chart', label: 'Зведення' },
-                      { tab: 'callsigns' as const, icon: 'bi bi-people', label: 'Позивні' },
-                      { tab: 'newCallsigns' as const, icon: 'bi bi-person-plus', label: 'Нові' },
+                      { tab: 'map' as const, icon: MapOutlinedIcon, label: 'Мапа' },
+                      { tab: 'stats' as const, icon: BarChartOutlinedIcon, label: 'Зведення' },
+                      { tab: 'callsigns' as const, icon: PeopleOutlineOutlinedIcon, label: 'Позивні' },
+                      { tab: 'newCallsigns' as const, icon: PersonAddOutlinedIcon, label: 'Нові' },
                     ].map((item) => {
                       const Icon = item.icon;
                       const active = page.rightSidebarTab === item.tab;
@@ -312,7 +311,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                             bgcolor: active ? 'action.selected' : 'transparent',
                           }}
                         >
-                          <Box component="i" className={item.icon} sx={{ fontSize: 18 }} />
+                          <Icon sx={{ fontSize: 20 }} />
                         </IconButton>
                       );
                     })}
@@ -391,20 +390,18 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       aria-label={page.leftPanelOpen ? 'Згорнути панель фільтрів' : 'Розгорнути панель фільтрів'}
                       sx={{ width: 56, height: 56, p: 0, borderRadius: 0 }}
                     >
-                      <Box
-                        component="i"
-                        className={page.leftPanelOpen ? 'bi bi-chevron-left' : 'bi bi-chevron-right'}
-                        sx={{ fontSize: 18, color: 'text.secondary' }}
-                      />
+                      {page.leftPanelOpen ? (
+                        <ChevronLeftOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      ) : (
+                        <ChevronRightOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      )}
                     </IconButton>
                   </Tooltip>
                   <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
                   <Tooltip title={page.canResetFilters ? 'Є незбережені зміни' : 'Фільтри'} arrow placement="right">
                     <Box sx={{ pt: 1.25, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Badge color="error" variant="dot" invisible={!page.canResetFilters}>
-                        <Box
-                          component="i"
-                          className="bi bi-funnel"
+                        <FilterAltOutlinedIcon
                           sx={{ fontSize: 20, color: page.canResetFilters ? 'primary.main' : 'text.secondary' }}
                         />
                       </Badge>
@@ -428,7 +425,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   position: 'relative',
                 }}
               >
-                <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: page.centerTab === 'map' ? 0 : 0.25 }}>
+                <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: page.centerTab === 'summary' ? 0 : 0.25 }}>
                   <Tabs
                     value={page.centerTab}
                     onChange={(_event, value) => page.setCenterTab(value)}
@@ -453,23 +450,15 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       label={`Повідомлення (${page.messages.length})`}
                     />
                     <Tab
-                      id={mapTabId}
-                      aria-controls={mapPanelId}
-                      value="map"
-                      icon={<MapOutlinedIcon />}
-                      iconPosition="start"
-                      label="Мапа"
-                    />
-                    <Tab
                       id={summaryTabId}
                       aria-controls={summaryPanelId}
                       value="summary"
-                      icon={<Box component="i" className="bi bi-table" sx={{ fontSize: 16 }} />}
+                      icon={<TableRowsOutlinedIcon sx={{ fontSize: 20 }} />}
                       iconPosition="start"
                       label="Таблиця: Частоти"
                     />
                   </Tabs>
-                  {page.centerTab === 'map' || page.centerTab === 'summary' ? null : (
+                  {page.centerTab === 'summary' ? null : (
                     <Stack
                       direction="row"
                       spacing={0.75}
@@ -508,16 +497,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                               label={'Всього: ' + (page.counts?.countOverall ?? 0)}
                               color="default"
                               size="small"
-                              fontSize="0.72rem"
-                              labelPaddingX={0.4}
+                              fontSize="0.875rem"
+                              labelPaddingX={0.75}
                             />
                             <PowerChip
                               label={'Обрано: ' + (page.counts?.countSelected ?? 0)}
                               color="primary"
                               selected
                               size="small"
-                              fontSize="0.72rem"
-                              labelPaddingX={0.4}
+                              fontSize="0.875rem"
+                              labelPaddingX={0.75}
                             />
                           </>
                         )}
@@ -577,36 +566,12 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       profiles={page.profiles}
                       tagsMap={page.tagsMap}
                       tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
+                      tagsLayout={page.tagsLayout}
+                      searchText={page.queryState.search}
                       callsignInfoMap={page.summaryCallsignsInfo}
                       networks={page.networks}
                       unitsMap={page.unitsMap}
                     />
-                  </Box>
-
-                  <Box
-                    id={mapPanelId}
-                    role="tabpanel"
-                    hidden={page.centerTab !== 'map'}
-                    aria-labelledby={mapTabId}
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      minHeight: 0,
-                      display: page.centerTab === 'map' ? 'flex' : 'none',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {mountedTabs.map ? (
-                      <AnalysisMapPane
-                        visible={page.centerTab === 'map'}
-                        mapAttrs={page.mapAttrs}
-                        search={page.queryState.search}
-                        onDateRangeChange={page.refreshMapDateRange}
-                        onExit={() => page.setCenterTab('messages')}
-                        onLoadMessages={page.loadMessagesForMap}
-                        onUnitClick={page.toggleUnitFromMap}
-                      />
-                    ) : null}
                   </Box>
 
                   <Box
@@ -681,19 +646,20 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       aria-label={page.rightPanelOpen ? 'Згорнути праву секцію' : 'Розгорнути праву секцію'}
                       sx={{ width: 56, height: 56, p: 0, borderRadius: 0 }}
                     >
-                      <Box
-                        component="i"
-                        className={page.rightPanelOpen ? 'bi bi-chevron-right' : 'bi bi-chevron-left'}
-                        sx={{ fontSize: 18, color: 'text.secondary' }}
-                      />
+                      {page.rightPanelOpen ? (
+                        <ChevronRightOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      ) : (
+                        <ChevronLeftOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      )}
                     </IconButton>
                   </Tooltip>
                   <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
                   <Stack spacing={0.75} alignItems="center" sx={{ pt: 1.25 }}>
                     {[
+                      { tab: 'map' as const, icon: MapOutlinedIcon, label: 'Мапа' },
                       { tab: 'stats' as const, icon: BarChartOutlinedIcon, label: 'Зведення' },
                       { tab: 'callsigns' as const, icon: PeopleOutlineOutlinedIcon, label: 'Позивні' },
-                      { tab: 'newCallsigns' as const, icon: AccountCircleOutlinedIcon, label: 'Нові' },
+                      { tab: 'newCallsigns' as const, icon: PersonAddOutlinedIcon, label: 'Нові' },
                     ].map((item) => {
                       const Icon = item.icon;
                       const active = page.rightSidebarTab === item.tab;
@@ -701,21 +667,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         <Tooltip key={item.tab} title={item.label} arrow placement="left">
                           <IconButton
                             size="small"
-                            onClick={() => {
-                              if (!page.rightPanelOpen) {
-                                page.toggleRightPanel();
-                              }
-                              page.setRightSidebarTab(item.tab);
+                            onClick={() => openRightSidebarTab(item.tab)}
+                            aria-label={item.label}
+                            aria-pressed={active}
+                            sx={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: '50%',
+                              color: active ? 'primary.main' : 'text.secondary',
+                              bgcolor: active ? 'action.selected' : 'transparent',
                             }}
-                          aria-label={item.label}
-                          aria-pressed={active}
-                          sx={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: '50%',
-                            color: active ? 'primary.main' : 'text.secondary',
-                            bgcolor: active ? 'action.selected' : 'transparent',
-                          }}
                           >
                             <Icon sx={{ fontSize: 20 }} />
                           </IconButton>

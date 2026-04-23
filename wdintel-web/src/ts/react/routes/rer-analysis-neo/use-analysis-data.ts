@@ -27,7 +27,7 @@ import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useAnalysisDataLoaders } from './use-analysis-data.loaders';
 import { useAnalysisDataMessageActions } from './use-analysis-data.message-actions';
 import { reloadAnalysisData } from './use-analysis-data.reload';
-import { emptyNewCallsigns, emptyOptions, toErrorMessage } from './use-analysis-data.shared';
+import { emptyNewCallsigns, emptyOptions, isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
 import {
   useLoadMissingNetworksForMessages,
@@ -385,7 +385,7 @@ export function useAnalysisData({
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       setMessages((current) => [...current, ...nextMessages]);
       await loadMissingNetworksForMessages(nextMessages);
-      if (nextMessages.length === 0) {
+      if (isAnalysisInboxPageExhausted(nextMessages)) {
         setNoMoreToLoad(true);
       }
     } catch (loadError) {

@@ -4,10 +4,11 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { CallsignInfoRes, InboxMessage, Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
-import { AnalysisMessageCard } from '../../rer-duty-neo/MessageCard';
+import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildSenderLabel, copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
+import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 
 type Props = {
   authUserName: string | null;
@@ -33,6 +34,8 @@ type Props = {
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
   tagsLoading: boolean;
+  tagsLayout: TagsLayoutVariant;
+  searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -57,6 +60,8 @@ type AnalysisMessageCardItemProps = {
   referenceTimeMs: number | null;
   tagsMap: Record<number, Tag>;
   tagsLoading: boolean;
+  tagsLayout: TagsLayoutVariant;
+  searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -81,6 +86,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   referenceTimeMs,
   tagsMap,
   tagsLoading,
+  tagsLayout,
+  searchText,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -102,6 +109,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
       tagsLoading={tagsLoading}
+      tagsLayout={tagsLayout}
+      searchText={searchText}
       callsignInfoMap={callsignInfoMap}
       networks={networks}
       unitsMap={unitsMap}
@@ -173,6 +182,8 @@ function AnalysisMessagesPaneComponent({
   profiles,
   tagsMap,
   tagsLoading,
+  tagsLayout,
+  searchText,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -269,16 +280,18 @@ function AnalysisMessagesPaneComponent({
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}
               tagsLoading={tagsLoading}
+              tagsLayout={tagsLayout}
+              searchText={searchText}
               callsignInfoMap={callsignInfoMap}
               networks={networks}
               unitsMap={unitsMap}
             />
           ))}
         </Box>
-        {!noMoreToLoad && messages.length > 0 ? (
+        {!noMoreToLoad && messages.length > 0 && !paginationLoading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-            <Button variant="outlined" onClick={onLoadMoreMessages} disabled={loading || paginationLoading}>
-              {paginationLoading ? 'Завантаження...' : 'Завантажити ще'}
+            <Button variant="outlined" onClick={onLoadMoreMessages} disabled={loading}>
+              Завантажити ще
             </Button>
           </Box>
         ) : null}
@@ -287,6 +300,7 @@ function AnalysisMessagesPaneComponent({
       {loading ? (
         <SectionLoadingOverlay open ariaLabel="Оновлення повідомлень" sx={{ zIndex: 2 }} />
       ) : null}
+      {paginationLoading ? <SectionLoadingOverlay open ariaLabel="Завантаження ще повідомлень" sx={{ zIndex: 2 }} /> : null}
 
       <CommentDialog
         open={commentMessage != null}

@@ -18,6 +18,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import type { AnalysisReportState } from './report-helpers';
+import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 export type AnalysisCountItem = {
   key: string;
@@ -88,13 +89,13 @@ export type AnalysisMapAttrs = {
   palitrasLoadState: AnalysisPalitrasLoadState;
 };
 
-export type AnalysisSidebarTab = 'stats' | 'callsigns' | 'newCallsigns';
+export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';
 
 export type AnalysisPageState = {
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];
   canResetFilters: boolean;
-  centerTab: 'messages' | 'map' | 'summary';
+  centerTab: 'messages' | 'summary';
   centerTabPending: boolean;
   counts: CountStatsRsp | null;
   copiedFeedbackId: string | null;
@@ -136,6 +137,7 @@ export type AnalysisPageState = {
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
+  tagsLayout: TagsLayoutVariant;
   rightPanelOpen: boolean;
   rightSidebarTab: AnalysisSidebarTab | null;
   report: AnalysisReportState;
@@ -187,7 +189,7 @@ export type AnalysisPageActions = {
   reload: () => void;
   resetFilters: () => void;
   saveAsNew: () => void;
-  setCenterTab: (tab: 'messages' | 'map' | 'summary') => void;
+  setCenterTab: (tab: 'messages' | 'summary') => void;
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;

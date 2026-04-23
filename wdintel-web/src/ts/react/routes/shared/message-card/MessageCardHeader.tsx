@@ -1,23 +1,25 @@
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
-import BookmarkOutlinedIcon from '@mui/icons-material/BookmarkOutlined';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
+import BookmarkBorderOutlinedIcon from '@mui/icons-material/BookmarkBorderOutlined';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
-import EditIcon from '@mui/icons-material/Edit';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
+import FlagIcon from '@mui/icons-material/Flag';
+import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
-import PriorityHighOutlinedIcon from '@mui/icons-material/PriorityHighOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Box, Button, ButtonGroup, CircularProgress, Link, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import type { InboxMessage, Network } from '../../../../Bindings';
-import { formatDateNoYear, formatTime } from './utils';
+import type { InboxMessage, Network } from '../../../../../Bindings';
+import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
 
 /** Where the card is shown: duty columns use a 4-wide action grid when stacked; analysis uses 3. */
 export type MessageCardDisplayMode = 'duty' | 'analysis';
@@ -59,10 +61,10 @@ function ActionIconButton({
           height: 30,
           p: 0,
           color: selected ? 'primary.main' : 'var(--color-action)',
-          backgroundColor: selected ? 'action.selected' : 'transparent',
+          backgroundColor: 'transparent',
           '& .MuiSvgIcon-root': { fontSize: 18 },
           '&:hover': {
-            backgroundColor: selected ? 'action.selected' : 'action.hover',
+            backgroundColor: 'action.hover',
           },
         }}
       >
@@ -151,7 +153,7 @@ function ActionIconsRow({
       <ActionIconButton
         key="edit-details"
         title="Редагувати додаткові поля та позивні"
-        icon={<EditIcon fontSize="inherit" />}
+        icon={<EditOutlinedIcon fontSize="inherit" />}
         onClick={onEditDetails}
       />
     ) : null,
@@ -170,14 +172,14 @@ function ActionIconsRow({
     <ActionIconButton
       key="important"
       title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
-      icon={<PriorityHighOutlinedIcon fontSize="inherit" />}
+      icon={msg.important ? <FlagIcon fontSize="inherit" /> : <FlagOutlinedIcon fontSize="inherit" />}
       onClick={onImportant}
       selected={msg.important}
     />,
     <ActionIconButton
       key="bookmark"
       title={msg.bookmarked ? 'Прибрати з закладок' : 'Додати в закладки'}
-      icon={<BookmarkOutlinedIcon fontSize="inherit" />}
+      icon={msg.bookmarked ? <BookmarkIcon fontSize="inherit" /> : <BookmarkBorderOutlinedIcon fontSize="inherit" />}
       onClick={onBookmark}
       selected={msg.bookmarked}
     />,

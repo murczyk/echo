@@ -1,4 +1,5 @@
 import type { CallsignInfo, CallsignInfoRes, Network, Unit } from '../../../../Bindings';
+import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { formatLegacyCallsignTooltipLine } from './callsign-hints-utils';
 
 export type CallsignHintContext = 'message' | 'frequency';
@@ -102,10 +103,13 @@ function determineHintStrategyForCallsign(params: {
   const networksByFreq = filterNetworksByFreq(networks, freq);
   const messageNetworkIds = getMessageNetworkIds(networkIds);
   const hasCatalogMatch = (callsignInfo ?? []).length > 0;
+  const isRelatedToAnyLoadedNetwork = hasCatalogMatch && isCallsignRelatedToNetworks(callsignInfo, networks, unitsMap);
 
   if (hintContext === 'message') {
     if (messageNetworkIds) {
-      return getStrictMessageNetworkHintStrategy(callsignInfo, messageNetworkIds);
+      if (hasCallsignInMessageNetworks(callsignInfo, messageNetworkIds)) return 'network';
+      if (!isRelatedToAnyLoadedNetwork) return hasCatalogMatch ? 'system' : 'none';
+      return 'none';
     }
     return hasCatalogMatch ? 'system' : 'none';
   }
@@ -152,7 +156,7 @@ export function getCallsignHintResult(params: {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   callsign: string;
 }): CallsignHintResult {
-  const callsignInfo = params.callsignInfoMap?.[params.callsign.toLowerCase()]?.res ?? null;
+  const callsignInfo = params.callsignInfoMap?.[normalizeCallsignLookupValue(params.callsign)]?.res ?? null;
   const strategy = determineHintStrategyForCallsign({
     hintContext: params.hintContext,
     freq: params.freq,

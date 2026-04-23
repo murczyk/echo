@@ -3,10 +3,12 @@ import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useId, useState } from 'react';
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
+import type { Theme } from '@mui/material/styles';
 
-import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../Bindings';
-import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
-import { formatCallsignHintTooltipData, getCallsignHintResult, isCallsignRelatedToNetworks } from '../rer-analysis-neo/callsign-hints';
+import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../../Bindings';
+import { normalizeCallsignLookupValue } from '../../../utils/callsign-normalization';
+import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from '../../rer-duty-neo/utils';
+import { formatCallsignHintTooltipData, getCallsignHintResult, isCallsignRelatedToNetworks } from '../../rer-analysis-neo/callsign-hints';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
@@ -31,6 +33,48 @@ function collectPointEtalons(nodes: ContentNode[]): string[] {
   return etalons;
 }
 
+function collectHighlightedTexts(nodes: ContentNode[]): Set<string> {
+  const texts = new Set<string>();
+  for (const n of nodes) {
+    if (typeof n !== 'string' && 'CNHighlightC' in n) {
+      const text = normalizeCallsignLookupValue(n.CNHighlightC.text);
+      if (text !== '') texts.add(text);
+    }
+  }
+  return texts;
+}
+
+function collectSearchTerms(searchText?: string | null): Set<string> {
+  const terms = new Set<string>();
+  if (searchText == null) return terms;
+
+  searchText
+    .split(/[\s,;:]+/g)
+    .map((value) => normalizeCallsignLookupValue(value))
+    .filter((value) => value !== '')
+    .forEach((value) => terms.add(value));
+
+  return terms;
+}
+
+function normalizeSearchToken(value: string): string {
+  return normalizeCallsignLookupValue(value).replace(/[^0-9a-zа-яёіїєґ-]+/giu, '');
+}
+
+function isSearchHighlightedCallsign(callsignText: string, searchTerms: Set<string>, highlightedTexts: Set<string>): boolean {
+  const normalizedCallsignText = normalizeSearchToken(callsignText);
+  if (normalizedCallsignText === '') return false;
+  if (highlightedTexts.has(normalizedCallsignText)) return true;
+
+  for (const term of searchTerms) {
+    const normalizedTerm = normalizeSearchToken(term);
+    if (normalizedTerm === '') continue;
+    if (normalizedCallsignText === normalizedTerm) return true;
+  }
+
+  return false;
+}
+
 function tokenPillBaseStyle(isInteractive: boolean): CSSProperties {
   return {
     display: 'inline-flex',
@@ -52,6 +96,40 @@ function tokenInteractiveResetStyle(cursor: CSSProperties['cursor']): CSSPropert
     color: 'inherit',
     textDecoration: 'none',
     cursor,
+  };
+}
+
+function searchHighlightedCallsignBaseSx(theme: Theme): CSSProperties {
+  return {
+    display: 'inline',
+    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 213, 79, 0.38)' : 'rgba(255, 179, 0, 0.40)',
+    boxShadow: theme.palette.mode === 'dark' ? 'inset 0 -1px 0 rgba(0, 0, 0, 0.5)' : 'none',
+    borderRadius: 0,
+    padding: '0 1px',
+    fontSize: 'inherit',
+    fontWeight: 600,
+    lineHeight: 1.15,
+    WebkitBoxDecorationBreak: 'clone',
+    boxDecorationBreak: 'clone',
+  };
+}
+
+function searchHighlightedCallsignLinkSx(theme: Theme): CSSProperties {
+  return {
+    ...searchHighlightedCallsignBaseSx(theme),
+    color: 'var(--message-callsign-color)',
+    textDecoration: 'underline',
+    textDecorationColor: 'currentColor',
+    textDecorationThickness: '2px',
+    textUnderlineOffset: '2px',
+  };
+}
+
+function searchHighlightedCallsignPlainSx(theme: Theme): CSSProperties {
+  return {
+    ...searchHighlightedCallsignBaseSx(theme),
+    color: 'inherit',
+    textDecoration: 'none',
   };
 }
 
@@ -216,6 +294,41 @@ function KeywordToken({ text }: { text: string }) {
   );
 }
 
+function SearchHighlightedCallsign({
+  text,
+  href,
+  linkCallsigns,
+}: {
+  text: string;
+  href: string;
+  linkCallsigns: boolean;
+}) {
+  if (!linkCallsigns) {
+    return (
+      <Box
+        component="span"
+        className="badge-highlighed-token badge-highlighed-token--callsign"
+        sx={searchHighlightedCallsignPlainSx}
+      >
+        {text}
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      component="a"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="content-token--ADP hover:cursor-pointer badge-highlighed-token badge-highlighed-token--callsign"
+      sx={searchHighlightedCallsignLinkSx}
+    >
+      {text}
+    </Box>
+  );
+}
+
 function CallsignWithHint({
   text,
   callsignInfoMap,
@@ -224,6 +337,7 @@ function CallsignWithHint({
   freq,
   networkIds,
   linkCallsigns = true,
+  searchHighlighted = false,
 }: {
   text: string;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -232,13 +346,19 @@ function CallsignWithHint({
   freq?: string | null;
   networkIds?: number[] | null;
   linkCallsigns?: boolean;
+  searchHighlighted?: boolean;
 }) {
   const displayText = text.toUpperCase();
   const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
-  const callsignInfo = callsignInfoMap?.[displayText.toLowerCase()]?.res ?? null;
+  const callsignInfo = callsignInfoMap?.[normalizeCallsignLookupValue(displayText)]?.res ?? null;
   const hasCatalogMatch = (callsignInfo?.length ?? 0) > 0;
   const isNetworkRelated = hasCatalogMatch && !!networks && !!unitsMap && isCallsignRelatedToNetworks(callsignInfo, networks, unitsMap);
   const hasMessageNetworks = (networkIds?.length ?? 0) > 0;
+
+  if (searchHighlighted) {
+    return <SearchHighlightedCallsign text={displayText} href={href} linkCallsigns={linkCallsigns} />;
+  }
+
   // Behavior change: callsign highlighting is intentionally split into 4 UX states.
   // States 1-3 stay clickable; state 4 is intentionally plain text.
   // Exact network matches keep the badge/tooltip, catalog-only callsigns keep the badge/tooltip,
@@ -409,12 +529,15 @@ export function renderMarkedText(
     unitsMap?: Record<number, Unit>;
     freq?: string | null;
     networkIds?: number[] | null;
+    searchText?: string | null;
   },
 ): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
   const linkCallsigns = options?.linkCallsigns !== false;
   const messageForMap = options?.message;
   const fromNodes = collectPointEtalons(nodes);
+  const highlightedTexts = collectHighlightedTexts(nodes);
+  const searchTerms = collectSearchTerms(options?.searchText);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
     messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
   );
@@ -437,6 +560,7 @@ export function renderMarkedText(
       const { text } = node.CNCallsignC;
       const callsignText = text.trim();
       if (callsignText === '') continue;
+      const searchHighlighted = isSearchHighlightedCallsign(callsignText, searchTerms, highlightedTexts);
       renderedNodes.push(
         <CallsignWithHint
           key={i}
@@ -447,6 +571,7 @@ export function renderMarkedText(
           freq={options?.freq}
           networkIds={options?.networkIds}
           linkCallsigns={linkCallsigns}
+          searchHighlighted={searchHighlighted}
         />,
       );
       continue;

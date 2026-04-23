@@ -7,8 +7,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
-import type { InboxMessage, Network, Tag } from '../../../../Bindings';
-import { inboxMessageWithMockImages } from './inbox-message-mocks';
+import type { InboxMessage, Network, Tag } from '../../../../../Bindings';
+import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
 import { MessageCard } from './MessageCard';
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
@@ -180,7 +180,7 @@ vi.mock('@mui/material', () => ({
   },
 }));
 
-vi.mock('../../components/PowerChip', () => ({
+vi.mock('../../../components/PowerChip', () => ({
   PowerChip: ({
     label,
     onDelete,
@@ -374,8 +374,8 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Відкрити аналіз');
     expect(view.container.textContent).not.toContain('Відкрити мапу тут');
     expect(view.container.textContent).not.toContain('Відкрити мапу в новому вікні');
-    expect(view.container.querySelector('button[aria-label="Відкрити мапу тут"]')).not.toBeNull();
-    expect(view.container.querySelector('button[aria-label="Відкрити мапу в новому вікні"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу тут"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу в новому вікні"]')).toBeNull();
     expect(view.container.textContent).toContain('Запропоновані позивні');
     expect(view.container.textContent).toContain('Позивні');
     expect(view.container.textContent).toContain('ALPHA');
@@ -515,6 +515,16 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('tags-loading');
     expect(view.container.textContent).not.toContain('переміщення');
+  });
+
+  it('hides tags completely when the shared tag layout is set to hidden', async () => {
+    const view = await renderCard({ tagsLayout: 'hidden' });
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('переміщення');
+    expect(view.container.textContent).not.toContain('зв’язок');
+    expect(view.container.textContent).not.toContain('РЕБ');
+    expect(view.container.textContent).not.toContain('теги');
   });
 
   it('keeps light-theme secondary text contrast within WCAG AA bounds', () => {

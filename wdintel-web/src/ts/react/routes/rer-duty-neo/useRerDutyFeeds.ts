@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
-import { fetchUserSettings } from '../../services/api/user-settings';
+import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { sortFrequenciesNumerically } from '../../utils/misc';
+import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -150,6 +151,18 @@ export function useRerDutyFeeds(authUserName: string | null) {
     };
   }, []);
   useEffect(() => {
+    const onSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ disableAutoScroll?: boolean }>).detail;
+      if (detail?.disableAutoScroll == null) return;
+      setDutyDisableAutoScroll(detail.disableAutoScroll);
+    };
+
+    window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
+    return () => {
+      window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
+    };
+  }, []);
+  useEffect(() => {
     isUnmountedRef.current = false;
     return () => {
       isUnmountedRef.current = true;
@@ -180,9 +193,9 @@ export function useRerDutyFeeds(authUserName: string | null) {
       .then((items) => {
         if (isUnmountedRef.current) return;
         let retryMapChanged = false;
-        const returnedByCallsign = new Map(items.map((item) => [item.callsign.toLowerCase(), item] as const));
+        const returnedByCallsign = new Map(items.map((item) => [normalizeCallsignLookupValue(item.callsign), item] as const));
         items.forEach((item) => {
-          const key = item.callsign.toLowerCase();
+          const key = normalizeCallsignLookupValue(item.callsign);
           if (item.res.length > 0) {
             enrichedCallsignsRef.current.add(key);
             retryMapChanged = emptyResultRetryAfterMsRef.current.delete(key) || retryMapChanged;

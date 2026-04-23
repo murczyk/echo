@@ -4,9 +4,9 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import { Box, Button, Chip, CircularProgress, Collapse, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
 
-import type { CallsignInfoRes, InboxMessage, Network, Tag, MessageMediaInfo, Unit } from '../../../../Bindings';
-import { PowerChip } from '../../components/PowerChip';
-import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from './utils';
+import type { CallsignInfoRes, InboxMessage, Network, Tag, MessageMediaInfo, Unit } from '../../../../../Bindings';
+import { PowerChip } from '../../../components/PowerChip';
+import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import { renderMarkedText } from './MarkedText';
 
 const PREVIEW_IMAGE_HEIGHT_PX = 100;
@@ -488,9 +488,11 @@ function MessageCardTagChips({
         <Box
           component="span"
           sx={{
-            display: 'inline-block',
+            display: 'inline-flex',
+            alignItems: 'flex-start',
             maxWidth: '100%',
-            ...(tagsLayout === 'compact' || row.showBadge ? { pt: TAG_CHIP_BADGE_TOP_PADDING_THEME } : {}),
+            verticalAlign: 'top',
+            ...(tagsLayout === 'compact' ? { pt: TAG_CHIP_BADGE_TOP_PADDING_THEME } : {}),
           }}
         >
           <Box component="span" className="relative inline-flex shrink-0 max-w-full">
@@ -533,7 +535,7 @@ function MessageCardTagChips({
   };
 
   if (tagsLayout !== 'compact') {
-    return <Box className="flex flex-wrap gap-1">{rows.map((row) => renderOneChip(row))}</Box>;
+    return <Box className="flex flex-wrap items-start gap-1">{rows.map((row) => renderOneChip(row))}</Box>;
   }
 
   const expandToggleButton = hasRest ? (
@@ -571,7 +573,7 @@ function MessageCardTagChips({
 
   if (!hasRest) {
     return (
-      <Box ref={compactMeasureRef} className="flex w-full min-w-0 flex-wrap gap-1">
+      <Box ref={compactMeasureRef} className="flex w-full min-w-0 flex-wrap items-start gap-1">
         {compactOrderedRows.map((row) => renderOneChip(row))}
       </Box>
     );
@@ -610,6 +612,7 @@ export function MessageCardMessageBody({
   callsignInfoMap,
   networks,
   unitsMap,
+  searchText,
 }: {
   compact?: boolean;
   msg: InboxMessage;
@@ -621,6 +624,7 @@ export function MessageCardMessageBody({
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
+  searchText?: string | null;
 }) {
   const imageHrefs = useMemo(() => collectMessageImageHrefs(msg), [msg]);
   const imageHrefSet = useMemo(() => new Set(imageHrefs), [imageHrefs]);
@@ -648,13 +652,14 @@ export function MessageCardMessageBody({
             unitsMap,
             freq: msg.freq ?? null,
             networkIds: msg.networkIds ?? null,
+            searchText,
           })
         : (() => {
             const text = msg.text?.trim() ?? '';
             if (text === '' || text === '—' || text === '-') return null;
             return msg.text;
           })(),
-    [analysisCallsignActions, callsignInfoMap, msg, networks, showPointLinks, tagsMap, unitsMap],
+    [analysisCallsignActions, callsignInfoMap, msg, networks, searchText, showPointLinks, tagsMap, unitsMap],
   );
   const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => node != null) : textPrimary != null;
 

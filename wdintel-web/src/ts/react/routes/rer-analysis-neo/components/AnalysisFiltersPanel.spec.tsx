@@ -14,6 +14,10 @@ const analysisFilterFieldSpy = vi.fn();
 const accordionSpy = vi.fn();
 const powerChipSpy = vi.fn();
 
+function uniqueInOrder(values: string[]): string[] {
+  return values.filter((value, index, array) => array.indexOf(value) === index);
+}
+
 vi.mock('@mui/material', () => ({
   Accordion: (props: { children: ReactNode; onChange?: (event: unknown, nextExpanded: boolean) => void }) => {
     accordionSpy(props);
@@ -430,7 +434,7 @@ describe('AnalysisFiltersPanel', () => {
     ]);
   });
 
-  it('sorts the requested filters alphabetically and keeps special entries first', async () => {
+  it('renders filters in the expected order with collapsed sections by default', async () => {
     const props = buildProps({
       aorEntries: [
         { id: 1, name: 'Смуга Б' },
@@ -500,6 +504,26 @@ describe('AnalysisFiltersPanel', () => {
     });
 
     rendered.push(await renderComponent(props));
+
+    expect(accordionSpy.mock.calls.map(([callProps]) => (callProps as { expanded: boolean }).expanded).every((expanded) => expanded === false)).toBe(true);
+
+    const renderedLabels = uniqueInOrder(analysisFilterFieldSpy.mock.calls.map(([callProps]) => (callProps as { label?: string }).label ?? ''));
+    expect(renderedLabels).toEqual([
+      'Смуги',
+      'Частоти',
+      'Позивні',
+      'Мережі',
+      'Підрозділи',
+      'Групи',
+      'Відправники',
+      'Пости',
+      'Локації',
+      'Теги',
+      'Метадані CC',
+      'Метадані відправника',
+      'Метадані отримувача',
+      'Хеш метаданих',
+    ]);
 
     const tagsField = analysisFilterFieldSpy.mock.calls
       .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
@@ -832,23 +856,24 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.querySelector('[data-testid="saved-filter-chip"]')?.textContent).toBe('Saved filter');
 
     expect(
-      accordionSpy.mock.calls
-        .map(([props]) => String((props as { 'data-section-id'?: string })['data-section-id']))
-        .filter((value) => value !== 'undefined')
-        .slice(0, 12),
+      uniqueInOrder(
+        accordionSpy.mock.calls
+          .map(([props]) => String((props as { 'data-section-id'?: string })['data-section-id']))
+          .filter((value) => value !== 'undefined'),
+      ).slice(0, 12),
     ).toEqual([
-      'important',
-      'Відправники',
-      'Групи',
-      'Локації',
-      'Мережі',
-      'Метадані',
-      'Підрозділи',
-      'Позивні',
-      'Пости',
       'Смуги',
-      'Теги',
       'Частоти',
+      'Позивні',
+      'Мережі',
+      'Підрозділи',
+      'Групи',
+      'Відправники',
+      'Пости',
+      'Локації',
+      'important',
+      'Теги',
+      'Метадані',
     ]);
   });
 });

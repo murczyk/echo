@@ -93,6 +93,26 @@ describe('mergeAnalysisCallsignInfoMap', () => {
       }),
     ]);
   });
+
+  it('normalizes callsign keys consistently when merging responses', () => {
+    const next = mergeAnalysisCallsignInfoMap(
+      {},
+      [
+        callsignInfo('  БеТоН  ', [
+          callsignInfoRow({
+            id: 31,
+            callsign: '  БеТоН  ',
+            position: 'catalog',
+            unit1: 'unit',
+            networkIdsReportedIn: [11],
+          }),
+        ]),
+      ],
+    );
+
+    expect(next['бетон']).toBeDefined();
+    expect(next['бетон'].callsign).toBe('  БеТоН  ');
+  });
 });
 
 describe('mergeNetworksById', () => {
