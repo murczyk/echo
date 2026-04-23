@@ -147,6 +147,23 @@ setup server:
     "
 
 [arg('server', long='server')]
+deploy-goi-echo-worker server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+
+    echo "Installing fresh goi-echo-worker on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      sudo apt-get install -y --reinstall goi-echo-worker
+      sudo systemctl enable --now goi-echo-worker
+      sudo systemctl restart goi-echo-worker
+      sudo systemctl status goi-echo-worker --no-pager
+    "
+
+[arg('server', long='server')]
 deploy server:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -222,6 +239,8 @@ deploy server:
       sudo systemctl restart goi.service
       sudo systemctl status goi.service --no-pager
     "
+
+    just deploy-goi-echo-worker --server "$SERVER"
 
 
 
@@ -305,6 +324,8 @@ deploy-first server:
       sudo systemctl restart goi.service
       sudo systemctl status goi.service --no-pager
     "
+
+    just deploy-goi-echo-worker --server "$SERVER"
 
 [arg('server', long='server')]
 deploy-swapp server:
