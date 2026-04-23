@@ -152,36 +152,38 @@ export function AnalysisFiltersPanel({
           justifyContent="space-between"
           sx={{ py: 0.5, minWidth: 0 }}
         >
-          <Button
-            size="small"
-            onClick={() => {
-              setMobileExpanded((current) => !current);
-            }}
-            aria-expanded={showFilterContent}
-            aria-label={showFilterContent ? 'Згорнути фільтри' : 'Розгорнути фільтри'}
-            startIcon={
-              <Badge color="error" variant="dot" invisible={!canResetFilters}>
-                <FilterAltOutlinedIcon sx={{ fontSize: 18 }} />
-              </Badge>
-            }
-            endIcon={showFilterContent ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-            sx={{
-              flexShrink: 1,
-              minWidth: 0,
-              justifyContent: 'flex-start',
-              whiteSpace: 'nowrap',
-              textTransform: 'none',
-              display: { xs: 'inline-flex', lg: 'none' },
-            }}
-          >
-            Фільтри
-          </Button>
-          <Typography
-            variant="subtitle1"
-            sx={{ fontWeight: 600, lineHeight: 1.2, display: { xs: 'none', lg: 'block' } }}
-          >
-            Фільтри
-          </Typography>
+          {showCompactToggle ? (
+            <Button
+              size="small"
+              onClick={() => {
+                setMobileExpanded((current) => !current);
+              }}
+              aria-expanded={showFilterContent}
+              aria-label={showFilterContent ? 'Згорнути фільтри' : 'Розгорнути фільтри'}
+              startIcon={
+                <Badge color="error" variant="dot" invisible={!canResetFilters}>
+                  <FilterAltOutlinedIcon sx={{ fontSize: 18 }} />
+                </Badge>
+              }
+              endIcon={showFilterContent ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+              sx={{
+                flexShrink: 1,
+                minWidth: 0,
+                justifyContent: 'flex-start',
+                whiteSpace: 'nowrap',
+                textTransform: 'none',
+              }}
+            >
+              Фільтри
+            </Button>
+          ) : (
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: 600, lineHeight: 1.2, display: { xs: 'none', lg: 'block' } }}
+            >
+              Фільтри
+            </Typography>
+          )}
           <Button size="small" onClick={resetFilters} disabled={!canResetFilters} sx={{ flexShrink: 0 }}>
             Скинути
           </Button>

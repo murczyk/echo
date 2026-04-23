@@ -34,6 +34,7 @@ vi.mock('@mui/material', () => ({
         : props.children}
     </div>
   ),
+  useMediaQuery: () => false,
 }));
 
 vi.mock('./AnalysisChartsPanel', () => ({
