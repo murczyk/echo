@@ -473,7 +473,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     <Stack
                       direction="row"
                       spacing={0.75}
-                      flexWrap="nowrap"
+                      flexWrap={{ xs: 'wrap', sm: 'nowrap' }}
                       alignItems="center"
                       justifyContent="space-between"
                       role="status"

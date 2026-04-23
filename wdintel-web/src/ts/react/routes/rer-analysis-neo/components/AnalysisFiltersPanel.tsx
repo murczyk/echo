@@ -133,7 +133,7 @@ export function AnalysisFiltersPanel({
       variant="outlined"
       sx={{
         p: { xs: 1, lg: 1.5 },
-        overflow: { xs: 'hidden', lg: 'auto' },
+        overflow: { xs: 'hidden', sm: 'auto' },
         minHeight: 0,
         height: '100%',
         display: 'flex',
