@@ -1,4 +1,4 @@
-import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 
 import { createRoot, Root } from 'react-dom/client';
 import { useNeoMuiTheme } from './mui-theme';
@@ -37,8 +37,13 @@ class RerDutyNeoElement extends HTMLElement {
 
   connectedCallback() {
     if (!this.root) {
-      this.style.display = 'block';
+      this.style.display = 'flex';
+      this.style.flexDirection = 'column';
+      this.style.flex = '1 1 0%';
+      this.style.minHeight = '0';
+      this.style.minWidth = '0';
       this.style.width = '100%';
+      this.style.touchAction = 'manipulation';
       this.root = createRoot(this);
     }
 

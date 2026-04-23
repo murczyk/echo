@@ -42,6 +42,7 @@ layout props shared route =
 type alias Model =
     { isNavbarVisible : Bool
     , openDropdown : Maybe String
+    , mobileNavOpen : Bool
     }
 
 
@@ -49,6 +50,7 @@ init : () -> ( Model, Effect Msg )
 init _ =
     ( { isNavbarVisible = True
       , openDropdown = Nothing
+      , mobileNavOpen = False
       }
     , E.batch
         [ E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
@@ -74,7 +76,9 @@ type Msg
     | Slept
     | KeepAliveDone (Result ApiError ())
     | ToggleNavbarVisibility
+    | ToggleMobileNav
     | SetOpenDropdown (Maybe String)
+    | CloseDropdownOnly
     | ToastMsg Toast.Msg
 
 
@@ -98,7 +102,7 @@ update route msg model =
 
         KeyPressed key ->
             if key == "Escape" then
-                ( { model | openDropdown = Nothing }, E.none )
+                ( { model | openDropdown = Nothing, mobileNavOpen = False }, E.none )
 
             else
                 ( model, E.none )
@@ -124,12 +128,35 @@ update route msg model =
             ( { model
                 | isNavbarVisible = not model.isNavbarVisible
                 , openDropdown = Nothing
+                , mobileNavOpen = False
               }
             , E.triggerResize
             )
 
+        ToggleMobileNav ->
+            ( { model
+                | mobileNavOpen = not model.mobileNavOpen
+                , openDropdown = Nothing
+              }
+            , E.none
+            )
+
         SetOpenDropdown selection ->
-            ( { model | openDropdown = selection }, E.none )
+            ( { model
+                | openDropdown = selection
+                , mobileNavOpen =
+                    case selection of
+                        Nothing ->
+                            False
+
+                        Just _ ->
+                            model.mobileNavOpen
+              }
+            , E.none
+            )
+
+        CloseDropdownOnly ->
+            ( { model | openDropdown = Nothing }, E.none )
 
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
@@ -177,6 +204,9 @@ view user activeName shared route { toContentMsg, model, content } =
             , isNavbarVisible = model.isNavbarVisible
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
+            , onCloseDropdownOnly = CloseDropdownOnly
+            , mobileNavOpen = model.mobileNavOpen
+            , onToggleMobileNav = ToggleMobileNav
             }
         navbarHtml =
             Shared.Components.Navbar.navBar user shared activeName navbarProps

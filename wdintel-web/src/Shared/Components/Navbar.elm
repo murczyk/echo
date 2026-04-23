@@ -43,6 +43,9 @@ type alias Props msg =
     , isNavbarVisible : Bool
     , openDropdown : Maybe String
     , onDropdownToggle : Maybe String -> msg
+    , onCloseDropdownOnly : msg
+    , mobileNavOpen : Bool
+    , onToggleMobileNav : msg
     }
 
 
@@ -266,54 +269,104 @@ navBar user shared activeName props =
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
-            [ div [ class "app-navbar-row flex flex-wrap items-center justify-between gap-x-3 gap-y-2" ]
-                [ a
-                    [ class "app-navbar-logo flex items-center space-x-2 shrink-0"
-                    , href "/"
-                    ]
-                    [ div
-                        [ class "relative w-8 h-7" ]
+            [ div [ class "app-navbar-row flex w-full flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap lg:justify-between" ]
+                [ div [ class "app-navbar-brand flex shrink-0 flex-row flex-nowrap items-center gap-2" ]
+                    [ a
+                        [ class "app-navbar-logo flex shrink-0 items-center space-x-2"
+                        , href "/"
+                        ]
                         [ div
-                            [ class "main-image absolute"
-                            , style "height" "28px"
-                            , style "width" "28px"
-                            ]
-                            [ img
-                                [ src "/img/SIGINT_190_kraken_transparent.png"
+                            [ class "relative h-7 w-8" ]
+                            [ div
+                                [ class "main-image absolute"
+                                , style "height" "28px"
+                                , style "width" "28px"
+                                ]
+                                [ img
+                                    [ src "/img/SIGINT_190_kraken_transparent.png"
+                                    , style "width" "28px"
+                                    , style "height" "28px"
+                                    ]
+                                    []
+                                ]
+                            , div
+                                [ class "hover-image absolute"
                                 , style "width" "28px"
                                 , style "height" "28px"
+                                , style "background-color" "#000"
+                                , style "border-radius" "50%"
                                 ]
-                                []
-                            ]
-                        , div
-                            [ class "hover-image absolute"
-                            , style "width" "28px"
-                            , style "height" "28px"
-                            , style "background-color" "#000"
-                            , style "border-radius" "50%"
-                            ]
-                            [ img
-                                [ src "/img/flying_skull_logo_transparent.png"
-                                , style "width" "28px"
-                                , style "z-index" "1"
-                                , alt "Flying Skull"
+                                [ img
+                                    [ src "/img/flying_skull_logo_transparent.png"
+                                    , style "width" "28px"
+                                    , style "z-index" "1"
+                                    , alt "Flying Skull"
+                                    ]
+                                    []
                                 ]
-                                []
                             ]
+                        , img
+                            [ src "/img/echo-logo.svg"
+                            , class "h-[16px] shrink-0 invert contrast-200 brightness-0"
+                            ]
+                            []
                         ]
-                    , img
-                        [ src "/img/echo-logo.svg"
-                        , class "invert brightness-0 contrast-200 h-[16px] shrink-0"
+                    , button
+                        [ class "flex appearance-none items-center justify-center rounded border-0 px-2 py-2 text-[1.625rem] leading-none text-white transition-all duration-200 hover:bg-black/10 lg:hidden"
+                        , type_ "button"
+                        , onClick props.onToggleMobileNav
+                        , attribute "aria-controls" "app-navbar-links-panel"
+                        , attribute "aria-expanded"
+                            (if props.mobileNavOpen then
+                                "true"
+
+                             else
+                                "false"
+                            )
+                        , attribute "aria-label"
+                            (if props.mobileNavOpen then
+                                "Закрити меню"
+
+                             else
+                                "Відкрити меню"
+                            )
                         ]
-                        []
+                        [ i
+                            [ class <|
+                                String.join " "
+                                    [ "app-navbar-mobile-menu-icon"
+                                    , if props.mobileNavOpen then
+                                        "bi bi-x-lg"
+
+                                      else
+                                        "bi bi-list"
+                                    ]
+                            ]
+                            []
+                        ]
                     ]
-                , div [ class "app-navbar-links w-full min-w-0" ]
-                    [ ul [ class "app-navbar-links-list flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0" ] menuItems
+                , div
+                    [ id "app-navbar-links-panel"
+                    , class <|
+                        String.join " "
+                            [ "app-navbar-links w-full min-w-0 basis-full border-t border-white/10"
+                            , "lg:mt-0 lg:flex lg:w-auto lg:min-w-0 lg:flex-1 lg:basis-0 lg:border-t-0 lg:pt-0"
+                            , if props.mobileNavOpen then
+                                "flex"
+
+                              else
+                                "hidden lg:flex"
+                            ]
                     ]
-                , div [ class "app-navbar-actions flex gap-2 items-center shrink-0" ]
+                    [ ul
+                        [ class "app-navbar-links-list flex min-w-0 w-full flex-col gap-y-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4 lg:gap-y-1" ]
+                        menuItems
+                    ]
+                , div
+                    [ class "app-navbar-toolbar ml-auto flex shrink-0 items-center gap-2" ]
                     [ if props.supportsFullscreenToggle then
                         button
-                            [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center"
+                            [ class "flex appearance-none items-center border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
                             , onClick props.onNavbarVisibilityChange
                             , title fullscreenToggleLabel
                             , attribute "aria-label" fullscreenToggleLabel
@@ -326,7 +379,7 @@ navBar user shared activeName props =
                                 )
                             ]
                             [ i
-                                [ class "bi bi-arrows-fullscreen text-white cursor-pointer hover:text-white transition-colors duration-200"
+                                [ class "bi bi-arrows-fullscreen cursor-pointer text-white transition-colors duration-200 hover:text-white"
                                 ]
                                 []
                             ]
@@ -336,10 +389,10 @@ navBar user shared activeName props =
                     , themeSwitcher
                         { currentTheme = shared.themeMode
                         , onThemeChange = props.onThemeChange
-                        , triggerClass = "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
+                        , triggerClass = "block rounded px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
                         }
                     , button
-                        [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center gap-1"
+                        [ class "flex appearance-none items-center gap-1 border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
                         , onClick props.onLogout
                         ]
                         [ i [ class "bi bi-box-arrow-right text-lg" ] []
@@ -357,7 +410,7 @@ navBar user shared activeName props =
 
 menuItemRoute : { a | onDropdownToggle : Maybe b -> msg } -> String -> { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String } -> String -> String -> Html msg
 menuItemRoute props activeName route activeNameExp nameText =
-    li []
+    li [ class "w-full lg:w-auto" ]
         [ a
             [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
             , classList
@@ -386,7 +439,7 @@ menuItem props activeName hrefLink activeNameExp nameText =
             else
                 [ text nameText ]
     in
-    li []
+    li [ class "w-full lg:w-auto" ]
         [ a
             [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
             , classList
@@ -414,7 +467,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
 
         toggleMsg =
             if isOpen then
-                props.onDropdownToggle Nothing
+                props.onCloseDropdownOnly
 
             else
                 props.onDropdownToggle (Just activeNameExp)
@@ -532,9 +585,9 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                        )
                 )
     in
-    li [ class "relative group" ]
+    li [ class "group relative w-full lg:w-auto" ]
         [ button
-            [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1"
+            [ class "inline-flex w-full cursor-pointer items-center rounded px-2 py-2 text-white transition-all duration-200 hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 lg:w-auto"
             , classList [ ( "font-medium", menuIsActive activeName (MenuGroup { label = nameText, subs = subs }) ) ]
             , onClick toggleMsg
             , onDropdownTriggerKey toggleMsg
@@ -556,10 +609,10 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                 ]
                 []
             ]
-        , div [ class "absolute left-0 pt-2 z-[3001]" ]
+        , div [ class "app-navbar-submenu-wrap" ]
             [ ul
                 [ id dropdownMenuId
-                , class "w-64 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
+                , class "app-navbar-submenu-list min-w-0 w-full max-w-[min(100vw-2rem,16rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg transition-all duration-200 lg:w-64 lg:max-w-none"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )

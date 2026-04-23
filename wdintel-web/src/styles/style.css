@@ -1055,54 +1055,159 @@ sl-tooltip {
     background-color: var(--color-error-light) !important;
 }
 
-/* Navbar layout:
-   - mobile/tablet: first row logo(left) + actions(right), second row links
-   - desktop: logo(left) | links(center) | actions(right)
-*/
-.app-navbar-logo {
+/* Navbar row: segment order must live here — Tailwind is prefixed (`tw-`), so unprefixed `order-*` / `flex` in Elm does not ship. */
+.app-navbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.75rem;
+    row-gap: 0.5rem;
+    width: 100%;
+}
+
+.app-navbar-row > .app-navbar-brand {
     order: 1;
 }
 
-.app-navbar-actions {
+.app-navbar-row > .app-navbar-links {
+    order: 3;
+    width: 100%;
+}
+
+.app-navbar-row > .app-navbar-toolbar {
     order: 2;
     margin-left: auto;
 }
 
-.app-navbar-links {
-    order: 3;
-    width: 100%;
+/* Below lg: grid keeps logo + actions on one row; flex order + full-width links alone often sent toolbar to a third line. */
+@media (max-width: 1023.98px) {
+    .app-navbar-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "brand toolbar"
+            "links links";
+        column-gap: 0.75rem;
+        row-gap: 0.5rem;
+        align-items: center;
+    }
+
+    .app-navbar-row > .app-navbar-brand {
+        grid-area: brand;
+        order: 0;
+        min-width: 0;
+    }
+
+    .app-navbar-row > .app-navbar-toolbar {
+        grid-area: toolbar;
+        order: 0;
+        margin-left: 0;
+        justify-self: end;
+    }
+
+    .app-navbar-row > .app-navbar-links {
+        grid-area: links;
+        order: 0;
+    }
+}
+
+.app-navbar-mobile-menu-icon {
+    display: inline-block;
+    transform: scale(1.3);
+    transform-origin: center;
+}
+
+/* Navbar submenu: avoid full-width absolute box on small screens so the bordered panel matches content width. */
+.app-navbar-submenu-wrap {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 3001;
+    padding-top: 0.5rem;
+    box-sizing: border-box;
+}
+
+@media (max-width: 1023.98px) {
+    .app-navbar-submenu-wrap {
+        right: auto;
+        width: max-content;
+        max-width: min(calc(100vw - 2rem), 16rem);
+    }
+
+    .app-navbar-submenu-list {
+        width: max-content;
+        max-width: min(calc(100vw - 2rem), 16rem);
+        box-sizing: border-box;
+    }
 }
 
 .app-navbar-links-list {
     justify-content: center;
 }
 
-@media (min-width: 1400px) {
+@media (min-width: 1024px) {
+    .app-navbar-submenu-wrap {
+        width: auto;
+    }
+
+    .app-navbar-submenu-list {
+        width: 16rem;
+        max-width: none;
+    }
+
+    /* One header row: flex could wrap toolbar under a multi-line link strip; grid pins three columns. */
     .app-navbar-row {
-        flex-wrap: nowrap;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas: "brand links toolbar";
+        /* start: logo, first menu line, and toolbar share one top edge (baseline centered the logo in a tall row). */
+        align-items: start;
+        column-gap: 0.75rem;
+        row-gap: 0.35rem;
     }
 
-    .app-navbar-logo {
-        order: 1;
+    .app-navbar-row > .app-navbar-brand {
+        grid-area: brand;
+        order: 0;
+        min-width: 0;
     }
 
-    .app-navbar-links {
-        order: 2;
+    /* Logo link had no py-2 unlike nav links / toolbar (Elm `py-2` = 16px here); unprefixed Tailwind may not apply. */
+    .app-navbar-row > .app-navbar-brand .app-navbar-logo {
+        padding: 5px;
+        box-sizing: border-box;
+    }
+
+    .app-navbar-row > .app-navbar-links {
+        grid-area: links;
+        order: 0;
         width: auto;
         min-width: 0;
-        flex: 1 1 auto;
         display: flex;
         justify-content: center;
+        justify-self: stretch;
+        align-items: flex-start;
     }
 
-    .app-navbar-actions {
-        order: 3;
+    .app-navbar-row > .app-navbar-toolbar {
+        grid-area: toolbar;
+        order: 0;
         margin-left: 0;
+        justify-self: end;
     }
 
     .app-navbar-links-list {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        align-content: flex-start;
         justify-content: center;
-        flex-wrap: nowrap;
-        white-space: nowrap;
+        column-gap: 1rem;
+        row-gap: 0.35rem;
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
     }
 }
