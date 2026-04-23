@@ -184,17 +184,22 @@ export function FeedFilterPanel({
   const [localFreqValue, setLocalFreqValue] = useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = useState<string[]>(() => postValue);
   const [saveInFlight, setSaveInFlight] = useState(false);
-  const sortedGroupKeys = [...groupsList].sort((a, b) => (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b));
+  const sortedGroupKeys = [...groupsList].sort((a, b) =>
+    (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b),
+  );
   const [localGroupValue, setLocalGroupValue] = useState<string[]>(() =>
     filterStable.deniedGroups?.length > 0 ? filterStable.deniedGroups : (filterStable.groupsSelected ?? []),
   );
   const pendingGroupResyncRef = useRef<string | null>(null);
   const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
-  const loadedSavedFilter = selectedSavedId == null ? null : savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null;
+  const loadedSavedFilter =
+    selectedSavedId == null ? null : (savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
   const trimmedSavedFilterName = saveFilterName.trim();
   const hasLoadedFilter = loadedSavedFilter != null;
-  const isRenaming = hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
-  const loadedFilterNormalized = loadedSavedFilter == null ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>);
+  const isRenaming =
+    hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
+  const loadedFilterNormalized =
+    loadedSavedFilter == null ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>);
   const isDirty =
     loadedFilterNormalized != null &&
     !(
@@ -209,7 +214,10 @@ export function FeedFilterPanel({
     );
   const canUpdateExisting = !saveInFlight && hasLoadedFilter && isDirty;
   const canRenameExisting =
-    !saveInFlight && hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
+    !saveInFlight &&
+    hasLoadedFilter &&
+    trimmedSavedFilterName !== '' &&
+    trimmedSavedFilterName !== loadedSavedFilter.name;
 
   const runSavedFilterAction = async (action: () => Promise<void>) => {
     if (saveInFlight) return;
@@ -235,8 +243,7 @@ export function FeedFilterPanel({
     });
   }, [groupsSelectedKey, deniedGroupsKey, groupMode]);
   useEffect(() => {
-    const ids =
-      senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
+    const ids = senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
     setLocalSenderValue((prev) => {
       const currentIds = prev.map((o) => o.id);
       if (ids.length === currentIds.length && ids.every((id, i) => id === currentIds[i])) return prev;
@@ -355,7 +362,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localGroupValue.length === 0 ? groupEmptyLabel : undefined} />
               )}
-              className="min-w-[180px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[180px] min-[600px]:flex-1"
             />
           </Box>
         </Box>
@@ -407,7 +414,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localSenderValue.length === 0 ? senderEmptyLabel : undefined} />
               )}
-              className="min-w-[180px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[180px] min-[600px]:flex-1"
             />
           </Box>
         </Box>
@@ -476,7 +483,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localFreqValue.length === 0 ? freqEmptyLabel : undefined} />
               )}
-              className="min-w-[160px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[160px] min-[600px]:flex-1"
             />
           </Box>
           <Box className="flex flex-wrap gap-2 justify-end mt-1">
@@ -550,7 +557,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localPostValue.length === 0 ? postEmptyLabel : undefined} />
               )}
-              className="min-w-[160px] flex-1"
+              className="min-w-0 w-full min-[600px]:min-w-[160px] min-[600px]:flex-1"
             />
           </Box>
         </Box>

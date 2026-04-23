@@ -69,6 +69,8 @@ const FeedList = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function Feed
 
 export type FeedColumnProps = {
   feed: MessageFeedState;
+  /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible Virtuoso min-height. */
+  narrowScreen?: boolean;
   /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */
   feedCount?: number;
   filterStable: {
@@ -160,6 +162,7 @@ export type FeedColumnHandle = { scrollToEnd: () => void };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   {
     feed,
+    narrowScreen = false,
     feedCount,
     filterStable,
     groupsList,
@@ -321,8 +324,16 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
 
   return (
     <Box
-      className="flex flex-col flex-1 min-w-0 gap-1 min-h-0"
-      sx={{ maxWidth: maxWidth ?? '100%', position: 'relative' }}
+      className={[
+        'flex flex-col min-w-0 gap-1 min-h-0',
+        narrowScreen ? 'shrink-0 grow-0 basis-full' : 'flex-1',
+      ].join(' ')}
+      sx={{
+        maxWidth: maxWidth ?? '100%',
+        position: 'relative',
+        scrollSnapAlign: narrowScreen ? 'start' : undefined,
+        scrollSnapStop: narrowScreen ? 'always' : undefined,
+      }}
     >
       <Box
         className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-[32px] shrink-0"
@@ -415,7 +426,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         <Paper variant="outlined" className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col">
           <Virtuoso
             ref={virtuosoRef}
-            style={{ flex: 1, minHeight: 400 }}
+            style={{ flex: 1, minHeight: narrowScreen ? 0 : 400 }}
             data={feed.items}
             firstItemIndex={feed.firstItemIndex ?? 0}
             computeItemKey={(_index, [id]) => String(id)}
@@ -518,8 +529,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             <Box
               sx={{
                 position: 'absolute',
-                bottom: 30,
-                right: 20,
+                bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 30 },
+                right: { xs: 12, sm: 20 },
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1,
