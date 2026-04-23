@@ -3,6 +3,7 @@ set positional-arguments := false
 goi_dir := justfile_directory()
 goi_app_dir := "/etc/goi"
 goi_timezone := "Europe/Kyiv"
+goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
@@ -10,6 +11,61 @@ goi_version := "1.3.3"
 
 default:
     @just --list
+
+_require-goi-cloud-access:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+      echo "❌ AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required. Look for 'echouastorage-lfs backblaze' in Bitwarden." >&2
+      exit 1
+    fi
+
+    if ! command -v s5cmd >/dev/null 2>&1; then
+      echo "❌ s5cmd is required (https://github.com/peak/s5cmd)" >&2
+      exit 1
+    fi
+
+goi-sync-from-cloud:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    just _require-goi-cloud-access
+
+    SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
+    ENDPOINT_URL="{{ goi_b2_endpoint_url }}"
+    REMOTE_DIR="s3://echouastorage/lfs/goi/goi-{{ goi_version }}/"
+    REMOTE_GLOB="s3://echouastorage/lfs/goi/goi-{{ goi_version }}/*"
+    LISTING=""
+
+    mkdir -p "${SRC_DIR}"
+
+    LISTING="$(s5cmd --endpoint-url "$ENDPOINT_URL" ls "$REMOTE_GLOB")"
+    if [[ -z "${LISTING}" ]]; then
+      echo "❌ No GOI {{ goi_version }} release found in Backblaze at ${REMOTE_DIR}" >&2
+      exit 1
+    fi
+
+    echo "Syncing GOI {{ goi_version }} from Backblaze into ${SRC_DIR}..."
+    s5cmd --endpoint-url "$ENDPOINT_URL" sync "$REMOTE_GLOB" "$SRC_DIR"
+
+release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    just _require-goi-cloud-access
+
+    SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
+    ENDPOINT_URL="{{ goi_b2_endpoint_url }}"
+    REMOTE_DIR="s3://echouastorage/lfs/goi/goi-{{ goi_version }}/"
+
+    if [[ ! -d "${SRC_DIR}" ]]; then
+      echo "❌ GOI release directory not found: ${SRC_DIR}" >&2
+      exit 1
+    fi
+
+    echo "Syncing ${SRC_DIR} to ${REMOTE_DIR}..."
+    s5cmd --endpoint-url "$ENDPOINT_URL" sync "${SRC_DIR}" "$REMOTE_DIR"
 
 [arg('server', long='server')]
 setup-dev-container-scripts server:
@@ -171,6 +227,8 @@ deploy server:
     SERVER="{{ server }}"
     APP_DIR="{{ goi_app_dir }}"
     SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
+
+    just goi-sync-from-cloud
 
     echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail

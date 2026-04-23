@@ -43,14 +43,4 @@ goi/swapp/npm-debug.log*
 goi/swapp/yarn-debug.log*
 goi/swapp/yarn-error.log*
 goi/swapp/pnpm-debug.log*
-goi/goi/goi-*/.runtime/
-goi/goi/goi-*/.next/
-goi/goi/goi-*/.output/
-goi/goi/goi-*/dist/
-goi/goi/goi-*/.bootstrap/
-goi/goi/goi-*/node_modules/
-goi/goi/goi-*/*.log
-goi/goi/goi-*/npm-debug.log*
-goi/goi/goi-*/yarn-debug.log*
-goi/goi/goi-*/yarn-error.log*
-goi/goi/goi-*/pnpm-debug.log*
+goi/goi/
