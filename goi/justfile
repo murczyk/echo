@@ -1,6 +1,7 @@
 set positional-arguments := false
 
 goi_dir := justfile_directory()
+repo_dir := goi_dir + "/.."
 goi_app_dir := "/etc/goi"
 goi_timezone := "Europe/Kyiv"
 goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
@@ -217,6 +218,42 @@ deploy-goi-echo-worker server:
       sudo systemctl enable --now goi-echo-worker
       sudo systemctl restart goi-echo-worker
       sudo systemctl status goi-echo-worker --no-pager
+    "
+
+# Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
+# Use only on Linux, preferrably 22.04 host
+[arg('server', long='server')]
+deploy-goi-echo-worker-from-local server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    DEB_PATH=""
+    DEB_NAME=""
+
+    echo "Building local goi-echo-worker deb package..."
+    (cd "{{ repo_dir }}" && cargo deb -p goi-echo-worker)
+
+    DEB_PATH="$(ls -1t "{{ repo_dir }}"/target/debian/goi-echo-worker_*_*.deb | head -n 1)"
+    if [[ -z "${DEB_PATH}" ]]; then
+      echo "❌ Failed to find built goi-echo-worker deb package in target/debian" >&2
+      exit 1
+    fi
+    DEB_NAME="$(basename "${DEB_PATH}")"
+
+    echo "Uploading ${DEB_NAME} to ${SERVER}..."
+    scp "${DEB_PATH}" "${SERVER}:/var/tmp/${DEB_NAME}"
+
+    echo "Installing ${DEB_NAME} on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      cd /var/tmp
+      sudo apt install -y --reinstall --allow-downgrades './${DEB_NAME}'
+      sudo systemctl enable --now goi-echo-worker
+      sudo systemctl restart goi-echo-worker
+      sudo systemctl status goi-echo-worker --no-pager
+      rm -f './${DEB_NAME}'
     "
 
 [arg('server', long='server')]
@@ -611,7 +648,7 @@ deploy-swapp-alt server:
 
     echo "Updating nginx on ${SERVER}..."
     just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
-    
+
 deploy-all:
    just deploy --server goi-stg
    just deploy --server goi-jf
