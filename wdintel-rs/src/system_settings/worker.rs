@@ -10,9 +10,11 @@ use crate::types::{Mode, ShortContext};
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use lazy_static::lazy_static;
 use log::{error, info, warn};
 use rand::Rng;
 use redis::aio::ConnectionManager;
+use regex::Regex;
 use sea_orm::*;
 use std::collections::HashMap;
 
@@ -109,10 +111,17 @@ async fn run_rer_duty_historical_interceptions_worker_once(
         return Ok(settings.rer_duty_poll_interval_sec.max(1) as u64);
     }
 
+    let mut replayed = 0;
+    let mut skipped = 0;
     for source in &sources {
-        replay_source_message(config, dbx, redis, source)
+        if replay_source_message(config, dbx, redis, source)
             .await
-            .c(h!())?;
+            .c(h!())?
+        {
+            replayed += 1;
+        } else {
+            skipped += 1;
+        }
     }
 
     *source_offset += sources.len() as u64;
@@ -121,8 +130,7 @@ async fn run_rer_duty_historical_interceptions_worker_once(
     }
 
     info!(
-        "rer_duty_historical_interceptions_worker replayed {} historical messages",
-        sources.len()
+        "rer_duty_historical_interceptions_worker replayed {replayed} historical messages, skipped {skipped}"
     );
     Ok(settings.rer_duty_poll_interval_sec.max(1) as u64)
 }
@@ -274,14 +282,23 @@ async fn replay_source_message(
     dbx: &DatabaseConnection,
     redis: &mut ConnectionManager,
     source: &ReplaySource,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let replay_ts = random_replay_timestamp();
+    let Some(body) =
+        build_replay_body(source.message.body.as_deref(), replay_ts)
+    else {
+        warn!(
+            "rer_duty_historical_interceptions_worker: skipping source message {} because body datetime could not be edited",
+            source.message.id
+        );
+        return Ok(false);
+    };
     let (date, time) = format_date_time_fields(replay_ts);
     let txn = dbx.begin().await.c(h!())?;
 
     let inserted = signal_message::ActiveModel {
         id: NotSet,
-        body: Set(source.message.body.clone()),
+        body: Set(Some(body)),
         created_at: NotSet,
         timestamp: Set(Some(replay_ts)),
         sender: Set(source.message.sender.clone()),
@@ -423,7 +440,124 @@ async fn replay_source_message(
     fanout(redis, EventMsg::new(EventType::ETInboxChanged(inserted.id)))
         .await
         .c(h!())?;
-    Ok(())
+    Ok(true)
+}
+
+fn build_replay_body(
+    body: Option<&str>,
+    replay_ts: NaiveDateTime,
+) -> Option<String> {
+    let body = body?;
+    rewrite_buran_datetime(body, replay_ts)
+        .or_else(|| rewrite_single_datetime_token(body, replay_ts))
+}
+
+fn rewrite_buran_datetime(
+    body: &str,
+    replay_ts: NaiveDateTime,
+) -> Option<String> {
+    lazy_static! {
+        static ref DATE_RE: Regex =
+            Regex::new(r"Дата: \d{4}-\d{2}-\d{2}").unwrap();
+        static ref TIME_RE: Regex = Regex::new(r"Час: \d{2}:\d{2}").unwrap();
+    }
+    DATE_RE.find(body)?;
+    TIME_RE.find(body)?;
+
+    let replay_ts = replay_ts_kyiv(replay_ts);
+    let body = replace_first_match(
+        body,
+        &DATE_RE,
+        &replay_ts.format("Дата: %Y-%m-%d").to_string(),
+    )?;
+    replace_first_match(
+        &body,
+        &TIME_RE,
+        &replay_ts.format("Час: %H:%M").to_string(),
+    )
+}
+
+fn rewrite_single_datetime_token(
+    body: &str,
+    replay_ts: NaiveDateTime,
+) -> Option<String> {
+    lazy_static! {
+        static ref PATTERNS: Vec<(Regex, &'static str)> = vec![
+            (
+                Regex::new(r"\d{2}\.\d{2}\.\d{4}_\d{2}:\d{2}:\d{2}").unwrap(),
+                "%d.%m.%Y_%H:%M:%S",
+            ),
+            (
+                Regex::new(r"\d{2}\.\d{2}\.\d{4}_\d{2}:\d{2}").unwrap(),
+                "%d.%m.%Y_%H:%M",
+            ),
+            (
+                Regex::new(r"\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}:\d{2}").unwrap(),
+                "%d.%m.%Y, %H:%M:%S",
+            ),
+            (
+                Regex::new(r"\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}").unwrap(),
+                "%Y-%m-%d_%H:%M:%S",
+            ),
+            (
+                Regex::new(r"\d{4}-\d{2}-\d{2}_\d{2}:\d{2}").unwrap(),
+                "%Y-%m-%d_%H:%M",
+            ),
+            (
+                Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap(),
+                "%Y-%m-%dT%H:%M:%S",
+            ),
+            (
+                Regex::new(r"\d{4}_\d{2}_\d{2} \d{2}-\d{2}-\d{2}").unwrap(),
+                "%Y_%m_%d %H-%M-%S",
+            ),
+            (
+                Regex::new(r"\d{2}\.\d{2}, \d{2}:\d{2}:\d{2}").unwrap(),
+                "%d.%m, %H:%M:%S",
+            ),
+            (
+                Regex::new(r"Час: \d{2}:\d{2}:\d{2}").unwrap(),
+                "Час: %H:%M:%S",
+            ),
+            (
+                Regex::new(r"\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}").unwrap(),
+                "%d.%m.%Y %H:%M:%S",
+            ),
+            (
+                Regex::new(r"\d{2}:\d{2} \d{2}\.\d{2}\.\d{4}").unwrap(),
+                "%H:%M %d.%m.%Y",
+            ),
+            (
+                Regex::new(r"\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap(),
+                "%d-%m %H:%M:%S",
+            ),
+        ];
+    }
+
+    let replay_ts = replay_ts_kyiv(replay_ts);
+    PATTERNS.iter().find_map(|(regex, fmt)| {
+        replace_first_match(body, regex, &replay_ts.format(fmt).to_string())
+    })
+}
+
+fn replace_first_match(
+    body: &str,
+    regex: &Regex,
+    replacement: &str,
+) -> Option<String> {
+    let found = regex.find(body)?;
+    let mut result = String::with_capacity(
+        body.len() - found.as_str().len() + replacement.len(),
+    );
+    result.push_str(&body[..found.start()]);
+    result.push_str(replacement);
+    result.push_str(&body[found.end()..]);
+    Some(result)
+}
+
+fn replay_ts_kyiv(replay_ts: NaiveDateTime) -> DateTime<chrono_tz::Tz> {
+    DateTime::<Utc>::from_naive_utc_and_offset(replay_ts, Utc)
+        .with_timezone(&chrono_tz::Europe::Kyiv)
 }
 
 fn random_replay_timestamp() -> NaiveDateTime {
@@ -439,4 +573,74 @@ fn format_date_time_fields(dt_utc: NaiveDateTime) -> (String, String) {
     let date = dt_kyiv.format("%Y-%m-%d").to_string();
     let time = dt_kyiv.format("%H:%M:%S").to_string();
     (date, time)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, TimeZone};
+
+    fn replay_ts() -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 4, 22)
+            .unwrap()
+            .and_hms_opt(9, 18, 31)
+            .unwrap()
+    }
+
+    fn parsed_body_datetime(body: &str) -> NaiveDateTime {
+        let lnow = chrono_tz::Europe::Kyiv
+            .from_utc_datetime(&replay_ts())
+            .with_timezone(&chrono_tz::Europe::Kyiv);
+        crate::rer_importer::datetime::extract_datetime(lnow, body)
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn build_replay_body_rewrites_mouse_datetime() {
+        let body = r#"29.02.2024_15:50 F=446.1125(МГц) П54
+УКХ р/м 70 мсп 42 мсд 58 А
+ЛАВИНА
+СЕРБ"#;
+
+        let edited = build_replay_body(Some(body), replay_ts()).unwrap();
+
+        assert!(edited.starts_with("22.04.2026_12:18"));
+        assert_eq!(
+            parsed_body_datetime(&edited),
+            NaiveDate::from_ymd_opt(2026, 4, 22)
+                .unwrap()
+                .and_hms_opt(12, 18, 0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn build_replay_body_rewrites_buran_datetime_pair() {
+        let body = r#"Дата: 2024-02-21;
+Час: 17:28;
+Частота: 446.1125
+ЛАВИНА СЕРБ"#;
+
+        let edited = build_replay_body(Some(body), replay_ts()).unwrap();
+
+        assert!(edited.contains("Дата: 2026-04-22;"));
+        assert!(edited.contains("Час: 12:18;"));
+        assert_eq!(
+            parsed_body_datetime(&edited),
+            NaiveDate::from_ymd_opt(2026, 4, 22)
+                .unwrap()
+                .and_hms_opt(12, 18, 0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn build_replay_body_skips_body_without_editable_datetime() {
+        assert_eq!(
+            build_replay_body(Some("ЛАВИНА СЕРБ без дати"), replay_ts()),
+            None
+        );
+        assert_eq!(build_replay_body(None, replay_ts()), None);
+    }
 }
