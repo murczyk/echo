@@ -179,7 +179,7 @@ export function AnalysisFiltersPanel({
           ) : (
             <Typography
               variant="subtitle1"
-              sx={{ fontWeight: 600, lineHeight: 1.2, display: { xs: 'none', lg: 'block' } }}
+              sx={{ fontWeight: 600, lineHeight: 1.2 }}
             >
               Фільтри
             </Typography>

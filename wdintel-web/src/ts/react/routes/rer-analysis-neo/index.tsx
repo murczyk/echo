@@ -74,7 +74,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   return (
     <Box
       sx={{
-        height: { xs: '100dvh', lg: '100%' },
+        height: '100%',
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
