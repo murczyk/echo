@@ -85,6 +85,7 @@ export function AnalysisSidebar({
 }: Props) {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
+  const keepMapPaneMounted = rightPanelOpen || isMobileLayout;
 
   return (
     <Box
@@ -156,7 +157,7 @@ export function AnalysisSidebar({
           },
         }}
       >
-        {rightPanelOpen ? (
+        {keepMapPaneMounted ? (
           <Box sx={{ height: '100%', minHeight: 0, display: rightSidebarTab === 'map' ? 'flex' : 'none' }}>
             <AnalysisMapPane
               mapAttrs={mapAttrs}
