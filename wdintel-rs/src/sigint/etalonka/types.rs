@@ -79,7 +79,7 @@ pub struct NetworkEtalonkaResult {
     pub unit_company: Option<String>,
     pub unit_division: Option<String>,
     pub unit_army: Option<String>,
-    pub active_from: NaiveDateTime,
+    pub active_from: Option<NaiveDateTime>,
     pub active_to: Option<NaiveDateTime>,
 }
 
