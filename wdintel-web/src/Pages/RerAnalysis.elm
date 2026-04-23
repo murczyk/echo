@@ -3661,6 +3661,9 @@ update user shared route msg model =
                         ActiveNetworks ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
+                        RTNetworkFrequencies ->
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
                         RTReport1213 ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
@@ -4161,6 +4164,9 @@ reportTemplateToApiType model template =
 
         ActiveNetworks ->
             Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })
+
+        RTNetworkFrequencies ->
+            Just (B.NetworkFrequencies { aorIds = model.reportActiveNetworksAorsSelect.selected })
 
         RTReport1213 ->
             Nothing

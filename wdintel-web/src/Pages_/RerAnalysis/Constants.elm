@@ -58,5 +58,8 @@ reportTemplateToString x =
         ActiveNetworks ->
             "active_networks"
 
+        RTNetworkFrequencies ->
+            "network_frequencies"
+
         RTReport1213 ->
             "report_1213"

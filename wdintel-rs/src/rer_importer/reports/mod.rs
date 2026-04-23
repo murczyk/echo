@@ -20,6 +20,7 @@ mod digest;
 pub mod interception;
 pub mod mouse;
 mod naushnom;
+mod network_frequencies;
 mod posts;
 mod report_1213;
 mod report_xlsx_kind_pelengs;
@@ -239,6 +240,17 @@ pub async fn report_docx(
             return Ok(resp);
         }
         self::active_networks::report_docx_kind_active_networks(
+            &env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == "network_frequencies" {
+        if let Some(resp) =
+            ensure_editor_report_permissions(&env, &user_login).await?
+        {
+            return Ok(resp);
+        }
+        self::network_frequencies::report_docx_kind_network_frequencies(
             &env, &req, &outpath,
         )
         .await
