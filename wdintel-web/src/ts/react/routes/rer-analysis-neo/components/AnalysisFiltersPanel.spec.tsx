@@ -22,6 +22,7 @@ vi.mock('@mui/material', () => ({
   AccordionDetails: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   AccordionSummary: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Button: (props: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
     <button type="button" disabled={props.disabled} onClick={props.onClick}>
       {props.children}
@@ -70,6 +71,7 @@ vi.mock('@mui/material', () => ({
       <input type={props.type ?? 'text'} value={props.value ?? ''} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })} />
     </label>
   ),
+  useMediaQuery: () => false,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 

@@ -5,13 +5,14 @@ import type { ReactNode } from 'react';
 type Props = {
   title: ReactNode;
   titleInfo?: ReactNode;
+  titleActions?: ReactNode;
   middle?: ReactNode;
   actions?: ReactNode;
   className?: string;
   titleClassName?: string;
 };
 
-export function PageHeader({ title, titleInfo, middle, actions, className, titleClassName }: Props) {
+export function PageHeader({ title, titleInfo, titleActions, middle, actions, className, titleClassName }: Props) {
   return (
     <Box
       className={className}
@@ -23,10 +24,25 @@ export function PageHeader({ title, titleInfo, middle, actions, className, title
         width: '100%',
       }}
     >
-      <Box sx={{ minHeight: 48, display: 'flex', alignItems: 'center', flexShrink: 0, minWidth: 0 }}>
+      <Box
+        sx={{
+          minHeight: 48,
+          display: 'flex',
+          alignItems: 'center',
+          flexShrink: 0,
+          minWidth: 0,
+          gap: 1,
+          width: { xs: '100%', sm: 'auto' },
+        }}
+      >
         <Typography component="h1" variant="h5" sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }} className={titleClassName}>
           {title}
         </Typography>
+        {titleActions ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexShrink: 0, ml: { xs: 'auto', sm: 0 } }}>
+            {titleActions}
+          </Box>
+        ) : null}
         {titleInfo ? (
           <Tooltip title={titleInfo} arrow placement="right-start">
             <Box
@@ -46,15 +62,25 @@ export function PageHeader({ title, titleInfo, middle, actions, className, title
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'flex-start',
-            width: 'fit-content',
+            width: { xs: '100%', sm: 'fit-content' },
             maxWidth: '100%',
             flexShrink: 0,
+            flexBasis: { xs: '100%', sm: 'auto' },
           }}
         >
           {middle}
         </Box>
       ) : null}
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+      <Box
+        sx={{
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          marginLeft: 'auto',
+          flexShrink: 0,
+        }}
+      >
         {actions ?? null}
       </Box>
     </Box>

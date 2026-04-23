@@ -1,5 +1,9 @@
-import { Box, Button, CircularProgress, Divider, Paper, Stack, Typography } from '@mui/material';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
+import { Badge, Box, Button, CircularProgress, Divider, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from '@mui/material/styles';
 
 import { PowerChip } from '../../../components/PowerChip';
 import type { AnalysisFilterSectionId } from '../types';
@@ -34,7 +38,10 @@ export function AnalysisFiltersPanel({
   updateExisting,
   updateQueryState,
 }: AnalysisFiltersPanelProps) {
+  const theme = useTheme();
+  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
+  const [mobileExpanded, setMobileExpanded] = useState(false);
   const [loadingSections, setLoadingSections] = useState<Partial<Record<FilterSectionId, boolean>>>({});
   const prevFiltersLoadingRef = useRef(filtersLoading);
 
@@ -113,14 +120,20 @@ export function AnalysisFiltersPanel({
     options.units.length,
   ]);
 
+  useEffect(() => {
+    setMobileExpanded(!isMobileLayout);
+  }, [isMobileLayout]);
+
   const isSectionLoading = (section: FilterSectionId): boolean => filtersLoading || loadingSections[section] === true;
+  const showCompactToggle = isMobileLayout;
+  const showFilterContent = !showCompactToggle || mobileExpanded;
 
   return (
     <Paper
       variant="outlined"
       sx={{
-        p: 1.5,
-        overflow: 'auto',
+        p: { xs: 1, lg: 1.5 },
+        overflow: { xs: 'hidden', sm: 'auto' },
         minHeight: 0,
         height: '100%',
         display: 'flex',
@@ -131,58 +144,159 @@ export function AnalysisFiltersPanel({
         backgroundColor: 'transparent',
       }}
     >
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" sx={{ pt: 0.5, pb: 1 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
-            Фільтри
-          </Typography>
+      <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ py: 0.5, minWidth: 0 }}
+        >
+          {showCompactToggle ? (
+            <Button
+              size="small"
+              onClick={() => {
+                setMobileExpanded((current) => !current);
+              }}
+              aria-expanded={showFilterContent}
+              aria-label={showFilterContent ? 'Згорнути фільтри' : 'Розгорнути фільтри'}
+              startIcon={
+                <Badge color="error" variant="dot" invisible={!canResetFilters}>
+                  <FilterAltOutlinedIcon sx={{ fontSize: 18 }} />
+                </Badge>
+              }
+              endIcon={showFilterContent ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+              sx={{
+                flexShrink: 1,
+                minWidth: 0,
+                justifyContent: 'flex-start',
+                whiteSpace: 'nowrap',
+                textTransform: 'none',
+              }}
+            >
+              Фільтри
+            </Button>
+          ) : (
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: 600, lineHeight: 1.2 }}
+            >
+              Фільтри
+            </Typography>
+          )}
           <Button size="small" onClick={resetFilters} disabled={!canResetFilters} sx={{ flexShrink: 0 }}>
             Скинути
           </Button>
         </Stack>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-          {loadedSavedFilter ? (
-            <PowerChip
-              label={loadedSavedFilter.name}
-              selected
-              color="default"
-              sx={{ alignSelf: 'flex-start', mb: 1 }}
-              title={`Збережений фільтр: ${loadedSavedFilter.name}`}
-            />
-          ) : null}
+        {showFilterContent ? (
+          showCompactToggle ? (
+            <Box
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                overscrollBehavior: 'contain',
+                WebkitOverflowScrolling: 'touch',
+                pr: 0.25,
+                pb: 0.5,
+              }}
+            >
+              <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {loadedSavedFilter ? (
+                  <PowerChip
+                    label={loadedSavedFilter.name}
+                    selected
+                    color="default"
+                    sx={{ alignSelf: 'flex-start', mb: 1 }}
+                    title={`Збережений фільтр: ${loadedSavedFilter.name}`}
+                  />
+                ) : null}
 
-          <AnalysisFiltersPanelSections
-            counts={counts}
-            derived={derived}
-            expandedSections={expandedSections}
-            includeOnlyNewFreqs={includeOnlyNewFreqs}
-            isSectionLoading={isSectionLoading}
-            loadingIndicator={<CircularProgress size={14} thickness={5} />}
-            loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
-            options={options}
-            queryState={queryState}
-            setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
-            toggleSection={toggleSection}
-            updateQueryState={updateQueryState}
-          />
-        </Box>
+                <AnalysisFiltersPanelSections
+                  counts={counts}
+                  derived={derived}
+                  expandedSections={expandedSections}
+                  includeOnlyNewFreqs={includeOnlyNewFreqs}
+                  isSectionLoading={isSectionLoading}
+                  loadingIndicator={<CircularProgress size={14} thickness={5} />}
+                  loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
+                  options={options}
+                  queryState={queryState}
+                  setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
+                  toggleSection={toggleSection}
+                  updateQueryState={updateQueryState}
+                />
+              </Box>
 
-        <Divider />
+              <Divider sx={{ my: 1, flexShrink: 0 }} />
 
-        <AnalysisSavedFiltersCard
-          isDirty={isDirty}
-          loadedSavedFilter={loadedSavedFilter}
-          saveInFlight={saveInFlight}
-          savedFilterName={savedFilterName}
-          savedFilters={savedFilters}
-          onApplySavedFilter={applySavedFilter}
-          onDeleteLoadedSavedFilter={deleteLoadedSavedFilter}
-          onRenameExisting={renameExistingSavedFilter}
-          onSaveAsNew={saveAsNew}
-          onSavedFilterNameChange={setSavedFilterName}
-          onUpdateExisting={updateExisting}
-        />
+              <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0, pb: 0.5 }}>
+                <AnalysisSavedFiltersCard
+                  isDirty={isDirty}
+                  loadedSavedFilter={loadedSavedFilter}
+                  saveInFlight={saveInFlight}
+                  savedFilterName={savedFilterName}
+                  savedFilters={savedFilters}
+                  onApplySavedFilter={applySavedFilter}
+                  onDeleteLoadedSavedFilter={deleteLoadedSavedFilter}
+                  onRenameExisting={renameExistingSavedFilter}
+                  onSaveAsNew={saveAsNew}
+                  onSavedFilterNameChange={setSavedFilterName}
+                  onUpdateExisting={updateExisting}
+                />
+              </Box>
+            </Box>
+          ) : (
+            <>
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                {loadedSavedFilter ? (
+                  <PowerChip
+                    label={loadedSavedFilter.name}
+                    selected
+                    color="default"
+                    sx={{ alignSelf: 'flex-start', mb: 1 }}
+                    title={`Збережений фільтр: ${loadedSavedFilter.name}`}
+                  />
+                ) : null}
+
+                <AnalysisFiltersPanelSections
+                  counts={counts}
+                  derived={derived}
+                  expandedSections={expandedSections}
+                  includeOnlyNewFreqs={includeOnlyNewFreqs}
+                  isSectionLoading={isSectionLoading}
+                  loadingIndicator={<CircularProgress size={14} thickness={5} />}
+                  loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
+                  options={options}
+                  queryState={queryState}
+                  setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
+                  toggleSection={toggleSection}
+                  updateQueryState={updateQueryState}
+                />
+              </Box>
+
+              <Divider sx={{ my: 1.25 }} />
+
+              <AnalysisSavedFiltersCard
+                isDirty={isDirty}
+                loadedSavedFilter={loadedSavedFilter}
+                saveInFlight={saveInFlight}
+                savedFilterName={savedFilterName}
+                savedFilters={savedFilters}
+                onApplySavedFilter={applySavedFilter}
+                onDeleteLoadedSavedFilter={deleteLoadedSavedFilter}
+                onRenameExisting={renameExistingSavedFilter}
+                onSaveAsNew={saveAsNew}
+                onSavedFilterNameChange={setSavedFilterName}
+                onUpdateExisting={updateExisting}
+              />
+            </>
+          )
+        ) : null}
       </Stack>
     </Paper>
   );
