@@ -60,6 +60,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
   const dataFreqValues = useMemo(() => data.options.freqs.map((option) => option.value), [data.options.freqs]);
   const dataNewFreqValues = useMemo(() => data.options.newFreqs.map((option) => option.value), [data.options.newFreqs]);
+  const analysisReq = useMemo(() => buildAnalysisReq(queryState, dataFreqValues), [dataFreqValues, queryState]);
 
   const savedFilters = useAnalysisSavedFilters({
     allFrequencies: dataFreqValues,
@@ -70,6 +71,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
 
   const report = useAnalysisReport({
+    analysisReq,
     fromDateTimeStr: queryState.fromDateTimeStr,
     inboxReq: data.inboxReq,
     onError: setPageError,
@@ -85,8 +87,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
 
   const validationError = useMemo(
-    () => (buildAnalysisReq(queryState) == null ? 'Перевірте дату та час. Дата раніше 2022-01-01 не допускається.' : null),
-    [queryState],
+    () => (analysisReq == null ? 'Перевірте дату та час. Дата раніше 2022-01-01 не допускається.' : null),
+    [analysisReq],
   );
 
   const setCenterTab = useCallback((tab: 'messages' | 'summary') => {

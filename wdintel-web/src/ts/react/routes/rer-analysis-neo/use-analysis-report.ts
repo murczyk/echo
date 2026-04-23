@@ -1,7 +1,7 @@
-import type { InboxMessagesReq } from '../../../../Bindings';
+import type { AnalysisStatsReq, InboxMessagesReq } from '../../../../Bindings';
 import { useCallback, useState } from 'react';
 
-import { downloadAnalysisReport } from '../../services/api/analysis';
+import { downloadAnalysisReport, downloadAnalysisSummaryTableXlsx } from '../../services/api/analysis';
 import { downloadBlob } from '../../utils/download-blob';
 import {
   buildReportFilename,
@@ -11,6 +11,7 @@ import {
 } from './report-helpers';
 
 type Props = {
+  analysisReq: AnalysisStatsReq | null;
   fromDateTimeStr: string;
   inboxReq: InboxMessagesReq | null;
   onError: (message: string) => void;
@@ -33,6 +34,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 export function useAnalysisReport({
+  analysisReq,
   fromDateTimeStr,
   inboxReq,
   onError,
@@ -55,7 +57,31 @@ export function useAnalysisReport({
   }, []);
 
   const downloadReport = useCallback(async () => {
-    if (inboxReq == null) return;
+    if (report.template === 'summary_table') {
+      if (analysisReq == null) {
+        onError('Перевірте дату та час перед експортом.');
+        return;
+      }
+
+      setReportDownloadInFlight(true);
+      onError('');
+      try {
+        const blob = await downloadAnalysisSummaryTableXlsx(analysisReq);
+        downloadBlob(blob, buildReportFilename(report, fromDateTimeStr, toDateTimeStr));
+      } catch (error) {
+        if (!onUnauthorized(error)) {
+          onError(toErrorMessage(error));
+        }
+      } finally {
+        setReportDownloadInFlight(false);
+      }
+      return;
+    }
+
+    if (inboxReq == null) {
+      onError('Перевірте дату та час перед експортом.');
+      return;
+    }
 
     setReportDownloadInFlight(true);
     onError('');
@@ -69,7 +95,7 @@ export function useAnalysisReport({
     } finally {
       setReportDownloadInFlight(false);
     }
-  }, [fromDateTimeStr, inboxReq, onError, onUnauthorized, report, toDateTimeStr]);
+  }, [analysisReq, fromDateTimeStr, inboxReq, onError, onUnauthorized, report, toDateTimeStr]);
 
   return {
     report,
