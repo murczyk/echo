@@ -528,6 +528,124 @@ deploy _server_pos="" server:
       -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
       '{{ discord_webhook }}' || true
 
+[arg('server', long='server')]
+deploy-from-local _server_pos="" server:
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
+      set -x
+    fi
+    if [[ "{{ _server_pos }}" != "" && "{{ server }}" != "" ]]; then
+      echo "pass either positional server or --server, not both." >&2
+      exit 1
+    fi
+
+    if [[ "{{ _server_pos }}" != "" ]]; then
+      SERVER="{{ _server_pos }}"
+    elif [[ "{{ server }}" != "" ]]; then
+      SERVER="{{ server }}"
+    else
+      just _print-servers; exit 1;
+    fi
+
+    DEB_PATH=""
+    DEB_NAME=""
+
+    printf "\n🚀🚀🚀 deploying %s from local .deb 🚀🚀🚀\n\n" "$SERVER"
+
+    echo "Building local wdintel-rs deb package..."
+    (cd "{{ justfile_directory() }}" && cargo deb -p wdintel-rs)
+
+    DEB_PATH="$(ls -1t "{{ justfile_directory() }}"/target/debian/wdintel-rs_*_*.deb | head -n 1)"
+    if [[ -z "$DEB_PATH" ]]; then
+      echo "Failed to find built wdintel-rs .deb in target/debian" >&2
+      exit 1
+    fi
+    DEB_NAME="$(basename "$DEB_PATH")"
+
+    echo "Uploading ${DEB_NAME} to ${SERVER}..."
+    scp "$DEB_PATH" "${SERVER}:/var/tmp/${DEB_NAME}"
+
+    ssh "$SERVER" 'set -euo pipefail
+      if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
+        echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
+        sudo systemctl stop wdintel-rs-bgworker.service || true
+        for i in $(seq 1 120); do
+          if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
+            echo "wdintel-rs-bgworker.service is stopped."
+            break
+          fi
+          if [ "$i" -eq 120 ]; then
+            echo "wdintel-rs-bgworker.service did not stop within 120 seconds." >&2
+            exit 1
+          fi
+          sleep 1
+        done
+      else
+        echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
+      fi'
+
+    echo "Installing ${DEB_NAME} on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
+      cd /var/tmp
+      sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${DEB_NAME}'
+      rm -f './${DEB_NAME}'
+    "
+
+    ssh "$SERVER" '
+      set -euo pipefail
+
+      sudo systemctl daemon-reload
+      sudo systemctl disable --now wdintel-rs.service || true
+
+      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+        if systemctl cat "$unit" >/dev/null 2>&1; then
+          sudo systemctl disable --now "$unit" || true
+        fi
+      done
+      for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.socket" "echo-whatsapp-bot@*.socket" | awk "{print \$1}"); do
+        sudo systemctl disable --now "$unit" || true
+      done
+
+      sudo systemctl enable --now wdintel-rs.socket
+      sudo systemctl enable --now wdintel-rs-bgworker.service
+
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service; do
+        if ! systemctl is-enabled --quiet "$unit"; then
+          echo "ERROR: $unit is not enabled after deploy." >&2
+          systemctl is-enabled "$unit" || true
+          exit 1
+        fi
+      done
+
+      if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
+        echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs.socket; then
+        echo "ERROR: wdintel-rs.socket is not active on 8081." >&2
+        systemctl status --no-pager wdintel-rs.socket || true
+        exit 1
+      fi
+
+      listen_8081=$(sudo ss -ltnp | grep "LISTEN .*:8081" || true)
+      if [ -z "$listen_8081" ]; then
+        echo "ERROR: 8081 is not listening after deploy." >&2
+        sudo ss -ltnp | grep "LISTEN" | grep ":8081" || true
+        exit 1
+      fi
+      if ! printf "%s\n" "$listen_8081" | grep -q "systemd"; then
+        echo "ERROR: 8081 is bound by unexpected process after deploy." >&2
+        printf "%s\n" "$listen_8081"
+        exit 1
+      fi
+
+      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, 8081 via systemd ✅✅✅"
+    '
+
 collect-ip-loop:
     #!/bin/bash
     set -euxo pipefail
