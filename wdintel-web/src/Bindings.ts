@@ -985,6 +985,7 @@ export type InboxMessagesRsp = {
   signalProfiles: Record<string, SignalProfileEntry | null>;
   signalGroups: Array<SignalGroupEntry>;
   freqPelengsSummary: Array<FreqPelengsEntry> | null;
+  pageLimit: number | null;
 };
 
 export type FreqDetailedPoint = {
@@ -2699,6 +2700,7 @@ export type SystemSettingsCurrentRsp = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
   rerDutyTestEnabled: boolean;
+  rerDutyInsertHistoricalInterceptions: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
@@ -2708,6 +2710,7 @@ export type SystemSettingsItem = {
   id: number;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
   rerDutyTestEnabled: boolean;
+  rerDutyInsertHistoricalInterceptions: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
@@ -2724,6 +2727,7 @@ export type SystemSettingsListRsp = {
 export type CreateSystemSettingsReq = {
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
   rerDutyTestEnabled: boolean;
+  rerDutyInsertHistoricalInterceptions: boolean;
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;

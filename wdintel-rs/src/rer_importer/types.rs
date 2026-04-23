@@ -281,6 +281,7 @@ pub struct InboxMessagesRsp {
     pub signal_profiles: BTreeMap<String, Option<SignalProfileEntry>>,
     pub signal_groups: Vec<SignalGroupEntry>,
     pub freq_pelengs_summary: Option<Vec<FreqPelengsEntry>>,
+    pub page_limit: Option<i64>,
 }
 
 #[derive(

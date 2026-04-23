@@ -353,7 +353,7 @@ export function useAnalysisData({
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       await loadMissingNetworksForMessages(rsp.inboxItems ?? []);
       setNolimitShown(true);
-      setNoMoreToLoad(true);
+      setNoMoreToLoad(isAnalysisInboxPageExhausted(rsp.inboxItems, rsp.pageLimit));
     } catch (loadError) {
       if (!onUnauthorized(loadError)) {
         onError(toErrorMessage(loadError));
@@ -385,7 +385,7 @@ export function useAnalysisData({
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       setMessages((current) => [...current, ...nextMessages]);
       await loadMissingNetworksForMessages(nextMessages);
-      if (isAnalysisInboxPageExhausted(nextMessages)) {
+      if (isAnalysisInboxPageExhausted(nextMessages, rsp.pageLimit)) {
         setNoMoreToLoad(true);
       }
     } catch (loadError) {

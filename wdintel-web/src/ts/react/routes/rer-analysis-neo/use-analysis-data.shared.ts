@@ -3,7 +3,6 @@ import type { NewCallsignsRes } from '../../../../Bindings';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
 
 const FILTER_LABEL_COLLATOR = new Intl.Collator('uk', { sensitivity: 'base', numeric: true });
-export const ANALYSIS_INBOX_PAGE_LIMIT = 20;
 
 export function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -14,8 +13,12 @@ export function topItems<T>(list: T[], getKey: (item: T) => string, getCount: (i
   return sortAndTakeTopAnalysisCountItems(list.map((item) => ({ key: getKey(item), count: getCount(item) })));
 }
 
-export function isAnalysisInboxPageExhausted(items: Array<unknown> | null | undefined): boolean {
-  return (items?.length ?? 0) < ANALYSIS_INBOX_PAGE_LIMIT;
+export function isAnalysisInboxPageExhausted(
+  items: Array<unknown> | null | undefined,
+  pageLimit: number | null | undefined,
+): boolean {
+  if (pageLimit == null) return false;
+  return (items?.length ?? 0) < pageLimit;
 }
 
 export function normalizeFilterLabel(label: string): string {

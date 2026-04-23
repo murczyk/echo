@@ -555,7 +555,7 @@ describe('MarkedText', () => {
     });
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('РЖАВИЙ');
-    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
 
@@ -593,6 +593,25 @@ describe('MarkedText', () => {
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ЛУНА');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+  });
+
+  it('keeps search-highlighted non-catalog callsigns as plain text', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'ГЛОБУС', begin: 0, end: 6, etalon: 'ГЛОБУС' } }]}
+          bodyText="ГЛОБУС"
+          searchText="ГЛОБУС"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{}}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')?.textContent).toBe('ГЛОБУС');
   });
 
   it('uses multiline wrapping styles for long tooltip rows', async () => {

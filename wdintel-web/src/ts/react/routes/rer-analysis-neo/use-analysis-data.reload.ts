@@ -433,7 +433,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
       params.setMessages(inboxRsp.inboxItems ?? []);
       params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(inboxRsp.callsigns, null));
-      params.setNoMoreToLoad(isAnalysisInboxPageExhausted(inboxRsp.inboxItems));
+      params.setNoMoreToLoad(isAnalysisInboxPageExhausted(inboxRsp.inboxItems, inboxRsp.pageLimit));
       params.setHasLoadedInitialMessages(true);
       params.setMessagesLoading(false);
 
@@ -470,7 +470,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             // rebuilt summary/count/map data with the old inbox response.
             params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
             params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(rebuiltInboxRsp.callsigns, null));
-            params.setNoMoreToLoad(isAnalysisInboxPageExhausted(rebuiltInboxRsp.inboxItems));
+            params.setNoMoreToLoad(isAnalysisInboxPageExhausted(rebuiltInboxRsp.inboxItems, rebuiltInboxRsp.pageLimit));
             resolvedAnalysisReq = rebuiltAnalysisReq;
             resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltInboxRsp;

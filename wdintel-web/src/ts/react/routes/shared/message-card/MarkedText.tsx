@@ -114,17 +114,6 @@ function searchHighlightedCallsignBaseSx(theme: Theme): CSSProperties {
   };
 }
 
-function searchHighlightedCallsignLinkSx(theme: Theme): CSSProperties {
-  return {
-    ...searchHighlightedCallsignBaseSx(theme),
-    color: 'var(--message-callsign-color)',
-    textDecoration: 'underline',
-    textDecorationColor: 'currentColor',
-    textDecorationThickness: '2px',
-    textUnderlineOffset: '2px',
-  };
-}
-
 function searchHighlightedCallsignPlainSx(theme: Theme): CSSProperties {
   return {
     ...searchHighlightedCallsignBaseSx(theme),
@@ -295,36 +284,13 @@ function KeywordToken({ text }: { text: string }) {
 }
 
 function SearchHighlightedCallsign({
-  text,
-  href,
-  linkCallsigns,
+  children,
 }: {
-  text: string;
-  href: string;
-  linkCallsigns: boolean;
+  children: ReactNode;
 }) {
-  if (!linkCallsigns) {
-    return (
-      <Box
-        component="span"
-        className="badge-highlighed-token badge-highlighed-token--callsign"
-        sx={searchHighlightedCallsignPlainSx}
-      >
-        {text}
-      </Box>
-    );
-  }
-
   return (
-    <Box
-      component="a"
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="content-token--ADP hover:cursor-pointer badge-highlighed-token badge-highlighed-token--callsign"
-      sx={searchHighlightedCallsignLinkSx}
-    >
-      {text}
+    <Box component="span" className="badge-highlighed-token badge-highlighed-token--callsign" sx={searchHighlightedCallsignPlainSx}>
+      {children}
     </Box>
   );
 }
@@ -354,10 +320,8 @@ function CallsignWithHint({
   const hasCatalogMatch = (callsignInfo?.length ?? 0) > 0;
   const isNetworkRelated = hasCatalogMatch && !!networks && !!unitsMap && isCallsignRelatedToNetworks(callsignInfo, networks, unitsMap);
   const hasMessageNetworks = (networkIds?.length ?? 0) > 0;
-
-  if (searchHighlighted) {
-    return <SearchHighlightedCallsign text={displayText} href={href} linkCallsigns={linkCallsigns} />;
-  }
+  const wrapSearchHighlighted = (node: ReactNode) =>
+    searchHighlighted ? <SearchHighlightedCallsign>{node}</SearchHighlightedCallsign> : node;
 
   // Behavior change: callsign highlighting is intentionally split into 4 UX states.
   // States 1-3 stay clickable; state 4 is intentionally plain text.
@@ -366,7 +330,7 @@ function CallsignWithHint({
 
   // If we don't have networks or unitsMap, just render as plain link
   if (!networks || !unitsMap) {
-  return (
+    return wrapSearchHighlighted(
       linkCallsigns ? (
         <a
           href={href}
@@ -384,7 +348,7 @@ function CallsignWithHint({
         >
           {displayText}
         </Box>
-      )
+      ),
     );
   }
 
@@ -420,11 +384,11 @@ function CallsignWithHint({
   if (tooltipText == null) {
     if (hasMessageNetworks) {
       if (!hasCatalogMatch) {
-        return renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' });
+        return wrapSearchHighlighted(renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }));
       }
-      return callsignDisplay;
+      return wrapSearchHighlighted(callsignDisplay);
     }
-    return shouldLinkCallsign ? callsignDisplay : renderPlainCallsign(displayText);
+    return wrapSearchHighlighted(shouldLinkCallsign ? callsignDisplay : renderPlainCallsign(displayText));
   }
 
   return (
@@ -509,7 +473,7 @@ function CallsignWithHint({
         }}
       >
         <Box component="span" sx={{ display: 'inline-block', pr: '8px' }}>
-          {callsignDisplay}
+          {wrapSearchHighlighted(callsignDisplay)}
         </Box>
       </Badge>
     </Tooltip>
