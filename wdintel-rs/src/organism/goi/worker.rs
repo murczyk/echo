@@ -64,11 +64,6 @@ async fn goi_association_worker_step(
     let integrations = load_goi_worker_integrations(&env.dbx, with_api_jobs)
         .await
         .c(h!())?;
-    if integrations.is_empty() {
-        log::warn!("[goi_association_worker] sleeping, nothing to do");
-        tokio::time::sleep(goi_worker_sleep_duration()).await;
-        return Ok(());
-    }
 
     for integration in integrations {
         if with_api_jobs && goi_integration_has_api_config(&integration) {
@@ -104,7 +99,8 @@ async fn goi_association_worker_step(
         tokio::time::sleep(goi_worker_sleep_duration()).await;
     }
 
-    log::warn!("[goi_association_worker] synced integrations successfully");
+    log::debug!("[goi_association_worker] synced integrations successfully");
+    tokio::time::sleep(goi_worker_sleep_duration()).await;
     Ok(())
 }
 
