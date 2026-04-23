@@ -50,7 +50,7 @@ async fn goi_worker_nofail(env: Arc<Env>, with_api_jobs: bool) {
         if let Err(err) =
             goi_association_worker_step(&env, &mut state, with_api_jobs).await
         {
-            log::warn!("GOI association worker step failed: {err:#}");
+            log::warn!("GOI association worker step failed: {err:#?}");
             tokio::time::sleep(goi_worker_sleep_duration()).await;
         }
     }
@@ -65,6 +65,7 @@ async fn goi_association_worker_step(
         .await
         .c(h!())?;
     if integrations.is_empty() {
+        log::warn!("[goi_association_worker] sleeping, nothing to do");
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
     }
@@ -74,20 +75,20 @@ async fn goi_association_worker_step(
             if let Err(err) = sync_goi_associations(env, &integration).await {
                 let label = integration.server_label.clone();
                 log::warn!(
-                    "Skipping GOI association sync for {label}: {err:#}"
+                    "[goi_association_worker] Skipping GOI association sync for {label}: {err:#?}"
                 );
             }
             if let Err(err) =
                 sync_goi_knowledge_if_due(env, &integration, state).await
             {
                 let label = integration.server_label.clone();
-                log::warn!("Skipping GOI knowledge sync for {label}: {err:#}");
+                log::warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {err:#?}");
             }
             if let Err(err) =
                 push_goi_report_if_due(env, &integration, state).await
             {
                 let label = integration.server_label.clone();
-                log::warn!("Skipping GOI report push for {label}: {err:#}");
+                log::warn!("Skipping GOI report push for {label}: {err:#?}");
             }
         }
         if !with_api_jobs {
@@ -96,12 +97,14 @@ async fn goi_association_worker_step(
             {
                 let label = integration.server_label.clone();
                 log::warn!(
-                    "Skipping GOI palitra folder sync for {label}: {err:#}"
+                    "Skipping GOI palitra folder sync for {label}: {err:#?}"
                 );
             }
         }
         tokio::time::sleep(goi_worker_sleep_duration()).await;
     }
+
+    log::warn!("[goi_association_worker] synced integrations successfully");
     Ok(())
 }
 
