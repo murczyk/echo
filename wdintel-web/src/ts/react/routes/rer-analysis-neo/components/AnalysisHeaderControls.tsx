@@ -8,12 +8,18 @@ type Props = Pick<AnalysisPageState, 'queryState'> & Pick<AnalysisPageActions, '
 export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) {
   return (
     <Stack
-      direction="row"
+      direction={{ xs: 'column', sm: 'row' }}
       spacing={1}
-      alignItems="center"
-      sx={{ width: 'fit-content', maxWidth: '100%', minWidth: 0, flexWrap: 'wrap', justifyContent: 'flex-start' }}
+      alignItems={{ xs: 'stretch', sm: 'center' }}
+      sx={{
+        width: { xs: '100%', sm: 'fit-content' },
+        maxWidth: '100%',
+        minWidth: 0,
+        flexWrap: { xs: 'nowrap', sm: 'wrap' },
+        justifyContent: 'flex-start',
+      }}
     >
-      <Box sx={{ width: { xs: '100%', sm: 220 }, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+      <Box sx={{ width: { xs: '100%', sm: 220 }, minWidth: 0, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
         <TextField
           placeholder="Пошук"
           size="small"
@@ -38,7 +44,7 @@ export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) 
           }}
         />
       </Box>
-      <Box sx={{ width: { xs: '100%', sm: 280 }, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+      <Box sx={{ width: { xs: '100%', sm: 280 }, minWidth: 0, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
         <DateTimeRangeControl
           value={{
             fromDateTimeStr: queryState.fromDateTimeStr,

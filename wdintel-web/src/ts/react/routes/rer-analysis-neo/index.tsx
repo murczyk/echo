@@ -17,8 +17,10 @@ import {
   Tab,
   Tabs,
   Tooltip,
+  useMediaQuery,
 } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
+import { useTheme } from '@mui/material/styles';
 
 import { PageHeader } from '../../components/PageHeader';
 import { PowerChip } from '../../components/PowerChip';
@@ -39,6 +41,8 @@ export type RerAnalysisNeoPageProps = {
 
 export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPageProps = {}) {
   const page = useRerAnalysisNeoPage(authUserName);
+  const theme = useTheme();
+  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
   const mapTabId = `${centerTabsId}-map-tab`;
@@ -68,12 +72,41 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   }, [page.centerTab]);
 
   return (
-    <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
+    <Box
+      sx={{
+        height: { xs: '100dvh', lg: '100%' },
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: { xs: 1, lg: 2 },
+        pb: { xs: 2, lg: 2 },
+        overflow: 'hidden',
+      }}
+    >
       <PageHeader
         title="Аналіз"
         middle={<AnalysisHeaderControls queryState={page.queryState} updateQueryState={page.updateQueryState} />}
+        titleActions={
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
+            onClick={page.openReport}
+            title="Відкрити конструктор звітів"
+            startIcon={<Box component="i" className="bi bi-journal-text" sx={{ fontSize: 14 }} />}
+            sx={{ height: 36, px: 1.25, display: { xs: 'inline-flex', md: 'none' }, whiteSpace: 'nowrap' }}
+          >
+            Конструктор
+          </Button>
+        }
         actions={
-          <Button variant="contained" color="primary" onClick={page.openReport} title="Відкрити конструктор звітів" sx={{ height: 44, px: 2 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={page.openReport}
+            title="Відкрити конструктор звітів"
+            sx={{ height: 44, px: 2, display: { xs: 'none', md: 'inline-flex' } }}
+          >
             Конструктор звітів
           </Button>
         }
@@ -130,7 +163,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     borderRight: '1px solid',
                     borderColor: 'divider',
                     overflow: 'hidden',
-                    display: { xs: 'block', lg: page.leftPanelOpen ? 'block' : 'none' },
+                    display: { xs: 'flex', lg: page.leftPanelOpen ? 'block' : 'none' },
+                    flexDirection: 'column',
+                    height: '100%',
                   }}
                 >
                   <AnalysisFiltersPanel {...page} />
@@ -194,7 +229,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   position: 'relative',
                 }}
               >
-                <Stack spacing={0.75} sx={{ px: 2, pt: 1, mb: 0.25 }}>
+                <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
                   <Skeleton variant="text" width={320} height={40} />
                   <Stack direction="row" spacing={1} flexWrap="wrap">
                     <Skeleton variant="rounded" width={160} height={32} />
@@ -202,7 +237,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     <Skeleton variant="rounded" width={112} height={32} />
                   </Stack>
                 </Stack>
-                <Box sx={{ flex: 1, minHeight: 0, px: 2, pb: 2, pt: 1, overflow: 'hidden' }}>
+                <Box sx={{ flex: 1, minHeight: 0, px: { xs: 1, lg: 2 }, pb: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, overflow: 'hidden' }}>
                   <Stack spacing={1.5}>
                     {Array.from({ length: 7 }).map((_, index) => (
                       <Skeleton key={index} variant="rounded" height={72} />
@@ -289,15 +324,15 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     minWidth: 0,
                     borderLeft: '1px solid',
                     borderColor: 'divider',
-                    p: 2,
+                    p: { xs: 1, lg: 2 },
                     display: 'flex',
                     flexDirection: 'column',
                   }}
                 >
                   <Stack spacing={2}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                       <Skeleton variant="text" width={280} height={40} />
-                      <Stack direction="row" spacing={2}>
+                      <Stack direction="row" spacing={1}>
                         <Skeleton variant="rounded" width={92} height={28} />
                         <Skeleton variant="rounded" width={92} height={28} />
                       </Stack>
@@ -393,12 +428,12 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   position: 'relative',
                 }}
               >
-                <Stack spacing={0.75} sx={{ px: 2, pt: 1, mb: page.centerTab === 'map' ? 0 : 0.25 }}>
+                <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: page.centerTab === 'map' ? 0 : 0.25 }}>
                   <Tabs
                     value={page.centerTab}
                     onChange={(_event, value) => page.setCenterTab(value)}
                     variant="scrollable"
-                    allowScrollButtonsMobile
+                    scrollButtons={isMobileLayout ? false : 'auto'}
                     sx={{
                       minHeight: 0,
                       width: '100%',
@@ -437,27 +472,31 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   {page.centerTab === 'map' || page.centerTab === 'summary' ? null : (
                     <Stack
                       direction="row"
-                      spacing={1.5}
-                      flexWrap="wrap"
+                      spacing={0.75}
+                      flexWrap="nowrap"
                       alignItems="center"
                       justifyContent="space-between"
                       role="status"
                       aria-live="polite"
                       aria-label="Поточна статистика вибірки"
-                      sx={{ rowGap: 1, width: '100%' }}
+                      sx={{ width: '100%', minWidth: 0 }}
                     >
                       <FormControlLabel
                         control={<Switch checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
                         label="спочатку нові"
-                        sx={{ mr: 0, '& .MuiFormControlLabel-label': { fontSize: 14, fontWeight: 500 } }}
+                        sx={{
+                          mr: 0,
+                          flexShrink: 0,
+                          whiteSpace: 'nowrap',
+                          '& .MuiFormControlLabel-label': { fontSize: { xs: 12.5, sm: 13 }, fontWeight: 500, lineHeight: 1.2 },
+                        }}
                       />
                       <Stack
                         direction="row"
-                        spacing={1.5}
-                        flexWrap="wrap"
-                        useFlexGap
+                        spacing={0.75}
+                        flexWrap="nowrap"
                         justifyContent="flex-end"
-                        sx={{ ml: 'auto', width: { xs: '100%', sm: 'auto' } }}
+                        sx={{ ml: 'auto', minWidth: 0, flexShrink: 0, width: 'auto' }}
                       >
                         {page.countsLoading ? (
                           <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 32, px: 1.5 }}>
@@ -465,121 +504,146 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                           </Box>
                         ) : (
                           <>
-                            <PowerChip label={"Всього: " + (page.counts?.countOverall ?? 0)} color="default" />
-                            <PowerChip label={"Обрано: " + (page.counts?.countSelected ?? 0)} color="primary" selected />
+                            <PowerChip
+                              label={'Всього: ' + (page.counts?.countOverall ?? 0)}
+                              color="default"
+                              size="small"
+                              fontSize="0.72rem"
+                              labelPaddingX={0.4}
+                            />
+                            <PowerChip
+                              label={'Обрано: ' + (page.counts?.countSelected ?? 0)}
+                              color="primary"
+                              selected
+                              size="small"
+                              fontSize="0.72rem"
+                              labelPaddingX={0.4}
+                            />
                           </>
                         )}
                       </Stack>
                     </Stack>
                   )}
                 </Stack>
-
                 <Box
-                  id={messagesPanelId}
-                  role="tabpanel"
-                  hidden={page.centerTab !== "messages"}
-                  aria-labelledby={messagesTabId}
                   sx={{
                     flex: 1,
-                    minWidth: 0,
                     minHeight: 0,
-                    px: 2,
-                    pb: 2,
-                    pt: 1,
-                    display: page.centerTab === "messages" ? "flex" : "none",
-                    overflow: "hidden",
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflowY: { xs: 'auto', lg: 'hidden' },
+                    overflowX: 'hidden',
+                    WebkitOverflowScrolling: 'touch',
+                    overscrollBehavior: { xs: 'contain', lg: 'auto' },
                   }}
                 >
-                  <AnalysisMessagesPane
-                    authUserName={page.authUserName}
-                    copiedFeedbackId={page.copiedFeedbackId}
-                    editorMessage={page.editorMessage}
-                    editorSaveInFlight={page.editorSaveInFlight}
-                    groupInfos={page.groupInfos}
-                    loading={messagesPaneLoading}
-                    paginationLoading={page.messagesPaging}
-                    messages={page.messages}
-                    networkDisplayMap={page.networkDisplayMap}
-                    noMoreToLoad={page.noMoreToLoad}
-                    onCloseEditor={page.closeEditor}
-                    onDeleteMessage={page.onDeleteMessage}
-                    onLoadMoreMessages={page.loadMoreMessages}
-                    onOpenEditor={page.openEditor}
-                    onSaveEditor={page.saveEditor}
-                    onSaveMessageUpdate={page.saveMessageUpdate}
-                    onSaveMessageComment={page.onSaveMessageComment}
-                    onToggleMessageBookmark={page.onToggleMessageBookmark}
-                    onToggleMessageImportant={page.onToggleMessageImportant}
-                    onToggleMessageTag={page.onToggleMessageTag}
-                    profiles={page.profiles}
-                    tagsMap={page.tagsMap}
-                    tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
-                    callsignInfoMap={page.summaryCallsignsInfo}
-                    networks={page.networks}
-                    unitsMap={page.unitsMap}
-                  />
-                </Box>
-
-                <Box
-                  id={mapPanelId}
-                  role="tabpanel"
-                  hidden={page.centerTab !== "map"}
-                  aria-labelledby={mapTabId}
-                  sx={{
-                    flex: 1,
-                    minWidth: 0,
-                    minHeight: 0,
-                    display: page.centerTab === "map" ? "flex" : "none",
-                    overflow: "hidden",
-                  }}
-                >
-                  {mountedTabs.map ? (
-                    <AnalysisMapPane
-                      visible={page.centerTab === "map"}
-                      mapAttrs={page.mapAttrs}
-                      search={page.queryState.search}
-                      onDateRangeChange={page.refreshMapDateRange}
-                      onExit={() => page.setCenterTab('messages')}
-                      onLoadMessages={page.loadMessagesForMap}
-                      onUnitClick={page.toggleUnitFromMap}
-                    />
-                  ) : null}
-                </Box>
-
-                <Box
-                  id={summaryPanelId}
-                  role="tabpanel"
-                  hidden={page.centerTab !== "summary"}
-                  aria-labelledby={summaryTabId}
-                  sx={{
-                    flex: 1,
-                    minWidth: 0,
-                    minHeight: 0,
-                    px: 2,
-                    pb: 2,
-                    display: page.centerTab === "summary" ? "flex" : "none",
-                    overflow: "hidden",
-                  }}
-                >
-                  {page.centerTab === 'summary' ? (
-                    <AnalysisSummaryTableCard
-                      callsignInfoMap={page.summaryCallsignsInfo}
+                  <Box
+                    id={messagesPanelId}
+                    role="tabpanel"
+                    hidden={page.centerTab !== 'messages'}
+                    aria-labelledby={messagesTabId}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 0,
+                      px: { xs: 1, lg: 2 },
+                      pb: { xs: 1, lg: 2 },
+                      pt: { xs: 0.5, lg: 1 },
+                      display: page.centerTab === 'messages' ? 'flex' : 'none',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <AnalysisMessagesPane
+                      authUserName={page.authUserName}
+                      copiedFeedbackId={page.copiedFeedbackId}
+                      editorMessage={page.editorMessage}
+                      editorSaveInFlight={page.editorSaveInFlight}
+                      groupInfos={page.groupInfos}
+                      loading={messagesPaneLoading}
+                      paginationLoading={page.messagesPaging}
+                      messages={page.messages}
                       networkDisplayMap={page.networkDisplayMap}
+                      noMoreToLoad={page.noMoreToLoad}
+                      onCloseEditor={page.closeEditor}
+                      onDeleteMessage={page.onDeleteMessage}
+                      onLoadMoreMessages={page.loadMoreMessages}
+                      onOpenEditor={page.openEditor}
+                      onSaveEditor={page.saveEditor}
+                      onSaveMessageUpdate={page.saveMessageUpdate}
+                      onSaveMessageComment={page.onSaveMessageComment}
+                      onToggleMessageBookmark={page.onToggleMessageBookmark}
+                      onToggleMessageImportant={page.onToggleMessageImportant}
+                      onToggleMessageTag={page.onToggleMessageTag}
+                      profiles={page.profiles}
+                      tagsMap={page.tagsMap}
+                      tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
+                      callsignInfoMap={page.summaryCallsignsInfo}
                       networks={page.networks}
-                      onDownloadGeojson={page.downloadGeojson}
-                      onDownloadKmz={page.downloadKmz}
-                      onDownloadXlsx={page.downloadSummaryXlsx}
-                      onRenameUnit={page.renameSummaryUnit}
-                      onSelectFreq={page.selectOnlyFreq}
-                      onShowFreqOnMap={page.showFreqOnMap}
-                      loading={page.summaryLoading}
-                      rows={page.summaryRows}
-                      sx={{ flex: 1, minWidth: 0 }}
-                      tableContainerSx={{ maxHeight: '100%' }}
-                      title="Таблиця частот"
                       unitsMap={page.unitsMap}
                     />
-                  ) : null}
+                  </Box>
+
+                  <Box
+                    id={mapPanelId}
+                    role="tabpanel"
+                    hidden={page.centerTab !== 'map'}
+                    aria-labelledby={mapTabId}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 0,
+                      display: page.centerTab === 'map' ? 'flex' : 'none',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {mountedTabs.map ? (
+                      <AnalysisMapPane
+                        visible={page.centerTab === 'map'}
+                        mapAttrs={page.mapAttrs}
+                        search={page.queryState.search}
+                        onDateRangeChange={page.refreshMapDateRange}
+                        onExit={() => page.setCenterTab('messages')}
+                        onLoadMessages={page.loadMessagesForMap}
+                        onUnitClick={page.toggleUnitFromMap}
+                      />
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id={summaryPanelId}
+                    role="tabpanel"
+                    hidden={page.centerTab !== 'summary'}
+                    aria-labelledby={summaryTabId}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 0,
+                      px: 2,
+                      pb: 2,
+                      display: page.centerTab === 'summary' ? 'flex' : 'none',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {page.centerTab === 'summary' ? (
+                      <AnalysisSummaryTableCard
+                        callsignInfoMap={page.summaryCallsignsInfo}
+                        networkDisplayMap={page.networkDisplayMap}
+                        networks={page.networks}
+                        onDownloadGeojson={page.downloadGeojson}
+                        onDownloadKmz={page.downloadKmz}
+                        onDownloadXlsx={page.downloadSummaryXlsx}
+                        onRenameUnit={page.renameSummaryUnit}
+                        onSelectFreq={page.selectOnlyFreq}
+                        onShowFreqOnMap={page.showFreqOnMap}
+                        loading={page.summaryLoading}
+                        rows={page.summaryRows}
+                        sx={{ flex: 1, minWidth: 0 }}
+                        tableContainerSx={{ maxHeight: '100%' }}
+                        title="Таблиця частот"
+                        unitsMap={page.unitsMap}
+                      />
+                    ) : null}
+                  </Box>
                 </Box>
 
               </Paper>

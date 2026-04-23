@@ -1,7 +1,8 @@
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
-import { Box, Tab, Tabs } from '@mui/material';
+import { Box, Tab, Tabs, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { AnalysisCallsignGraphCard } from './AnalysisCallsignGraphCard';
@@ -72,6 +73,9 @@ export function AnalysisSidebar({
   topUnits,
   toggleCallsignGraphNolimit,
 }: Props) {
+  const theme = useTheme();
+  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
+
   return (
     <Box
       component="aside"
@@ -83,13 +87,16 @@ export function AnalysisSidebar({
           value={rightSidebarTab ?? false}
           onChange={(_event, value) => setRightSidebarTab(value as 'stats' | 'callsigns' | 'newCallsigns')}
           variant="scrollable"
-          allowScrollButtonsMobile
+          scrollButtons={isMobileLayout ? false : 'auto'}
           aria-label="Вкладки правої панелі аналізу"
           sx={{
             minHeight: 0,
             width: '100%',
             px: { xs: 0.5, sm: 1, md: 1.5 },
-            '& .MuiTabs-flexContainer': { gap: 1 },
+            '& .MuiTabs-flexContainer': {
+              gap: 1,
+              alignItems: 'stretch',
+            },
             '& .MuiTabs-scroller': {
               px: 0,
             },
@@ -98,14 +105,18 @@ export function AnalysisSidebar({
               flexShrink: 0,
             },
             '& .MuiTab-root': {
-              minHeight: 40,
+              minHeight: 44,
               px: 1.25,
-              py: 0.5,
+              py: 0,
               whiteSpace: 'nowrap',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 1.1,
             },
             '& .MuiTab-iconWrapper': {
               mr: 1,
               mb: 0,
+              alignItems: 'center',
             },
           }}
         >
