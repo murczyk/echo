@@ -12,12 +12,14 @@ path = "src/lib.rs"
 
 [dependencies]
 actix-web = { workspace = true }
+async-stream = "0.3.6"
 anyhow = { workspace = true }
 base64 = "0.22.1"
 calamine = { version = "0.30.1", features = ["dates"] }
 chrono = { workspace = true, features = ["serde"] }
 chrono-tz = "0.10.4"
 env_logger = "0.11.9"
+futures-util = "0.3.32"
 log = { workspace = true }
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }

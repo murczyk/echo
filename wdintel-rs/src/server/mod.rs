@@ -98,6 +98,8 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .timeout(core::time::Duration::from_secs(RQ_TIMEOUT))
         .build()
         .c(h!())?;
+    let rq_goi_associations: reqwest::Client =
+        reqwest::Client::builder().build().c(h!())?;
     let m_greptimedb = if config.greptime_host.is_some()
         && config.greptime_host != Some("".to_string())
     {
@@ -161,6 +163,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         rq,
+        rq_goi_associations,
         config: config.clone(),
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),

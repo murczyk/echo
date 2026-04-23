@@ -1,4 +1,5 @@
 use crate::config::{
+    ORGANISM_GOI_API_TIMEOUT_SEC, ORGANISM_GOI_ASSOCIATIONS_INSERT_BATCH_SIZE,
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
     ORGANISM_GOI_INTEGRATION_TYPE_FULL,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
@@ -14,6 +15,8 @@ use crate::organism::goi::shared::{
 };
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
+use bytes::BytesMut;
+use futures_util::StreamExt;
 use goi_echo_worker::api::{
     AssociationApiItem, ImportSignedFrequenciesRsp, KnowledgeApiItem,
     ListAssociationsReq,
@@ -23,6 +26,7 @@ use sea_orm::*;
 use sea_query::Expr;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use tokio::task::JoinSet;
 use url::Url;
 
 const GOI_FREQUENCIES_IMPORT_PATH: &str = "/api/frequencies/signed/import";
@@ -34,6 +38,12 @@ struct GoiWorkerState {
     last_knowledge_sync_attempt_at: HashMap<i64, Instant>,
     last_report_push_attempt_at: HashMap<i64, Instant>,
     last_palitra_folder_sync_attempt_at: HashMap<i64, Instant>,
+}
+
+struct GoiApiJob {
+    integration: goi_integration::Model,
+    sync_knowledge: bool,
+    push_report: bool,
 }
 
 pub async fn goi_association_worker_nofail(env: Arc<Env>) {
@@ -57,51 +67,126 @@ async fn goi_worker_nofail(env: Arc<Env>, with_api_jobs: bool) {
 }
 
 async fn goi_association_worker_step(
-    env: &Env,
+    env: &Arc<Env>,
     state: &mut GoiWorkerState,
     with_api_jobs: bool,
 ) -> Result<(), AppError> {
-    let integrations = load_goi_worker_integrations(&env.dbx, with_api_jobs)
-        .await
-        .c(h!())?;
+    let integrations =
+        load_goi_worker_integrations(&env.as_ref().dbx, with_api_jobs)
+            .await
+            .c(h!())?;
 
-    for integration in integrations {
-        if with_api_jobs && goi_integration_has_api_config(&integration) {
-            if let Err(err) = sync_goi_associations(env, &integration).await {
-                let label = integration.server_label.clone();
-                log::warn!(
-                    "[goi_association_worker] Skipping GOI association sync for {label}: {err:#?}"
-                );
-            }
-            if let Err(err) =
-                sync_goi_knowledge_if_due(env, &integration, state).await
-            {
-                let label = integration.server_label.clone();
-                log::warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {err:#?}");
-            }
-            if let Err(err) =
-                push_goi_report_if_due(env, &integration, state).await
-            {
-                let label = integration.server_label.clone();
-                log::warn!("Skipping GOI report push for {label}: {err:#?}");
-            }
-        }
-        if !with_api_jobs {
-            if let Err(err) =
-                sync_goi_palitra_folders_if_due(env, &integration, state).await
-            {
-                let label = integration.server_label.clone();
-                log::warn!(
-                    "Skipping GOI palitra folder sync for {label}: {err:#?}"
-                );
-            }
-        }
-        tokio::time::sleep(goi_worker_sleep_duration()).await;
+    if with_api_jobs {
+        run_goi_api_jobs(env, state, integrations).await;
+    } else {
+        run_goi_folder_sync_jobs(env.as_ref(), state, integrations).await;
     }
 
     log::debug!("[goi_association_worker] synced integrations successfully");
     tokio::time::sleep(goi_worker_sleep_duration()).await;
     Ok(())
+}
+
+async fn run_goi_api_jobs(
+    env: &Arc<Env>,
+    state: &mut GoiWorkerState,
+    integrations: Vec<goi_integration::Model>,
+) {
+    let mut job_set = JoinSet::new();
+    for integration in integrations {
+        if !goi_integration_has_api_config(&integration) {
+            continue;
+        }
+        let job = plan_goi_api_job(state, integration);
+        let env = env.clone();
+        job_set.spawn(async move {
+            run_goi_api_job(env, job).await;
+        });
+        tokio::time::sleep(goi_worker_sleep_duration()).await;
+    }
+    while let Some(job_result) = job_set.join_next().await {
+        if let Err(err) = job_result {
+            log::warn!("GOI API job join failed: {err:#?}");
+        }
+    }
+}
+
+async fn run_goi_folder_sync_jobs(
+    env: &Env,
+    state: &mut GoiWorkerState,
+    integrations: Vec<goi_integration::Model>,
+) {
+    for integration in integrations {
+        if let Err(err) =
+            sync_goi_palitra_folders_if_due(env, &integration, state).await
+        {
+            let label = integration.server_label.clone();
+            log::warn!(
+                "Skipping GOI palitra folder sync for {label}: {err:#?}"
+            );
+        }
+        tokio::time::sleep(goi_worker_sleep_duration()).await;
+    }
+}
+
+fn plan_goi_api_job(
+    state: &mut GoiWorkerState,
+    integration: goi_integration::Model,
+) -> GoiApiJob {
+    let sync_knowledge = goi_knowledge_sync_is_due(state, integration.id);
+    if sync_knowledge {
+        state
+            .last_knowledge_sync_attempt_at
+            .insert(integration.id, Instant::now());
+    }
+
+    let push_report = goi_report_push_is_due(state, integration.id);
+    if push_report {
+        state
+            .last_report_push_attempt_at
+            .insert(integration.id, Instant::now());
+    }
+
+    GoiApiJob {
+        integration,
+        sync_knowledge,
+        push_report,
+    }
+}
+
+async fn run_goi_api_job(env: Arc<Env>, job: GoiApiJob) {
+    if let Err(err) =
+        sync_goi_associations(env.as_ref(), &job.integration).await
+    {
+        let label = job.integration.server_label.clone();
+        log::warn!(
+            "[goi_association_worker] Skipping GOI association sync for {label}: {err:#?}"
+        );
+    }
+    if job.sync_knowledge {
+        if let Err(err) =
+            sync_goi_knowledge(env.as_ref(), &job.integration).await
+        {
+            let label = job.integration.server_label.clone();
+            log::warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {err:#?}");
+        }
+    }
+    if job.push_report {
+        match push_goi_report(env.as_ref(), &job.integration).await {
+            Ok(response) => {
+                log::info!(
+                    "Pushed GOI signed frequencies report for {} to {} ({} bytes)",
+                    job.integration.server_label,
+                    response.path,
+                    response.bytes_written
+                );
+            }
+            Err(err) => {
+                let label = job.integration.server_label.clone();
+                log::warn!("Skipping GOI report push for {label}: {err:#?}");
+            }
+        }
+    }
 }
 
 async fn sync_goi_palitra_folders_if_due(
@@ -165,36 +250,16 @@ async fn sync_goi_associations(
     let since_id = last_source_association_id(&env.dbx, integration.id)
         .await
         .c(h!())?;
-    let items = fetch_goi_associations(env, integration, since_id)
+    stream_goi_associations_into_db(env, integration, since_id)
         .await
         .c(h!())?;
-    if items.is_empty() {
-        return Ok(());
-    }
-    insert_goi_associations(
-        &env.dbx,
-        integration.id,
-        integration.owner_organism_id,
-        items,
-    )
-    .await
-    .c(h!())?;
     Ok(())
 }
 
-async fn sync_goi_knowledge_if_due(
+async fn sync_goi_knowledge(
     env: &Env,
     integration: &goi_integration::Model,
-    state: &mut GoiWorkerState,
 ) -> Result<(), AppError> {
-    if !goi_knowledge_sync_is_due(state, integration.id) {
-        return Ok(());
-    }
-
-    state
-        .last_knowledge_sync_attempt_at
-        .insert(integration.id, Instant::now());
-
     prune_old_deleted_goi_knowledge(&env.dbx, integration.id)
         .await
         .c(h!())?;
@@ -223,17 +288,18 @@ async fn last_source_association_id(
         .map(|association| association.source_association_id))
 }
 
-async fn fetch_goi_associations(
+async fn stream_goi_associations_into_db(
     env: &Env,
     integration: &goi_integration::Model,
     since_id: Option<i64>,
-) -> Result<Vec<AssociationApiItem>, AppError> {
+) -> Result<(), AppError> {
     let url = goi_associations_url(integration)?;
     let (login, password) = goi_api_credentials(integration)?;
 
     let response = env
-        .rq
+        .rq_goi_associations
         .post(url)
+        .header(reqwest::header::ACCEPT, "application/x-ndjson")
         .basic_auth(login, Some(password))
         .json(&ListAssociationsReq {
             since_id_nonincl: since_id,
@@ -243,7 +309,77 @@ async fn fetch_goi_associations(
         .c(h!())?
         .error_for_status()
         .c(h!())?;
-    Ok(response.json::<Vec<AssociationApiItem>>().await.c(h!())?)
+
+    if !goi_associations_response_is_ndjson(&response) {
+        let items = response.json::<Vec<AssociationApiItem>>().await.c(h!())?;
+        if items.is_empty() {
+            return Ok(());
+        }
+        insert_goi_associations(
+            &env.dbx,
+            integration.id,
+            integration.owner_organism_id,
+            items,
+        )
+        .await
+        .c(h!())?;
+        return Ok(());
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut line_buf = BytesMut::new();
+    let mut items_batch =
+        Vec::with_capacity(ORGANISM_GOI_ASSOCIATIONS_INSERT_BATCH_SIZE);
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.c(h!())?;
+        line_buf.extend_from_slice(&chunk);
+        while let Some(newline_pos) = line_buf.iter().position(|&b| b == b'\n')
+        {
+            let line = line_buf.split_to(newline_pos + 1);
+            let line = &line[..line.len() - 1];
+            if line.is_empty() {
+                continue;
+            }
+            items_batch.push(serde_json::from_slice(line).c(h!())?);
+            if items_batch.len() >= ORGANISM_GOI_ASSOCIATIONS_INSERT_BATCH_SIZE
+            {
+                insert_goi_associations(
+                    &env.dbx,
+                    integration.id,
+                    integration.owner_organism_id,
+                    std::mem::take(&mut items_batch),
+                )
+                .await
+                .c(h!())?;
+            }
+        }
+    }
+
+    if !line_buf.is_empty() {
+        items_batch.push(serde_json::from_slice(&line_buf).c(h!())?);
+    }
+    if items_batch.is_empty() {
+        return Ok(());
+    }
+    insert_goi_associations(
+        &env.dbx,
+        integration.id,
+        integration.owner_organism_id,
+        items_batch,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+fn goi_associations_response_is_ndjson(response: &reqwest::Response) -> bool {
+    response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.starts_with("application/x-ndjson"))
+        .unwrap_or(false)
 }
 
 async fn fetch_goi_knowledge(
@@ -256,6 +392,7 @@ async fn fetch_goi_knowledge(
     let response = env
         .rq
         .post(url)
+        .timeout(goi_api_timeout())
         .basic_auth(login, Some(password))
         .send()
         .await
@@ -265,33 +402,17 @@ async fn fetch_goi_knowledge(
     Ok(response.json::<Vec<KnowledgeApiItem>>().await.c(h!())?)
 }
 
-async fn push_goi_report_if_due(
+async fn push_goi_report(
     env: &Env,
     integration: &goi_integration::Model,
-    state: &mut GoiWorkerState,
-) -> Result<(), AppError> {
-    if !goi_report_push_is_due(state, integration.id) {
-        return Ok(());
-    }
-
-    state
-        .last_report_push_attempt_at
-        .insert(integration.id, Instant::now());
-
+) -> Result<ImportSignedFrequenciesRsp, AppError> {
     let report_xlsx =
         crate::sigint::network::goi::report_xlsx_networks_goi_to_buffer(env)
             .await
             .c(h!())?;
-    let response = post_goi_report(env, integration, report_xlsx)
+    Ok(post_goi_report(env, integration, report_xlsx)
         .await
-        .c(h!())?;
-    log::info!(
-        "Pushed GOI signed frequencies report for {} to {} ({} bytes)",
-        integration.server_label,
-        response.path,
-        response.bytes_written
-    );
-    Ok(())
+        .c(h!())?)
 }
 
 fn goi_report_push_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
@@ -334,6 +455,7 @@ async fn post_goi_report(
     let response = env
         .rq
         .post(url)
+        .timeout(goi_api_timeout())
         .basic_auth(login, Some(password))
         .header(reqwest::header::CONTENT_TYPE, GOI_XLSX_CONTENT_TYPE)
         .body(report_xlsx)
@@ -406,6 +528,10 @@ fn goi_api_credentials(
             ),
         })?;
     Ok((login, password))
+}
+
+fn goi_api_timeout() -> Duration {
+    Duration::from_secs(ORGANISM_GOI_API_TIMEOUT_SEC)
 }
 async fn insert_goi_associations(
     db: &DatabaseConnection,

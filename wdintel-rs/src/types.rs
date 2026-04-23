@@ -108,6 +108,7 @@ pub struct Env {
     /// GreptimeDB connection via Postgresql driver
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,
     pub rq: reqwest::Client,
+    pub rq_goi_associations: reqwest::Client,
     pub mil_geo: MilGeo,
     pub redis: redis::aio::ConnectionManager,
     /// Used when you need to explicitly create a connection and block on it, like for streams.

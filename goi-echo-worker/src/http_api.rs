@@ -8,6 +8,7 @@ use actix_web::{post, web, Error, HttpRequest, HttpResponse};
 use anyhow::Context;
 use base64::engine::general_purpose::STANDARD as Base64;
 use base64::Engine;
+use futures_util::TryStreamExt;
 use goi_echo_worker::api::{
     AssociationApiItem, ImportSignedFrequenciesRsp, KnowledgeApiItem,
     ListAssociationsReq,
@@ -40,16 +41,69 @@ pub async fn list_associations(
         query = query.filter(association::Column::Id.gt(since_id));
     }
 
-    let items = query
-        .all(&state.db)
-        .await
-        .context("fetching associations")
-        .map_err(ErrorInternalServerError)?
-        .into_iter()
-        .map(to_api_item)
-        .collect::<Result<Vec<_>, _>>()?;
+    if !client_accepts_ndjson(&http_req) {
+        let items = query
+            .all(&state.db)
+            .await
+            .context("fetching associations")
+            .map_err(ErrorInternalServerError)?
+            .into_iter()
+            .map(to_api_item)
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(HttpResponse::Ok().json(items));
+    }
 
-    Ok(HttpResponse::Ok().json(items))
+    let db = state.db.clone();
+    let stream = async_stream::stream! {
+        let mut associations = match query
+            .stream(&db)
+            .await
+            .context("streaming associations")
+            .map_err(ErrorInternalServerError)
+        {
+            Ok(associations) => associations,
+            Err(err) => {
+                yield Err(err);
+                return;
+            }
+        };
+        while let Some(association) = match associations
+            .try_next()
+            .await
+            .context("reading streamed association")
+            .map_err(ErrorInternalServerError)
+        {
+            Ok(association) => association,
+            Err(err) => {
+                yield Err(err);
+                return;
+            }
+        } {
+            let item = match to_api_item(association) {
+                Ok(item) => item,
+                Err(err) => {
+                    yield Err(err);
+                    return;
+                }
+            };
+            let mut body = match serde_json::to_vec(&item)
+                .context("serializing association item")
+                .map_err(ErrorInternalServerError)
+            {
+                Ok(body) => body,
+                Err(err) => {
+                    yield Err(err);
+                    return;
+                }
+            };
+            body.push(b'\n');
+            yield Ok(web::Bytes::from(body));
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/x-ndjson")
+        .streaming(stream))
 }
 
 #[post("/api/knowledge")]
@@ -149,6 +203,19 @@ fn require_basic_auth(
     } else {
         Err(ErrorUnauthorized("invalid credentials"))
     }
+}
+
+fn client_accepts_ndjson(http_req: &HttpRequest) -> bool {
+    http_req
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(',')
+                .any(|part| part.trim().starts_with("application/x-ndjson"))
+        })
+        .unwrap_or(false)
 }
 
 fn validate_xlsx_body(body: &[u8]) -> Result<(), Error> {
