@@ -16,6 +16,7 @@ pub const DEFAULT_FREQUENCIES_XLSX_PATH: &str =
 pub const DEFAULT_LISTEN_HOST: &str = "0.0.0.0";
 pub const DEFAULT_LISTEN_PORT: u16 = 8088;
 pub const DEFAULT_POLL_SLEEP_MS: u64 = 1_000;
+pub const GOI_ASSOCIATIONS_INSERT_BATCH_SIZE: usize = 20_000;
 pub const GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS: i64 = 30;
 
 #[derive(Debug, Clone, Deserialize)]

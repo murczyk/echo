@@ -156,26 +156,46 @@ async fn insert_association_rows(
     db: &DatabaseConnection,
     rows: Vec<AssociationRow>,
 ) -> Result<()> {
-    let models = rows
-        .into_iter()
-        .map(|association_row| {
-            let dedupe_key = association_row.dedupe_key();
-            let association_row = serde_json::to_value(association_row)
-                .context("serializing association row")?;
-            Ok(association::ActiveModel {
-                id: NotSet,
-                row: Set(association_row),
-                created_at: NotSet,
-                deleted: Set(false),
-                dedupe_key: Set(dedupe_key),
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    if models.is_empty() {
+    let mut models_batch = Vec::new();
+    for association_row in rows {
+        models_batch.push(association_row_to_active_model(association_row)?);
+        if models_batch.len()
+            >= crate::config::GOI_ASSOCIATIONS_INSERT_BATCH_SIZE
+        {
+            insert_association_model_batch(
+                db,
+                std::mem::take(&mut models_batch),
+            )
+            .await?;
+        }
+    }
+    if models_batch.is_empty() {
         return Ok(());
     }
+    insert_association_model_batch(db, models_batch).await?;
+    Ok(())
+}
 
-    let result = association::Entity::insert_many(models)
+fn association_row_to_active_model(
+    association_row: AssociationRow,
+) -> Result<association::ActiveModel> {
+    let dedupe_key = association_row.dedupe_key();
+    let association_row = serde_json::to_value(association_row)
+        .context("serializing association row")?;
+    Ok(association::ActiveModel {
+        id: NotSet,
+        row: Set(association_row),
+        created_at: NotSet,
+        deleted: Set(false),
+        dedupe_key: Set(dedupe_key),
+    })
+}
+
+async fn insert_association_model_batch(
+    db: &DatabaseConnection,
+    models_batch: Vec<association::ActiveModel>,
+) -> Result<()> {
+    let result = association::Entity::insert_many(models_batch)
         .on_conflict(
             OnConflict::column(association::Column::DedupeKey)
                 .do_nothing()
