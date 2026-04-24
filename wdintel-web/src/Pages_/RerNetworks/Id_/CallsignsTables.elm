@@ -133,10 +133,27 @@ loadUnknownCallsignsActivity model =
 loadUnknownCallsignsActivityForCallsigns model callsigns =
     case model.network of
         Success network ->
-            loadCallsignsActivity network.id (unknownCallsignActivityCallsigns callsigns)
+            loadCallsignsActivityWith network.id (unknownCallsignActivityCallsigns callsigns) UnknownCallsignsActivityReturnedByApi
 
         _ ->
             E.none
+
+
+loadCallsignsActivityWith networkId callsigns toMsg =
+    let
+        selectedCallsigns =
+            callsigns
+                |> List.filter (\callsign -> String.trim callsign /= "")
+                |> ListX.unique
+    in
+    if List.isEmpty selectedCallsigns then
+        E.none
+
+    else
+        E.getNetworkCallsignsActivity toMsg
+            { networkId = networkId
+            , callsigns = selectedCallsigns
+            }
 
 
 applyCallsignsActivity rsp callsigns =
@@ -214,11 +231,7 @@ update shared msg model =
               }
             , E.batch
                 [ knownActivityEffect
-                , if model.unknownCallsignsShowMessages then
-                    loadUnknownCallsignsActivityForCallsigns model res.callsigns
-
-                  else
-                    E.none
+                , loadUnknownCallsignsActivityForCallsigns model res.callsigns
                 ]
             )
 
@@ -228,6 +241,27 @@ update shared msg model =
             )
 
         CallsignsActivityReturnedByApi (Ok rsp) ->
+            ( { model
+                | callsigns =
+                    case model.callsigns of
+                        Success callsigns ->
+                            Success (applyCallsignsActivity rsp callsigns)
+
+                        NeedsReload callsigns ->
+                            NeedsReload (applyCallsignsActivity rsp callsigns)
+
+                        _ ->
+                            model.callsigns
+              }
+            , E.none
+            )
+
+        UnknownCallsignsActivityReturnedByApi (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності позивних" e
+            )
+
+        UnknownCallsignsActivityReturnedByApi (Ok rsp) ->
             ( { model
                 | callsigns =
                     case model.callsigns of
@@ -634,30 +668,16 @@ update shared msg model =
         CloseUnknownCallsignDropdown ->
             ( { model | unknownCallsignDropdown = Nothing }, E.none )
 
-        ToggleUnknownCallsignsMessages ->
-            let
-                showMessages =
-                    not model.unknownCallsignsShowMessages
-            in
-            ( { model
-                | unknownCallsignsShowMessages = showMessages
-                , unknownCallsignsSortByMessages =
-                    if model.unknownCallsignsShowMessages then
-                        model.unknownCallsignsSortByMessages
-
-                    else
-                        False
-              }
-            , if showMessages then
-                loadUnknownCallsignsActivity model
-
-              else
-                E.none
-            )
-
         ToggleUnknownCallsignsSortByMessages ->
             ( { model
                 | unknownCallsignsSortByMessages = not model.unknownCallsignsSortByMessages
+              }
+            , E.none
+            )
+
+        ToggleUnknownCallsignsShowStale ->
+            ( { model
+                | unknownCallsignsShowStale = not model.unknownCallsignsShowStale
               }
             , E.none
             )
@@ -912,6 +932,18 @@ getDevelopingCallsigns callsigns =
     List.filter (\callsign -> callsign.developing) callsigns
 
 
+isVisibleUnknownCallsign : Shared.Model -> { a | messageCount : Int, lastDatetime : Maybe Int } -> Bool
+isVisibleUnknownCallsign shared callsign =
+    let
+        activeSince =
+            Utils.Time.xDaysAgo 14 (Time.millisToPosix shared.now)
+                |> Time.posixToMillis
+    in
+    callsign.messageCount > 2
+        && Maybe.withDefault False
+            (Maybe.map (\lastDatetime -> lastDatetime >= activeSince) callsign.lastDatetime)
+
+
 view : Model -> Auth.User -> Shared.Model -> Html CallsignsMsg
 view model user shared =
     section [ class "bg-w dark:bg-[#1C1C21] w-full mt-[30px] p-[16px] flex flex-col" ]
@@ -963,29 +995,34 @@ view model user shared =
                                             (model.developingCallsignDropdown == Just callsign.id)
                                             (ToggleDevelopingCallsignDropdown callsign.id)
                                             CloseDevelopingCallsignDropdown
-                                            ([ DropdownBadge.InternalAction
-                                                { icon = "bi-pencil"
-                                                , label = "Редагувати"
-                                                , action = EditCallsignClicked callsign.id
-                                                }
-                                             , DropdownBadge.InternalAction
-                                                { icon = "bi-trash"
-                                                , label = "Видалити"
-                                                , action = DeleteCallsignFromNetwork callsign.id
-                                                }
-                                             ]
-                                                ++ (case model.network of
-                                                        Success network ->
-                                                            [ DropdownBadge.ExternalLink
+                                            (List.filterMap identity
+                                                [ Just
+                                                    (DropdownBadge.InternalAction
+                                                        { icon = "bi-pencil"
+                                                        , label = "Редагувати"
+                                                        , action = EditCallsignClicked callsign.id
+                                                        }
+                                                    )
+                                                , Just
+                                                    (DropdownBadge.InternalAction
+                                                        { icon = "bi-trash"
+                                                        , label = "Видалити"
+                                                        , action = DeleteCallsignFromNetwork callsign.id
+                                                        }
+                                                    )
+                                                , case model.network of
+                                                    Success network ->
+                                                        Just
+                                                            (DropdownBadge.ExternalLink
                                                                 { icon = "bi-arrow-right"
                                                                 , label = "Проаналізувати"
                                                                 , url = IdUtils.createAnalysisUrl shared network callsign.callsign
                                                                 }
-                                                            ]
+                                                            )
 
-                                                        _ ->
-                                                            []
-                                                   )
+                                                    _ ->
+                                                        Nothing
+                                                ]
                                             )
                                         )
                                 )
@@ -1054,6 +1091,7 @@ viewCallsigns callsigns model user shared =
                                             Just
                                                 { callsign = callsign.callsign
                                                 , messageCount = callsign.messageCount
+                                                , lastDatetime = callsign.lastDatetime
                                                 }
 
                                         else
@@ -1063,28 +1101,35 @@ viewCallsigns callsigns model user shared =
                                         Just
                                             { callsign = callsign.callsign
                                             , messageCount = callsign.messageCount
+                                            , lastDatetime = callsign.lastDatetime
                                             }
                             )
 
-                callsignsUnknownSorted =
-                    if model.unknownCallsignsShowMessages then
-                        if model.unknownCallsignsSortByMessages then
-                            List.sortWith
-                                (\left right ->
-                                    case compare right.messageCount left.messageCount of
-                                        EQ ->
-                                            compare (String.toUpper left.callsign) (String.toUpper right.callsign)
-
-                                        ordering ->
-                                            ordering
-                                )
-                                callsignsUnknown
-
-                        else
-                            List.sortBy (\entry -> String.toUpper entry.callsign) callsignsUnknown
+                callsignsUnknownVisible =
+                    if model.unknownCallsignsShowStale then
+                        callsignsUnknown
 
                     else
-                        List.sortBy (\entry -> String.toUpper entry.callsign) callsignsUnknown
+                        List.filter (isVisibleUnknownCallsign shared) callsignsUnknown
+
+                callsignsUnknownHiddenCount =
+                    List.length callsignsUnknown - List.length callsignsUnknownVisible
+
+                callsignsUnknownSorted =
+                    if model.unknownCallsignsSortByMessages then
+                        List.sortWith
+                            (\left right ->
+                                case compare right.messageCount left.messageCount of
+                                    EQ ->
+                                        compare (String.toUpper left.callsign) (String.toUpper right.callsign)
+
+                                    ordering ->
+                                        ordering
+                            )
+                            callsignsUnknownVisible
+
+                    else
+                        List.sortBy (\entry -> String.toUpper entry.callsign) callsignsUnknownVisible
               in
               div [ class "table-responsive-modern" ]
                 [ -- Таблиця "Всі позивні" (з пагінацією)
@@ -1093,21 +1138,21 @@ viewCallsigns callsigns model user shared =
                   Pager.view model.callsignsPager
                     |> Html.map CallsignsPagerMsg
                 , div [ class "mt-4 p-3 bg-[var(--color-bg-muted)] rounded" ]
-                    [ div [ class "flex flex-wrap items-center gap-2" ]
-                        [ span [ class "font-medium" ] [ text "Присутні в перехопленнях: " ]
-                        , Button.new
-                            { label =
-                                if model.unknownCallsignsShowMessages then
-                                    "Сховати сеанси"
+                    [ div [ class "flex flex-wrap items-start justify-between gap-3" ]
+                        [ div [ class "min-w-0 flex flex-col gap-1" ]
+                            [ span [ class "font-medium" ] [ text "Присутні в перехопленнях:" ]
+                            , div [ class "opacity-75", style "color" "var(--color-text)" ]
+                                [ text
+                                    (if model.unknownCallsignsShowStale then
+                                        "Всі позивні"
 
-                                else
-                                    "Показати сеанси"
-                            , onClick = ToggleUnknownCallsignsMessages
-                            }
-                            |> Button.withStyleSecondary
-                            |> Button.view
-                        , if model.unknownCallsignsShowMessages then
-                            Button.new
+                                     else
+                                        "Активні протягом 2 тижнів"
+                                    )
+                                ]
+                            ]
+                        , div [ class "flex flex-wrap items-center gap-2" ]
+                            [ Button.new
                                 { label =
                                     if model.unknownCallsignsSortByMessages then
                                         "Сортувати по імені"
@@ -1118,56 +1163,66 @@ viewCallsigns callsigns model user shared =
                                 }
                                 |> Button.withStyleSecondary
                                 |> Button.view
+                            , if model.unknownCallsignsShowStale || callsignsUnknownHiddenCount > 0 then
+                                Button.new
+                                    { label =
+                                        if model.unknownCallsignsShowStale then
+                                            "Сховати застарілі"
 
-                          else
-                            text ""
+                                        else
+                                            "Показати застарілі"
+                                    , onClick = ToggleUnknownCallsignsShowStale
+                                    }
+                                    |> Button.withStyleSecondary
+                                    |> Button.view
+
+                              else
+                                text ""
+                            ]
                         ]
-                    , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
-                        (List.map
-                            (\entry ->
-                                let
-                                    config =
-                                        DropdownBadge.config
-                                            (String.toUpper entry.callsign)
-                                            (model.unknownCallsignDropdown == Just entry.callsign)
-                                            (ToggleUnknownCallsignDropdown entry.callsign)
-                                            CloseUnknownCallsignDropdown
-                                            ([ DropdownBadge.InternalAction
-                                                { icon = "bi-plus"
-                                                , label = "Додати"
-                                                , action = OpenAddFromUnknownSidebar entry.callsign
-                                                }
-                                             ]
-                                                ++ (case model.network of
-                                                        Success network ->
-                                                            [ DropdownBadge.ExternalLink
-                                                                { icon = "bi-arrow-right"
-                                                                , label = "Проаналізувати"
-                                                                , url = IdUtils.createAnalysisUrl shared network entry.callsign
-                                                                }
-                                                            ]
+                    , if List.isEmpty callsignsUnknownSorted then
+                        div [ class "text-sm leading-6 opacity-90 mt-2", style "color" "var(--color-text)" ]
+                            [ text "Немає активних позивних" ]
 
-                                                        _ ->
-                                                            []
-                                                   )
-                                            )
-                                in
-                                div [ class "relative inline-flex items-start" ]
-                                    ([ DropdownBadge.view
-                                        (DropdownBadge.withAutoDirection DropdownBadge.Up config)
-                                     ]
-                                        ++ (if model.unknownCallsignsShowMessages then
-                                                [ span [ class "badge badge-messages" ]
-                                                    [ text <| String.fromInt entry.messageCount ]
-                                                ]
+                      else
+                        div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
+                            (List.map
+                                (\entry ->
+                                    let
+                                        config =
+                                            DropdownBadge.config
+                                                (String.toUpper entry.callsign)
+                                                (model.unknownCallsignDropdown == Just entry.callsign)
+                                                (ToggleUnknownCallsignDropdown entry.callsign)
+                                                CloseUnknownCallsignDropdown
+                                                (DropdownBadge.InternalAction
+                                                    { icon = "bi-plus"
+                                                    , label = "Додати"
+                                                    , action = OpenAddFromUnknownSidebar entry.callsign
+                                                    }
+                                                    :: (case model.network of
+                                                            Success network ->
+                                                                [ DropdownBadge.ExternalLink
+                                                                    { icon = "bi-arrow-right"
+                                                                    , label = "Проаналізувати"
+                                                                    , url = IdUtils.createAnalysisUrl shared network entry.callsign
+                                                                    }
+                                                                ]
 
-                                            else
-                                                []
-                                           )
-                                    )
+                                                            _ ->
+                                                                []
+                                                       )
+                                                )
+                                    in
+                                    div [ class "relative inline-flex items-start" ]
+                                        [ DropdownBadge.view
+                                            (DropdownBadge.withAutoDirection DropdownBadge.Up config)
+                                        , span [ class "badge badge-messages" ]
+                                            [ text <| String.fromInt entry.messageCount ]
+                                        ]
+                                )
+                                callsignsUnknownSorted
                             )
-                            callsignsUnknownSorted
-                        )
                     ]
                 ]
             ]
