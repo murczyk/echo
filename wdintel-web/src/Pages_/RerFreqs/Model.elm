@@ -40,6 +40,7 @@ type alias Model =
     , openMapRowId : Maybe String
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
     , altUnitsByFreq : Api.ListAltUnitsByFreqsRsp
+    , altUnitsRequestId : Int
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , networksExtra : Dict Int B.Network
     , rowShowAllPopupStatus : Maybe ( String, ShowAllPopupFor )

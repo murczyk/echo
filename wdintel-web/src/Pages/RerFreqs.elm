@@ -89,6 +89,7 @@ init _ =
             , openMapRowId = Nothing
             , callsignsByFreq = Dict.empty
             , altUnitsByFreq = Dict.empty
+            , altUnitsRequestId = 0
             , callsignsInfo = Dict.empty
             , networksExtra = Dict.empty
             , callsigns = []
@@ -410,18 +411,26 @@ update shared msg model =
             )
 
         GotFreqs paginating (Ok rsp) ->
-            ( { model
-                | freqs =
-                    if paginating then
-                        model.freqs ++ rsp.freqs
+            let
+                nextAltUnitsRequestId =
+                    model.altUnitsRequestId + 1
 
-                    else
-                        rsp.freqs
-                , loading = False
-                , loadingMore = False
-                , currentRequestTracker = Nothing
-                , noMoreToLoad = not rsp.showLoadMore
-              }
+                m2 =
+                    { model
+                        | freqs =
+                            if paginating then
+                                model.freqs ++ rsp.freqs
+
+                            else
+                                rsp.freqs
+                        , loading = False
+                        , loadingMore = False
+                        , currentRequestTracker = Nothing
+                        , noMoreToLoad = not rsp.showLoadMore
+                        , altUnitsRequestId = nextAltUnitsRequestId
+                    }
+            in
+            ( m2
             , E.batch
                 (loadNetworksForFreqs shared model rsp.freqs
                     :: (case ( model.from.datePosix, model.to.datePosix ) of
@@ -448,7 +457,7 @@ update shared msg model =
                                         , tillDateNoninclusiveMs = timeTo
                                         }
                                 , E.sendCmd <|
-                                    Api.list_alt_units_by_freqs (AltUnitsByFreqReturnedByApi paginating)
+                                    Api.list_alt_units_by_freqs (AltUnitsByFreqReturnedByApi nextAltUnitsRequestId paginating)
                                         { freqs = freqsAsString
                                         , sinceDateInclusiveMs = timeFrom
                                         , tillDateNoninclusiveMs = timeTo
@@ -913,15 +922,23 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
             )
 
-        AltUnitsByFreqReturnedByApi paginating (Ok rsp) ->
-            ( { model | altUnitsByFreq = Utils.updateAltUnitsByFreq paginating model.altUnitsByFreq rsp }
-            , E.none
-            )
+        AltUnitsByFreqReturnedByApi requestId paginating (Ok rsp) ->
+            if requestId == model.altUnitsRequestId then
+                ( { model | altUnitsByFreq = Utils.updateAltUnitsByFreq paginating model.altUnitsByFreq rsp }
+                , E.none
+                )
 
-        AltUnitsByFreqReturnedByApi paginating (Err err) ->
-            ( { model | altUnitsByFreq = Utils.clearAltUnitsByFreqOnError paginating model.altUnitsByFreq }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
-            )
+            else
+                ( model, E.none )
+
+        AltUnitsByFreqReturnedByApi requestId paginating (Err err) ->
+            if requestId == model.altUnitsRequestId then
+                ( { model | altUnitsByFreq = Utils.clearAltUnitsByFreqOnError paginating model.altUnitsByFreq }
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
+                )
+
+            else
+                ( model, E.none )
 
         CallsignsInfoReturnedByApi (Err e) ->
             ( model
