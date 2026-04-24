@@ -229,6 +229,8 @@ type ReportTemplate
     | RTReo
     | RTDigest
     | ActiveNetworks
+    | RTNetworkFrequencies
+    | RTSummaryTable
     | RTReport1213
 
 

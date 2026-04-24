@@ -1720,6 +1720,10 @@ export type ActiveNetworksReportSettings = {
   aorIds: Array<number>;
 };
 
+export type NetworkFrequenciesReportSettings = {
+  aorIds: Array<number>;
+};
+
 export type ReportAggregation =
   | 'ByProfile'
   | 'ByPost'
@@ -1747,6 +1751,7 @@ export type ReportType =
   | { Reo: [ReoReportSettings, ReoReportFileType] }
   | 'Digest'
   | { ActiveNetworks: ActiveNetworksReportSettings }
+  | { NetworkFrequencies: NetworkFrequenciesReportSettings }
 ;
 
 export type SenderReportSettings = {

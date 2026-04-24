@@ -15,7 +15,8 @@ export type ReportTemplateId =
   | 'mouse'
   | 'reo'
   | 'digest'
-  | 'active_networks';
+  | 'active_networks'
+  | 'summary_table';
 
 export type SenderAggregation = 'ByProfile' | 'ByPost';
 
@@ -59,6 +60,8 @@ export function reportTemplateToKind(template: ReportTemplateId, senderAggregati
       return 'posts_docx';
     case 'active_networks':
       return 'active_networks';
+    case 'summary_table':
+      return 'summary_table';
     default:
       return template;
   }
@@ -99,6 +102,8 @@ export function reportTemplateToType(state: AnalysisReportState): ReportType | n
       return 'Digest';
     case 'active_networks':
       return { ActiveNetworks: { aorIds: state.activeNetworksAorIds } };
+    case 'summary_table':
+      return null;
   }
 }
 
@@ -129,6 +134,8 @@ export function reportDownloadMeta(state: AnalysisReportState): { extension: str
       return state.reoFileType === 'Xlsx'
         ? { extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
         : { extension: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+    case 'summary_table':
+      return { extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
     default:
       return { extension: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
   }

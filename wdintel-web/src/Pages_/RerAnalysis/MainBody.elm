@@ -577,6 +577,16 @@ view user model shared route =
                     "Активні радіомережі"
                     "Для генерування потрібні права редактора чи адміна"
                 , templateCard
+                    (model.reportTemplate == RTNetworkFrequencies)
+                    (ReportTemplateSelect RTNetworkFrequencies)
+                    "Частоти Радіомереж"
+                    "Для генерування потрібні права редактора чи адміна. За обраний період: мережа, частота, активність та останній раз в етері"
+                , templateCard
+                    (model.reportTemplate == RTSummaryTable)
+                    (ReportTemplateSelect RTSummaryTable)
+                    "Підсумкова таблиця"
+                    "XLSX-експорт підсумкової таблиці без обмеження в 1 тиждень"
+                , templateCard
                     (model.reportTemplate == RTReport1213)
                     (ReportTemplateSelect RTReport1213)
                     "Звіт 1.2.13"
@@ -923,10 +933,21 @@ view user model shared route =
                 _ ->
                     HtmlX.nothing
             , div [ class "flex justify-center items-center mb-4" ]
-                [ Button.new { label = " завантажити docx/xlsx", onClick = ReportDownloadDocx }
+                [ Button.new
+                    { label =
+                        if model.reportTemplate == RTSummaryTable then
+                            " завантажити xlsx"
+
+                        else
+                            " завантажити docx/xlsx"
+                    , onClick = ReportDownloadDocx
+                    }
                     |> Button.withIcon
                         [ if model.reportDownloadInProgress then
                             span [ class "me-1" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                          else if model.reportTemplate == RTSummaryTable then
+                            i [ class "bi bi-filetype-xlsx" ] []
 
                           else
                             i [ class "bi bi-filetype-docx" ] []

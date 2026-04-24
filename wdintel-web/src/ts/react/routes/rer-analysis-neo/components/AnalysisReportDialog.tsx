@@ -46,6 +46,7 @@ const templateOptions: Array<{ id: ReportTemplateId; title: string; description:
   { id: 'reo', title: 'РЕО', description: 'Потрібні права редактора чи адміна' },
   { id: 'digest', title: 'Дайджест', description: 'Потрібні права редактора чи адміна' },
   { id: 'active_networks', title: 'Активні радіомережі', description: 'Потрібні права редактора чи адміна' },
+  { id: 'summary_table', title: 'Підсумкова таблиця', description: 'XLSX-експорт підсумкової таблиці без обмеження в 1 тиждень' },
 ];
 
 export function AnalysisReportDialog({ aors, downloadInFlight, open, report, onClose, onDownload, onUpdate }: Props) {
@@ -193,7 +194,7 @@ export function AnalysisReportDialog({ aors, downloadInFlight, open, report, onC
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose}>Закрити</Button>
         <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight}>
-          {downloadInFlight ? 'Готуємо...' : 'Завантажити docx/xlsx'}
+          {downloadInFlight ? 'Готуємо...' : report.template === 'summary_table' ? 'Завантажити xlsx' : 'Завантажити docx/xlsx'}
         </Button>
       </DialogActions>
     </Dialog>

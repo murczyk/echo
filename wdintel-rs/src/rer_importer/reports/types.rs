@@ -27,6 +27,7 @@ pub enum ReportType {
     Reo(ReoReportSettings, ReoReportFileType),
     Digest,
     ActiveNetworks(ActiveNetworksReportSettings),
+    NetworkFrequencies(NetworkFrequenciesReportSettings),
 }
 
 #[derive(
@@ -73,6 +74,13 @@ pub struct SenderReportSettings {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ActiveNetworksReportSettings {
+    pub aor_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkFrequenciesReportSettings {
     pub aor_ids: Vec<i64>,
 }
 

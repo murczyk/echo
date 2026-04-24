@@ -26,7 +26,7 @@ use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{prelude::Expr, sea_query::Alias, *};
 use sea_query::*;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use tempfile::TempDir;
 
 pub mod geojson;
@@ -1565,11 +1565,6 @@ pub async fn summary_table_freq_1(
     env: &Env,
     req: &AnalysisStatsReq,
 ) -> Result<SummaryTableFreq, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
-    let include_peleng_locations =
-        req.include_peleng_locations.unwrap_or(false);
-
     #[derive(FromQueryResult)]
     struct Row {
         freq: Option<String>,
@@ -1588,96 +1583,33 @@ pub async fn summary_table_freq_1(
             .c(h!())?;
 
     let dedup_key_alias = Alias::new("dedup_key");
-    let dedup_subquery = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .select_only()
-        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
-        .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
-        .column_as(
-            Expr::col(sigint_inbox_item::Column::NominatimresId),
-            "nominatimres_id",
-        )
-        .column_as(Expr::col(sigint_inbox_item::Column::Callsigns), "callsigns")
-        .column_as(Expr::col(sigint_inbox_item::Column::UnitV2), "unit_v2")
-        .column_as(
-            Expr::col(sigint_inbox_item::Column::LocationV2),
-            "location_v2",
-        )
-        .column_as(
-            Expr::col((signal_message::Entity, signal_message::Column::Id)),
-            "dedup_key",
-        )
-        .distinct_on([dedup_key_alias.clone()])
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq_any(master_keys.clone()),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .order_by(Expr::cust("dedup_key"), Order::Asc)
-        // emulate NULLS FIRST: order nulls before non-nulls
-        .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
     let dedup_subquery =
-        filter_selected_freqs(dedup_subquery, &req.selected_freqs)?;
-    let dedup_subquery =
-        filter_selected_posts(dedup_subquery, &req.selected_posts)?;
-    let dedup_subquery = filter_selected_groups_and_senders_with_access(
-        dedup_subquery,
-        &req.selected_groups,
-        &req.selected_senders,
-        &master_keys,
-    )?;
-    let dedup_subquery = filter_selected_units(
-        dedup_subquery,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let dedup_subquery = filter_selected_locations(
-        dedup_subquery,
-        &req.selected_locations,
-        include_peleng_locations,
-    )?;
-    let dedup_subquery =
-        filter_selected_callsigns(dedup_subquery, &req.selected_callsigns)?;
-    let dedup_subquery = filter_selected_tags(
-        dedup_subquery,
-        &req.selected_tags,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_without_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
-        &user.id().c(h!())?,
-        req.report_tags_only_this_unit.unwrap_or(false),
-    )?;
-    let dedup_subquery =
-        filter_selected_aors(dedup_subquery, &req.selected_aors)
-            .context(h!())?;
-    let dedup_subquery = filter_selected_networks(
-        dedup_subquery,
-        &req.selected_networks,
-        &req.without_network,
-    )
-    .context(h!())?;
-    let dedup_subquery =
-        filter_selected_metadata_for_analysis_stats(dedup_subquery, req)?;
-    let dedup_subquery = filter_search(dedup_subquery, &req.search)?;
+        build_summary_table_filtered_messages_query(user, req, &master_keys)?
+            .select_only()
+            .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+            .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
+            .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
+            .column_as(
+                Expr::col(sigint_inbox_item::Column::NominatimresId),
+                "nominatimres_id",
+            )
+            .column_as(
+                Expr::col(sigint_inbox_item::Column::Callsigns),
+                "callsigns",
+            )
+            .column_as(Expr::col(sigint_inbox_item::Column::UnitV2), "unit_v2")
+            .column_as(
+                Expr::col(sigint_inbox_item::Column::LocationV2),
+                "location_v2",
+            )
+            .column_as(
+                Expr::col((signal_message::Entity, signal_message::Column::Id)),
+                "dedup_key",
+            )
+            .distinct_on([dedup_key_alias.clone()])
+            .order_by(Expr::cust("dedup_key"), Order::Asc)
+            // emulate NULLS FIRST: order nulls before non-nulls
+            .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
     // println!(
     //     "> summary table dedup_subquery sql: {}",
     //     dedup_subquery.build(DbBackend::Postgres).to_string()
@@ -1927,6 +1859,275 @@ pub async fn summary_table_freq_1(
     Ok(SummaryTableFreq { rows })
 }
 
+pub(crate) fn build_summary_table_filtered_messages_query(
+    user: &Identity,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
+
+    let q = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(master_keys.to_vec()),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let q = filter_selected_freqs(q, &req.selected_freqs)?;
+    let q = filter_selected_posts(q, &req.selected_posts)?;
+    let q = filter_selected_groups_and_senders_with_access(
+        q,
+        &req.selected_groups,
+        &req.selected_senders,
+        master_keys,
+    )?;
+    let q = filter_selected_units(
+        q,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )?;
+    let q = filter_selected_locations(
+        q,
+        &req.selected_locations,
+        include_peleng_locations,
+    )?;
+    let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
+    let q = filter_selected_tags(
+        q,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_without_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        &user.id().c(h!())?,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )?;
+    let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
+    let q = filter_selected_networks(
+        q,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
+    let q = filter_selected_metadata_for_analysis_stats(q, req)?;
+    filter_search(q, &req.search)
+}
+
+async fn summary_table_last_datetime_by_freq(
+    user: &Identity,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<BTreeMap<String, NaiveDateTime>, AppError> {
+    #[derive(FromQueryResult)]
+    struct Row {
+        freq: Option<String>,
+        last_datetime: Option<NaiveDateTime>,
+    }
+
+    let master_keys =
+        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
+            .await
+            .c(h!())?;
+    let rows =
+        build_summary_table_filtered_messages_query(user, req, &master_keys)?
+            .select_only()
+            .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+            .expr_as(
+                Expr::cust("MAX(sigint_inbox_item.datetime)"),
+                "last_datetime",
+            )
+            .group_by(sigint_inbox_item::Column::Freq)
+            .into_model::<Row>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?;
+
+    let mut result = BTreeMap::new();
+    for row in rows {
+        let (Some(freq), Some(last_datetime)) = (row.freq, row.last_datetime)
+        else {
+            continue;
+        };
+        result.insert(freq, last_datetime);
+    }
+    Ok(result)
+}
+
+async fn summary_table_related_networks_by_freq(
+    user: &Identity,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<BTreeMap<String, Vec<String>>, AppError> {
+    #[derive(FromQueryResult)]
+    struct NetworkFreqRow {
+        freq: Option<String>,
+        network_name: String,
+        unit_name: Option<String>,
+    }
+
+    if req.without_network.unwrap_or(false) {
+        return Ok(BTreeMap::new());
+    }
+
+    let master_keys =
+        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
+            .await
+            .c(h!())?;
+
+    let filtered_messages_alias = Alias::new("filtered_messages");
+    let inbox_network_alias = Alias::new("summary_inbox_network");
+    let network_alias = Alias::new("summary_network");
+    let network_unit_alias = Alias::new("summary_network_unit");
+    let unit_alias = Alias::new("summary_unit");
+
+    let filtered_messages_query =
+        build_summary_table_filtered_messages_query(user, req, &master_keys)?
+            .select_only()
+            .column_as(
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Id,
+                )),
+                "inbox_item_id",
+            )
+            .column_as(
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Freq,
+                )),
+                "freq",
+            )
+            .distinct_on([Alias::new("inbox_item_id"), Alias::new("freq")]);
+
+    let mut query = Query::select();
+    query
+        .column((filtered_messages_alias.clone(), "freq"))
+        .expr_as(
+            Expr::col((network_alias.clone(), sigint_network::Column::Name)),
+            Alias::new("network_name"),
+        )
+        .expr_as(
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Name)),
+            Alias::new("unit_name"),
+        )
+        .from_subquery(
+            filtered_messages_query.into_query(),
+            filtered_messages_alias.clone(),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Entity,
+            inbox_network_alias.clone(),
+            Expr::col((filtered_messages_alias.clone(), "inbox_item_id"))
+                .equals((
+                    inbox_network_alias.clone(),
+                    sigint_inbox_item_network::Column::SigintInboxItemId,
+                )),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network::Entity,
+            network_alias.clone(),
+            Expr::col((network_alias.clone(), sigint_network::Column::Id))
+                .equals((
+                    inbox_network_alias.clone(),
+                    sigint_inbox_item_network::Column::SigintNetworkId,
+                )),
+        )
+        .join_as(
+            JoinType::LeftJoin,
+            sigint_network_unit::Entity,
+            network_unit_alias.clone(),
+            Expr::col((network_alias.clone(), sigint_network::Column::Id))
+                .equals((
+                    network_unit_alias.clone(),
+                    sigint_network_unit::Column::NetworkId,
+                )),
+        )
+        .join_as(
+            JoinType::LeftJoin,
+            sigint_unit::Entity,
+            unit_alias.clone(),
+            Expr::col((
+                network_unit_alias.clone(),
+                sigint_network_unit::Column::UnitId,
+            ))
+            .equals((unit_alias.clone(), sigint_unit::Column::Id)),
+        )
+        .and_where(
+            Expr::col((network_alias.clone(), sigint_network::Column::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Deleted))
+                .eq(false)
+                .or(Expr::col((unit_alias.clone(), sigint_unit::Column::Id))
+                    .is_null()),
+        );
+    if let Some(selected_networks) =
+        req.selected_networks.as_ref().filter(|ids| !ids.is_empty())
+    {
+        query.and_where(
+            Expr::col((network_alias.clone(), sigint_network::Column::Id))
+                .is_in(selected_networks.clone()),
+        );
+    }
+    let query = query.to_owned();
+    let rows = NetworkFreqRow::find_by_statement(Statement::from_string(
+        DbBackend::Postgres,
+        query.to_string(PostgresQueryBuilder),
+    ))
+    .all(&env.dbx)
+    .await
+    .c(h!())?;
+
+    let mut networks_by_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for row in rows {
+        let Some(freq) = row.freq else {
+            continue;
+        };
+        let network_name = row.network_name.trim();
+        if network_name.is_empty() {
+            continue;
+        }
+        let full_name = match row.unit_name.as_deref().map(str::trim) {
+            Some(unit_name) if !unit_name.is_empty() => {
+                format!("{network_name} {unit_name}")
+            }
+            _ => network_name.to_string(),
+        };
+        networks_by_freq
+            .entry(freq)
+            .and_modify(|items| {
+                if !items.contains(&full_name) {
+                    items.push(full_name.clone());
+                }
+            })
+            .or_insert_with(|| vec![full_name]);
+    }
+
+    Ok(networks_by_freq)
+}
+
 /// Summary table showing row-per-frequency
 #[post("/api/rer/analysis/summary-table.xlsx")]
 async fn summary_table_xlsx(
@@ -1940,6 +2141,14 @@ async fn summary_table_xlsx(
         .c(h!())?;
     let summary_table: SummaryTableFreq =
         summary_table_freq_1(&user, &env, &req).await.c(h!())?;
+    let last_datetime_by_freq =
+        summary_table_last_datetime_by_freq(&user, &env, &req)
+            .await
+            .c(h!())?;
+    let related_networks_by_freq =
+        summary_table_related_networks_by_freq(&user, &env, &req)
+            .await
+            .c(h!())?;
 
     let tmp_dir = TempDir::new()?;
     let outpath = tmp_dir.path().join("summary-table.xlsx");
@@ -1975,9 +2184,27 @@ async fn summary_table_xlsx(
         .context(h!())?;
     sheet1.set_column_width(3, 80.0).context(h!())?; // Set width for column 3
     sheet1.set_column_format(3, &format_wrap).context(h!())?; // Apply format to column 3
+    sheet1
+        .write_string_with_format(2, 4, "Останнє перехоплення", &format_bold)
+        .context(h!())?;
+    sheet1.set_column_width(4, 24.0).context(h!())?;
+    sheet1
+        .write_string_with_format(2, 5, "Мережі", &format_bold)
+        .context(h!())?;
+    sheet1.set_column_width(5, 80.0).context(h!())?;
+    sheet1.set_column_format(5, &format_wrap).context(h!())?;
 
     for (i, row) in summary_table.rows.iter().enumerate() {
         let row_i = i as u32 + 3;
+        let last_datetime = last_datetime_by_freq
+            .get(&row.freq)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default();
+        let related_networks = related_networks_by_freq
+            .get(&row.freq)
+            .cloned()
+            .unwrap_or_default()
+            .join(", ");
         sheet1.write_string(row_i, 0, &row.freq).context(h!())?; // Removed None
         sheet1
             .write_number(row_i, 1, row.count as f64)
@@ -1988,6 +2215,12 @@ async fn summary_table_xlsx(
         sheet1
             .write_string(row_i, 3, row.units.join(", "))
             .context(h!())?; // Removed None
+        sheet1
+            .write_string(row_i, 4, &last_datetime)
+            .context(h!())?;
+        sheet1
+            .write_string(row_i, 5, &related_networks)
+            .context(h!())?;
     }
 
     // Add and name the second sheet

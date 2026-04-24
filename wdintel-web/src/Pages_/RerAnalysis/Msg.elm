@@ -122,6 +122,7 @@ type Msg
     | CloseReportConstructor
     | ReportDownloadDocx
     | ReportDownloadDocxDone (Result ApiError Bytes)
+    | ReportDownloadSummaryTableDone (Result ApiError Bytes)
     | ScrollMessagesToTop
     | LoadMoreMessages
     | LoadNewCallsignStats
