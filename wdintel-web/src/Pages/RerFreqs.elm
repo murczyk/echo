@@ -88,6 +88,8 @@ init _ =
             , locationTexts = Dict.empty
             , openMapRowId = Nothing
             , callsignsByFreq = Dict.empty
+            , altUnitsByFreq = Dict.empty
+            , altUnitsRequestId = 0
             , callsignsInfo = Dict.empty
             , networksExtra = Dict.empty
             , callsigns = []
@@ -409,18 +411,36 @@ update shared msg model =
             )
 
         GotFreqs paginating (Ok rsp) ->
-            ( { model
-                | freqs =
+            let
+                nextAltUnitsRequestId =
                     if paginating then
-                        model.freqs ++ rsp.freqs
+                        model.altUnitsRequestId
 
                     else
-                        rsp.freqs
-                , loading = False
-                , loadingMore = False
-                , currentRequestTracker = Nothing
-                , noMoreToLoad = not rsp.showLoadMore
-              }
+                        model.altUnitsRequestId + 1
+
+                m2 =
+                    { model
+                        | freqs =
+                            if paginating then
+                                model.freqs ++ rsp.freqs
+
+                            else
+                                rsp.freqs
+                        , loading = False
+                        , loadingMore = False
+                        , currentRequestTracker = Nothing
+                        , noMoreToLoad = not rsp.showLoadMore
+                        , altUnitsRequestId = nextAltUnitsRequestId
+                        , altUnitsByFreq =
+                            if paginating then
+                                model.altUnitsByFreq
+
+                            else
+                                Dict.empty
+                    }
+            in
+            ( m2
             , E.batch
                 (loadNetworksForFreqs shared model rsp.freqs
                     :: (case ( model.from.datePosix, model.to.datePosix ) of
@@ -445,6 +465,14 @@ update shared msg model =
                                         { freqs = freqsAsString
                                         , sinceDateInclusiveMs = timeFrom
                                         , tillDateNoninclusiveMs = timeTo
+                                        }
+                                , E.sendCmd <|
+                                    Api.list_alt_units_by_freqs (AltUnitsByFreqReturnedByApi nextAltUnitsRequestId paginating)
+                                        { freqs = freqsAsString
+                                        , sinceDateInclusiveMs = timeFrom
+                                        , tillDateNoninclusiveMs = timeTo
+                                        , filterGroupMasterKeys = Nothing
+                                        , filterSenderProfileIds = Nothing
                                         }
                                 ]
 
@@ -903,6 +931,24 @@ update shared msg model =
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
             )
+
+        AltUnitsByFreqReturnedByApi requestId _ (Ok rsp) ->
+            if requestId == model.altUnitsRequestId then
+                ( { model | altUnitsByFreq = Utils.updateAltUnitsByFreq model.altUnitsByFreq rsp }
+                , E.none
+                )
+
+            else
+                ( model, E.none )
+
+        AltUnitsByFreqReturnedByApi requestId _ (Err err) ->
+            if requestId == model.altUnitsRequestId then
+                ( model
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
+                )
+
+            else
+                ( model, E.none )
 
         CallsignsInfoReturnedByApi (Err e) ->
             ( model
@@ -1845,7 +1891,69 @@ freqsTableConfig shared model user =
                         }
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "34%"
+                |> Table.withColumnWidth "26%"
+            , Table.veryCustomColumn
+                { name = "Альтернативні прив'язки"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex flex-col gap-[4px]" ]
+                                (case Dict.get freq.freq model.altUnitsByFreq of
+                                    Just units ->
+                                        (List.map (\u -> span [] [ text u.unit ]) units
+                                            |> List.take 3
+                                        )
+                                            ++ (if List.length units > 3 then
+                                                    let
+                                                        body =
+                                                            span
+                                                                [ style "font-size" "12px"
+                                                                , style "font-weight" "300"
+                                                                , style "cursor" "pointer"
+                                                                , style "display" "block"
+                                                                , style "padding-right" "6px"
+                                                                , style "text-decoration" "underline"
+                                                                ]
+                                                                [ text ("Показати всі " ++ (units |> List.length |> String.fromInt)) ]
+
+                                                        popupBody =
+                                                            div [ class "d-flex flex-column", style "gap" "20px" ]
+                                                                (List.map (\unit -> span [] [ text unit.unit ]) units)
+
+                                                        isOpen =
+                                                            case model.rowShowAllPopupStatus of
+                                                                Just ( freq_, ShowAllAltUnits ) ->
+                                                                    freq_ == freq.freq
+
+                                                                _ ->
+                                                                    False
+                                                    in
+                                                    [ Shared.Components.Popup.new
+                                                        { body = body
+                                                        , popupBody = popupBody
+                                                        , isOpen = isOpen
+                                                        , onClose = RowShowAllPopupChanged Nothing
+                                                        , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllAltUnits )
+                                                        , disabled = False
+                                                        }
+                                                        |> Shared.Components.Popup.withFakeAnchor
+                                                        |> Shared.Components.Popup.withCloseButton
+                                                        |> Shared.Components.Popup.view
+                                                    ]
+
+                                                else
+                                                    [ text "" ]
+                                               )
+
+                                    Nothing ->
+                                        [ text "" ]
+                                )
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Активність р/м"
                 , viewData =

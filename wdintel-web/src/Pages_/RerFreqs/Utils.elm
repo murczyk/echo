@@ -1,5 +1,6 @@
-module Pages_.RerFreqs.Utils exposing (findConnectedNetworks)
+module Pages_.RerFreqs.Utils exposing (findConnectedNetworks, updateAltUnitsByFreq)
 
+import Api
 import Bindings as B
 import Core.Unit as Unit
 import Dict exposing (Dict)
@@ -26,3 +27,8 @@ findConnectedNetworks selectedUnit networks masterUnits =
     Dict.toList networks
         |> List.map Tuple.second
         |> List.filter (\network -> List.any (\unitId -> List.member unitId sameRegimentUnitIds) (Maybe.withDefault [] network.unitIds))
+
+
+updateAltUnitsByFreq : Api.ListAltUnitsByFreqsRsp -> Api.ListAltUnitsByFreqsRsp -> Api.ListAltUnitsByFreqsRsp
+updateAltUnitsByFreq current incoming =
+    Dict.union incoming current
