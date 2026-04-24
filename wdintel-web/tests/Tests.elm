@@ -4,6 +4,7 @@ import CoordinatesTests
 import Le.Block.UnitTests
 import Le.Callsign.HintStrategyTests
 import Le.Callsign.TabDelimitedParserTests
+import RerFreqsUtilsTests
 import Test exposing (..)
 import UnitHierarchyTests
 
@@ -16,4 +17,5 @@ suite =
         , Le.Callsign.TabDelimitedParserTests.suite
         , UnitHierarchyTests.suite
         , CoordinatesTests.suite
+        , RerFreqsUtilsTests.suite
         ]
