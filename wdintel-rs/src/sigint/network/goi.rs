@@ -6,6 +6,7 @@ use actix_identity::Identity;
 use chrono::prelude::*;
 use rust_xlsxwriter::Workbook;
 use sea_orm::{prelude::Expr, *};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub async fn report_xlsx_networks_goi(
@@ -30,11 +31,14 @@ pub async fn report_xlsx_networks_goi_to_buffer(
 
 #[derive(FromQueryResult)]
 struct NetworkFreq {
+    network_freq_id: i64,
+    network_aor_id: i64,
     freq: String,
     location: String,
     unit_name: Option<String>,
     created_at: NaiveDateTime,
     aor_name: String,
+    aor_order: f64,
 }
 
 async fn build_goi_report_workbook(env: &Env) -> Result<Workbook, AppError> {
@@ -124,10 +128,13 @@ async fn get_goi_report_freqs(
             sigint_network_unit::Relation::SigintUnit.def(),
         )
         .select_only()
+        .column_as(sigint_network_freq::Column::Id, "network_freq_id")
+        .column_as(sigint_network_aor::Column::Id, "network_aor_id")
         .column(sigint_network_freq::Column::Freq)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::Location)
         .column_as(area_of_responsibility::Column::Name, "aor_name")
+        .column_as(area_of_responsibility::Column::OrderForReport, "aor_order")
         .column(sigint_network_freq::Column::CreatedAt)
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(
@@ -161,9 +168,8 @@ async fn get_goi_report_freqs(
                 .add(sigint_unit::Column::Deleted.eq(false))
                 .add(sigint_unit::Column::Deleted.is_null()),
         )
-        .order_by_asc(area_of_responsibility::Column::OrderForReport)
-        .order_by_asc(area_of_responsibility::Column::Name)
-        .order_by_asc(sigint_network_freq::Column::Freq);
+        .order_by_asc(sigint_network_aor::Column::Id)
+        .order_by_asc(sigint_network_freq::Column::Id);
 
     // debug!(
     //     "GOI report SQL: {}",
@@ -171,6 +177,7 @@ async fn get_goi_report_freqs(
     // );
 
     let freqs = q.into_model::<NetworkFreq>().all(&env.dbx).await.c(h!())?;
+    let freqs = keep_first_network_aor_per_freq(freqs);
 
     let mut grouped: Vec<(String, Vec<NetworkFreq>)> = Vec::new();
     for freq in freqs {
@@ -186,6 +193,31 @@ async fn get_goi_report_freqs(
     Ok(grouped)
 }
 
+fn keep_first_network_aor_per_freq(
+    freqs: Vec<NetworkFreq>,
+) -> Vec<NetworkFreq> {
+    let mut first_freq_rows = HashMap::<i64, NetworkFreq>::new();
+    for freq in freqs {
+        match first_freq_rows.get_mut(&freq.network_freq_id) {
+            Some(current) if current.network_aor_id <= freq.network_aor_id => {}
+            Some(current) => *current = freq,
+            None => {
+                first_freq_rows.insert(freq.network_freq_id, freq);
+            }
+        }
+    }
+
+    let mut freqs = first_freq_rows.into_values().collect::<Vec<_>>();
+    freqs.sort_by(|left, right| {
+        left.aor_order
+            .total_cmp(&right.aor_order)
+            .then_with(|| left.aor_name.cmp(&right.aor_name))
+            .then_with(|| left.freq.cmp(&right.freq))
+            .then_with(|| left.network_freq_id.cmp(&right.network_freq_id))
+    });
+    freqs
+}
+
 /// Excel sheet names cannot contain certain characters or exceed 31 chars.
 fn sanitize_sheet_name(name: &str) -> String {
     let mut clean = name
@@ -199,4 +231,49 @@ fn sanitize_sheet_name(name: &str) -> String {
         clean = "Unnamed".to_string();
     }
     clean
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{keep_first_network_aor_per_freq, NetworkFreq};
+    use chrono::NaiveDate;
+
+    fn test_freq(
+        network_freq_id: i64,
+        network_aor_id: i64,
+        aor_name: &str,
+        aor_order: f64,
+        freq: &str,
+    ) -> NetworkFreq {
+        NetworkFreq {
+            network_freq_id,
+            network_aor_id,
+            freq: freq.to_string(),
+            location: "loc".to_string(),
+            unit_name: None,
+            created_at: NaiveDate::from_ymd_opt(2026, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            aor_name: aor_name.to_string(),
+            aor_order,
+        }
+    }
+
+    #[test]
+    fn keep_first_network_aor_per_freq_uses_lowest_link_id() {
+        let freqs = vec![
+            test_freq(10, 20, "B", 2.0, "200"),
+            test_freq(10, 5, "A", 1.0, "200"),
+            test_freq(11, 7, "C", 3.0, "300"),
+        ];
+
+        let rows = keep_first_network_aor_per_freq(freqs);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].network_freq_id, 10);
+        assert_eq!(rows[0].network_aor_id, 5);
+        assert_eq!(rows[0].aor_name, "A");
+        assert_eq!(rows[1].network_freq_id, 11);
+    }
 }
