@@ -17,7 +17,7 @@ import type { TagsLayoutVariant } from './utils';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
 import { FeedFilterPanel } from './FeedFilterPanel';
-import { DutyMessageCard } from './MessageCard';
+import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */

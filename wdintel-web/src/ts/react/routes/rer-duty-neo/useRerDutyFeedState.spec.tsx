@@ -34,6 +34,7 @@ function inboxRsp(items: Array<[number, InboxMessage]>): InboxMessagesRsp {
     signalProfiles: {},
     signalGroups: [],
     freqPelengsSummary: null,
+    pageLimit: 20,
   };
 }
 

@@ -1,4 +1,6 @@
-import { Box, Stack, TextField } from '@mui/material';
+import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
+import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
+import { Box, IconButton, InputAdornment, Stack, TextField, Tooltip } from '@mui/material';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { DateTimeRangeControl } from '../../../components/DateTimeRangeControl';
@@ -24,10 +26,28 @@ export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) 
           placeholder="Пошук"
           size="small"
           value={queryState.search ?? ''}
-          onChange={(event) => updateQueryState({ search: event.target.value })}
+          onChange={(event) => updateQueryState({ search: event.target.value.trim() === '' ? '' : event.target.value })}
           slotProps={{
             input: {
-              startAdornment: <Box component="i" className="bi bi-search" sx={{ mr: 1, fontSize: 14, color: 'text.secondary' }} />,
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                </InputAdornment>
+              ),
+              endAdornment: queryState.search ? (
+                <InputAdornment position="end">
+                  <Tooltip title="Очистити пошук" arrow>
+                    <IconButton
+                      aria-label="Очистити пошук"
+                      size="small"
+                      onClick={() => updateQueryState({ search: '' })}
+                      sx={{ p: 0.25, color: 'text.secondary' }}
+                    >
+                      <ClearOutlinedIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ) : undefined,
             },
           }}
           sx={{

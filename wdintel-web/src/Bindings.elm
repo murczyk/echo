@@ -2576,6 +2576,7 @@ type alias InboxMessagesRsp =
     , signalProfiles : Dict String (Maybe SignalProfileEntry)
     , signalGroups : List SignalGroupEntry
     , freqPelengsSummary : Maybe (List FreqPelengsEntry)
+    , pageLimit : Maybe Int
     }
 
 
@@ -2587,6 +2588,7 @@ inboxMessagesRspEncoder struct =
         , ( "signal_profiles", Json.Encode.dict identity (Maybe.withDefault Json.Encode.null << Maybe.map signalProfileEntryEncoder) struct.signalProfiles )
         , ( "signal_groups", Json.Encode.list signalGroupEntryEncoder struct.signalGroups )
         , ( "freq_pelengs_summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list freqPelengsEntryEncoder)) struct.freqPelengsSummary )
+        , ( "page_limit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.pageLimit )
         ]
 
 
@@ -7145,6 +7147,7 @@ type alias SystemSettingsCurrentRsp =
     { id : Maybe Int
     , rerAnalysisUnitsExactMatchOnlyDefault : Bool
     , rerDutyTestEnabled : Bool
+    , rerDutyInsertHistoricalInterceptions : Bool
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
@@ -7157,6 +7160,7 @@ systemSettingsCurrentRspEncoder struct =
         [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.id )
         , ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
         , ( "rer_duty_test_enabled", Json.Encode.bool struct.rerDutyTestEnabled )
+        , ( "rer_duty_insert_historical_interceptions", Json.Encode.bool struct.rerDutyInsertHistoricalInterceptions )
         , ( "rer_duty_test_since_ms", Json.Encode.int struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", Json.Encode.int struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", Json.Encode.int struct.rerDutyPollIntervalSec )
@@ -7167,6 +7171,7 @@ type alias SystemSettingsItem =
     { id : Int
     , rerAnalysisUnitsExactMatchOnlyDefault : Bool
     , rerDutyTestEnabled : Bool
+    , rerDutyInsertHistoricalInterceptions : Bool
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
@@ -7183,6 +7188,7 @@ systemSettingsItemEncoder struct =
         [ ( "id", Json.Encode.int struct.id )
         , ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
         , ( "rer_duty_test_enabled", Json.Encode.bool struct.rerDutyTestEnabled )
+        , ( "rer_duty_insert_historical_interceptions", Json.Encode.bool struct.rerDutyInsertHistoricalInterceptions )
         , ( "rer_duty_test_since_ms", Json.Encode.int struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", Json.Encode.int struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", Json.Encode.int struct.rerDutyPollIntervalSec )
@@ -7208,6 +7214,7 @@ systemSettingsListRspEncoder struct =
 type alias CreateSystemSettingsReq =
     { rerAnalysisUnitsExactMatchOnlyDefault : Bool
     , rerDutyTestEnabled : Bool
+    , rerDutyInsertHistoricalInterceptions : Bool
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
@@ -7219,6 +7226,7 @@ createSystemSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "rer_analysis_units_exact_match_only_default", Json.Encode.bool struct.rerAnalysisUnitsExactMatchOnlyDefault )
         , ( "rer_duty_test_enabled", Json.Encode.bool struct.rerDutyTestEnabled )
+        , ( "rer_duty_insert_historical_interceptions", Json.Encode.bool struct.rerDutyInsertHistoricalInterceptions )
         , ( "rer_duty_test_since_ms", Json.Encode.int struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", Json.Encode.int struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", Json.Encode.int struct.rerDutyPollIntervalSec )
@@ -8389,7 +8397,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "calculate_freq_pelengs_summary" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_group_stats" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_id" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
 
@@ -8570,7 +8578,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
@@ -8743,7 +8751,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
@@ -8873,7 +8881,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
@@ -8885,7 +8893,7 @@ editFreqUnitNameReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_new" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
@@ -9074,6 +9082,7 @@ inboxMessagesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profiles" (Json.Decode.dict (Json.Decode.nullable signalProfileEntryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_groups" (Json.Decode.list signalGroupEntryDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_pelengs_summary" (Json.Decode.nullable (Json.Decode.list freqPelengsEntryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_limit" (Json.Decode.nullable Json.Decode.int)))
 
 
 inboxMapItemDecoder : Json.Decode.Decoder InboxMapItem
@@ -12076,6 +12085,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_insert_historical_interceptions" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" Json.Decode.int))
@@ -12087,6 +12097,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_insert_historical_interceptions" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" Json.Decode.int))
@@ -12107,6 +12118,7 @@ createSystemSettingsReqDecoder =
     Json.Decode.succeed CreateSystemSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_insert_historical_interceptions" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" Json.Decode.int))

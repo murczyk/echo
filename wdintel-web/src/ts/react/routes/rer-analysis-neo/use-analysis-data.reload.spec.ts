@@ -63,6 +63,12 @@ type Deferred<T> = {
   reject: (reason?: unknown) => void;
 };
 
+type ReloadInboxRsp = {
+  inboxItems: Array<[number, unknown]>;
+  callsigns: Array<{ callsign: string; res: [] }>;
+  pageLimit: number | null;
+};
+
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -185,7 +191,7 @@ describe('filterSectionsForInitialLoad', () => {
 
 describe('reloadAnalysisData', () => {
   it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
-    const inboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
+    const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
 
     mocks.fetchInboxMessages.mockImplementationOnce(() => inboxDeferred.promise);
@@ -205,6 +211,7 @@ describe('reloadAnalysisData', () => {
 
     const invalidateCorrelatedFreqsCache = vi.fn();
     const setHasLoadedInitialMessages = vi.fn();
+    const setNoMoreToLoad = vi.fn();
     const setSummaryCallsignsInfo = vi.fn();
 
     const queryState = {
@@ -244,7 +251,7 @@ describe('reloadAnalysisData', () => {
       setNewCallsignsLoading: vi.fn(),
       setNewCallsignsLoadedKey: vi.fn(),
       shouldLoadNewCallsigns: false,
-      setNoMoreToLoad: vi.fn(),
+      setNoMoreToLoad,
       setNolimitShown: vi.fn(),
       setOptions: vi.fn(),
       setProfiles: vi.fn(),
@@ -263,13 +270,14 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
     expect(messagesLoadingTransitions).toContain(true);
 
-    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }], pageLimit: 20 });
     await flushPromises();
 
     expect(setHasLoadedInitialMessages).toHaveBeenCalledWith(true);
     expect(messagesLoadingTransitions).toContain(false);
     expect(mocks.fetchAnalysisCount).not.toHaveBeenCalled();
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
+    expect(setNoMoreToLoad).toHaveBeenCalledWith(true);
 
     freqsDeferred.resolve({ freqs: [] });
     await reloadPromise;
@@ -280,8 +288,8 @@ describe('reloadAnalysisData', () => {
   });
 
   it('refreshes summary callsign info after rebuilt inbox data arrives', async () => {
-    const inboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
-    const rebuiltInboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
+    const inboxDeferred = deferred<ReloadInboxRsp>();
+    const rebuiltInboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
     const rebuiltFreqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
 
@@ -360,7 +368,7 @@ describe('reloadAnalysisData', () => {
     });
 
     await flushPromises();
-    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }], pageLimit: 20 });
     await flushPromises();
     freqsDeferred.resolve({
       freqs: [
@@ -370,7 +378,7 @@ describe('reloadAnalysisData', () => {
       ],
     });
     await flushPromises();
-    rebuiltInboxDeferred.resolve({ inboxItems: [[2, { networkIds: [] }]], callsigns: [{ callsign: 'bravo', res: [] }] });
+    rebuiltInboxDeferred.resolve({ inboxItems: [[2, { networkIds: [] }]], callsigns: [{ callsign: 'bravo', res: [] }], pageLimit: 20 });
     await flushPromises();
     rebuiltFreqsDeferred.resolve({
       freqs: [
@@ -394,8 +402,8 @@ describe('reloadAnalysisData', () => {
   });
 
   it('keeps the original inbox state when rebuilt inbox fetch fails', async () => {
-    const inboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
-    const rebuiltInboxDeferred = deferred<{ inboxItems: Array<[number, unknown]>; callsigns: Array<{ callsign: string; res: [] }> }>();
+    const inboxDeferred = deferred<ReloadInboxRsp>();
+    const rebuiltInboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
 
     mocks.fetchInboxMessages
@@ -466,7 +474,7 @@ describe('reloadAnalysisData', () => {
     });
 
     await flushPromises();
-    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    inboxDeferred.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }], pageLimit: 20 });
     await flushPromises();
     freqsDeferred.resolve({
       freqs: [
@@ -488,7 +496,23 @@ describe('reloadAnalysisData', () => {
 
   it('hydrates summary hints and network metadata from the full analysis scope', async () => {
     mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [{ callsign: 'alpha', count: 11 }, { callsign: 'beta', count: 7 }] });
-    mocks.fetchAnalysisCallsignInfos.mockResolvedValue([{ callsign: 'beta', res: [{ id: 1, comment: '', position: '', unit1: '', unit2: '', networkIdsReportedIn: [] }] }]);
+    mocks.fetchAnalysisCallsignInfos.mockResolvedValue([
+      {
+        callsign: 'beta',
+        res: [
+          {
+            id: 1,
+            callsign: 'beta',
+            comment: '',
+            position: '',
+            unit1: '',
+            unit2: '',
+            unitId: null,
+            networkIdsReportedIn: [],
+          },
+        ],
+      },
+    ]);
     mocks.fetchAnalysisUnits.mockResolvedValue({ units: [{ unit: 'UNIT-1', count: 12 }] });
     mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [{ location: 'LOC-1', count: 13 }] });
     mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [{ networkId: 11, count: 2 }], networkNames: [{ id: 11, name: 'Network 11' }] });
@@ -500,6 +524,7 @@ describe('reloadAnalysisData', () => {
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [[1, { networkIds: [12] }]],
       callsigns: [{ callsign: 'alpha', res: [] }],
+      pageLimit: 20,
     });
     mocks.fetchAnalysisFreqs.mockResolvedValue({
       freqs: [{ freq: '150.100', count: 1, isNew: false }],
@@ -586,7 +611,23 @@ describe('reloadAnalysisData', () => {
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
       buildSummaryCallsignsInfo(
         [{ callsign: 'alpha', res: [] }],
-        [{ callsign: 'beta', res: [{ id: 1, comment: '', position: '', unit1: '', unit2: '', networkIdsReportedIn: [] }] }],
+        [
+          {
+            callsign: 'beta',
+            res: [
+              {
+                id: 1,
+                callsign: 'beta',
+                comment: '',
+                position: '',
+                unit1: '',
+                unit2: '',
+                unitId: null,
+                networkIdsReportedIn: [],
+              },
+            ],
+          },
+        ],
       ),
     );
   });
@@ -595,7 +636,7 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
     mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
     mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
-    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }], pageLimit: 20 });
     mocks.fetchAnalysisFreqs.mockResolvedValue({
       freqs: [{ freq: '150.100', count: 1, isNew: false }],
     });
@@ -662,7 +703,7 @@ describe('reloadAnalysisData', () => {
 
   it('clears frequency-derived state when the frequency request fails after inbox loads', async () => {
     mocks.fetchAnalysisFreqs.mockRejectedValue(new Error('freqs failed'));
-    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }] });
+    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }], pageLimit: 20 });
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });

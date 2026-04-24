@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
 import { isUnauthorizedError } from '../../services/api/client';
+import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import {
   buildAnalysisReq,
   createInitialQueryState,
@@ -16,6 +17,7 @@ import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
 import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
+import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 function initState(): AnalysisQueryState {
   return createInitialQueryState(parseQueryStateFromWindow());
@@ -31,12 +33,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
   );
-  const [centerTab, setCenterTabState] = useState<'messages' | 'map' | 'summary'>('messages');
+  const [centerTab, setCenterTabState] = useState<'messages' | 'summary'>('messages');
   const [error, setError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(null);
+  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
 
@@ -86,7 +89,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [queryState],
   );
 
-  const setCenterTab = useCallback((tab: 'messages' | 'map' | 'summary') => {
+  const setCenterTab = useCallback((tab: 'messages' | 'summary') => {
     startCenterTabTransition(() => {
       setCenterTabState(tab);
     });
@@ -98,8 +101,40 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     if (typeof window === 'undefined') return;
     if (!shouldOpenAnalysisMapFromSearchParams(new URLSearchParams(window.location.search))) return;
     showMapDeepLinkAppliedRef.current = true;
-    setCenterTab('map');
-  }, [setCenterTab]);
+    setRightPanelOpen(true);
+    setRightSidebarTab('map');
+  }, []);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    void fetchUserSettings(abortController.signal)
+      .then((prefs) => {
+        if (abortController.signal.aborted) return;
+        setTagsLayout(prefs.tagsLayout);
+      })
+      .catch(() => {
+        if (abortController.signal.aborted) return;
+        setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const onSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ tagsLayout?: TagsLayoutVariant }>).detail;
+      if (!detail?.tagsLayout) return;
+      setTagsLayout(detail.tagsLayout);
+    };
+
+    window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
+    return () => {
+      window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
+    };
+  }, []);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
     data.invalidateFilterSectionLoads();
@@ -173,7 +208,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
       data.invalidateFilterSectionLoads();
-      setCenterTabState('map');
+      setRightPanelOpen(true);
+      setRightSidebarTab('map');
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
   }, [data.invalidateFilterSectionLoads]);
@@ -186,7 +222,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setRightPanelOpen((current) => {
       const next = !current;
       if (next && rightSidebarTab == null) {
-        setRightSidebarTab('stats');
+        setRightSidebarTab('map');
       }
       return next;
     });
@@ -257,6 +293,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     options: data.options,
     profiles: data.profiles,
     queryState,
+    tagsLayout,
     rightPanelOpen,
     rightSidebarTab,
     report: report.report,

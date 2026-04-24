@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
 import { CALLSIGN_TOOLTIP_ITEM_SX, renderMarkedText } from './MarkedText';
-import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../Bindings';
+import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../../Bindings';
 
 function decodeMapHrefState(href: string | null): { search: string; freqs_selected?: string[] } | null {
   if (href == null || href === '') return null;
@@ -32,6 +32,7 @@ function TestHost(props: {
   showPointLinks?: boolean;
   linkCallsigns?: boolean;
   message?: InboxMessage;
+  searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -47,6 +48,7 @@ function TestHost(props: {
         unitsMap: props.unitsMap,
         freq: props.message?.freq ?? null,
         networkIds: props.message?.networkIds ?? null,
+        searchText: props.searchText ?? null,
       })}
     </div>
   );
@@ -375,6 +377,90 @@ describe('MarkedText', () => {
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
+  it('renders an outlined badge for catalog-only callsigns even when message networks are present', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'fox', begin: 0, end: 3, etalon: 'fox' } }]}
+          bodyText="fox"
+          message={{ freq: null, networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            fox: {
+              callsign: 'fox',
+              res: [
+                {
+                  id: 33,
+                  callsign: 'fox',
+                  position: 'sys',
+                  comment: 'catalog',
+                  unit1: 's1',
+                  unit2: 's2',
+                  unitId: 2,
+                  networkIdsReportedIn: [20],
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={{
+            ...unitsMap,
+            99: {
+              id: 99,
+              company: '',
+              battalion: '',
+              regiment: '',
+              division: '',
+              army: 'Z',
+              comment: '',
+              name: 'Unmapped unit',
+              active: true,
+              createdAt: 0,
+              createdBy: 'test',
+            },
+          }}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+  });
+
+  it('normalizes catalog lookup keys before rendering the hint badge', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: '  БеТоН  ', begin: 0, end: 8, etalon: '  БеТоН  ' } }]}
+          bodyText="  БеТоН  "
+          message={{ freq: null, networkIds: null } as InboxMessage}
+          callsignInfoMap={{
+            бетон: {
+              callsign: 'БЕТОН',
+              res: [
+                {
+                  id: 4,
+                  callsign: 'БЕТОН',
+                  position: 'sys',
+                  comment: 'catalog',
+                  unit1: 's1',
+                  unit2: 's2',
+                  unitId: 1,
+                  networkIdsReportedIn: [20],
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('БЕТОН');
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
+  });
+
   it('renders the outlined-badge catalog state without linking when callsign links are disabled', async () => {
     await act(async () => {
       root.render(
@@ -433,6 +519,99 @@ describe('MarkedText', () => {
     expect(container.querySelector('span.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+  });
+
+  it('renders search-highlighted callsigns with the same orange token style as keyword highlights', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[
+            { CNHighlightC: { text: 'РЖАВИЙ', begin: 0, end: 6 } },
+            { CNCallsignC: { text: 'РЖАВИЙ', begin: 0, end: 6, etalon: 'РЖАВИЙ' } },
+          ]}
+          bodyText="РЖАВИЙ"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            'ржавий': {
+              callsign: 'РЖАВИЙ',
+              res: [
+                {
+                  id: 44,
+                  callsign: 'РЖАВИЙ',
+                  position: 'sys',
+                  comment: 'catalog',
+                  unit1: 's1',
+                  unit2: 's2',
+                  unitId: 1,
+                  networkIdsReportedIn: [10],
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('РЖАВИЙ');
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+  });
+
+  it('highlights a callsign token when it matches the active search text', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'ЛУНА', begin: 0, end: 4, etalon: 'ЛУНА' } }]}
+          bodyText="ЛУНА"
+          searchText="ЛУНА"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            луна: {
+              callsign: 'ЛУНА',
+              res: [
+                {
+                  id: 77,
+                  callsign: 'ЛУНА',
+                  position: 'sys',
+                  comment: 'catalog',
+                  unit1: 's1',
+                  unit2: 's2',
+                  unitId: 1,
+                  networkIdsReportedIn: [20],
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ЛУНА');
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+  });
+
+  it('keeps search-highlighted non-catalog callsigns as plain text', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'ГЛОБУС', begin: 0, end: 6, etalon: 'ГЛОБУС' } }]}
+          bodyText="ГЛОБУС"
+          searchText="ГЛОБУС"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{}}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')?.textContent).toBe('ГЛОБУС');
   });
 
   it('uses multiline wrapping styles for long tooltip rows', async () => {

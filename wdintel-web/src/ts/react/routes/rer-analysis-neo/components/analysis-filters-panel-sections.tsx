@@ -51,6 +51,197 @@ export function AnalysisFiltersPanelSections({
   return (
     <>
       <FilterSection
+        title="Смуги"
+        countLabel={isSectionLoading('aors') ? loadingIndicator : sectionCountLabel(derived.aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
+        expanded={expandedSections.aors}
+        onToggle={() => toggleSection('aors')}
+        onLoad={loadSection('aors')}
+      >
+        <AnalysisFilterField
+          label="Смуги"
+          options={derived.aorOptions}
+          loading={isSectionLoading('aors')}
+          value={queryState.aorsSelected}
+          onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
+        />
+      </FilterSection>
+      <FilterSection
+        title="Частоти"
+        countLabel={isSectionLoading('freqs') ? loadingIndicator : sectionCountLabel(derived.freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
+        expanded={expandedSections.freqs}
+        onToggle={() => toggleSection('freqs')}
+      >
+        <Stack spacing={1.25}>
+          <AnalysisFilterField
+            label="Частоти"
+            options={options.freqs}
+            disabled={includeOnlyNewFreqs}
+            loading={isSectionLoading('freqs')}
+            value={queryState.freqsSelected}
+            onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
+          />
+          <FormControl size="small" disabled={includeOnlyNewFreqs}>
+            <InputLabel id="analysis-adjacent-range-label">Включати частоти в діапазоні</InputLabel>
+            <Select
+              labelId="analysis-adjacent-range-label"
+              label="Включати частоти в діапазоні"
+              value={String(queryState.adjacentFreqsRange)}
+              onChange={(event) => updateQueryState({ adjacentFreqsRange: Number(event.target.value) })}
+            >
+              {[0, 0.0005, 0.002, 0.005].map((value) => (
+                <MenuItem key={value} value={String(value)}>
+                  {value === 0 ? '0 кГц' : `${value * 1000} кГц`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControlLabel
+            control={<Checkbox checked={includeOnlyNewFreqs} onChange={(_event, value) => setIncludeOnlyNewFreqs(value)} />}
+            label="Тільки нові частоти"
+            sx={compactCheckboxLabelSx}
+          />
+        </Stack>
+      </FilterSection>
+      <FilterSection
+        title="Позивні"
+        countLabel={isSectionLoading('callsigns') ? loadingIndicator : sectionCountLabel(derived.callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
+        expanded={expandedSections.callsigns}
+        onToggle={() => toggleSection('callsigns')}
+        onLoad={loadSection('callsigns')}
+      >
+        <AnalysisFilterField
+          label="Позивні"
+          options={derived.callsignsOptions}
+          loading={isSectionLoading('callsigns')}
+          value={queryState.callsignsSelected}
+          onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
+        />
+      </FilterSection>
+      <FilterSection
+        title="Мережі"
+        countLabel={isSectionLoading('networks') ? loadingIndicator : sectionCountLabel(derived.networksSelectedCount, counts?.networksCount ?? options.networks.length)}
+        expanded={expandedSections.networks}
+        onToggle={() => toggleSection('networks')}
+        onLoad={loadSection('networks')}
+      >
+        <AnalysisFilterField
+          label="Мережі"
+          options={derived.networkOptions}
+          disabled={queryState.withoutNetwork}
+          loading={isSectionLoading('networks')}
+          value={queryState.networksSelected}
+          onChange={(networksSelected) => updateQueryState({ networksSelected })}
+        />
+        <Stack spacing={0.5}>
+          <FormControlLabel
+            control={<Checkbox checked={queryState.withoutNetwork} onChange={(_event, value) => updateQueryState({ withoutNetwork: value })} />}
+            label="Тільки без мережі"
+            sx={compactCheckboxLabelSx}
+          />
+        </Stack>
+      </FilterSection>
+      <FilterSection
+        title="Підрозділи"
+        countLabel={isSectionLoading('units') ? loadingIndicator : sectionCountLabel(derived.unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
+        expanded={expandedSections.units}
+        onToggle={() => toggleSection('units')}
+        onLoad={loadSection('units')}
+      >
+        <Stack spacing={1.25}>
+          <AnalysisFilterField
+            label="Підрозділи"
+            options={derived.unitsOptions}
+            loading={isSectionLoading('units')}
+            value={queryState.unitsSelected}
+            onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
+          />
+          <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>
+            <InputLabel id="units-exact-match-mode-label">Збіг за еталонкою</InputLabel>
+            <Select
+              labelId="units-exact-match-mode-label"
+              label="Збіг за еталонкою"
+              value={unitsExactMatchModeFromState(queryState.unitsExactMatchOnly)}
+              onChange={handleUnitsExactMatchModeChange}
+            >
+              <MenuItem value="default">За замовчуванням</MenuItem>
+              <MenuItem value="exact">Точний збіг</MenuItem>
+              <MenuItem value="non-exact">Неточний збіг</MenuItem>
+            </Select>
+          </FormControl>
+        </Stack>
+      </FilterSection>
+      <FilterSection
+        title="Групи"
+        countLabel={isSectionLoading('groups') ? loadingIndicator : sectionCountLabel(derived.groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
+        expanded={expandedSections.groups}
+        onToggle={() => toggleSection('groups')}
+        onLoad={loadSection('groups')}
+      >
+        <AnalysisFilterField
+          label="Групи"
+          options={derived.groupOptions}
+          loading={isSectionLoading('groups')}
+          value={queryState.groupsSelected}
+          onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
+        />
+      </FilterSection>
+      <FilterSection
+        title="Відправники"
+        countLabel={isSectionLoading('senders') ? loadingIndicator : sectionCountLabel(derived.sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
+        expanded={expandedSections.senders}
+        onToggle={() => toggleSection('senders')}
+        onLoad={loadSection('senders')}
+      >
+        <AnalysisFilterField
+          label="Відправники"
+          options={options.senders}
+          loading={isSectionLoading('senders')}
+          value={queryState.sendersSelected}
+          onChange={(sendersSelected) => updateQueryState({ sendersSelected })}
+        />
+      </FilterSection>
+      <FilterSection
+        title="Пости"
+        countLabel={isSectionLoading('posts') ? loadingIndicator : sectionCountLabel(derived.postsSelectedCount, counts?.postsCount ?? options.posts.length)}
+        expanded={expandedSections.posts}
+        onToggle={() => toggleSection('posts')}
+        onLoad={loadSection('posts')}
+      >
+        <Stack spacing={1.25}>
+          <AnalysisFilterField
+            label="Пости"
+            options={derived.postsOptions}
+            loading={isSectionLoading('posts')}
+            value={queryState.postsSelected}
+            onChange={(postsSelected) => updateQueryState({ postsSelected })}
+          />
+        </Stack>
+      </FilterSection>
+      <FilterSection
+        title="Локації"
+        countLabel={
+          isSectionLoading('locations') ? loadingIndicator : sectionCountLabel(derived.locationsSelectedCount, counts?.locationsCount ?? options.locations.length)
+        }
+        expanded={expandedSections.locations}
+        onToggle={() => toggleSection('locations')}
+        onLoad={loadSection('locations')}
+      >
+        <Stack spacing={0.5}>
+          <AnalysisFilterField
+            label="Локації"
+            options={derived.locationsOptions}
+            loading={isSectionLoading('locations')}
+            value={queryState.locationsSelected}
+            onChange={(locationsSelected) => updateQueryState({ locationsSelected })}
+          />
+          <FormControlLabel
+            control={<Checkbox checked={queryState.includePelengLocations} onChange={(_event, value) => updateQueryState({ includePelengLocations: value })} />}
+            label="Включати пеленг-локації"
+            sx={compactCheckboxLabelSx}
+          />
+        </Stack>
+      </FilterSection>
+      <FilterSection
         sectionId="important"
         title="Важливе"
         countLabel={sectionCountLabel(derived.importantSelectedCount, null)}
@@ -107,88 +298,47 @@ export function AnalysisFiltersPanelSections({
           />
         </Box>
       </FilterSection>
-
       <FilterSection
-        title="Відправники"
-        countLabel={isSectionLoading('senders') ? loadingIndicator : sectionCountLabel(derived.sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
-        expanded={expandedSections.senders}
-        onToggle={() => toggleSection('senders')}
-        onLoad={loadSection('senders')}
+        title="Теги"
+        countLabel={isSectionLoading('tags') ? loadingIndicator : sectionCountLabel(derived.tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
+        expanded={expandedSections.tags}
+        onToggle={() => toggleSection('tags')}
+        onLoad={loadSection('tags')}
       >
-        <AnalysisFilterField
-          label="Відправники"
-          options={options.senders}
-          loading={isSectionLoading('senders')}
-          value={queryState.sendersSelected}
-          onChange={(sendersSelected) => updateQueryState({ sendersSelected })}
-        />
-      </FilterSection>
-
-      <FilterSection
-        title="Групи"
-        countLabel={isSectionLoading('groups') ? loadingIndicator : sectionCountLabel(derived.groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
-        expanded={expandedSections.groups}
-        onToggle={() => toggleSection('groups')}
-        onLoad={loadSection('groups')}
-      >
-        <AnalysisFilterField
-          label="Групи"
-          options={derived.groupOptions}
-          loading={isSectionLoading('groups')}
-          value={queryState.groupsSelected}
-          onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
-        />
-      </FilterSection>
-
-      <FilterSection
-        title="Локації"
-        countLabel={
-          isSectionLoading('locations') ? loadingIndicator : sectionCountLabel(derived.locationsSelectedCount, counts?.locationsCount ?? options.locations.length)
-        }
-        expanded={expandedSections.locations}
-        onToggle={() => toggleSection('locations')}
-        onLoad={loadSection('locations')}
-      >
-        <Stack spacing={0.5}>
+        <Stack spacing={1.25}>
           <AnalysisFilterField
-            label="Локації"
-            options={derived.locationsOptions}
-            loading={isSectionLoading('locations')}
-            value={queryState.locationsSelected}
-            onChange={(locationsSelected) => updateQueryState({ locationsSelected })}
+            label="Теги"
+            options={derived.tagOptions}
+            loading={isSectionLoading('tags')}
+            value={queryState.tags.map((tagId) => String(tagId))}
+            onChange={(next) => updateQueryState({ tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)) })}
           />
-          <FormControlLabel
-            control={<Checkbox checked={queryState.includePelengLocations} onChange={(_event, value) => updateQueryState({ includePelengLocations: value })} />}
-            label="Включати пеленг-локації"
-            sx={compactCheckboxLabelSx}
-          />
+          <FormControl size="small">
+            <InputLabel id="analysis-tags-mode-label">Збіг тегів</InputLabel>
+            <Select
+              labelId="analysis-tags-mode-label"
+              label="Збіг тегів"
+              value={queryState.filterTagsOption}
+              onChange={(event) => updateQueryState({ filterTagsOption: event.target.value as 'OneOfTags' | 'AllTags' })}
+            >
+              <MenuItem value="OneOfTags">Будь-який з вибраних</MenuItem>
+              <MenuItem value="AllTags">Усі вибрані</MenuItem>
+            </Select>
+          </FormControl>
+          <Stack spacing={0.5}>
+            <FormControlLabel
+              control={<Checkbox checked={queryState.withoutModelTags} onChange={(_event, value) => updateQueryState({ withoutModelTags: value })} />}
+              label="Без відміток роботами"
+              sx={compactCheckboxLabelSx}
+            />
+            <FormControlLabel
+              control={<Checkbox checked={queryState.reportTagsOnlyThisUnit} onChange={(_event, value) => updateQueryState({ reportTagsOnlyThisUnit: value })} />}
+              label="Лише теги мого підрозділу"
+              sx={compactCheckboxLabelSx}
+            />
+          </Stack>
         </Stack>
       </FilterSection>
-
-      <FilterSection
-        title="Мережі"
-        countLabel={isSectionLoading('networks') ? loadingIndicator : sectionCountLabel(derived.networksSelectedCount, counts?.networksCount ?? options.networks.length)}
-        expanded={expandedSections.networks}
-        onToggle={() => toggleSection('networks')}
-        onLoad={loadSection('networks')}
-      >
-        <AnalysisFilterField
-          label="Мережі"
-          options={derived.networkOptions}
-          disabled={queryState.withoutNetwork}
-          loading={isSectionLoading('networks')}
-          value={queryState.networksSelected}
-          onChange={(networksSelected) => updateQueryState({ networksSelected })}
-        />
-        <Stack spacing={0.5}>
-          <FormControlLabel
-            control={<Checkbox checked={queryState.withoutNetwork} onChange={(_event, value) => updateQueryState({ withoutNetwork: value })} />}
-            label="Тільки без мережі"
-            sx={compactCheckboxLabelSx}
-          />
-        </Stack>
-      </FilterSection>
-
       <FilterSection
         title="Метадані"
         countLabel={isSectionLoading('metadata') ? loadingIndicator : sectionCountLabel(derived.metadataSelectedCount, null)}
@@ -239,167 +389,6 @@ export function AnalysisFiltersPanelSections({
           <FormControlLabel
             control={<Checkbox checked={queryState.withoutMetadata} disabled={queryState.onlyWithMetadata} onChange={(_event, value) => updateQueryState({ withoutMetadata: value })} />}
             label="Тільки без метаданих"
-            sx={compactCheckboxLabelSx}
-          />
-        </Stack>
-      </FilterSection>
-
-      <FilterSection
-        title="Підрозділи"
-        countLabel={isSectionLoading('units') ? loadingIndicator : sectionCountLabel(derived.unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
-        expanded={expandedSections.units}
-        onToggle={() => toggleSection('units')}
-        onLoad={loadSection('units')}
-      >
-        <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Підрозділи"
-            options={derived.unitsOptions}
-            loading={isSectionLoading('units')}
-            value={queryState.unitsSelected}
-            onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
-          />
-          <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>
-            <InputLabel id="units-exact-match-mode-label">Збіг за еталонкою</InputLabel>
-            <Select
-              labelId="units-exact-match-mode-label"
-              label="Збіг за еталонкою"
-              value={unitsExactMatchModeFromState(queryState.unitsExactMatchOnly)}
-              onChange={handleUnitsExactMatchModeChange}
-            >
-              <MenuItem value="default">За замовчуванням</MenuItem>
-              <MenuItem value="exact">Точний збіг</MenuItem>
-              <MenuItem value="non-exact">Неточний збіг</MenuItem>
-            </Select>
-          </FormControl>
-        </Stack>
-      </FilterSection>
-
-      <FilterSection
-        title="Позивні"
-        countLabel={isSectionLoading('callsigns') ? loadingIndicator : sectionCountLabel(derived.callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
-        expanded={expandedSections.callsigns}
-        onToggle={() => toggleSection('callsigns')}
-        onLoad={loadSection('callsigns')}
-      >
-        <AnalysisFilterField
-          label="Позивні"
-          options={derived.callsignsOptions}
-          loading={isSectionLoading('callsigns')}
-          value={queryState.callsignsSelected}
-          onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
-        />
-      </FilterSection>
-
-      <FilterSection
-        title="Пости"
-        countLabel={isSectionLoading('posts') ? loadingIndicator : sectionCountLabel(derived.postsSelectedCount, counts?.postsCount ?? options.posts.length)}
-        expanded={expandedSections.posts}
-        onToggle={() => toggleSection('posts')}
-        onLoad={loadSection('posts')}
-      >
-        <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Пости"
-            options={derived.postsOptions}
-            loading={isSectionLoading('posts')}
-            value={queryState.postsSelected}
-            onChange={(postsSelected) => updateQueryState({ postsSelected })}
-          />
-        </Stack>
-      </FilterSection>
-
-      <FilterSection
-        title="Смуги"
-        countLabel={isSectionLoading('aors') ? loadingIndicator : sectionCountLabel(derived.aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
-        expanded={expandedSections.aors}
-        onToggle={() => toggleSection('aors')}
-        onLoad={loadSection('aors')}
-      >
-        <AnalysisFilterField
-          label="Смуги"
-          options={derived.aorOptions}
-          loading={isSectionLoading('aors')}
-          value={queryState.aorsSelected}
-          onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
-        />
-      </FilterSection>
-
-      <FilterSection
-        title="Теги"
-        countLabel={isSectionLoading('tags') ? loadingIndicator : sectionCountLabel(derived.tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
-        expanded={expandedSections.tags}
-        onToggle={() => toggleSection('tags')}
-        onLoad={loadSection('tags')}
-      >
-        <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Теги"
-            options={derived.tagOptions}
-            loading={isSectionLoading('tags')}
-            value={queryState.tags.map((tagId) => String(tagId))}
-            onChange={(next) => updateQueryState({ tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)) })}
-          />
-          <FormControl size="small">
-            <InputLabel id="analysis-tags-mode-label">Збіг тегів</InputLabel>
-            <Select
-              labelId="analysis-tags-mode-label"
-              label="Збіг тегів"
-              value={queryState.filterTagsOption}
-              onChange={(event) => updateQueryState({ filterTagsOption: event.target.value as 'OneOfTags' | 'AllTags' })}
-            >
-              <MenuItem value="OneOfTags">Будь-який з вибраних</MenuItem>
-              <MenuItem value="AllTags">Усі вибрані</MenuItem>
-            </Select>
-          </FormControl>
-          <Stack spacing={0.5}>
-            <FormControlLabel
-              control={<Checkbox checked={queryState.withoutModelTags} onChange={(_event, value) => updateQueryState({ withoutModelTags: value })} />}
-              label="Без відміток роботами"
-              sx={compactCheckboxLabelSx}
-            />
-            <FormControlLabel
-              control={<Checkbox checked={queryState.reportTagsOnlyThisUnit} onChange={(_event, value) => updateQueryState({ reportTagsOnlyThisUnit: value })} />}
-              label="Лише теги мого підрозділу"
-              sx={compactCheckboxLabelSx}
-            />
-          </Stack>
-        </Stack>
-      </FilterSection>
-
-      <FilterSection
-        title="Частоти"
-        countLabel={isSectionLoading('freqs') ? loadingIndicator : sectionCountLabel(derived.freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
-        expanded={expandedSections.freqs}
-        onToggle={() => toggleSection('freqs')}
-      >
-        <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Частоти"
-            options={options.freqs}
-            disabled={includeOnlyNewFreqs}
-            loading={isSectionLoading('freqs')}
-            value={queryState.freqsSelected}
-            onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
-          />
-          <FormControl size="small" disabled={includeOnlyNewFreqs}>
-            <InputLabel id="analysis-adjacent-range-label">Включати частоти в діапазоні</InputLabel>
-            <Select
-              labelId="analysis-adjacent-range-label"
-              label="Включати частоти в діапазоні"
-              value={String(queryState.adjacentFreqsRange)}
-              onChange={(event) => updateQueryState({ adjacentFreqsRange: Number(event.target.value) })}
-            >
-              {[0, 0.0005, 0.002, 0.005].map((value) => (
-                <MenuItem key={value} value={String(value)}>
-                  {value === 0 ? '0 кГц' : `${value * 1000} кГц`}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControlLabel
-            control={<Checkbox checked={includeOnlyNewFreqs} onChange={(_event, value) => setIncludeOnlyNewFreqs(value)} />}
-            label="Тільки нові частоти"
             sx={compactCheckboxLabelSx}
           />
         </Stack>

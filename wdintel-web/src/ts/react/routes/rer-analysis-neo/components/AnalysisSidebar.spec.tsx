@@ -41,6 +41,10 @@ vi.mock('./AnalysisChartsPanel', () => ({
   AnalysisChartsPanel: () => <div>charts-panel</div>,
 }));
 
+vi.mock('./AnalysisMapPane', () => ({
+  AnalysisMapPane: () => <div>map-pane</div>,
+}));
+
 vi.mock('./AnalysisCallsignsCloudCard', () => ({
   AnalysisCallsignsCloudCard: () => <div>callsigns-cloud</div>,
 }));
@@ -74,13 +78,25 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     groupsActivityLoadedPeriod: null,
     groupsActivityPeriod: 'selected',
     groupsActivityLoading: false,
+    mapAttrs: {
+      daterange: '',
+      daterangeLoading: '',
+      messages: '',
+      palitras: '',
+      palitrasLoaded: '',
+      palitrasLoadState: 'idle',
+      points: '',
+      selectedUnits: '',
+    },
     loadCallsignGraph: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
+    loadMessagesForMap: vi.fn(),
     newCallsigns: [],
     newCallsignsLoading: false,
     queryState: {
       freqsSelected: [],
+      search: '',
     } as ComponentProps<typeof AnalysisSidebar>['queryState'],
     rightPanelOpen: true,
     rightSidebarTab: 'stats',
@@ -90,7 +106,9 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     topFreqs: [],
     topLocations: [],
     topUnits: [],
+    refreshMapDateRange: vi.fn(),
     toggleCallsignGraphNolimit: vi.fn(),
+    toggleUnitFromMap: vi.fn(),
     ...overrides,
   };
 }
@@ -131,6 +149,14 @@ describe('AnalysisSidebar', () => {
     expect(view.container.textContent).not.toContain('callsigns-cloud');
   });
 
+  it('renders the map content for the map tab', async () => {
+    const view = await renderComponent(buildProps({ rightSidebarTab: 'map' }));
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('map-pane');
+    expect(view.container.textContent).not.toContain('charts-panel');
+  });
+
   it('renders only the callsigns content for the callsigns tab', async () => {
     const view = await renderComponent(buildProps({ rightSidebarTab: 'callsigns' }));
     rendered.push(view);
@@ -145,12 +171,12 @@ describe('AnalysisSidebar', () => {
     const view = await renderComponent(buildProps({ setRightSidebarTab }));
     rendered.push(view);
 
-    const newTab = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent?.includes('Нові'));
-    expect(newTab).toBeTruthy();
+    const mapTab = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent?.includes('Мапа'));
+    expect(mapTab).toBeTruthy();
 
-    await click(newTab as HTMLButtonElement);
+    await click(mapTab as HTMLButtonElement);
 
-    expect(setRightSidebarTab).toHaveBeenCalledWith('newCallsigns');
+    expect(setRightSidebarTab).toHaveBeenCalledWith('map');
   });
 
   it('allows a null tab while the right panel is closed', async () => {

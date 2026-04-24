@@ -13,8 +13,15 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </button>
   ),
+  IconButton: (props: { children: ReactNode; onClick?: () => void; 'aria-label'?: string }) => (
+    <button type="button" aria-label={props['aria-label']} onClick={props.onClick}>
+      {props.children}
+    </button>
+  ),
+  InputAdornment: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Paper: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Popover: (props: { open?: boolean; children: ReactNode }) => (props.open ? <div>{props.children}</div> : null),
+  Tooltip: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   TextField: (props: {
     placeholder?: string;
@@ -23,14 +30,22 @@ vi.mock('@mui/material', () => ({
     value?: string;
     onClick?: () => void;
     onChange?: (event: { target: { value: string } }) => void;
+    slotProps?: {
+      input?: {
+        startAdornment?: ReactNode;
+        endAdornment?: ReactNode;
+      };
+    };
   }) => (
     <label onClick={props.onClick}>
       <span>{props.label ?? props.placeholder}</span>
+      {props.slotProps?.input?.startAdornment}
       <input
         type={props.type ?? 'text'}
         value={props.value ?? ''}
         onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
       />
+      {props.slotProps?.input?.endAdornment}
     </label>
   ),
 }));
@@ -88,6 +103,20 @@ describe('AnalysisHeaderControls', () => {
 
     expect(view.container.querySelector('input[value="uid-1"]')).toBeTruthy();
     expect(view.container.querySelector('input[value="27.03.2026 21:52 — 28.03.2026 09:52"]')).toBeTruthy();
+    expect(view.container.querySelector('button[aria-label="Очистити пошук"]')).toBeTruthy();
+  });
+
+  it('clears search when the close icon is clicked', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(buildProps({ updateQueryState }));
+    rendered.push(view);
+
+    const clearButton = view.container.querySelector('button[aria-label="Очистити пошук"]');
+    expect(clearButton).toBeTruthy();
+
+    await click(clearButton as HTMLButtonElement);
+
+    expect(updateQueryState).toHaveBeenCalledWith({ search: '' });
   });
 
   it('opens the datetime popover with split from/to inputs', async () => {

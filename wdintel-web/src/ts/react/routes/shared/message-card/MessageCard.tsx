@@ -1,9 +1,8 @@
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
-import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useMemo } from 'react';
-import type { CallsignInfoRes, InboxMessage, Network, Tag, Unit } from '../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, Network, Tag, Unit } from '../../../../../Bindings';
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
@@ -14,7 +13,7 @@ import {
   getPointEtalonsFromMessage,
   messageRenderDistance,
   type TagsLayoutVariant,
-} from './utils';
+} from '../../rer-duty-neo/utils';
 
 /** Share of the header row (network vs relative time) reserved for etalon / network block. */
 export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
@@ -37,6 +36,7 @@ export type MessageCardProps = {
   senderName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
+  searchText?: string | null;
   /** Loaded network models (for «в дорозвідці» badge); keys match `msg.networkIds`. */
   networkMap?: Record<number, Network>;
   /** When false, show `msg.unit` if network ids are empty (and freq present). */
@@ -70,6 +70,7 @@ export function MessageCard({
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
+  searchText,
   networkMap = {},
   featureStrictNetworks = false,
   tagsMap,
@@ -134,17 +135,7 @@ export function MessageCard({
           target="_blank"
         />
       </Stack>
-    ) : (
-      <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
-        <CardActionLink href={mapHref} icon={<MapOutlinedIcon aria-hidden />} label="Відкрити мапу тут" />
-        <CardActionLink
-          href={mapHref}
-          icon={<OpenInNewOutlinedIcon aria-hidden />}
-          label="Відкрити мапу в новому вікні"
-          target="_blank"
-        />
-      </Stack>
-    );
+    ) : null;
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
@@ -224,6 +215,7 @@ export function MessageCard({
           callsignInfoMap={callsignInfoMap}
           networks={networks}
           unitsMap={unitsMap}
+          searchText={searchText}
         />
       </Box>
     </Box>

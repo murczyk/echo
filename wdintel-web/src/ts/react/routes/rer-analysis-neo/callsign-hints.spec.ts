@@ -209,6 +209,51 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(formatCallsignHintTooltip(result)).toBeNull();
   });
 
+  it('returns system tooltip in message context for catalog-only callsigns even when message networks exist', () => {
+    const result = getCallsignHintResult({
+      hintContext: 'message',
+      freq: null,
+      networkIds: [10],
+      networks,
+      unitsMap: {
+        ...unitsMap,
+        99: {
+          id: 99,
+          company: '',
+          battalion: '',
+          regiment: '',
+          division: '',
+          army: 'Z',
+          comment: '',
+          name: 'Unmapped unit',
+          active: true,
+          createdAt: 0,
+          createdBy: 'test',
+        },
+      },
+      callsignInfoMap: createCallsignInfoMap({
+        fox: [
+          {
+            id: 3,
+            callsign: 'fox',
+            position: 'начальник',
+            comment: '',
+            unit1: 'штаб',
+            unit2: '',
+            unitId: 99,
+            networkIdsReportedIn: [30],
+          },
+        ],
+      }),
+      callsign: 'fox',
+    });
+
+    expect(result.strategy).toBe('system');
+    expect(result.iconClass).toBe('bi-info-circle');
+    expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([3]);
+    expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 начальник штаб ');
+  });
+
   it('returns network tooltip in message context and keeps only rows from message networks', () => {
     const result = getCallsignHintResult({
       hintContext: 'message',

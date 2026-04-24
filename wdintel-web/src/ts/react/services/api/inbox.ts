@@ -46,6 +46,7 @@ type InboxMessagesRspRaw = {
     { master_key?: string; masterKey?: string; name?: string; [key: string]: unknown }
   >;
   freq_pelengs_summary: InboxMessagesRsp['freqPelengsSummary'];
+  page_limit?: number | null;
 };
 
 function normalizeProfileEntry(
@@ -172,6 +173,7 @@ function mapRsp(raw: InboxMessagesRspRaw): InboxMessagesRsp {
     signalProfiles,
     signalGroups,
     freqPelengsSummary: raw.freq_pelengs_summary,
+    pageLimit: raw.page_limit ?? null,
   };
 }
 

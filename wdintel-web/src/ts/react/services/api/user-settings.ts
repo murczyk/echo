@@ -3,6 +3,8 @@ import type { DutyTagsLayout, UserDutySettingsDto } from '../../../../Bindings';
 import { getJson, putJson } from './client';
 import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
+export const USER_SETTINGS_UPDATED_EVENT = 'user-settings-updated';
+
 export type { UserDutySettingsDto };
 export type UserDutySettings = {
   tagsLayout: TagsLayoutVariant;
