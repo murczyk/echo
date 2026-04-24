@@ -211,6 +211,7 @@ update shared msg model =
             ( { model
                 | callsigns = Success res.callsigns
                 , callsignsPager = updatedPager
+                , unknownCallsignsActivityReady = False
               }
             , E.batch
                 [ knownActivityEffect
@@ -219,7 +220,7 @@ update shared msg model =
             )
 
         CallsignsActivityReturnedByApi (Err e) ->
-            ( model
+            ( { model | unknownCallsignsActivityReady = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності позивних" e
             )
 
@@ -235,6 +236,7 @@ update shared msg model =
 
                         _ ->
                             model.callsigns
+                , unknownCallsignsActivityReady = True
               }
             , E.none
             )
@@ -1056,7 +1058,11 @@ viewCallsigns callsigns model user shared =
                             )
 
                 callsignsUnknownVisible =
-                    List.filter (isVisibleUnknownCallsign shared) callsignsUnknown
+                    if model.unknownCallsignsActivityReady then
+                        List.filter (isVisibleUnknownCallsign shared) callsignsUnknown
+
+                    else
+                        callsignsUnknown
 
                 callsignsUnknownSorted =
                     if model.unknownCallsignsSortByMessages then
