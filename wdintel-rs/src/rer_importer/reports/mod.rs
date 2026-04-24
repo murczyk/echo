@@ -251,7 +251,7 @@ pub async fn report_docx(
             return Ok(resp);
         }
         self::network_frequencies::report_docx_kind_network_frequencies(
-            user, &env, &req, &outpath,
+            &env, &req, &outpath,
         )
         .await
         .c(h!())?;

@@ -2185,21 +2185,11 @@ async fn summary_table_xlsx(
     sheet1.set_column_width(3, 80.0).context(h!())?; // Set width for column 3
     sheet1.set_column_format(3, &format_wrap).context(h!())?; // Apply format to column 3
     sheet1
-        .write_string_with_format(
-            2,
-            4,
-            "Дата/час останнього повідомлення",
-            &format_bold,
-        )
+        .write_string_with_format(2, 4, "Останнє перехоплення", &format_bold)
         .context(h!())?;
     sheet1.set_column_width(4, 24.0).context(h!())?;
     sheet1
-        .write_string_with_format(
-            2,
-            5,
-            "Повна назва пов'язаної р/м",
-            &format_bold,
-        )
+        .write_string_with_format(2, 5, "Мережі", &format_bold)
         .context(h!())?;
     sheet1.set_column_width(5, 80.0).context(h!())?;
     sheet1.set_column_format(5, &format_wrap).context(h!())?;
