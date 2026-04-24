@@ -102,11 +102,11 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
   const storedState = loadRerAnalysisQueryState();
   const hasManagedStateInUrl = hasRerAnalysisQueryStateParams(url.searchParams);
 
-  return normalizeQueryState({
+  return {
     ...emptyQueryState(),
     ...(hasManagedStateInUrl ? {} : (storedState ?? {})),
     ...(flatStateFromUrl ?? {}),
-  });
+  };
 }
 
 export function createInitialQueryState(
@@ -138,10 +138,9 @@ export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): 
 
 export function pushQueryStateToUrl(state: AnalysisQueryState) {
   if (typeof window === 'undefined') return;
-  const normalized = normalizeQueryState(state);
-  saveRerAnalysisQueryState(normalized);
+  saveRerAnalysisQueryState(state);
   const url = new URL(window.location.href);
-  writeRerAnalysisQueryStateToSearchParams(url.searchParams, normalized);
+  writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }
 
