@@ -214,11 +214,7 @@ update shared msg model =
               }
             , E.batch
                 [ knownActivityEffect
-                , if model.unknownCallsignsShowMessages then
-                    loadUnknownCallsignsActivityForCallsigns model res.callsigns
-
-                  else
-                    E.none
+                , loadUnknownCallsignsActivityForCallsigns model res.callsigns
                 ]
             )
 
@@ -633,27 +629,6 @@ update shared msg model =
 
         CloseUnknownCallsignDropdown ->
             ( { model | unknownCallsignDropdown = Nothing }, E.none )
-
-        ToggleUnknownCallsignsMessages ->
-            let
-                showMessages =
-                    not model.unknownCallsignsShowMessages
-            in
-            ( { model
-                | unknownCallsignsShowMessages = showMessages
-                , unknownCallsignsSortByMessages =
-                    if model.unknownCallsignsShowMessages then
-                        model.unknownCallsignsSortByMessages
-
-                    else
-                        False
-              }
-            , if showMessages then
-                loadUnknownCallsignsActivity model
-
-              else
-                E.none
-            )
 
         ToggleUnknownCallsignsSortByMessages ->
             ( { model
@@ -1084,24 +1059,20 @@ viewCallsigns callsigns model user shared =
                     List.filter (isVisibleUnknownCallsign shared) callsignsUnknown
 
                 callsignsUnknownSorted =
-                    if model.unknownCallsignsShowMessages then
-                        if model.unknownCallsignsSortByMessages then
-                            List.sortWith
-                                (\left right ->
-                                    case compare right.messageCount left.messageCount of
-                                        EQ ->
-                                            compare (String.toUpper left.callsign) (String.toUpper right.callsign)
+                    if model.unknownCallsignsSortByMessages then
+                        List.sortWith
+                            (\left right ->
+                                case compare right.messageCount left.messageCount of
+                                    EQ ->
+                                        compare (String.toUpper left.callsign) (String.toUpper right.callsign)
 
-                                        ordering ->
-                                            ordering
-                                )
-                                callsignsUnknownVisible
-
-                        else
-                            List.sortBy (\entry -> String.toUpper entry.callsign) callsignsUnknownVisible
+                                    ordering ->
+                                        ordering
+                            )
+                            callsignsUnknownVisible
 
                     else
-                        []
+                        List.sortBy (\entry -> String.toUpper entry.callsign) callsignsUnknownVisible
               in
               div [ class "table-responsive-modern" ]
                 [ -- Таблиця "Всі позивні" (з пагінацією)
@@ -1110,38 +1081,23 @@ viewCallsigns callsigns model user shared =
                   Pager.view model.callsignsPager
                     |> Html.map CallsignsPagerMsg
                 , div [ class "mt-4 p-3 bg-[var(--color-bg-muted)] rounded" ]
-                    [ div [ class "flex flex-wrap items-center gap-2" ]
-                        [ span [ class "font-medium" ] [ text "Присутні в перехопленнях: " ]
+                    [ div [ class "flex flex-wrap items-start justify-between gap-3" ]
+                        [ div [ class "min-w-0 flex flex-col gap-1" ]
+                            [ span [ class "font-medium" ] [ text "Присутні в перехопленнях:" ]
+                            , div [ class "opacity-75", style "color" "var(--color-text)" ]
+                                [ text "Активні протягом 2 тижнів" ]
+                            ]
                         , Button.new
                             { label =
-                                if model.unknownCallsignsShowMessages then
-                                    "Сховати сеанси"
+                                if model.unknownCallsignsSortByMessages then
+                                    "Сортувати по імені"
 
                                 else
-                                    "Показати сеанси"
-                            , onClick = ToggleUnknownCallsignsMessages
+                                    "Сортувати по сеансам"
+                            , onClick = ToggleUnknownCallsignsSortByMessages
                             }
                             |> Button.withStyleSecondary
                             |> Button.view
-                        , if model.unknownCallsignsShowMessages then
-                            Button.new
-                                { label =
-                                    if model.unknownCallsignsSortByMessages then
-                                        "Сортувати по імені"
-
-                                    else
-                                        "Сортувати по сеансам"
-                                , onClick = ToggleUnknownCallsignsSortByMessages
-                                }
-                                |> Button.withStyleSecondary
-                                |> Button.view
-
-                          else
-                            text ""
-                        ]
-                    , div [ class "text-sm leading-6 mt-1 space-y-1" ]
-                        [ div [ class "opacity-75", style "color" "var(--color-text)" ]
-                            [ text "Активні протягом 2 тижнів" ]
                         ]
                     , if List.isEmpty callsignsUnknownSorted then
                         div [ class "text-sm leading-6 opacity-90 mt-2", style "color" "var(--color-text)" ]
@@ -1181,14 +1137,9 @@ viewCallsigns callsigns model user shared =
                                         ([ DropdownBadge.view
                                             (DropdownBadge.withAutoDirection DropdownBadge.Up config)
                                          ]
-                                            ++ (if model.unknownCallsignsShowMessages then
-                                                    [ span [ class "badge badge-messages" ]
-                                                        [ text <| String.fromInt entry.messageCount ]
-                                                    ]
-
-                                                else
-                                                    []
-                                               )
+                                            ++ [ span [ class "badge badge-messages" ]
+                                                    [ text <| String.fromInt entry.messageCount ]
+                                               ]
                                         )
                                 )
                                 callsignsUnknownSorted

@@ -148,7 +148,6 @@ type CallsignsMsg
     | NavigateToCallsignPage Int -- Перейти на сторінку позивного
     | ToggleUnknownCallsignDropdown String -- Відкрити/закрити dropdown для невідомого позивного
     | CloseUnknownCallsignDropdown -- Закрити всі dropdown для невідомих позивних
-    | ToggleUnknownCallsignsMessages
     | ToggleUnknownCallsignsSortByMessages
     | SetCallsignsTableState Table.State
     | SetNetworkCallsignsTableState Table.State

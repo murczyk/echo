@@ -289,7 +289,6 @@ init route _ () =
 
       -- Unknown callsigns dropdown initialization
       , unknownCallsignDropdown = Nothing
-      , unknownCallsignsShowMessages = False
       , unknownCallsignsSortByMessages = False
 
       -- Row show all popup status initialization
