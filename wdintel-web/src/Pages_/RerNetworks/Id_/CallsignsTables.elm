@@ -133,13 +133,27 @@ loadUnknownCallsignsActivity model =
 loadUnknownCallsignsActivityForCallsigns model callsigns =
     case model.network of
         Success network ->
-            E.getNetworkCallsignsActivity UnknownCallsignsActivityReturnedByApi
-                { networkId = network.id
-                , callsigns = unknownCallsignActivityCallsigns callsigns
-                }
+            loadCallsignsActivityWith network.id (unknownCallsignActivityCallsigns callsigns) UnknownCallsignsActivityReturnedByApi
 
         _ ->
             E.none
+
+
+loadCallsignsActivityWith networkId callsigns toMsg =
+    let
+        selectedCallsigns =
+            callsigns
+                |> List.filter (\callsign -> String.trim callsign /= "")
+                |> ListX.unique
+    in
+    if List.isEmpty selectedCallsigns then
+        E.none
+
+    else
+        E.getNetworkCallsignsActivity toMsg
+            { networkId = networkId
+            , callsigns = selectedCallsigns
+            }
 
 
 applyCallsignsActivity rsp callsigns =
@@ -223,7 +237,7 @@ update shared msg model =
             )
 
         CallsignsActivityReturnedByApi (Err e) ->
-            ( { model | unknownCallsignsActivityReady = False }
+            ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності позивних" e
             )
 
