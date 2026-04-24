@@ -6,7 +6,7 @@ use actix_identity::Identity;
 use chrono::prelude::*;
 use rust_xlsxwriter::Workbook;
 use sea_orm::{prelude::Expr, *};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
 pub async fn report_xlsx_networks_goi(
@@ -196,18 +196,34 @@ async fn get_goi_report_freqs(
 fn keep_first_network_aor_per_freq(
     freqs: Vec<NetworkFreq>,
 ) -> Vec<NetworkFreq> {
-    let mut first_freq_rows = HashMap::<i64, NetworkFreq>::new();
+    let mut first_freq_rows =
+        HashMap::<i64, (NetworkFreq, BTreeSet<String>)>::new();
     for freq in freqs {
-        match first_freq_rows.get_mut(&freq.network_freq_id) {
-            Some(current) if current.network_aor_id <= freq.network_aor_id => {}
-            Some(current) => *current = freq,
+        let network_freq_id = freq.network_freq_id;
+        let unit_name = freq.unit_name.clone();
+        match first_freq_rows.get_mut(&network_freq_id) {
+            Some((current, unit_names)) => {
+                add_unit_name(unit_names, unit_name);
+                if current.network_aor_id > freq.network_aor_id {
+                    *current = freq;
+                }
+            }
             None => {
-                first_freq_rows.insert(freq.network_freq_id, freq);
+                let mut unit_names = BTreeSet::new();
+                add_unit_name(&mut unit_names, unit_name);
+                first_freq_rows.insert(network_freq_id, (freq, unit_names));
             }
         }
     }
 
-    let mut freqs = first_freq_rows.into_values().collect::<Vec<_>>();
+    let mut freqs = first_freq_rows
+        .into_values()
+        .map(|(mut freq, unit_names)| {
+            freq.unit_name = (!unit_names.is_empty())
+                .then(|| unit_names.into_iter().collect::<Vec<_>>().join(", "));
+            freq
+        })
+        .collect::<Vec<_>>();
     freqs.sort_by(|left, right| {
         left.aor_order
             .total_cmp(&right.aor_order)
@@ -216,6 +232,16 @@ fn keep_first_network_aor_per_freq(
             .then_with(|| left.network_freq_id.cmp(&right.network_freq_id))
     });
     freqs
+}
+
+fn add_unit_name(unit_names: &mut BTreeSet<String>, unit_name: Option<String>) {
+    if let Some(unit_name) =
+        unit_name.map(|unit_name| unit_name.trim().to_string())
+    {
+        if !unit_name.is_empty() {
+            unit_names.insert(unit_name);
+        }
+    }
 }
 
 /// Excel sheet names cannot contain certain characters or exceed 31 chars.
@@ -244,13 +270,14 @@ mod tests {
         aor_name: &str,
         aor_order: f64,
         freq: &str,
+        unit_name: Option<&str>,
     ) -> NetworkFreq {
         NetworkFreq {
             network_freq_id,
             network_aor_id,
             freq: freq.to_string(),
             location: "loc".to_string(),
-            unit_name: None,
+            unit_name: unit_name.map(str::to_string),
             created_at: NaiveDate::from_ymd_opt(2026, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
@@ -263,9 +290,9 @@ mod tests {
     #[test]
     fn keep_first_network_aor_per_freq_uses_lowest_link_id() {
         let freqs = vec![
-            test_freq(10, 20, "B", 2.0, "200"),
-            test_freq(10, 5, "A", 1.0, "200"),
-            test_freq(11, 7, "C", 3.0, "300"),
+            test_freq(10, 20, "B", 2.0, "200", None),
+            test_freq(10, 5, "A", 1.0, "200", None),
+            test_freq(11, 7, "C", 3.0, "300", None),
         ];
 
         let rows = keep_first_network_aor_per_freq(freqs);
@@ -275,5 +302,27 @@ mod tests {
         assert_eq!(rows[0].network_aor_id, 5);
         assert_eq!(rows[0].aor_name, "A");
         assert_eq!(rows[1].network_freq_id, 11);
+    }
+
+    #[test]
+    fn keep_first_network_aor_per_freq_collects_all_unit_names() {
+        let freqs = vec![
+            test_freq(10, 20, "B", 2.0, "200", Some("Unit B")),
+            test_freq(10, 5, "A", 1.0, "200", Some("Unit C")),
+            test_freq(10, 5, "A", 1.0, "200", Some("Unit A")),
+            test_freq(11, 7, "C", 3.0, "300", None),
+        ];
+
+        let rows = keep_first_network_aor_per_freq(freqs);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].network_freq_id, 10);
+        assert_eq!(rows[0].network_aor_id, 5);
+        assert_eq!(rows[0].aor_name, "A");
+        assert_eq!(
+            rows[0].unit_name.as_deref(),
+            Some("Unit A, Unit B, Unit C")
+        );
+        assert_eq!(rows[1].unit_name, None);
     }
 }
