@@ -200,7 +200,7 @@ type alias Model =
 
     -- Unknown callsigns dropdown
     , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
-    , unknownCallsignsActivityReady : Bool
+    , unknownCallsignsShowStale : Bool
     , unknownCallsignsSortByMessages : Bool
 
     -- Row show all popup status for comments

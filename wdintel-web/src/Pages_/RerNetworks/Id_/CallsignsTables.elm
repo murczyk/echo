@@ -228,7 +228,6 @@ update shared msg model =
             ( { model
                 | callsigns = Success res.callsigns
                 , callsignsPager = updatedPager
-                , unknownCallsignsActivityReady = False
               }
             , E.batch
                 [ knownActivityEffect
@@ -258,7 +257,7 @@ update shared msg model =
             )
 
         UnknownCallsignsActivityReturnedByApi (Err e) ->
-            ( { model | unknownCallsignsActivityReady = False }
+            ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності позивних" e
             )
 
@@ -274,7 +273,6 @@ update shared msg model =
 
                         _ ->
                             model.callsigns
-                , unknownCallsignsActivityReady = True
               }
             , E.none
             )
@@ -677,6 +675,13 @@ update shared msg model =
             , E.none
             )
 
+        ToggleUnknownCallsignsShowStale ->
+            ( { model
+                | unknownCallsignsShowStale = not model.unknownCallsignsShowStale
+              }
+            , E.none
+            )
+
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
             , E.deleteNetworkCallsign CallsignDeletedFromNetwork callsignId
@@ -990,29 +995,34 @@ view model user shared =
                                             (model.developingCallsignDropdown == Just callsign.id)
                                             (ToggleDevelopingCallsignDropdown callsign.id)
                                             CloseDevelopingCallsignDropdown
-                                            ([ DropdownBadge.InternalAction
-                                                { icon = "bi-pencil"
-                                                , label = "Редагувати"
-                                                , action = EditCallsignClicked callsign.id
-                                                }
-                                             , DropdownBadge.InternalAction
-                                                { icon = "bi-trash"
-                                                , label = "Видалити"
-                                                , action = DeleteCallsignFromNetwork callsign.id
-                                                }
-                                             ]
-                                                ++ (case model.network of
-                                                        Success network ->
-                                                            [ DropdownBadge.ExternalLink
+                                            (List.filterMap identity
+                                                [ Just
+                                                    (DropdownBadge.InternalAction
+                                                        { icon = "bi-pencil"
+                                                        , label = "Редагувати"
+                                                        , action = EditCallsignClicked callsign.id
+                                                        }
+                                                    )
+                                                , Just
+                                                    (DropdownBadge.InternalAction
+                                                        { icon = "bi-trash"
+                                                        , label = "Видалити"
+                                                        , action = DeleteCallsignFromNetwork callsign.id
+                                                        }
+                                                    )
+                                                , case model.network of
+                                                    Success network ->
+                                                        Just
+                                                            (DropdownBadge.ExternalLink
                                                                 { icon = "bi-arrow-right"
                                                                 , label = "Проаналізувати"
                                                                 , url = IdUtils.createAnalysisUrl shared network callsign.callsign
                                                                 }
-                                                            ]
+                                                            )
 
-                                                        _ ->
-                                                            []
-                                                   )
+                                                    _ ->
+                                                        Nothing
+                                                ]
                                             )
                                         )
                                 )
@@ -1096,11 +1106,14 @@ viewCallsigns callsigns model user shared =
                             )
 
                 callsignsUnknownVisible =
-                    if model.unknownCallsignsActivityReady then
-                        List.filter (isVisibleUnknownCallsign shared) callsignsUnknown
+                    if model.unknownCallsignsShowStale then
+                        callsignsUnknown
 
                     else
-                        callsignsUnknown
+                        List.filter (isVisibleUnknownCallsign shared) callsignsUnknown
+
+                callsignsUnknownHiddenCount =
+                    List.length callsignsUnknown - List.length callsignsUnknownVisible
 
                 callsignsUnknownSorted =
                     if model.unknownCallsignsSortByMessages then
@@ -1129,19 +1142,43 @@ viewCallsigns callsigns model user shared =
                         [ div [ class "min-w-0 flex flex-col gap-1" ]
                             [ span [ class "font-medium" ] [ text "Присутні в перехопленнях:" ]
                             , div [ class "opacity-75", style "color" "var(--color-text)" ]
-                                [ text "Активні протягом 2 тижнів" ]
-                            ]
-                        , Button.new
-                            { label =
-                                if model.unknownCallsignsSortByMessages then
-                                    "Сортувати по імені"
+                                [ text
+                                    (if model.unknownCallsignsShowStale then
+                                        "Всі позивні"
 
-                                else
-                                    "Сортувати по сеансам"
-                            , onClick = ToggleUnknownCallsignsSortByMessages
-                            }
-                            |> Button.withStyleSecondary
-                            |> Button.view
+                                     else
+                                        "Активні протягом 2 тижнів"
+                                    )
+                                ]
+                            ]
+                        , div [ class "flex flex-wrap items-center gap-2" ]
+                            [ Button.new
+                                { label =
+                                    if model.unknownCallsignsSortByMessages then
+                                        "Сортувати по імені"
+
+                                    else
+                                        "Сортувати по сеансам"
+                                , onClick = ToggleUnknownCallsignsSortByMessages
+                                }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                            , if model.unknownCallsignsShowStale || callsignsUnknownHiddenCount > 0 then
+                                Button.new
+                                    { label =
+                                        if model.unknownCallsignsShowStale then
+                                            "Сховати застарілі"
+
+                                        else
+                                            "Показати застарілі"
+                                    , onClick = ToggleUnknownCallsignsShowStale
+                                    }
+                                    |> Button.withStyleSecondary
+                                    |> Button.view
+
+                              else
+                                text ""
+                            ]
                         ]
                     , if List.isEmpty callsignsUnknownSorted then
                         div [ class "text-sm leading-6 opacity-90 mt-2", style "color" "var(--color-text)" ]
@@ -1178,13 +1215,11 @@ viewCallsigns callsigns model user shared =
                                                 )
                                     in
                                     div [ class "relative inline-flex items-start" ]
-                                        ([ DropdownBadge.view
+                                        [ DropdownBadge.view
                                             (DropdownBadge.withAutoDirection DropdownBadge.Up config)
-                                         ]
-                                            ++ [ span [ class "badge badge-messages" ]
-                                                    [ text <| String.fromInt entry.messageCount ]
-                                               ]
-                                        )
+                                        , span [ class "badge badge-messages" ]
+                                            [ text <| String.fromInt entry.messageCount ]
+                                        ]
                                 )
                                 callsignsUnknownSorted
                             )
