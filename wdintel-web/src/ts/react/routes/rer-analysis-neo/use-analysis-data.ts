@@ -385,7 +385,7 @@ export function useAnalysisData({
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       setMessages((current) => [...current, ...nextMessages]);
       await loadMissingNetworksForMessages(nextMessages);
-      if (isAnalysisInboxPageExhausted(nextMessages, rsp.pageLimit)) {
+      if (nextMessages.length === 0 || isAnalysisInboxPageExhausted(nextMessages, rsp.pageLimit)) {
         setNoMoreToLoad(true);
       }
     } catch (loadError) {
