@@ -230,6 +230,7 @@ type ReportTemplate
     | RTDigest
     | ActiveNetworks
     | RTNetworkFrequencies
+    | RTSummaryTable
     | RTReport1213
 
 

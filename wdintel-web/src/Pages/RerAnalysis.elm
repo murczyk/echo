@@ -3574,38 +3574,52 @@ update user shared route msg model =
             )
 
         ReportDownloadDocx ->
-            ( { model | reportDownloadInProgress = True }
-            , E.getDocxReportForDownload ReportDownloadDocxDone
-                { kind = reportTemplateToString model.reportTemplate
-                , reportType = reportTemplateToApiType model model.reportTemplate
-                , req = getInboxReq model
-                , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
-                , report1213LinkedNetworksOnly =
-                    if model.reportTemplate == RTReport1213 then
-                        Just model.report1213LinkedNetworksOnly
+            case ( model.reportTemplate, model.from.datePosix, model.to.datePosix ) of
+                ( RTSummaryTable, Just dtFromPosix, Just dtToPosix ) ->
+                    let
+                        analysisPs =
+                            Query.analysisStatsParams dtFromPosix dtToPosix model
+                    in
+                    ( { model | reportDownloadInProgress = True }
+                    , E.getFreqsSummaryTableXlsx ReportDownloadSummaryTableDone analysisPs
+                    )
 
-                    else
-                        Nothing
-                , withoutComments =
-                    if model.reportTemplate == RTBabak then
-                        Just model.reportWithoutComments
+                ( RTSummaryTable, _, _ ) ->
+                    ( model, E.none )
 
-                    else
-                        Nothing
-                , digestOmitExoId =
-                    if model.reportTemplate == RTDigest then
-                        Just model.reportDigestOmitExoId
+                _ ->
+                    ( { model | reportDownloadInProgress = True }
+                    , E.getDocxReportForDownload ReportDownloadDocxDone
+                        { kind = reportTemplateToString model.reportTemplate
+                        , reportType = reportTemplateToApiType model model.reportTemplate
+                        , req = getInboxReq model
+                        , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
+                        , report1213LinkedNetworksOnly =
+                            if model.reportTemplate == RTReport1213 then
+                                Just model.report1213LinkedNetworksOnly
 
-                    else
-                        Nothing
-                , digestForm1217 =
-                    if model.reportTemplate == RTDigest then
-                        Just model.reportDigestForm1217
+                            else
+                                Nothing
+                        , withoutComments =
+                            if model.reportTemplate == RTBabak then
+                                Just model.reportWithoutComments
 
-                    else
-                        Nothing
-                }
-            )
+                            else
+                                Nothing
+                        , digestOmitExoId =
+                            if model.reportTemplate == RTDigest then
+                                Just model.reportDigestOmitExoId
+
+                            else
+                                Nothing
+                        , digestForm1217 =
+                            if model.reportTemplate == RTDigest then
+                                Just model.reportDigestForm1217
+
+                            else
+                                Nothing
+                        }
+                    )
 
         ReportDownloadDocxDone (Err e) ->
             ( { model | reportDownloadInProgress = False }
@@ -3614,6 +3628,34 @@ update user shared route msg model =
 
               else
                 Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту" e
+            )
+
+        ReportDownloadSummaryTableDone (Err e) ->
+            ( { model | reportDownloadInProgress = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження Excel файлу" e
+            )
+
+        ReportDownloadSummaryTableDone (Ok bytes) ->
+            let
+                m2 =
+                    { model | reportDownloadInProgress = False }
+            in
+            ( m2
+            , E.downloadFile
+                ("report_"
+                    ++ (model.from.datePosix
+                            |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
+                            |> def ""
+                       )
+                    ++ "_"
+                    ++ (model.to.datePosix
+                            |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
+                            |> def ""
+                       )
+                    ++ ".xlsx"
+                )
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                bytes
             )
 
         ReportDownloadDocxDone (Ok bytes) ->
@@ -3663,6 +3705,9 @@ update user shared route msg model =
 
                         RTNetworkFrequencies ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
+                        RTSummaryTable ->
+                            ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
                         RTReport1213 ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
@@ -4166,7 +4211,10 @@ reportTemplateToApiType model template =
             Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })
 
         RTNetworkFrequencies ->
-            Just (B.NetworkFrequencies { aorIds = model.reportActiveNetworksAorsSelect.selected })
+            Just (B.NetworkFrequencies { aorIds = [] })
+
+        RTSummaryTable ->
+            Nothing
 
         RTReport1213 ->
             Nothing
