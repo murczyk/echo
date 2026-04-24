@@ -413,7 +413,11 @@ update shared msg model =
         GotFreqs paginating (Ok rsp) ->
             let
                 nextAltUnitsRequestId =
-                    model.altUnitsRequestId + 1
+                    if paginating then
+                        model.altUnitsRequestId
+
+                    else
+                        model.altUnitsRequestId + 1
 
                 m2 =
                     { model
@@ -428,6 +432,12 @@ update shared msg model =
                         , currentRequestTracker = Nothing
                         , noMoreToLoad = not rsp.showLoadMore
                         , altUnitsRequestId = nextAltUnitsRequestId
+                        , altUnitsByFreq =
+                            if paginating then
+                                model.altUnitsByFreq
+
+                            else
+                                Dict.empty
                     }
             in
             ( m2
@@ -922,18 +932,18 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
             )
 
-        AltUnitsByFreqReturnedByApi requestId paginating (Ok rsp) ->
+        AltUnitsByFreqReturnedByApi requestId _ (Ok rsp) ->
             if requestId == model.altUnitsRequestId then
-                ( { model | altUnitsByFreq = Utils.updateAltUnitsByFreq paginating model.altUnitsByFreq rsp }
+                ( { model | altUnitsByFreq = Utils.updateAltUnitsByFreq model.altUnitsByFreq rsp }
                 , E.none
                 )
 
             else
                 ( model, E.none )
 
-        AltUnitsByFreqReturnedByApi requestId paginating (Err err) ->
+        AltUnitsByFreqReturnedByApi requestId _ (Err err) ->
             if requestId == model.altUnitsRequestId then
-                ( { model | altUnitsByFreq = Utils.clearAltUnitsByFreqOnError paginating model.altUnitsByFreq }
+                ( model
                 , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
                 )
 
