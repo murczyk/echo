@@ -39,6 +39,7 @@ type alias Model =
     , locationTexts : Dict String TextLocation
     , openMapRowId : Maybe String
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
+    , altUnitsByFreq : Api.ListAltUnitsByFreqsRsp
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , networksExtra : Dict Int B.Network
     , rowShowAllPopupStatus : Maybe ( String, ShowAllPopupFor )
@@ -114,3 +115,4 @@ type TextLocation
 type ShowAllPopupFor
     = ShowAllCallsigns
     | ShowAllLocations
+    | ShowAllAltUnits
