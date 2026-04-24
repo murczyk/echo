@@ -1,12 +1,12 @@
 use crate::config::get_tz;
 use crate::entities::{
-    area_of_responsibility, sigint_inbox_item, sigint_inbox_item_network,
-    sigint_network, sigint_network_aor, sigint_network_freq,
+    area_of_responsibility, sigint_network, sigint_network_aor,
+    sigint_network_freq,
 };
 use crate::error::AppError;
 use crate::h;
 use crate::messenger::group::get_identity_sigint_groups_noimport;
-use crate::rer_importer::analysis::build_summary_table_filtered_messages_query;
+use crate::rer_importer::analysis::stats::fetch_networks_for_login;
 use crate::rer_importer::reports::types::{
     AreaOfResponsibility, ReportPreviewReq,
 };
@@ -22,7 +22,7 @@ use docx_rs::{
 };
 use log::info;
 use sea_orm::{FromQueryResult, *};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Instant;
 
@@ -81,12 +81,6 @@ struct AreaOfResponsibilityNetworkFrequencies {
 }
 
 #[derive(Debug, Clone, FromQueryResult)]
-struct FilteredNetworkFrequencyKey {
-    network_id: i64,
-    freq: Option<String>,
-}
-
-#[derive(Debug, Clone, FromQueryResult)]
 struct NetworkFrequencyCandidateRow {
     network_id: i64,
     network_name: String,
@@ -128,44 +122,19 @@ async fn get_aor_network_frequency_rows(
     since_dt: NaiveDateTime,
     till_dt: NaiveDateTime,
 ) -> Result<Vec<AreaOfResponsibilityNetworkFrequencies>, AppError> {
-    let filtered_keys =
-        get_filtered_network_frequency_keys(db, user, env, req).await?;
-    if filtered_keys.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let network_ids = filtered_keys
-        .iter()
-        .map(|row| row.network_id)
-        .collect::<BTreeSet<_>>();
-    let filtered_pairs = filtered_keys
-        .into_iter()
-        .filter_map(|row| {
-            row.freq.and_then(|freq| {
-                let freq = freq.trim().to_string();
-                if freq.is_empty() {
-                    None
-                } else {
-                    Some((row.network_id, freq))
-                }
-            })
-        })
-        .collect::<HashSet<_>>();
-    if filtered_pairs.is_empty() {
+    let network_ids = get_filtered_network_ids(db, user, env, req).await?;
+    if network_ids.is_empty() {
         return Ok(vec![]);
     }
 
     let rows_by_network = get_network_frequency_rows_by_network(
         db,
-        network_ids.iter().copied().collect(),
-        &filtered_pairs,
+        network_ids.clone(),
         since_dt,
         till_dt,
     )
     .await?;
-    let aor_links =
-        get_network_aor_links(db, network_ids.iter().copied().collect())
-            .await?;
+    let aor_links = get_network_aor_links(db, network_ids).await?;
 
     let mut result_by_aor =
         BTreeMap::<i64, AreaOfResponsibilityNetworkFrequencies>::new();
@@ -205,44 +174,29 @@ async fn get_aor_network_frequency_rows(
     Ok(result)
 }
 
-async fn get_filtered_network_frequency_keys(
+async fn get_filtered_network_ids(
     db: &DatabaseConnection,
     user: &Identity,
     env: &Env,
     req: &ReportPreviewReq,
-) -> Result<Vec<FilteredNetworkFrequencyKey>, AppError> {
+) -> Result<Vec<i64>, AppError> {
     let analysis_req = analysis_stats_req_from_inbox_req(&req.req);
     let master_keys =
         get_identity_sigint_groups_noimport(db, user, &env.config)
             .await
             .context(h!())?;
+    let login = user.id().context(h!())?;
+    let networks =
+        fetch_networks_for_login(&analysis_req, &login, db, master_keys)
+            .await
+            .context(h!())?;
 
-    build_summary_table_filtered_messages_query(
-        user,
-        &analysis_req,
-        &master_keys,
-    )?
-    .join(
-        JoinType::InnerJoin,
-        sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
-    )
-    .join(
-        JoinType::InnerJoin,
-        sigint_inbox_item_network::Relation::SigintNetwork.def(),
-    )
-    .filter(sigint_network::Column::Deleted.eq(false))
-    .select_only()
-    .column_as(
-        sigint_inbox_item_network::Column::SigintNetworkId,
-        "network_id",
-    )
-    .column_as(sigint_inbox_item::Column::Freq, "freq")
-    .distinct()
-    .into_model::<FilteredNetworkFrequencyKey>()
-    .all(db)
-    .await
-    .context(h!())
-    .map_err(Into::into)
+    Ok(networks
+        .into_iter()
+        .map(|network| network.network_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
 }
 
 async fn get_network_aor_links(
@@ -276,11 +230,10 @@ async fn get_network_aor_links(
 async fn get_network_frequency_rows_by_network(
     db: &DatabaseConnection,
     network_ids: Vec<i64>,
-    filtered_pairs: &HashSet<(i64, String)>,
     since_dt: NaiveDateTime,
     till_dt: NaiveDateTime,
 ) -> Result<BTreeMap<i64, Vec<NetworkFrequencyRow>>, AppError> {
-    if network_ids.is_empty() || filtered_pairs.is_empty() {
+    if network_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
 
@@ -314,10 +267,10 @@ async fn get_network_frequency_rows_by_network(
     let mut grouped =
         BTreeMap::<(i64, String), Vec<NetworkFrequencyCandidateRow>>::new();
     for row in candidate_rows {
-        let key = (row.network_id, row.freq.clone());
-        if filtered_pairs.contains(&key) {
-            grouped.entry(key).or_default().push(row);
-        }
+        grouped
+            .entry((row.network_id, row.freq.clone()))
+            .or_default()
+            .push(row);
     }
 
     let mut result = BTreeMap::<i64, Vec<NetworkFrequencyRow>>::new();

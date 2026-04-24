@@ -2003,10 +2003,19 @@ async fn summary_table_related_networks_by_freq(
         build_summary_table_filtered_messages_query(user, req, &master_keys)?
             .select_only()
             .column_as(
-                Expr::col(sigint_inbox_item::Column::Id),
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Id,
+                )),
                 "inbox_item_id",
             )
-            .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+            .column_as(
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Freq,
+                )),
+                "freq",
+            )
             .distinct_on([Alias::new("inbox_item_id"), Alias::new("freq")]);
 
     let mut query = Query::select();
