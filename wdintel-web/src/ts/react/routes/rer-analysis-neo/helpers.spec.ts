@@ -12,6 +12,7 @@ import {
   queryStateComparisonKey,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
+  pushQueryStateToUrl,
   shouldOpenAnalysisMapFromSearchParams,
 } from './helpers';
 import type { AnalysisQueryState } from './types';
@@ -124,6 +125,88 @@ describe('rer-analysis-neo helpers', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
+  it('preserves hidden selections in persistence while request normalization still excludes them', () => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        clear: () => storage.clear(),
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+      },
+    });
+
+    let currentUrl = 'https://example.test/rer-analysis-neo';
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: {
+          get href() {
+            return currentUrl;
+          },
+          set href(value: string) {
+            currentUrl = value;
+          },
+        },
+        history: {
+          replaceState: (_state: unknown, _title: string, nextUrl: string) => {
+            currentUrl = `https://example.test${nextUrl}`;
+          },
+        },
+      },
+    });
+
+    const state = createQueryState({
+      withoutNetwork: true,
+      networksSelected: ['7'],
+      withoutMetadata: true,
+      metadataCc: ['cc-1'],
+      metadataSender: ['sender-1'],
+      metadataReceiver: ['receiver-1'],
+      metadataHash: ['hash-1'],
+    });
+
+    pushQueryStateToUrl(state);
+
+    expect(JSON.parse(storage.get(RER_ANALYSIS_QUERY_STATE_KEY) ?? '{}')).toMatchObject({
+      withoutNetwork: true,
+      networksSelected: ['7'],
+      withoutMetadata: true,
+      metadataCc: ['cc-1'],
+      metadataSender: ['sender-1'],
+      metadataReceiver: ['receiver-1'],
+      metadataHash: ['hash-1'],
+    });
+
+    expect(parseQueryStateFromWindow()).toMatchObject({
+      withoutNetwork: true,
+      networksSelected: ['7'],
+      withoutMetadata: true,
+      metadataCc: ['cc-1'],
+      metadataSender: ['sender-1'],
+      metadataReceiver: ['receiver-1'],
+      metadataHash: ['hash-1'],
+    });
+
+    expect(buildAnalysisReq(state)).toMatchObject({
+      withoutNetwork: true,
+      selectedNetworks: null,
+      withoutMetadata: true,
+      metadataCc: null,
+      metadataSender: null,
+      metadataReceiver: null,
+      metadataHash: null,
+    });
+
+    delete (globalThis as { localStorage?: Storage }).localStorage;
+    delete (globalThis as { window?: Window }).window;
+  });
+
   it('keeps the saved filter clean when only the date range differs', () => {
     const savedFilter = createSavedFilter(createQueryState());
     const currentState = createQueryState({
@@ -161,6 +244,20 @@ describe('rer-analysis-neo helpers', () => {
       'alpha',
       'Bravo',
     ]);
+  });
+
+  it('normalizes legacy peleng flags so both true becomes the neutral all state', () => {
+    expect(
+      normalizeQueryState(
+        createQueryState({
+          orWithCoords: true,
+          orWithoutCoords: true,
+        }),
+      ),
+    ).toMatchObject({
+      orWithCoords: false,
+      orWithoutCoords: false,
+    });
   });
 
   it('derives default analysis dates from today to tomorrow in the app timezone', () => {

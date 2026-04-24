@@ -61,6 +61,23 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </select>
   ),
+  ToggleButtonGroup: ({
+    children,
+    onChange,
+  }: {
+    children: ReactNode;
+    onChange?: (_event: unknown, value: string | null) => void;
+  }) => (
+    <div data-testid="toggle-button-group">
+      {children}
+      {void (toggleButtonGroupOnChange = onChange)}
+    </div>
+  ),
+  ToggleButton: ({ children, value }: { children: ReactNode; value: string }) => (
+    <button type="button" onClick={() => toggleButtonGroupOnChange?.(null, value)}>
+      {children}
+    </button>
+  ),
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
     <input
@@ -115,6 +132,8 @@ type Rendered = {
   container: HTMLDivElement;
   root: Root;
 };
+
+let toggleButtonGroupOnChange: ((_event: unknown, value: string | null) => void) | undefined;
 
 function buildOptions(): AnalysisPageState['options'] {
   const option = (value: string, label: string, count = 1) => ({ value, label, count });
@@ -258,6 +277,7 @@ describe('AnalysisFiltersPanel', () => {
     analysisFilterFieldSpy.mockClear();
     accordionSpy.mockClear();
     powerChipSpy.mockClear();
+    toggleButtonGroupOnChange = undefined;
   });
 
   afterEach(() => {
@@ -686,12 +706,43 @@ describe('AnalysisFiltersPanel', () => {
     await setChecked(findLabelInput(view.container, 'Тільки нові частоти'), true);
     await setChecked(findLabelInput(view.container, 'Лише теги мого підрозділу'), true);
     await setChecked(findLabelInput(view.container, 'Тільки без мережі'), true);
-    await setChecked(findLabelInput(view.container, 'Без пеленга'), true);
 
     expect(setIncludeOnlyNewFreqs).toHaveBeenCalledWith(true);
     expect(updateQueryState).toHaveBeenCalledWith({ reportTagsOnlyThisUnit: true });
     expect(updateQueryState).toHaveBeenCalledWith({ withoutNetwork: true });
+
+    const toggleButton = (labelText: string) => {
+      const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes(labelText));
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error(`Button not found for label: ${labelText}`);
+      }
+      return button;
+    };
+
+    await act(async () => {
+      toggleButton('Без пеленга').click();
+    });
+    await act(async () => {
+      toggleButton('З пеленгом').click();
+    });
+    await act(async () => {
+      toggleButton('Усі').click();
+    });
+
     expect(updateQueryState).toHaveBeenCalledWith({ orWithoutCoords: true, orWithCoords: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ orWithoutCoords: false, orWithCoords: true });
+    expect(updateQueryState).toHaveBeenCalledWith({ orWithoutCoords: false, orWithCoords: false });
+  });
+
+  it('renders the peleng filter as a clear exclusive choice with helper text', async () => {
+    const view = await renderComponent(buildProps());
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Режим пеленга');
+    expect(view.container.textContent).toContain('Усі');
+    expect(view.container.textContent).toContain('З пеленгом');
+    expect(view.container.textContent).toContain('Без пеленга');
+    expect(view.container.textContent).toContain('Показувати всі записи або лише ті, де є координати пеленга.');
   });
 
   it('uses the lighter default label for the units exact-match selector without an extra hint chip', async () => {
