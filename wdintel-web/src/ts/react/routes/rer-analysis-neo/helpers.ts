@@ -166,7 +166,9 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
     next = { ...next, networksSelected: [] };
   }
 
-  if (next.orWithoutCoords) {
+  if (next.orWithCoords && next.orWithoutCoords) {
+    next = { ...next, orWithCoords: false, orWithoutCoords: false };
+  } else if (next.orWithoutCoords) {
     next = { ...next, orWithCoords: false };
   }
 

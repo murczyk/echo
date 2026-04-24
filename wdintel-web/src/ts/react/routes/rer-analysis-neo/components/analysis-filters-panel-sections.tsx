@@ -1,5 +1,5 @@
-import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, type SelectChangeEvent } from '@mui/material';
-import type { ReactNode } from 'react';
+import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Typography, type SelectChangeEvent } from '@mui/material';
+import type { MouseEvent, ReactNode } from 'react';
 
 import type { AnalysisFilterSectionId } from '../types';
 import { AnalysisFilterField } from './AnalysisFilterField';
@@ -24,6 +24,15 @@ type Props = Pick<AnalysisFiltersPanelProps, 'counts' | 'includeOnlyNewFreqs' | 
   loadFilterSectionWithSpinner: (section: AnalysisFilterSectionId) => Promise<void>;
 };
 
+type CoordsFilterMode = 'all' | 'with' | 'without';
+
+function coordsFilterModeFromState(queryState: AnalysisFiltersPanelProps['queryState']): CoordsFilterMode {
+  if (queryState.orWithCoords && queryState.orWithoutCoords) return 'all';
+  if (queryState.orWithCoords) return 'with';
+  if (queryState.orWithoutCoords) return 'without';
+  return 'all';
+}
+
 export function AnalysisFiltersPanelSections({
   counts,
   derived,
@@ -45,6 +54,14 @@ export function AnalysisFiltersPanelSections({
   const handleUnitsExactMatchModeChange = (event: SelectChangeEvent) => {
     updateQueryState({
       unitsExactMatchOnly: unitsExactMatchStateFromMode(event.target.value as UnitsExactMatchMode),
+    });
+  };
+
+  const handleCoordsFilterModeChange = (_event: MouseEvent<HTMLElement>, nextMode: CoordsFilterMode | null) => {
+    const mode = nextMode ?? 'all';
+    updateQueryState({
+      orWithCoords: mode === 'with',
+      orWithoutCoords: mode === 'without',
     });
   };
 
@@ -268,26 +285,6 @@ export function AnalysisFiltersPanelSections({
             sx={compactCheckboxLabelSx}
           />
           <FormControlLabel
-            control={
-              <Checkbox
-                checked={queryState.orWithCoords}
-                onChange={(_event, value) => updateQueryState({ orWithCoords: value, orWithoutCoords: value ? false : queryState.orWithoutCoords })}
-              />
-            }
-            label="З пеленгом"
-            sx={compactCheckboxLabelSx}
-          />
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={queryState.orWithoutCoords}
-                onChange={(_event, value) => updateQueryState({ orWithoutCoords: value, orWithCoords: value ? false : queryState.orWithCoords })}
-              />
-            }
-            label="Без пеленга"
-            sx={compactCheckboxLabelSx}
-          />
-          <FormControlLabel
             control={<Checkbox checked={queryState.orImportant} onChange={(_event, value) => updateQueryState({ orImportant: value })} />}
             label="Важливі"
             sx={{
@@ -296,6 +293,42 @@ export function AnalysisFiltersPanelSections({
               justifySelf: 'start',
             }}
           />
+          <Box
+            sx={{
+              gridColumn: '1 / -1',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+              minWidth: 0,
+              mt: 0.5,
+            }}
+          >
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+              Режим пеленга
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              color="primary"
+              value={coordsFilterModeFromState(queryState)}
+              onChange={handleCoordsFilterModeChange}
+              aria-label="Режим пеленга"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  py: 0.75,
+                },
+              }}
+            >
+              <ToggleButton value="all">Усі</ToggleButton>
+              <ToggleButton value="with">З пеленгом</ToggleButton>
+              <ToggleButton value="without">Без пеленга</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
+              Показувати всі записи або лише ті, де є координати пеленга.
+            </Typography>
+          </Box>
         </Box>
       </FilterSection>
       <FilterSection
