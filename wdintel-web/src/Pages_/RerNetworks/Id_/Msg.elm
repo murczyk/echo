@@ -116,6 +116,7 @@ type
 type CallsignsMsg
     = CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
     | CallsignsActivityReturnedByApi (Result ApiError B.NetworkCallsignsActivityRsp)
+    | UnknownCallsignsActivityReturnedByApi (Result ApiError B.NetworkCallsignsActivityRsp)
     | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
     | CallsignCreated (Result ApiError B.NetworkCallsign)
     | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign))
