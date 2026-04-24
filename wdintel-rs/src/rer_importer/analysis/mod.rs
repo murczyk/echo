@@ -1859,7 +1859,7 @@ pub async fn summary_table_freq_1(
     Ok(SummaryTableFreq { rows })
 }
 
-fn build_summary_table_filtered_messages_query(
+pub(crate) fn build_summary_table_filtered_messages_query(
     user: &Identity,
     req: &AnalysisStatsReq,
     master_keys: &[String],

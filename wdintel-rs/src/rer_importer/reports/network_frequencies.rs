@@ -1,16 +1,19 @@
 use crate::config::get_tz;
 use crate::entities::{
-    area_of_responsibility, sigint_network, sigint_network_aor,
-    sigint_network_freq,
+    area_of_responsibility, sigint_inbox_item, sigint_inbox_item_network,
+    sigint_network, sigint_network_aor, sigint_network_freq,
 };
 use crate::error::AppError;
 use crate::h;
+use crate::messenger::group::get_identity_sigint_groups_noimport;
+use crate::rer_importer::analysis::build_summary_table_filtered_messages_query;
 use crate::rer_importer::reports::types::{
-    AreaOfResponsibility, NetworkFrequenciesReportSettings, ReportPreviewReq,
-    ReportType,
+    AreaOfResponsibility, ReportPreviewReq,
 };
+use crate::rer_importer::types::{AnalysisStatsReq, InboxMessagesReq};
 use crate::types::Env;
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
+use actix_identity::Identity;
 use anyhow::Context;
 use chrono::{NaiveDateTime, TimeZone};
 use docx_rs::{
@@ -19,6 +22,7 @@ use docx_rs::{
 };
 use log::info;
 use sea_orm::{FromQueryResult, *};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 use std::time::Instant;
 
@@ -28,6 +32,7 @@ const CELL_STATUS_WIDTH: usize = 1800;
 const CELL_LAST_SEEN_WIDTH: usize = 2600;
 
 pub async fn report_docx_kind_network_frequencies(
+    user: Identity,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
@@ -39,9 +44,14 @@ pub async fn report_docx_kind_network_frequencies(
     let since_dt = format_to_native_date(req.req.since_date_inclusive_ms)?;
     let till_dt = format_to_native_date(req.req.till_date_inclusive_ms)?;
     let aor_data =
-        get_aor_network_frequency_rows(&db, req, since_dt, till_dt).await?;
+        get_aor_network_frequency_rows(&db, &user, env, req, since_dt, till_dt)
+            .await?;
 
     let mut docx = get_docx_document(req);
+
+    if aor_data.is_empty() {
+        docx = add_empty_state_paragraph(docx);
+    }
 
     for aor_row in aor_data {
         docx = add_aor_paragraph(docx, &aor_row.area_of_responsibility);
@@ -71,6 +81,28 @@ struct AreaOfResponsibilityNetworkFrequencies {
 }
 
 #[derive(Debug, Clone, FromQueryResult)]
+struct FilteredNetworkFrequencyKey {
+    network_id: i64,
+    freq: Option<String>,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+struct NetworkFrequencyCandidateRow {
+    network_id: i64,
+    network_name: String,
+    freq: String,
+    active_to: Option<NaiveDateTime>,
+    last_seen_dt: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+struct NetworkAorLinkRow {
+    aor_id: i64,
+    aor_name: String,
+    network_id: i64,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
 struct NetworkFrequencyRow {
     network_name: String,
     freq: String,
@@ -90,80 +122,174 @@ impl NetworkFrequencyRow {
 
 async fn get_aor_network_frequency_rows(
     db: &DatabaseConnection,
+    user: &Identity,
+    env: &Env,
     req: &ReportPreviewReq,
     since_dt: NaiveDateTime,
     till_dt: NaiveDateTime,
 ) -> Result<Vec<AreaOfResponsibilityNetworkFrequencies>, AppError> {
-    let aor_ids = get_request_aor_ids(req);
-    let aors = get_areas_of_responsibility(db, aor_ids).await?;
-    let mut result = Vec::with_capacity(aors.len());
-
-    for area_of_responsibility in aors {
-        let rows = get_network_frequency_rows_for_aor(
-            db,
-            area_of_responsibility.id,
-            since_dt,
-            till_dt,
-        )
-        .await?;
-        result.push(AreaOfResponsibilityNetworkFrequencies {
-            area_of_responsibility,
-            rows,
-        });
+    let filtered_keys =
+        get_filtered_network_frequency_keys(db, user, env, req).await?;
+    if filtered_keys.is_empty() {
+        return Ok(vec![]);
     }
 
+    let network_ids = filtered_keys
+        .iter()
+        .map(|row| row.network_id)
+        .collect::<BTreeSet<_>>();
+    let filtered_pairs = filtered_keys
+        .into_iter()
+        .filter_map(|row| {
+            row.freq.and_then(|freq| {
+                let freq = freq.trim().to_string();
+                if freq.is_empty() {
+                    None
+                } else {
+                    Some((row.network_id, freq))
+                }
+            })
+        })
+        .collect::<HashSet<_>>();
+    if filtered_pairs.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let rows_by_network = get_network_frequency_rows_by_network(
+        db,
+        network_ids.iter().copied().collect(),
+        &filtered_pairs,
+        since_dt,
+        till_dt,
+    )
+    .await?;
+    let aor_links =
+        get_network_aor_links(db, network_ids.iter().copied().collect())
+            .await?;
+
+    let mut result_by_aor =
+        BTreeMap::<i64, AreaOfResponsibilityNetworkFrequencies>::new();
+
+    for link in aor_links {
+        let rows = rows_by_network
+            .get(&link.network_id)
+            .cloned()
+            .unwrap_or_default();
+        let entry = result_by_aor.entry(link.aor_id).or_insert_with(|| {
+            AreaOfResponsibilityNetworkFrequencies {
+                area_of_responsibility: AreaOfResponsibility {
+                    id: link.aor_id,
+                    name: link.aor_name.clone(),
+                },
+                rows: vec![],
+            }
+        });
+        entry.rows.extend(rows);
+    }
+
+    let mut result = result_by_aor.into_values().collect::<Vec<_>>();
+    for aor in &mut result {
+        aor.rows.sort_by(|left, right| {
+            left.network_name
+                .cmp(&right.network_name)
+                .then(left.freq.cmp(&right.freq))
+        });
+        aor.rows.dedup_by(|left, right| {
+            left.network_name == right.network_name && left.freq == right.freq
+        });
+    }
+    result.sort_by(|left, right| {
+        display_aor_name(&left.area_of_responsibility.name)
+            .cmp(&display_aor_name(&right.area_of_responsibility.name))
+    });
     Ok(result)
 }
 
-fn get_request_aor_ids(req: &ReportPreviewReq) -> Vec<i64> {
-    match req.report_type.clone() {
-        Some(ReportType::NetworkFrequencies(
-            NetworkFrequenciesReportSettings { aor_ids },
-        )) => aor_ids,
-        _ => vec![],
-    }
+async fn get_filtered_network_frequency_keys(
+    db: &DatabaseConnection,
+    user: &Identity,
+    env: &Env,
+    req: &ReportPreviewReq,
+) -> Result<Vec<FilteredNetworkFrequencyKey>, AppError> {
+    let analysis_req = analysis_stats_req_from_inbox_req(&req.req);
+    let master_keys =
+        get_identity_sigint_groups_noimport(db, user, &env.config)
+            .await
+            .context(h!())?;
+
+    build_summary_table_filtered_messages_query(
+        user,
+        &analysis_req,
+        &master_keys,
+    )?
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+    )
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item_network::Relation::SigintNetwork.def(),
+    )
+    .filter(sigint_network::Column::Deleted.eq(false))
+    .select_only()
+    .column_as(
+        sigint_inbox_item_network::Column::SigintNetworkId,
+        "network_id",
+    )
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .distinct()
+    .into_model::<FilteredNetworkFrequencyKey>()
+    .all(db)
+    .await
+    .context(h!())
+    .map_err(Into::into)
 }
 
-async fn get_areas_of_responsibility(
+async fn get_network_aor_links(
     db: &DatabaseConnection,
-    aor_ids: Vec<i64>,
-) -> Result<Vec<AreaOfResponsibility>, AppError> {
-    let mut aors_select = area_of_responsibility::Entity::find()
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .filter(area_of_responsibility::Column::IsTopLevel.eq(true));
-
-    if !aor_ids.is_empty() {
-        aors_select = aors_select
-            .filter(area_of_responsibility::Column::Id.is_in(aor_ids));
+    network_ids: Vec<i64>,
+) -> Result<Vec<NetworkAorLinkRow>, AppError> {
+    if network_ids.is_empty() {
+        return Ok(vec![]);
     }
 
-    aors_select
+    area_of_responsibility::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            area_of_responsibility::Relation::SigintNetworkAor.def(),
+        )
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
+        .filter(sigint_network_aor::Column::NetworkId.is_in(network_ids))
         .select_only()
-        .column(area_of_responsibility::Column::Id)
-        .column(area_of_responsibility::Column::Name)
-        .into_model::<AreaOfResponsibility>()
+        .column_as(area_of_responsibility::Column::Id, "aor_id")
+        .column_as(area_of_responsibility::Column::Name, "aor_name")
+        .column_as(sigint_network_aor::Column::NetworkId, "network_id")
+        .order_by_asc(area_of_responsibility::Column::Name)
+        .into_model::<NetworkAorLinkRow>()
         .all(db)
         .await
         .context(h!())
         .map_err(Into::into)
 }
 
-async fn get_network_frequency_rows_for_aor(
+async fn get_network_frequency_rows_by_network(
     db: &DatabaseConnection,
-    aor_id: i64,
+    network_ids: Vec<i64>,
+    filtered_pairs: &HashSet<(i64, String)>,
     since_dt: NaiveDateTime,
     till_dt: NaiveDateTime,
-) -> Result<Vec<NetworkFrequencyRow>, AppError> {
-    sigint_network_freq::Entity::find()
+) -> Result<BTreeMap<i64, Vec<NetworkFrequencyRow>>, AppError> {
+    if network_ids.is_empty() || filtered_pairs.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let candidate_rows = sigint_network_freq::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_network_freq::Relation::SigintNetwork.def(),
         )
-        .join(
-            JoinType::InnerJoin,
-            sigint_network::Relation::SigintNetworkAor.def(),
-        )
-        .filter(sigint_network_aor::Column::AorId.eq(aor_id))
+        .filter(sigint_network_freq::Column::NetworkId.is_in(network_ids))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::ActiveFrom.lte(till_dt))
@@ -172,19 +298,94 @@ async fn get_network_frequency_rows_for_aor(
                 .add(sigint_network_freq::Column::ActiveTo.is_null())
                 .add(sigint_network_freq::Column::ActiveTo.gte(since_dt)),
         )
-        .distinct()
         .select_only()
+        .column(sigint_network_freq::Column::NetworkId)
         .column_as(sigint_network::Column::Name, "network_name")
         .column(sigint_network_freq::Column::Freq)
         .column(sigint_network_freq::Column::ActiveTo)
         .column(sigint_network_freq::Column::LastSeenDt)
         .order_by_asc(sigint_network::Column::Name)
         .order_by_asc(sigint_network_freq::Column::Freq)
-        .into_model::<NetworkFrequencyRow>()
+        .into_model::<NetworkFrequencyCandidateRow>()
         .all(db)
         .await
-        .context(h!())
-        .map_err(Into::into)
+        .context(h!())?;
+
+    let mut grouped =
+        BTreeMap::<(i64, String), Vec<NetworkFrequencyCandidateRow>>::new();
+    for row in candidate_rows {
+        let key = (row.network_id, row.freq.clone());
+        if filtered_pairs.contains(&key) {
+            grouped.entry(key).or_default().push(row);
+        }
+    }
+
+    let mut result = BTreeMap::<i64, Vec<NetworkFrequencyRow>>::new();
+    for ((network_id, freq), rows) in grouped {
+        let Some(first_row) = rows.first() else {
+            continue;
+        };
+        let is_active = rows.iter().any(|row| {
+            row.active_to.is_none_or(|active_to| active_to > till_dt)
+        });
+        let active_to = if is_active {
+            None
+        } else {
+            rows.iter().filter_map(|row| row.active_to).max()
+        };
+        let last_seen_dt = rows.iter().filter_map(|row| row.last_seen_dt).max();
+        result
+            .entry(network_id)
+            .or_default()
+            .push(NetworkFrequencyRow {
+                network_name: first_row.network_name.clone(),
+                freq,
+                active_to,
+                last_seen_dt,
+            });
+    }
+
+    Ok(result)
+}
+
+fn analysis_stats_req_from_inbox_req(
+    req: &InboxMessagesReq,
+) -> AnalysisStatsReq {
+    AnalysisStatsReq {
+        since_date_inclusive_ms: req.since_date_inclusive_ms.unwrap_or(0),
+        till_date_noninclusive_ms: req
+            .till_date_inclusive_ms
+            .map(|value| value.saturating_add(1))
+            .unwrap_or(0),
+        selected_groups: req.selected_groups.clone(),
+        selected_senders: req.selected_senders.clone(),
+        selected_freqs: req.selected_freqs.clone(),
+        selected_posts: req.selected_posts.clone(),
+        selected_callsigns: req.selected_callsigns.clone(),
+        selected_units: req.selected_units.clone(),
+        selected_locations: req.selected_locations.clone(),
+        or_with_extended_form: req.or_with_extended_form,
+        or_bookmarked: req.or_bookmarked,
+        or_important: req.or_important,
+        or_with_coords: req.or_with_coords,
+        or_without_coords: req.or_without_coords,
+        search: req.search.clone(),
+        selected_tags: req.selected_tags.clone(),
+        selected_networks: req.selected_networks.clone(),
+        without_network: req.without_network,
+        metadata_cc: req.metadata_cc.clone(),
+        metadata_sender: req.metadata_sender.clone(),
+        metadata_receiver: req.metadata_receiver.clone(),
+        metadata_hash: req.metadata_hash.clone(),
+        only_with_metadata: req.only_with_metadata,
+        without_metadata: req.without_metadata,
+        include_peleng_locations: req.include_peleng_locations,
+        units_exact_match_only: req.units_exact_match_only,
+        filter_tags_option: req.filter_tags_option,
+        selected_aors: req.selected_aors.clone(),
+        without_model_tags: req.without_model_tags,
+        report_tags_only_this_unit: req.report_tags_only_this_unit,
+    }
 }
 
 fn get_docx_document(req: &ReportPreviewReq) -> Docx {
@@ -210,12 +411,13 @@ fn add_aor_paragraph(
     docx: Docx,
     area_of_responsibility: &AreaOfResponsibility,
 ) -> Docx {
-    docx.add_paragraph(Paragraph::new().add_run(Run::new().bold().add_text(
-        format!(
-            "В смузі оборони {}",
-            area_of_responsibility.name.to_uppercase()
+    docx.add_paragraph(
+        Paragraph::new().add_run(
+            Run::new()
+                .bold()
+                .add_text(display_aor_name(&area_of_responsibility.name)),
         ),
-    )))
+    )
 }
 
 fn add_empty_state_paragraph(docx: Docx) -> Docx {
@@ -307,4 +509,12 @@ fn format_to_native_date(dt: Option<i64>) -> Result<NaiveDateTime, AppError> {
         .transpose()
         .context(h!())?
         .unwrap_or_default())
+}
+
+fn display_aor_name(name: &str) -> String {
+    if name == "DEFAULT AOR" {
+        "Вся смуга".to_string()
+    } else {
+        name.to_string()
+    }
 }
