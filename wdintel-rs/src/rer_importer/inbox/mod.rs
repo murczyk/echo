@@ -365,11 +365,13 @@ async fn inbox_messages(
         _ => None,
     };
     txn.commit().await.context(h!())?;
-    let page_limit = if req.nolimit == Some(true) {
-        None
-    } else {
-        Some(test_limit.unwrap_or(20))
-    };
+    let page_limit = test_limit.or_else(|| {
+        if req.nolimit == Some(true) {
+            None
+        } else {
+            Some(20)
+        }
+    });
 
     Ok(Json(InboxMessagesRsp {
         inbox_items,
