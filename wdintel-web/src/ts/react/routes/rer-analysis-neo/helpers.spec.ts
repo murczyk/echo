@@ -163,6 +163,20 @@ describe('rer-analysis-neo helpers', () => {
     ]);
   });
 
+  it('normalizes legacy peleng flags so both true becomes the neutral all state', () => {
+    expect(
+      normalizeQueryState(
+        createQueryState({
+          orWithCoords: true,
+          orWithoutCoords: true,
+        }),
+      ),
+    ).toMatchObject({
+      orWithCoords: false,
+      orWithoutCoords: false,
+    });
+  });
+
   it('derives default analysis dates from today to tomorrow in the app timezone', () => {
     const state = createInitialQueryState(emptyQueryState(), new Date(Date.UTC(2026, 0, 15, 22, 30, 0)));
 

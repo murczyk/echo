@@ -4,7 +4,7 @@ import { emptyQueryState } from '../helpers';
 import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 
 describe('buildAnalysisFiltersPanelDerivedData', () => {
-  it('keeps tag-only toggles out of the important badge count', () => {
+  it('keeps tag-only toggles and legacy peleng dual state out of the important badge count', () => {
     const derived = buildAnalysisFiltersPanelDerivedData({
       aorEntries: [],
       groupInfos: {},
@@ -38,7 +38,7 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
       tagsMap: {},
     });
 
-    expect(derived.importantSelectedCount).toBe(5);
+    expect(derived.importantSelectedCount).toBe(3);
     expect(derived.tagsSelectedCount).toBe(2);
   });
 });

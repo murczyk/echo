@@ -271,20 +271,15 @@ fn message_has_sender_exists(senders: &[String]) -> SimpleExpr {
 }
 
 fn message_has_peleng_exists() -> SimpleExpr {
-    let subquery = sigint_peleng::Entity::find()
-        .select_only()
-        .expr(Expr::value(1))
-        .filter(
+    Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Coords))
+        .is_not_null()
+        .and(
             Expr::col((
-                sigint_peleng::Entity,
-                sigint_peleng::Column::SourceInboxItemId,
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Coords,
             ))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+            .ne(""),
         )
-        .filter(sigint_peleng::Column::Deleted.eq(false))
-        .into_query();
-
-    Expr::exists(subquery)
 }
 
 fn message_has_no_peleng_exists() -> SimpleExpr {

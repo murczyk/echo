@@ -3151,8 +3151,66 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
         5
     );
 
+    let peleng_msg = signal_message::Entity::find()
+        .filter(signal_message::Column::MessageUid.eq("msg-peleng"))
+        .one(&fixture.env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut peleng_item = sigint_inbox_item::Entity::find_by_id(peleng_msg.id)
+        .one(&fixture.env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    peleng_item.coords = Set(Some("36U XB 70367 06497".to_string()));
+    peleng_item.update(&fixture.env.dbx).await.unwrap();
+
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
+    req.or_with_coords = Some(true);
+    let req = Json(req);
+    let master_keys =
+        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+            .await
+            .unwrap();
+    assert_eq!(
+        stats::fetch_counts_for_login(
+            &req,
+            &test_identity.login,
+            &fixture.env,
+            master_keys,
+        )
+        .await
+        .unwrap()
+        .1,
+        1
+    );
+
+    let coords_only_msg = mk_analysis_message(
+        &fixture.env.dbx,
+        "msg-coords-only",
+        "999.9",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.beta],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let mut coords_only_item =
+        sigint_inbox_item::Entity::find_by_id(coords_only_msg.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+    coords_only_item.coords = Set(Some("36U XB 70367 06497".to_string()));
+    coords_only_item.update(&fixture.env.dbx).await.unwrap();
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["999.9".to_string()]);
     req.or_with_coords = Some(true);
     let req = Json(req);
     let master_keys =

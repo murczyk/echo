@@ -102,11 +102,11 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
   const storedState = loadRerAnalysisQueryState();
   const hasManagedStateInUrl = hasRerAnalysisQueryStateParams(url.searchParams);
 
-  return {
+  return normalizeQueryState({
     ...emptyQueryState(),
     ...(hasManagedStateInUrl ? {} : (storedState ?? {})),
     ...(flatStateFromUrl ?? {}),
-  };
+  });
 }
 
 export function createInitialQueryState(
@@ -138,9 +138,10 @@ export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): 
 
 export function pushQueryStateToUrl(state: AnalysisQueryState) {
   if (typeof window === 'undefined') return;
-  saveRerAnalysisQueryState(state);
+  const normalized = normalizeQueryState(state);
+  saveRerAnalysisQueryState(normalized);
   const url = new URL(window.location.href);
-  writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
+  writeRerAnalysisQueryStateToSearchParams(url.searchParams, normalized);
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }
 
@@ -166,7 +167,9 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
     next = { ...next, networksSelected: [] };
   }
 
-  if (next.orWithoutCoords) {
+  if (next.orWithCoords && next.orWithoutCoords) {
+    next = { ...next, orWithCoords: false, orWithoutCoords: false };
+  } else if (next.orWithoutCoords) {
     next = { ...next, orWithCoords: false };
   }
 
