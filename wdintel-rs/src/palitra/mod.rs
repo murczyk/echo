@@ -91,7 +91,10 @@ pub async fn create_palitra_with_kmz(
 
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
-    let remote_filename = palitra_goi_remote_file_name(palitra.id);
+    let remote_filename = palitra_goi_remote_file_name(
+        palitra.id,
+        Some(&multipart_payload.filename),
+    );
     let upload = kmz::load_coordinates_from_file(
         multipart_payload.filename.clone(),
         multipart_payload.kmz_data.clone(),
@@ -227,7 +230,10 @@ pub async fn create_palitra_basic(
     }
 
     for palitra_id in &created_palitra_ids {
-        let remote_filename = palitra_goi_remote_file_name(*palitra_id);
+        let remote_filename = palitra_goi_remote_file_name(
+            *palitra_id,
+            Some(&multipart_payload.filename),
+        );
         sync_upload_palitra_to_connected_organisms(
             &env.dbx,
             &access,
@@ -347,7 +353,10 @@ pub async fn create_palitra_basic_v2(
         .await
         .c(h!())?;
 
-    let remote_filename = palitra_goi_remote_file_name(palitra.id);
+    let remote_filename = palitra_goi_remote_file_name(
+        palitra.id,
+        Some(&multipart_payload.filename),
+    );
     sync_upload_palitra_to_connected_organisms(
         &env.dbx,
         &access,
@@ -444,7 +453,11 @@ pub async fn upload_palitra_points(
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
-    let raw_filename = field.name().c(h!())?.to_string();
+    let raw_filename = field
+        .content_disposition()
+        .and_then(|cd| cd.get_filename().map(str::to_string))
+        .or_else(|| field.name().map(str::to_string))
+        .unwrap_or_else(|| "file.kmz".to_string());
     let filename = kmz::sanitize_upload_filename(&raw_filename);
     let raw_kmz_data = val;
     let upload = kmz::load_coordinates_from_file(
@@ -537,7 +550,8 @@ pub async fn upload_palitra_points(
         .await
         .c(h!())?;
 
-    let remote_filename = palitra_goi_remote_file_name(palitra.id);
+    let remote_filename =
+        palitra_goi_remote_file_name(palitra.id, Some(&filename));
     sync_upload_palitra_to_connected_organisms(
         &env.dbx,
         &existing_access,
@@ -1653,12 +1667,13 @@ async fn sync_delete_palitra_from_connected_organisms(
         collect_connected_goi_targets(dbx, organism_ids.as_slice())
             .await
             .c(h!())?;
-    let mut file_names = vec![palitra_goi_remote_file_name(palitra_id)];
-    if let Some(source_file_name) = source_file_name {
-        let legacy_file_name = kmz_file_name_as_kmz(source_file_name);
-        if !file_names.contains(&legacy_file_name) {
-            file_names.push(legacy_file_name);
-        }
+    let mut file_names = vec![palitra_goi_remote_file_name(
+        palitra_id,
+        source_file_name.as_deref(),
+    )];
+    let legacy_file_name = palitra_goi_remote_file_name_legacy(palitra_id);
+    if !file_names.contains(&legacy_file_name) {
+        file_names.push(legacy_file_name);
     }
 
     for target in goi_targets {
@@ -1735,8 +1750,9 @@ where
         };
         let target_folder =
             bl::normalize_palitra_folder_from_db(palitra.folder.clone());
-        let target_file_name = palitra_goi_remote_file_name(palitra.id);
-        let legacy_file_name = kmz_file_name_as_kmz(&source_file_name);
+        let target_file_name =
+            palitra_goi_remote_file_name(palitra.id, Some(&source_file_name));
+        let legacy_file_name = palitra_goi_remote_file_name_legacy(palitra.id);
         let source_file_names = if legacy_file_name == target_file_name {
             vec![target_file_name.clone()]
         } else {
@@ -1900,8 +1916,21 @@ pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     }
 }
 
-pub(crate) fn palitra_goi_remote_file_name(palitra_id: i64) -> String {
+fn palitra_goi_remote_file_name_legacy(palitra_id: i64) -> String {
     format!("palitra_{palitra_id:06}.kmz")
+}
+
+pub(crate) fn palitra_goi_remote_file_name(
+    palitra_id: i64,
+    source_file_name: Option<&str>,
+) -> String {
+    match source_file_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(source_file_name) => kmz_file_name_as_kmz(source_file_name),
+        None => palitra_goi_remote_file_name_legacy(palitra_id),
+    }
 }
 
 fn compose_goi_palette_remote_path(path: &str, file_name: &str) -> String {
@@ -2037,6 +2066,22 @@ mod tests {
         assert_eq!(
             pick_primary_color_hex(&grouped, &line_strings),
             "#222222".to_string()
+        );
+    }
+
+    #[test]
+    fn uses_source_filename_for_goi_remote_name() {
+        assert_eq!(
+            palitra_goi_remote_file_name(418, Some(" Блоки-2023-05-12.KMZ ")),
+            "Блоки-2023-05-12.kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn falls_back_to_synthetic_goi_remote_name_without_source_filename() {
+        assert_eq!(
+            palitra_goi_remote_file_name(418, None),
+            "palitra_000418.kmz".to_string()
         );
     }
 }

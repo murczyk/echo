@@ -68,6 +68,26 @@ release:
     echo "Syncing ${SRC_DIR} to ${REMOTE_DIR}..."
     s5cmd --endpoint-url "$ENDPOINT_URL" sync "${SRC_DIR}" "$REMOTE_DIR"
 
+unrelease:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    just _require-goi-cloud-access
+
+    ENDPOINT_URL="{{ goi_b2_endpoint_url }}"
+    REMOTE_DIR="s3://echouastorage/lfs/goi/goi-{{ goi_version }}/"
+    REMOTE_GLOB="s3://echouastorage/lfs/goi/goi-{{ goi_version }}/*"
+    LISTING=""
+
+    LISTING="$(s5cmd --endpoint-url "$ENDPOINT_URL" ls "$REMOTE_GLOB")"
+    if [[ -z "${LISTING}" ]]; then
+      echo "❌ No GOI {{ goi_version }} release found in Backblaze at ${REMOTE_DIR}" >&2
+      exit 1
+    fi
+
+    echo "Removing GOI {{ goi_version }} release from ${REMOTE_DIR}..."
+    s5cmd --endpoint-url "$ENDPOINT_URL" rm "$REMOTE_GLOB"
+
 [arg('server', long='server')]
 setup-dev-container-scripts server:
     #!/usr/bin/env bash
@@ -654,7 +674,6 @@ deploy-swapp-alt server:
 deploy-all:
    just deploy --server goi-stg
    just deploy --server goi-jf
-   just deploy --server goi-tsur
    just deploy --server goi-prod-01
    just deploy --server goi-prod-02
    just deploy --server goi-prod-03
@@ -662,3 +681,4 @@ deploy-all:
    just deploy --server goi-prod-05
    just deploy --server goi-prod-06
    just deploy --server goi-prod-07
+   just deploy --server goi-tsur
