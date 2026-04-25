@@ -313,6 +313,8 @@ deploy server:
       --exclude '.output/' \
       --exclude 'dist/' \
       --filter 'P goi-npm-start.sh' \
+      --filter 'P tailscale.crt' \
+      --filter 'P tailscale.key' \
       --exclude '*.log' \
       --exclude 'npm-debug.log*' \
       --exclude 'yarn-debug.log*' \
@@ -398,6 +400,8 @@ deploy-first server:
       --exclude '.output/' \
       --exclude 'dist/' \
       --filter 'P goi-npm-start.sh' \
+      --filter 'P tailscale.crt' \
+      --filter 'P tailscale.key' \
       --exclude '*.log' \
       --exclude 'npm-debug.log*' \
       --exclude 'yarn-debug.log*' \
