@@ -709,6 +709,7 @@ pub async fn list_all_palitras(
 
 pub async fn delete_palitra(
     id: i64,
+    palitra_name: &str,
     txn: &DatabaseTransaction,
     existing_access: PalitraAccess,
     env: &Data<Env>,
@@ -732,6 +733,7 @@ pub async fn delete_palitra(
         sync_delete_palitra_from_connected_organisms(
             &env.dbx, // even if transaction rolls back we must save these changes to db because they perform some changes to filesystem
             id,
+            palitra_name,
             &existing_access,
             &geometry.source_file_name,
         )
