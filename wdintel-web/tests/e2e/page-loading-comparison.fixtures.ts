@@ -287,7 +287,7 @@ async function routeDutyApi(route: Route, pathname: string, delayMs: number): Pr
     return true;
   }
 
-  if (pathname === '/api/rer-analysis/stats/posts') {
+  if (pathname === '/api/rer/analysis/stats/posts') {
     await fulfillJson(route, emptyDutyPostStatsResponse());
     return true;
   }

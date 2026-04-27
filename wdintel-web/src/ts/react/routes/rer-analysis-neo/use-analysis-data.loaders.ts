@@ -155,10 +155,9 @@ export function useAnalysisDataLoaders(params: Params) {
     rightSidebarRequestKeyRef.current = null;
     setRightSidebarLoading(false);
     setTopCallsigns([]);
-    setTopFreqs([]);
     setTopLocations([]);
     setTopUnits([]);
-  }, [setRightSidebarLoading, setTopCallsigns, setTopFreqs, setTopLocations, setTopUnits]);
+  }, [setRightSidebarLoading, setTopCallsigns, setTopLocations, setTopUnits]);
 
   const refreshMapDateRange = useCallback(
     async (range: { startDate: number; endDate: number }) => {
