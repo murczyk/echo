@@ -1900,7 +1900,7 @@ where
 pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     let safe_name = kmz::sanitize_upload_filename(source_file_name);
     let path = Path::new(&safe_name);
-    let stem = path
+    let mut stem = path
         .file_stem()
         .and_then(|value| value.to_str())
         .map(|value| value.to_string())
@@ -1910,6 +1910,24 @@ pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.to_ascii_lowercase());
+
+    if let Some(extension) = extension.as_deref() {
+        if matches!(extension, "kml" | "kmz") {
+            let stem_path = Path::new(&stem);
+            let stem_extension = stem_path
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(|value| value.to_ascii_lowercase());
+            if stem_extension.as_deref() == Some(extension) {
+                stem = stem_path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .map(|value| value.to_string())
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "palitra".to_string());
+            }
+        }
+    }
 
     match extension.as_deref() {
         Some("kml") => format!("{stem}.kml"),
@@ -2113,6 +2131,14 @@ mod tests {
                 Some(" Блоки-2023-05-12.KMZ "),
             ),
             "Блоки-2023-05-12.kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn keeps_inner_dots_when_source_filename_has_extension() {
+        assert_eq!(
+            kmz_file_name_as_kmz("new palitra (27.04).KMZ.kmz"),
+            "new palitra (27.04).kmz".to_string()
         );
     }
 
