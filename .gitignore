@@ -4,6 +4,7 @@ map.html
 .ipynb_checkpoints
 *~
 wdintel
+.env
 .DS_Store
 /TAGS
 **/__pycache__
