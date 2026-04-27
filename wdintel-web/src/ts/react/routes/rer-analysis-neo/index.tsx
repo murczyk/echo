@@ -200,7 +200,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   </Tooltip>
                   <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
                   <Tooltip title={page.canResetFilters ? 'Є незбережені зміни' : 'Фільтри'} arrow placement="right">
-                    <Box sx={{ pt: 1.25, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Box
+                      sx={{
+                        pt: 1.25,
+                        width: 44,
+                        height: 44,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
                       <Badge color="error" variant="dot" invisible={!page.canResetFilters}>
                         <FilterAltOutlinedIcon
                           sx={{ fontSize: 20, color: page.canResetFilters ? 'primary.main' : 'text.secondary' }}
@@ -399,7 +408,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   </Tooltip>
                   <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
                   <Tooltip title={page.canResetFilters ? 'Є незбережені зміни' : 'Фільтри'} arrow placement="right">
-                    <Box sx={{ pt: 1.25, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Box
+                      sx={{
+                        pt: 1.25,
+                        width: 44,
+                        height: 44,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
                       <Badge color="error" variant="dot" invisible={!page.canResetFilters}>
                         <FilterAltOutlinedIcon
                           sx={{ fontSize: 20, color: page.canResetFilters ? 'primary.main' : 'text.secondary' }}
