@@ -72,7 +72,6 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     callsignGraphNolimit: false,
     correlatedFreqs: [],
     correlatedFreqsLoading: false,
-    filtersLoading: false,
     groupsActivity: null,
     groupsActivityLoadedFreq: null,
     groupsActivityLoadedPeriod: null,
@@ -94,6 +93,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     loadMessagesForMap: vi.fn(),
     newCallsigns: [],
     newCallsignsLoading: false,
+    rightSidebarLoading: false,
     queryState: {
       freqsSelected: [],
       search: '',

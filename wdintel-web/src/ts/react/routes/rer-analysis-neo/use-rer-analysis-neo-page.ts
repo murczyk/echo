@@ -52,9 +52,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   const data = useAnalysisData({
+    centerTab,
     newestFirst,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
+    rightPanelOpen,
+    rightSidebarTab,
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState,
   });
@@ -304,6 +307,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     savedFilterName: savedFilters.savedFilterName,
     savedFilters: savedFilters.savedFilters,
     summaryLoading: data.summaryLoading,
+    rightSidebarLoading: data.rightSidebarLoading,
     summaryRows: data.summaryRows,
     summaryCallsignsInfo: data.summaryCallsignsInfo,
     unitsMap: data.unitsMap,

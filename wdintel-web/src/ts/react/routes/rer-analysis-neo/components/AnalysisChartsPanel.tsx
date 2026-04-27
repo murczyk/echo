@@ -12,7 +12,7 @@ import { CompactText } from '../../../components/CompactTypography';
 type Props = {
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoading: boolean;
-  filtersLoading: boolean;
+  rightSidebarLoading: boolean;
   groupsActivity: FreqDailyActivityCount | null;
   groupsActivityLoadedFreq: string | null;
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
@@ -30,7 +30,6 @@ type Props = {
 export function AnalysisChartsPanel({
   correlatedFreqs,
   correlatedFreqsLoading,
-  filtersLoading,
   groupsActivity,
   groupsActivityLoadedFreq,
   groupsActivityLoadedPeriod,
@@ -40,6 +39,7 @@ export function AnalysisChartsPanel({
   onLoadGroupsActivity,
   onSelectFreq,
   selectedFreq,
+  rightSidebarLoading,
   topFreqs,
   topLocations,
   topUnits,
@@ -82,13 +82,13 @@ export function AnalysisChartsPanel({
         <AnalysisCorrelatedFreqsCard correlatedFreqs={correlatedFreqs} loading={correlatedFreqsLoading} selectedFreq={selectedFreq} />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Частоти" items={topFreqs} loading={filtersLoading} onItemAction={onSelectFreq} itemActionLabel="У фільтр" />
+        <AnalysisCountBlock title="Частоти" items={topFreqs} loading={rightSidebarLoading} onItemAction={onSelectFreq} itemActionLabel="У фільтр" />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Підрозділи" items={topUnits} loading={filtersLoading} />
+        <AnalysisCountBlock title="Підрозділи" items={topUnits} loading={rightSidebarLoading} />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Локації" items={topLocations} loading={filtersLoading} />
+        <AnalysisCountBlock title="Локації" items={topLocations} loading={rightSidebarLoading} />
       </Box>
       <Box>
         <AnalysisGroupsActivityCard

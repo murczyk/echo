@@ -146,6 +146,7 @@ export type AnalysisPageState = {
   savedFilterName: string;
   savedFilters: SavedFilter[];
   summaryLoading: boolean;
+  rightSidebarLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;

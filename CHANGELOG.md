@@ -9,6 +9,8 @@
 
 ## NEXT
 
+- [#2221](https://github.com/echoua/echo/issues/2221) ✅ Базовий набір e2e-тестів та їх інтеграція в CI/CD.
+- [#2276](https://github.com/echoua/echo/issues/2276) ✅🐞 Аналіз (нова): покращення швидкодії.
 - [#2270](https://github.com/echoua/echo/issues/2270) ✅ Мережа: приховано застарілі позивні.
 - [#2268](https://github.com/echoua/echo/issues/2268) 🐞 Аналіз (нова): виправлення фільтрації по пеленгам.
 - [#2270](https://github.com/echoua/echo/issues/2270) ✅🐞 Мережа: приховано застарілі позивні.

@@ -124,7 +124,7 @@ export function AnalysisFiltersPanel({
     setMobileExpanded(!isMobileLayout);
   }, [isMobileLayout]);
 
-  const isSectionLoading = (section: FilterSectionId): boolean => filtersLoading || loadingSections[section] === true;
+  const isSectionLoading = (section: FilterSectionId): boolean => loadingSections[section] === true;
   const showCompactToggle = isMobileLayout;
   const showFilterContent = !showCompactToggle || mobileExpanded;
 
@@ -221,6 +221,7 @@ export function AnalysisFiltersPanel({
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
+                  filtersLoading={filtersLoading}
                   isSectionLoading={isSectionLoading}
                   loadingIndicator={<CircularProgress size={14} thickness={5} />}
                   loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
@@ -268,6 +269,7 @@ export function AnalysisFiltersPanel({
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
+                  filtersLoading={filtersLoading}
                   isSectionLoading={isSectionLoading}
                   loadingIndicator={<CircularProgress size={14} thickness={5} />}
                   loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}

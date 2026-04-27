@@ -1,4 +1,4 @@
-import { Button, Paper, Stack } from '@mui/material';
+import { Button, CircularProgress, Paper, Stack } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
 
 import { CompactPowerChip } from '../../../components/CompactPowerChip';
@@ -7,9 +7,10 @@ import { CompactText, CompactTitle } from '../../../components/CompactTypography
 
 type Props = {
   items: AnalysisCountItem[];
+  loading?: boolean;
 };
 
-export function AnalysisCallsignsCloudCard({ items }: Props) {
+export function AnalysisCallsignsCloudCard({ items, loading = false }: Props) {
   const headingId = useId().replace(/:/g, '-');
   const [expanded, setExpanded] = useState(false);
   const hasHiddenItems = items.length > 12;
@@ -29,7 +30,12 @@ export function AnalysisCallsignsCloudCard({ items }: Props) {
         Хмара позивних
       </CompactTitle>
       <Stack direction="row" gap={1} flexWrap="wrap" role="list" aria-label="Хмара позивних">
-        {visibleItems.length === 0 ? (
+        {loading && visibleItems.length === 0 ? (
+          <Stack direction="row" spacing={1} alignItems="center">
+            <CircularProgress size={16} />
+            <CompactText color="text.secondary">Завантаження...</CompactText>
+          </Stack>
+        ) : visibleItems.length === 0 ? (
           <CompactText color="text.secondary">
             Немає даних
           </CompactText>

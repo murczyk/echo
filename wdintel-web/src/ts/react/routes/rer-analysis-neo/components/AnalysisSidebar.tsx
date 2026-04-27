@@ -20,7 +20,6 @@ type Props = Pick<
   | 'callsignGraphNolimit'
   | 'correlatedFreqs'
   | 'correlatedFreqsLoading'
-  | 'filtersLoading'
   | 'groupsActivity'
   | 'groupsActivityLoadedFreq'
   | 'groupsActivityLoadedPeriod'
@@ -29,6 +28,7 @@ type Props = Pick<
   | 'mapAttrs'
   | 'newCallsigns'
   | 'newCallsignsLoading'
+  | 'rightSidebarLoading'
   | 'queryState'
   | 'rightSidebarTab'
   | 'rightPanelOpen'
@@ -57,7 +57,6 @@ export function AnalysisSidebar({
   callsignGraphNolimit,
   correlatedFreqs,
   correlatedFreqsLoading,
-  filtersLoading,
   groupsActivity,
   groupsActivityLoadedFreq,
   groupsActivityLoadedPeriod,
@@ -70,6 +69,7 @@ export function AnalysisSidebar({
   loadMessagesForMap,
   newCallsigns,
   newCallsignsLoading,
+  rightSidebarLoading,
   queryState,
   rightPanelOpen,
   rightSidebarTab,
@@ -173,29 +173,29 @@ export function AnalysisSidebar({
         {rightSidebarTab === 'stats' ? (
           <>
             <Box>
-              <AnalysisChartsPanel
-                correlatedFreqs={correlatedFreqs}
-                correlatedFreqsLoading={correlatedFreqsLoading}
-                filtersLoading={filtersLoading}
-                groupsActivity={groupsActivity}
-                groupsActivityLoadedFreq={groupsActivityLoadedFreq}
-                groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
-                groupsActivityPeriod={groupsActivityPeriod}
-                groupsActivityLoading={groupsActivityLoading}
+          <AnalysisChartsPanel
+            correlatedFreqs={correlatedFreqs}
+            correlatedFreqsLoading={correlatedFreqsLoading}
+            groupsActivity={groupsActivity}
+            groupsActivityLoadedFreq={groupsActivityLoadedFreq}
+            groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
+            groupsActivityPeriod={groupsActivityPeriod}
+            groupsActivityLoading={groupsActivityLoading}
                 onLoadCorrelatedFreqs={loadCorrelatedFreqs}
                 onLoadGroupsActivity={loadGroupsActivity}
-                onSelectFreq={selectOnlyFreq}
-                selectedFreq={queryState.freqsSelected[0] ?? null}
-                topFreqs={topFreqs}
-                topLocations={topLocations}
-                topUnits={topUnits}
-              />
+            onSelectFreq={selectOnlyFreq}
+            selectedFreq={queryState.freqsSelected[0] ?? null}
+            rightSidebarLoading={rightSidebarLoading}
+            topFreqs={topFreqs}
+            topLocations={topLocations}
+            topUnits={topUnits}
+          />
             </Box>
           </>
         ) : null}
         {rightSidebarTab === 'callsigns' ? (
           <Box>
-            <AnalysisCallsignsCloudCard items={topCallsigns} />
+            <AnalysisCallsignsCloudCard items={topCallsigns} loading={rightSidebarLoading} />
             <AnalysisCallsignGraphCard
               graph={callsignGraph}
               loading={callsignGraphLoading}
