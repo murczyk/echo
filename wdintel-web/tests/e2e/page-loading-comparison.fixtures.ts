@@ -337,7 +337,7 @@ export async function installRouteLoadComparisonMocks(
 ): Promise<void> {
   const delayMs = options.delayMs ?? 0;
 
-  await page.route('**/api/**', async (route) => {
+  const handleApiRoute = async (route: Route) => {
     const request = route.request();
     const resourceType = request.resourceType();
     if (resourceType !== 'fetch' && resourceType !== 'xhr') {
@@ -354,5 +354,8 @@ export async function installRouteLoadComparisonMocks(
     if (suite === 'duty' && (await routeDutyApi(route, pathname, delayMs))) return;
 
     await fulfillJson(route, {});
-  });
+  };
+
+  await page.route('**/api/**', handleApiRoute);
+  await page.route('**/api-public/**', handleApiRoute);
 }
