@@ -432,10 +432,9 @@ export function useAnalysisData({
   }, [centerTab, loadSummaryData]);
 
   useEffect(() => {
-    if (!rightPanelOpen) return;
     if (rightSidebarTab !== 'stats' && rightSidebarTab !== 'callsigns') return;
     void loadTopSidebarData();
-  }, [loadTopSidebarData, rightPanelOpen, rightSidebarTab]);
+  }, [loadTopSidebarData, rightSidebarTab]);
 
   useEffect(() => {
     void loadMapPalitras();
