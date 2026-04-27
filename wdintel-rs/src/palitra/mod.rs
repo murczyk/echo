@@ -1898,24 +1898,38 @@ where
 }
 
 pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
-    let safe_name = kmz::sanitize_upload_filename(source_file_name);
-    let path = Path::new(&safe_name);
-    let stem = path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_string())
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "palitra".to_string());
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase());
-
-    match extension.as_deref() {
+    let (stem, extension) = split_palitra_file_name_for_goi(source_file_name);
+    match extension {
         Some("kml") => format!("{stem}.kml"),
         Some("kmz") => format!("{stem}.kmz"),
         _ => format!("{stem}.kmz"),
     }
+}
+
+fn split_palitra_file_name_for_goi(
+    source_file_name: &str,
+) -> (String, Option<&'static str>) {
+    let safe_name = kmz::sanitize_upload_filename(source_file_name);
+    let lower_name = safe_name.to_ascii_lowercase();
+    let extension = if lower_name.ends_with(".kml") {
+        Some("kml")
+    } else if lower_name.ends_with(".kmz") {
+        Some("kmz")
+    } else {
+        None
+    };
+    let stem = extension
+        .map(|ext| safe_name[..safe_name.len() - ext.len() - 1].to_string())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(safe_name)
+        .trim()
+        .to_string();
+    let stem = if stem.is_empty() {
+        "palitra".to_string()
+    } else {
+        stem
+    };
+    (stem, extension)
 }
 
 fn palitra_goi_remote_file_name_legacy(palitra_id: i64) -> String {
@@ -2125,6 +2139,34 @@ mod tests {
                 Some(" Блоки-2023-05-12.KMZ "),
             ),
             "Палітра ППО.kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn keeps_inner_dots_when_palitra_name_has_no_extension() {
+        assert_eq!(
+            palitra_goi_remote_file_name(
+                418,
+                Some(" new palitra (27.04) "),
+                Some("ignored.kmz"),
+            ),
+            "new palitra (27.04).kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn keeps_inner_dots_when_source_filename_has_extension() {
+        assert_eq!(
+            kmz_file_name_as_kmz(" new palitra (27.04).KMZ "),
+            "new palitra (27.04).kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn keeps_inner_dots_when_source_filename_has_no_extension() {
+        assert_eq!(
+            kmz_file_name_as_kmz(" new palitra (27.04) "),
+            "new palitra (27.04).kmz".to_string()
         );
     }
 
