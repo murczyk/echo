@@ -10,6 +10,7 @@ type Props = {
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
   callsignGraphNolimit: boolean;
+  visible: boolean;
   onLoadCallsignGraph: () => void;
   onToggleNolimit: () => void;
   rightSidebarLoading: boolean;
@@ -21,6 +22,7 @@ export function AnalysisCallsignsPane({
   callsignGraphLoading,
   callsignGraphLoadVersion,
   callsignGraphNolimit,
+  visible,
   onLoadCallsignGraph,
   onToggleNolimit,
   rightSidebarLoading,
@@ -37,6 +39,7 @@ export function AnalysisCallsignsPane({
           loading={callsignGraphLoading}
           loadVersion={callsignGraphLoadVersion}
           nolimit={callsignGraphNolimit}
+          visible={visible}
           onLoad={onLoadCallsignGraph}
           onToggleNolimit={onToggleNolimit}
         />

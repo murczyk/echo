@@ -198,6 +198,7 @@ export function AnalysisSidebar({
             callsignGraphLoading={callsignGraphLoading}
             callsignGraphLoadVersion={callsignGraphLoadVersion}
             callsignGraphNolimit={callsignGraphNolimit}
+            visible={rightPanelOpen}
             onLoadCallsignGraph={loadCallsignGraph}
             onToggleNolimit={toggleCallsignGraphNolimit}
             rightSidebarLoading={rightSidebarLoading}
