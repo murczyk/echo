@@ -718,6 +718,81 @@ describe('reloadAnalysisData', () => {
     expect(setTopFreqs).toHaveBeenCalledWith([]);
   });
 
+  it('keeps deferred panel data intact when the critical inbox request fails early', async () => {
+    mocks.fetchInboxMessages.mockRejectedValue(new Error('inbox failed'));
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+
+    const invalidateSummaryLoads = vi.fn();
+    const invalidateTopSidebarLoads = vi.fn();
+    const setSummaryRows = vi.fn();
+    const setTopCallsigns = vi.fn();
+    const setTopFreqs = vi.fn();
+    const setTopLocations = vi.fn();
+    const setTopUnits = vi.fn();
+
+    await reloadAnalysisData({
+      clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: vi.fn(),
+      setCounts: vi.fn(),
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworkDisplayMap: vi.fn(),
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
+      setNewCallsigns: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading: vi.fn(),
+      setNewCallsignsLoadedKey: vi.fn(),
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions: vi.fn(),
+      setProfiles: vi.fn(),
+      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryLoading: vi.fn(),
+      setSummaryRows,
+      setTagsMap: vi.fn(),
+      setTopCallsigns,
+      setTopFreqs,
+      setTopLocations,
+      setTopUnits,
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+      invalidateSummaryLoads,
+      invalidateTopSidebarLoads,
+    });
+
+    expect(invalidateSummaryLoads).not.toHaveBeenCalled();
+    expect(invalidateTopSidebarLoads).not.toHaveBeenCalled();
+    expect(setSummaryRows).not.toHaveBeenCalledWith([]);
+    expect(setTopCallsigns).not.toHaveBeenCalledWith([]);
+    expect(setTopFreqs).not.toHaveBeenCalledWith([]);
+    expect(setTopLocations).not.toHaveBeenCalledWith([]);
+    expect(setTopUnits).not.toHaveBeenCalledWith([]);
+  });
+
   it('invalidates pending new callsign loads when the query state cannot be built', async () => {
     const clearAnalysisResults = vi.fn();
     const setNewCallsignsLoading = vi.fn();

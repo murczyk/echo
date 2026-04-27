@@ -374,8 +374,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.onError('');
   params.invalidateMessagePaging();
   params.invalidateCorrelatedFreqsCache();
-  params.invalidateSummaryLoads?.();
-  params.invalidateTopSidebarLoads?.();
   params.setCountsLoading(true);
   params.setMessagesLoading(true);
   params.setFiltersLoading(true);
@@ -591,16 +589,18 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     };
 
     startedSecondaryLoads = true;
+    params.invalidateSummaryLoads?.();
+    params.invalidateTopSidebarLoads?.();
     const secondaryLoads = [
       loadCountsData(),
       loadReferenceData(),
-        (async () => {
-          try {
-            await params.loadInitialFilterSections(criticalData.resolvedAnalysisReq);
-          } finally {
-            if (!isStaleReload()) params.setFiltersLoading(false);
-          }
-        })(),
+      (async () => {
+        try {
+          await params.loadInitialFilterSections(criticalData.resolvedAnalysisReq);
+        } finally {
+          if (!isStaleReload()) params.setFiltersLoading(false);
+        }
+      })(),
       loadMapData(),
     ];
     if (params.shouldLoadNewCallsigns) {
