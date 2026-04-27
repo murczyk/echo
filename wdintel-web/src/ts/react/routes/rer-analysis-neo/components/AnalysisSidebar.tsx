@@ -6,10 +6,9 @@ import { Box, Tab, Tabs, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { AnalysisCallsignsPane } from './AnalysisCallsignsPane';
 import { AnalysisMapPane } from './AnalysisMapPane';
-import { AnalysisCallsignGraphCard } from './AnalysisCallsignGraphCard';
-import { AnalysisChartsPanel } from './AnalysisChartsPanel';
-import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
+import { AnalysisStatsPane } from './AnalysisStatsPane';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
 
 type Props = Pick<
@@ -173,7 +172,7 @@ export function AnalysisSidebar({
         {rightSidebarTab === 'stats' ? (
           <>
             <Box>
-          <AnalysisChartsPanel
+          <AnalysisStatsPane
             correlatedFreqs={correlatedFreqs}
             correlatedFreqsLoading={correlatedFreqsLoading}
             groupsActivity={groupsActivity}
@@ -194,18 +193,16 @@ export function AnalysisSidebar({
           </>
         ) : null}
         {rightSidebarTab === 'callsigns' ? (
-          <Box>
-            <AnalysisCallsignsCloudCard items={topCallsigns} loading={rightSidebarLoading} />
-            <AnalysisCallsignGraphCard
-              graph={callsignGraph}
-              loading={callsignGraphLoading}
-              loadVersion={callsignGraphLoadVersion}
-              nolimit={callsignGraphNolimit}
-              visible={rightPanelOpen}
-              onLoad={loadCallsignGraph}
-              onToggleNolimit={toggleCallsignGraphNolimit}
-            />
-          </Box>
+          <AnalysisCallsignsPane
+            callsignGraph={callsignGraph}
+            callsignGraphLoading={callsignGraphLoading}
+            callsignGraphLoadVersion={callsignGraphLoadVersion}
+            callsignGraphNolimit={callsignGraphNolimit}
+            onLoadCallsignGraph={loadCallsignGraph}
+            onToggleNolimit={toggleCallsignGraphNolimit}
+            rightSidebarLoading={rightSidebarLoading}
+            topCallsigns={topCallsigns}
+          />
         ) : null}
         {rightSidebarTab === 'newCallsigns' ? (
           <Box>

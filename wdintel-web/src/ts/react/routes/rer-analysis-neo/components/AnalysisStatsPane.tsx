@@ -27,7 +27,7 @@ type Props = {
   topUnits: AnalysisCountItem[];
 };
 
-export function AnalysisChartsPanel({
+export function AnalysisStatsPane({
   correlatedFreqs,
   correlatedFreqsLoading,
   groupsActivity,
