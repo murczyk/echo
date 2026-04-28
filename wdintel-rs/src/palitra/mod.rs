@@ -2155,6 +2155,26 @@ mod tests {
     }
 
     #[test]
+    fn keeps_inner_dots_when_palitra_name_has_no_extension() {
+        assert_eq!(
+            palitra_goi_remote_file_name(
+                418,
+                Some(" new palitra (27.04) "),
+                Some("ignored.kmz"),
+            ),
+            "new palitra (27.04).kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn keeps_inner_dots_when_source_filename_has_no_extension() {
+        assert_eq!(
+            kmz_file_name_as_kmz(" new palitra (27.04) "),
+            "new palitra (27.04).kmz".to_string()
+        );
+    }
+
+    #[test]
     fn falls_back_to_synthetic_goi_remote_name_without_source_filename() {
         assert_eq!(
             palitra_goi_remote_file_name(418, None, None),

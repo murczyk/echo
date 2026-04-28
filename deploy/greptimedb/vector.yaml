@@ -7,6 +7,11 @@ sources:
     since_now: true
     # include_units:
     #   - wdintel-rs
+  postgresql:
+    type: file
+    include:
+      - /var/lib/postgresql/14/main/log/postgresql-*.log
+    read_from: end
 
 transforms:
   parse_logs:
@@ -15,10 +20,54 @@ transforms:
       - systemd
     source: |
       .
+  parse_postgresql_logs:
+    type: remap
+    inputs:
+      - postgresql
+    source: |
+      msg = to_string(.message) ?? ""
+
+      .source_type = "postgresql_file"
+      .SYSLOG_IDENTIFIER = "postgresql"
+      ._SYSTEMD_UNIT = "postgresql@14-main.service"
+
+      pg_re = r'^(?P<pg_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ [A-Z]+) \[(?P<postgresql_pid>\d+)\] (?P<postgresql_session>[^ ]*) (?P<postgresql_level>[A-Z]+):\s+(?P<postgresql_message>.*)$'
+      if match(msg, pg_re) {
+        parsed = parse_regex!(msg, pg_re)
+        .postgresql_timestamp = parsed.pg_timestamp
+        .postgresql_pid = to_int(parsed.postgresql_pid) ?? 0
+        .postgresql_session = parsed.postgresql_session
+        .postgresql_level = parsed.postgresql_level
+        .postgresql_message = parsed.postgresql_message
+        .severity_text = parsed.postgresql_level
+      }
+
+      .postgresql_log_kind = "other"
+      if contains(msg, "temporary file:") {
+        .postgresql_log_kind = "temp_file"
+        temp_file = parse_regex(msg, r'temporary file: path "(?P<postgresql_temp_file_path>[^"]+)", size (?P<postgresql_temp_file_size_bytes>\d+)') ?? {}
+        .postgresql_temp_file_path = temp_file.postgresql_temp_file_path
+        .postgresql_temp_file_size_bytes = to_int(temp_file.postgresql_temp_file_size_bytes) ?? 0
+      } else if contains(msg, "duration:") {
+        .postgresql_log_kind = "slow_statement"
+        duration = parse_regex(msg, r'duration: (?P<postgresql_duration_ms>[0-9.]+) ms') ?? {}
+        .postgresql_duration_ms = to_float(duration.postgresql_duration_ms) ?? 0.0
+      } else if contains(msg, "STATEMENT:") {
+        .postgresql_log_kind = "statement"
+      } else if contains(msg, "DETAIL:") {
+        .postgresql_log_kind = "detail"
+      }
+  postgresql_filter:
+    type: filter
+    inputs:
+      - parse_postgresql_logs
+    condition: |
+      .postgresql_log_kind != "temp_file" || (to_int(.postgresql_temp_file_size_bytes) ?? 0) >= 104857600
   signoz_gate:
     type: remap
     inputs:
       - parse_logs
+      - postgresql_filter
     source: |
       ._send_to_signoz = downcase(get_env_var("SIGNOZ_LOGS_ENABLED") ?? "false") == "true"
       ._signoz_logs_endpoint = strip_whitespace(get_env_var("SIGNOZ_LOGS_ENDPOINT") ?? "")
@@ -47,17 +96,17 @@ transforms:
       del(.timestamp)
 
 sinks:
-  greptime:
-    type: greptimedb_logs
-    inputs:
-      - parse_logs
-    # GreptimeDB endpoint details
-    endpoint: "http://100.80.126.44:4000"  # echo-greptime-echo on mothership-02
-    dbname: "echo"
-    table: "logs"
-    pipeline_name: "greptime_identity"
-    username: "${GREPTIME_USER}"
-    password: "${GREPTIME_PASSWORD}"
+  # greptime:
+  #   type: greptimedb_logs
+  #   inputs:
+  #     - parse_logs
+  #   # GreptimeDB endpoint details
+  #   endpoint: "http://100.80.126.44:4000"  # echo-greptime-echo on mothership-02
+  #   dbname: "echo"
+  #   table: "logs"
+  #   pipeline_name: "greptime_identity"
+  #   username: "${GREPTIME_USER}"
+  #   password: "${GREPTIME_PASSWORD}"
 
   signoz:
     type: http
