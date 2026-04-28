@@ -53,6 +53,7 @@ export function useAnalysisData({
   onUnauthorized,
   queryState,
   rightPanelOpen,
+  rightSidebarVisible,
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
@@ -432,9 +433,10 @@ export function useAnalysisData({
   }, [centerTab, loadSummaryData]);
 
   useEffect(() => {
+    if (!rightSidebarVisible) return;
     if (rightSidebarTab !== 'stats' && rightSidebarTab !== 'callsigns') return;
     void loadTopSidebarData();
-  }, [loadTopSidebarData, rightSidebarTab]);
+  }, [loadTopSidebarData, rightSidebarTab, rightSidebarVisible]);
 
   useEffect(() => {
     void loadMapPalitras();

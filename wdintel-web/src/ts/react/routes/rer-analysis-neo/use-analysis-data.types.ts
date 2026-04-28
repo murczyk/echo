@@ -30,6 +30,7 @@ export type UseAnalysisDataProps = {
   queryState: import('./types').AnalysisQueryState;
   centerTab: 'messages' | 'summary';
   rightPanelOpen: boolean;
+  rightSidebarVisible: boolean;
   rightSidebarTab: import('./types').AnalysisSidebarTab | null;
 };
 

@@ -84,7 +84,8 @@ export function AnalysisSidebar({
 }: Props) {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
-  const keepMapPaneMounted = rightPanelOpen || isMobileLayout;
+  const isSidebarVisible = rightPanelOpen || isMobileLayout;
+  const keepMapPaneMounted = isSidebarVisible;
 
   return (
     <Box
@@ -198,7 +199,7 @@ export function AnalysisSidebar({
             callsignGraphLoading={callsignGraphLoading}
             callsignGraphLoadVersion={callsignGraphLoadVersion}
             callsignGraphNolimit={callsignGraphNolimit}
-            visible={rightPanelOpen}
+            visible={isSidebarVisible}
             onLoadCallsignGraph={loadCallsignGraph}
             onToggleNolimit={toggleCallsignGraphNolimit}
             rightSidebarLoading={rightSidebarLoading}

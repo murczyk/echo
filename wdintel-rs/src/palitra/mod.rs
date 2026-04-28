@@ -1903,12 +1903,18 @@ pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     let lower_name = safe_name.to_ascii_lowercase();
     let (stem, extension) = if lower_name.ends_with(".kml") {
         (
-            safe_name[..safe_name.len() - 4].trim().to_string(),
+            strip_duplicate_extension(
+                safe_name[..safe_name.len() - 4].trim(),
+                "kml",
+            ),
             Some("kml"),
         )
     } else if lower_name.ends_with(".kmz") {
         (
-            safe_name[..safe_name.len() - 4].trim().to_string(),
+            strip_duplicate_extension(
+                safe_name[..safe_name.len() - 4].trim(),
+                "kmz",
+            ),
             Some("kmz"),
         )
     } else {
@@ -1924,6 +1930,20 @@ pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
         Some("kml") => format!("{stem}.kml"),
         Some("kmz") => format!("{stem}.kmz"),
         _ => format!("{stem}.kmz"),
+    }
+}
+
+fn strip_duplicate_extension(stem: &str, extension: &str) -> String {
+    let lower_stem = stem.to_ascii_lowercase();
+    if lower_stem.ends_with(&format!(".{extension}")) {
+        let next = stem[..stem.len() - extension.len() - 1].trim();
+        if next.is_empty() {
+            "palitra".to_string()
+        } else {
+            next.to_string()
+        }
+    } else {
+        stem.to_string()
     }
 }
 
@@ -2150,6 +2170,18 @@ mod tests {
                 Some(" Блоки-2023-05-12.KMZ "),
             ),
             "Палітра ППО.kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn strips_duplicate_extension_from_palitra_name() {
+        assert_eq!(
+            palitra_goi_remote_file_name(
+                418,
+                Some(" new palitra (27.04).KMZ "),
+                Some("ignored.kmz"),
+            ),
+            "new palitra (27.04).kmz".to_string()
         );
     }
 
