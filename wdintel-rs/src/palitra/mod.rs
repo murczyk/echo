@@ -1899,23 +1899,20 @@ where
 
 pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     let safe_name = kmz::sanitize_upload_filename(source_file_name);
+    let safe_name = safe_name.trim();
     let lower_name = safe_name.to_ascii_lowercase();
     let (stem, extension) = if lower_name.ends_with(".kml") {
         (
-            safe_name[..safe_name.len() - 4]
-                .trim()
-                .to_string(),
+            safe_name[..safe_name.len() - 4].trim().to_string(),
             Some("kml"),
         )
     } else if lower_name.ends_with(".kmz") {
         (
-            safe_name[..safe_name.len() - 4]
-                .trim()
-                .to_string(),
+            safe_name[..safe_name.len() - 4].trim().to_string(),
             Some("kmz"),
         )
     } else {
-        (safe_name.trim().to_string(), None)
+        (safe_name.to_string(), None)
     };
     let stem = if stem.is_empty() {
         "palitra".to_string()
@@ -2132,6 +2129,14 @@ mod tests {
     fn keeps_inner_dots_when_source_filename_has_extension() {
         assert_eq!(
             kmz_file_name_as_kmz("new palitra (27.04).KMZ.kmz"),
+            "new palitra (27.04).kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn trims_outer_whitespace_when_source_filename_has_extension() {
+        assert_eq!(
+            kmz_file_name_as_kmz(" new palitra (27.04).KMZ "),
             "new palitra (27.04).kmz".to_string()
         );
     }
