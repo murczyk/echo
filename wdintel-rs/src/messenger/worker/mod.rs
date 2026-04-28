@@ -9,8 +9,11 @@ use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use log::info;
+use once_cell::sync::Lazy;
 use sea_orm::*;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::Instant;
 use tokio::runtime::*;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
@@ -21,6 +24,16 @@ pub mod pool;
 pub mod queue;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
+static UNLINKED_DATASOURCE_NOTIFICATION_STATE: Lazy<
+    Mutex<HashMap<i64, UnlinkedDatasourceNotificationState>>,
+> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+#[derive(Clone, Copy, Debug)]
+struct UnlinkedDatasourceNotificationState {
+    next_allowed_at: Instant,
+    consecutive_failures: usize,
+    is_in_flight: bool,
+}
 
 /// Receive thread for all datasources (messengers)
 ///
@@ -128,6 +141,11 @@ pub async fn bl_spawn_worker_if_not_running(
     now: NaiveDateTime,
     datasource: &EchoAccountF1,
 ) -> Result<(), AppError> {
+    if has_unlinked_echo_account(datasource) {
+        notify_unlinked_datasource(datasource).await;
+        return Ok(());
+    }
+    clear_unlinked_datasource_notification(datasource.id);
     if !running_ids.contains(&datasource.id) {
         running_ids.insert(datasource.id);
         let Some(client_name) = datasource.system_service_name.clone() else {
@@ -238,6 +256,14 @@ async fn sync_client_once(
     cli: EchoAccountF1,
     dbx: &DatabaseConnection,
 ) -> SyncResult {
+    if has_unlinked_echo_account(&cli) {
+        notify_unlinked_datasource(&cli).await;
+        return SyncResult {
+            is_healthy: false,
+            num_synced_inbox_messages: 0,
+        };
+    }
+    clear_unlinked_datasource_notification(cli.id);
     let Some(client_name) = cli.system_service_name else {
         trace!("client name is missing, skipping: {cli:?}");
         return SyncResult {
@@ -259,6 +285,144 @@ async fn sync_client_once(
         is_healthy,
         num_synced_inbox_messages,
     }
+}
+
+fn has_unlinked_echo_account(datasource: &EchoAccountF1) -> bool {
+    datasource.echo_client_lock_id.is_some() && !datasource.is_linked
+}
+
+fn clear_unlinked_datasource_notification(datasource_id: i64) {
+    let mut notification_state = UNLINKED_DATASOURCE_NOTIFICATION_STATE
+        .lock()
+        .expect("unlinked datasource notification mutex poisoned");
+    notification_state.remove(&datasource_id);
+}
+
+async fn notify_unlinked_datasource(datasource: &EchoAccountF1) {
+    let should_notify =
+        reserve_unlinked_datasource_notification(datasource.id, Instant::now());
+    if !should_notify {
+        return;
+    }
+    let send_result = send_unlinked_datasource_notification(datasource).await;
+    finish_unlinked_datasource_notification(
+        datasource.id,
+        send_result.is_ok(),
+        Instant::now(),
+    );
+    if let Err(e) = send_result {
+        error!(
+            "failed to send discord alert for unlinked datasource {}: {e:?}",
+            datasource.id
+        );
+    }
+}
+
+fn reserve_unlinked_datasource_notification(
+    datasource_id: i64,
+    now: Instant,
+) -> bool {
+    let mut notification_state = UNLINKED_DATASOURCE_NOTIFICATION_STATE
+        .lock()
+        .expect("unlinked datasource notification mutex poisoned");
+    reserve_unlinked_datasource_notification_inner(
+        &mut notification_state,
+        datasource_id,
+        now,
+    )
+}
+
+fn reserve_unlinked_datasource_notification_inner(
+    notification_state: &mut HashMap<i64, UnlinkedDatasourceNotificationState>,
+    datasource_id: i64,
+    now: Instant,
+) -> bool {
+    let state = notification_state.entry(datasource_id).or_insert(
+        UnlinkedDatasourceNotificationState {
+            next_allowed_at: now,
+            consecutive_failures: 0,
+            is_in_flight: false,
+        },
+    );
+    if state.is_in_flight || state.next_allowed_at > now {
+        return false;
+    }
+    state.is_in_flight = true;
+    true
+}
+
+fn finish_unlinked_datasource_notification(
+    datasource_id: i64,
+    is_sent_successfully: bool,
+    now: Instant,
+) {
+    let mut notification_state = UNLINKED_DATASOURCE_NOTIFICATION_STATE
+        .lock()
+        .expect("unlinked datasource notification mutex poisoned");
+    finish_unlinked_datasource_notification_inner(
+        &mut notification_state,
+        datasource_id,
+        is_sent_successfully,
+        now,
+    );
+}
+
+fn finish_unlinked_datasource_notification_inner(
+    notification_state: &mut HashMap<i64, UnlinkedDatasourceNotificationState>,
+    datasource_id: i64,
+    is_sent_successfully: bool,
+    now: Instant,
+) {
+    let Some(state) = notification_state.get_mut(&datasource_id) else {
+        return;
+    };
+    state.is_in_flight = false;
+    if is_sent_successfully {
+        state.consecutive_failures = 0;
+        state.next_allowed_at = now
+            + Duration::from_secs(
+                MESSENGER_UNLINKED_DISCORD_ALERT_SUCCESS_COOLDOWN_SEC,
+            );
+        return;
+    }
+    state.next_allowed_at = now
+        + unlinked_datasource_notification_retry_delay(
+            state.consecutive_failures,
+        );
+    state.consecutive_failures = (state.consecutive_failures + 1)
+        .min(MESSENGER_UNLINKED_DISCORD_ALERT_RETRY_DELAYS_SEC.len());
+}
+
+fn unlinked_datasource_notification_retry_delay(
+    consecutive_failures: usize,
+) -> Duration {
+    let idx = consecutive_failures
+        .min(MESSENGER_UNLINKED_DISCORD_ALERT_RETRY_DELAYS_SEC.len() - 1);
+    Duration::from_secs(MESSENGER_UNLINKED_DISCORD_ALERT_RETRY_DELAYS_SEC[idx])
+}
+
+async fn send_unlinked_datasource_notification(
+    datasource: &EchoAccountF1,
+) -> Result<(), AppError> {
+    let client_name = datasource
+        .system_service_name
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    let content = format!(
+        "Echo-акаунт не прив'язаний для datasource #{} ({}) messenger={} client={} phone={}",
+        datasource.id,
+        datasource.display_name,
+        datasource.messenger,
+        client_name,
+        datasource.phone_number,
+    );
+    tokio::time::timeout(
+        Duration::from_secs(MESSENGER_UNLINKED_DISCORD_ALERT_TIMEOUT_SEC),
+        crate::server::discord::discord_notify(&content),
+    )
+    .await
+    .map_err(|e| anyhow::Error::new(e).c(h!()))??;
+    Ok(())
 }
 
 async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
@@ -712,4 +876,162 @@ pub fn clear_messenger_login_string(input: &str) -> String {
 
     // 3. Reconstruct the string
     format!("{}@{}", clean_id, domain_section)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unlinked_notification_suppresses_duplicates_until_success_cooldown() {
+        let datasource_id = 101;
+        let mut notification_state = HashMap::new();
+        let now = Instant::now();
+
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now,
+        ));
+        assert!(!reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now,
+        ));
+
+        finish_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            true,
+            now,
+        );
+
+        assert!(!reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now + Duration::from_secs(30),
+        ));
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now + Duration::from_secs(
+                MESSENGER_UNLINKED_DISCORD_ALERT_SUCCESS_COOLDOWN_SEC,
+            ),
+        ));
+    }
+
+    #[test]
+    fn unlinked_notification_uses_capped_retry_backoff() {
+        let datasource_id = 202;
+        let mut notification_state = HashMap::new();
+        let now = Instant::now();
+
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now,
+        ));
+        finish_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            false,
+            now,
+        );
+        assert!(!reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now + Duration::from_millis(999),
+        ));
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now + Duration::from_secs(1),
+        ));
+
+        let retry_1_at = now + Duration::from_secs(1);
+        finish_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            false,
+            retry_1_at,
+        );
+        assert!(!reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            retry_1_at + Duration::from_secs(4),
+        ));
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            retry_1_at + Duration::from_secs(5),
+        ));
+
+        let retry_2_at = retry_1_at + Duration::from_secs(5);
+        finish_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            false,
+            retry_2_at,
+        );
+        assert!(!reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            retry_2_at + Duration::from_secs(14),
+        ));
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            retry_2_at + Duration::from_secs(15),
+        ));
+
+        let retry_3_at = retry_2_at + Duration::from_secs(15);
+        finish_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            false,
+            retry_3_at,
+        );
+        assert!(!reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            retry_3_at + Duration::from_secs(14),
+        ));
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            retry_3_at + Duration::from_secs(15),
+        ));
+    }
+
+    #[test]
+    fn clear_unlinked_notification_resets_retry_state() {
+        let datasource_id = 303;
+        let mut notification_state = HashMap::new();
+        let now = Instant::now();
+
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now,
+        ));
+        finish_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            false,
+            now,
+        );
+        assert!(!reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now,
+        ));
+
+        notification_state.remove(&datasource_id);
+
+        assert!(reserve_unlinked_datasource_notification_inner(
+            &mut notification_state,
+            datasource_id,
+            now,
+        ));
+    }
 }

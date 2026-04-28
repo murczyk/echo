@@ -17,6 +17,8 @@ pub async fn discord_notify(content: &str) -> Result<(), AppError> {
         })
         .send()
         .await
+        .c(h!())?
+        .error_for_status()
         .c(h!())?;
     Ok(())
 }
