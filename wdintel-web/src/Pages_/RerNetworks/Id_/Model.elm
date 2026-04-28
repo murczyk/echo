@@ -197,6 +197,8 @@ type alias Model =
 
     -- Developing callsigns dropdown
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
+    , developingCallsignsShowStale : Bool
+    , developingCallsignsSortByMessages : Bool
 
     -- Unknown callsigns dropdown
     , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown

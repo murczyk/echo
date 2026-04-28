@@ -146,6 +146,8 @@ type CallsignsMsg
     | DeleteCallsignCanceled -- Скасування видалення позивного
     | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
     | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
+    | ToggleDevelopingCallsignsShowStale
+    | ToggleDevelopingCallsignsSortByMessages
     | NavigateToCallsignPage Int -- Перейти на сторінку позивного
     | ToggleUnknownCallsignDropdown String -- Відкрити/закрити dropdown для невідомого позивного
     | CloseUnknownCallsignDropdown -- Закрити всі dropdown для невідомих позивних
