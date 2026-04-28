@@ -152,6 +152,25 @@ describe('retryable loader caches', () => {
     expect(apiMocks.fetchAnalysisSummaryTable).toHaveBeenCalledTimes(2);
   });
 
+  it('loads summary callsign infos together with summary rows', async () => {
+    apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({
+      rows: [
+        {
+          callsigns: [' alpha ', 'alpha', 'bravo'],
+        },
+      ],
+    });
+    apiMocks.fetchAnalysisCallsignInfos.mockResolvedValueOnce([]);
+
+    renderLoaderHook();
+
+    await act(async () => {
+      await latest?.loadSummaryData();
+    });
+
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledWith(['alpha', 'bravo']);
+  });
+
   it('retries right sidebar loading after a failure for the same query', async () => {
     apiMocks.fetchAnalysisCallsigns.mockRejectedValueOnce(new Error('sidebar failed'));
     apiMocks.fetchAnalysisCallsigns.mockResolvedValueOnce({ callsigns: [] });
