@@ -1899,37 +1899,31 @@ where
 
 pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     let safe_name = kmz::sanitize_upload_filename(source_file_name);
-    let path = Path::new(&safe_name);
-    let mut stem = path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_string())
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "palitra".to_string());
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase());
+    let lower_name = safe_name.to_ascii_lowercase();
+    let (stem, extension) = if lower_name.ends_with(".kml") {
+        (
+            safe_name[..safe_name.len() - 4]
+                .trim()
+                .to_string(),
+            Some("kml"),
+        )
+    } else if lower_name.ends_with(".kmz") {
+        (
+            safe_name[..safe_name.len() - 4]
+                .trim()
+                .to_string(),
+            Some("kmz"),
+        )
+    } else {
+        (safe_name.trim().to_string(), None)
+    };
+    let stem = if stem.is_empty() {
+        "palitra".to_string()
+    } else {
+        stem
+    };
 
-    if let Some(extension) = extension.as_deref() {
-        if matches!(extension, "kml" | "kmz") {
-            let stem_path = Path::new(&stem);
-            let stem_extension = stem_path
-                .extension()
-                .and_then(|value| value.to_str())
-                .map(|value| value.to_ascii_lowercase());
-            if stem_extension.as_deref() == Some(extension) {
-                stem = stem_path
-                    .file_stem()
-                    .and_then(|value| value.to_str())
-                    .map(|value| value.to_string())
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or_else(|| "palitra".to_string());
-            }
-        }
-    }
-
-    match extension.as_deref() {
+    match extension {
         Some("kml") => format!("{stem}.kml"),
         Some("kmz") => format!("{stem}.kmz"),
         _ => format!("{stem}.kmz"),
