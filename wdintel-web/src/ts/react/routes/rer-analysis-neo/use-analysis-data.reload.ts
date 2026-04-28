@@ -6,26 +6,23 @@ import type {
   NewCallsignsRes,
   SignalGroupEntry,
   SignalProfileEntry,
-  SummaryTableFreqRow,
   Tag,
   Unit,
 } from '../../../../Bindings';
 import type { AnalysisStatsReq } from '../../../../Bindings';
 import {
   fetchAnalysisAors,
-  fetchAnalysisCallsigns,
-  fetchAnalysisCallsignInfos,
   fetchAnalysisCount,
+  fetchAnalysisCallsigns,
   fetchAnalysisFreqs,
   fetchAnalysisGroups,
-  fetchAnalysisLocations,
   fetchAnalysisMapPoints,
+  fetchAnalysisLocations,
   fetchAnalysisMetadata,
   fetchAnalysisNetworks,
   fetchAnalysisNewCallsigns,
   fetchAnalysisPosts,
   fetchAnalysisSenders,
-  fetchAnalysisSummaryTable,
   fetchAnalysisTags,
   fetchAnalysisUnits,
   fetchInboxMessages,
@@ -108,7 +105,9 @@ export function filterSectionsForQueryState(queryState: AnalysisQueryState): Ana
 
 export function filterSectionsForInitialLoad(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
   const sections = new Set<AnalysisFilterSectionId>(['tags', 'groups', 'senders']);
-  filterSectionsForQueryState(queryState).forEach((section) => sections.add(section));
+  filterSectionsForQueryState(queryState).forEach((section) => {
+    sections.add(section);
+  });
   return Array.from(sections);
 }
 
@@ -355,13 +354,13 @@ type ReloadParams = {
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
-  setSummaryLoading: Setter<boolean>;
-  setSummaryRows: Setter<SummaryTableFreqRow[]>;
   setTagsMap: Setter<Record<number, Tag>>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
   setTopUnits: Setter<AnalysisCountItem[]>;
+  invalidateSummaryLoads?: () => void;
+  invalidateTopSidebarLoads?: () => void;
   loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
 };
@@ -378,7 +377,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.setCountsLoading(true);
   params.setMessagesLoading(true);
   params.setFiltersLoading(true);
-  params.setSummaryLoading(true);
   params.setNewCallsignsLoading(true);
   params.setNewCallsignsLoadedKey(null);
   params.setMapLoading(true);
@@ -391,10 +389,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       allFrequencies: string[],
     ): Promise<
       | {
-          analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
+          originalAnalysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
           inboxReq: NonNullable<ReturnType<typeof buildInboxReq>>;
           inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
           freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
+          countsPromise: Promise<CountStatsRsp>;
+          resolvedAnalysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
         }
       | null
     > => {
@@ -402,6 +402,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       const inboxReq = buildInboxReq(params.queryState, allFrequencies);
 
       if (analysisReq == null || inboxReq == null) {
+        params.invalidateSummaryLoads?.();
+        params.invalidateTopSidebarLoads?.();
         params.clearAnalysisResults();
         if (
           params.newCallsignsRequestRef != null &&
@@ -419,6 +421,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         return null;
       }
 
+      const countsPromise = fetchAnalysisCount(analysisReq);
+      countsPromise.catch(() => undefined);
       const inboxPromise = fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst });
       const freqsPromise = fetchAnalysisFreqs(analysisReq);
 
@@ -508,7 +512,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         endDate: resolvedInboxReq.tillDateInclusiveMs ?? 0,
       });
       params.invalidateCallsignGraph();
-      return { analysisReq: resolvedAnalysisReq, inboxReq: resolvedInboxReq, inboxRsp: resolvedInboxRsp, freqsRsp: resolvedFreqsRsp };
+      return {
+        originalAnalysisReq: analysisReq,
+        countsPromise,
+        inboxReq: resolvedInboxReq,
+        inboxRsp: resolvedInboxRsp,
+        freqsRsp: resolvedFreqsRsp,
+        resolvedAnalysisReq,
+      };
     };
 
     const criticalData = await loadCriticalData(params.optionsFreqsRef.current);
@@ -519,7 +530,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
     const loadCountsData = async () => {
       try {
-        const countsRsp = await fetchAnalysisCount(criticalData.analysisReq);
+        const countsPromise =
+          criticalData.resolvedAnalysisReq === criticalData.originalAnalysisReq
+            ? criticalData.countsPromise
+            : fetchAnalysisCount(criticalData.resolvedAnalysisReq);
+        if (criticalData.resolvedAnalysisReq !== criticalData.originalAnalysisReq) {
+          countsPromise.catch(() => undefined);
+        }
+        const countsRsp = await countsPromise;
         if (isStaleReload()) return;
         params.setCounts(countsRsp);
       } catch (loadError) {
@@ -534,7 +552,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       try {
         const [units, networksStatsRsp] = await Promise.all([
           getUnitsList(),
-          fetchAnalysisNetworks(criticalData.analysisReq),
+          fetchAnalysisNetworks(criticalData.resolvedAnalysisReq),
         ]);
         if (isStaleReload()) return;
         params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
@@ -547,42 +565,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const networksByAnalysisIds = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
         if (isStaleReload()) return;
         params.setNetworks((current) => mergeNetworks(current, networksByAnalysisIds));
-      } catch (loadError) {
-        if (isStaleReload()) return;
-        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
-      }
-    };
-
-    const loadSummaryData = async () => {
-      try {
-        const summaryRsp = await fetchAnalysisSummaryTable(criticalData.analysisReq);
-        if (isStaleReload()) return;
-        params.setSummaryRows(summaryRsp.rows ?? []);
-      } catch (loadError) {
-        if (isStaleReload()) return;
-        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
-      } finally {
-        if (!isStaleReload()) params.setSummaryLoading(false);
-      }
-    };
-
-    const loadTopSidebarData = async () => {
-      try {
-        const [callsignsRsp, unitsRsp, locationsRsp] = await Promise.all([
-          fetchAnalysisCallsigns(criticalData.analysisReq),
-          fetchAnalysisUnits(criticalData.analysisReq),
-          fetchAnalysisLocations(criticalData.analysisReq),
-        ]);
-        if (isStaleReload()) return;
-        params.setTopCallsigns(topItems(callsignsRsp.callsigns, (item) => item.callsign, (item) => item.count));
-        params.setTopUnits(topItems(unitsRsp.units, (item) => item.unit, (item) => item.count));
-        params.setTopLocations(topItems(locationsRsp.locations, (item) => item.location, (item) => item.count));
-        const callsignIds = callsignsRsp.callsigns.map((item) => item.callsign);
-        if (callsignIds.length > 0) {
-          const callsignInfos = await fetchAnalysisCallsignInfos(callsignIds);
-          if (isStaleReload()) return;
-          params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(criticalData.inboxRsp.callsigns, callsignInfos));
-        }
       } catch (loadError) {
         if (isStaleReload()) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
@@ -609,28 +591,28 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     };
 
     startedSecondaryLoads = true;
+    params.invalidateSummaryLoads?.();
+    params.invalidateTopSidebarLoads?.();
     const secondaryLoads = [
       loadCountsData(),
       loadReferenceData(),
-      loadTopSidebarData(),
       (async () => {
         try {
-          await params.loadInitialFilterSections(criticalData.analysisReq);
+          await params.loadInitialFilterSections(criticalData.resolvedAnalysisReq);
         } finally {
           if (!isStaleReload()) params.setFiltersLoading(false);
         }
       })(),
-      loadSummaryData(),
       loadMapData(),
     ];
     if (params.shouldLoadNewCallsigns) {
       secondaryLoads.push(
         (async () => {
           try {
-            const newCallsignsRsp = await fetchAnalysisNewCallsigns(criticalData.analysisReq);
+            const newCallsignsRsp = await fetchAnalysisNewCallsigns(criticalData.resolvedAnalysisReq);
             if (isStaleReload()) return;
             params.setNewCallsigns(newCallsignsRsp);
-            params.setNewCallsignsLoadedKey(JSON.stringify(criticalData.analysisReq));
+            params.setNewCallsignsLoadedKey(JSON.stringify(criticalData.resolvedAnalysisReq));
           } catch (loadError) {
             if (isStaleReload()) return;
             if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
@@ -654,7 +636,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       if (!startedSecondaryLoads) {
         params.setCountsLoading(false);
         params.setFiltersLoading(false);
-        params.setSummaryLoading(false);
         params.setNewCallsignsLoading(false);
         params.setMapLoading(false);
       }

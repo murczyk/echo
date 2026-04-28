@@ -28,6 +28,10 @@ export type UseAnalysisDataProps = {
   onUnauthorized: (error: unknown) => boolean;
   shouldLoadNewCallsigns: boolean;
   queryState: import('./types').AnalysisQueryState;
+  centerTab: 'messages' | 'summary';
+  rightPanelOpen: boolean;
+  rightSidebarVisible: boolean;
+  rightSidebarTab: import('./types').AnalysisSidebarTab | null;
 };
 
 export type UseAnalysisDataResult = {
@@ -83,6 +87,7 @@ export type UseAnalysisDataResult = {
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   reload: () => Promise<void>;
   summaryLoading: boolean;
+  rightSidebarLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;

@@ -57,8 +57,10 @@ export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) 
               minHeight: 40,
               backgroundColor: 'transparent',
               '& .MuiInputBase-input': {
-                py: 0,
-                fontSize: '0.875rem',
+                fontSize: 14,
+                lineHeight: '20px',
+                boxSizing: 'border-box',
+                padding: '9px 8px 9px 0 !important',
               },
             },
           }}

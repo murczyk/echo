@@ -47,10 +47,14 @@ import type {
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
 export function useAnalysisData({
+  centerTab,
   newestFirst,
   onError,
   onUnauthorized,
   queryState,
+  rightPanelOpen,
+  rightSidebarVisible,
+  rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
   const [countsLoading, setCountsLoading] = useState(false);
@@ -63,6 +67,7 @@ export function useAnalysisData({
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState<SummaryTableFreqRow[]>([]);
+  const [rightSidebarLoading, setRightSidebarLoading] = useState(false);
   const [newCallsignsLoading, setNewCallsignsLoading] = useState(false);
   const [newCallsigns, setNewCallsigns] = useState<NewCallsignsRes>(emptyNewCallsigns);
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
@@ -164,7 +169,11 @@ export function useAnalysisData({
     loadGroupsActivity,
     loadMapPalitras,
     loadMessagesForMap,
+    loadSummaryData,
+    loadTopSidebarData,
     refreshMapDateRange,
+    invalidateSummaryData,
+    invalidateRightSidebarData,
     toggleCallsignGraphNolimit,
   } = useAnalysisDataLoaders({
     callsignGraphNolimit,
@@ -196,6 +205,14 @@ export function useAnalysisData({
     setMapPalitrasLoaded,
     setMapPalitrasLoadState,
     setMapPoints,
+    setSummaryCallsignsInfo,
+    setSummaryLoading,
+    setSummaryRows,
+    setTopCallsigns,
+    setTopFreqs,
+    setTopLocations,
+    setRightSidebarLoading,
+    setTopUnits,
   });
 
   const loadNewCallsigns = useLoadNewCallsigns({
@@ -244,11 +261,13 @@ export function useAnalysisData({
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
+    setSummaryLoading,
     setSummaryRows,
     setTagsMap,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
+    setRightSidebarLoading,
     setTopUnits,
     setUnitsMap,
     setHasLoadedInitialMessages,
@@ -295,8 +314,6 @@ export function useAnalysisData({
       setOptions,
       setProfiles,
       setSummaryCallsignsInfo,
-      setSummaryLoading,
-      setSummaryRows,
       setTagsMap,
       setTopCallsigns,
       setTopFreqs,
@@ -304,6 +321,8 @@ export function useAnalysisData({
       setTopUnits,
       setUnitsMap,
       setHasLoadedInitialMessages,
+      invalidateSummaryLoads: invalidateSummaryData,
+      invalidateTopSidebarLoads: invalidateRightSidebarData,
       loadInitialFilterSections,
     });
   }, [
@@ -311,6 +330,8 @@ export function useAnalysisData({
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
     invalidateFilterSectionLoads,
+    invalidateSummaryData,
+    invalidateRightSidebarData,
     invalidateMessagePaging,
     loadInitialFilterSections,
     newestFirst,
@@ -407,6 +428,17 @@ export function useAnalysisData({
   }, [reload]);
 
   useEffect(() => {
+    if (centerTab !== 'summary') return;
+    void loadSummaryData();
+  }, [centerTab, loadSummaryData]);
+
+  useEffect(() => {
+    if (!rightSidebarVisible) return;
+    if (rightSidebarTab !== 'stats' && rightSidebarTab !== 'callsigns') return;
+    void loadTopSidebarData();
+  }, [loadTopSidebarData, rightSidebarTab, rightSidebarVisible]);
+
+  useEffect(() => {
     void loadMapPalitras();
   }, [loadMapPalitras]);
 
@@ -489,6 +521,7 @@ export function useAnalysisData({
     refreshMapDateRange,
     reload,
     summaryLoading,
+    rightSidebarLoading,
     summaryRows,
     summaryCallsignsInfo,
     unitsMap,

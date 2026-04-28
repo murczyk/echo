@@ -51,6 +51,38 @@ nginx macos: see [[deploy/README]]
 
 Then open http://wildducks.localhost
 
+## Tests
+
+Frontend unit checks:
+
+```bash
+just test-fe
+```
+
+This runs the frontend test pipeline in `wdintel-web`:
+- `elm-test`
+- `vitest`
+- the generated frontend test setup
+
+Frontend end-to-end checks:
+
+```bash
+cd wdintel-web
+npm run e2e
+```
+
+This runs the Playwright smoke suite for the current React/Elm hybrid frontend. For the slower loading comparisons, use:
+
+```bash
+npm run e2e:perf
+```
+
+Before running Playwright locally for the first time, install the browser once:
+
+```bash
+npm run e2e:install
+```
+
 Documentation web app:
 
 you need to install `Zola` project first: https://www.getzola.org/documentation/getting-started/installation/

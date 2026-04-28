@@ -6,10 +6,9 @@ import { Box, Tab, Tabs, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { AnalysisCallsignsPane } from './AnalysisCallsignsPane';
 import { AnalysisMapPane } from './AnalysisMapPane';
-import { AnalysisCallsignGraphCard } from './AnalysisCallsignGraphCard';
-import { AnalysisChartsPanel } from './AnalysisChartsPanel';
-import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
+import { AnalysisStatsPane } from './AnalysisStatsPane';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
 
 type Props = Pick<
@@ -20,7 +19,6 @@ type Props = Pick<
   | 'callsignGraphNolimit'
   | 'correlatedFreqs'
   | 'correlatedFreqsLoading'
-  | 'filtersLoading'
   | 'groupsActivity'
   | 'groupsActivityLoadedFreq'
   | 'groupsActivityLoadedPeriod'
@@ -29,6 +27,7 @@ type Props = Pick<
   | 'mapAttrs'
   | 'newCallsigns'
   | 'newCallsignsLoading'
+  | 'rightSidebarLoading'
   | 'queryState'
   | 'rightSidebarTab'
   | 'rightPanelOpen'
@@ -57,7 +56,6 @@ export function AnalysisSidebar({
   callsignGraphNolimit,
   correlatedFreqs,
   correlatedFreqsLoading,
-  filtersLoading,
   groupsActivity,
   groupsActivityLoadedFreq,
   groupsActivityLoadedPeriod,
@@ -70,6 +68,7 @@ export function AnalysisSidebar({
   loadMessagesForMap,
   newCallsigns,
   newCallsignsLoading,
+  rightSidebarLoading,
   queryState,
   rightPanelOpen,
   rightSidebarTab,
@@ -85,7 +84,8 @@ export function AnalysisSidebar({
 }: Props) {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
-  const keepMapPaneMounted = rightPanelOpen || isMobileLayout;
+  const isSidebarVisible = rightPanelOpen || isMobileLayout;
+  const keepMapPaneMounted = isSidebarVisible;
 
   return (
     <Box
@@ -173,39 +173,38 @@ export function AnalysisSidebar({
         {rightSidebarTab === 'stats' ? (
           <>
             <Box>
-              <AnalysisChartsPanel
-                correlatedFreqs={correlatedFreqs}
-                correlatedFreqsLoading={correlatedFreqsLoading}
-                filtersLoading={filtersLoading}
-                groupsActivity={groupsActivity}
-                groupsActivityLoadedFreq={groupsActivityLoadedFreq}
-                groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
-                groupsActivityPeriod={groupsActivityPeriod}
-                groupsActivityLoading={groupsActivityLoading}
+          <AnalysisStatsPane
+            correlatedFreqs={correlatedFreqs}
+            correlatedFreqsLoading={correlatedFreqsLoading}
+            groupsActivity={groupsActivity}
+            groupsActivityLoadedFreq={groupsActivityLoadedFreq}
+            groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
+            groupsActivityPeriod={groupsActivityPeriod}
+            groupsActivityLoading={groupsActivityLoading}
                 onLoadCorrelatedFreqs={loadCorrelatedFreqs}
                 onLoadGroupsActivity={loadGroupsActivity}
-                onSelectFreq={selectOnlyFreq}
-                selectedFreq={queryState.freqsSelected[0] ?? null}
-                topFreqs={topFreqs}
-                topLocations={topLocations}
-                topUnits={topUnits}
-              />
+            onSelectFreq={selectOnlyFreq}
+            selectedFreq={queryState.freqsSelected[0] ?? null}
+            rightSidebarLoading={rightSidebarLoading}
+            topFreqs={topFreqs}
+            topLocations={topLocations}
+            topUnits={topUnits}
+          />
             </Box>
           </>
         ) : null}
         {rightSidebarTab === 'callsigns' ? (
-          <Box>
-            <AnalysisCallsignsCloudCard items={topCallsigns} />
-            <AnalysisCallsignGraphCard
-              graph={callsignGraph}
-              loading={callsignGraphLoading}
-              loadVersion={callsignGraphLoadVersion}
-              nolimit={callsignGraphNolimit}
-              visible={rightPanelOpen}
-              onLoad={loadCallsignGraph}
-              onToggleNolimit={toggleCallsignGraphNolimit}
-            />
-          </Box>
+          <AnalysisCallsignsPane
+            callsignGraph={callsignGraph}
+            callsignGraphLoading={callsignGraphLoading}
+            callsignGraphLoadVersion={callsignGraphLoadVersion}
+            callsignGraphNolimit={callsignGraphNolimit}
+            visible={isSidebarVisible}
+            onLoadCallsignGraph={loadCallsignGraph}
+            onToggleNolimit={toggleCallsignGraphNolimit}
+            rightSidebarLoading={rightSidebarLoading}
+            topCallsigns={topCallsigns}
+          />
         ) : null}
         {rightSidebarTab === 'newCallsigns' ? (
           <Box>

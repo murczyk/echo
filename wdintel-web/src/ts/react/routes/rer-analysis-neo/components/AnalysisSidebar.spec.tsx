@@ -37,20 +37,16 @@ vi.mock('@mui/material', () => ({
   useMediaQuery: () => false,
 }));
 
-vi.mock('./AnalysisChartsPanel', () => ({
-  AnalysisChartsPanel: () => <div>charts-panel</div>,
+vi.mock('./AnalysisStatsPane', () => ({
+  AnalysisStatsPane: () => <div>charts-panel</div>,
 }));
 
 vi.mock('./AnalysisMapPane', () => ({
   AnalysisMapPane: () => <div>map-pane</div>,
 }));
 
-vi.mock('./AnalysisCallsignsCloudCard', () => ({
-  AnalysisCallsignsCloudCard: () => <div>callsigns-cloud</div>,
-}));
-
-vi.mock('./AnalysisCallsignGraphCard', () => ({
-  AnalysisCallsignGraphCard: () => <div>callsign-graph</div>,
+vi.mock('./AnalysisCallsignsPane', () => ({
+  AnalysisCallsignsPane: () => <div>callsigns-pane</div>,
 }));
 
 vi.mock('./AnalysisNewCallsignsCard', () => ({
@@ -72,7 +68,6 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     callsignGraphNolimit: false,
     correlatedFreqs: [],
     correlatedFreqsLoading: false,
-    filtersLoading: false,
     groupsActivity: null,
     groupsActivityLoadedFreq: null,
     groupsActivityLoadedPeriod: null,
@@ -94,6 +89,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     loadMessagesForMap: vi.fn(),
     newCallsigns: [],
     newCallsignsLoading: false,
+    rightSidebarLoading: false,
     queryState: {
       freqsSelected: [],
       search: '',
@@ -146,7 +142,7 @@ describe('AnalysisSidebar', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('charts-panel');
-    expect(view.container.textContent).not.toContain('callsigns-cloud');
+    expect(view.container.textContent).not.toContain('callsigns-pane');
   });
 
   it('renders the map content for the map tab', async () => {
@@ -161,8 +157,7 @@ describe('AnalysisSidebar', () => {
     const view = await renderComponent(buildProps({ rightSidebarTab: 'callsigns' }));
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('callsigns-cloud');
-    expect(view.container.textContent).toContain('callsign-graph');
+    expect(view.container.textContent).toContain('callsigns-pane');
     expect(view.container.textContent).not.toContain('overview-card');
   });
 
@@ -183,6 +178,6 @@ describe('AnalysisSidebar', () => {
     const view = await renderComponent(buildProps({ rightPanelOpen: false, rightSidebarTab: null }));
     rendered.push(view);
 
-    expect(view.container.textContent).not.toContain('callsigns-cloud');
+    expect(view.container.textContent).not.toContain('callsigns-pane');
   });
 });

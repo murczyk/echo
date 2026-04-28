@@ -44,11 +44,13 @@ type Params = {
   setOptions: Setter<import('./types').AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
+  setSummaryLoading: Setter<boolean>;
   setSummaryRows: Setter<SummaryTableFreqRow[]>;
   setTagsMap: Setter<Record<number, Tag>>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
+  setRightSidebarLoading: Setter<boolean>;
   setTopUnits: Setter<AnalysisCountItem[]>;
   setUnitsMap: Setter<Record<number, Unit>>;
   setHasLoadedInitialMessages: Setter<boolean>;
@@ -80,11 +82,13 @@ export function useAnalysisDataStateUtils(params: Params) {
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
+    setSummaryLoading,
     setSummaryRows,
     setTagsMap,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
+    setRightSidebarLoading,
     setTopUnits,
     setUnitsMap,
     setHasLoadedInitialMessages,
@@ -119,6 +123,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setUnitsMap({});
     setNetworkDisplayMap({});
     setSummaryCallsignsInfo({});
+    setSummaryLoading(false);
     setMapDateRange({ startDate: 0, endDate: 0 });
     setHasLoadedInitialMessages(false);
     setMapPoints([]);
@@ -128,6 +133,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setGroupsActivity(null);
     setGroupsActivityLoadedFreq(null);
     setGroupsActivityLoadedPeriod(null);
+    setRightSidebarLoading(false);
     setNoMoreToLoad(false);
     setNolimitShown(false);
     optionsFreqsRef.current = [];
@@ -157,11 +163,13 @@ export function useAnalysisDataStateUtils(params: Params) {
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
+    setSummaryLoading,
     setSummaryRows,
     setTagsMap,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
+    setRightSidebarLoading,
     setTopUnits,
     setUnitsMap,
   ]);

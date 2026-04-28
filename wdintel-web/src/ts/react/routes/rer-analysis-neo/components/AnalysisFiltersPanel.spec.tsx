@@ -311,7 +311,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(networkField?.disabled).toBe(true);
   });
 
-  it('keeps server-backed filter fields interactive while their options refresh', async () => {
+  it('keeps server-backed filter fields interactive while the page reloads', async () => {
     const props = buildProps({
       filtersLoading: true,
     });
@@ -326,9 +326,9 @@ describe('AnalysisFiltersPanel', () => {
       .find((callProps) => callProps.label === 'Групи');
 
     expect(frequencyField?.disabled ?? false).toBe(false);
-    expect(frequencyField?.loading).toBe(true);
+    expect(frequencyField?.loading ?? false).toBe(false);
     expect(groupsField?.disabled ?? false).toBe(false);
-    expect(groupsField?.loading).toBe(true);
+    expect(groupsField?.loading ?? false).toBe(false);
   });
 
   it('shows loading state for an opened lazy section instead of an empty-options message', async () => {
@@ -847,7 +847,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(resetFilters).not.toHaveBeenCalled();
   });
 
-  it('shows loading spinners in section headers while filters are loading', async () => {
+  it('shows loading indicators for filter counters while the initial filters load is still in flight', async () => {
     const view = await renderComponent(
       buildProps({
         filtersLoading: true,

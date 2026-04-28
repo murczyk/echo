@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 import { isUnauthorizedError } from '../../services/api/client';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
@@ -28,6 +30,8 @@ function stringArraysEqual(left: string[], right: string[]): boolean {
 }
 
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
+  const theme = useTheme();
+  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
@@ -52,10 +56,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   const data = useAnalysisData({
+    centerTab,
     newestFirst,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
+    rightPanelOpen,
+    rightSidebarVisible: rightPanelOpen || isMobileLayout,
+    rightSidebarTab,
+    shouldLoadNewCallsigns: (rightPanelOpen || isMobileLayout) && rightSidebarTab === 'newCallsigns',
     queryState,
   });
   const dataFreqValues = useMemo(() => data.options.freqs.map((option) => option.value), [data.options.freqs]);
@@ -231,9 +239,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [rightSidebarTab]);
 
   useEffect(() => {
-    if (!rightPanelOpen || rightSidebarTab !== 'newCallsigns') return;
+    if (!(rightPanelOpen || isMobileLayout) || rightSidebarTab !== 'newCallsigns') return;
     void data.loadNewCallsigns();
-  }, [data.loadNewCallsigns, rightPanelOpen, rightSidebarTab]);
+  }, [data.loadNewCallsigns, isMobileLayout, rightPanelOpen, rightSidebarTab]);
 
   const canResetFilters = useMemo(() => {
     const queryStateKey = queryStateComparisonKey(queryState);
@@ -304,6 +312,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     savedFilterName: savedFilters.savedFilterName,
     savedFilters: savedFilters.savedFilters,
     summaryLoading: data.summaryLoading,
+    rightSidebarLoading: data.rightSidebarLoading,
     summaryRows: data.summaryRows,
     summaryCallsignsInfo: data.summaryCallsignsInfo,
     unitsMap: data.unitsMap,

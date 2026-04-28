@@ -1898,7 +1898,34 @@ where
 }
 
 pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
-    let (stem, extension) = split_palitra_file_name_for_goi(source_file_name);
+    let safe_name = kmz::sanitize_upload_filename(source_file_name);
+    let safe_name = safe_name.trim();
+    let lower_name = safe_name.to_ascii_lowercase();
+    let (stem, extension) = if lower_name.ends_with(".kml") {
+        (
+            strip_duplicate_extension(
+                safe_name[..safe_name.len() - 4].trim(),
+                "kml",
+            ),
+            Some("kml"),
+        )
+    } else if lower_name.ends_with(".kmz") {
+        (
+            strip_duplicate_extension(
+                safe_name[..safe_name.len() - 4].trim(),
+                "kmz",
+            ),
+            Some("kmz"),
+        )
+    } else {
+        (safe_name.to_string(), None)
+    };
+    let stem = if stem.is_empty() {
+        "palitra".to_string()
+    } else {
+        stem
+    };
+
     match extension {
         Some("kml") => format!("{stem}.kml"),
         Some("kmz") => format!("{stem}.kmz"),
@@ -1906,30 +1933,18 @@ pub(crate) fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     }
 }
 
-fn split_palitra_file_name_for_goi(
-    source_file_name: &str,
-) -> (String, Option<&'static str>) {
-    let safe_name = kmz::sanitize_upload_filename(source_file_name);
-    let lower_name = safe_name.to_ascii_lowercase();
-    let extension = if lower_name.ends_with(".kml") {
-        Some("kml")
-    } else if lower_name.ends_with(".kmz") {
-        Some("kmz")
+fn strip_duplicate_extension(stem: &str, extension: &str) -> String {
+    let lower_stem = stem.to_ascii_lowercase();
+    if lower_stem.ends_with(&format!(".{extension}")) {
+        let next = stem[..stem.len() - extension.len() - 1].trim();
+        if next.is_empty() {
+            "palitra".to_string()
+        } else {
+            next.to_string()
+        }
     } else {
-        None
-    };
-    let stem = extension
-        .map(|ext| safe_name[..safe_name.len() - ext.len() - 1].to_string())
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(safe_name)
-        .trim()
-        .to_string();
-    let stem = if stem.is_empty() {
-        "palitra".to_string()
-    } else {
-        stem
-    };
-    (stem, extension)
+        stem.to_string()
+    }
 }
 
 fn palitra_goi_remote_file_name_legacy(palitra_id: i64) -> String {
@@ -2131,6 +2146,22 @@ mod tests {
     }
 
     #[test]
+    fn keeps_inner_dots_when_source_filename_has_extension() {
+        assert_eq!(
+            kmz_file_name_as_kmz("new palitra (27.04).KMZ.kmz"),
+            "new palitra (27.04).kmz".to_string()
+        );
+    }
+
+    #[test]
+    fn trims_outer_whitespace_when_source_filename_has_extension() {
+        assert_eq!(
+            kmz_file_name_as_kmz(" new palitra (27.04).KMZ "),
+            "new palitra (27.04).kmz".to_string()
+        );
+    }
+
+    #[test]
     fn prefers_palitra_name_for_goi_remote_name() {
         assert_eq!(
             palitra_goi_remote_file_name(
@@ -2143,11 +2174,11 @@ mod tests {
     }
 
     #[test]
-    fn keeps_inner_dots_when_palitra_name_has_no_extension() {
+    fn strips_duplicate_extension_from_palitra_name() {
         assert_eq!(
             palitra_goi_remote_file_name(
                 418,
-                Some(" new palitra (27.04) "),
+                Some(" new palitra (27.04).KMZ "),
                 Some("ignored.kmz"),
             ),
             "new palitra (27.04).kmz".to_string()
@@ -2155,9 +2186,13 @@ mod tests {
     }
 
     #[test]
-    fn keeps_inner_dots_when_source_filename_has_extension() {
+    fn keeps_inner_dots_when_palitra_name_has_no_extension() {
         assert_eq!(
-            kmz_file_name_as_kmz(" new palitra (27.04).KMZ "),
+            palitra_goi_remote_file_name(
+                418,
+                Some(" new palitra (27.04) "),
+                Some("ignored.kmz"),
+            ),
             "new palitra (27.04).kmz".to_string()
         );
     }
