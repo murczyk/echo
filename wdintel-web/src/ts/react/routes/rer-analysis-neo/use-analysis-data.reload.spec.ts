@@ -795,6 +795,8 @@ describe('reloadAnalysisData', () => {
 
   it('invalidates pending new callsign loads when the query state cannot be built', async () => {
     const clearAnalysisResults = vi.fn();
+    const invalidateSummaryLoads = vi.fn();
+    const invalidateTopSidebarLoads = vi.fn();
     const setNewCallsignsLoading = vi.fn();
     const newCallsignsRequestRef = { current: 9 };
     const newCallsignsLoadedKeyRef = { current: 'loaded-key' };
@@ -850,10 +852,14 @@ describe('reloadAnalysisData', () => {
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
       setTopUnits: vi.fn(),
+      invalidateSummaryLoads,
+      invalidateTopSidebarLoads,
       loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
       invalidateFilterSectionLoads: vi.fn(),
     });
 
+    expect(invalidateSummaryLoads).toHaveBeenCalledTimes(1);
+    expect(invalidateTopSidebarLoads).toHaveBeenCalledTimes(1);
     expect(clearAnalysisResults).toHaveBeenCalledTimes(1);
     expect(setNewCallsignsLoading).toHaveBeenCalledWith(false);
     expect(newCallsignsRequestRef.current).toBe(10);

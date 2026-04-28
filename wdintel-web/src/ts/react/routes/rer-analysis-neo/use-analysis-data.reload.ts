@@ -402,6 +402,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       const inboxReq = buildInboxReq(params.queryState, allFrequencies);
 
       if (analysisReq == null || inboxReq == null) {
+        params.invalidateSummaryLoads?.();
+        params.invalidateTopSidebarLoads?.();
         params.clearAnalysisResults();
         if (
           params.newCallsignsRequestRef != null &&
