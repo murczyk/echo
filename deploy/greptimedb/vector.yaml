@@ -50,8 +50,8 @@ transforms:
         .postgresql_temp_file_size_bytes = to_int(temp_file.postgresql_temp_file_size_bytes) ?? 0
       } else if contains(msg, "duration:") {
         .postgresql_log_kind = "slow_statement"
-        duration = parse_regex(msg, r'duration: (?P<postgresql_duration_ms>[0-9.]+) ms') ?? {}
-        .postgresql_duration_ms = to_float(duration.postgresql_duration_ms) ?? 0.0
+        duration_match = parse_regex(msg, r'duration: (?P<postgresql_duration_ms>[0-9.]+) ms') ?? {}
+        .postgresql_duration_ms = to_float(duration_match.postgresql_duration_ms) ?? 0.0
       } else if contains(msg, "STATEMENT:") {
         .postgresql_log_kind = "statement"
       } else if contains(msg, "DETAIL:") {
