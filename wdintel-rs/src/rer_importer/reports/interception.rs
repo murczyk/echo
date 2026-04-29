@@ -72,7 +72,7 @@ async fn build_inbox_messages_report_sql(
             condition
         });
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
+        crate::messenger::group::get_identity_sigint_groups(&read_db, login)
             .await
             .c(h!())?;
     let mut q = SignalMessage::find()
@@ -238,7 +238,7 @@ async fn build_inbox_messages_report_sql(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &login,
+        login,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_locations(
