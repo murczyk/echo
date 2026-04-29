@@ -156,7 +156,7 @@ assets = [
 	[ "version.txt", "usr/share/echo/", "755", ],
 	[ "../deploy/echo-whatsapp/echo-whatsapp", "usr/bin/", "755", ],
 	[ "../deploy/empty.txt", "etc/echo/echo-whatsapp/", "755", ],
-    [ "../deploy/greptimedb/vector.yaml", "etc/echo/vector.yaml", "755", ],
+    [ "../deploy/signoz/vector.yaml", "etc/echo/vector.yaml", "755", ],
 	[ "data/callsigns_whitelist.txt", "etc/echo/", "755", ],
 	[ "data/settlements.json", "etc/echo/", "755", ],
 	[ "data/settlements_json/*", "etc/echo/settlements_json/", "755", ],
