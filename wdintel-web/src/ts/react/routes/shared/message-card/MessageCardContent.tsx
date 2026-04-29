@@ -564,9 +564,11 @@ function MessageCardTagChips({
 
   if (showCompactRest && hasRest) {
     return (
-      <Box className="flex w-full min-w-0 flex-wrap items-start gap-1">
-        {compactOrderedRows.map((row) => renderOneChip(row))}
-        <Box sx={{ flexShrink: 0, pt: TAG_CHIP_BADGE_TOP_PADDING_THEME }}>{expandToggleButton}</Box>
+      <Box ref={compactMeasureRef} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-1">
+        <Box className="flex w-full min-w-0 flex-wrap items-start gap-1">
+          {compactOrderedRows.map((row) => renderOneChip(row))}
+        </Box>
+        <Box sx={{ flexShrink: 0, justifySelf: 'end', pt: TAG_CHIP_BADGE_TOP_PADDING_THEME }}>{expandToggleButton}</Box>
       </Box>
     );
   }
@@ -581,16 +583,14 @@ function MessageCardTagChips({
 
   return (
     <Box ref={compactMeasureRef} className="w-full min-w-0">
-      <Box className="flex w-full min-w-0 items-center gap-1">
+      <Box className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-1">
         <Box className="flex min-h-[27px] min-w-0 flex-1 items-center gap-1 overflow-x-hidden">
           {row1Chips.map((row) => renderOneChip(row))}
         </Box>
         <Box
           sx={{
             flexShrink: 0,
-            alignSelf: 'center',
-            position: 'relative',
-            zIndex: 1,
+            justifySelf: 'end',
             pt: TAG_CHIP_BADGE_TOP_PADDING_THEME,
           }}
         >

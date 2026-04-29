@@ -259,7 +259,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                   const combined = dedupeMessageItems([...x.items, ...toAdd]);
                   const markAllRead = opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
                   const readIds = markAllRead ? new Set(combined.map(([id]) => id)) : x.readIds;
-                  const unreadCount = markAllRead ? 0 : combined.length - x.readIds.size;
+                  const unreadCount = markAllRead ? 0 : Math.max(x.unreadCount, toAdd.length);
                   delete lastServerCountByFeedIdRef.current[feedId];
                   return {
                     ...x,
@@ -334,14 +334,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         countInFlightByFeedIdRef.current.add(w.id);
         try {
           const lastItem = w.items[w.items.length - 1];
-          const sinceMs =
-            lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
-              ? lastItem[1].timestamp + 1
-              : 0;
           const hasItems = w.items.length > 0;
-          const { quantity } = await fetchInboxCount(
-            buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
-          );
+          const { quantity } = await fetchInboxCount(buildReqForFeed(w, { sinceIdNoninclusive: lastItem?.[0] ?? null, nolimit: true }));
           return { feedId: w.id, quantity, hasItems, skipped: false, failed: false };
         } catch {
           return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false, failed: true };
@@ -354,16 +348,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       prev.map((f) => {
         const entry = counts.find((c) => c.feedId === f.id);
         if (entry?.skipped) return f;
+        if (f.items.length === 0) return f;
         const quantity = entry?.quantity ?? 0;
-        const hasItems = entry?.hasItems ?? f.items.length > 0;
-        const allItemsRead =
-          f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
-        const unreadCount = !hasItems
-          ? f.unreadCount
-          : quantity === 0 && allItemsRead
-            ? 0
-            : Math.max(f.unreadCount, quantity);
-        return { ...f, unreadCount };
+        return { ...f, unreadCount: Math.max(f.unreadCount, quantity) };
       }),
     );
     const newCountBySignature: Record<string, number> = {};

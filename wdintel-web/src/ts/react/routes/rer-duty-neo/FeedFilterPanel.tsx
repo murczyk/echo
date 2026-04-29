@@ -23,6 +23,7 @@ import { ADJACENT_FREQS_RANGE_OPTIONS, normalizeFeed } from './utils';
 
 export type FeedFilterPanelProps = {
   feedId: string;
+  mergedTop?: boolean;
   filterStable: {
     groupsSelected: string[];
     deniedGroups: string[];
@@ -69,6 +70,7 @@ export type FeedFilterPanelProps = {
 
 export function FeedFilterPanel({
   feedId: _feedId,
+  mergedTop = false,
   filterStable,
   groupsList,
   groupInfos,
@@ -315,7 +317,16 @@ export function FeedFilterPanel({
   }, [localPostValue]);
 
   return (
-    <Paper variant="outlined" className="p-3 z-2">
+    <Paper
+      variant="outlined"
+      className="p-3 z-2"
+      sx={{
+        borderRadius: 1,
+        mt: mergedTop ? '-1px' : 0,
+        borderTopLeftRadius: mergedTop ? 0 : 1,
+        borderTopRightRadius: mergedTop ? 0 : 1,
+      }}
+    >
       <Box className="flex flex-col gap-3">
         <Box>
           <Typography variant="subtitle2" className="mb-2 font-semibold">
@@ -362,7 +373,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localGroupValue.length === 0 ? groupEmptyLabel : undefined} />
               )}
-              className="min-w-0 w-full min-[600px]:min-w-[180px] min-[600px]:flex-1"
+              className="min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1"
             />
           </Box>
         </Box>
@@ -414,7 +425,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localSenderValue.length === 0 ? senderEmptyLabel : undefined} />
               )}
-              className="min-w-0 w-full min-[600px]:min-w-[180px] min-[600px]:flex-1"
+              className="min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1"
             />
           </Box>
         </Box>
@@ -483,7 +494,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localFreqValue.length === 0 ? freqEmptyLabel : undefined} />
               )}
-              className="min-w-0 w-full min-[600px]:min-w-[160px] min-[600px]:flex-1"
+              className="min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1"
             />
           </Box>
           <Box className="flex flex-wrap gap-2 justify-end mt-1">
@@ -557,7 +568,7 @@ export function FeedFilterPanel({
               renderInput={(params) => (
                 <TextField {...params} placeholder={localPostValue.length === 0 ? postEmptyLabel : undefined} />
               )}
-              className="min-w-0 w-full min-[600px]:min-w-[160px] min-[600px]:flex-1"
+              className="min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1"
             />
           </Box>
         </Box>

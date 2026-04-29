@@ -504,11 +504,19 @@ export type MessageFeedState = {
   onlyMyUnitTagsEnabled: boolean;
 };
 
-/** Unread count on the column “new messages” FAB chip — keep in sync anywhere else we show the same number (e.g. tab title). */
+/** Single source of truth for displayed unread count on a feed. */
+export function feedUnreadDisplayCount(feed: MessageFeedState): number {
+  return Math.max(0, feed.items.filter(([id]) => !feed.readIds.has(id)).length);
+}
+
+/** Sum of {@link feedUnreadDisplayCount} across all feeds. */
+export function feedsUnreadDisplayTotal(feeds: MessageFeedState[]): number {
+  return feeds.reduce((sum, feed) => sum + feedUnreadDisplayCount(feed), 0);
+}
+
+/** Backward-compatible alias for the column “new messages” FAB chip. */
 export function feedColumnUnreadDisplayed(feed: MessageFeedState): number {
-  return feed.items.length > 0
-    ? Math.max(feed.unreadCount, feed.items.filter(([id]) => !feed.readIds.has(id)).length)
-    : feed.unreadCount;
+  return feedUnreadDisplayCount(feed);
 }
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

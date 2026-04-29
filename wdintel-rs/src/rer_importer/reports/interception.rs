@@ -28,16 +28,15 @@ struct InboxMessage {
     important: Option<i64>,
 }
 
-async fn get_inbox_messages_report(
-    user: Identity,
+async fn build_inbox_messages_report_sql(
+    login: &str,
     env: &Env,
     req: &InboxMessagesReq,
-) -> Result<Vec<InboxMessage>, AppError> {
+) -> Result<String, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let login = user.id().context(h!())?;
     let read_db = env.replica();
-    let logins = crate::users::get_organism_logins(&read_db, user)
+    let logins = crate::users::get_organism_logins_by_login(&read_db, login)
         .await
         .context(h!())?;
     let report_tags_only_this_unit =
@@ -287,9 +286,19 @@ async fn get_inbox_messages_report(
         .query(dedup_q)
         .to_string(PostgresQueryBuilder);
 
-    // println!("Interception report SQL: {combined_query}");
+    Ok(combined_query)
+}
 
-    // First execute the query to get QueryResult
+async fn get_inbox_messages_report(
+    user: Identity,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<InboxMessage>, AppError> {
+    let login = user.id().context(h!())?;
+    let combined_query =
+        build_inbox_messages_report_sql(&login, env, req).await?;
+    let read_db = env.replica();
+
     let results = read_db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -298,7 +307,6 @@ async fn get_inbox_messages_report(
         .await
         .context(h!())?;
 
-    // Then convert results to InboxMessage struct
     let messages: Vec<InboxMessage> = results
         .iter()
         .map(|qr| InboxMessage::from_query_result(qr, ""))

@@ -514,8 +514,6 @@
 
 .text-marked .content-token--ADP {
     color: var(--message-callsign-color);
-    border-bottom: 2px solid var(--message-callsign-color);
-    transition: border-bottom-color 1s ease;
 }
 
 .text-marked .content-token--point {

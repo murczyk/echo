@@ -914,6 +914,7 @@ mod tests {
     use crate::functest::tests::*;
     use chrono::Utc;
     use sea_orm::ActiveValue::Set;
+    use sea_query::{Alias, ColumnRef, Query};
     use serde_json::json;
     use serial_test::serial;
     use std::sync::Arc;
@@ -989,6 +990,104 @@ mod tests {
         }
 
         Ok(message)
+    }
+
+    async fn seed_message_with_timestamp(
+        env: &Arc<Env>,
+        datasource_group: &datasource_group::Model,
+        timestamp: Option<chrono::NaiveDateTime>,
+    ) -> Result<signal_message::Model, AppError> {
+        let now = Utc::now().naive_utc();
+        let uid = format!("uid-{}", now.and_utc().timestamp_millis());
+
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("test message".to_string())),
+                created_at: Set(now),
+                timestamp: Set(timestamp),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some(uid.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(
+                datasource_group.group_master_key.clone(),
+            )),
+            sender: Set(Some("sender".to_string())),
+            message_uid: Set(Some(uid)),
+            datasource_group_id: Set(Some(datasource_group.id)),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .context(h!())?;
+
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some("123.45".to_string())),
+                callsigns: Set(Some(json!(["Alpha"]))),
+                date: Set(Some(now.date().to_string())),
+                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        Ok(message)
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_null_timestamp_cursor_uses_cte_id_in_outer_pagination() {
+        let env = cleanup().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+
+        let message =
+            seed_message_with_timestamp(&env, &datasource_group, None)
+                .await
+                .unwrap();
+
+        let req = InboxMessagesReq {
+            since_id_noninclusive: Some(message.id),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            nolimit: Some(true),
+            page_id: Some("rer-duty-neo".to_string()),
+            ..Default::default()
+        };
+
+        let q = Query::select()
+            .column(ColumnRef::Asterisk)
+            .from(Alias::new("inbox_items_cte"))
+            .to_owned();
+        let q = crate::rer_importer::inbox::query::get_pagination_filter_real_lower_bound_stmt(
+            &env,
+            &req,
+            q,
+        )
+        .await
+        .unwrap();
+        let sql = q.to_string(PostgresQueryBuilder);
+
+        assert!(sql.contains("inbox_items_cte"));
+        assert!(sql.contains("timestamp IS NULL"));
+        assert!(sql.contains("id >"));
+        assert!(!sql.contains("signal_message.id >"));
+        assert!(!sql.contains("signal_message.timestamp IS NULL"));
+        assert!(!sql.contains("sigint_inbox_item.id >"));
     }
 
     #[serial]
@@ -1105,6 +1204,33 @@ mod tests {
                     && t.organism_id == Some(other_org.id)),
             "expected tag from other login with its organism id"
         );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_inbox_count_uses_id_bucket_for_null_timestamp_cursor() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+
+        let message =
+            seed_message_with_timestamp(&env, &datasource_group, None)
+                .await
+                .unwrap();
+
+        let req = InboxMessagesReq {
+            since_id_noninclusive: Some(message.id),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            nolimit: Some(true),
+            page_id: Some("rer-duty-neo".to_string()),
+            ..Default::default()
+        };
+
+        let sql = build_inbox_query(&login.login, &env, &req).await.unwrap();
+
+        assert!(sql.contains("IS NULL"));
+        assert!(sql.contains("id >"));
     }
 
     #[serial]

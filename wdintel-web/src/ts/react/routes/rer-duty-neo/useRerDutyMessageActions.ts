@@ -26,7 +26,7 @@ import {
 } from '../../services/api/inbox';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { FeedColumnHandle } from './FeedColumn';
-import { buildSenderOptions, normalizeFeed } from './utils';
+import { buildInboxReq, buildSenderOptions, normalizeFeed } from './utils';
 import type { MessageFeedState } from './utils';
 
 export type MessageActionsDeps = {
@@ -42,7 +42,13 @@ export type MessageActionsDeps = {
     feedId: string,
     opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
   ) => Promise<void>;
-  buildReqForFeed: (feed: MessageFeedState, opts: { sinceDateInclusiveMs?: number; nolimit?: boolean }) => InboxMessagesReq;
+  buildReqForFeed: (
+    feed: MessageFeedState,
+    opts: Omit<
+      Parameters<typeof buildInboxReq>[0],
+      'filter' | 'expandedFreqsSelected' | 'expandedFreqsDenied' | 'highlightSignals' | 'reportTagsOnlyThisUnit'
+    >,
+  ) => InboxMessagesReq;
   columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
   showArrowResult: (feedId: string, message: string) => void;
   setWatchModeByFeedId: Dispatch<SetStateAction<Record<string, boolean>>>;
@@ -261,7 +267,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
           if (w.id !== deleteConfirmFeedId) return w;
           const newItems = w.items.filter(([id]) => id !== deleteConfirmId);
           const newReadIds = new Set([...w.readIds].filter((id) => id !== deleteConfirmId));
-          const unreadCount = newItems.filter(([id]) => !newReadIds.has(id)).length;
+          const unreadCount = w.readIds.has(deleteConfirmId) ? w.unreadCount : Math.max(0, w.unreadCount - 1);
           return { ...w, items: newItems, readIds: newReadIds, unreadCount };
         }),
       );
@@ -381,13 +387,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       try {
         if (feed.items.length > 0) {
           const lastItem = feed.items[feed.items.length - 1];
-          const sinceMs =
-            lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
-              ? lastItem[1].timestamp + 1
-              : 0;
-          const { quantity } = await fetchInboxCount(
-            buildReqForFeed(feed, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
-          );
+          const { quantity } = await fetchInboxCount(buildReqForFeed(feed, { sinceIdNoninclusive: lastItem[0], nolimit: true }));
           if (quantity === 0) {
             showArrowResult(feedId, 'Немає нових повідомлень');
             return;
@@ -429,13 +429,13 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       setMessageFeeds((prev) =>
         prev.map((f) => {
           if (f.id !== feedId) return f;
-          if (ids.length >= f.items.length && !opts?.atBottom) return f;
-          const nextReadIds = new Set([...f.readIds, ...ids]);
-          if (nextReadIds.size === f.readIds.size && ids.every((id) => f.readIds.has(id))) return f;
+          const newlyReadIds = ids.filter((id) => !f.readIds.has(id));
+          if (newlyReadIds.length === 0 && !opts?.atBottom) return f;
+          const nextReadIds = new Set([...f.readIds, ...newlyReadIds]);
           return {
             ...f,
             readIds: nextReadIds,
-            unreadCount: f.items.filter(([id]) => !nextReadIds.has(id)).length,
+            unreadCount: opts?.atBottom ? 0 : Math.max(0, f.unreadCount - newlyReadIds.length),
           };
         }),
       );

@@ -10,7 +10,15 @@ use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
-use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
+use sea_query::{Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
+
+fn since_id_null_bucket_filter(
+    since_id_noninclusive: i64,
+    cursor_expr: SimpleExpr,
+    id_expr: SimpleExpr,
+) -> SimpleExpr {
+    cursor_expr.is_null().and(id_expr.gt(since_id_noninclusive))
+}
 
 pub(crate) async fn build_inbox_query(
     login: &str,
@@ -295,43 +303,56 @@ where
                     else {
                         break '_if;
                     };
-                    let Some(datetime) = inbox.datetime else {
-                        break '_if;
-                    };
-
-                    let ts = to_ts_expr(datetime);
-                    q = q.filter(
-                        Expr::tuple([
-                            sigint_inbox_item::Column::Datetime
-                                .into_column_ref()
-                                .into(),
+                    q = if let Some(datetime) = inbox.datetime {
+                        let ts = to_ts_expr(datetime);
+                        q.filter(
+                            Expr::tuple([
+                                sigint_inbox_item::Column::Datetime
+                                    .into_column_ref()
+                                    .into(),
+                                Expr::cust("sigint_inbox_item.id"),
+                                // signal_message::Column::Id.into_column_ref().into(),
+                            ])
+                            .gt(
+                                SimpleExpr::Tuple(vec![
+                                    ts,
+                                    since_id_noninclusive.into(),
+                                ]),
+                            ),
+                        )
+                    } else {
+                        q.filter(since_id_null_bucket_filter(
+                            since_id_noninclusive,
+                            Expr::cust("sigint_inbox_item.datetime"),
                             Expr::cust("sigint_inbox_item.id"),
-                            // signal_message::Column::Id.into_column_ref().into(),
-                        ])
-                        .gt(SimpleExpr::Tuple(vec![
-                            ts,
-                            since_id_noninclusive.into(),
-                        ])),
-                    );
+                        ))
+                    };
                 }
                 InboxMessagesSortBy::IMSTimestamp => {
-                    let Some(timestamp) = message.timestamp else {
-                        break '_if;
-                    };
-                    let ts = to_ts_expr(timestamp);
-                    q = q.filter(
-                        Expr::tuple([
-                            signal_message::Column::Timestamp
-                                .into_column_ref()
-                                .into(),
+                    q = if let Some(timestamp) = message.timestamp {
+                        let ts = to_ts_expr(timestamp);
+                        q.filter(
+                            Expr::tuple([
+                                signal_message::Column::Timestamp
+                                    .into_column_ref()
+                                    .into(),
+                                Expr::cust("signal_message.id"),
+                                // signal_message::Column::Id.into_column_ref().into(),
+                            ])
+                            .gt(
+                                SimpleExpr::Tuple(vec![
+                                    ts,
+                                    since_id_noninclusive.into(),
+                                ]),
+                            ),
+                        )
+                    } else {
+                        q.filter(since_id_null_bucket_filter(
+                            since_id_noninclusive,
+                            Expr::cust("signal_message.timestamp"),
                             Expr::cust("signal_message.id"),
-                            // signal_message::Column::Id.into_column_ref().into(),
-                        ])
-                        .gt(SimpleExpr::Tuple(vec![
-                            ts,
-                            since_id_noninclusive.into(),
-                        ])),
-                    );
+                        ))
+                    };
                 }
             }
         }
@@ -454,6 +475,12 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                                 ]),
                             ),
                         );
+                    } else {
+                        q.and_where(since_id_null_bucket_filter(
+                            since_id_noninclusive,
+                            Expr::cust("datetime"),
+                            Expr::cust("id"),
+                        ));
                     }
                 }
             }
@@ -481,6 +508,12 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                                 ]),
                             ),
                         );
+                    } else {
+                        q.and_where(since_id_null_bucket_filter(
+                            since_id_noninclusive,
+                            Expr::cust("timestamp"),
+                            Expr::cust("id"),
+                        ));
                     }
                 }
             }
