@@ -913,6 +913,7 @@ mod tests {
     };
     use crate::functest::tests::*;
     use chrono::Utc;
+    use regex::Regex;
     use sea_orm::ActiveValue::Set;
     use sea_query::{Alias, ColumnRef, Query};
     use serde_json::json;
@@ -1049,8 +1050,8 @@ mod tests {
         Ok(message)
     }
 
-    fn normalized_sql(sql: &str) -> String {
-        sql.replace(['"', ' '], "").to_lowercase()
+    fn assert_sql_matches(sql: &str, pattern: &str) {
+        assert!(Regex::new(pattern).unwrap().is_match(sql), "{sql}");
     }
 
     #[serial]
@@ -1084,13 +1085,24 @@ mod tests {
         )
         .await
         .unwrap();
-        let sql = normalized_sql(&q.to_string(PostgresQueryBuilder));
+        let sql = q.to_string(PostgresQueryBuilder);
 
-        assert!(sql.contains("inbox_items_cte"), "{sql}");
-        assert!(sql.contains("isnull"), "{sql}");
-        assert!(sql.contains("id>"), "{sql}");
-        assert!(!sql.contains("signal_message."), "{sql}");
-        assert!(!sql.contains("sigint_inbox_item."), "{sql}");
+        assert_sql_matches(&sql, r"(?i)\binbox_items_cte\b");
+        assert_sql_matches(&sql, r"(?i)\bid\)?\s*>\s*\d+\b");
+        assert!(
+            !Regex::new(r"(?i)signal_message\.").unwrap().is_match(&sql),
+            "{sql}"
+        );
+        assert!(
+            !Regex::new(r"(?i)sigint_inbox_item\.")
+                .unwrap()
+                .is_match(&sql),
+            "{sql}"
+        );
+        assert!(
+            !Regex::new(r"(?i)is\s*null").unwrap().is_match(&sql),
+            "{sql}"
+        );
     }
 
     #[serial]
@@ -1230,12 +1242,13 @@ mod tests {
             ..Default::default()
         };
 
-        let sql = normalized_sql(
-            &build_inbox_query(&login.login, &env, &req).await.unwrap(),
-        );
+        let sql = build_inbox_query(&login.login, &env, &req).await.unwrap();
 
-        assert!(sql.contains("isnull"), "{sql}");
-        assert!(sql.contains("id>"), "{sql}");
+        assert_sql_matches(&sql, r"(?i)\bid\)?\s*>\s*\d+\b");
+        assert!(
+            !Regex::new(r"(?i)is\s*null").unwrap().is_match(&sql),
+            "{sql}"
+        );
     }
 
     #[serial]

@@ -10,14 +10,13 @@ use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
-use sea_query::{Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
+use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
 
 fn since_id_null_bucket_filter(
     since_id_noninclusive: i64,
-    cursor_expr: SimpleExpr,
     id_expr: SimpleExpr,
 ) -> SimpleExpr {
-    cursor_expr.is_null().and(id_expr.gt(since_id_noninclusive))
+    id_expr.gt(since_id_noninclusive)
 }
 
 pub(crate) async fn build_inbox_query(
@@ -323,7 +322,6 @@ where
                     } else {
                         q.filter(since_id_null_bucket_filter(
                             since_id_noninclusive,
-                            Expr::cust("sigint_inbox_item.datetime"),
                             Expr::cust("sigint_inbox_item.id"),
                         ))
                     };
@@ -349,7 +347,6 @@ where
                     } else {
                         q.filter(since_id_null_bucket_filter(
                             since_id_noninclusive,
-                            Expr::cust("signal_message.timestamp"),
                             Expr::cust("signal_message.id"),
                         ))
                     };
@@ -464,9 +461,8 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                         q.and_where(
                             Expr::tuple([
                                 sigint_inbox_item::Column::Datetime
-                                    .into_column_ref()
-                                    .into(),
-                                Expr::cust("id"),
+                                    .into_simple_expr(),
+                                Expr::col(Alias::new("id")).into_simple_expr(),
                             ])
                             .gt(
                                 SimpleExpr::Tuple(vec![
@@ -478,8 +474,7 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                     } else {
                         q.and_where(since_id_null_bucket_filter(
                             since_id_noninclusive,
-                            Expr::cust("datetime"),
-                            Expr::cust("id"),
+                            Expr::col(Alias::new("id")).into_simple_expr(),
                         ));
                     }
                 }
@@ -497,9 +492,8 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                         q.and_where(
                             Expr::tuple([
                                 signal_message::Column::Timestamp
-                                    .into_column_ref()
-                                    .into(),
-                                Expr::cust("id"),
+                                    .into_simple_expr(),
+                                Expr::col(Alias::new("id")).into_simple_expr(),
                             ])
                             .gt(
                                 SimpleExpr::Tuple(vec![
@@ -511,8 +505,7 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                     } else {
                         q.and_where(since_id_null_bucket_filter(
                             since_id_noninclusive,
-                            Expr::cust("timestamp"),
-                            Expr::cust("id"),
+                            Expr::col(Alias::new("id")).into_simple_expr(),
                         ));
                     }
                 }
