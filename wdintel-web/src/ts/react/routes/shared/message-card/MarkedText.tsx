@@ -1,4 +1,4 @@
-import { Badge, Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useId, useState } from 'react';
@@ -118,14 +118,6 @@ function searchHighlightedCallsignPlainSx(theme: Theme): CSSProperties {
   return {
     ...searchHighlightedCallsignBaseSx(theme),
     color: 'inherit',
-    textDecoration: 'none',
-  };
-}
-
-function callsignLinkStyle(): CSSProperties {
-  return {
-    color: 'var(--message-callsign-color)',
-    borderBottom: '2px solid var(--message-callsign-color)',
     textDecoration: 'none',
   };
 }
@@ -337,7 +329,6 @@ function CallsignWithHint({
           target="_blank"
           rel="noopener noreferrer"
           className="content-token--ADP hover:cursor-pointer"
-          style={callsignLinkStyle()}
         >
           {displayText}
         </a>
@@ -371,7 +362,6 @@ function CallsignWithHint({
       target="_blank"
       rel="noopener noreferrer"
       className="content-token--ADP hover:cursor-pointer"
-      style={callsignLinkStyle()}
     >
       {displayText}
     </a>
@@ -392,91 +382,71 @@ function CallsignWithHint({
   }
 
   return (
-    <Tooltip
-      placement="top"
-      arrow
-      describeChild
-      slotProps={{
-        tooltip: {
-          sx: {
-            maxWidth: 420,
-            width: 'min(420px, calc(100vw - 32px))',
-            px: 1.5,
-            py: 1.25,
-            whiteSpace: 'normal',
-            overflowWrap: 'anywhere',
-            wordBreak: 'break-word',
-          },
-        },
-      }}
-      title={
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 320, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-          <Typography component="div" sx={{ fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.3 }}>
-            {tooltipText.header}
-          </Typography>
-          <Box component="ul" sx={{ m: 0, pl: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0 }}>
-            {tooltipText.items.map((item, index) => (
-              <Typography
-                key={`${displayText}-${index}`}
-                component="li"
-                sx={CALLSIGN_TOOLTIP_ITEM_SX}
-              >
-                {item}
-              </Typography>
-            ))}
-          </Box>
-        </Box>
-      }
-    >
-      <Badge
-        overlap="rectangular"
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        badgeContent={
-          <Box
-            component="span"
-            aria-label={isNetworkHint ? 'Підказка по мережі' : 'Підказка з каталогу'}
-            data-testid={isNetworkHint ? 'callsign-hint-badge-network' : 'callsign-hint-badge-system'}
-            sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 18,
-              height: 18,
-              borderRadius: '50%',
-              bgcolor: 'var(--color-card)',
-              color: 'var(--message-callsign-color)',
-              lineHeight: 0,
-              pointerEvents: 'none',
-            }}
-          >
-            {isNetworkHint ? <InfoIcon sx={{ fontSize: 16 }} /> : <InfoOutlinedIcon sx={{ fontSize: 16 }} />}
-          </Box>
-        }
-        sx={{
-          display: 'inline-flex',
-          verticalAlign: 'baseline',
-          mr: '0.1em',
-          '& .MuiBadge-badge': {
-            p: 0,
-            border: 'none',
-            bgcolor: 'transparent',
-            minWidth: 18,
-            height: 18,
-            transform: 'translate(45%, -35%)',
-          },
-          '&:focus-within': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
-            outlineOffset: '2px',
-            borderRadius: '4px',
+    <Box component="span" sx={{ position: 'relative', display: 'inline-block', verticalAlign: 'baseline', pr: '8px' }}>
+      {wrapSearchHighlighted(callsignDisplay)}
+      <Tooltip
+        placement="top"
+        arrow
+        describeChild
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 420,
+              width: 'min(420px, calc(100vw - 32px))',
+              px: 1.5,
+              py: 1.25,
+              whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            },
           },
         }}
+        title={
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 320, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
+            <Typography component="div" sx={{ fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.3 }}>
+              {tooltipText.header}
+            </Typography>
+            <Box component="ul" sx={{ m: 0, pl: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0 }}>
+              {tooltipText.items.map((item, index) => (
+                <Typography
+                  key={`${displayText}-${index}`}
+                  component="li"
+                  sx={CALLSIGN_TOOLTIP_ITEM_SX}
+                >
+                  {item}
+                </Typography>
+              ))}
+            </Box>
+          </Box>
+        }
       >
-        <Box component="span" sx={{ display: 'inline-block', pr: '8px' }}>
-          {wrapSearchHighlighted(callsignDisplay)}
-        </Box>
-      </Badge>
-    </Tooltip>
+        <IconButton
+          type="button"
+          aria-label={isNetworkHint ? 'Підказка по мережі' : 'Підказка з каталогу'}
+          data-testid={isNetworkHint ? 'callsign-hint-badge-network' : 'callsign-hint-badge-system'}
+          size="small"
+          disableRipple
+          sx={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            transform: 'translate(45%, -35%)',
+            width: 18,
+            height: 18,
+            minWidth: 18,
+            p: 0,
+            borderRadius: '50%',
+            bgcolor: 'var(--color-card)',
+            color: 'var(--message-callsign-color)',
+            lineHeight: 0,
+            zIndex: 1,
+            '&:hover': { bgcolor: 'var(--color-card)' },
+          }}
+        >
+          {isNetworkHint ? <InfoIcon sx={{ fontSize: 16 }} /> : <InfoOutlinedIcon sx={{ fontSize: 16 }} />}
+        </IconButton>
+      </Tooltip>
+    </Box>
   );
 }
 

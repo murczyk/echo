@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2282](https://github.com/echoua/echo/issues/2282) ✅🐞 Оперативний (нова): покращення адаптивності UX/UI. Виправлення логіки лічильника нових повідомлень.
 - [#2278](https://github.com/echoua/echo/issues/2278) ✅ Мережа: приховано застарілі позивні в дорозвідці.
 - [#2221](https://github.com/echoua/echo/issues/2221) ✅ Базовий набір e2e-тестів та їх інтеграція в CI/CD.
 - [#2276](https://github.com/echoua/echo/issues/2276) ✅🐞 Аналіз (нова): покращення швидкодії.

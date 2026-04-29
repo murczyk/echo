@@ -1,4 +1,6 @@
 import { Box, Button, CircularProgress, Fab, Paper, Typography } from '@mui/material';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import CloseIcon from '@mui/icons-material/Close';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
@@ -19,6 +21,7 @@ import type { MessageFeedState } from './utils';
 import { FeedFilterPanel } from './FeedFilterPanel';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
+import { dutyTopActionButtonSx, dutyTopScrollButtonSx } from './top-action-styles';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
 const LOAD_OLDER_BUFFER_ITEMS = 10;
@@ -41,6 +44,7 @@ const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function 
         pl: '12px',
         scrollbarGutter: 'stable',
         boxSizing: 'border-box',
+        overflowX: 'hidden',
       }}
       className={[className, 'rer-duty-feed-scroll'].filter(Boolean).join(' ')}
       {...props}
@@ -158,7 +162,6 @@ export type FeedColumnProps = {
 };
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
-
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   {
     feed,
@@ -325,105 +328,118 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   return (
     <Box
       className={[
-        'flex flex-col min-w-0 gap-1 min-h-0',
-        narrowScreen ? 'shrink-0 grow-0 basis-full' : 'flex-1',
+        'flex flex-col min-w-0 gap-0 min-h-0 h-full',
+        narrowScreen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
       ].join(' ')}
       sx={{
+        width: maxWidth ?? '100%',
         maxWidth: maxWidth ?? '100%',
         position: 'relative',
         scrollSnapAlign: narrowScreen ? 'start' : undefined,
         scrollSnapStop: narrowScreen ? 'always' : undefined,
       }}
     >
-      <Box
-        className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-[32px] shrink-0"
-        sx={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 1,
-          backgroundColor: 'background.paper',
-          '& .MuiButton-root': {
-            minHeight: 0,
-            height: 32,
-            maxHeight: 32,
+      <Box sx={{ backgroundColor: 'background.paper', borderRadius: 1, overflow: 'hidden' }}>
+        <Box
+          className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-[32px] shrink-0"
+          sx={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+            backgroundColor: 'background.paper',
             overflow: 'hidden',
-          },
-        }}
-      >
-        <div>
-          <Button
-            size="small"
-            variant="text"
-            className="self-stretch px-4"
-            startIcon={<i className="bi bi-gear" />}
-            endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
-            onClick={() => setShowFilters((s) => !s)}
-          >
-            Фільтри
-          </Button>
-        </div>
-        {canRemove && !showFilters && (
-          <Button
-            size="small"
-            color="inherit"
-            aria-label="Закрити колонку"
-            onClick={onRemoveColumn}
-            sx={{
-              width: 48,
-              minWidth: 48,
-              '&:hover': { backgroundColor: '#1e2931', color: '#ccddfb' },
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <i className="bi bi-x-lg" />
-          </Button>
+            borderBottomLeftRadius: showFilters ? 0 : 1,
+            borderBottomRightRadius: showFilters ? 0 : 1,
+            '& .MuiButton-root': {
+              minHeight: 0,
+              height: 32,
+              maxHeight: 32,
+              overflow: 'hidden',
+            },
+          }}
+        >
+          <div>
+            <Button
+              size="small"
+              variant="text"
+              className="self-stretch px-4"
+              startIcon={<i className="bi bi-gear" />}
+              endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
+              onClick={() => setShowFilters((s) => !s)}
+              sx={{
+                borderRadius: 1,
+              }}
+            >
+              Фільтри
+            </Button>
+          </div>
+          {!showFilters && canRemove && (
+            <Button
+              size="small"
+              color="inherit"
+              aria-label="Закрити колонку"
+              onClick={onRemoveColumn}
+              sx={dutyTopActionButtonSx}
+            >
+              <CloseIcon />
+            </Button>
+          )}
+        </Box>
+        {showFilters && (
+          <FeedFilterPanel
+            feedId={feedId}
+            mergedTop
+            filterStable={filterStable}
+            groupsList={groupsList}
+            groupInfos={groupInfos}
+            profiles={profiles}
+            senderOptions={senderOptions}
+            freqs={freqs}
+            postsList={postsList}
+            adjacentFreqsRange={adjacentFreqsRange}
+            highlightSignalsEnabled={highlightSignalsEnabled}
+            onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
+            savedFilters={savedFilters}
+            selectedSavedId={selectedSavedId}
+            saveFilterName={saveFilterName}
+            reloadFreqsLoading={reloadFreqsLoading}
+            onGroupsChange={applyGroups}
+            onDeniedGroupsChange={applyDeniedGroups}
+            onSendersChange={applySenders}
+            onDeniedSendersChange={applyDeniedSenders}
+            onFreqsChange={applyFreqs}
+            onFreqsDeniedChange={applyFreqsDenied}
+            onPostsChange={onPostsChange}
+            onPostsDeniedChange={onPostsDeniedChange}
+            onAdjacentFreqsRangeChange={onAdjacentFreqsRangeChange}
+            onHighlightSignalsChange={onHighlightSignalsChange}
+            onOnlyMyUnitTagsChange={onOnlyMyUnitTagsChange}
+            onReloadFreqs={onReloadFreqs}
+            onSavedFilterSelect={onSavedFilterSelect}
+            onSaveFilterNameChange={onSaveFilterNameChange}
+            onSaveFilter={onSaveFilter}
+            onUpdateSelectedSavedFilter={onUpdateSelectedSavedFilter}
+            onRenameSelectedSavedFilter={onRenameSelectedSavedFilter}
+            onDeleteSelectedSavedFilter={onDeleteSelectedSavedFilter}
+            onApplySavedFilter={onApplySavedFilter}
+          />
         )}
       </Box>
-      {showFilters && (
-        <FeedFilterPanel
-          feedId={feedId}
-          filterStable={filterStable}
-          groupsList={groupsList}
-          groupInfos={groupInfos}
-          profiles={profiles}
-          senderOptions={senderOptions}
-          freqs={freqs}
-          postsList={postsList}
-          adjacentFreqsRange={adjacentFreqsRange}
-          highlightSignalsEnabled={highlightSignalsEnabled}
-          onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
-          savedFilters={savedFilters}
-          selectedSavedId={selectedSavedId}
-          saveFilterName={saveFilterName}
-          reloadFreqsLoading={reloadFreqsLoading}
-          onGroupsChange={applyGroups}
-          onDeniedGroupsChange={applyDeniedGroups}
-          onSendersChange={applySenders}
-          onDeniedSendersChange={applyDeniedSenders}
-          onFreqsChange={applyFreqs}
-          onFreqsDeniedChange={applyFreqsDenied}
-          onPostsChange={onPostsChange}
-          onPostsDeniedChange={onPostsDeniedChange}
-          onAdjacentFreqsRangeChange={onAdjacentFreqsRangeChange}
-          onHighlightSignalsChange={onHighlightSignalsChange}
-          onOnlyMyUnitTagsChange={onOnlyMyUnitTagsChange}
-          onReloadFreqs={onReloadFreqs}
-          onSavedFilterSelect={onSavedFilterSelect}
-          onSaveFilterNameChange={onSaveFilterNameChange}
-          onSaveFilter={onSaveFilter}
-          onUpdateSelectedSavedFilter={onUpdateSelectedSavedFilter}
-          onRenameSelectedSavedFilter={onRenameSelectedSavedFilter}
-          onDeleteSelectedSavedFilter={onDeleteSelectedSavedFilter}
-          onApplySavedFilter={onApplySavedFilter}
-        />
-      )}
 
       {feed.loading ? (
         <Box className="flex-1 flex justify-center items-center min-h-0">
           <CircularProgress />
         </Box>
       ) : (
-        <Paper variant="outlined" className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col">
+        <Paper
+          variant="outlined"
+          className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
+          sx={{
+            mt: showFilters ? '-1px' : 0,
+            borderTopLeftRadius: showFilters ? 0 : 1,
+            borderTopRightRadius: showFilters ? 0 : 1,
+          }}
+        >
           <Virtuoso
             ref={virtuosoRef}
             style={{ flex: 1, minHeight: narrowScreen ? 0 : 400 }}
@@ -529,7 +545,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             <Box
               sx={{
                 position: 'absolute',
-                bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 30 },
+                bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 12 },
                 right: { xs: 12, sm: 20 },
                 display: 'flex',
                 alignItems: 'center',
@@ -552,15 +568,17 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   color={unreadCount > 0 ? 'primary' : 'default'}
                   size="small"
                   sx={{
-                    width: 35,
-                    height: 35,
-                    minWidth: 35,
-                    minHeight: 35,
+                    ...dutyTopScrollButtonSx,
                     position: 'relative',
-                    backgroundColor: 'transparent',
                     zIndex: 0,
-                    border: '2px solid',
                     borderColor: unreadCount > 0 ? 'primary.main' : 'grey.400',
+                    color: unreadCount > 0 ? 'primary.main' : 'grey.400',
+                    '&:hover': {
+                      backgroundColor: 'background.paper',
+                      borderColor: 'primary.main',
+                      color: 'primary.main',
+                      boxShadow: 'none',
+                    },
                   }}
                   aria-label={isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'}
                   onClick={onArrowClick}
@@ -569,11 +587,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   {loadingNewer ? (
                     <CircularProgress size={20} sx={{ color: 'primary.main' }} />
                   ) : (
-                    <Box
-                      component="i"
-                      className="bi bi-arrow-down"
-                      sx={{ fontSize: 20, color: unreadCount > 0 ? 'primary.main' : 'grey.400' }}
-                    />
+                    <ArrowDownwardIcon sx={{ fontSize: 20 }} />
                   )}
                 </Fab>
                 {!loadingNewer && unreadCount > 0 && !isWatchMode && arrowResultMessage == null && (

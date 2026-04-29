@@ -14,6 +14,8 @@ import {
   etalonFallbackWhenNoNetworks,
   filtersEqual,
   findAllAdjacentFreqs,
+  feedUnreadDisplayCount,
+  feedsUnreadDisplayTotal,
   getPointEtalonsFromMessage,
   messageHasPalitraTag,
   uniquePointEtalonsForMapSearch,
@@ -199,5 +201,30 @@ describe('rer-duty utils', () => {
       { id: 'feed-only', label: 'Невідомий' },
       { id: 'selected-only', label: 'Невідомий' },
     ]);
+  });
+
+  it('uses loaded unread items for feed and tab unread totals', () => {
+    const feed = {
+      id: 'mf-1',
+      filter: emptyFilter(),
+      items: [
+        [1, { } as InboxMessage],
+        [2, { } as InboxMessage],
+        [3, { } as InboxMessage],
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasReachedStart: false,
+      firstItemIndex: 0,
+      referenceTimeMs: null,
+      readIds: new Set<number>([1]),
+      unreadCount: 69980,
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
+    };
+
+    expect(feedUnreadDisplayCount(feed)).toBe(2);
+    expect(feedsUnreadDisplayTotal([feed, { ...feed, readIds: new Set<number>([1, 2, 3]) }])).toBe(2);
   });
 });
