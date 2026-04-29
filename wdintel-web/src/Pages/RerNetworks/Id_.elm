@@ -286,6 +286,8 @@ init route _ () =
 
       -- Developing callsigns dropdown initialization
       , developingCallsignDropdown = Nothing
+      , developingCallsignsShowStale = False
+      , developingCallsignsSortByMessages = False
 
       -- Unknown callsigns dropdown initialization
       , unknownCallsignDropdown = Nothing

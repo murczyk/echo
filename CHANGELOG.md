@@ -10,11 +10,12 @@
 ## NEXT
 
 - [#2282](https://github.com/echoua/echo/issues/2282) ✅🐞 Оперативний (нова): покращення адаптивності UX/UI. Виправлення логіки лічильника нових повідомлень.
+- [#2278](https://github.com/echoua/echo/issues/2278) ✅ Мережа: приховано застарілі позивні в дорозвідці.
 - [#2221](https://github.com/echoua/echo/issues/2221) ✅ Базовий набір e2e-тестів та їх інтеграція в CI/CD.
 - [#2276](https://github.com/echoua/echo/issues/2276) ✅🐞 Аналіз (нова): покращення швидкодії.
 - [#2270](https://github.com/echoua/echo/issues/2270) ✅ Мережа: приховано застарілі позивні.
 - [#2268](https://github.com/echoua/echo/issues/2268) 🐞 Аналіз (нова): виправлення фільтрації по пеленгам.
-- [#2270](https://github.com/echoua/echo/issues/2270) ✅🐞 Мережа: приховано застарілі позивні.
+- [#2270](https://github.com/echoua/echo/issues/2270) ✅ Мережа: приховано застарілі позивні в перехопленнях.
 - [#2266](https://github.com/echoua/echo/issues/2266) ✅🐞 Частоти: відновлено інформацію про альтернативні прив'язки та виправлено пов'язані помилки.
 - [#2263](https://github.com/echoua/echo/issues/2263) ✅🐞 Аналіз (нова): виправлення та покращення.
 - [#2260](https://github.com/echoua/echo/issues/2260) ✅🐞 Аналіз (нова): покращений вигляд на малих екранах.
