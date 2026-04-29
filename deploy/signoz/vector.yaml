@@ -12,6 +12,9 @@ sources:
     include:
       - /var/lib/postgresql/14/main/log/postgresql-*.log
     read_from: end
+    ignore_older_secs: 3600
+    glob_minimum_cooldown_ms: 10000
+    rotate_wait_secs: 3600
 
 transforms:
   parse_logs:
