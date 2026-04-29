@@ -991,63 +991,6 @@ mod tests {
         Ok(message)
     }
 
-    async fn seed_message_with_timestamp(
-        env: &Arc<Env>,
-        datasource_group: &datasource_group::Model,
-        timestamp: Option<chrono::NaiveDateTime>,
-    ) -> Result<signal_message::Model, AppError> {
-        let now = Utc::now().naive_utc();
-        let uid = format!("uid-{}", now.and_utc().timestamp_millis());
-
-        let message = mk_signal_message(
-            &env.dbx,
-            signal_message::ActiveModel {
-                body: Set(Some("test message".to_string())),
-                created_at: Set(now),
-                timestamp: Set(timestamp),
-                sender: Set(Some("sender".to_string())),
-                message_uid: Set(Some(uid.clone())),
-                datasource_group_id: Set(Some(datasource_group.id)),
-                ..Default::default()
-            },
-        )
-        .await
-        .context(h!())?;
-
-        signal_message_group::ActiveModel {
-            signal_message_id: Set(message.id),
-            group_master_key: Set(Some(
-                datasource_group.group_master_key.clone(),
-            )),
-            sender: Set(Some("sender".to_string())),
-            message_uid: Set(Some(uid)),
-            datasource_group_id: Set(Some(datasource_group.id)),
-            created_at: Set(now),
-            ..Default::default()
-        }
-        .insert(&env.dbx)
-        .await
-        .context(h!())?;
-
-        mk_sigint_inbox_item(
-            &env.dbx,
-            sigint_inbox_item::ActiveModel {
-                id: Set(message.id),
-                freq: Set(Some("123.45".to_string())),
-                callsigns: Set(Some(json!(["Alpha"]))),
-                date: Set(Some(now.date().to_string())),
-                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
-                reviewed: Set(Some(true)),
-                parsed_unit_v2: Set(false),
-                ..Default::default()
-            },
-        )
-        .await
-        .context(h!())?;
-
-        Ok(message)
-    }
-
     #[serial]
     #[tokio::test]
     async fn test_messages_by_id_includes_organism_on_tags() {
