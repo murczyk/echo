@@ -680,6 +680,31 @@ pub async fn get_bl_ordering_stmt(
     Ok(q)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::sea_query::PostgresQueryBuilder;
+
+    const TEST_CURSOR_ID: i64 = 4_101_055;
+
+    #[test]
+    fn null_bucket_filter_renders_expected_sql() {
+        let expr = since_id_null_bucket_filter(
+            TEST_CURSOR_ID,
+            Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp")))
+                .into(),
+            Expr::col((Alias::new("inbox_items_cte"), Alias::new("id"))).into(),
+        );
+
+        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
+
+        assert_eq!(
+            sql,
+            r#"SELECT "inbox_items_cte"."timestamp" IS NULL AND "inbox_items_cte"."id" > 4101055"#
+        );
+    }
+}
+
 fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
     let ts = ts.format("%Y-%m-%d %H:%M:%S%.9f");
     let txt = format!("'{ts}'::timestamp at time zone 'UTC'");
