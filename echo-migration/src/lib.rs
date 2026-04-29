@@ -235,6 +235,7 @@ mod m20260420_114249_add_aor_order_for_report;
 mod m20260420_193430_add_rer_duty_historical_replay;
 mod m20260426_191910_add_slowlog_perf_indexes;
 mod m20260429_175416_add_signal_message_group_lookup_indexes;
+mod m20260429_181706_add_datasource_group_lookup_index;
 
 pub struct Migrator;
 
@@ -480,6 +481,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260426_191910_add_slowlog_perf_indexes::Migration),
             Box::new(
                 m20260429_175416_add_signal_message_group_lookup_indexes::Migration,
+            ),
+            Box::new(
+                m20260429_181706_add_datasource_group_lookup_index::Migration,
             ),
         ]
     }
