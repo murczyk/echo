@@ -420,29 +420,31 @@ function CallsignWithHint({
           </Box>
         }
       >
-        <Box
-          component="span"
+        <IconButton
+          type="button"
           aria-label={isNetworkHint ? 'Підказка по мережі' : 'Підказка з каталогу'}
           data-testid={isNetworkHint ? 'callsign-hint-badge-network' : 'callsign-hint-badge-system'}
+          size="small"
+          disableRipple
           sx={{
             position: 'absolute',
             right: 0,
             top: 0,
             transform: 'translate(45%, -35%)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             width: 18,
             height: 18,
+            minWidth: 18,
+            p: 0,
             borderRadius: '50%',
             bgcolor: 'var(--color-card)',
             color: 'var(--message-callsign-color)',
             lineHeight: 0,
             zIndex: 1,
+            '&:hover': { bgcolor: 'var(--color-card)' },
           }}
         >
           {isNetworkHint ? <InfoIcon sx={{ fontSize: 16 }} /> : <InfoOutlinedIcon sx={{ fontSize: 16 }} />}
-        </Box>
+        </IconButton>
       </Tooltip>
     </Box>
   );

@@ -1099,10 +1099,7 @@ mod tests {
                 .is_match(&sql),
             "{sql}"
         );
-        assert!(
-            !Regex::new(r"(?i)is\s*null").unwrap().is_match(&sql),
-            "{sql}"
-        );
+        assert_sql_matches(&sql, r"(?i)is\s*null");
     }
 
     #[serial]
@@ -1245,10 +1242,7 @@ mod tests {
         let sql = build_inbox_query(&login.login, &env, &req).await.unwrap();
 
         assert_sql_matches(&sql, r"(?i)\bid\)?\s*>\s*\d+\b");
-        assert!(
-            !Regex::new(r"(?i)is\s*null").unwrap().is_match(&sql),
-            "{sql}"
-        );
+        assert_sql_matches(&sql, r"(?i)is\s*null");
     }
 
     #[serial]

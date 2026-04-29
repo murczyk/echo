@@ -14,9 +14,27 @@ use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
 
 fn since_id_null_bucket_filter(
     since_id_noninclusive: i64,
+    cursor_expr: SimpleExpr,
     id_expr: SimpleExpr,
 ) -> SimpleExpr {
-    id_expr.gt(since_id_noninclusive)
+    cursor_expr.is_null().and(id_expr.gt(since_id_noninclusive))
+}
+
+fn inbox_items_cte_id_expr() -> SimpleExpr {
+    Expr::col((Alias::new("inbox_items_cte"), Alias::new("id"))).into()
+}
+
+fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
+    match req_sort_by {
+        InboxMessagesSortBy::IMSDatetime => {
+            Expr::col((Alias::new("inbox_items_cte"), Alias::new("datetime")))
+                .into()
+        }
+        InboxMessagesSortBy::IMSTimestamp => {
+            Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp")))
+                .into()
+        }
+    }
 }
 
 pub(crate) async fn build_inbox_query(
@@ -322,6 +340,8 @@ where
                     } else {
                         q.filter(since_id_null_bucket_filter(
                             since_id_noninclusive,
+                            sigint_inbox_item::Column::Datetime
+                                .into_simple_expr(),
                             Expr::cust("sigint_inbox_item.id"),
                         ))
                     };
@@ -347,6 +367,8 @@ where
                     } else {
                         q.filter(since_id_null_bucket_filter(
                             since_id_noninclusive,
+                            signal_message::Column::Timestamp
+                                .into_simple_expr(),
                             Expr::cust("signal_message.id"),
                         ))
                     };
@@ -462,7 +484,7 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                             Expr::tuple([
                                 sigint_inbox_item::Column::Datetime
                                     .into_simple_expr(),
-                                Expr::col(Alias::new("id")).into_simple_expr(),
+                                inbox_items_cte_id_expr(),
                             ])
                             .gt(
                                 SimpleExpr::Tuple(vec![
@@ -474,7 +496,10 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                     } else {
                         q.and_where(since_id_null_bucket_filter(
                             since_id_noninclusive,
-                            Expr::col(Alias::new("id")).into_simple_expr(),
+                            inbox_items_cte_cursor_expr(
+                                InboxMessagesSortBy::IMSDatetime,
+                            ),
+                            inbox_items_cte_id_expr(),
                         ));
                     }
                 }
@@ -493,7 +518,7 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                             Expr::tuple([
                                 signal_message::Column::Timestamp
                                     .into_simple_expr(),
-                                Expr::col(Alias::new("id")).into_simple_expr(),
+                                inbox_items_cte_id_expr(),
                             ])
                             .gt(
                                 SimpleExpr::Tuple(vec![
@@ -505,7 +530,10 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                     } else {
                         q.and_where(since_id_null_bucket_filter(
                             since_id_noninclusive,
-                            Expr::col(Alias::new("id")).into_simple_expr(),
+                            inbox_items_cte_cursor_expr(
+                                InboxMessagesSortBy::IMSTimestamp,
+                            ),
+                            inbox_items_cte_id_expr(),
                         ));
                     }
                 }
