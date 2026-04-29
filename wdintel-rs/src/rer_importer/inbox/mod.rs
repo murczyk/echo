@@ -1050,7 +1050,7 @@ mod tests {
     }
 
     fn normalized_sql(sql: &str) -> String {
-        sql.replace('"', "").replace(' ', "").to_lowercase()
+        sql.replace(['"', ' '], "").to_lowercase()
     }
 
     #[serial]
