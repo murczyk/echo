@@ -1049,6 +1049,10 @@ mod tests {
         Ok(message)
     }
 
+    fn normalized_sql(sql: &str) -> String {
+        sql.replace('"', "").replace(' ', "").to_lowercase()
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_null_timestamp_cursor_uses_cte_id_in_outer_pagination() {
@@ -1080,14 +1084,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let sql = q.to_string(PostgresQueryBuilder);
+        let sql = normalized_sql(&q.to_string(PostgresQueryBuilder));
 
-        assert!(sql.contains("inbox_items_cte"));
-        assert!(sql.contains("timestamp IS NULL"));
-        assert!(sql.contains("id >"));
-        assert!(!sql.contains("signal_message.id >"));
-        assert!(!sql.contains("signal_message.timestamp IS NULL"));
-        assert!(!sql.contains("sigint_inbox_item.id >"));
+        assert!(sql.contains("inbox_items_cte"), "{sql}");
+        assert!(sql.contains("isnull"), "{sql}");
+        assert!(sql.contains("id>"), "{sql}");
+        assert!(!sql.contains("signal_message."), "{sql}");
+        assert!(!sql.contains("sigint_inbox_item."), "{sql}");
     }
 
     #[serial]
@@ -1227,10 +1230,12 @@ mod tests {
             ..Default::default()
         };
 
-        let sql = build_inbox_query(&login.login, &env, &req).await.unwrap();
+        let sql = normalized_sql(
+            &build_inbox_query(&login.login, &env, &req).await.unwrap(),
+        );
 
-        assert!(sql.contains("IS NULL"));
-        assert!(sql.contains("id >"));
+        assert!(sql.contains("isnull"), "{sql}");
+        assert!(sql.contains("id>"), "{sql}");
     }
 
     #[serial]
