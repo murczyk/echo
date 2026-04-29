@@ -6,7 +6,7 @@
 
 ## АРХІТЕКТУРА
 
-- На `echo-gpu-spark` запущено `vllm` із моделлю `openai/gpt-oss-120b` або іншою сумісною моделлю.
+- На `echo-gpu-spark` запущено `vllm` із моделлю `google/gemma-4-26B-A4B-it`; `openai/gpt-oss-120b` лишається альтернативною сумісною моделлю.
 - Агент працює в Incus-контейнері `echo-gpu-agent` і ходить до `vllm` по мережі через `vllm-host:8000`.
     - див. `/usr/share/echo-agent/opencode` для голого opencode та конфігурації
 - `opencode/` містить конфіг для OpenCode, який підключається до `vllm`.

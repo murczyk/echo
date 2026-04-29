@@ -4,6 +4,12 @@
 
 
 ```
+echo@echo-gpu-spark:~/workspace/dgx-spark-vllm/spark-vllm-docker$ ./launch-cluster.sh --solo --launch-script ./examples/vllm-gemma4.sh
+```
+
+- alternative GPT-OSS launch:
+
+```
 echo@echo-gpu-spark:~/workspace/dgx-spark-vllm/spark-vllm-docker$ ./launch-cluster.sh --solo --launch-script ./examples/vllm-openai-gpt-oss-120b.sh
 ```
 
@@ -23,7 +29,7 @@ root@echo-gpu-agent:~# curl -sS http://10.16.206.1:8000/v1/models | jq .
   "object": "list",
   "data": [
     {
-      "id": "openai/gpt-oss-120b",
+      "id": "google/gemma-4-26B-A4B-it",
 	  ...
     }
   ]
@@ -42,6 +48,12 @@ curl -fsSL https://opencode.ai/install | bash
 
 ```bash
 export OPENCODE_BIN=/home/echo/.opencode/bin/opencode
+```
+
+- optional: use GPT-OSS instead of the default Gemma model:
+
+```bash
+export OPENCODE_MODEL=vllm/openai/gpt-oss-120b
 ```
 
 - run Rust wrapper:

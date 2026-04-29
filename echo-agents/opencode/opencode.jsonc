@@ -16,12 +16,39 @@
         "apiKey": "local"
       },
       "models": {
+        "google/gemma-4-26B-A4B-it": {
+          "name": "Gemma4-26B-A4B-it (vLLM default)",
+          "reasoning": true,
+          "variants": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            }
+          }
+        },
         "openai/gpt-oss-120b": {
-          "name": "gpt-oss-120b (vllm)"
+          "name": "OpenAI GPT-OSS 120B (vLLM alternative)",
+          "reasoning": true,
+          "variants": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            }
+          }
         }
       }
     }
   },
 
-  "model": "vllm/openai/gpt-oss-120b"
+  "model": "vllm/google/gemma-4-26B-A4B-it"
 }
