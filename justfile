@@ -458,9 +458,9 @@ deploy _server_pos="" server:
 
       run_logged 600 "sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update" \
         sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs echo-docs" \
+      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs" \
         sudo env DEBIAN_FRONTEND=noninteractive \
-          apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs echo-docs'
+          apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs'
 
     # Re-assert critical services after deploy package update
     ssh "$SERVER" '
@@ -518,9 +518,9 @@ deploy _server_pos="" server:
         printf "%s\n" "$listen_8081"
         exit 1
       fi
-
-      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
     '
+    printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
+    echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
     # Success notification
     curl -sS -X POST \
@@ -1100,10 +1100,35 @@ deploy-many _servers_pos="" servers="":
     fi
 
     echo "Each server deploy waits up to 120s for wdintel-rs-bgworker.service to stop, then prints the apt commands it is waiting on."
+    echo "Docs are not deployed by deploy-many; use: just deploy-docs-many --servers=\"{{ servers }}\""
     echo-install-utils run-many \
       --values "{{ servers }}" \
       --cwd "{{ justfile_directory() }}" \
       -- just deploy --server={}
+
+[arg('servers', long='servers')]
+deploy-docs-many _servers_pos="" servers="":
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "{{ _servers_pos }}" != "" ]]; then
+      echo "positional servers are not allowed; use: just deploy-docs-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+    if [[ "{{ servers }}" == "" ]]; then
+      echo "missing --servers. usage: just deploy-docs-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo "Each server docs deploy waits for the same CI publish keys as deploy, then apt-installs echo-docs."
+    echo-install-utils run-many \
+      --values "{{ servers }}" \
+      --cwd "{{ justfile_directory() }}" \
+      -- just deploy-docs --server={}
 
 _echo-generic-deploy:
     #!/bin/bash
@@ -1473,16 +1498,123 @@ builder-build-docs:
       echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
     fi
 
-[arg('builder', long='builder')]
 [arg('server', long='server')]
-deploy-docs builder="echo-gpu" server:
-    @if [[ "{{ server }}" == "" ]]; then \
-        just _print-servers; exit 1; \
+deploy-docs _server_pos="" server:
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
+      set -x
+    fi
+    if [[ "{{ _server_pos }}" != "" && "{{ server }}" != "" ]]; then
+      echo "pass either positional server or --server, not both." >&2
+      exit 1
     fi
 
-    just builder={{ builder }} builder-build-docs
-    rsync --progress ~/Downloads/echo-docs_0.1.0-1_amd64.deb {{ server }}:/var/tmp/
-    ssh -t {{ server }} 'cd /var/tmp/ && sudo dpkg -i echo-docs_0.1.0-1_amd64.deb && rm /var/tmp/echo-docs*.deb'
+    if [[ "{{ _server_pos }}" != "" ]]; then
+      SERVER="{{ _server_pos }}"
+    elif [[ "{{ server }}" != "" ]]; then
+      SERVER="{{ server }}"
+    else
+      just _print-servers; exit 1;
+    fi
+
+    VERSION=$(tq -r -f Cargo.toml workspace.package.version)
+
+    if [[ -z "$VERSION" ]]; then
+      echo "Failed to detect version from Cargo.toml" >&2
+      exit 1
+    fi
+
+    STARTED_KEY="echo-ci:deploy:echo:started:$VERSION"
+    FINISHED_KEY="echo-ci:deploy:echo:finished:$VERSION"
+
+    BUILDER="${BUILDER:-echo-build-main}"
+    CI_SSH_TARGET="$BUILDER"
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$CI_SSH_TARGET" true 2>/dev/null; then
+      echo "Cannot SSH to $CI_SSH_TARGET; required to check Redis keys" >&2
+      exit 1
+    fi
+
+    wait_for_ci_key() {
+      local key="$1"
+      local max_label="$2"
+      local attempts="$3"
+      local failure_message="$4"
+      local ok=0
+
+      echo "Waiting up to $max_label for CI key: $key ..."
+      local trace_was_on=0
+      case $- in *x*) trace_was_on=1;; esac
+      [[ $trace_was_on -eq 1 ]] && set +x
+      for i in $(seq 1 "$attempts"); do
+        exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$key")
+        if [[ "$exists" == "1" ]]; then ok=1; break; fi
+        sleep 5
+        echo -n "."
+      done
+      [[ $trace_was_on -eq 1 ]] && set -x
+      echo
+      if [[ $ok -ne 1 ]]; then
+        echo "$failure_message" >&2
+        exit 1
+      fi
+    }
+
+    printf "\n📚📚📚 deploying docs %s 📚📚📚\n\n" "$SERVER"
+
+    curl -sS -X POST \
+      -H 'Content-Type: application/json' \
+      -d "{\"content\":\"deploying docs $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
+      '{{ discord_webhook }}' || true
+
+    echo "CI: https://github.com/echoua/echo/actions"
+
+    wait_for_ci_key "$STARTED_KEY" "15m" 180 \
+      "CI did not start publishing for version $VERSION within 15m (key $STARTED_KEY missing)"
+    echo "CI started detected."
+    wait_for_ci_key "$FINISHED_KEY" "10m" 120 \
+      "CI did not finish publishing for version $VERSION within 10m (key $FINISHED_KEY missing)"
+
+    echo "CI finished detected. Proceeding with remote apt install for echo-docs."
+    ssh "$SERVER" 'set -euo pipefail
+      run_logged() {
+        local timeout_secs="$1"
+        local command_text="$2"
+        shift 2
+
+        echo "+ $command_text"
+        local status=0
+        if timeout --foreground "${timeout_secs}s" "$@"; then
+          status=0
+        else
+          status="$?"
+        fi
+        if [ "$status" -eq 0 ]; then
+          return 0
+        fi
+
+        if [ "$status" -eq 124 ]; then
+          echo "$command_text timed out after ${timeout_secs}s." >&2
+        else
+          echo "$command_text failed with exit code $status." >&2
+        fi
+        return "$status"
+      }
+
+      run_logged 600 "sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update" \
+        sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
+      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-docs" \
+        sudo env DEBIAN_FRONTEND=noninteractive \
+          apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-docs
+
+      installed=$(dpkg-query -W -f=\${Version} echo-docs)
+      echo "✅✅✅ docs deploy OK on $HOSTNAME: echo-docs $installed ✅✅✅"
+    '
+
+    curl -sS -X POST \
+      -H 'Content-Type: application/json' \
+      -d "{\"content\":\"✅ Deployed docs $SERVER (version $VERSION) via apt-get\"}" \
+      '{{ discord_webhook }}' || true
 
 fmt:
     just --fmt --unstable
