@@ -96,6 +96,39 @@ transforms:
         .resources."host.name" = host_name
       }
 
+      service_name = ""
+      service_instance_id = ""
+
+      systemd_unit = to_string(._SYSTEMD_UNIT) ?? ""
+      if systemd_unit != "" {
+        systemd_unit_instance_re = r'^(?P<service_name>[^@]+?)@(?P<service_instance_id>.*)\.(service|scope|socket|timer|target)$'
+        systemd_unit_re = r'^(?P<service_name>.+?)\.(service|scope|socket|timer|target)$'
+        if match(systemd_unit, systemd_unit_instance_re) {
+          systemd_unit_match = parse_regex!(systemd_unit, systemd_unit_instance_re)
+          service_name = systemd_unit_match.service_name
+          service_instance_id = systemd_unit_match.service_instance_id
+        } else if match(systemd_unit, systemd_unit_re) {
+          systemd_unit_match = parse_regex!(systemd_unit, systemd_unit_re)
+          service_name = systemd_unit_match.service_name
+        } else {
+          service_name = systemd_unit
+        }
+      }
+      if service_name == "" {
+        service_name = to_string(.SYSLOG_IDENTIFIER) ?? ""
+      }
+      if service_name == "" {
+        service_name = to_string(._COMM) ?? ""
+      }
+      if service_name != "" {
+        ."service.name" = service_name
+        .resources."service.name" = service_name
+      }
+      if service_instance_id != "" {
+        ."service.instance.id" = service_instance_id
+        .resources."service.instance.id" = service_instance_id
+      }
+
       # Signoz JSON receiver expects either unix-nanos timestamp or no timestamp.
       del(.timestamp)
 
