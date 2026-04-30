@@ -24,7 +24,6 @@ function buildProps(overrides: Partial<Parameters<typeof AnalysisMapPane>[0]> = 
     onDateRangeChange: vi.fn(),
     onLoadMessages: vi.fn(),
     onUnitClick: vi.fn(),
-    onExit: vi.fn(),
     ...overrides,
   };
 }
@@ -62,5 +61,14 @@ describe('AnalysisMapPane', () => {
     });
 
     expect(map?.getAttribute('visibility')).toBe('true');
+  });
+
+  it('signals overlay controls to collapse when the map becomes visible', async () => {
+    await act(async () => {
+      root.render(<AnalysisMapPane {...buildProps({ visible: true })} />);
+    });
+
+    const map = container.querySelector('analysis-map');
+    expect(map?.getAttribute('overlay-controls-collapsed')).toBe('true');
   });
 });

@@ -37,6 +37,7 @@ type PalitrasOverlayProps = {
   visibleIds: number[];
   loadState: 'idle' | 'loading' | 'success' | 'error';
   interactionDisabled: boolean;
+  forceCollapsed?: boolean;
   onVisibleIdsChange: (visibleIds: number[]) => void;
 };
 
@@ -333,7 +334,7 @@ const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) 
 });
 
 function PalitrasOverlay(props: PalitrasOverlayProps) {
-  const { palitras, visibleIds, loadState, interactionDisabled, onVisibleIdsChange } = props;
+  const { palitras, visibleIds, loadState, interactionDisabled, forceCollapsed, onVisibleIdsChange } = props;
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [isCollapsed, setCollapsed] = useState<boolean>(() => {
     try {
@@ -419,6 +420,19 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (forceCollapsed) {
+      setCollapsed(true);
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(COLLAPSE_STORAGE_KEY);
+      setCollapsed(saved === 'true');
+    } catch (_error) {
+      setCollapsed(false);
+    }
+  }, [forceCollapsed]);
 
   const toggleSelectAll = useCallback(() => {
     if (interactionDisabled) {
@@ -511,10 +525,10 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
       }
 
       const controlRect = control.getBoundingClientRect();
-      const zoomControl = mapRoot.querySelector('.analysis-map-zoom-control');
-      const zoomRect = zoomControl instanceof HTMLElement ? zoomControl.getBoundingClientRect() : null;
+      const settingsControl = mapRoot.querySelector('.map-settings-control-host');
+      const settingsRect = settingsControl instanceof HTMLElement ? settingsControl.getBoundingClientRect() : null;
       const mapRect = mapRoot.getBoundingClientRect();
-      const maxBottom = zoomRect ? zoomRect.top - MAP_CONTROL_GAP : mapRect.bottom - MAP_CONTROL_GAP;
+      const maxBottom = settingsRect ? settingsRect.top - MAP_CONTROL_GAP : mapRect.bottom - MAP_CONTROL_GAP;
       const nextMaxHeight = Math.floor(maxBottom - controlRect.top);
 
       setControlMaxHeight(nextMaxHeight > 0 ? nextMaxHeight : null);
@@ -532,9 +546,9 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
 
     if (resizeObserver && mapRoot instanceof HTMLElement) {
       resizeObserver.observe(mapRoot);
-      const zoomControl = mapRoot.querySelector('.analysis-map-zoom-control');
-      if (zoomControl instanceof HTMLElement) {
-        resizeObserver.observe(zoomControl);
+      const settingsControl = mapRoot.querySelector('.map-settings-control-host');
+      if (settingsControl instanceof HTMLElement) {
+        resizeObserver.observe(settingsControl);
       }
     }
 
@@ -690,6 +704,7 @@ class AnalysisMapPalitrasElement extends HTMLElement {
   private visibleIds: number[] = [];
   private loadState: 'idle' | 'loading' | 'success' | 'error' = 'idle';
   private interactionDisabled = false;
+  private forceCollapsed = false;
   private pendingUnmountHandle: number | null = null;
 
   connectedCallback() {
@@ -730,6 +745,11 @@ class AnalysisMapPalitrasElement extends HTMLElement {
     this.renderComponent();
   }
 
+  setCollapsed(collapsed: boolean) {
+    this.forceCollapsed = collapsed;
+    this.renderComponent();
+  }
+
   private renderComponent() {
     if (!this.root) {
       return;
@@ -741,6 +761,7 @@ class AnalysisMapPalitrasElement extends HTMLElement {
         visibleIds={this.visibleIds}
         loadState={this.loadState}
         interactionDisabled={this.interactionDisabled}
+        forceCollapsed={this.forceCollapsed}
         onVisibleIdsChange={(visibleIds) => {
           this.dispatchEvent(
             new CustomEvent('palitras-visible-ids-change', {

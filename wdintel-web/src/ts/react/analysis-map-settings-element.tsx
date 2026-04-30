@@ -6,6 +6,7 @@ import { AnalysisMapSettingsControl } from './AnalysisMapSettingsControl';
 class AnalysisMapSettingsElement extends HTMLElement {
   private root: Root | null = null;
   private visible = true;
+  private forceCollapsed = false;
   private pendingUnmountHandle: number | null = null;
 
   connectedCallback() {
@@ -30,6 +31,11 @@ class AnalysisMapSettingsElement extends HTMLElement {
     this.renderComponent();
   }
 
+  setCollapsed(collapsed: boolean) {
+    this.forceCollapsed = collapsed;
+    this.renderComponent();
+  }
+
   private renderComponent() {
     if (!this.root) {
       return;
@@ -38,6 +44,7 @@ class AnalysisMapSettingsElement extends HTMLElement {
     this.root.render(
       <AnalysisMapSettingsControl
         visible={this.visible}
+        forceCollapsed={this.forceCollapsed}
         onVisibleChange={(visible) => {
           this.visible = visible;
           this.renderComponent();

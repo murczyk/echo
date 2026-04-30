@@ -2,6 +2,7 @@ import * as L from 'leaflet';
 
 export interface MapSettingsControl extends L.Control {
   setPelengLabelsVisible: (visible: boolean) => void;
+  setCollapsed: (collapsed: boolean) => void;
 }
 
 export function createMapSettingsControl(
@@ -38,7 +39,11 @@ export function createMapSettingsControl(
       this._showPelengLabels = visible;
       this._settingsElement?.setPelengLabelsVisible?.(visible);
     },
+
+    setCollapsed: function (collapsed: boolean) {
+      this._settingsElement?.setCollapsed?.(collapsed);
+    },
   });
 
-  return new MapSettingsControlClass({ position: 'bottomleft' }) as MapSettingsControl;
+  return new MapSettingsControlClass({ position: 'bottomright' }) as MapSettingsControl;
 }

@@ -697,7 +697,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         search={page.queryState.search}
                         visible
                         onDateRangeChange={page.refreshMapDateRange}
-                        onExit={() => page.setCenterTab('messages')}
                         onLoadMessages={page.loadMessagesForMap}
                         onUnitClick={page.toggleUnitFromMap}
                       />

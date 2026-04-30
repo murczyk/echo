@@ -1,7 +1,7 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LayersIcon from '@mui/icons-material/Layers';
 import { Box, Checkbox, IconButton, Radio, ThemeProvider, Typography } from '@mui/material';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import type { FeatureToggleState } from '../maps/control-modules';
 import { useNeoMuiTheme } from './mui-theme';
@@ -11,6 +11,7 @@ type BaseLayerName = 'openStreetMap' | 'googleHybrid';
 type AnalysisMapLayerSwitchControlProps = {
   currentLayer: BaseLayerName;
   features: FeatureToggleState;
+  forceCollapsed?: boolean;
   onLayerChange: (layer: BaseLayerName) => void;
   onFeatureToggle: (feature: keyof FeatureToggleState, enabled: boolean) => void;
 };
@@ -38,6 +39,19 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (props.forceCollapsed) {
+      setCollapsed(true);
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      setCollapsed(saved === null ? true : saved === 'true');
+    } catch {
+      setCollapsed(true);
+    }
+  }, [props.forceCollapsed]);
 
   return (
     <Box className={`palitras-control layer-switch-control ${isCollapsed ? 'collapsed' : ''}`}>
@@ -70,21 +84,6 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
 
       {!isCollapsed ? (
         <Box className="layer-switch-list">
-          <Typography className="layer-switch-subheader">Базова мапа</Typography>
-          <LayerRow
-            checked={props.currentLayer === 'openStreetMap'}
-            label="OpenStreetMap"
-            onClick={() => props.onLayerChange('openStreetMap')}
-            type="radio"
-          />
-          <LayerRow
-            checked={props.currentLayer === 'googleHybrid'}
-            label="Супутник"
-            onClick={() => props.onLayerChange('googleHybrid')}
-            type="radio"
-          />
-
-          <Typography className="layer-switch-subheader">Шари</Typography>
           <LayerRow
             checked={props.features.palitrasEnabled}
             label="Палітри"
@@ -102,6 +101,20 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
             label="KMZ підкладка"
             onClick={() => props.onFeatureToggle('kmzEnabled', !props.features.kmzEnabled)}
             type="checkbox"
+          />
+
+          <Typography className="layer-switch-subheader">Основа</Typography>
+          <LayerRow
+            checked={props.currentLayer === 'googleHybrid'}
+            label="Супутник"
+            onClick={() => props.onLayerChange('googleHybrid')}
+            type="radio"
+          />
+          <LayerRow
+            checked={props.currentLayer === 'openStreetMap'}
+            label="OpenStreetMap"
+            onClick={() => props.onLayerChange('openStreetMap')}
+            type="radio"
           />
         </Box>
       ) : null}

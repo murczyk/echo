@@ -183,7 +183,6 @@ export function AnalysisSidebar({
               search={queryState.search}
               visible={sidebarTab === 'map'}
               onDateRangeChange={refreshMapDateRange}
-              onExit={() => setRightSidebarTab('stats')}
               onLoadMessages={loadMessagesForMap}
               onUnitClick={toggleUnitFromMap}
             />

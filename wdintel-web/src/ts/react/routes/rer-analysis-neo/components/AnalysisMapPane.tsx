@@ -10,10 +10,9 @@ type Props = {
   onDateRangeChange: (range: { startDate: number; endDate: number }) => void;
   onLoadMessages: (messageIds: number[]) => void;
   onUnitClick: (unitName: string | null) => void;
-  onExit: () => void;
 };
 
-export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, onLoadMessages, onUnitClick, onExit }: Props) {
+export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, onLoadMessages, onUnitClick }: Props) {
   const hostRef = useRef<HTMLElement | null>(null);
   const [renderedVisible, setRenderedVisible] = useState(false);
 
@@ -46,22 +45,17 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
     const handleUnitClick = (event: Event) => {
       onUnitClick((event as CustomEvent<{ networkUnitName: string | null }>).detail.networkUnitName ?? null);
     };
-    const handleExit = () => {
-      onExit();
-    };
 
     host.addEventListener('date-range-changed', handleDateRangeChange as EventListener);
     host.addEventListener('load-messages-description', handleLoadMessages as EventListener);
     host.addEventListener('message-unit-clicked', handleUnitClick as EventListener);
-    host.addEventListener('exit', handleExit as EventListener);
 
     return () => {
       host.removeEventListener('date-range-changed', handleDateRangeChange as EventListener);
       host.removeEventListener('load-messages-description', handleLoadMessages as EventListener);
       host.removeEventListener('message-unit-clicked', handleUnitClick as EventListener);
-      host.removeEventListener('exit', handleExit as EventListener);
     };
-  }, [onDateRangeChange, onExit, onLoadMessages, onUnitClick]);
+  }, [onDateRangeChange, onLoadMessages, onUnitClick]);
 
   return (
     <Box
@@ -84,6 +78,7 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
         palitras: mapAttrs.palitras,
         'palitras-loaded': mapAttrs.palitrasLoaded,
         'palitras-load-state': mapAttrs.palitrasLoadState,
+        'overlay-controls-collapsed': visible ? 'true' : 'false',
         visibility: renderedVisible ? 'true' : 'false',
         search,
       })}

@@ -5,12 +5,12 @@ export interface MapWindowControl extends L.Control {
 }
 
 export function createMapWindowControl(
-  closeMap: () => void,
   toggleFullscreen: () => void,
   initialFullscreen = false
 ): MapWindowControl {
   const MapWindowControlClass = L.Control.extend({
     _isFullscreen: initialFullscreen,
+    _map: null as L.Map | null,
     _fullscreenButton: null as HTMLButtonElement | null,
 
     _updateFullscreenButton: function () {
@@ -29,8 +29,26 @@ export function createMapWindowControl(
     },
 
     onAdd: function (_map: L.Map) {
+      this._map = _map;
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-window-control');
 
+      const createZoomButton = (iconClass: string, ariaLabel: string, onClick: () => void) => {
+        const button = document.createElement('button');
+        button.className = 'analysis-map-window-button';
+        button.type = 'button';
+        button.setAttribute('aria-label', ariaLabel);
+        button.title = ariaLabel;
+        button.innerHTML = `<i class="${iconClass}"></i>`;
+        button.addEventListener('click', (event) => {
+          L.DomEvent.stopPropagation(event);
+          L.DomEvent.preventDefault(event);
+          onClick();
+        });
+        return button;
+      };
+
+      const zoomInButton = createZoomButton('bi bi-plus-lg', 'Збільшити мапу', () => this._map?.zoomIn());
+      const zoomOutButton = createZoomButton('bi bi-dash-lg', 'Зменшити мапу', () => this._map?.zoomOut());
       const fullscreenButton = document.createElement('button');
       fullscreenButton.className = 'analysis-map-window-button';
       fullscreenButton.type = 'button';
@@ -44,20 +62,9 @@ export function createMapWindowControl(
       this._fullscreenButton = fullscreenButton;
       this._updateFullscreenButton();
 
-      const closeButton = document.createElement('button');
-      closeButton.className = 'analysis-map-window-button';
-      closeButton.type = 'button';
-      closeButton.innerHTML = '<i class="bi bi-x-lg"></i>';
-      closeButton.setAttribute('aria-label', 'Закрити мапу');
-      closeButton.title = 'Закрити мапу';
-      closeButton.addEventListener('click', (event) => {
-        L.DomEvent.stopPropagation(event);
-        L.DomEvent.preventDefault(event);
-        closeMap();
-      });
-
+      this._container.appendChild(zoomInButton);
+      this._container.appendChild(zoomOutButton);
       this._container.appendChild(fullscreenButton);
-      this._container.appendChild(closeButton);
 
       L.DomEvent.disableClickPropagation(this._container);
       L.DomEvent.disableScrollPropagation(this._container);

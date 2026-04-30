@@ -5,7 +5,6 @@ import {
   createLayerSwitchControl,
   createMapSettingsControl,
   createMapWindowControl,
-  createMapZoomControl,
   createPalitrasControl,
   createSearchControl,
   createTimeswitchControl,
@@ -32,7 +31,6 @@ type InitializeAnalysisMapControlsOptions = {
   isFullscreen: boolean;
   featureToggleState: FeatureToggleState;
   pelengLabelsPermanent: boolean;
-  onExit: () => void;
   onToggleFullscreen: () => void;
   onFeatureToggle: (feature: FeatureName, enabled: boolean) => void;
   onPelengLabelsPermanentChange: (show: boolean) => void;
@@ -47,7 +45,6 @@ export function initializeAnalysisMapControls({
   isFullscreen,
   featureToggleState,
   pelengLabelsPermanent,
-  onExit,
   onToggleFullscreen,
   onFeatureToggle,
   onPelengLabelsPermanentChange,
@@ -62,7 +59,7 @@ export function initializeAnalysisMapControls({
 } {
   const switchTimeControl = createTimeswitchControl(daterange, isDateRangeInteractionLocked);
   const searchControl = createSearchControl();
-  const mapWindowControl = createMapWindowControl(onExit, onToggleFullscreen, isFullscreen);
+  const mapWindowControl = createMapWindowControl(onToggleFullscreen, isFullscreen);
   const layerSwitchControl = createLayerSwitchControl(tileLayers, featureToggleState, onFeatureToggle);
   const mapSettingsControl = createMapSettingsControl(
     pelengLabelsPermanent,
@@ -75,7 +72,6 @@ export function initializeAnalysisMapControls({
   map.addControl(mapWindowControl);
   map.addControl(layerSwitchControl);
   map.addControl(mapSettingsControl);
-  map.addControl(createMapZoomControl());
   map.addControl(createAttributionControl());
 
   return {

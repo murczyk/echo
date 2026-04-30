@@ -4,7 +4,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css"
 import "leaflet.markercluster/dist/leaflet.markercluster.js"
 import { KMZLayer } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
-import { TimeswitchControl, FeatureToggleState, FeatureName, LayerSwitchControl, SearchControl, MapWindowControl, MapSettingsControl, PalitrasLoadState } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, FeatureName, LayerSwitchControl, SearchControl, MapWindowControl, MapSettingsControl, PalitrasControl, PalitrasLoadState } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -21,7 +21,7 @@ import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search", "palitras-load-state"]
+  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search", "palitras-load-state", "overlay-controls-collapsed"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -57,8 +57,10 @@ class AnalysisMap extends HTMLElement {
   private _coordMenuController: AnalysisMapCoordMenuController | null = null;
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
+  private _palitrasControl: PalitrasControl | null = null;
   private _isDateRangeLoading = false;
   private _isSearchLoading = false;
+  private _overlayControlsCollapsed = false;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
     if (this._isSearchInteractionLocked()) {
       return;
@@ -188,6 +190,9 @@ class AnalysisMap extends HTMLElement {
       case 'palitras-load-state':
         this._handlePalitrasLoadStateAttributeChanged(newValue);
         break;
+      case 'overlay-controls-collapsed':
+        this._handleOverlayControlsCollapsedAttributeChanged(newValue);
+        break;
       default:
         break;
     }
@@ -201,6 +206,7 @@ class AnalysisMap extends HTMLElement {
     if (this._initialized) {
       setTimeout(() => {
         this._map?.invalidateSize();
+        this._collapseOverlayControls();
       }, 0);
       return;
     }
@@ -209,6 +215,7 @@ class AnalysisMap extends HTMLElement {
       this.render();
       await this._initializeMap();
       this._initialized = true;
+      this._collapseOverlayControls();
     }, 0);
   }
 
@@ -268,6 +275,13 @@ class AnalysisMap extends HTMLElement {
     this._syncAsyncInteractionState();
     if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
       this._runSearchQueryIfSet();
+    }
+  }
+
+  private _handleOverlayControlsCollapsedAttributeChanged(newValue: string): void {
+    this._overlayControlsCollapsed = this._parseBooleanAttribute(newValue);
+    if (this._overlayControlsCollapsed) {
+      this._collapseOverlayControls();
     }
   }
 
@@ -452,7 +466,6 @@ class AnalysisMap extends HTMLElement {
       isFullscreen: this._isFullscreen,
       featureToggleState: this._getFeatureToggleState(),
       pelengLabelsPermanent: this._pelengLabelsPermanent,
-      onExit: () => this._emitExit(),
       onToggleFullscreen: () => this._toggleFullscreen(),
       onFeatureToggle: (feature, enabled) => this._setFeatureEnabled(feature, enabled),
       onPelengLabelsPermanentChange: (show) => this._setPelengLabelsPermanent(show),
@@ -464,6 +477,7 @@ class AnalysisMap extends HTMLElement {
     this._mapWindowControl = result.mapWindowControl;
     this._layerSwitchControl = result.layerSwitchControl;
     this._mapSettingsControl = result.mapSettingsControl;
+    this._palitrasControl = result.palitrasControl;
 
     return {
       map,
@@ -603,6 +617,16 @@ class AnalysisMap extends HTMLElement {
     }
   }
 
+  private _collapseOverlayControls(): void {
+    if (!this._overlayControlsCollapsed) {
+      return;
+    }
+
+    this._palitrasControl?.setCollapsed(true);
+    this._layerSwitchControl?.setCollapsed(true);
+    this._mapSettingsControl?.setCollapsed(true);
+  }
+
   private _applyState(state: AnalysisMapStoredState) {
     this._palitrasEnabled = state.features.palitras;
     this._kmzEnabled = state.features.kmz;
@@ -673,16 +697,6 @@ class AnalysisMap extends HTMLElement {
       kmzLayer: this._kmzLayer,
       loadKmzLayer: () => this._loadKmzLayer(),
     });
-  }
-
-  private _emitExit(): void {
-    this._setFullscreen(false);
-    const event = new CustomEvent('exit', {
-      detail: {},
-      bubbles: true,
-      composed: true
-    });
-    this.dispatchEvent(event);
   }
 
   private _handleVisiblePalitraIdsChange(visibleIds: number[]): void {
