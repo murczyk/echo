@@ -31,7 +31,9 @@ jobs:
 
       - name: Read Chromium revision
         id: chromium-revision
-        run: echo "revision=$(node -p \"require('./node_modules/playwright-core/browsers.json').browsers.find(browser => browser.name === 'chromium').revision\")" >> "$GITHUB_OUTPUT"
+        run: |
+          revision=$(node -e "const browsers = require('./node_modules/playwright-core/browsers.json').browsers; const chromium = browsers.find((browser) => browser.name === 'chromium'); console.log(chromium.revision)")
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4

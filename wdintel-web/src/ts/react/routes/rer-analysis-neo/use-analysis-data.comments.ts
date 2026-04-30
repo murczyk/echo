@@ -115,11 +115,14 @@ export async function loadMissingMessageCommentsForMessages(
         try {
           return { login, user: await fetchUserInfo(login) };
         } catch (loadError) {
+          if (requestVersion !== params.messageCommentsLoadVersionRef.current) {
+            return null;
+          }
           if (params.onUnauthorized(loadError)) {
             return null;
           }
           params.onError(toErrorMessage(loadError));
-          return null;
+          return { login, user: null };
         }
       }),
     );
@@ -128,7 +131,7 @@ export async function loadMissingMessageCommentsForMessages(
     params.setUsers((current) => {
       const next = { ...current };
       for (const entry of nextUsers) {
-        if (entry == null || entry.user == null) continue;
+        if (entry == null) continue;
         next[entry.login] = entry.user;
       }
       return next;
