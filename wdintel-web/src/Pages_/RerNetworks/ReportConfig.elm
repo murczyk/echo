@@ -5,7 +5,6 @@ module Pages_.RerNetworks.ReportConfig exposing
     , ReportType(..)
     , ReportTypeOption(..)
     , defaultCommonSettings
-    , defaultExtendedSettings
     , generateFileName
     , optionToReportType
     , reportTypeToOption

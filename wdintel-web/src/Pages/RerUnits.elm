@@ -28,7 +28,6 @@ import Task
 import Time
 import Utils.Api.ErrorHandling
 import Utils.Time
-import Utils.Utils exposing (..)
 import View exposing (View)
 
 
@@ -491,7 +490,7 @@ filteredUnits model =
                     True
 
                 else
-                    unit.active == True
+                    unit.active
             )
         |> List.filter
             (\unit ->

@@ -4,9 +4,9 @@ import Api
 import Auth
 import Bindings as B exposing (..)
 import Browser.Events
+import Config
 import Core.EventHelpers
 import Core.Types exposing (..)
-import Config
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -17,7 +17,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
 import List.Extra as ListX
-import Maybe.Extra as MaybeX exposing (isJust)
+import Maybe.Extra exposing (isJust)
 import Page exposing (Page)
 import Pages_.RerDuty.Waterfall exposing (Msg(..), waterfallDivId)
 import Pages_.RerDuty.Waterfall.Messages as Messages
@@ -28,17 +28,13 @@ import Route exposing (Route)
 import Route.Path
 import Set exposing (Set)
 import Shared
-import Shared.Components.Navbar exposing (navBar)
-import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
-import Task
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
-import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.RemoteData exposing (RemoteData(..))
 import Utils.Utils exposing (..)
-import Utils.Views
 import Uuid.Barebones
 import View exposing (View)
 
@@ -147,7 +143,7 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "rer-duty"
@@ -166,59 +162,59 @@ recalcDuplicates model =
         Set.empty
 
     else
-    let
-        msgs : List ( Int, B.InboxMessage )
-        msgs =
-            List.concatMap (\( _, wf ) -> Messages.toMessageList wf.messages) model.waterfalls
+        let
+            msgs : List ( Int, B.InboxMessage )
+            msgs =
+                List.concatMap (\( _, wf ) -> Messages.toMessageList wf.messages) model.waterfalls
 
-        msgs2 : List ( Int, B.InboxMessage )
-        msgs2 =
-            msgs
+            msgs2 : List ( Int, B.InboxMessage )
+            msgs2 =
+                msgs
 
-        -- List.sortBy
-        --     (\( _, x ) -> Maybe.withDefault 0 x.timestamp)
-        --     msgs
-        go : ( Int, B.InboxMessage ) -> RecalcDuplicatesAcc -> RecalcDuplicatesAcc
-        go ( id_, msg ) acc =
-            let
-                mUid =
-                    msg.messageUid
-                        |> andThen
-                            (\uid ->
-                                if String.isEmpty uid then
-                                    Nothing
+            -- List.sortBy
+            --     (\( _, x ) -> Maybe.withDefault 0 x.timestamp)
+            --     msgs
+            go : ( Int, B.InboxMessage ) -> RecalcDuplicatesAcc -> RecalcDuplicatesAcc
+            go ( id_, msg ) acc =
+                let
+                    mUid =
+                        msg.messageUid
+                            |> andThen
+                                (\uid ->
+                                    if String.isEmpty uid then
+                                        Nothing
 
-                                else
-                                    Just uid
-                            )
-            in
-            case mUid of
-                Nothing ->
-                    acc
+                                    else
+                                        Just uid
+                                )
+                in
+                case mUid of
+                    Nothing ->
+                        acc
 
-                Just uid ->
-                    let
-                        seenUid =
-                            Dict.get uid acc.seenMsgs
-                    in
-                    if isJust seenUid && (seenUid /= Just id_) then
-                        { acc
-                            | duplicates = acc.duplicates |> Set.insert id_
-                        }
+                    Just uid ->
+                        let
+                            seenUid =
+                                Dict.get uid acc.seenMsgs
+                        in
+                        if isJust seenUid && (seenUid /= Just id_) then
+                            { acc
+                                | duplicates = acc.duplicates |> Set.insert id_
+                            }
 
-                    else
-                        { acc
-                            | seenMsgs =
-                                acc.seenMsgs
-                                    |> Dict.insert uid id_
-                        }
-    in
-    (List.foldl go
-        { duplicates = Set.empty
-        , seenMsgs = Dict.empty
-        }
-        msgs2
-    ).duplicates
+                        else
+                            { acc
+                                | seenMsgs =
+                                    acc.seenMsgs
+                                        |> Dict.insert uid id_
+                            }
+        in
+        (List.foldl go
+            { duplicates = Set.empty
+            , seenMsgs = Dict.empty
+            }
+            msgs2
+        ).duplicates
 
 
 update : Shared.Model -> B.User -> Msg -> Model -> ( Model, Effect Msg )

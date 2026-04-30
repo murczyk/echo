@@ -3,6 +3,7 @@ module Stubs exposing (..)
 import Dict
 
 
+callsignA : { callsign : String, comment : String, id : number, position : String, unit1 : String, unit2 : String, unitId : Maybe number }
 callsignA =
     { callsign = "кабан"
     , comment = "нічого сказати"
@@ -14,6 +15,7 @@ callsignA =
     }
 
 
+callsignB : { callsign : String, comment : String, id : number, position : String, unit1 : String, unit2 : String, unitId : Maybe number }
 callsignB =
     { callsign = "абхаз"
     , comment = ""
@@ -25,6 +27,7 @@ callsignB =
     }
 
 
+callsignC : { callsign : String, comment : String, id : number, position : String, unit1 : String, unit2 : String, unitId : Maybe number }
 callsignC =
     { callsign = "чапля"
     , comment = "щось важливе"
@@ -36,6 +39,7 @@ callsignC =
     }
 
 
+gdocCallsigns : Dict.Dict String (Maybe (List { callsign : String, comment : String, id : number, position : String, unit1 : String, unit2 : String, unitId : Maybe number }))
 gdocCallsigns =
     Dict.fromList
         [ ( "кабан"
@@ -49,6 +53,7 @@ gdocCallsigns =
         ]
 
 
+unitA : { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdBy : String, division : String, id : number, name : String, regiment : String }
 unitA =
     { active = True
     , army = ""
@@ -64,6 +69,7 @@ unitA =
     }
 
 
+unitCConnectedToA : { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdBy : String, division : String, id : number, name : String, regiment : String }
 unitCConnectedToA =
     { active = True
     , army = ""
@@ -79,6 +85,7 @@ unitCConnectedToA =
     }
 
 
+masterUnits : Dict.Dict number { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdBy : String, division : String, id : number, name : String, regiment : String }
 masterUnits =
     Dict.fromList
         [ ( 1
@@ -88,6 +95,7 @@ masterUnits =
         ]
 
 
+networkA : { comment : String, createdAt : number, freq : String, id : number, kind : String, location : String, name : String, unitIds : List number }
 networkA =
     { comment = ""
     , createdAt = 1711972701350
@@ -100,6 +108,7 @@ networkA =
     }
 
 
+networkB : { comment : String, createdAt : number, freq : String, id : number, kind : String, location : String, name : String, unitIds : List number }
 networkB =
     { comment = ""
     , createdAt = 1711972701350
@@ -112,6 +121,7 @@ networkB =
     }
 
 
+networks : Dict.Dict number (Maybe { comment : String, createdAt : number, freq : String, id : number, kind : String, location : String, name : String, unitIds : List number })
 networks =
     Dict.fromList
         [ ( 1

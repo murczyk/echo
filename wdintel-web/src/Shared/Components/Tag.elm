@@ -1,4 +1,4 @@
-module Shared.Components.Tag exposing (new, view, withActive, withBadge, withOverlays)
+module Shared.Components.Tag exposing (new, view, withBadge, withOverlays)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -27,11 +27,6 @@ new options =
         }
 
 
-withActive : Bool -> Config msg -> Config msg
-withActive isActive (Config config) =
-    Config { config | isActive = isActive }
-
-
 withBadge : String -> Config msg -> Config msg
 withBadge badgeValue (Config config) =
     Config { config | withBadge = Just badgeValue }
@@ -52,12 +47,12 @@ view label (Config config) =
             ]
         , onClick <| config.onToggle
         ]
-        ([ String.uncons label
+        ((String.uncons label
             |> Maybe.map (\( head, tail ) -> String.cons (Char.toUpper head) tail)
             |> Maybe.withDefault ""
             |> text
-         ]
-            ++ (case config.withBadge of
+         )
+            :: (case config.withBadge of
                     Just v ->
                         [ span [ class "absolute top-0 transform  -translate-y-1/2 z-1" ] [ Badge.view v ] ]
 

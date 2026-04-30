@@ -1,14 +1,13 @@
-module Utils.Utils exposing (andThen, capitalize, decodePair, def, emptySToNothing, emptyToNothing, enumerate, extractMRecordField, findAllAdjacentFreqs, findK, flip, for_, getLabelOrDefault, ifOrEmpty, insertShowMapToQuery, jumpToBottom, mapFst, mapSnd, mmap, msgToHtml, networkKindVHFMapping, onKeyDown, renderZoneError, resToList, textBeforeComma, trueToOne, twoSign, unique, updateV, zeroToNothing)
+module Utils.Utils exposing (andThen, decodePair, def, emptySToNothing, emptyToNothing, enumerate, extractMRecordField, findAllAdjacentFreqs, findK, flip, for_, getLabelOrDefault, ifOrEmpty, insertShowMapToQuery, jumpToBottom, mapFst, mapSnd, mmap, onKeyDown, resToList, textBeforeComma, trueToOne, twoSign, unique, updateV, zeroToNothing)
 
 import Browser.Dom
 import Dict
-import Html exposing (Attribute, Html)
+import Html exposing (Attribute)
 import Html.Events exposing (..)
 import Json.Decode as Decode exposing (Decoder)
 import List.Extra as ListX
 import Route exposing (Route)
 import Task
-import TimeZone
 
 
 decodePair : Decoder a -> Decoder b -> Decoder ( a, b )
@@ -19,33 +18,6 @@ decodePair da db =
                 Decode.index 1 db
                     |> Decode.map (\bVal -> ( aVal, bVal ))
             )
-
-
-mapFst : (a1 -> a2) -> ( a1, b ) -> ( a2, b )
-mapFst f v =
-    let
-        ( v1, v2 ) =
-            v
-    in
-    ( f v1, v2 )
-
-
-mapSnd : (b1 -> b2) -> ( a, b1 ) -> ( a, b2 )
-mapSnd f v =
-    let
-        ( v1, v2 ) =
-            v
-    in
-    ( v1, f v2 )
-
-
-twoSign : Int -> String
-twoSign x =
-    if x < 10 then
-        "0" ++ String.fromInt x
-
-    else
-        String.fromInt x
 
 
 enumerate : List a -> List ( Int, a )
@@ -60,6 +32,33 @@ enumerate xss =
                     ( i, x ) :: go (i + 1) xs_tl
     in
     go 0 xss
+
+
+mapSnd : (b1 -> b2) -> ( a, b1 ) -> ( a, b2 )
+mapSnd f v =
+    let
+        ( v1, v2 ) =
+            v
+    in
+    ( v1, f v2 )
+
+
+mapFst : (a1 -> a2) -> ( a1, b ) -> ( a2, b )
+mapFst f v =
+    let
+        ( v1, v2 ) =
+            v
+    in
+    ( f v1, v2 )
+
+
+twoSign : Int -> String
+twoSign x =
+    if x < 10 then
+        "0" ++ String.fromInt x
+
+    else
+        String.fromInt x
 
 
 findK : k -> List ( k, v ) -> Maybe v
@@ -112,6 +111,7 @@ emptySToNothing x =
         Just x
 
 
+ifOrEmpty : Bool -> List a -> List a
 ifOrEmpty if_ then_ =
     if if_ then
         then_
@@ -132,20 +132,6 @@ jumpToBottom id noOp =
         |> Task.attempt (\_ -> noOp)
 
 
-{-| turns "line1\\nline2" into "line1<br>\\nline2"
--}
-msgToHtml : String -> List (Html msg)
-msgToHtml msg =
-    let
-        lines =
-            String.lines msg
-
-        renderLine l =
-            [ Html.text l, Html.br [] [] ]
-    in
-    List.concatMap renderLine lines
-
-
 unique : List a -> List a
 unique list =
     List.foldl
@@ -160,6 +146,7 @@ unique list =
         list
 
 
+resToList : Result x a -> List a
 resToList x =
     case x of
         Err _ ->
@@ -169,19 +156,22 @@ resToList x =
             [ v ]
 
 
+def : a -> Maybe a -> a
 def =
     Maybe.withDefault
 
 
+mmap : (a -> b) -> Maybe a -> Maybe b
 mmap =
     Maybe.map
 
 
+andThen : (a -> Maybe b) -> Maybe a -> Maybe b
 andThen =
     Maybe.andThen
 
 
-flip : (a -> b -> c) -> (b -> a -> c)
+flip : (a -> b -> c) -> b -> a -> c
 flip f_ab b a =
     f_ab a b
 
@@ -196,16 +186,6 @@ textBeforeComma s =
 
         _ ->
             s
-
-
-renderZoneError : TimeZone.Error -> String
-renderZoneError err =
-    case err of
-        TimeZone.NoZoneName ->
-            "TimeZone error: No zone name"
-
-        TimeZone.NoDataForZoneName s ->
-            "TimeZone error: No data for zone name: " ++ s
 
 
 trueToOne : Bool -> Int
@@ -266,22 +246,3 @@ findAllAdjacentFreqs allFrequencies selectedFrequencies range =
                 not (List.member freq selectedFrequencies)
                     && List.any (\selected -> isInRange selected freq range) selectedFrequencies
             )
-
-
-networkKindVHFMapping kind =
-    case kind of
-        "VHF" ->
-            "УКХ"
-
-        other ->
-            other
-
-
-capitalize : String -> String
-capitalize str =
-    case String.uncons str of
-        Nothing ->
-            str
-
-        Just ( firstChar, rest ) ->
-            String.cons (Char.toUpper firstChar) rest

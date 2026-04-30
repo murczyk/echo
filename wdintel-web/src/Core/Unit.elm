@@ -4,7 +4,6 @@ import Bindings as B
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class)
-import Utils.Utils as Utils
 
 
 unitName : Dict Int B.Unit -> Int -> String
@@ -108,18 +107,6 @@ isChildUnitByLevels parentLevels childLevels =
             parentFilled == childPrefix
     in
     parentNotEmpty && childMoreSpecific && parentMatchesChildPrefix
-
-
-{-| Застаріла функція - замінена на isSameOrChildUnit
-Залишена для зворотної сумісності, але помічена як deprecated
--}
-sameRegiment : B.Unit -> B.Unit -> Bool
-sameRegiment unit1 unit2 =
-    if not (String.isEmpty unit1.regiment) && not (String.isEmpty unit2.regiment) then
-        unit1.regiment == unit2.regiment && unit1.army == unit2.army && unit1.division == unit2.division
-
-    else
-        unit1.id == unit2.id
 
 
 boldMasterUnit : Dict Int B.Unit -> B.Network -> Html msg

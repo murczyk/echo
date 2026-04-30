@@ -559,7 +559,7 @@ update vps msg model =
             , vps.message
             )
 
-        MarkBotTagWrongDone _ tagId (Err e) ->
+        MarkBotTagWrongDone _ _ (Err e) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити тег бота" e
             , vps.message
@@ -696,6 +696,7 @@ view ps messageTuple model =
         ]
 
 
+leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), masterUnits : Dict Int B.Unit, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
 leftColumn ( messageId, message ) ps model =
     let
         clipboardBlock msgType isBig =
@@ -1155,9 +1156,6 @@ rightColumn ( messageId, message ) ps model =
                                         , text (" " ++ (message.location |> def "Не встановлена"))
                                         ]
                                     ]
-
-                            datasource_kind =
-                                datasourceKind message ps.datasources
 
                             timeDistBlock =
                                 case ps.time of

@@ -278,7 +278,7 @@ export function AnalysisFiltersPanelSections({
         >
           <FormControlLabel
             control={<Checkbox checked={queryState.orWithExtendedForm} onChange={(_event, value) => updateQueryState({ orWithExtendedForm: value })} />}
-            label="З нотаткою"
+            label="З коментарем"
             sx={compactCheckboxLabelSx}
           />
           <FormControlLabel

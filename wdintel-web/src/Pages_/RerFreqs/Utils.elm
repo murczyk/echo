@@ -16,7 +16,7 @@ findConnectedNetworks selectedUnit networks masterUnits =
         sameRegimentUnits =
             case mSelUnit of
                 Just unit ->
-                    List.filter (\( id_, unit_ ) -> Unit.isSameOrChildUnit unit unit_) (Dict.toList masterUnits)
+                    List.filter (\( _, unit_ ) -> Unit.isSameOrChildUnit unit unit_) (Dict.toList masterUnits)
 
                 Nothing ->
                     []
@@ -24,8 +24,7 @@ findConnectedNetworks selectedUnit networks masterUnits =
         sameRegimentUnitIds =
             sameRegimentUnits |> List.map Tuple.first
     in
-    Dict.toList networks
-        |> List.map Tuple.second
+    Dict.values networks
         |> List.filter (\network -> List.any (\unitId -> List.member unitId sameRegimentUnitIds) (Maybe.withDefault [] network.unitIds))
 
 

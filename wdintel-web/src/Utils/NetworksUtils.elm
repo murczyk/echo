@@ -6,9 +6,9 @@ import Core.Unit as Unit
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class)
-import Utils.Utils exposing (networkKindVHFMapping)
 
 
+renderNetworkNameWithoutType : B.Network -> Dict Int B.Unit -> Html msg
 renderNetworkNameWithoutType network masterUnits =
     let
         hasNoUnits =
@@ -74,6 +74,7 @@ type NetworkKind
     | DMRe
 
 
+networkKindFromString : String -> NetworkKind
 networkKindFromString str =
     case str of
         "DMR" ->
@@ -89,6 +90,7 @@ networkKindFromString str =
             VHF
 
 
+networkKindToString : NetworkKind -> String
 networkKindToString networkKind =
     case networkKind of
         DMR ->
@@ -101,6 +103,7 @@ networkKindToString networkKind =
             "VHF"
 
 
+networkKindToLabel : NetworkKind -> String
 networkKindToLabel networkKind =
     case networkKind of
         DMR ->
@@ -113,6 +116,7 @@ networkKindToLabel networkKind =
             "УКХ"
 
 
+networkStringToLabel : String -> String
 networkStringToLabel networkString =
     case networkString of
         "VHF" ->

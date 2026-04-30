@@ -1,4 +1,4 @@
-module Shared.Components.Toast exposing (Level(..), Model, Msg(..), Toast, ToastV2, addError, addErrorV2, addErrors, addWarning, addWarningV2, init, overlay, update, view)
+module Shared.Components.Toast exposing (Level(..), Model, Msg(..), Toast, ToastV2, addError, addErrorV2, addErrors, addWarning, init, overlay, update, view)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -107,13 +107,6 @@ addToastV2 ps =
 addErrorV2 : (Msg -> msg) -> String -> String -> Cmd msg
 addErrorV2 toMsg title content =
     addToastV2 { toMsg = toMsg, level = Error, title = title, content = content }
-
-
-{-| Add warning toast with separate title and content (V2 API)
--}
-addWarningV2 : (Msg -> msg) -> String -> String -> Cmd msg
-addWarningV2 toMsg title content =
-    addToastV2 { toMsg = toMsg, level = Warning, title = title, content = content }
 
 
 {-| Legacy function - adds error toast with single label (backward compatibility)

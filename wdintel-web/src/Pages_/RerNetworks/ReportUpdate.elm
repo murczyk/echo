@@ -1,16 +1,16 @@
 module Pages_.RerNetworks.ReportUpdate exposing
-    ( updateReportFromForm
+    ( createReportDownloadEffect
+    , handleReportDownloadResponse
     , updateCommonSetting
     , updateExtendedSetting
-    , createReportDownloadEffect
-    , handleReportDownloadResponse
+    , updateReportFromForm
     )
 
 import Bytes exposing (Bytes)
+import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import File.Download as Download
-import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportType(..), ReportContext, ReportTypeOption(..))
-import Core.Types exposing (ApiError)
+import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportContext, ReportType(..), ReportTypeOption)
 import Utils.Api.ErrorHandling
 
 
@@ -23,7 +23,7 @@ updateReportFromForm option =
 
 {-| Оновлення налаштування "Лише активні частоти"
 -}
-updateCommonSetting : String -> Bool -> ReportType -> ReportType  
+updateCommonSetting : String -> Bool -> ReportType -> ReportType
 updateCommonSetting settingName checked currentReport =
     case ( settingName, currentReport ) of
         ( "activeFreqsOnly", AccordingToForm settings ) ->
@@ -86,10 +86,10 @@ updateExtendedSetting settingName checked currentReport =
 
 {-| Створення ефекту для завантаження звіту
 -}
-createReportDownloadEffect : 
-    ReportType 
-    -> ReportContext 
-    -> (ReportType -> ReportContext -> Effect msg) 
+createReportDownloadEffect :
+    ReportType
+    -> ReportContext
+    -> (ReportType -> ReportContext -> Effect msg)
     -> Effect msg
 createReportDownloadEffect reportType context apiCall =
     apiCall reportType context
@@ -97,11 +97,11 @@ createReportDownloadEffect reportType context apiCall =
 
 {-| Обробка відповіді завантаження звіту
 -}
-handleReportDownloadResponse : 
-    Result ApiError Bytes 
-    -> ReportContext 
+handleReportDownloadResponse :
+    Result ApiError Bytes
+    -> ReportContext
     -> (Bool -> model -> model)
-    -> model 
+    -> model
     -> ( model, Effect msg )
 handleReportDownloadResponse result context updateDownloadingState model =
     case result of

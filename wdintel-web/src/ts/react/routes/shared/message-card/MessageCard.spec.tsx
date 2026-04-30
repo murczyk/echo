@@ -38,6 +38,10 @@ vi.mock('@mui/icons-material/ExpandMore', () => ({
   default: () => <span>expand</span>,
 }));
 
+vi.mock('@mui/icons-material/ExpandLess', () => ({
+  default: () => <span>collapse</span>,
+}));
+
 /** Narrow width for tag-row measurement in compact layout (MessageCardTagChips `useLayoutEffect`). */
 const TAG_ROW_MEASURE_WIDTH_PX = 200;
 const LIGHT_CARD_BG = '#F8F9FB';
@@ -264,9 +268,11 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
     groupName: "Куп'янськ пеленг",
     senderName: 'Dow_Jones_2',
     copiedFeedbackId: null,
+    currentUser: { name: 'tester', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
     networkDisplayMap: { 7: 'р/м Alpha' },
     networkMap,
     tagsMap,
+    users: {},
     onBookmark: vi.fn(),
     onImportant: vi.fn(),
     onCopyText: vi.fn(),
@@ -404,6 +410,87 @@ describe('MessageCard', () => {
     if (suggestedButton == null) throw new Error('suggested button not found');
     await click(suggestedButton);
     expect(onAddSuggestedCallsign).toHaveBeenCalledWith('BRAVO');
+  });
+
+  it('orders toolbar actions as comment, copy, important, bookmark, edit, delete', async () => {
+    const onEditDetails = vi.fn();
+    const onDelete = vi.fn();
+    const view = await renderCard({
+      onEditDetails,
+      onDelete,
+    });
+    rendered.push(view);
+
+    const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
+
+    const labels = Array.from(toolbar.querySelectorAll('button')).map((button) => button.getAttribute('aria-label'));
+    expect(labels).toEqual([
+      'Редагувати коментар',
+      'Копіювати повідомлення',
+      'Позначити як важливе',
+      'Додати в закладки',
+      'Редагувати додаткові поля та позивні',
+      'Видалити',
+    ]);
+  });
+
+  it('shows comments from other organisms and hides comments from our organism', async () => {
+    const view = await renderCard({
+      messageComments: [
+        { id: 11, messageId: 42, comment: 'visible comment', login: 'other-login' },
+        { id: 12, messageId: 42, comment: 'hidden comment', login: 'same-org-login' },
+      ],
+      users: {
+        'other-login': { name: 'other-login', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+        'same-org-login': { name: 'same-org-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('visible comment');
+    expect(view.container.textContent).toContain('other-login');
+    expect(view.container.textContent).not.toContain('hidden comment');
+  });
+
+  it('collapses other comments after the first three and expands on demand', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const view = await renderCard({
+        displayMode: 'analysis',
+        messageComments: [
+          { id: 11, messageId: 42, comment: 'first comment', login: 'other-login-1' },
+          { id: 11, messageId: 42, comment: 'second comment', login: 'other-login-2' },
+          { id: 11, messageId: 42, comment: 'third comment', login: 'other-login-3' },
+          { id: 11, messageId: 42, comment: 'fourth comment', login: 'other-login-4' },
+        ],
+        users: {
+          'other-login-1': { name: 'other-login-1', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'other-login-2': { name: 'other-login-2', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'other-login-3': { name: 'other-login-3', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'other-login-4': { name: 'other-login-4', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+        },
+      });
+      rendered.push(view);
+
+      expect(view.container.textContent).toContain('first comment');
+      expect(view.container.textContent).toContain('second comment');
+      expect(view.container.textContent).toContain('third comment');
+      expect(view.container.textContent).not.toContain('fourth comment');
+
+      const toggleButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('розгорнути'),
+      );
+      if (toggleButton == null) throw new Error('expand button not found');
+      await click(toggleButton);
+
+      expect(view.container.textContent).toContain('fourth comment');
+      expect(
+        consoleErrorSpy.mock.calls.some((call) => String(call[0] ?? '').includes('Encountered two children with the same key')),
+      ).toBe(false);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it('keeps analysis-only callsign chips visible even without a catalog match', async () => {

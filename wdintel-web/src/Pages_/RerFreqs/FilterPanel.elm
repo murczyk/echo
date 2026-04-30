@@ -1,24 +1,17 @@
 module Pages_.RerFreqs.FilterPanel exposing (view)
 
-import Dict exposing (Dict)
-import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
+import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
-import Pages_.RerFreqs.Model exposing (Model, NetworkWorkflowStatus(..), TextLocation(..))
+import Pages_.RerFreqs.Model exposing (Model)
 import Pages_.RerFreqs.Msg exposing (Msg(..))
-import Pages_.RerFreqs.Utils as Utils
 import Select
 import Shared
-import Shared.Components.Button as Button
-import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Spinner
-import Shared.Components.Toggle as Toggle
 import Shared.Model exposing (isDarkMode)
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
-import Utils.Utils exposing (..)
 
 
 view : Shared.Model -> Model -> Html Msg
@@ -53,10 +46,10 @@ view shared model =
                     case model.callsignSearchResults of
                         Success callsigns ->
                             List.map .callsign callsigns
-                        
+
                         _ ->
                             []
-                
+
                 -- Create menu items from available callsigns
                 menuItems =
                     List.map
@@ -67,7 +60,7 @@ view shared model =
                                 }
                         )
                         availableCallsigns
-                
+
                 -- Selected items (currently filtered callsigns)
                 selectedItems =
                     List.map

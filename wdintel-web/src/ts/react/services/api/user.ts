@@ -1,6 +1,6 @@
 import { SettingsSaveReq, User } from '../../../../Bindings';
 
-import { getJson, postVoid } from './client';
+import { getJson, postJson, postVoid } from './client';
 
 type UserLike = {
   name?: string;
@@ -51,6 +51,11 @@ function toSettingsSaveReqBody(req: SettingsSaveReq): SettingsSaveReqBody {
 export async function fetchCurrentUser(signal?: AbortSignal): Promise<User> {
   const data = await getJson<UserLike>('/api/user', { signal });
   return normalizeUser(data ?? {});
+}
+
+export async function fetchUserInfo(login: string): Promise<User> {
+  const data = await postJson<UserLike>('/api/user/user-info', { login });
+  return normalizeUser(data as UserLike);
 }
 
 export async function saveUserSettings(req: SettingsSaveReq): Promise<void> {

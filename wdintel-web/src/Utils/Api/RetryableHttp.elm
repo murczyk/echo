@@ -1,16 +1,15 @@
 module Utils.Api.RetryableHttp exposing
     ( defaultRetryConfig
-    , retryableGet
     , retryablePost
     )
 
 import Core.Types exposing (ApiError)
-import Dict exposing (Dict)
+import Dict
 import Effect as E exposing (Effect)
 import Http
 import Json.Decode as D
 import Task exposing (Task)
-import Utils.Api.Retry as Retry exposing (Policy, exponentialBackoff, maxDuration, maxRetries, with)
+import Utils.Api.Retry exposing (Policy, exponentialBackoff, maxDuration, maxRetries, with)
 
 
 type alias RetryConfig =
@@ -63,28 +62,6 @@ retryablePost config toMsg request =
     E.sendCmd (Task.attempt toMsg httpTask)
 
 
-retryableGet :
-    RetryConfig
-    -> (Result ApiError a -> msg)
-    -> { url : String, decoder : D.Decoder a }
-    -> Effect msg
-retryableGet config toMsg request =
-    let
-        httpTask : Task ApiError a
-        httpTask =
-            Http.task
-                { method = "GET"
-                , headers = []
-                , url = request.url
-                , body = Http.emptyBody
-                , resolver = Http.stringResolver (resolveJson request.decoder)
-                , timeout = Nothing
-                }
-                |> with (toRetryPolicies config)
-    in
-    E.sendCmd (Task.attempt toMsg httpTask)
-
-
 resolveJson : D.Decoder a -> Http.Response String -> Result ApiError a
 resolveJson decoder response =
     case response of
@@ -97,7 +74,7 @@ resolveJson decoder response =
         Http.NetworkError_ ->
             Err { httpError = Http.NetworkError, formErrors = Dict.empty, errors = [] }
 
-        Http.BadStatus_ metadata body ->
+        Http.BadStatus_ metadata _ ->
             Err { httpError = Http.BadStatus metadata.statusCode, formErrors = Dict.empty, errors = [] }
 
         Http.GoodStatus_ _ body ->
@@ -107,11 +84,3 @@ resolveJson decoder response =
 
                 Err err ->
                     Err { httpError = Http.BadBody (D.errorToString err), formErrors = Dict.empty, errors = [] }
-
-
-handleHttpError : Http.Error -> ApiError
-handleHttpError err =
-    { httpError = err
-    , formErrors = Dict.empty
-    , errors = []
-    }

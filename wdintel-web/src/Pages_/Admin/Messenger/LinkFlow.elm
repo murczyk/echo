@@ -1,39 +1,37 @@
 module Pages_.Admin.Messenger.LinkFlow exposing
-    ( LinkFlow
-    , PhoneForm
-    , ApiForm
-    , QrData
+    ( ApiForm
     , FlowType
-    , initPhoneFlow
-    , initApiFlow
-    , isApi
-    , resetFlow
-    , handleLinkResult
-    , updateQrCode
-    , updatePhoneNumber
-    , updateMessengerType
-    , updateName
-    , updateDescription
-    , updateAorId
-    , updateApiEndpoint
-    , updateApiUser
-    , updateSelectedApiUser
-    , getPhoneForm
+    , LinkFlow
+    , PhoneForm
+    , QrData
+    , flowTypeToString
     , getApiForm
-    , getQrData
+    , getCurrentFlowType
     , getErrorMessage
+    , getPhoneForm
+    , getQrData
     , getSuccessAccount
+    , handleLinkResult
+    , initApiFlow
+    , initPhoneFlow
+    , isApi
+    , isApiFlowType
+    , isInErrorState
     , isInFormState
     , isInQrState
     , isInSuccessState
-    , isInErrorState
-    , getCurrentFlowType
-    , flowTypeToString
-    , stringToFlowType
-    , phoneFlowType
-    , apiFlowType
     , isPhoneFlowType
-    , isApiFlowType
+    , markError
+    , resetFlow
+    , stringToFlowType
+    , updateAorId
+    , updateApiEndpoint
+    , updateDescription
+    , updateMessengerType
+    , updateName
+    , updatePhoneNumber
+    , updateQrCode
+    , updateSelectedApiUser
     )
 
 import Bindings as B
@@ -53,13 +51,13 @@ type PhoneFlow
     = PhoneFormState PhoneForm
     | PhoneQrCode QrData
     | PhoneSuccess B.EchoAccountF1
-    | PhoneError { message : String, accountId : Int, account : B.EchoAccountF1 }
+    | PhoneError String
 
 
 type ApiFlow
     = ApiFormState ApiForm
     | ApiSuccess B.EchoAccountF1
-    | ApiError { message : String, accountId : Int, account : B.EchoAccountF1 }
+    | ApiError String
 
 
 type alias QrData =
@@ -135,6 +133,16 @@ handleLinkResult linkRsp linkFlow =
 
         LinkApi _ ->
             LinkApi <| ApiSuccess linkRsp.account
+
+
+markError : String -> LinkFlow -> LinkFlow
+markError message linkFlow =
+    case linkFlow of
+        LinkPhone _ ->
+            LinkPhone <| PhoneError message
+
+        LinkApi _ ->
+            LinkApi <| ApiError message
 
 
 updateQrCode : String -> LinkFlow -> LinkFlow
@@ -216,16 +224,6 @@ updateApiEndpoint apiEndpoint linkFlow =
             linkFlow
 
 
-updateApiUser : String -> LinkFlow -> LinkFlow
-updateApiUser apiUser linkFlow =
-    case linkFlow of
-        LinkApi (ApiFormState form) ->
-            LinkApi <| ApiFormState { form | selectedApiUser = Just apiUser }
-
-        _ ->
-            linkFlow
-
-
 updateSelectedApiUser : Maybe String -> LinkFlow -> LinkFlow
 updateSelectedApiUser selectedApiUser linkFlow =
     case linkFlow of
@@ -269,11 +267,11 @@ getQrData linkFlow =
 getErrorMessage : LinkFlow -> Maybe String
 getErrorMessage linkFlow =
     case linkFlow of
-        LinkPhone (PhoneError errorData) ->
-            Just errorData.message
+        LinkPhone (PhoneError message) ->
+            Just message
 
-        LinkApi (ApiError errorData) ->
-            Just errorData.message
+        LinkApi (ApiError message) ->
+            Just message
 
         _ ->
             Nothing
@@ -371,16 +369,6 @@ stringToFlowType str =
 
         _ ->
             Nothing
-
-
-phoneFlowType : FlowType
-phoneFlowType =
-    PhoneFlow
-
-
-apiFlowType : FlowType
-apiFlowType =
-    ApiFlow
 
 
 isPhoneFlowType : FlowType -> Bool

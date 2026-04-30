@@ -1,25 +1,24 @@
-module Shared.Components.Table.View exposing
-    ( view
-    , getSortedData
-    )
+module Shared.Components.Table.View exposing (view, getSortedData)
 
 {-| This module handles HTML rendering for tables.
 
+
 # View Functions
+
 @docs view, getSortedData
 
 -}
 
-import Shared.Components.Table.Column as Column exposing (ColumnData, HtmlDetails)
-import Shared.Components.Table.Config as Config exposing (Config, Status(..))
-import Shared.Components.Table.Sorter as Sorter exposing (Sorter)
-import Shared.Components.Table.State as State exposing (State)
 import Html exposing (Attribute, Html)
 import Html.Attributes
 import Html.Events as E
 import Html.Keyed as Keyed
-import Html.Lazy exposing (lazy2, lazy3)
+import Html.Lazy exposing (lazy3)
 import Json.Decode as Json
+import Shared.Components.Table.Column exposing (ColumnData)
+import Shared.Components.Table.Config as Config exposing (Config, Status(..))
+import Shared.Components.Table.Sorter as Sorter
+import Shared.Components.Table.State as State exposing (State)
 
 
 {-| Take a list of data and turn it into a table. The `Config` argument is the
@@ -53,10 +52,10 @@ view ((Config.Config { toId, toMsg, columns, customizations }) as conf) state da
         withFoot =
             case customizations.tfoot of
                 Nothing ->
-                    tbody :: []
+                    [ tbody ]
 
                 Just { attributes, children } ->
-                    Html.tfoot attributes children :: tbody :: []
+                    [ Html.tfoot attributes children, tbody ]
 
         -- Generate <colgroup> with optional column widths
         colGroup =
@@ -65,8 +64,11 @@ view ((Config.Config { toId, toMsg, columns, customizations }) as conf) state da
                     let
                         attrs =
                             case colData.width of
-                                Nothing -> []
-                                Just w -> [ Html.Attributes.style "width" w ]
+                                Nothing ->
+                                    []
+
+                                Just w ->
+                                    [ Html.Attributes.style "width" w ]
                     in
                     Html.col attrs []
             in
@@ -115,8 +117,7 @@ toHeaderInfo (State.State sortName isReversed) toMsg { name, sorter } =
 onClick : String -> Bool -> (State -> msg) -> Attribute msg
 onClick name isReversed toMsg =
     E.on "click" <|
-        Json.map toMsg <|
-            Json.map2 State.State (Json.succeed name) (Json.succeed isReversed)
+        Json.succeed (toMsg <| State.State name isReversed)
 
 
 {-| Render a single table row.
@@ -161,5 +162,5 @@ sort (State.State selectedColumn isReversed) columnData data =
 {-| Return the data sorted exactly as it will be displayed on the screen.
 -}
 getSortedData : Config data msg -> State -> List data -> List data
-getSortedData (Config.Config { toId, toMsg, columns, customizations }) state data =
+getSortedData (Config.Config { columns }) state data =
     sort state columns data

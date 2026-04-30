@@ -6,6 +6,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 
 
+hasError : comparable -> Dict.Dict comparable v -> Bool
 hasError fld formErrors =
     case Dict.get fld formErrors of
         Just _ ->
@@ -15,6 +16,7 @@ hasError fld formErrors =
             False
 
 
+isInvalidCls : comparable -> Dict.Dict comparable v -> Html.Attribute msg
 isInvalidCls fld formErrors =
     if hasError fld formErrors then
         class "is-invalid"
@@ -23,6 +25,7 @@ isInvalidCls fld formErrors =
         classList []
 
 
+fieldError : comparable -> Dict.Dict comparable String -> List (Html msg)
 fieldError fld formErrors =
     case Dict.get fld formErrors of
         Just e ->
@@ -32,6 +35,7 @@ fieldError fld formErrors =
             []
 
 
+googleMapsOutLink : Float -> Float -> Html msg
 googleMapsOutLink lat lng =
     a
         [ href <|

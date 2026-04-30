@@ -1,6 +1,7 @@
 import type {
   AnalysisStatsReq,
   EditFreqUnitNameReq,
+  BatchMessageCommentsReq,
   InboxSubmitReq,
   ReportPreviewReq,
   ReportType,
@@ -32,6 +33,7 @@ import type {
   Network,
   NetworkUnit,
   NewCallsignsRes,
+  MessageComments,
   ListUnitsByIdReq,
   ListUnitsByIdRsp,
   SavedFilter,
@@ -254,6 +256,11 @@ export async function fetchAnalysisMapPoints(req: {
 export async function fetchMessagesByIds(messageIds: number[]): Promise<Array<[number, InboxMessage]>> {
   const raw = await postJson<unknown>('/api/rer-importer/messages-by-id', transformCamelToSnake({ messageIds }));
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+}
+
+export async function fetchMessageComments(req: BatchMessageCommentsReq): Promise<MessageComments> {
+  const raw = await postJson<unknown>('/api/rer/message/comments-batch', transformCamelToSnake(req));
+  return transformSnakeToCamel<MessageComments>(raw);
 }
 
 export async function fetchAnalysisCallsignInfos(callsigns: string[]): Promise<CallsignInfoRes[]> {

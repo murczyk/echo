@@ -1,6 +1,6 @@
 module Utils.Api.Retry exposing
     ( Policy(..), with
-    , maxRetries, maxDuration, constantInterval, exponentialBackoff
+    , maxRetries, maxDuration, exponentialBackoff
     )
 
 {-| Add retries to a task, based on a list of retry policies, until any one of
@@ -11,14 +11,14 @@ the policies fail too.
 
 ## Common policies
 
-@docs maxRetries, maxDuration, constantInterval, exponentialBackoff
+@docs maxRetries, maxDuration, exponentialBackoff
 
 -}
 
 import Process
 import Random
 import Task exposing (Task)
-import Time exposing (now)
+import Time
 
 
 {-| A [`Policy`](#Policy) is attached with a function that will return another
@@ -110,27 +110,8 @@ maxDuration duration =
     Policy nextPolicy
 
 
-{-| Sleep for the same number of milliseconds before every retry.
-
-    Retry.with [ Retry.constantInterval 1000 ] originalTask
-        |> Task.attempt DidOriginalTask
-
-NOTE: The code above will keep retrying `originalTask`; best to combine with
-[`maxRetries`](#maxRetries) or [`maxDuration`](#maxDuration)
-
--}
-constantInterval : Float -> Policy x
-constantInterval duration =
-    let
-        nextPolicy _ sameTask _ =
-            Process.sleep duration
-                |> Task.andThen (\_ -> Task.succeed sameTask)
-    in
-    Policy nextPolicy
-
-
 {-| Sleep for an increasing number of milliseconds before every retry. Backoff
-algorithim is based off [https://github.com/cenkalti/backoff](https://github.com/cenkalti/backoff/blob/4b4cebaf850ec58f1bb1fec5bdebdf8501c2bc3f/exponential.go#L144-L153)
+algorithim is based off [<https://github.com/cenkalti/backoff>](https://github.com/cenkalti/backoff/blob/4b4cebaf850ec58f1bb1fec5bdebdf8501c2bc3f/exponential.go#L144-L153)
 
     Retry.with [ Retry.exponentialBackoff { interval = 500, maxInterval = 3000 } ] originalTask
         |> Task.attempt DidOriginalTask
@@ -149,9 +130,9 @@ exponentialBackoff { interval, maxInterval } =
                         (nextIntervalGenerator { randomizationFactor = 0.5, multiplier = 1.5, interval = currInterval })
                         seed
 
-                nextPolicy _ _ err =
+                nextPolicy _ _ _ =
                     Process.sleep currInterval
-                        |> Task.andThen (\_ -> Task.succeed (backoffWith nextSeed (min calcInterval maxInterval)))
+                        |> Task.map (\_ -> backoffWith nextSeed (min calcInterval maxInterval))
             in
             Policy nextPolicy
     in

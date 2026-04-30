@@ -1,35 +1,37 @@
 module Shared.Components.Table.Column exposing
-    ( Column
-    , ColumnData
-    , HtmlDetails
-    , stringColumn
-    , intColumn
-    , floatColumn
-    , customColumn
-    , veryCustomColumn
-    , textDetails
+    ( Column, ColumnData, HtmlDetails
+    , stringColumn, intColumn
+    , customColumn, veryCustomColumn
     , unwrapColumn
     , withColumnWidth
     )
 
 {-| This module handles column definitions for tables.
 
+
 # Column Types
+
 @docs Column, ColumnData, HtmlDetails
 
+
 # Basic Columns
-@docs stringColumn, intColumn, floatColumn
+
+@docs stringColumn, intColumn
+
 
 # Custom Columns
+
 @docs customColumn, veryCustomColumn
 
+
 # Helpers
-@docs textDetails, unwrapColumn
+
+@docs unwrapColumn
 
 -}
 
-import Shared.Components.Table.Sorter as Sorter exposing (Sorter)
 import Html exposing (Attribute, Html)
+import Shared.Components.Table.Sorter as Sorter exposing (Sorter)
 
 
 {-| Sometimes you must use a `<td>` tag, but the attributes and children are up
@@ -85,18 +87,6 @@ intColumn name toInt =
         { name = name
         , viewData = textDetails << String.fromInt << toInt
         , sorter = Sorter.increasingOrDecreasingBy toInt
-        , width = Nothing
-        }
-
-
-{-| Create a column that displays floats and can be sorted numerically.
--}
-floatColumn : String -> (data -> Float) -> Column data msg
-floatColumn name toFloat =
-    Column
-        { name = name
-        , viewData = textDetails << String.fromFloat << toFloat
-        , sorter = Sorter.increasingOrDecreasingBy toFloat
         , width = Nothing
         }
 
@@ -179,6 +169,7 @@ veryCustomColumn :
     -> Column data msg
 veryCustomColumn { name, viewData, sorter } =
     Column <| ColumnData name viewData sorter Nothing
+
 
 {-| Add new function
 -}

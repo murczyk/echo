@@ -27,8 +27,8 @@ import Shared.Components.Table as Table
 import Shared.Model exposing (isDarkMode)
 import Utils.Api.ErrorHandling
 import Utils.Components exposing (fieldError, isInvalidCls)
-import Utils.NetworksUtils as NetworksUtils
 import Utils.Modulations as Modulations
+import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import View exposing (View)
@@ -128,12 +128,7 @@ type alias Model =
 
 
 init : Route () -> Shared.Model -> () -> ( Model, Effect Msg )
-init route _ () =
-    let
-        -- Parse frequency from query parameters
-        _ =
-            Dict.get "freq" route.query
-    in
+init _ _ () =
     ( { formErrors = Dict.empty
       , createNetworkState =
             { freqs = Nothing
@@ -428,7 +423,7 @@ update shared route msg model =
                 items =
                     case ( postsSelect.items, shared.posts ) of
                         ( [], RD.Success posts ) ->
-                            if List.length (Dict.toList posts) > 0 then
+                            if Dict.size posts > 0 then
                                 List.map (\post -> Select.basicMenuItem { item = post.id, label = post.name }) (Dict.values posts)
 
                             else
@@ -816,7 +811,7 @@ viewMissingFieldsBlock shared model =
                     , span [ class "text-red-500 ml-1" ] [ text "*" ]
                     ]
                 , div [ class "col-span-2" ]
-                    ((input
+                    (input
                         [ class "form-input w-full h-[40px]"
                         , type_ "text"
                         , value model.createNetworkState.name
@@ -826,7 +821,6 @@ viewMissingFieldsBlock shared model =
                         , placeholder "введіть назву"
                         ]
                         []
-                     )
                         :: fieldError "name" model.formErrors
                     )
                 ]
@@ -893,12 +887,14 @@ viewMissingFieldsBlock shared model =
                                         Select.basicMenuItem
                                             { item = unitId
                                             , label =
-                                                case RD.withDefault [] model.units of
-                                                    units ->
-                                                        List.filter (\u -> u.id == unitId) units
-                                                            |> List.head
-                                                            |> Maybe.map .name
-                                                            |> Maybe.withDefault (String.fromInt unitId)
+                                                let
+                                                    units =
+                                                        RD.withDefault [] model.units
+                                                in
+                                                List.filter (\u -> u.id == unitId) units
+                                                    |> List.head
+                                                    |> Maybe.map .name
+                                                    |> Maybe.withDefault (String.fromInt unitId)
                                             }
                                     )
 
@@ -1108,7 +1104,7 @@ createMainInfoBlock createReq _ model =
                 , span [ class "text-red-500 ml-1" ] [ text "*" ]
                 ]
             , div [ class "col-span-2" ]
-                ((input
+                (input
                     [ value createReq.location
                     , onInput (\newLocation -> UpdateNetworkState (\state -> { state | location = newLocation }))
                     , onBlur (ValidateField "location")
@@ -1117,7 +1113,6 @@ createMainInfoBlock createReq _ model =
                     , isInvalidCls "location" model.formErrors
                     ]
                     []
-                 )
                     :: fieldError "location" model.formErrors
                 )
             ]

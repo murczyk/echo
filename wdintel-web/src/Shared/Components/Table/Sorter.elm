@@ -1,21 +1,20 @@
 module Shared.Components.Table.Sorter exposing
-    ( Sorter(..)
-    , unsortable
-    , increasingBy
-    , decreasingBy
-    , increasingOrDecreasingBy
-    , decreasingOrIncreasingBy
-    , applySorter
-    , findSorter
+    ( Sorter(..), unsortable
+    , increasingOrDecreasingBy, decreasingOrIncreasingBy
+    , applySorter, findSorter
     )
 
 {-| This module handles sorting logic for table columns.
 
+
 # Sorter Types
-@docs Sorter, unsortable, increasingBy, decreasingBy
+
+@docs Sorter, unsortable
 @docs increasingOrDecreasingBy, decreasingOrIncreasingBy
 
+
 # Internal Sorting Functions
+
 @docs applySorter, findSorter
 
 -}
@@ -38,33 +37,6 @@ sort based on that column.
 unsortable : Sorter data
 unsortable =
     None
-
-
-{-| Create a sorter that can only display the data in increasing order. If we
-want a table of people, sorted alphabetically by name, we would say this:
-
-    sorter : Sorter { a | name : comparable }
-    sorter =
-        increasingBy .name
-
--}
-increasingBy : (data -> comparable) -> Sorter data
-increasingBy toComparable =
-    Increasing (List.sortBy toComparable)
-
-
-{-| Create a sorter that can only display the data in decreasing order. If we
-want a table of countries, sorted by population from highest to lowest, we
-would say this:
-
-    sorter : Sorter { a | population : comparable }
-    sorter =
-        decreasingBy .population
-
--}
-decreasingBy : (data -> comparable) -> Sorter data
-decreasingBy toComparable =
-    Decreasing (List.sortBy toComparable)
 
 
 {-| Sometimes you want to be able to sort data in increasing _or_ decreasing

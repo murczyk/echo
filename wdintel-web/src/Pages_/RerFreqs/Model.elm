@@ -1,4 +1,4 @@
-module Pages_.RerFreqs.Model exposing (FilterState, FurtherInvestigationFilter(..), Model, NetworkSearchState, NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
+module Pages_.RerFreqs.Model exposing (FilterState, FurtherInvestigationFilter(..), Model, NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -6,7 +6,7 @@ import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Select
-import Set exposing (Set)
+import Set
 import Shared.Components.DateTime
 import Shared.Components.Table as Table
 import Time
@@ -94,12 +94,6 @@ type alias FilterState =
     { freq : String
     , unit : String
     , callsigns : List String
-    }
-
-
-type alias NetworkSearchState =
-    { showNetworksWithoutUnit : Bool
-    , selectedNetworkId : Maybe Int
     }
 
 

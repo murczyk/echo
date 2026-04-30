@@ -21,7 +21,6 @@ import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
 import Shared.Components.Watermark as Watermark
-import Shared.Icons as Icons
 import Shared.MarkedText
 import String exposing (fromInt, trim)
 import Time

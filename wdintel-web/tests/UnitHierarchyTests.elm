@@ -1,6 +1,5 @@
 module UnitHierarchyTests exposing (suite)
 
-import Bindings as B
 import Core.UnitHierarchy
 import Expect
 import Test exposing (Test, describe, test)

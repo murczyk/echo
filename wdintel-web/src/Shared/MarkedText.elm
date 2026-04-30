@@ -1,4 +1,4 @@
-module Shared.MarkedText exposing (MetadataLink, Model, fromPlainText, new, view, viewWithHintResults)
+module Shared.MarkedText exposing (MetadataLink, Model, fromPlainText, new, viewWithHintResults)
 
 import Bindings as B
 import Core.Callsigns.HintStrategy as HintStrategy
@@ -37,39 +37,9 @@ fromPlainText bodyText =
         |> new
 
 
-{-| DEPRECATED:Використовуйте viewWithHintResults з повним HintResult замість цієї функції
--}
-view : Dict String ( List B.CallsignInfo, List B.CallsignInfo ) -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> Model msg -> List (Html msg)
-view prioritizedCallsignsDict signals networks mFreq (Model config) =
-    viewWithHintResults
-        (Dict.map (\_ -> createHintResultFromTuple) prioritizedCallsignsDict)
-        signals
-        networks
-        mFreq
-        ""
-        Nothing
-        []
-        (Model config)
-
-
-{-| Конвертує tuple (prioritized, nonPrioritized) в HintResult
-DEPRECATED: Використовуйте viewWithHintResults з повним HintResult замість цієї функції
--}
-createHintResultFromTuple : ( List B.CallsignInfo, List B.CallsignInfo ) -> HintStrategy.HintResult
-createHintResultFromTuple ( prioritized, nonPrioritized ) =
-    let
-        strategy =
-            HintStrategy.NoHints
-    in
-    { strategy = strategy
-    , prioritizedCallsigns = prioritized
-    , iconClass = HintStrategy.getIconClass strategy
-    }
-
-
 {-| Нова функція для роботи з HintResult.
-  bodyText: original message text; point tokens are rendered as the slice bodyText[begin..end].
-  pointTokenClickUrl: when Just, point tokens are links to the analysis map; when Nothing, plain text (no highlight).
+bodyText: original message text; point tokens are rendered as the slice bodyText[begin..end].
+pointTokenClickUrl: when Just, point tokens are links to the analysis map; when Nothing, plain text (no highlight).
 -}
 viewWithHintResults : Dict String HintStrategy.HintResult -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> String -> Maybe (String -> String) -> List MetadataLink -> Model msg -> List (Html msg)
 viewWithHintResults hintResultsDict signals networks mFreq bodyText pointTokenClickUrl metadataLinks (Model config) =

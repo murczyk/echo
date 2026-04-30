@@ -174,7 +174,7 @@ describe('rer-analysis-neo callsign hints', () => {
     });
 
     expect(result.strategy).toBe('system');
-    expect(result.iconClass).toBe('bi-info-circle');
+    expect(result.iconClass).toBe('info-circle');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1, 2]);
     expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 командир 1 рота \n🐷 заступник 2 рота ');
   });
@@ -249,7 +249,7 @@ describe('rer-analysis-neo callsign hints', () => {
     });
 
     expect(result.strategy).toBe('system');
-    expect(result.iconClass).toBe('bi-info-circle');
+    expect(result.iconClass).toBe('info-circle');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([3]);
     expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 начальник штаб ');
   });
@@ -289,7 +289,7 @@ describe('rer-analysis-neo callsign hints', () => {
     });
 
     expect(result.strategy).toBe('network');
-    expect(result.iconClass).toBe('bi-info-circle-fill');
+    expect(result.iconClass).toBe('info-circle-fill');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
     expect(formatCallsignHintTooltip(result)).toBe('Позивні підрозділів мережі:\n🐷 командир 1 рота ');
   });
@@ -357,7 +357,7 @@ describe('rer-analysis-neo callsign hints', () => {
     });
 
     expect(result.strategy).toBe('network');
-    expect(result.iconClass).toBe('bi-info-circle-fill');
+    expect(result.iconClass).toBe('info-circle-fill');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
   });
 
@@ -395,7 +395,7 @@ describe('rer-analysis-neo callsign hints', () => {
     });
 
     expect(result.strategy).toBe('network');
-    expect(result.iconClass).toBe('bi-info-circle-fill');
+    expect(result.iconClass).toBe('info-circle-fill');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
     expect(formatCallsignHintTooltip(result)).toBe('Позивні підрозділів мережі:\n🐷 командир взводу 3 тр ');
   });
@@ -424,7 +424,7 @@ describe('rer-analysis-neo callsign hints', () => {
     });
 
     expect(result.strategy).toBe('system');
-    expect(result.iconClass).toBe('bi-info-circle');
+    expect(result.iconClass).toBe('info-circle');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([3]);
     expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 начальник штаб ');
   });

@@ -359,6 +359,7 @@ type ReloadParams = {
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
   setTopUnits: Setter<AnalysisCountItem[]>;
+  loadMessageComments?: (messages: Array<[number, InboxMessage]>, forceReload?: boolean) => Promise<void>;
   invalidateSummaryLoads?: () => void;
   invalidateTopSidebarLoads?: () => void;
   loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => Promise<void>;
@@ -440,6 +441,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       params.setNoMoreToLoad(isAnalysisInboxPageExhausted(inboxRsp.inboxItems, inboxRsp.pageLimit));
       params.setHasLoadedInitialMessages(true);
       params.setMessagesLoading(false);
+      void params.loadMessageComments?.(inboxRsp.inboxItems ?? [], true);
 
       let freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
       try {
@@ -479,6 +481,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltInboxRsp;
             resolvedFreqsRsp = rebuiltFreqsRsp;
+            void params.loadMessageComments?.(rebuiltInboxRsp.inboxItems ?? [], true);
           } catch (loadError) {
             if (isStaleReload()) return null;
             if (!params.onUnauthorized(loadError)) {

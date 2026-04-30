@@ -4,9 +4,6 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Shared.Components.Button as Button
-import Shared.Components.Console
-import Shared.Components.Spinner
 import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -15,12 +12,14 @@ import File.Download as Download
 import File.Select
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (..)
 import Layouts
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.Console
+import Shared.Components.Spinner
 import Shared.Model exposing (isDarkMode)
 import Task
 import Utils.Api.ErrorHandling

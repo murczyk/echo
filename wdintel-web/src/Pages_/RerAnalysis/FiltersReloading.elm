@@ -1,10 +1,9 @@
-module Pages_.RerAnalysis.FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), endpoints, focusAndReloadOptionsIfNeeded, handleFilterState, invalidateFiltersState)
+module Pages_.RerAnalysis.FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), endpoints, handleFilterState, invalidateFiltersState)
 
-import Api
 import Bindings as B
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
-import Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, Model)
+import Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot)
 import Pages_.RerAnalysis.Msg exposing (Msg(..))
 import Select
 import Utils.RemoteData as RD exposing (RemoteData(..))
@@ -154,16 +153,15 @@ invalidateFiltersState filterTriggeredChange model =
 
 focusedItemsForKey : String -> Maybe FocusedFilterSnapshot -> Maybe (List String)
 focusedItemsForKey filterKey focusedFilterItemsBeforeChange =
-    case focusedFilterItemsBeforeChange of
-        Just snapshot ->
-            if snapshot.filterKey == filterKey then
-                Just snapshot.itemsBeforeChange
+    focusedFilterItemsBeforeChange
+        |> Maybe.andThen
+            (\snapshot ->
+                if snapshot.filterKey == filterKey then
+                    Just snapshot.itemsBeforeChange
 
-            else
-                Nothing
-
-        Nothing ->
-            Nothing
+                else
+                    Nothing
+            )
 
 
 focusAndReloadOptionsIfNeeded : RemoteData ApiError a -> Maybe (List String) -> FilterDataState

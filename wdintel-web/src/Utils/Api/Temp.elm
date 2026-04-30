@@ -1,9 +1,9 @@
 module Utils.Api.Temp exposing (..)
 
-import Dict exposing (Dict)
+import Core.Types exposing (ApiError)
+import Dict
 import Http
 import Json.Decode as Decode
-import Core.Types exposing (ApiError)
 
 
 leExpectJson : (Result ApiError a -> msg) -> Decode.Decoder a -> Http.Expect msg

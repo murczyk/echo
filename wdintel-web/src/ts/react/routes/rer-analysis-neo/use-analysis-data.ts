@@ -5,6 +5,7 @@ import type {
   FreqDailyActivityCount,
   FreqDetailedPoint,
   InboxMessage,
+  MessageComment,
   NetJsonGraphAndMeta,
   Network,
   NetworkUnit,
@@ -14,12 +15,13 @@ import type {
   SignalProfileEntry,
   SummaryTableFreqRow,
   Tag,
+  User,
   Unit,
 } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchInboxMessages } from '../../services/api/analysis';
-import { buildInboxReq } from './helpers';
+import { buildInboxReq, queryStateComparisonKey } from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { buildNetworkDisplayMap } from './message-utils';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
@@ -29,6 +31,7 @@ import { useAnalysisDataMessageActions } from './use-analysis-data.message-actio
 import { reloadAnalysisData } from './use-analysis-data.reload';
 import { emptyNewCallsigns, emptyOptions, isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
+import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
 import {
   useLoadMissingNetworksForMessages,
   useLoadNewCallsigns,
@@ -47,6 +50,7 @@ import type {
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
 export function useAnalysisData({
+  currentUser,
   centerTab,
   newestFirst,
   onError,
@@ -65,6 +69,7 @@ export function useAnalysisData({
   const [counts, setCounts] = useState<CountStatsRsp | null>(null);
   const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [messageComments, setMessageComments] = useState<Record<number, MessageComment[]>>({});
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState<SummaryTableFreqRow[]>([]);
   const [rightSidebarLoading, setRightSidebarLoading] = useState(false);
@@ -98,17 +103,27 @@ export function useAnalysisData({
   const [groupsActivityPeriod, setGroupsActivityPeriod] = useState<AnalysisGroupsActivityPeriod>('selected');
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
   const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
+  const [users, setUsers] = useState<Record<string, User | null>>({});
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
   const [networks, setNetworks] = useState<Network[]>([]);
   const networksRef = useRef(networks);
+  const currentUserRef = useRef(currentUser);
+  const messageCommentsRef = useRef(messageComments);
+  const usersRef = useRef(users);
   const mapMessagesLoadVersionRef = useRef(0);
   const mapDateRangeLoadVersionRef = useRef(0);
+  const messageCommentsLoadVersionRef = useRef(0);
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const optionsFreqsRef = useRef<string[]>([]);
+  const reloadTriggerKey = useMemo(
+    () => `${queryStateComparisonKey(queryState) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}`,
+    [newestFirst, queryState],
+  );
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
+  const lastReloadTriggerKeyRef = useRef<string | null>(null);
   const loadMoreMessagesRequestRef = useRef(0);
   const newCallsignsRequestRef = useRef(0);
   const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
@@ -137,6 +152,18 @@ export function useAnalysisData({
   useEffect(() => {
     unitsMapRef.current = unitsMap;
   }, [unitsMap]);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  useEffect(() => {
+    messageCommentsRef.current = messageComments;
+  }, [messageComments]);
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
 
   const invalidateMessagePaging = useCallback(() => {
     loadMoreMessagesRequestRef.current += 1;
@@ -253,6 +280,7 @@ export function useAnalysisData({
     setMapOpenMessages,
     setMapPoints,
     setMessages,
+    setMessageComments,
     setNetworkDisplayMap,
     setNetworks,
     setNewCallsigns,
@@ -271,9 +299,32 @@ export function useAnalysisData({
     setTopUnits,
     setUnitsMap,
     setHasLoadedInitialMessages,
+    invalidateMessageCommentsLoads: () => {
+      messageCommentsLoadVersionRef.current += 1;
+      setMessageComments({});
+    },
   });
 
+  const loadMessageComments = useCallback(
+    async (loadedMessages: Array<[number, InboxMessage]>, forceReload = false) => {
+      await loadMissingMessageCommentsForMessages(loadedMessages, {
+        authUserName: currentUserRef.current?.name ?? null,
+        currentUser: currentUserRef.current,
+        messageComments: messageCommentsRef.current,
+        messageCommentsLoadVersionRef,
+        onError,
+        onUnauthorized,
+        setMessageComments,
+        setUsers,
+        users: usersRef.current,
+      }, forceReload);
+    },
+    [onError, onUnauthorized, setMessageComments, setUsers],
+  );
+
   const reload = useCallback(async () => {
+    messageCommentsLoadVersionRef.current += 1;
+    setMessageComments({});
     await reloadAnalysisData({
       clearAnalysisResults,
       invalidateCallsignGraph,
@@ -300,6 +351,7 @@ export function useAnalysisData({
       setMapOpenMessages,
       setMapPoints,
       setMessages,
+      loadMessageComments,
       setMessagesLoading,
       setNetworkDisplayMap,
       setNetworks,
@@ -333,6 +385,7 @@ export function useAnalysisData({
     invalidateSummaryData,
     invalidateRightSidebarData,
     invalidateMessagePaging,
+    loadMessageComments,
     loadInitialFilterSections,
     newestFirst,
     onError,
@@ -373,6 +426,7 @@ export function useAnalysisData({
       setMessages(rsp.inboxItems ?? []);
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       await loadMissingNetworksForMessages(rsp.inboxItems ?? []);
+      await loadMessageComments(rsp.inboxItems ?? [], false);
       setNolimitShown(true);
       setNoMoreToLoad(isAnalysisInboxPageExhausted(rsp.inboxItems, rsp.pageLimit));
     } catch (loadError) {
@@ -382,7 +436,7 @@ export function useAnalysisData({
     } finally {
       setMessagesPaging(false);
     }
-  }, [loadMissingNetworksForMessages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
+  }, [loadMessageComments, loadMissingNetworksForMessages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   const loadMoreMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, optionsFreqValues);
@@ -406,6 +460,7 @@ export function useAnalysisData({
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       setMessages((current) => [...current, ...nextMessages]);
       await loadMissingNetworksForMessages(nextMessages);
+      await loadMessageComments(nextMessages, false);
       if (nextMessages.length === 0 || isAnalysisInboxPageExhausted(nextMessages, rsp.pageLimit)) {
         setNoMoreToLoad(true);
       }
@@ -421,11 +476,13 @@ export function useAnalysisData({
         setMessagesPaging(false);
       }
     }
-  }, [loadMissingNetworksForMessages, messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
+  }, [loadMessageComments, loadMissingNetworksForMessages, messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   useEffect(() => {
+    if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
+    lastReloadTriggerKeyRef.current = reloadTriggerKey;
     void reload();
-  }, [reload]);
+  }, [reload, reloadTriggerKey]);
 
   useEffect(() => {
     if (centerTab !== 'summary') return;
@@ -503,6 +560,7 @@ export function useAnalysisData({
     messageActionLoading: messageActionCount > 0,
     messagesLoading,
     messagesPaging,
+    messageComments,
     messages,
     networkDisplayMap,
     networks,
@@ -518,6 +576,7 @@ export function useAnalysisData({
     onToggleMessageTag,
     options,
     profiles,
+    users,
     refreshMapDateRange,
     reload,
     summaryLoading,

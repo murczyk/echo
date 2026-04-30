@@ -1,12 +1,26 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { Box, Button, Chip, CircularProgress, Collapse, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
 
-import type { CallsignInfoRes, InboxMessage, Network, Tag, MessageMediaInfo, Unit } from '../../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  InboxMessage,
+  MessageComment,
+  MessageMediaInfo,
+  Network,
+  Tag,
+  Unit,
+  User,
+} from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from '../../rer-duty-neo/utils';
+import { filterOtherMessageComments } from '../../rer-analysis-neo/use-analysis-data.comments';
 import { renderMarkedText } from './MarkedText';
 
 const PREVIEW_IMAGE_HEIGHT_PX = 100;
@@ -346,6 +360,7 @@ const COMPACT_EXPAND_BTN_RESERVE_PX = 92;
 const COMPACT_LAST_CHIP_BADGE_OVERFLOW_PX = 44;
 /** Compact: every chip outer wrapper; full layout: only when `showBadge`. Expand button uses the same in compact. */
 const TAG_CHIP_BADGE_TOP_PADDING_THEME = 1.75;
+const OTHER_COMMENTS_PREVIEW_COUNT = 3;
 
 function estimateTagChipWidthPx(label: string): number {
   return Math.min(180, Math.max(28, Math.round(label.length * 6.5 + 26)));
@@ -510,23 +525,23 @@ function MessageCardTagChips({
               selectedTextColor="var(--neutral-900)"
             />
             {row.showBadge && (
-              <span
-                className="absolute -top-[12px] -right-1 flex items-center gap-1 text-[10px] bg-card border border-border rounded-full px-1.5 py-0.5 shadow-sm"
-                aria-hidden
-              >
-                {botContribsLen > 0 && (
-                  <span className="flex items-center gap-0.5" title="Боти">
-                    <i className="bi bi-robot" />
-                    <span>{botContribsLen}</span>
-                  </span>
-                )}
-                {humanContribsLen > 0 && (
-                  <span className="flex items-center gap-0.5" title="Користувачі">
-                    <i className="bi bi-person-fill" />
-                    <span>{humanContribsLen}</span>
-                  </span>
-                )}
-              </span>
+                <span
+                  className="absolute -top-[12px] -right-1 flex items-center gap-1 text-[10px] bg-card border border-border rounded-full px-1.5 py-0.5 shadow-sm"
+                  aria-hidden
+                >
+                  {botContribsLen > 0 && (
+                    <span className="flex items-center gap-0.5" title="Боти">
+                      <SmartToyOutlinedIcon sx={{ fontSize: 11 }} aria-hidden />
+                      <span>{botContribsLen}</span>
+                    </span>
+                  )}
+                  {humanContribsLen > 0 && (
+                    <span className="flex items-center gap-0.5" title="Користувачі">
+                      <PersonOutlineOutlinedIcon sx={{ fontSize: 11 }} aria-hidden />
+                      <span>{humanContribsLen}</span>
+                    </span>
+                  )}
+                </span>
             )}
           </Box>
         </Box>
@@ -546,7 +561,7 @@ function MessageCardTagChips({
       onClick={() => setShowCompactRest((v) => !v)}
       aria-expanded={showCompactRest}
       aria-label={showCompactRest ? 'Згорнути додаткові теги' : 'Показати додаткові теги'}
-      endIcon={<i className={showCompactRest ? 'bi bi-chevron-up' : 'bi bi-chevron-down'} aria-hidden />}
+      endIcon={showCompactRest ? <ExpandLessIcon fontSize="inherit" aria-hidden /> : <ExpandMoreIcon fontSize="inherit" aria-hidden />}
       sx={{
         flexShrink: 0,
         minHeight: 27,
@@ -612,6 +627,10 @@ export function MessageCardMessageBody({
   callsignInfoMap,
   networks,
   unitsMap,
+  authUserName,
+  currentUser,
+  messageComments = [],
+  users,
   searchText,
 }: {
   compact?: boolean;
@@ -624,6 +643,10 @@ export function MessageCardMessageBody({
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
+  authUserName: string | null;
+  currentUser: User | null;
+  messageComments?: MessageComment[];
+  users: Record<string, User | null>;
   searchText?: string | null;
 }) {
   const imageHrefs = useMemo(() => collectMessageImageHrefs(msg), [msg]);
@@ -662,6 +685,37 @@ export function MessageCardMessageBody({
     [analysisCallsignActions, callsignInfoMap, msg, networks, searchText, showPointLinks, tagsMap, unitsMap],
   );
   const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => node != null) : textPrimary != null;
+  const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
+  const otherComments = useMemo(
+    () => filterOtherMessageComments(authUserName, currentUser, users, messageComments),
+    [authUserName, currentUser, messageComments, users],
+  );
+  const hasOtherCommentsRest = otherComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
+  const visibleOtherComments = showOtherCommentsRest || !hasOtherCommentsRest ? otherComments : otherComments.slice(0, OTHER_COMMENTS_PREVIEW_COUNT);
+  const otherCommentsExpandToggleButton = hasOtherCommentsRest ? (
+    <Button
+      size="small"
+      color="primary"
+      variant="text"
+      onClick={() => setShowOtherCommentsRest((v) => !v)}
+      aria-expanded={showOtherCommentsRest}
+      aria-label={showOtherCommentsRest ? 'Згорнути додаткові коментарі' : 'Показати додаткові коментарі'}
+      endIcon={showOtherCommentsRest ? <ExpandLessIcon fontSize="inherit" aria-hidden /> : <ExpandMoreIcon fontSize="inherit" aria-hidden />}
+      sx={{
+        flexShrink: 0,
+        minHeight: 27,
+        py: 0,
+        px: 0.5,
+        fontSize: '0.875rem',
+        fontWeight: 400,
+        textTransform: 'none',
+        '& .MuiButton-endIcon': { ml: 1, mr: 0, '& i': { fontSize: '0.875rem' } },
+        alignSelf: 'flex-start',
+      }}
+    >
+      {showOtherCommentsRest ? 'згорнути' : 'розгорнути'}
+    </Button>
+  ) : null;
 
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
@@ -691,15 +745,35 @@ export function MessageCardMessageBody({
       ) : null}
       {msg.extendedForm != null && msg.extendedForm.trim() !== '' ? (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-          <Box
-            component="i"
-            className="bi bi-chat-text"
-            sx={{ fontSize: 13, color: 'var(--color-icons)', flexShrink: 0 }}
-            title="Коментар"
-          />
+          <ChatBubbleOutlineOutlinedIcon sx={{ fontSize: 13, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Коментар" />
           <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
             {msg.extendedForm}
           </Typography>
+        </Stack>
+      ) : null}
+      {otherComments.length > 0 ? (
+        <Stack
+          spacing={0.75}
+          sx={{
+            minWidth: 0,
+            mt: 0.25,
+            pl: 1,
+            py: 0.25,
+            borderLeft: '4px solid',
+            borderColor: 'divider',
+          }}
+        >
+          {visibleOtherComments.map((comment, index) => (
+            <Stack key={`${comment.messageId}-${comment.id}-${index}`} spacing={0.25} sx={{ minWidth: 0 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', minWidth: 0 }}>
+                {comment.login}
+              </Typography>
+              <Typography variant="caption" sx={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', lineHeight: 1.4, minWidth: 0 }}>
+                {comment.comment}
+              </Typography>
+            </Stack>
+          ))}
+          {otherCommentsExpandToggleButton ? <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>{otherCommentsExpandToggleButton}</Box> : null}
         </Stack>
       ) : null}
       {tagsLoading ? (

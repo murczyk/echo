@@ -142,8 +142,7 @@ updModelFromQueryState model ms =
             ms
                 |> normalizeQueryStateMetadata
                 |> normalizeQueryStateNetworks
-    in
-    let
+
         modelWithBaseState =
             { model
                 | from = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateFromStr, timeStr = queryState.timeFromStr }

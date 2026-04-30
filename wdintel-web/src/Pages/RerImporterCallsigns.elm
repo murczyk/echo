@@ -69,6 +69,7 @@ type Msg
     | SelectCallsign String
 
 
+callsignsPerFreq : List B.CallsignWithFrequencies -> Dict String (List String)
 callsignsPerFreq callsigns =
     List.foldr
         (\callsign acc ->

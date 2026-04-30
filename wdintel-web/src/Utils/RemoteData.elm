@@ -1,4 +1,4 @@
-module Utils.RemoteData exposing (RemoteData(..), isLoading, isSuccess, markOutdated, toMaybe, withDefault, withDefault2)
+module Utils.RemoteData exposing (RemoteData(..), isLoading, markOutdated, toMaybe, withDefault, withDefault2)
 
 
 type RemoteData err data
@@ -49,16 +49,6 @@ isLoading : RemoteData e a -> Bool
 isLoading data =
     case data of
         Loading ->
-            True
-
-        _ ->
-            False
-
-
-isSuccess : RemoteData e a -> Bool
-isSuccess data =
-    case data of
-        Success _ ->
             True
 
         _ ->

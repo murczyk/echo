@@ -1,7 +1,7 @@
 module Shared.Components.Checkbox exposing (new, view, withContent, withDisabled)
 
-import Html exposing (Html, div, input, label, text)
-import Html.Attributes exposing (checked, class, disabled, for, type_)
+import Html exposing (Html, input, label)
+import Html.Attributes exposing (checked, class, disabled, type_)
 import Html.Events exposing (onCheck)
 
 

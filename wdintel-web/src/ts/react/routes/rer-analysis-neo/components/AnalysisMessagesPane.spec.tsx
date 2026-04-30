@@ -27,11 +27,13 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
     onComment: () => void;
     onDelete: () => void;
     onEditDetails: () => void;
+    messageComments?: Array<{ id: number; login: string; comment: string }>;
     tagsLayout?: string;
     analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
     <div data-testid={`message-card-${props.id}`}>
       <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
+      <span data-testid={`comments-${props.id}`}>{(props.messageComments ?? []).map((comment) => `${comment.login}:${comment.comment}`).join('|')}</span>
       <button type="button" onClick={props.onComment}>
         comment-{props.id}
       </button>
@@ -108,7 +110,7 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
     freq: '100.000',
     bookmarked: false,
     important: false,
-    extendedForm: 'saved note',
+    extendedForm: 'saved comment',
     sender: 'sender-1',
     groupMasterKey: 'group-1',
     networkIds: [],
@@ -121,9 +123,11 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
   return {
     authUserName: 'tester',
     copiedFeedbackId: null,
+    currentUser: { name: 'tester', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
     groupInfos: {},
     loading: false,
     paginationLoading: false,
+    messageComments: {},
     messages: [],
     networkDisplayMap: {},
     noMoreToLoad: true,
@@ -140,6 +144,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
     profiles: {},
+    users: {},
     tagsMap: {},
     tagsLoading: false,
     tagsLayout: 'full',
@@ -256,7 +261,24 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('hello');
     await click(getButton(view.container, 'save-comment'));
 
-    expect(onSaveMessageComment).toHaveBeenCalledWith(7, 'saved note');
+    expect(onSaveMessageComment).toHaveBeenCalledWith(7, 'saved comment');
+  });
+
+  it('forwards loaded message comments into the rendered message card', async () => {
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage()]],
+        messageComments: {
+          7: [{ id: 19, messageId: 7, comment: 'other-organism comment', login: 'peer-login' }],
+        },
+        users: {
+          'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain('peer-login:other-organism comment');
   });
 
   it('wires delete confirmation into the page callback', async () => {

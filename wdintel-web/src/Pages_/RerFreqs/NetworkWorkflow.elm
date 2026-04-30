@@ -1,40 +1,27 @@
 module Pages_.RerFreqs.NetworkWorkflow exposing (view)
 
 import Bindings as B
-import Bytes exposing (Bytes)
 import Core.Unit as Unit
-import Debounce exposing (Debounce)
 import Dict exposing (Dict)
-import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Styled as Styled
 import List.Extra as ListX
-import Pages_.RerFreqs.Model exposing (Model, NetworkWorkflowStatus(..), TextLocation(..))
+import Pages_.RerFreqs.Model exposing (Model, NetworkWorkflowStatus(..))
 import Pages_.RerFreqs.Msg exposing (Msg(..))
-import Pages_.RerFreqs.Utils as Utils
-import Route exposing (Route)
+import Route
 import Route.Path
 import Select
 import Shared
-import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
 import Shared.Components.Spinner
 import Shared.Components.Toggle as Toggle
-import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Shared.Model exposing (isDarkMode)
-import Time exposing (Posix)
-import Time.Extra
-import Url.Parser exposing (query)
-import Utils.RemoteData as RemoteData exposing (RemoteData)
 import Utils.NetworksUtils as NetworksUtils
+import Utils.RemoteData as RemoteData
 import Utils.Select
-import Utils.Time
-import Utils.Utils exposing (..)
-import View exposing (View)
 
 
 view : Model -> Shared.Model -> Dict Int B.Network -> List (Html Msg)

@@ -1,6 +1,9 @@
 import { Box, Button, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import CloseIcon from '@mui/icons-material/Close';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
@@ -363,8 +366,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               size="small"
               variant="text"
               className="self-stretch px-4"
-              startIcon={<i className="bi bi-gear" />}
-              endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
+              startIcon={<SettingsOutlinedIcon />}
+              endIcon={showFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               onClick={() => setShowFilters((s) => !s)}
               sx={{
                 borderRadius: 1,
@@ -522,13 +525,16 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   groupName={groupName}
                   senderName={senderName}
                   copiedFeedbackId={copiedFeedbackId}
+                  currentUser={null}
                   networkDisplayMap={networkDisplayMap}
+                  messageComments={[]}
                   networkMap={networkMap}
                   unitsMap={unitsMap}
                   callsignInfoMap={callsignInfoMap}
                   networks={networkMap ? Object.values(networkMap) : undefined}
                   featureStrictNetworks={featureStrictNetworks}
                   tagsMap={tagsMap}
+                  users={{}}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
                   onImportant={() => onMessageImportant(id, msg.important)}
                   onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}

@@ -9,15 +9,9 @@ module Utils.EnumeratedList exposing
     , isEmpty
     , length
     , map
-    , mapEl
     , mapPair
     , setAtPos
-    , toKvList
     , toList
-    , updateAtItem
-    , updateAtItemPosition
-    , updateAtPos
-    , updateValAtItem
     )
 
 {-| List with enumerated elements.
@@ -66,21 +60,10 @@ toList (EL xs) =
     List.map .el xs
 
 
-toKvList : EnumeratedList a -> List ( Int, a )
-toKvList (EL xs) =
-    List.map (\x -> ( x.pos, x.el )) xs
-
-
 map : (EnumeratedItem a -> b) -> EnumeratedList a -> EnumeratedList b
 map f (EL xs) =
     fromList <|
         List.map (\item -> f item) xs
-
-
-mapEl : (a -> b) -> EnumeratedList a -> EnumeratedList b
-mapEl f (EL xs) =
-    fromList <|
-        List.map (\item -> f item.el) xs
 
 
 mapPair : (( Int, a ) -> b) -> EnumeratedList a -> List b
@@ -91,33 +74,6 @@ mapPair f (EL xs) =
 findByPosition : Int -> EnumeratedList a -> Maybe (EnumeratedItem a)
 findByPosition n (EL xs) =
     ListX.getAt n xs
-
-
-updateAtItem :
-    EnumeratedItem a
-    -> (EnumeratedItem a -> Maybe a)
-    -> EnumeratedList a
-    -> EnumeratedList a
-updateAtItem item f (EL xs) =
-    let
-        go i yss =
-            case yss of
-                [] ->
-                    []
-
-                y :: ys ->
-                    if i == item.pos then
-                        case f y of
-                            Nothing ->
-                                List.map .el ys
-
-                            Just y2 ->
-                                y2 :: List.map .el ys
-
-                    else
-                        y.el :: go (i + 1) ys
-    in
-    fromList (go 0 xs)
 
 
 updateAtPos :
@@ -169,60 +125,12 @@ setAtPos pos y2 (EL xs) =
     fromList (go 0 xs)
 
 
-deleteAtItem :
-    EnumeratedItem a
-    -> EnumeratedList a
-    -> EnumeratedList a
-deleteAtItem item xs =
-    updateAtItem item (always Nothing) xs
-
-
 deleteAtPos :
     Int
     -> EnumeratedList a
     -> EnumeratedList a
 deleteAtPos pos xs =
     updateAtPos pos (always Nothing) xs
-
-
-updateValAtItem :
-    EnumeratedItem a
-    -> (a -> Maybe a)
-    -> EnumeratedList a
-    -> EnumeratedList a
-updateValAtItem item f xs =
-    updateAtItem item
-        (\v ->
-            f v.el
-        )
-        xs
-
-
-updateAtItemPosition :
-    Int
-    -> (EnumeratedItem a -> Maybe a)
-    -> EnumeratedList a
-    -> EnumeratedList a
-updateAtItemPosition position f (EL xs) =
-    let
-        go i yss =
-            case yss of
-                [] ->
-                    []
-
-                y :: ys ->
-                    if i == position then
-                        case f y of
-                            Nothing ->
-                                List.map .el ys
-
-                            Just y2 ->
-                                y2 :: List.map .el ys
-
-                    else
-                        y.el :: go (i + 1) ys
-    in
-    fromList (go 0 xs)
 
 
 length : EnumeratedList a -> Int

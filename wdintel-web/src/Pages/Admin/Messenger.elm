@@ -26,10 +26,8 @@ import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Time
 import Utils.Api.ErrorHandling
-import Utils.Components exposing (..)
-import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.RemoteData as RD exposing (RemoteData)
 import Utils.Select
-import Utils.Utils exposing (..)
 import View exposing (View)
 
 
@@ -907,7 +905,7 @@ update msg model =
                 )
 
         GotLinkResult (Err error) ->
-            ( { model | linkFlow = LinkFlow.resetFlow model.linkFlow }
+            ( { model | linkFlow = LinkFlow.markError "Помилка прив'язування акаунту" model.linkFlow }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
@@ -918,8 +916,7 @@ update msg model =
 
         GotQrCode (Err error) ->
             if LinkFlow.isInQrState model.linkFlow then
-                -- Handle QR code error - for now just keep trying or reset
-                ( model
+                ( { model | linkFlow = LinkFlow.markError "Помилка отримання QR коду" model.linkFlow }
                 , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
                 )
 
@@ -1002,9 +999,6 @@ update msg model =
                         Just account ->
                             let
                                 -- Create a temporary QR data and update via LinkFlow API
-                                _ =
-                                    { accountId = accountId, qrCode = "", account = account }
-
                                 newLinkFlow =
                                     LinkFlow.initPhoneFlow
                                         -- Start with phone flow
@@ -1999,11 +1993,12 @@ messengerAccountsTableConfig isLoading _ =
                             viewDetail key maybeValue =
                                 case maybeValue of
                                     Just value ->
-                                       [ li []
-                                           [ b [] [ text key ]
-                                           , text (": " ++ value)
-                                           ]
-                                       ]
+                                        [ li []
+                                            [ b [] [ text key ]
+                                            , text (": " ++ value)
+                                            ]
+                                        ]
+
                                     Nothing ->
                                         []
 
@@ -2023,6 +2018,7 @@ messengerAccountsTableConfig isLoading _ =
                                 (if List.isEmpty allDetails then
                                     -- Display a placeholder if no fields are present
                                     [ span [ class "text-muted-foreground" ] [ text "—" ] ]
+
                                  else
                                     -- Render the list of details
                                     [ ul [ class "space-y-1 list-disc list-inside ml-2" ]

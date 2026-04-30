@@ -2,21 +2,20 @@ module Pages.Home_ exposing (Model, Msg, page)
 
 import Auth
 import Bindings as B
-import Shared.Components.Spinner
-import Shared.Components.Toast
 import Core.Auth
 import Core.Types
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Layouts
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Components.Spinner
+import Shared.Components.Toast
 import Task
 import Utils.Api.ErrorHandling
 import Utils.RemoteData as RD exposing (RemoteData(..))
@@ -55,6 +54,7 @@ toLayout user _ =
         }
 
 
+loadInboxGroupsActivityInterval : Float
 loadInboxGroupsActivityInterval =
     10000
 

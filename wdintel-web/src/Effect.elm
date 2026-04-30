@@ -312,6 +312,7 @@ getViewportById id_ toMsg =
     GetViewportById id_ toMsg
 
 
+scrollToElement : { elemId : String, x : Int, y : Int } -> Effect msg
 scrollToElement payload =
     ScrollToElement payload
 
@@ -336,54 +337,67 @@ getUnitsById toMsg payload =
     GetUnitsById toMsg payload
 
 
+getMessagesComments : (Result ApiError B.MessageComments -> msg) -> B.BatchMessageCommentsReq -> Effect msg
 getMessagesComments toMsg payload =
     GetMessagesComments toMsg payload
 
 
+getUserInfo : (Result ApiError B.User -> msg) -> B.UserInfoReq -> Effect msg
 getUserInfo toMsg payload =
     GetUserInfo toMsg payload
 
 
+getLocations : (Result ApiError B.LocationStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getLocations toMsg payload =
     GetLocations toMsg payload
 
 
+getPosts : (Result ApiError B.PostStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getPosts toMsg payload =
     GetPosts toMsg payload
 
 
+getCallsigns : (Result ApiError B.CallsignStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getCallsigns toMsg payload =
     GetCallsigns toMsg payload
 
 
+getFreqs : (Result ApiError B.FreqStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getFreqs toMsg payload =
     GetFreqs toMsg payload
 
 
+getSenders : (Result ApiError B.SenderStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getSenders toMsg payload =
     GetSenders toMsg payload
 
 
+getNetworks : (Result ApiError B.NetworkStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getNetworks toMsg payload =
     GetNetworks toMsg payload
 
 
+getGroups : (Result ApiError B.GroupStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getGroups toMsg payload =
     GetGroups toMsg payload
 
 
+getAors : (Result ApiError B.AreaOfResponsibilityStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAors toMsg payload =
     GetAors toMsg payload
 
 
+getMetadataStats : (Result ApiError B.MetadataStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getMetadataStats toMsg payload =
     GetMetadataStats toMsg payload
 
 
+getSystemSettings : (Result ApiError B.SystemSettingsCurrentRsp -> msg) -> Effect msg
 getSystemSettings toMsg =
     GetSystemSettings toMsg
 
 
+focusHtmlElement : { elemId : String } -> Effect msg
 focusHtmlElement payload =
     FocusHtmlElement payload
 
@@ -393,14 +407,17 @@ getInboxMessages token toMsg payload =
     GetInboxMessages token toMsg payload
 
 
+getStatsCount : (Result ApiError B.CountStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getStatsCount toMsg payload =
     GetStatsCount toMsg payload
 
 
+getCallsignsGraph : (Result ApiError B.NetJsonGraphAndMeta -> msg) -> B.CallsignsGraphReq -> Effect msg
 getCallsignsGraph toMsg payload =
     GetCallsignsGraph toMsg payload
 
 
+getImportantMessagesIds : (Result ApiError (List B.Important) -> msg) -> B.ImportantListReq -> Effect msg
 getImportantMessagesIds toMsg payload =
     GetImportantMessagesIds toMsg payload
 
@@ -409,182 +426,227 @@ getImportantMessagesIds toMsg payload =
 --TODO: rename
 
 
+getTags2 : (Result ApiError B.TagStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getTags2 toMsg payload =
     GetTags2 toMsg payload
 
 
+getFreqsSummaryTable : (Result ApiError B.SummaryTableFreq -> msg) -> B.AnalysisStatsReq -> Effect msg
 getFreqsSummaryTable toMsg payload =
     GetFreqsSummaryTable toMsg payload
 
 
+getFreqsSummaryTableXlsx : (Result ApiError Bytes -> msg) -> B.AnalysisStatsReq -> Effect msg
 getFreqsSummaryTableXlsx toMsg payload =
     GetFreqsSummaryTableXlsx toMsg payload
 
 
+getBookmarks : (Result ApiError (List B.Bookmark) -> msg) -> B.BookmarkListReq -> Effect msg
 getBookmarks toMsg payload =
     GetBookmarks toMsg payload
 
 
+getMessagesMapPoints : (Result ApiError B.MapPointsRsp -> msg) -> B.MapPointsReq -> Effect msg
 getMessagesMapPoints toMsg payload =
     GetMessagesMapPoints toMsg payload
 
 
+getGroupsActivityStats : (Result ApiError GroupsActivityPerDayRsp -> msg) -> B.ListGroupsByFreqsPerDayReq -> Effect msg
 getGroupsActivityStats toMsg payload =
     GetGroupsActivityStats toMsg payload
 
 
+getUnits2 : (Result ApiError B.UnitStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getUnits2 toMsg payload =
     GetUnits2 toMsg payload
 
 
+getDocxReportForDownload : (Result ApiError Bytes -> msg) -> B.ReportPreviewReq -> Effect msg
 getDocxReportForDownload toMsg payload =
     GetDocxReportForDownload toMsg payload
 
 
+downloadFile : String -> String -> Bytes -> Effect msg
 downloadFile name content =
     DownloadFile name content
 
 
+initNetjsonGraph : { graphDataAndMeta : B.NetJsonGraphAndMeta, elemId : String } -> Effect msg
 initNetjsonGraph payload =
     InitNetjsonGraph payload
 
 
+getNewCallsigns : (Result ApiError B.NewCallsignsRes -> msg) -> B.AnalysisStatsReq -> Effect msg
 getNewCallsigns toMsg payload =
     GetNewCallsigns toMsg payload
 
 
+deleteMessage : (Result ApiError () -> msg) -> { id : Int } -> Effect msg
 deleteMessage toMsg payload =
     DeleteMessage toMsg payload
 
 
+getCallsignsInfo : (Result ApiError (List B.CallsignInfoRes) -> msg) -> B.RerCallsignInfoBatchReq -> Effect msg
 getCallsignsInfo toMsg payload =
     GetCallsignsInfo toMsg payload
 
 
+getNetworksInfoByFreqs : (Result ApiError (List B.Network) -> msg) -> List String -> Effect msg
 getNetworksInfoByFreqs toMsg payload =
     GetNetworksInfoByFreqs toMsg payload
 
 
+getNetworksInfoByIds : (Result ApiError (List B.Network) -> msg) -> List Int -> Effect msg
 getNetworksInfoByIds toMsg payload =
     GetNetworksInfoByIds toMsg payload
 
 
+downloadKmz : (Result ApiError Bytes -> msg) -> AnalysisStatsReq -> Effect msg
 downloadKmz toMsg payload =
     DownloadKmz toMsg payload
 
 
+downloadGeojson : (Result ApiError Bytes -> msg) -> B.AnalysisStatsReq -> Effect msg
 downloadGeojson toMsg payload =
     DownloadGeojson toMsg payload
 
 
+getCorrelatedFreqs : (Result ApiError B.CorrelatedFreqsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
 getCorrelatedFreqs toMsg payload =
     GetCorrelatedFreqs toMsg payload
 
 
+editFreqUnitName : (Result ApiError () -> msg) -> B.EditFreqUnitNameReq -> Effect msg
 editFreqUnitName toMsg payload =
     EditFreqUnitName toMsg payload
 
 
+saveAnalysisFilter : (Result ApiError (List B.SavedFilter) -> msg) -> B.SavedFilterUpsertReq -> Effect msg
 saveAnalysisFilter toMsg payload =
     SaveAnalysisFilter toMsg payload
 
 
+renameSavedAnalysisFilter : (Result ApiError () -> msg) -> { id : Int, name : String } -> Effect msg
 renameSavedAnalysisFilter toMsg payload =
     RenameSavedAnalysisFilter toMsg payload
 
 
+deleteSavedAnalysisFilter : (Result ApiError () -> msg) -> Int -> Effect msg
 deleteSavedAnalysisFilter toMsg payload =
     DeleteSavedAnalysisFilter toMsg payload
 
 
+getMessagesByIds : (Result ApiError B.MessageIdsRsp -> msg) -> B.MessageIdsReq -> Effect msg
 getMessagesByIds toMsg payload =
     GetMessagesByIds toMsg payload
 
 
+getFreqActivityDaily : (Result ApiError B.FreqDailyActivityCount -> msg) -> B.FreqStatsReq -> Effect msg
 getFreqActivityDaily toMsg payload =
     GetFreqActivityDaily toMsg payload
 
 
+getInboxGroupsActivityStats : (Result ApiError B.InboxByGroupDigestRsp -> msg) -> Effect msg
 getInboxGroupsActivityStats toMsg =
     GetInboxGroupsActivityStats toMsg
 
 
+getNetworksList : (Result ApiError (List B.Network) -> msg) -> B.ListNetworksReq -> Effect msg
 getNetworksList toMsg payload =
     GetNetworksList toMsg payload
 
 
+createNetwork : (Result ApiError B.Network -> msg) -> B.CreateNetworkReq -> Effect msg
 createNetwork toMsg payload =
     CreateNetwork toMsg payload
 
 
+updateNetwork : (Result ApiError B.Network -> msg) -> B.UpdateNetworkReq -> Effect msg
 updateNetwork toMsg payload =
     UpdateNetwork toMsg payload
 
 
+keepAlive : (Result ApiError () -> msg) -> B.KeepAliveReq -> Effect msg
 keepAlive toMsg payload =
     KeepAlive toMsg payload
 
 
+addFreqToNetwork : (Result ApiError B.Network -> msg) -> B.AddNetworkFreqReq -> Effect msg
 addFreqToNetwork toMsg payload =
     AddFreqToNetwork toMsg payload
 
 
+reactivateNetworkFreq : (Result ApiError B.Network -> msg) -> B.ReactivateNetworkFreqReq -> Effect msg
 reactivateNetworkFreq toMsg payload =
     ReactivateNetworkFreq toMsg payload
 
 
+removeFreqFromNetwork : (Result ApiError B.Network -> msg) -> B.DeleteNetworkFreqReq -> Effect msg
 removeFreqFromNetwork toMsg payload =
     RemoveFreqFromNetwork toMsg payload
 
 
+getNetworksGroupsActivity : (Result ApiError GroupsActivityPerDayRsp -> msg) -> B.NetworkGroupsActivityReq -> Effect msg
 getNetworksGroupsActivity toMsg payload =
     GetNetworksGroupsActivity toMsg payload
 
 
+getNetworksCallsigns : (Result ApiError CallsignsByNetwork -> msg) -> B.NetworkCallsignsReq -> Effect msg
 getNetworksCallsigns toMsg payload =
     GetNetworksCallsigns toMsg payload
 
 
+getNetworkPoints : (Result ApiError B.ListNetworkPointsRsp -> msg) -> B.ListNetworkPointsReq -> Effect msg
 getNetworkPoints toMsg payload =
     GetNetworkPoints toMsg payload
 
 
+getUnitStatsForNetworks : (Result ApiError B.NetworkUnitStatsRsp -> msg) -> Effect msg
 getUnitStatsForNetworks toMsg =
     GetUnitStatsForNetworks toMsg
 
 
+getNetworksReport : (Result ApiError Bytes -> msg) -> B.EtalonkaJimForksReq -> Effect msg
 getNetworksReport toMsg payload =
     GetNetworksReport toMsg payload
 
 
+getNetworkCallsigns : (Result ApiError B.SingleNetworkCallsignsListRsp -> msg) -> B.SingleNetworkCallsignsReq -> Effect msg
 getNetworkCallsigns toMsg payload =
     GetNetworkCallsigns toMsg payload
 
 
+getNetworkCallsignsActivity : (Result ApiError B.NetworkCallsignsActivityRsp -> msg) -> B.NetworkCallsignsActivityReq -> Effect msg
 getNetworkCallsignsActivity toMsg payload =
     GetNetworkCallsignsActivity toMsg payload
 
 
+getNetworkCallsignsList : (Result ApiError B.ListNetworkCallsignsRes -> msg) -> B.ListNetworkCallsignsReq -> Effect msg
 getNetworkCallsignsList toMsg payload =
     GetNetworkCallsignsList toMsg payload
 
 
+getNetworkFreqCallsigns : (Result ApiError B.NetworkFreqCallsignsRsp -> msg) -> B.NetworkFreqCallsignsReq -> Effect msg
 getNetworkFreqCallsigns toMsg payload =
     GetNetworkFreqCallsigns toMsg payload
 
 
+getSingleNetwork : (Result ApiError B.Network -> msg) -> Int -> Effect msg
 getSingleNetwork toMsg networkId =
     GetSingleNetwork toMsg networkId
 
 
+getSingleNetworkGroupsActivity : (Result ApiError GroupsByDate -> msg) -> B.NetworkGroupsActivityOneReq -> Effect msg
 getSingleNetworkGroupsActivity toMsg payload =
     GetSingleNetworkGroupsActivity toMsg payload
 
 
+getNetworkFreqsActivity : (Result ApiError (Dict String (Dict String Int)) -> msg) -> B.NetworkFreqsActivityReq -> Effect msg
 getNetworkFreqsActivity toMsg payload =
     GetNetworkFreqsActivity toMsg payload
 
 
+getSingleNetworkFreqs : (Result ApiError B.SingleNetworkFreqsListRsp -> msg) -> B.SingleNetworkFreqsReq -> Effect msg
 getSingleNetworkFreqs toMsg payload =
     GetSingleNetworkFreqs toMsg payload
 
@@ -594,66 +656,82 @@ getCallsignsInfoShared callsigns =
     SendSharedMsg (Shared.Msg.CallsignsInfoAskedByPage callsigns)
 
 
+mergeNetworks : (Result ApiError B.Network -> msg) -> B.MergeNetworkReq -> Effect msg
 mergeNetworks toMsg payload =
     MergeNetworks toMsg payload
 
 
+getModulations : (Result ApiError (List B.ModulationRec) -> msg) -> Effect msg
 getModulations toMsg =
     GetModulations toMsg
 
 
+updateNetworkPosts : (Result ApiError B.Network -> msg) -> B.UpdateNetworkPostsReq -> Effect msg
 updateNetworkPosts toMsg payload =
     UpdateNetworkPosts toMsg payload
 
 
+updateNetworkUnits : (Result ApiError B.Network -> msg) -> B.UpdateNetworkUnitsReq -> Effect msg
 updateNetworkUnits toMsg payload =
     UpdateNetworkUnits toMsg payload
 
 
+deleteNetwork : (Result ApiError B.Network -> msg) -> B.DeleteNetworkReq -> Effect msg
 deleteNetwork toMsg payload =
     DeleteNetwork toMsg payload
 
 
+loadPostsFromShared : B.ListPostsReq -> Effect msg
 loadPostsFromShared payload =
     SendSharedMsg (Shared.Msg.PostLoadAll payload)
 
 
+postCreate : (Result ApiError B.Post -> msg) -> B.CreatePostReq -> Effect msg
 postCreate toMsg payload =
     PostCreate toMsg payload
 
 
+postUpdate : (Result ApiError B.Post -> msg) -> B.UpdatePostReq -> Effect msg
 postUpdate toMsg payload =
     PostUpdate toMsg payload
 
 
+postDelete : (Result ApiError () -> msg) -> B.DeletePostReq -> Effect msg
 postDelete toMsg payload =
     PostDelete toMsg payload
 
 
+networkAddDescription : (Result ApiError B.Network -> msg) -> B.AddNetworkDescriptionsReq -> Effect msg
 networkAddDescription toMsg payload =
     NetworkAddDescription toMsg payload
 
 
+networkDeleteDescription : (Result ApiError B.Network -> msg) -> B.DeleteNetworkDescriptionReq -> Effect msg
 networkDeleteDescription toMsg payload =
     NetworkDeleteDescription toMsg payload
 
 
+networkUpdateDescription : (Result ApiError B.Network -> msg) -> B.UpdateNetworkDescriptionReq -> Effect msg
 networkUpdateDescription toMsg payload =
     NetworkUpdateDescription toMsg payload
 
 
+getSignalsForNetwork : (Result ApiError B.NetworkSignalsListRes -> msg) -> B.NetworkSignalsListReq -> Effect msg
 getSignalsForNetwork toMsg payload =
     GetSignalsForNetwork toMsg payload
 
 
+updateNetworkFreq : (Result ApiError B.Network -> msg) -> B.UpdateNetworkFreqReq -> Effect msg
 updateNetworkFreq toMsg payload =
     UpdateNetworkFreq toMsg payload
 
 
+getNetworkReportBatch : (Result ApiError Bytes -> msg) -> B.EtalonkaNetworkBatchReq -> Effect msg
 getNetworkReportBatch toMsg payload =
     GetNetworkReportBatch toMsg payload
 
 
+getNetworkGoiReport : (Result ApiError Bytes -> msg) -> Effect msg
 getNetworkGoiReport toMsg =
     GetNetworkGoiReport toMsg
 

@@ -2,26 +2,14 @@ module Pages_.RerFreqs.Msg exposing (Msg(..))
 
 import Api
 import Bindings as B
-import Core.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
-import Debounce exposing (Debounce)
-import Dict exposing (Dict)
-import Effect as E exposing (Effect)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (..)
-import Page exposing (Page)
+import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
+import Debounce
 import Pages_.RerFreqs.Model exposing (FilterState, ShowAllPopupFor)
-import Route exposing (Route)
 import Select
-import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.DateTime
 import Shared.Components.Table as Table
-import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Time exposing (Posix)
 import Utils.NetworksUtils as NetworksUtils
-import Utils.RemoteData as RD exposing (RemoteData(..))
-import Utils.Utils exposing (..)
-import View exposing (View)
 
 
 type Msg

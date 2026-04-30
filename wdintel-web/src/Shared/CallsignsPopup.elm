@@ -1,18 +1,12 @@
 module Shared.CallsignsPopup exposing (..)
 
 import Bindings as B
-import Shared.Components.Popup
-import Core.Callsign
 import Core.Callsigns.HintStrategy as HintStrategy
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Shared.Callsign
-
-
-prioUnitsAccessor : ( List B.CallsignInfo, String ) -> List B.CallsignInfo
-prioUnitsAccessor callsignWithPrio =
-    callsignWithPrio |> Tuple.first
+import Shared.Components.Popup
 
 
 type alias Params a =
@@ -54,44 +48,6 @@ getCallsignHintsNew freq networks params callsign =
             createHintContext networks params
     in
     HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context callsign
-
-
-sortByPrio callsignWithPrioA callsignWithPrioB =
-    let
-        lengthA =
-            callsignWithPrioA |> prioUnitsAccessor |> List.length
-
-        lengthB =
-            callsignWithPrioB |> prioUnitsAccessor |> List.length
-    in
-    if lengthA > lengthB then
-        LT
-
-    else if lengthA < lengthB then
-        GT
-
-    else
-        EQ
-
-
-sortCallsigns : String -> Dict Int B.Network -> Params a -> List ( List B.CallsignInfo, String )
-sortCallsigns freq networksDict params =
-    let
-        networksWithMessageFreq =
-            Core.Callsign.filterNetworksByFreq networksDict (Just freq)
-
-        networksUnitIds =
-            Core.Callsign.getAllUnitsIdsForNetworks networksWithMessageFreq
-
-        networkUnits =
-            Core.Callsign.getUnitsInfoByIds networksUnitIds params.masterUnits
-
-        prioritizeCallsignsPartial callsign =
-            Core.Callsign.prioritizeCallsigns params.masterUnits networkUnits params.callsignsInfo callsign
-    in
-    params.callsigns
-        |> List.map (\callsign -> ( prioritizeCallsignsPartial callsign, callsign ))
-        |> List.sortWith sortByPrio
 
 
 {-| Нова функція сортування через HintStrategy (поки що не використовується)
@@ -157,20 +113,6 @@ sortByPrioNew callsignWithPrioA callsignWithPrioB =
 
     else
         EQ
-
-
-sortCallsigns2 : B.Network -> Params a -> List ( List B.CallsignInfo, String )
-sortCallsigns2 network params =
-    let
-        networkUnits =
-            Core.Callsign.getNetworkUnits2 network params.masterUnits
-
-        prioritizeCallsignsPartial callsign =
-            Core.Callsign.prioritizeCallsigns params.masterUnits networkUnits params.callsignsInfo callsign
-    in
-    params.callsigns
-        |> List.map (\callsign -> ( prioritizeCallsignsPartial callsign, callsign ))
-        |> List.sortWith sortByPrio
 
 
 {-| Нова функція сортування для мережі через HintStrategy (поки що не використовується)
@@ -284,6 +226,7 @@ view viewParams pageSpecific =
         ]
 
 
+viewCallsignsRow : List ( HintStrategy.HintResult, String ) -> Html msg
 viewCallsignsRow callsignsList =
     div [ class "flex flex-col gap-[4px]" ]
         (callsignsList
@@ -302,6 +245,7 @@ viewCallsignsRow callsignsList =
         )
 
 
+viewCallsignsGroup : List ( HintStrategy.HintResult, String ) -> Html msg
 viewCallsignsGroup callsignsList =
     div [ class "callsigns-group" ]
         (callsignsList

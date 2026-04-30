@@ -4,14 +4,13 @@ module Shared.Components.FloatingPopup exposing
     , new
     , view
     , withPlacement
-    , withOverlay
-    , withoutOverlay
     )
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Json.Decode as Decode
+
 
 
 -- TYPES
@@ -34,6 +33,7 @@ type Placement
     | Bottom
     | Left
     | Right
+
 
 
 -- CONSTRUCTOR
@@ -59,6 +59,7 @@ new props =
         }
 
 
+
 -- BUILDER METHODS
 
 
@@ -66,15 +67,6 @@ withPlacement : Placement -> FloatingPopup msg -> FloatingPopup msg
 withPlacement placement (Settings settings) =
     Settings { settings | placement = placement }
 
-
-withOverlay : FloatingPopup msg -> FloatingPopup msg
-withOverlay (Settings settings) =
-    Settings { settings | withOverlay = True }
-
-
-withoutOverlay : FloatingPopup msg -> FloatingPopup msg
-withoutOverlay (Settings settings) =
-    Settings { settings | withOverlay = False }
 
 
 -- VIEW
@@ -93,6 +85,7 @@ view (Settings settings) =
         ]
 
 
+
 -- HELPERS
 
 
@@ -104,11 +97,13 @@ buildAttributes settings =
     ]
         ++ (if settings.isOpen then
                 [ attribute "open" "" ]
+
             else
                 []
            )
         ++ (if settings.withOverlay then
                 [ attribute "overlay" "" ]
+
             else
                 []
            )
