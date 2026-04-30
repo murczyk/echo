@@ -2,8 +2,33 @@ import type { InboxMessage, PalitraReadV2, NetworkUnit } from '../../../../Bindi
 import { transformCamelToSnake } from '../../../snake-to-camel';
 import type { AnalysisPalitrasLoadState } from './types';
 
+const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
+  _c_n_text_c: 'CNTextC',
+  _c_n_newline_c: 'CNNewlineC',
+  _c_n_callsign_c: 'CNCallsignC',
+  _c_n_highlight_c: 'CNHighlightC',
+  _c_n_signal_c: 'CNSignalC',
+  _c_n_point_c: 'CNPointC',
+};
+
 function fallbackGeometryScopedId(palitraId: number): number {
   return -palitraId;
+}
+
+function restoreContentNodeVariantKeys<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => restoreContentNodeVariantKeys(item)) as T;
+  }
+  if (typeof value !== 'object') return value;
+
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(obj)) {
+    const restoredKey = CONTENT_NODE_VARIANT_KEY_MAP[key] ?? key;
+    out[restoredKey] = restoreContentNodeVariantKeys(obj[key]);
+  }
+  return out as T;
 }
 
 function toMapPalitras(palitras: PalitraReadV2[]): unknown[] {
@@ -62,12 +87,12 @@ export function buildMapAttrs(params: {
     unit.frequencies.some((freq) => allFreqs.includes(freq)),
   );
 
-  const snakeMessages = params.messages.map(([id, message]) => [id, transformCamelToSnake(message)]);
+  const snakeMessages = restoreContentNodeVariantKeys(transformCamelToSnake(params.messages));
 
   return {
     daterange: JSON.stringify(params.dateRange),
     daterangeLoading: JSON.stringify(params.isLoading),
-    points: JSON.stringify(params.points),
+    points: JSON.stringify(transformCamelToSnake(params.points)),
     messages: JSON.stringify({
       networkUnits: filteredNetworkUnits,
       messages: snakeMessages,

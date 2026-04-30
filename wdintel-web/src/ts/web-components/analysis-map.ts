@@ -565,7 +565,7 @@ class AnalysisMap extends HTMLElement {
       pelengLabelsPermanent: this._pelengLabelsPermanent,
       onPointClick: (point, circle) => {
         this._clickedLatLng = circle.getLatLng();
-        this._emitLoadMessagesDescriptions([point.message_id]);
+        this._emitLoadMessagesDescriptions([circle.getData().messageId]);
         this._clickedPoint = circle;
       },
       onPointContextMenu: (target, latlng, originalEvent) => {

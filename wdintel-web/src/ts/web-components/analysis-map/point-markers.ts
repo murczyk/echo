@@ -222,7 +222,7 @@ function bindPelengLabel(
   point: MapPointDetailed,
   pelengLabelsPermanent: boolean,
 ): void {
-  const freqLabel = (point as MapPointDetailed & { freq?: string | null }).freq ?? '';
+  const freqLabel = point.freq ?? '';
   if (!freqLabel) {
     return;
   }
