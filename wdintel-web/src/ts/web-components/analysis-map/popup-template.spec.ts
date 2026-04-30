@@ -28,4 +28,15 @@ describe('getPointPopupTemplate', () => {
     expect(html).toContain('P-1');
     expect(html).toContain('title="Відкрити на мапі аналізу: P-1"');
   });
+
+  it('renders callsign tokens from marked popup text', () => {
+    const message = buildMessage({
+      text_marked: [{ CNCallsignC: { text: 'БОРОДА', begin: 0, end: 6, etalon: 'БОРОДА' } }] as unknown as Message[1]['text_marked'],
+    });
+
+    const html = getPointPopupTemplate([message], [] as NetworkUnit[], []);
+
+    expect(html).toContain('БОРОДА');
+    expect(html).toContain('badge-highlighed-token--callsign');
+  });
 });

@@ -43,6 +43,11 @@ function renderMarkedText(nodes: ContentNode[]): string {
         return text === '' ? '' : `<span class="badge-highlighed-token badge-highlighed-token--callsign">${escapeHtml(text)}</span>`;
       }
 
+      if ('CNCallsignC' in node) {
+        const text = node.CNCallsignC.text.trim();
+        return text === '' ? '' : `<span class="badge-highlighed-token badge-highlighed-token--callsign">${escapeHtml(text)}</span>`;
+      }
+
       if ('CNSignalC' in node) {
         const text = node.CNSignalC.text.trim();
         return text === '' ? '' : `<span class="content-token--ADV">${escapeHtml(text)}</span>`;
