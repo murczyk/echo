@@ -423,9 +423,10 @@ async fn send_unlinked_datasource_notification(
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
     let content = format!(
-        "Echo-акаунт не прив'язаний для datasource #{} ({}) messenger={} client={} phone={}",
+        "Echo-акаунт не прив'язаний для datasource #{} ({}) public_host={} messenger={} client={} phone={}",
         datasource.id,
         datasource.display_name,
+        config.public_host,
         datasource.messenger,
         client_name,
         datasource.phone_number,
