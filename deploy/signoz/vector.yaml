@@ -86,14 +86,14 @@ transforms:
     source: |
       del(._send_to_signoz)
 
-      # Promote host into canonical OTel host.name resource for SigNoz fast filters.
+      # SigNoz HTTP JSON receiver expects resource attributes in `resources`.
       host_name = to_string(.host) ?? ""
       if host_name == "" {
         host_name = to_string(._HOSTNAME) ?? ""
       }
       if host_name != "" {
         ."host.name" = host_name
-        .resource."host.name" = host_name
+        .resources."host.name" = host_name
       }
 
       # Signoz JSON receiver expects either unix-nanos timestamp or no timestamp.
