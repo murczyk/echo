@@ -1,64 +1,32 @@
 module Pages_.RerNetworks.Id_.Descriptions exposing (..)
 
-import Api
 import Auth
 import Bindings as B
-import Bytes exposing (Bytes)
-import Char
 import Core.Auth
-import Core.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
-import Dict exposing (Dict)
 import Effect as E exposing (Effect)
-import File.Download as Download
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Keyed
 import Html.Styled as Styled
-import Json.Encode as Encode
-import Layouts
 import List.Extra as ListX
-import Page exposing (Page)
-import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
-import Pages_.RerNetworks.Id_.FrequenciesTable as FreqsTable
-import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), Model, ShowAllPopupFor(..))
-import Pages_.RerNetworks.Id_.Msg as Msgs exposing (DescriptionsMsg(..), Msg)
-import Pages_.RerNetworks.Utils as IdUtils
-import Route exposing (Route)
-import Route.Path
+import Pages_.RerNetworks.Id_.Model exposing (Model)
+import Pages_.RerNetworks.Id_.Msg exposing (DescriptionsMsg(..))
 import Select
-import Set exposing (Set)
 import Shared
-import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
-import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
-import Shared.Components.Pager as Pager
-import Shared.Components.Popup as Popup
-import Shared.Components.SegmentedControl as SegmentedControl
 import Shared.Components.Sidebar as Sidebar
-import Shared.Components.Spinner
-import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
-import Shared.Components.Table.Sorter as TableSorter
 import Shared.Model exposing (isDarkMode)
-import Svg.Styled exposing (desc)
 import Time
-import Time.Extra
-import Url.Builder
 import Utils.Api.ErrorHandling
-import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
-import Utils.Utils exposing (networkKindVHFMapping)
-import View exposing (View)
 
 
 update : Shared.Model -> DescriptionsMsg -> Model -> ( Model, Effect DescriptionsMsg )
-update shared msg model =
+update _ msg model =
     case msg of
         DescriptionAddClickedByUser networkId descType ->
             let
@@ -187,7 +155,7 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення опису мережі" e
             )
 
-        DescriptionEditUpdated descrId (Ok res) ->
+        DescriptionEditUpdated _ (Ok res) ->
             ( { model | network = Success res }, E.none )
 
         DescriptionDeleted (Err e) ->
@@ -500,7 +468,7 @@ descriptionEditCloseSidebar description network model user shared =
 
 
 confirmationCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html DescriptionsMsg
-confirmationCreateSidebarContent shared model user network =
+confirmationCreateSidebarContent shared model _ network =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити обґрунтування прив'язки" ]
@@ -556,7 +524,7 @@ confirmationCreateSidebarContent shared model user network =
 
 
 signsCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html DescriptionsMsg
-signsCreateSidebarContent shared model user network =
+signsCreateSidebarContent _ model _ network =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити розвідувальні ознаки" ]
@@ -587,7 +555,7 @@ signsCreateSidebarContent shared model user network =
 
 
 editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> B.NetworkDescription -> Html DescriptionsMsg
-editDescriptionSidebarContent shared model user network description =
+editDescriptionSidebarContent shared model _ _ description =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати опис" ]

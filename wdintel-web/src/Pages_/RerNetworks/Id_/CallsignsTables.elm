@@ -2,8 +2,6 @@ module Pages_.RerNetworks.Id_.CallsignsTables exposing
     ( createCallsignsSidebar
     , deleteCallsignModal
     , editCallsignsSidebar
-    , getDevelopingCallsigns
-    , getRegularCallsigns
     , initLoad
     , loadCatalogAndNetworkCallsigns
     , loadCatalogCallsigns
@@ -14,40 +12,28 @@ module Pages_.RerNetworks.Id_.CallsignsTables exposing
 import Api
 import Auth
 import Bindings as B
-import Bytes exposing (Bytes)
-import Char
 import Core.Auth
-import Core.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
-import Dict exposing (Dict)
+import Core.Types exposing (ApiError)
+import Dict
 import Effect as E exposing (Effect)
-import File.Download as Download
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Html.Keyed
 import Html.Styled as Styled
-import Json.Encode as Encode
-import Layouts
 import List.Extra as ListX
-import Page exposing (Page)
-import Pages_.RerNetworks.Id_.FrequenciesTable as FreqsTable
 import Pages_.RerNetworks.Id_.CallsignsSection as CallsignsSection
-import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), Model, ShowAllPopupFor(..))
-import Pages_.RerNetworks.Id_.Msg as Msgs exposing (CallsignsMsg(..))
+import Pages_.RerNetworks.Id_.Model exposing (CallsignCreateMode(..), CallsignTableRow, Model, ShowAllPopupFor(..))
+import Pages_.RerNetworks.Id_.Msg exposing (CallsignsMsg(..))
 import Pages_.RerNetworks.Utils as IdUtils
-import Route exposing (Route)
-import Route.Path
 import Select
-import Set exposing (Set)
+import Set
 import Shared
-import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
-import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
+import Shared.Components.DropdownBadge as DropdownBadge
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
 import Shared.Components.Popup as Popup
-import Shared.Components.SegmentedControl as SegmentedControl
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
@@ -56,21 +42,24 @@ import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Table.Sorter as TableSorter
 import Shared.Model exposing (isDarkMode)
 import Time
-import Time.Extra
-import Url.Builder
 import Utils.Api.ErrorHandling
-import Utils.NetworksUtils as NetworksUtils
-import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.RemoteData exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
-import Utils.Utils exposing (networkKindVHFMapping)
-import View exposing (View)
 
 
+
+
+
+
+
+
+initLoad : Effect CallsignsMsg
 initLoad =
     E.sendCmd (Api.sigint_list_sources GotSources ())
 
 
+loadCallsignsActivity : Int -> List String -> Effect CallsignsMsg
 loadCallsignsActivity networkId callsigns =
     let
         selectedCallsigns =
@@ -88,6 +77,7 @@ loadCallsignsActivity networkId callsigns =
             }
 
 
+knownCallsignActivityCallsigns : List { a | knownCallsigns : Maybe (List b), callsign : c } -> List c
 knownCallsignActivityCallsigns callsigns =
     callsigns
         |> List.filterMap
@@ -105,6 +95,7 @@ knownCallsignActivityCallsigns callsigns =
             )
 
 
+unknownCallsignActivityCallsigns : List { a | knownCallsigns : Maybe (List b), callsign : c } -> List c
 unknownCallsignActivityCallsigns callsigns =
     callsigns
         |> List.filterMap
@@ -122,15 +113,7 @@ unknownCallsignActivityCallsigns callsigns =
             )
 
 
-loadUnknownCallsignsActivity model =
-    case ( model.network, model.callsigns ) of
-        ( Success network, Success callsigns ) ->
-            loadCallsignsActivity network.id (unknownCallsignActivityCallsigns callsigns)
-
-        _ ->
-            E.none
-
-
+loadUnknownCallsignsActivityForCallsigns : { a | network : RemoteData err { b | id : Int } } -> List { c | knownCallsigns : Maybe (List d), callsign : String } -> Effect CallsignsMsg
 loadUnknownCallsignsActivityForCallsigns model callsigns =
     case model.network of
         Success network ->
@@ -140,6 +123,7 @@ loadUnknownCallsignsActivityForCallsigns model callsigns =
             E.none
 
 
+loadCallsignsActivityWith : Int -> List String -> (Result ApiError B.NetworkCallsignsActivityRsp -> msg) -> Effect msg
 loadCallsignsActivityWith networkId callsigns toMsg =
     let
         selectedCallsigns =
@@ -157,6 +141,33 @@ loadCallsignsActivityWith networkId callsigns toMsg =
             }
 
 
+applyCallsignsActivity :
+    { a |
+        callsignsActivity :
+            List
+                { b |
+                    callsign : String
+                    , activity :
+                        { messageCount : d
+                        , lastDatetime : e
+                        , freqs : f
+                        }
+                }
+    }
+        -> List
+            { c |
+                callsign : String
+                , messageCount : d
+                , lastDatetime : e
+                , freqs : f
+            }
+        -> List
+            { c |
+                callsign : String
+                , messageCount : d
+                , lastDatetime : e
+                , freqs : f
+            }
 applyCallsignsActivity rsp callsigns =
     let
         activityByCallsign =
@@ -181,18 +192,20 @@ applyCallsignsActivity rsp callsigns =
         callsigns
 
 
+loadCatalogAndNetworkCallsigns : Int -> List (Effect CallsignsMsg)
 loadCatalogAndNetworkCallsigns networkId =
     [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeActivityInfo = Just False }
     , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing }
     ]
 
 
+loadCatalogCallsigns : Int -> Effect CallsignsMsg
 loadCatalogCallsigns networkId =
     E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeActivityInfo = Just False }
 
 
 update : Shared.Model -> CallsignsMsg -> Model -> ( Model, Effect CallsignsMsg )
-update shared msg model =
+update _ msg model =
     case msg of
         CallsignsReturnedByApi (Err e) ->
             ( { model | callsigns = Failure e }
@@ -666,7 +679,7 @@ update shared msg model =
             , E.none
             )
 
-        NavigateToCallsignPage callsignId ->
+        NavigateToCallsignPage _ ->
             ( { model | developingCallsignDropdown = Nothing }, E.none )
 
         ToggleUnknownCallsignDropdown callsign ->
@@ -947,8 +960,8 @@ getDevelopingCallsigns callsigns =
     List.filter (\callsign -> callsign.developing) callsigns
 
 
-view : Model -> Auth.User -> Shared.Model -> Html CallsignsMsg
-view model user shared =
+view : Shared.Model -> Model -> Auth.User -> Html CallsignsMsg
+view shared model user =
     section [ class "bg-w dark:bg-[#1C1C21] w-full mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
@@ -967,7 +980,7 @@ view model user shared =
             Loading ->
                 Shared.Components.Spinner.loadingSpinnerSm
 
-            Failure e ->
+            Failure _ ->
                 div [ class "text-red-500" ] [ text "Помилка завантаження позивних мережі" ]
 
             NotAsked ->
@@ -1075,6 +1088,7 @@ view model user shared =
         ]
 
 
+viewCallsigns : List B.NetworkCallsignRes -> Model -> Auth.User -> Shared.Model -> Html CallsignsMsg
 viewCallsigns callsigns model user shared =
     div [ class "flex flex-col flex-1" ]
         [ div [ class "overflow-y-auto flex-1" ]
@@ -1214,6 +1228,7 @@ viewCallsigns callsigns model user shared =
         ]
 
 
+viewNetworkCallsigns : List B.NetworkCallsign -> Model -> Auth.User -> Shared.Model -> Html CallsignsMsg
 viewNetworkCallsigns networkCallsigns model user shared =
     let
         -- Використовуємо helper функцію для фільтрації звичайних позивних
@@ -1237,7 +1252,7 @@ viewNetworkCallsigns networkCallsigns model user shared =
 
 
 callsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config CallsignTableRow CallsignsMsg
-callsignsTableConfig shared model user =
+callsignsTableConfig shared model _ =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1474,7 +1489,7 @@ callsignsTableConfig shared model user =
 
 
 networkCallsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.NetworkCallsign CallsignsMsg
-networkCallsignsTableConfig shared model user =
+networkCallsignsTableConfig shared model _ =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1744,6 +1759,7 @@ networkCallsignsTableConfig shared model user =
 -- SIDEBAR CONTENTS
 
 
+createCallsignsSidebar : Model -> Auth.User -> Shared.Model -> Html CallsignsMsg
 createCallsignsSidebar model user shared =
     case model.callsignCreateSidebar of
         Just _ ->
@@ -1753,6 +1769,7 @@ createCallsignsSidebar model user shared =
             text ""
 
 
+editCallsignsSidebar : Model -> Auth.User -> Shared.Model -> Html CallsignsMsg
 editCallsignsSidebar model user shared =
     if model.editCallsignSidebar /= Nothing then
         Sidebar.view True CloseEditCallsignSidebar [ editCallsignSidebarContent shared model user ]
@@ -1762,7 +1779,7 @@ editCallsignsSidebar model user shared =
 
 
 callsignCreateSidebarContent : Shared.Model -> Model -> Auth.User -> Html CallsignsMsg
-callsignCreateSidebarContent shared model user =
+callsignCreateSidebarContent shared model _ =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити позивний мережі" ]
@@ -1777,12 +1794,7 @@ callsignCreateSidebarContent shared model user =
                         , onInput <|
                             UpdateCallsignCreateField
                                 << (\v maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just { s | callsign = String.toUpper v }
-
-                                            Nothing ->
-                                                Nothing
+                                        Maybe.map (\s -> { s | callsign = String.toUpper v }) maybeState
                                    )
                         ]
                         []
@@ -1794,14 +1806,7 @@ callsignCreateSidebarContent shared model user =
                             , onToggle =
                                 \_ ->
                                     UpdateCallsignCreateField
-                                        (\maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | mainRadioStation = not s.mainRadioStation }
-
-                                                Nothing ->
-                                                    Nothing
-                                        )
+                                        (Maybe.map (\s -> { s | mainRadioStation = not s.mainRadioStation }))
                             }
                             |> Checkbox.withContent [ text "Головна радіостанція" ]
                             |> Checkbox.view
@@ -1936,14 +1941,7 @@ callsignCreateSidebarContent shared model user =
                             , onToggle =
                                 \_ ->
                                     UpdateCallsignCreateField
-                                        (\maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | unitDeveloping = not s.unitDeveloping }
-
-                                                Nothing ->
-                                                    Nothing
-                                        )
+                                        (Maybe.map (\s -> { s | unitDeveloping = not s.unitDeveloping }))
                             }
                             |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
                             |> Checkbox.view
@@ -1959,20 +1957,18 @@ callsignCreateSidebarContent shared model user =
                         , onInput <|
                             UpdateCallsignCreateField
                                 << (\v maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just
-                                                    { s
-                                                        | position =
-                                                            if String.trim v == "" then
-                                                                Nothing
+                                        Maybe.map
+                                            (\s ->
+                                                { s
+                                                    | position =
+                                                        if String.trim v == "" then
+                                                            Nothing
 
-                                                            else
-                                                                Just v
-                                                    }
-
-                                            Nothing ->
-                                                Nothing
+                                                        else
+                                                            Just v
+                                                }
+                                            )
+                                            maybeState
                                    )
                         ]
                         []
@@ -1987,20 +1983,18 @@ callsignCreateSidebarContent shared model user =
                         , onInput <|
                             UpdateCallsignCreateField
                                 << (\v maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just
-                                                    { s
-                                                        | comment =
-                                                            if String.trim v == "" then
-                                                                Nothing
+                                        Maybe.map
+                                            (\s ->
+                                                { s
+                                                    | comment =
+                                                        if String.trim v == "" then
+                                                            Nothing
 
-                                                            else
-                                                                Just v
-                                                    }
-
-                                            Nothing ->
-                                                Nothing
+                                                        else
+                                                            Just v
+                                                }
+                                            )
+                                            maybeState
                                    )
                         ]
                         []
@@ -2012,14 +2006,7 @@ callsignCreateSidebarContent shared model user =
                             , onToggle =
                                 \_ ->
                                     UpdateCallsignCreateField
-                                        (\maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | developing = not s.developing }
-
-                                                Nothing ->
-                                                    Nothing
-                                        )
+                                        (Maybe.map (\s -> { s | developing = not s.developing }))
                             }
                             |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
                             |> Checkbox.view
@@ -2036,20 +2023,18 @@ callsignCreateSidebarContent shared model user =
                             , onInput <|
                                 UpdateCallsignCreateField
                                     << (\v maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just
-                                                        { s
-                                                            | radioFreq =
-                                                                if String.trim v == "" then
-                                                                    Nothing
+                                            Maybe.map
+                                                (\s ->
+                                                    { s
+                                                        | radioFreq =
+                                                            if String.trim v == "" then
+                                                                Nothing
 
-                                                                else
-                                                                    Just v
-                                                        }
-
-                                                Nothing ->
-                                                    Nothing
+                                                            else
+                                                                Just v
+                                                    }
+                                                )
+                                                maybeState
                                        )
                             ]
                             []
@@ -2099,7 +2084,7 @@ callsignCreateSidebarContent shared model user =
 
 
 editCallsignSidebarContent : Shared.Model -> Model -> B.User -> Html CallsignsMsg
-editCallsignSidebarContent shared model user =
+editCallsignSidebarContent shared model _ =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати позивний мережі" ]
@@ -2114,12 +2099,7 @@ editCallsignSidebarContent shared model user =
                         , onInput <|
                             UpdateEditCallsignField
                                 << (\v maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just { s | callsign = String.toUpper v }
-
-                                            Nothing ->
-                                                Nothing
+                                        Maybe.map (\s -> { s | callsign = String.toUpper v }) maybeState
                                    )
                         ]
                         []
@@ -2131,14 +2111,7 @@ editCallsignSidebarContent shared model user =
                             , onToggle =
                                 \_ ->
                                     UpdateEditCallsignField
-                                        (\maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | mainRadioStation = not s.mainRadioStation }
-
-                                                Nothing ->
-                                                    Nothing
-                                        )
+                                        (Maybe.map (\s -> { s | mainRadioStation = not s.mainRadioStation }))
                             }
                             |> Checkbox.withContent [ text "Головна радіостанція" ]
                             |> Checkbox.view
@@ -2273,14 +2246,7 @@ editCallsignSidebarContent shared model user =
                             , onToggle =
                                 \_ ->
                                     UpdateEditCallsignField
-                                        (\maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | unitDeveloping = not s.unitDeveloping }
-
-                                                Nothing ->
-                                                    Nothing
-                                        )
+                                        (Maybe.map (\s -> { s | unitDeveloping = not s.unitDeveloping }))
                             }
                             |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
                             |> Checkbox.view
@@ -2296,20 +2262,18 @@ editCallsignSidebarContent shared model user =
                         , onInput <|
                             UpdateEditCallsignField
                                 << (\v maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just
-                                                    { s
-                                                        | position =
-                                                            if String.trim v == "" then
-                                                                Nothing
+                                        Maybe.map
+                                            (\s ->
+                                                { s
+                                                    | position =
+                                                        if String.trim v == "" then
+                                                            Nothing
 
-                                                            else
-                                                                Just v
-                                                    }
-
-                                            Nothing ->
-                                                Nothing
+                                                        else
+                                                            Just v
+                                                }
+                                            )
+                                            maybeState
                                    )
                         ]
                         []
@@ -2324,20 +2288,18 @@ editCallsignSidebarContent shared model user =
                         , onInput <|
                             UpdateEditCallsignField
                                 << (\v maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just
-                                                    { s
-                                                        | comment =
-                                                            if String.trim v == "" then
-                                                                Nothing
+                                        Maybe.map
+                                            (\s ->
+                                                { s
+                                                    | comment =
+                                                        if String.trim v == "" then
+                                                            Nothing
 
-                                                            else
-                                                                Just v
-                                                    }
-
-                                            Nothing ->
-                                                Nothing
+                                                        else
+                                                            Just v
+                                                }
+                                            )
+                                            maybeState
                                    )
                         ]
                         []
@@ -2349,14 +2311,7 @@ editCallsignSidebarContent shared model user =
                             , onToggle =
                                 \_ ->
                                     UpdateEditCallsignField
-                                        (\maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | developing = not s.developing }
-
-                                                Nothing ->
-                                                    Nothing
-                                        )
+                                        (Maybe.map (\s -> { s | developing = not s.developing }))
                             }
                             |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
                             |> Checkbox.view
@@ -2373,20 +2328,18 @@ editCallsignSidebarContent shared model user =
                             , onInput <|
                                 UpdateEditCallsignField
                                     << (\v maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just
-                                                        { s
-                                                            | radioFreq =
-                                                                if String.trim v == "" then
-                                                                    Nothing
+                                            Maybe.map
+                                                (\s ->
+                                                    { s
+                                                        | radioFreq =
+                                                            if String.trim v == "" then
+                                                                Nothing
 
-                                                                else
-                                                                    Just v
-                                                        }
-
-                                                Nothing ->
-                                                    Nothing
+                                                            else
+                                                                Just v
+                                                    }
+                                                )
+                                                maybeState
                                        )
                             ]
                             []

@@ -4,6 +4,7 @@ import type {
   CountStatsRsp,
   FreqDailyActivityCount,
   InboxMessage,
+  MessageComment,
   InboxMessagesReq,
   NetJsonGraphAndMeta,
   Network,
@@ -15,6 +16,7 @@ import type {
   SummaryTableFreqRow,
   Tag,
   TagFilterOption,
+  User,
   Unit,
 } from '../../../../Bindings';
 import type { AnalysisReportState } from './report-helpers';
@@ -102,6 +104,7 @@ export type AnalysisPageState = {
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
+  currentUser: User | null;
   filtersLoading: boolean;
   groupInfos: Record<string, SignalGroupEntry>;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
@@ -124,6 +127,7 @@ export type AnalysisPageState = {
   hasLoadedInitialMessages: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
+  messageComments: Record<number, MessageComment[]>;
   messagesLoading: boolean;
   messagesPaging: boolean;
   messages: Array<[number, InboxMessage]>;
@@ -137,6 +141,7 @@ export type AnalysisPageState = {
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
+  users: Record<string, User | null>;
   tagsLayout: TagsLayoutVariant;
   rightPanelOpen: boolean;
   rightSidebarTab: AnalysisSidebarTab | null;

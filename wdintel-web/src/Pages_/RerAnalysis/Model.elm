@@ -1,8 +1,7 @@
 module Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..))
 
-
 import Bindings as B
-import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
+import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
 import Select
 import Shared.Components.DateRangePicker
@@ -201,7 +200,7 @@ type alias Model =
     , withoutModelTags : Bool
     , editSidebar : Maybe Int
     , eventLastId : Maybe String
-    
+
     -- палітри
     , palitras : RemoteData ApiError (List B.PalitraReadV2)
     }

@@ -4,7 +4,7 @@ import Core.Coordinates as C
 import Expect
 import List.Extra
 import Pages.Importer
-import Parser as P exposing ((|.), (|=), Parser)
+import Parser as P exposing ((|.), (|=))
 import Shared.Components.Console
 import Test exposing (..)
 import Time

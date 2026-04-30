@@ -33,7 +33,6 @@ import Utils.Api.ErrorHandling
 import Utils.RemoteData exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
-import Utils.Utils exposing (..)
 import View exposing (View)
 
 
@@ -978,10 +977,10 @@ contentBlock shared model user =
                             [ class "btn btn-outline-secondary d-flex align-items-center gap-2"
                             , style "white-space" "nowrap"
                             , onClick (DownloadCsv hasEditorRole)
-                            , Attr.disabled (not hasEditorRole || model.downloadCsvInProgress)
+                            , Attr.disabled model.downloadCsvInProgress
                             , attribute "title" "Завантажити CSV з обраними фільтрами"
                             ]
-                            ((text "Завантажити csv")
+                            (text "Завантажити csv"
                                 :: (if model.downloadCsvInProgress then
                                         [ Shared.Components.Spinner.loadingSpinner2Sm ]
 

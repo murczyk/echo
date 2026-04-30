@@ -5,9 +5,7 @@ import Auth
 import Bindings as B
 import Config
 import Core.EventHelpers
-import Core.Types exposing (..)
 import Dict exposing (Dict)
-import Dict.Extra as DE
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -40,8 +38,7 @@ import Shared.Components.DateTime
 import Shared.Components.RerMessage
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Toast
-import Shared.Model exposing (isDarkMode)
-import String exposing (fromInt)
+import String
 import Task
 import Time exposing (Posix)
 import Utils.Api.ErrorHandling
@@ -288,8 +285,7 @@ init route _ =
 
                 Nothing ->
                     m2
-    in
-    let
+
         ( m4, palitrasEff ) =
             loadPalitrasIfNeeded m3
     in
@@ -507,15 +503,15 @@ invalidateOptionFilters : Model -> Model
 invalidateOptionFilters model =
     markMetadataStatsStale
         { model
-        | locations = NeedsReload (RD.withDefault [] model.locations)
-        , senders = NeedsReload (RD.withDefault [] model.senders)
-        , units = NeedsReload (RD.withDefault [] model.units)
-        , freqs = NeedsReload (RD.withDefault [] model.freqs)
-        , posts = NeedsReload (RD.withDefault [] model.posts)
-        , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
-        , groups = NeedsReload (RD.withDefault [] model.groups)
-        , aors = NeedsReload (RD.withDefault [] model.aors)
-        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
+            | locations = NeedsReload (RD.withDefault [] model.locations)
+            , senders = NeedsReload (RD.withDefault [] model.senders)
+            , units = NeedsReload (RD.withDefault [] model.units)
+            , freqs = NeedsReload (RD.withDefault [] model.freqs)
+            , posts = NeedsReload (RD.withDefault [] model.posts)
+            , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+            , groups = NeedsReload (RD.withDefault [] model.groups)
+            , aors = NeedsReload (RD.withDefault [] model.aors)
+            , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
         }
 
 
@@ -647,7 +643,7 @@ loadCoreStats model =
                             else
                                 ( m2, E.none )
 
-                        ( NeedsReload data, Just freq ) ->
+                        ( NeedsReload _, Just freq ) ->
                             if m2.unfoldGraphs then
                                 ( m2
                                 , E.getFreqActivityDaily GotFreqActivityDaily
@@ -675,8 +671,7 @@ loadCoreStats model =
 
                         _ ->
                             ( m2, E.none )
-            in
-            let
+
                 ( m4, palitrasEff ) =
                     loadPalitrasIfNeeded m3
             in
@@ -2133,7 +2128,7 @@ update user shared route msg model =
                             else
                                 ( m2, E.none )
 
-                        ( NeedsReload data, Just freq ) ->
+                        ( NeedsReload _, Just freq ) ->
                             if m2.unfoldGraphs then
                                 ( m2
                                 , E.getFreqActivityDaily GotFreqActivityDaily
@@ -2197,8 +2192,7 @@ update user shared route msg model =
 
                         _ ->
                             ( model, E.none )
-            in
-            let
+
                 m3 =
                     { m2 | unfoldMapBlock = unfoldMapBlock }
 
@@ -3568,6 +3562,7 @@ update user shared route msg model =
         ReportTagsWithoutBotTagsToggle ->
             ( if model.withoutModelTags then
                 { model | withoutModelTags = False }
+
               else
                 { model | withoutModelTags = True }
             , E.none
@@ -4144,6 +4139,7 @@ updateMessageField msgId updateFn messages =
         messages
 
 
+getSinceDateForGroupsActivity : GroupsActivityPeriod -> Posix -> Posix -> Posix
 getSinceDateForGroupsActivity period dtFromPosix dtToPosix =
     case period of
         FilterSelectedRange ->

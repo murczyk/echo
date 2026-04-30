@@ -5,7 +5,6 @@ module Shared.Components.Console exposing (Console(..), Model(..), Msg(..), find
 
 import Api
 import Bindings as B
-import Shared.Components.Toast
 import Core.Coordinates as C
 import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
@@ -15,6 +14,7 @@ import Html.Attributes exposing (..)
 import Html.Extra as HtmlX
 import Process
 import Regex
+import Shared.Components.Toast
 import Task
 import Utils.Utils exposing (..)
 
@@ -62,19 +62,44 @@ type Msg msg
     | StatusAndLogsSleepDone Int Int ()
 
 
-getMError : Model -> Maybe String
-getMError (Model model) =
-    case model.statusAndLogsRsp of
-        Nothing ->
-            Nothing
+progressRegex : Regex.Regex
+progressRegex =
+    Maybe.withDefault Regex.never <|
+        Regex.fromString """\\[(\\d+)/(\\d+)\\]"""
 
-        Just attachImagesStatusAndLogsRsp ->
-            case attachImagesStatusAndLogsRsp.finishedWithError of
-                Nothing ->
+
+findLastProgress : List String -> Maybe { overall : Int, curr : Int }
+findLastProgress sss0 =
+    let
+        go sss =
+            case sss of
+                [] ->
                     Nothing
 
-                Just finishedWithError ->
-                    Just finishedWithError
+                s :: ss ->
+                    case Regex.find progressRegex s of
+                        [ match ] ->
+                            case match.submatches of
+                                [ Just curr, Just overall ] ->
+                                    case ( String.toInt curr, String.toInt overall ) of
+                                        ( Just currI, Just overallI ) ->
+                                            Just { curr = currI, overall = overallI }
+
+                                        _ ->
+                                            go ss
+
+                                _ ->
+                                    go ss
+
+                        _ ->
+                            go ss
+    in
+    go (List.reverse sss0)
+
+
+getMError : Model -> Maybe String
+getMError (Model model) =
+    Maybe.andThen .finishedWithError model.statusAndLogsRsp
 
 
 isError : Model -> Bool
@@ -244,38 +269,3 @@ view (Model model) =
                         ]
                     ]
                 ]
-
-
-progressRegex : Regex.Regex
-progressRegex =
-    Maybe.withDefault Regex.never <|
-        Regex.fromString """\\[(\\d+)/(\\d+)\\]"""
-
-
-findLastProgress : List String -> Maybe { overall : Int, curr : Int }
-findLastProgress sss0 =
-    let
-        go sss =
-            case sss of
-                [] ->
-                    Nothing
-
-                s :: ss ->
-                    case Regex.find progressRegex s of
-                        [ match ] ->
-                            case match.submatches of
-                                [ Just curr, Just overall ] ->
-                                    case ( String.toInt curr, String.toInt overall ) of
-                                        ( Just currI, Just overallI ) ->
-                                            Just { curr = currI, overall = overallI }
-
-                                        _ ->
-                                            go ss
-
-                                _ ->
-                                    go ss
-
-                        _ ->
-                            go ss
-    in
-    go (List.reverse sss0)

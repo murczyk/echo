@@ -1,4 +1,4 @@
-module Shared.Components.DateTime exposing (DateTime, Model, Msg(..), dateFormErrId, init, initAnalysisRanges, initFromDt, initFromPosix, new, setDateModelValue, setDisabled, setTimeModelValue, update, view)
+module Shared.Components.DateTime exposing (Model, Msg(..), dateFormErrId, init, initAnalysisRanges, initFromDt, initFromPosix, new, setDateModelValue, setDisabled, setTimeModelValue, update, view)
 
 import Config
 import Dict exposing (Dict)
@@ -11,6 +11,15 @@ import Time exposing (Posix)
 import Time.Extra
 import Utils.Components exposing (isInvalidCls)
 import Utils.Time
+
+
+type alias Model =
+    { dateStr : String
+    , datePosix : Maybe Posix
+    , timeStr : String
+    , formErrors : Dict String String
+    , disabled : Bool
+    }
 
 
 type alias DateTime msg =
@@ -30,17 +39,8 @@ new ps =
     }
 
 
-type alias Model =
-    { dateStr : String
-    , datePosix : Maybe Posix
-    , timeStr : String
-    , formErrors : Dict String String
-    , disabled : Bool
-    }
-
-
 init : () -> Model
-init ps =
+init _ =
     { dateStr = ""
     , datePosix = Nothing
     , timeStr = "00:00"
@@ -275,6 +275,7 @@ type Msg msg
     | SetTime String
 
 
+dateFormErrId : String
 dateFormErrId =
     "datetime"
 

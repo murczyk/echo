@@ -1,13 +1,9 @@
 module Shared.Components.Pager exposing
     ( Model
     , Msg(..)
-    , init
-    , initWithPageSize
-    , initCustom
     , update
     , view
-    , getPageData
-    , updateForNewTotalItems
+    , getPageData, initWithPageSize, updateForNewTotalItems
     )
 
 {-| A reusable pagination component for tables and lists.
@@ -24,8 +20,6 @@ module Shared.Components.Pager exposing
 
 
 # Initialization
-
-@docs init
 
 
 # Update
@@ -62,16 +56,6 @@ type Msg
     | ChangePageSize Int
 
 
-{-| Initialize pagination with default values
--}
-init : Model
-init =
-    { currentPage = 1
-    , pageSize = 10
-    , totalItems = 0
-    }
-
-
 {-| Initialize pagination with custom page size
 -}
 initWithPageSize : Int -> Model
@@ -79,16 +63,6 @@ initWithPageSize pageSize =
     { currentPage = 1
     , pageSize = pageSize
     , totalItems = 0
-    }
-
-
-{-| Initialize pagination with custom values
--}
-initCustom : Int -> Int -> Int -> Model
-initCustom currentPage pageSize totalItems =
-    { currentPage = currentPage
-    , pageSize = pageSize
-    , totalItems = totalItems
     }
 
 
@@ -132,9 +106,6 @@ getPageData model data =
     let
         startIndex =
             (model.currentPage - 1) * model.pageSize
-
-        endIndex =
-            startIndex + model.pageSize
     in
     List.drop startIndex data
         |> List.take model.pageSize
@@ -174,6 +145,7 @@ view : Model -> Html Msg
 view model =
     if model.totalItems == 0 then
         text ""
+
     else
         let
             info =
@@ -248,9 +220,14 @@ This function recalculates totalItems and adjusts currentPage if needed
 updateForNewTotalItems : Int -> Model -> Model
 updateForNewTotalItems newTotalItems model =
     let
-        totalItems = newTotalItems
-        maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat model.pageSize))
-        newCurrentPage = Basics.min model.currentPage maxPage
+        totalItems =
+            newTotalItems
+
+        maxPage =
+            Basics.max 1 (ceiling (toFloat totalItems / toFloat model.pageSize))
+
+        newCurrentPage =
+            Basics.min model.currentPage maxPage
     in
     { model | totalItems = totalItems, currentPage = newCurrentPage }
 

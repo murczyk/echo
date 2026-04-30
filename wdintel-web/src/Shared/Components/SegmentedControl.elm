@@ -1,4 +1,4 @@
-module Shared.Components.SegmentedControl exposing (SegmentedControl, new, withValue, withOnChange, view)
+module Shared.Components.SegmentedControl exposing (SegmentedControl, new, view)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -26,21 +26,6 @@ new value onChange options =
     , options = options
     , className = Nothing
     }
-
-
-withValue : a -> SegmentedControl a msg -> SegmentedControl a msg
-withValue value control =
-    { control | value = value }
-
-
-withOnChange : (a -> msg) -> SegmentedControl a msg -> SegmentedControl a msg
-withOnChange onChange control =
-    { control | onChange = onChange }
-
-
-withClassName : String -> SegmentedControl a msg -> SegmentedControl a msg
-withClassName className control =
-    { control | className = Just className }
 
 
 view : SegmentedControl a msg -> Html msg
@@ -79,6 +64,7 @@ renderOption control option =
                 , style "color" "var(--button-text-color)"
                 , style "box-shadow" "0 1px 2px 0 rgba(0, 0, 0, 0.05)"
                 ]
+
             else
                 [ style "background-color" "transparent"
                 , style "color" "var(--text-color)"
@@ -87,19 +73,27 @@ renderOption control option =
     in
     button
         ([ type_ "button"
-        , attribute "role" "radio"
-        , attribute "aria-checked" (if isSelected then "true" else "false")
-        , class baseClasses
-        , style "min-width" "80px"
-        , style "border" "none"
-        , style "cursor" "pointer"
-        , style "font-family" "inherit"
-        , style "font-size" "0.875rem"
-        , style "line-height" "1.25rem"
-        , style "font-weight" "500"
-        , style "border-radius" "0.375rem"
-        , style "transition" "all 0.2s ease-in-out"
-        , style "outline" "none"
-        , onClick (control.onChange option.value)
-        ] ++ buttonStyles)
+         , attribute "role" "radio"
+         , attribute "aria-checked"
+            (if isSelected then
+                "true"
+
+             else
+                "false"
+            )
+         , class baseClasses
+         , style "min-width" "80px"
+         , style "border" "none"
+         , style "cursor" "pointer"
+         , style "font-family" "inherit"
+         , style "font-size" "0.875rem"
+         , style "line-height" "1.25rem"
+         , style "font-weight" "500"
+         , style "border-radius" "0.375rem"
+         , style "transition" "all 0.2s ease-in-out"
+         , style "outline" "none"
+         , onClick (control.onChange option.value)
+         ]
+            ++ buttonStyles
+        )
         [ text option.label ]

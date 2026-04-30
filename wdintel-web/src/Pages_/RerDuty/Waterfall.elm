@@ -20,7 +20,6 @@ import Core.Callsign
 import Core.Types exposing (..)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
-import Dict.Extra as DE
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -45,21 +44,19 @@ import Select
 import Set exposing (Set)
 import Shared
 import Shared.Components.Badges exposing (badgeNotSelectedHtml, badgeSelectedCloseCounter, badgeSelectedHtml)
-import Shared.Components.RerMessage exposing (model0)
+import Shared.Components.RerMessage
 import Shared.Components.Spinner
-import Shared.Components.Toast
 import Shared.Components.Toggle as Toggle
 import Shared.Components.Tooltip as Tooltip
 import Shared.Model exposing (isDarkMode)
 import String
 import Task
 import Time exposing (Posix)
-import TimeZone
 import Utils.Api.ErrorHandling
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select as LeSelect
 import Utils.Time
-import Utils.Utils exposing (andThen, def, emptyToNothing, findK, getLabelOrDefault, jumpToBottom, renderZoneError)
+import Utils.Utils exposing (andThen, def, emptyToNothing, findK, getLabelOrDefault, jumpToBottom)
 
 
 type Msg
@@ -333,6 +330,7 @@ init id_ ms =
 
 {-| a message that's N items from top, if you scroll to it we'll load earlier messages from server
 -}
+earlyMessageCount : number
 earlyMessageCount =
     10
 
@@ -341,6 +339,7 @@ earlyMessageCount =
 {- how often do we try to load new messages -}
 
 
+loadingNewMessagesInterval : number
 loadingNewMessagesInterval =
     1000
 
@@ -775,14 +774,17 @@ commonGotInboxLoopFunc messages model =
     )
 
 
+loadNewerTracker : String -> String
 loadNewerTracker id =
     waterfallDivId id ++ " load-newer-messages"
 
 
+loadEarlierTracker : String -> String
 loadEarlierTracker id =
     waterfallDivId id ++ "load-earlier-messages"
 
 
+loadDigestTracker : String -> String
 loadDigestTracker id =
     waterfallDivId id ++ "load-messages-digest"
 
@@ -1726,7 +1728,7 @@ update shared user msg model =
             , E.none
             )
 
-        GotInboxMessagesDigest (Err e) ->
+        GotInboxMessagesDigest (Err _) ->
             ( { model | loadingInboxDigest = False }
             , E.none
             )

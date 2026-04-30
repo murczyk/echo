@@ -1,41 +1,13 @@
 module Pages_.RerNetworks.Create.Msg exposing (..)
 
-import Api exposing (check_if_freq_exist)
-import Auth
 import Bindings as B
-import Char
 import Core.Types exposing (ApiError)
-import Debounce exposing (Debounce)
 import Dict exposing (Dict)
-import Effect as E exposing (Effect)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (..)
-import Html.Styled as Styled
-import Http
-import Layouts
-import Maybe.Extra as MaybeX
-import Page exposing (Page)
 import Pages_.RerNetworks.Create.Model exposing (FreqActivityFilter, ShowAllPopupFor)
-import Route exposing (Route)
-import Route.Path
 import Select
-import Shared
-import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
 import Shared.Components.Pager as Pager
-import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Table as Table
-import Shared.Components.Toast
-import Shared.Model exposing (isDarkMode)
-import Time
-import Time.Extra
-import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.NetworksUtils as NetworksUtils
-import Utils.RemoteData as RD exposing (RemoteData(..))
-import Utils.Select
-import Utils.Time
-import View exposing (View)
 
 
 type Msg

@@ -3,6 +3,7 @@ import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import { isUnauthorizedError } from '../../services/api/client';
+import { fetchCurrentUser } from '../../services/api/user';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import {
   buildAnalysisReq,
@@ -14,6 +15,7 @@ import {
   queryStateComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
 } from './helpers';
+import type { User } from '../../../../Bindings';
 import type { AnalysisPageViewModel, AnalysisQueryState, AnalysisSidebarTab } from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
@@ -34,6 +36,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
   );
@@ -56,6 +59,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   const data = useAnalysisData({
+    currentUser,
     centerTab,
     newestFirst,
     onError: setPageError,
@@ -126,6 +130,28 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       .catch(() => {
         if (abortController.signal.aborted) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    void fetchCurrentUser(abortController.signal)
+      .then((user) => {
+        if (abortController.signal.aborted) return;
+        setCurrentUser(user);
+      })
+      .catch((error) => {
+        if (abortController.signal.aborted) return;
+        if (isUnauthorizedError(error)) {
+          window.location.assign('/login');
+          return;
+        }
+        setCurrentUser(null);
       });
 
     return () => {
@@ -255,6 +281,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     authUserName,
     aorEntries: data.aorEntries,
     canResetFilters,
+    currentUser,
     callsignGraph: data.callsignGraph,
     callsignGraphLoading: data.callsignGraphLoading,
     callsignGraphLoadVersion: data.callsignGraphLoadVersion,
@@ -286,6 +313,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     messageActionLoading: data.messageActionLoading,
     messagesLoading: data.messagesLoading,
     messagesPaging: data.messagesPaging,
+    messageComments: data.messageComments,
     messages: data.messages,
     networkDisplayMap: data.networkDisplayMap,
     networks: data.networks,
@@ -303,6 +331,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     options: data.options,
     profiles: data.profiles,
     queryState,
+    users: data.users,
     tagsLayout,
     rightPanelOpen,
     rightSidebarTab,

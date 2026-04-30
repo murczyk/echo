@@ -1,15 +1,15 @@
 module Shared.Components.Table exposing
     ( view
-    , config, stringColumn, intColumn, floatColumn
-    , withColumnWidth
+    , stringColumn, intColumn
     , State, initialSort
     , getSortState, sortBy
     , getSortedData
     , Column, customColumn, veryCustomColumn
-    , Sorter, unsortable, increasingBy, decreasingBy
+    , Sorter, unsortable
     , increasingOrDecreasingBy, decreasingOrIncreasingBy
     , Config, customConfig, Customizations, HtmlDetails, Status
     , defaultCustomizations
+    , withColumnWidth
     )
 
 {-| This library helps you create sortable tables. The crucial feature is that it
@@ -30,7 +30,7 @@ I recommend checking out the [examples] to get a feel for how it works.
 
 # Configuration
 
-@docs config, stringColumn, intColumn, floatColumn
+@docs stringColumn, intColumn
 
 
 # State
@@ -55,7 +55,7 @@ is not that crazy.
 ## Custom Columns
 
 @docs Column, customColumn, veryCustomColumn
-@docs Sorter, unsortable, increasingBy, decreasingBy
+@docs Sorter, unsortable
 @docs increasingOrDecreasingBy, decreasingOrIncreasingBy
 
 
@@ -67,19 +67,23 @@ is not that crazy.
 -}
 
 -- Re-export modules for clean API
+
+import Html exposing (Html)
 import Shared.Components.Table.Column as Column
 import Shared.Components.Table.Config as Config
 import Shared.Components.Table.Sorter as Sorter
 import Shared.Components.Table.State as State
 import Shared.Components.Table.View as View
-import Html exposing (Html)
+
 
 
 -- STATE
 
+
 {-| Tracks which column to sort by.
 -}
-type alias State = State.State
+type alias State =
+    State.State
 
 
 {-| Create a table state. By providing a column name, you determine which
@@ -92,7 +96,8 @@ yachts to be sorted by length by default, you might say:
 
 -}
 initialSort : String -> State
-initialSort = State.initialSort
+initialSort =
+    State.initialSort
 
 
 {-| Inspect the current table state. Which column is being sorted by,
@@ -100,7 +105,8 @@ and whether the sort order is reversed. This could be useful for storing
 the sort state in a URL or somewhere else outside of Elm.
 -}
 getSortState : State -> ( String, Bool )
-getSortState = State.getSortState
+getSortState =
+    State.getSortState
 
 
 {-| Create a table state with a column to sort by, and whether to
@@ -108,10 +114,13 @@ reverse the order. This allows a sort to be applied URL params or
 somewhere else outside of Elm.
 -}
 sortBy : String -> Bool -> State
-sortBy = State.sortBy
+sortBy =
+    State.sortBy
+
 
 
 -- CONFIG
+
 
 {-| Configuration for your table, describing your columns.
 
@@ -119,50 +128,8 @@ sortBy = State.sortBy
 It should only appear in `view` code.
 
 -}
-type alias Config data msg = Config.Config data msg
-
-
-{-| Create the `Config` for your `view` function. Everything you need to
-render your columns efficiently and handle selection of columns.
-
-Say we have a `List Person` that we want to show as a table. The table should
-have a column for name and age. We would create a `Config` like this:
-
-    import Shared.Components.Table as Table
-
-    type Msg = NewTableState State | ...
-
-    config : Table.Config Person Msg
-    config =
-      Table.config
-        { toId = .name
-        , toMsg = NewTableState
-        , columns =
-            [ Table.stringColumn "Name" .name
-            , Table.intColumn "Age" .age
-            ]
-        }
-
-You provide the following information in your table configuration:
-
-  - `toId` &mdash; turn a `Person` into a unique ID. This lets us use
-    [`Html.Keyed`][keyed] under the hood to make re-sorts faster.
-  - `columns` &mdash; specify some columns to show.
-  - `toMsg` &mdash; a way to send new table states to your app as messages.
-
-See the [examples] to get a better feel for this!
-
-[keyed]: http://package.elm-lang.org/packages/elm-lang/html/latest/Html-Keyed
-[examples]: https://github.com/billstclair/elm-sortable-table/tree/master/examples
-
--}
-config :
-    { toId : data -> String
-    , toMsg : State -> msg
-    , columns : List (Column data msg)
-    }
-    -> Config data msg
-config = Config.config
+type alias Config data msg =
+    Config.Config data msg
 
 
 {-| Just like `config` but you can specify a bunch of table customizations.
@@ -174,7 +141,8 @@ customConfig :
     , customizations : Customizations data msg
     }
     -> Config data msg
-customConfig = Config.customConfig
+customConfig =
+    Config.customConfig
 
 
 {-| There are quite a lot of ways to customize the `<table>` tag. You can add
@@ -189,20 +157,23 @@ impossible to do bad stuff. So just be aware of that, and share any stories
 you have. Stories make it possible to design better!
 
 -}
-type alias Customizations data msg = Config.Customizations data msg
+type alias Customizations data msg =
+    Config.Customizations data msg
 
 
 {-| Sometimes you must use a `<td>` tag, but the attributes and children are up
 to you. This type lets you specify all the details of an HTML node except the
 tag name.
 -}
-type alias HtmlDetails msg = Column.HtmlDetails msg
+type alias HtmlDetails msg =
+    Column.HtmlDetails msg
 
 
 {-| The customizations used in `config` by default.
 -}
 defaultCustomizations : Customizations data msg
-defaultCustomizations = Config.defaultCustomizations
+defaultCustomizations =
+    Config.defaultCustomizations
 
 
 {-| The status of a particular column, for use in the `thead` field of your
@@ -221,29 +192,30 @@ defaultCustomizations = Config.defaultCustomizations
 This information lets you do custom header decorations for each scenario.
 
 -}
-type alias Status = Config.Status
+type alias Status =
+    Config.Status
+
 
 
 -- COLUMNS
 
+
 {-| Describes how to turn `data` into a column in your table.
 -}
-type alias Column data msg = Column.Column data msg
+type alias Column data msg =
+    Column.Column data msg
 
 
 {-| -}
 stringColumn : String -> (data -> String) -> Column data msg
-stringColumn = Column.stringColumn
+stringColumn =
+    Column.stringColumn
 
 
 {-| -}
 intColumn : String -> (data -> Int) -> Column data msg
-intColumn = Column.intColumn
-
-
-{-| -}
-floatColumn : String -> (data -> Float) -> Column data msg
-floatColumn = Column.floatColumn
+intColumn =
+    Column.intColumn
 
 
 {-| Perhaps the basic columns are not quite what you want. Maybe you want to
@@ -278,7 +250,8 @@ customColumn :
     , sorter : Sorter data
     }
     -> Column data msg
-customColumn = Column.customColumn
+customColumn =
+    Column.customColumn
 
 
 {-| It is _possible_ that you want something crazier than `customColumn`. In
@@ -315,10 +288,13 @@ veryCustomColumn :
     , sorter : Sorter data
     }
     -> Column data msg
-veryCustomColumn = Column.veryCustomColumn
+veryCustomColumn =
+    Column.veryCustomColumn
+
 
 
 -- VIEW
+
 
 {-| Take a list of data and turn it into a table. The `Config` argument is the
 configuration for the table. It describes the columns that we want to show. The
@@ -332,20 +308,25 @@ that.
 
 -}
 view : Config data msg -> State -> List data -> Html msg
-view = View.view
+view =
+    View.view
 
 
 {-| Return the data sorted exactly as it will be displayed on the screen.
 -}
 getSortedData : Config data msg -> State -> List data -> List data
-getSortedData = View.getSortedData
+getSortedData =
+    View.getSortedData
+
 
 
 -- SORTERS
 
+
 {-| Specifies a particular way of sorting data.
 -}
-type alias Sorter data = Sorter.Sorter data
+type alias Sorter data =
+    Sorter.Sorter data
 
 
 {-| A sorter for columns that are unsortable. Maybe you have a column in your
@@ -353,32 +334,8 @@ table for delete buttons that delete the row. It would not make any sense to
 sort based on that column.
 -}
 unsortable : Sorter data
-unsortable = Sorter.unsortable
-
-
-{-| Create a sorter that can only display the data in increasing order. If we
-want a table of people, sorted alphabetically by name, we would say this:
-
-    sorter : Sorter { a | name : comparable }
-    sorter =
-        increasingBy .name
-
--}
-increasingBy : (data -> comparable) -> Sorter data
-increasingBy = Sorter.increasingBy
-
-
-{-| Create a sorter that can only display the data in decreasing order. If we
-want a table of countries, sorted by population from highest to lowest, we
-would say this:
-
-    sorter : Sorter { a | population : comparable }
-    sorter =
-        decreasingBy .population
-
--}
-decreasingBy : (data -> comparable) -> Sorter data
-decreasingBy = Sorter.decreasingBy
+unsortable =
+    Sorter.unsortable
 
 
 {-| Sometimes you want to be able to sort data in increasing _or_ decreasing
@@ -392,7 +349,8 @@ This function lets you see both, starting with decreasing order.
 
 -}
 decreasingOrIncreasingBy : (data -> comparable) -> Sorter data
-decreasingOrIncreasingBy = Sorter.decreasingOrIncreasingBy
+decreasingOrIncreasingBy =
+    Sorter.decreasingOrIncreasingBy
 
 
 {-| Sometimes you want to be able to sort data in increasing _or_ decreasing
@@ -405,9 +363,12 @@ sort by best time by default, but also see the other order.
 
 -}
 increasingOrDecreasingBy : (data -> comparable) -> Sorter data
-increasingOrDecreasingBy = Sorter.increasingOrDecreasingBy
+increasingOrDecreasingBy =
+    Sorter.increasingOrDecreasingBy
 
 
-{-| Set a fixed width for a column (e.g. "120px" or "10%"). -}
+{-| Set a fixed width for a column (e.g. "120px" or "10%").
+-}
 withColumnWidth : String -> Column.Column data msg -> Column.Column data msg
-withColumnWidth = Column.withColumnWidth
+withColumnWidth =
+    Column.withColumnWidth

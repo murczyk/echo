@@ -1583,12 +1583,14 @@ view dark _ _ model =
 -- small [] [ i [ class "bi bi-image" ] [] ] ] small [] [ text "іконка" ]
 
 
+exampleContent : String
 exampleContent =
     """19.00 Качкарівка
 *В район (47.1305050, 33.7418280) сьогодні зайшла ОВТ ров. Склад та кількість не встановлено.
 *в районі (52-20714 65-51696) знаходиться машина з антенами. Тип не встановлено."""
 
 
+operatyvkaExamples : List String
 operatyvkaExamples =
     [ exampleContent
     , """№ 68839

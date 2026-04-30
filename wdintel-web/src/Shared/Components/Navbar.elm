@@ -15,6 +15,7 @@ import Shared.Model exposing (ThemeMode)
 import String
 import Utils.Utils exposing (..)
 
+
 type Link
     = Internal Route.Path.Path
     | InternalRoute { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String }
@@ -92,14 +93,6 @@ internalMenuRoute route activeName label =
         }
 
 
-menuGroup : String -> List Menu -> Menu
-menuGroup label subs =
-    MenuGroup
-        { label = label
-        , subs = subs
-        }
-
-
 menuIsActive : String -> Menu -> Bool
 menuIsActive activeName menu =
     case menu of
@@ -115,7 +108,8 @@ menuIsActive activeName menu =
 
 isActiveName : String -> String -> Bool
 isActiveName itemActiveName activeName =
-    itemActiveName == activeName
+    itemActiveName
+        == activeName
         || (itemActiveName == "settings-neo" && String.startsWith "settings-neo" activeName)
 
 
@@ -421,36 +415,6 @@ menuItemRoute props activeName route activeNameExp nameText =
             [ text nameText ]
         ]
 
-
-menuItem : { a | onDropdownToggle : Maybe b -> msg } -> String -> Route.Path.Path -> String -> String -> Html msg
-menuItem props activeName hrefLink activeNameExp nameText =
-    let
-        neoAlphaBadge =
-            span
-                [ class "pointer-events-none absolute -top-[1px] -right-[18px] z-10 rounded-full border !border-rose-300 bg-rose-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-rose-900" ]
-                [ text "Alpha" ]
-
-        linkContents =
-            if activeNameExp == "rer-duty-neo" then
-                [ text nameText
-                , neoAlphaBadge
-                ]
-
-            else
-                [ text nameText ]
-    in
-    li [ class "w-full lg:w-auto" ]
-        [ a
-            [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
-            , classList
-                [ ( "relative", activeNameExp == "rer-duty-neo" )
-                , ( "font-medium", isActiveName activeNameExp activeName )
-                ]
-            , Route.Path.href hrefLink
-            , onClick (props.onDropdownToggle Nothing)
-            ]
-            linkContents
-        ]
 
 
 -- Dropdowns: black text in light mode, white in dark mode

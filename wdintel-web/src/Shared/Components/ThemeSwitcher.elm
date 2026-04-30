@@ -26,8 +26,10 @@ themeSwitcher props =
                         ++ (case props.currentTheme of
                                 Light ->
                                     "bi-sun"
+
                                 Dark ->
                                     "bi-moon"
+
                                 System ->
                                     "bi-laptop"
                            )
@@ -57,6 +59,7 @@ themeOption props theme iconClass label =
         , span [ class "text-[var(--color-text)] whitespace-nowrap" ] [ text label ]
         , if props.currentTheme == theme then
             i [ class "bi bi-check ml-auto text-[var(--color-primary)]" ] []
+
           else
             text ""
         ]
@@ -67,17 +70,13 @@ getNextTheme current =
     case current of
         Light ->
             Dark
+
         Dark ->
             System
+
         System ->
             Light
 
 
+
 -- Backward compatibility function
-colorThemeSwitcher : msg -> Bool -> Html msg
-colorThemeSwitcher msg isDark =
-    themeSwitcher
-        { currentTheme = if isDark then Dark else Light
-        , onThemeChange = \_ -> msg
-        , triggerClass = "p-2 rounded transition-all duration-200"
-        }

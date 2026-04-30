@@ -1,3 +1,5 @@
+import InfoIcon from '@mui/icons-material/Info';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Button, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import { Fragment, useState } from 'react';
 
@@ -51,11 +53,13 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
     <Stack spacing={0.75} alignItems="flex-start">
       <Stack direction="row" gap={0.5} flexWrap="wrap" sx={{ maxWidth: '100%' }}>
         {visibleCallsigns.map((entry, index) => {
+          const hintIcon =
+            entry.iconClass === 'info-circle-fill' ? <InfoIcon fontSize="inherit" /> : entry.iconClass === 'info-circle' ? <InfoOutlinedIcon fontSize="inherit" /> : null;
           const chip = (
             <PowerChip
               label={
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  {entry.tooltip && entry.iconClass ? <i className={`bi ${entry.iconClass}`} /> : null}
+                  {entry.tooltip && hintIcon ? hintIcon : null}
                   <span>{entry.callsign.toUpperCase()}</span>
                 </span>
               }

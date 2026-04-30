@@ -19,7 +19,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import Pages_.RerFreqs.FilterPanel as FilterPanel
-import Pages_.RerFreqs.Model exposing (NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
+import Pages_.RerFreqs.Model exposing (NetworkWorkflowStatus(..), ShowAllPopupFor(..), TextLocation(..))
 import Pages_.RerFreqs.Msg exposing (Msg(..))
 import Pages_.RerFreqs.NetworkWorkflow as NetworkWorkflow
 import Pages_.RerFreqs.Utils as Utils
@@ -45,8 +45,8 @@ import Time exposing (Posix)
 import Time.Extra
 import Url.Builder
 import Utils.Api.ErrorHandling
-import Utils.NetworksUtils as NetworksUtils
 import Utils.Modulations as Modulations
+import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
@@ -307,9 +307,6 @@ loadFreqsWithTracker model paginating tracker =
             Cmd.none
 
 
-
-
-
 callsignsForFilterParams : Posix -> Posix -> Model -> B.CallsignsForFreqReq
 callsignsForFilterParams dtFromPosix dtToPosix model =
     let
@@ -479,7 +476,7 @@ update shared msg model =
                             _ ->
                                 []
                        )
-                    )
+                )
             )
 
         GroupsMessageCountByDayReturnedByApi (Ok r) ->
@@ -2131,12 +2128,11 @@ dateAndPanelsBlock _ model =
                         }
                         |> Shared.Components.DateTime.view
                    )
-                ++ ((div
+                ++ (div
                         [ class "me-2"
                         , style "font-size" "1rem"
                         ]
                         [ text "по" ]
-                    )
                         :: (Shared.Components.DateTime.new
                                 { model = model.to
                                 , toMsg = DateTimeToMsg
@@ -2252,7 +2248,7 @@ unitsBlock shared model =
             , div [ class "overflow-y-auto grow-1" ]
                 [ case shared.masterUnits of
                     Success units ->
-                        Core.UnitHierarchy.view config (Dict.toList units |> List.map Tuple.second) model.unitStats
+                        Core.UnitHierarchy.view config (Dict.values units) model.unitStats
 
                     _ ->
                         div [] [ text "Завантаження підрозділів..." ]

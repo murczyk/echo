@@ -58,7 +58,7 @@ subscriptions _ =
 
 
 view : Auth.User -> Model -> View Msg
-view user _ =
+view _ _ =
     { title = "ГОІ: налаштування"
     , body =
         [ div [ class "box-border px-6 pt-6 pb-6 w-full flex flex-col" ]

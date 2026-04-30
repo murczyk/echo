@@ -1,30 +1,33 @@
 module Shared.Components.Table.Config exposing
-    ( Config(..)
-    , Customizations
+    ( Config(..), customConfig
+    , Customizations, defaultCustomizations
     , Status(..)
-    , config
-    , customConfig
-    , defaultCustomizations
     )
 
 {-| This module handles table configuration and customizations.
 
+
 # Configuration
-@docs Config, config, customConfig
+
+@docs Config, customConfig
+
 
 # Customizations
+
 @docs Customizations, defaultCustomizations
 
+
 # Status
+
 @docs Status
 
 -}
 
 import Char
-import Shared.Components.Table.Column as Column exposing (Column, ColumnData, HtmlDetails)
-import Shared.Components.Table.State as State exposing (State)
 import Html exposing (Attribute, Html)
 import Html.Attributes
+import Shared.Components.Table.Column as Column exposing (Column, ColumnData, HtmlDetails)
+import Shared.Components.Table.State exposing (State)
 
 
 {-| Configuration for your table, describing your columns.
@@ -84,56 +87,6 @@ type Status
     = Unsortable
     | Sortable Bool
     | Reversible (Maybe Bool)
-
-
-{-| Create the `Config` for your `view` function. Everything you need to
-render your columns efficiently and handle selection of columns.
-
-Say we have a `List Person` that we want to show as a table. The table should
-have a column for name and age. We would create a `Config` like this:
-
-    import Shared.Components.Table as Table
-    import Shared.Components.Table.Column as Column
-
-    type Msg = NewTableState Table.State | ...
-
-    config : Table.Config Person Msg
-    config =
-      Table.config
-        { toId = .name
-        , toMsg = NewTableState
-        , columns =
-            [ Column.stringColumn "Name" .name
-            , Column.intColumn "Age" .age
-            ]
-        }
-
-You provide the following information in your table configuration:
-
-  - `toId` &mdash; turn a `Person` into a unique ID. This lets us use
-    [`Html.Keyed`][keyed] under the hood to make re-sorts faster.
-  - `columns` &mdash; specify some columns to show.
-  - `toMsg` &mdash; a way to send new table states to your app as messages.
-
-See the [examples] to get a better feel for this!
-
-[keyed]: http://package.elm-lang.org/packages/elm-lang/html/latest/Html-Keyed
-[examples]: https://github.com/billstclair/elm-sortable-table/tree/master/examples
-
--}
-config :
-    { toId : data -> String
-    , toMsg : State -> msg
-    , columns : List (Column data msg)
-    }
-    -> Config data msg
-config { toId, toMsg, columns } =
-    Config
-        { toId = toId
-        , toMsg = toMsg
-        , columns = List.map Column.unwrapColumn columns
-        , customizations = defaultCustomizations
-        }
 
 
 {-| Just like `config` but you can specify a bunch of table customizations.
@@ -216,7 +169,7 @@ simpleTheadHelp ( name, status, click ) =
 -}
 nbsp : String
 nbsp =
-    String.fromList [ Char.fromCode 0xA0 ]
+    String.fromChar (Char.fromCode 0xA0)
 
 
 {-| Dark grey styling for sort indicators.

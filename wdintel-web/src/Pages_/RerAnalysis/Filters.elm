@@ -149,8 +149,8 @@ unitsExactMatchCheckboxChipLabel model =
 unitsExactMatchCheckboxContent : Model -> List (Html msg)
 unitsExactMatchCheckboxContent model =
     [ span [ class "inline-flex items-center gap-2" ]
-        ([ text "точний збіг за еталонкою" ]
-            ++ (case unitsExactMatchCheckboxChipLabel model of
+        (text "точний збіг за еталонкою"
+            :: (case unitsExactMatchCheckboxChipLabel model of
                     Just chipLabel ->
                         [ span
                             [ class "inline-flex items-center rounded-full border border-amber-500/40 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold leading-none text-amber-700" ]
@@ -165,7 +165,7 @@ unitsExactMatchCheckboxContent model =
 
 
 view : Bool -> B.User -> Model -> Html Msg
-view isDark user model =
+view isDark _ model =
     let
         renderSavedFilter ( filterId, filter ) =
             let
@@ -419,7 +419,7 @@ view isDark user model =
                             ]
                         ]
             in
-            filterMenuBlockCountOutOf
+            [ filterMenuBlockCountOutOf
                 { unfold = model.unfoldAorsFilter
                 , toggleMsg = ToggleUnfoldAorsFilter
                 , label = "смуги"
@@ -428,109 +428,109 @@ view isDark user model =
                 , withGreenCircle = False
                 }
                 tabFiltersAors
-                :: [ filterMenuBlockCountOutOf
-                        { unfold = model.unfoldGroupsFilter
-                        , toggleMsg = ToggleUnfoldGroupsFilter
-                        , label = "група"
-                        , mCountLabel = List.length model.groupsSelected |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.groupsCount) model.groups
-                        , withGreenCircle = False
-                        }
-                        tabFiltersGroups
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldSendersFilter
-                        , toggleMsg = ToggleUnfoldSendersFilter
-                        , label = "відправник"
-                        , mCountLabel = model.sendersSelected |> List.length |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.sendersCount) model.senders
-                        , withGreenCircle = False
-                        }
-                        tabFiltersSenders
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldFreqsFilter
-                        , toggleMsg = ToggleUnfoldFreqsFilter
-                        , label = "частоти"
-                        , mCountLabel = List.length model.freqsSelected |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.freqsCount) model.freqs
-                        , withGreenCircle = model.includeOnlyNewFreqs
-                        }
-                        tabFiltersFreqs
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldCallsignsFilter
-                        , toggleMsg = ToggleUnfoldCallsignsFilter
-                        , label = "позивні"
-                        , mCountLabel = List.length model.callsignsSelected |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.callsignsCount) model.callsigns
-                        , withGreenCircle = False
-                        }
-                        tabFiltersCallsigns
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldUnitsFilter
-                        , toggleMsg = ToggleUnfoldUnitsFilter
-                        , label = "підрозділи"
-                        , mCountLabel = List.length model.unitsSelected |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.unitsCount) model.units
-                        , withGreenCircle = False
-                        }
-                        tabFiltersUnits
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldLocationsFilter
-                        , toggleMsg = ToggleUnfoldLocationsFilter
-                        , label = "локації"
-                        , mCountLabel = List.length model.locationsSelected |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.locationsCount) model.locations
-                        , withGreenCircle = not model.includePelengLocations
-                        }
-                        tabFiltersLocations
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldPostsFilter
-                        , toggleMsg = ToggleUnfoldPostsFilter
-                        , label = "пости"
-                        , mCountLabel = List.length model.postsSelected |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.postsCount) model.posts
-                        , withGreenCircle = False
-                        }
-                        tabFiltersPosts
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldNetworksFilter
-                        , toggleMsg = ToggleUnfoldNetworksFilter
-                        , label = "мережі"
-                        , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
-                        , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
-                        , withGreenCircle = False
-                        }
-                        tabFiltersNetworks
-                   , filterMenuBlock
-                        { unfold = model.unfoldMetadataFilter
-                        , toggleMsg = ToggleUnfoldMetadataFilter
-                        , label = "метадані"
-                        }
-                        tabFiltersMetadata
-                   , filterMenuBlockCountOutOf
-                        { unfold = model.unfoldTagsFilter
-                        , toggleMsg = ToggleUnfoldTagsFilter
-                        , label = "теги, збережені"
-                        , mCountLabel =
-                            (List.length model.tagsSelected
-                                + trueToOne model.orBookmarked
-                                + trueToOne model.orImportant
-                                + trueToOne model.orWithCoords
-                                + trueToOne model.orWithExtendedForm
-                                + trueToOne model.withoutModelTags
-                                + trueToOne model.reportTagsOnlyThisUnit
-                            )
-                                |> zeroToNothing
-                                |> mmap String.fromInt
-                        , overallLabel =
-                            extractMRecordField (\r -> r.tagsCount) (List.length model.tags) (RD.toMaybe model.counts)
-                                |> String.fromInt
-                        , withGreenCircle = model.reportTagsOnlyThisUnit
-                        }
-                        tagListBlock
-                   , div [ class "flex-grow-1", style "margin-top" "100px" ]
-                        [-- text "space"
-                        ]
-                   ]
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldGroupsFilter
+                , toggleMsg = ToggleUnfoldGroupsFilter
+                , label = "група"
+                , mCountLabel = List.length model.groupsSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.groupsCount) model.groups
+                , withGreenCircle = False
+                }
+                tabFiltersGroups
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldSendersFilter
+                , toggleMsg = ToggleUnfoldSendersFilter
+                , label = "відправник"
+                , mCountLabel = model.sendersSelected |> List.length |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.sendersCount) model.senders
+                , withGreenCircle = False
+                }
+                tabFiltersSenders
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldFreqsFilter
+                , toggleMsg = ToggleUnfoldFreqsFilter
+                , label = "частоти"
+                , mCountLabel = List.length model.freqsSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.freqsCount) model.freqs
+                , withGreenCircle = model.includeOnlyNewFreqs
+                }
+                tabFiltersFreqs
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldCallsignsFilter
+                , toggleMsg = ToggleUnfoldCallsignsFilter
+                , label = "позивні"
+                , mCountLabel = List.length model.callsignsSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.callsignsCount) model.callsigns
+                , withGreenCircle = False
+                }
+                tabFiltersCallsigns
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldUnitsFilter
+                , toggleMsg = ToggleUnfoldUnitsFilter
+                , label = "підрозділи"
+                , mCountLabel = List.length model.unitsSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.unitsCount) model.units
+                , withGreenCircle = False
+                }
+                tabFiltersUnits
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldLocationsFilter
+                , toggleMsg = ToggleUnfoldLocationsFilter
+                , label = "локації"
+                , mCountLabel = List.length model.locationsSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.locationsCount) model.locations
+                , withGreenCircle = not model.includePelengLocations
+                }
+                tabFiltersLocations
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldPostsFilter
+                , toggleMsg = ToggleUnfoldPostsFilter
+                , label = "пости"
+                , mCountLabel = List.length model.postsSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.postsCount) model.posts
+                , withGreenCircle = False
+                }
+                tabFiltersPosts
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldNetworksFilter
+                , toggleMsg = ToggleUnfoldNetworksFilter
+                , label = "мережі"
+                , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
+                , withGreenCircle = False
+                }
+                tabFiltersNetworks
+            , filterMenuBlock
+                { unfold = model.unfoldMetadataFilter
+                , toggleMsg = ToggleUnfoldMetadataFilter
+                , label = "метадані"
+                }
+                tabFiltersMetadata
+            , filterMenuBlockCountOutOf
+                { unfold = model.unfoldTagsFilter
+                , toggleMsg = ToggleUnfoldTagsFilter
+                , label = "теги, збережені"
+                , mCountLabel =
+                    (List.length model.tagsSelected
+                        + trueToOne model.orBookmarked
+                        + trueToOne model.orImportant
+                        + trueToOne model.orWithCoords
+                        + trueToOne model.orWithExtendedForm
+                        + trueToOne model.withoutModelTags
+                        + trueToOne model.reportTagsOnlyThisUnit
+                    )
+                        |> zeroToNothing
+                        |> mmap String.fromInt
+                , overallLabel =
+                    extractMRecordField (\r -> r.tagsCount) (List.length model.tags) (RD.toMaybe model.counts)
+                        |> String.fromInt
+                , withGreenCircle = model.reportTagsOnlyThisUnit
+                }
+                tagListBlock
+            , div [ class "flex-grow-1", style "margin-top" "100px" ]
+                [-- text "space"
+                ]
+            ]
 
         tabFiltersAors =
             let
@@ -857,14 +857,14 @@ view isDark user model =
                             , trunc = Utils.Select.Long
                             }
                     )
-                    , div [ class "my-3" ]
-                        [ Shared.Components.Checkbox.new { isChecked = model.withoutNetwork, onToggle = WithoutNetworkChanged }
-                            |> Shared.Components.Checkbox.withContent
-                                [ text "без мережі "
-                                , i [ class "bi-question-circle text-xs text-gray-500 dark:text-gray-400" ] []
-                                ]
-                            |> Shared.Components.Checkbox.view
-                        ]
+                , div [ class "my-3" ]
+                    [ Shared.Components.Checkbox.new { isChecked = model.withoutNetwork, onToggle = WithoutNetworkChanged }
+                        |> Shared.Components.Checkbox.withContent
+                            [ text "без мережі "
+                            , i [ class "bi-question-circle text-xs text-gray-500 dark:text-gray-400" ] []
+                            ]
+                        |> Shared.Components.Checkbox.view
+                    ]
                 ]
     in
     div

@@ -316,15 +316,16 @@ getAddValidationError sourceId addState parseError =
             Just err
 
         Nothing ->
-            if isRoSource sourceId
-                && (addState
-                        |> EL.toList
-                        |> List.any
-                            (\state ->
-                                hasAnyAddStateInput state
-                                    && String.isEmpty (String.trim state.inpRadioFreq)
-                            )
-                   )
+            if
+                isRoSource sourceId
+                    && (addState
+                            |> EL.toList
+                            |> List.any
+                                (\state ->
+                                    hasAnyAddStateInput state
+                                        && String.isEmpty (String.trim state.inpRadioFreq)
+                                )
+                       )
             then
                 Just roSourceRadioFreqRequiredError
 
@@ -603,6 +604,7 @@ update _ shared msg model =
                 parseResult =
                     if isTabDelimitedInput then
                         processTabDelimitedInput state.inpCallsign
+
                     else
                         Ok []
 
@@ -642,7 +644,6 @@ update _ shared msg model =
             in
             ( { model
                 | inpSource = updatedSourceId
-                , addParseError = model.addParseError
                 , addValidationError =
                     getAddValidationError updatedSourceId model.addState model.addParseError
               }
@@ -716,16 +717,16 @@ update _ shared msg model =
                         ( mAction, iState, iCmd ) =
                             Select.update selMsg editState.inpUnitSelState
                     in
-                        ( { model
-                            | editState =
-                                Utils.Select.singleUpd mAction (Just editState.inpUnitId)
-                                    |> Maybe.map
-                                        (\unitId ->
-                                            { editState
-                                                | inpUnitSelState = iState
-                                                , inpUnitId = unitId
-                                            }
-                                        )
+                    ( { model
+                        | editState =
+                            Utils.Select.singleUpd mAction (Just editState.inpUnitId)
+                                |> Maybe.map
+                                    (\unitId ->
+                                        { editState
+                                            | inpUnitSelState = iState
+                                            , inpUnitId = unitId
+                                        }
+                                    )
                       }
                     , E.sendCmd <| Cmd.map EditUnitSelMsg iCmd
                     )
@@ -1238,7 +1239,6 @@ update _ shared msg model =
             ( { model
                 | inpSourceSelState = imodel2
                 , inpSource = updatedSourceId
-                , addParseError = model.addParseError
                 , addValidationError =
                     getAddValidationError updatedSourceId model.addState model.addParseError
               }
@@ -1905,6 +1905,7 @@ contentBlock shared model user =
     let
         hasEditorRole =
             Core.Auth.hasRole "CallsignsEditor" user || Core.Auth.hasRole "UnitsEditor" user
+
         hasUnitEditorRole =
             Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user
 
@@ -2211,20 +2212,19 @@ contentBlock shared model user =
                                 , option [ value "all" ] [ text "Усі" ]
                                 ]
                             ]
-                                ++ (button
-                                        [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
-                                        , onClick ToggleSidebar
-                                        , attribute "title"
-                                            (if model.showSidebar then
-                                                "Сховати підрозділи"
+                                ++ button
+                                    [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
+                                    , onClick ToggleSidebar
+                                    , attribute "title"
+                                        (if model.showSidebar then
+                                            "Сховати підрозділи"
 
-                                             else
-                                                "Показати підрозділи"
-                                            )
-                                        ]
-                                        [ text "Підрозділи" ]
-                                   )
-                                    :: (if hasUnitEditorRole then
+                                         else
+                                            "Показати підрозділи"
+                                        )
+                                    ]
+                                    [ text "Підрозділи" ]
+                                :: (if hasUnitEditorRole then
                                         [ button
                                             [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 flex items-center gap-2 ml-4"
                                             , onClick (DownloadCsv hasUnitEditorRole)
@@ -2232,7 +2232,7 @@ contentBlock shared model user =
                                             , attribute "title" "Завантажити CSV з обраними фільтрами"
                                             , style "margin-left" "12px"
                                             ]
-                                            ((text "Завантажити csv")
+                                            (text "Завантажити csv"
                                                 :: (if model.downloadCsvInProgress then
                                                         [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
@@ -2244,7 +2244,7 @@ contentBlock shared model user =
 
                                     else
                                         []
-                                       )
+                                   )
                                 ++ (if hasUnitEditorRole then
                                         [ button
                                             [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 flex items-center gap-2"
@@ -2252,7 +2252,7 @@ contentBlock shared model user =
                                             , Attr.disabled model.downloadXlsxInProgress
                                             , attribute "title" "Завантажити XLSX з обраними фільтрами"
                                             ]
-                                            ((text "Завантажити XLSX")
+                                            (text "Завантажити XLSX"
                                                 :: (if model.downloadXlsxInProgress then
                                                         [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
@@ -2526,14 +2526,15 @@ mkAddStateWithFullName callsign position fullName comment =
     , inpRadioFreq = ""
     }
 
+
 processTabDelimitedInput : String -> Result String (List AddState)
 processTabDelimitedInput input =
     let
         stripTrailingLineBreaks value =
-            if String.endsWith "\r\n" value then
+            if String.endsWith "\u{000D}\n" value then
                 stripTrailingLineBreaks (String.dropRight 2 value)
 
-            else if String.endsWith "\n" value || String.endsWith "\r" value then
+            else if String.endsWith "\n" value || String.endsWith "\u{000D}" value then
                 stripTrailingLineBreaks (String.dropRight 1 value)
 
             else

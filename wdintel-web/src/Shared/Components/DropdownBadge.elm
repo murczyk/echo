@@ -80,25 +80,25 @@ view cfg =
             , span [ class "opacity-70" ] [ text "⋮" ]
             ]
         , if cfg.isOpen then
-            viewDropdown cfg.actions cfg.onClose cfg.forceDirection
+            viewDropdown cfg.actions cfg.forceDirection
           else
             text ""
         ]
 
 
-viewDropdown : List (DropdownAction msg) -> msg -> Maybe DropdownDirection -> Html msg
-viewDropdown actions onClose direction =
+viewDropdown : List (DropdownAction msg) -> Maybe DropdownDirection -> Html msg
+viewDropdown actions direction =
     let
-        (positionClass, marginClass) =
+        positionClass =
             case direction of
                 Just Up ->
-                    ( "bottom-full left-0 mb-1", "mb-1" )
+                    "bottom-full left-0 mb-1"
 
                 Just Down ->
-                    ( "top-full left-0 mt-1", "mt-1" )
+                    "top-full left-0 mt-1"
 
                 Nothing ->
-                    ( "top-full left-0 mt-1", "mt-1" )
+                    "top-full left-0 mt-1"
     in
     div
         [ class ("absolute " ++ positionClass ++ " bg-[var(--color-card)] border border-[var(--color-border-muted)] rounded shadow-lg z-50 min-w-[160px]")

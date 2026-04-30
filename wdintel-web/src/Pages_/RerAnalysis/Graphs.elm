@@ -11,15 +11,13 @@ import Pages_.RerAnalysis.Constants exposing (..)
 import Pages_.RerAnalysis.FreqBadge
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
-import Pages_.RerAnalysis.Utils exposing (..)
 import Shared
 import Shared.Components.Spinner
-import String exposing (fromInt)
 import Utils.RemoteData as RD exposing (RemoteData(..))
 
 
 graphsBlock : Model -> Shared.Model -> List (Html Msg)
-graphsBlock model shared =
+graphsBlock model _ =
     let
         correlationBlock =
             let

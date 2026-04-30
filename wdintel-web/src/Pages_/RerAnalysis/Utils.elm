@@ -1,7 +1,7 @@
-module Pages_.RerAnalysis.Utils exposing (buildMetadataLinks, buildPointTokenClickUrlFor, getPointEtalonsFromMessage, messageHasPalitraTag, uniquePointEtalonsForMapSearch, updateQueryWithSelectedFreq, updateQueryWithSearch)
+module Pages_.RerAnalysis.Utils exposing (buildMetadataLinks, buildPointTokenClickUrlFor, getPointEtalonsFromMessage, messageHasPalitraTag, updateQueryWithSelectedFreq)
 
 import Bindings as B
-import Dict exposing (Dict)
+import Dict
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Maybe
@@ -38,6 +38,7 @@ uniquePointEtalonsForMapSearch etalons =
             in
             if t == "" || List.member t acc then
                 acc
+
             else
                 acc ++ [ t ]
         )
@@ -251,9 +252,12 @@ dedupeMetadataSpans metadataSpans_ =
 
 sameMetadataSpan : MetadataSpan -> MetadataSpan -> Bool
 sameMetadataSpan left right =
-    left.startIndex == right.startIndex
-        && left.endIndex == right.endIndex
-        && metadataFilterKey left.filter == metadataFilterKey right.filter
+    left.startIndex
+        == right.startIndex
+        && left.endIndex
+        == right.endIndex
+        && metadataFilterKey left.filter
+        == metadataFilterKey right.filter
 
 
 metadataFilterKey : MetadataFilter -> ( String, String )

@@ -5,6 +5,7 @@ import type {
   FreqDailyActivityCount,
   FreqDetailedPoint,
   InboxMessage,
+  MessageComment,
   Network,
   NetworkUnit,
   NewCallsignsRes,
@@ -36,6 +37,7 @@ type Params = {
   setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
   setMapPoints: Setter<FreqDetailedPoint[]>;
   setMessages: Setter<Array<[number, InboxMessage]>>;
+  setMessageComments: Setter<Record<number, MessageComment[]>>;
   setNetworkDisplayMap: Setter<Record<number, string>>;
   setNetworks: Setter<Network[]>;
   setNewCallsigns: Setter<NewCallsignsRes>;
@@ -54,6 +56,7 @@ type Params = {
   setTopUnits: Setter<AnalysisCountItem[]>;
   setUnitsMap: Setter<Record<number, Unit>>;
   setHasLoadedInitialMessages: Setter<boolean>;
+  invalidateMessageCommentsLoads: () => void;
 };
 
 export function useAnalysisDataStateUtils(params: Params) {
@@ -74,6 +77,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setMapOpenMessages,
     setMapPoints,
     setMessages,
+    setMessageComments,
     setNetworkDisplayMap,
     setNetworks,
     setNewCallsigns,
@@ -92,6 +96,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setTopUnits,
     setUnitsMap,
     setHasLoadedInitialMessages,
+    invalidateMessageCommentsLoads,
   } = params;
 
   const patchMessages = useCallback(
@@ -136,6 +141,8 @@ export function useAnalysisDataStateUtils(params: Params) {
     setRightSidebarLoading(false);
     setNoMoreToLoad(false);
     setNolimitShown(false);
+    setMessageComments({});
+    invalidateMessageCommentsLoads();
     optionsFreqsRef.current = [];
     invalidateCallsignGraph();
   }, [
@@ -155,6 +162,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setMapOpenMessages,
     setMapPoints,
     setMessages,
+    setMessageComments,
     setNetworkDisplayMap,
     setNetworks,
     setNewCallsigns,
@@ -172,6 +180,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setRightSidebarLoading,
     setTopUnits,
     setUnitsMap,
+    invalidateMessageCommentsLoads,
   ]);
 
   const onUpdateLocalMessage = useCallback(

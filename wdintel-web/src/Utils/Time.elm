@@ -10,19 +10,13 @@ module Utils.Time exposing
     , posixToInputValueTime
     , posixToString
     , renderDateF4
-    , renderDateF5FromMillis
-    , renderDateF6
     , renderDateTimeF1
-    , renderDateTimeF2
-    , renderDateTimeF3
+    , renderDateF6
     , renderDateTimeF6
-    , renderDateTimeF7
     , renderDateTimeF9
     , renderDistanceF1
-    , renderPartsAsInputValue
     , renderPartsF1
     , renderTimeF4
-    , thresholdStopCountingDaysInMillis
     , xDaysAgo
     , xDaysInMillis
     )
@@ -54,26 +48,6 @@ renderDateTimeF1 z t =
         ++ twoSign (Time.toSecond z t)
 
 
-{-| Like "18:35:08"
--}
-renderDateTimeF2 : Zone -> Posix -> String
-renderDateTimeF2 z t =
-    twoSign (Time.toHour z t)
-        ++ ":"
-        ++ twoSign (Time.toMinute z t)
-        ++ ":"
-        ++ twoSign (Time.toSecond z t)
-
-
-{-| Like "26.03"
--}
-renderDateTimeF3 : Zone -> Posix -> String
-renderDateTimeF3 z t =
-    twoSign (Time.toDay z t)
-        ++ "."
-        ++ twoSign (Date.monthToNumber (Time.toMonth z t))
-
-
 {-| Like "2023-03-26"
 -}
 renderDateF4 : Zone -> Posix -> String
@@ -83,17 +57,6 @@ renderDateF4 z t =
         ++ twoSign (Date.monthToNumber (Time.toMonth z t))
         ++ "-"
         ++ twoSign (Time.toDay z t)
-
-
-{-| Like "26-03-2024"
--}
-renderDateF5 : Zone -> Posix -> String
-renderDateF5 z t =
-    twoSign (Time.toDay z t)
-        ++ "-"
-        ++ twoSign (Date.monthToNumber (Time.toMonth z t))
-        ++ "-"
-        ++ String.fromInt (Time.toYear z t)
 
 
 {-| Like "26.03.24"
@@ -131,21 +94,6 @@ renderDateTimeF6 z t =
         ++ twoSign (Time.toMinute z t)
 
 
-{-| Like "26.03.2023 18:35"
--}
-renderDateTimeF7 : Zone -> Posix -> String
-renderDateTimeF7 z t =
-    twoSign (Time.toDay z t)
-        ++ "."
-        ++ twoSign (Date.monthToNumber (Time.toMonth z t))
-        ++ "."
-        ++ String.slice 2 4 (String.fromInt (Time.toYear z t))
-        ++ " "
-        ++ twoSign (Time.toHour z t)
-        ++ ":"
-        ++ twoSign (Time.toMinute z t)
-
-
 {-| Like "26.03 18:35"
 -}
 renderDateTimeF9 : Zone -> Posix -> String
@@ -169,21 +117,6 @@ renderDateTimeF9 z t =
 --         ++ twoSign (Date.monthToNumber ps.month)
 --         ++ "-"
 --         ++ twoSign ps.day
-
-
-{-| parse date str like "2023-03-29T08:00" to be a valid value for input type="datetime-local"
--}
-renderPartsAsInputValue : Parts -> String
-renderPartsAsInputValue ps =
-    String.fromInt ps.year
-        ++ "-"
-        ++ twoSign (Date.monthToNumber ps.month)
-        ++ "-"
-        ++ twoSign ps.day
-        ++ "T"
-        ++ twoSign ps.hour
-        ++ ":"
-        ++ twoSign ps.minute
 
 
 renderPartsAsInputValueDate : Parts -> String
@@ -348,6 +281,7 @@ parseDatetimeParts str =
 -- Function to parse a date string in the format "YYYY-MM-DD"
 
 
+posixToInputValueDate : Zone -> Posix -> String
 posixToInputValueDate zone dt =
     renderPartsAsInputValueDate (Time.Extra.posixToParts zone dt)
 
@@ -430,11 +364,6 @@ xDaysAgo days currentTime =
 xDaysInMillis : Int -> Int
 xDaysInMillis days =
     1000 * 60 * 60 * 24 * days
-
-
-oneWeekInMillis : Int
-oneWeekInMillis =
-    xDaysInMillis 7
 
 
 isMoreThanThresholdApart : Posix -> Posix -> Bool
@@ -530,8 +459,3 @@ posixToString posix zone =
                 ++ (String.fromInt minute |> String.padLeft 2 '0')
     in
     ( date, time )
-
-
-renderDateF5FromMillis : Int -> Zone -> String
-renderDateF5FromMillis createdAt zone =
-    createdAt |> Time.millisToPosix |> renderDateF5 zone

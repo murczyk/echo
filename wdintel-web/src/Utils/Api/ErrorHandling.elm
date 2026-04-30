@@ -1,4 +1,4 @@
-module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, formatErrorForShowErrorWithDetails, formatErrorWithCustomTitle, getErrorDetails, getErrorTypeMessage, getHttpStatusString)
+module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, formatErrorForShowErrorWithDetails)
 
 import Core.Types
 import Effect as E
@@ -156,7 +156,7 @@ formatErrorForShowErrorWithDetails customTitle error =
         Http.BadStatus 401 ->
             -- For 401 errors, trigger logout instead of showing error
             E.logout
-            
+
         _ ->
             -- For other errors, show the error message
             E.showErrorWithDetails errorDetails.title errorDetails.content

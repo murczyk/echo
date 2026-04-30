@@ -17,6 +17,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { useEffect, useRef, useState } from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { ADJACENT_FREQS_RANGE_OPTIONS, normalizeFeed } from './utils';
@@ -447,7 +448,7 @@ export function FeedFilterPanel({
                   {reloadFreqsLoading ? (
                     <CircularProgress size={18} />
                   ) : (
-                    <i className="bi bi-arrow-clockwise w-[21px]" style={{ fontSize: '1rem' }} />
+                    <RefreshOutlinedIcon sx={{ fontSize: '1rem' }} />
                   )}
                 </IconButton>
               </span>

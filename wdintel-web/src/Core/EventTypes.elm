@@ -1,4 +1,4 @@
-module Core.EventTypes exposing (EventState, EventSubscription, EventSubscriptions, subscribeToEvent, subscribeToEvents, unsubscribeFromEvents, getSubscribedEvents)
+module Core.EventTypes exposing (EventState, EventSubscriptions, subscribeToEvents, unsubscribeFromEvents)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -14,33 +14,20 @@ type alias EventState =
     }
 
 
-type alias EventSubscription =
-    { pageId : Route.Path.Path
-    , eventTypes : List B.EventType
-    }
-
-
 type alias EventSubscriptions =
     Dict String (List B.EventType)
 
 
--- Helper functions for type-safe event subscriptions
 
-subscribeToEvent : Route.Path.Path -> B.EventType -> EventSubscriptions -> EventSubscriptions
-subscribeToEvent pageId eventType subscriptions =
-    let
-        pageIdString = Route.Path.toString pageId
-        currentEvents =
-            Dict.get pageIdString subscriptions
-                |> Maybe.withDefault []
-    in
-    Dict.insert pageIdString (eventType :: currentEvents) subscriptions
+-- Helper functions for type-safe event subscriptions
 
 
 subscribeToEvents : Route.Path.Path -> List B.EventType -> EventSubscriptions -> EventSubscriptions
 subscribeToEvents pageId eventTypes subscriptions =
     let
-        pageIdString = Route.Path.toString pageId
+        pageIdString =
+            Route.Path.toString pageId
+
         currentEvents =
             Dict.get pageIdString subscriptions
                 |> Maybe.withDefault []
@@ -51,15 +38,7 @@ subscribeToEvents pageId eventTypes subscriptions =
 unsubscribeFromEvents : Route.Path.Path -> EventSubscriptions -> EventSubscriptions
 unsubscribeFromEvents pageId subscriptions =
     let
-        pageIdString = Route.Path.toString pageId
+        pageIdString =
+            Route.Path.toString pageId
     in
     Dict.remove pageIdString subscriptions
-
-
-getSubscribedEvents : Route.Path.Path -> EventSubscriptions -> List B.EventType
-getSubscribedEvents pageId subscriptions =
-    let
-        pageIdString = Route.Path.toString pageId
-    in
-    Dict.get pageIdString subscriptions
-        |> Maybe.withDefault []

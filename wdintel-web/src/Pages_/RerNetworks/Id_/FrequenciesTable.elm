@@ -12,36 +12,24 @@ module Pages_.RerNetworks.Id_.FrequenciesTable exposing
 import Api
 import Auth
 import Bindings as B
-import Bytes exposing (Bytes)
-import Char
 import Core.Auth
-import Core.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
-import Dict exposing (Dict)
+import Core.Types exposing (ApiError)
+import Dict
 import Effect as E exposing (Effect)
-import File.Download as Download
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Html.Keyed
 import Html.Styled as Styled
 import Json.Encode as Encode
-import Layouts
 import List.Extra as ListX
-import Page exposing (Page)
-import Pages_.RerNetworks.Id_.Model exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), Model, ShowAllPopupFor(..))
-import Pages_.RerNetworks.Id_.Msg as Msgs exposing (FrequenciesMsg(..), Msg)
-import Route exposing (Route)
-import Route.Path
+import Pages_.RerNetworks.Id_.Model exposing (FreqActivityFilter(..), Mode(..), Model)
+import Pages_.RerNetworks.Id_.Msg exposing (FrequenciesMsg(..))
 import Select
-import Set exposing (Set)
 import Shared
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
-import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
-import Shared.Components.Pager as Pager
-import Shared.Components.Popup as Popup
 import Shared.Components.SegmentedControl as SegmentedControl
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
@@ -53,17 +41,15 @@ import Shared.Model exposing (isDarkMode)
 import String
 import Time
 import Time.Extra
-import Url.Builder
 import Utils.Api.ErrorHandling
 import Utils.Modulations as Modulations
 import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
-import Utils.Utils exposing (networkKindVHFMapping)
-import View exposing (View)
 
 
+loadFreqsInit : Int -> List (Effect FrequenciesMsg)
 loadFreqsInit networkId =
     [ E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = networkId }
     , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = networkId, includeCallsigns = Just False }
@@ -89,6 +75,7 @@ doNeedReloadCatalogCallsigns freqsMsg =
             False
 
 
+updateFreqCallsigns : a -> b -> List { freq | networkFreqId : a, callsigns : Maybe b } -> List { freq | networkFreqId : a, callsigns : Maybe b }
 updateFreqCallsigns networkFreqId callsigns freqs =
     List.map
         (\freq ->
@@ -102,7 +89,7 @@ updateFreqCallsigns networkFreqId callsigns freqs =
 
 
 update : Shared.Model -> FrequenciesMsg -> Model -> ( Model, Effect FrequenciesMsg )
-update shared msg model =
+update _ msg model =
     case msg of
         NetworkFreqsActivityReturnedByApi (Err e) ->
             ( { model | networkFreqsActivity = Failure e }
@@ -161,8 +148,7 @@ update shared msg model =
                         Editing editingDict ->
                             let
                                 effects =
-                                    Dict.toList editingDict
-                                        |> List.map Tuple.second
+                                    Dict.values editingDict
                                         |> List.filterMap
                                             (\updateFreqReq ->
                                                 case model.freqs of
@@ -534,7 +520,7 @@ update shared msg model =
 
         DeleteFreqConfirmedByUser ->
             case ( model.network, model.deleteFreqConfirmation ) of
-                ( Success network, Just ( freqId, _ ) ) ->
+                ( Success _, Just ( freqId, _ ) ) ->
                     ( { model | deleteFreqLoading = True, deleteFreqConfirmation = Nothing }
                     , E.removeFreqFromNetwork (DeleteFreqReturnedByApi freqId) { id = Just freqId, networkId = Nothing, freq = Nothing }
                     )
@@ -1370,15 +1356,16 @@ freqsTableConfig shared model user =
                                                         [ title "Редагувати"
                                                         , class "icon-btn icon-btn-primary"
                                                         , onClick <|
-                                                            OpenFreqEditSidebar freq.networkFreqId freq.freq
-                                                        { networkId = network.id
-                                                        , freq = freq.freq
-                                                        , kind = Maybe.withDefault "VHF" freq.kind
-                                                        , modulationId = freq.modulationId
-                                                        , encryptionKeyIds = freq.encryptionKeyIds
-                                                        , activeFrom = freq.activeFrom
-                                                        , activeTo = freq.activeTo
-                                                        }
+                                                            OpenFreqEditSidebar freq.networkFreqId
+                                                                freq.freq
+                                                                { networkId = network.id
+                                                                , freq = freq.freq
+                                                                , kind = Maybe.withDefault "VHF" freq.kind
+                                                                , modulationId = freq.modulationId
+                                                                , encryptionKeyIds = freq.encryptionKeyIds
+                                                                , activeFrom = freq.activeFrom
+                                                                , activeTo = freq.activeTo
+                                                                }
                                                         ]
                                                         [ i [ class "bi bi-pencil-square" ] [] ]
                                                     , button
@@ -1478,7 +1465,7 @@ freqActivityChartDetailed model shared =
 
 
 freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> Int -> String -> B.UpdateNetworkFreqReq -> List (Html FrequenciesMsg)
-freqEditSidebarContent shared model user networkFreqId freqId updateReq =
+freqEditSidebarContent shared model _ networkFreqId freqId updateReq =
     let
         editedFreq =
             model.freqs
@@ -1746,7 +1733,7 @@ freqEditSidebarContent shared model user networkFreqId freqId updateReq =
 
 
 freqCreateSidebarContent : Shared.Model -> Model -> Auth.User -> List (Html FrequenciesMsg)
-freqCreateSidebarContent shared model user =
+freqCreateSidebarContent shared model _ =
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати частоту" ]

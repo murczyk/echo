@@ -12,6 +12,7 @@ import FlagIcon from '@mui/icons-material/Flag';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Box, Button, ButtonGroup, CircularProgress, Link, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
@@ -149,14 +150,6 @@ function ActionIconsRow({
   const [stackedLayout, setStackedLayout] = useState(compact);
 
   const buttons = [
-    onEditDetails != null ? (
-      <ActionIconButton
-        key="edit-details"
-        title="Редагувати додаткові поля та позивні"
-        icon={<EditOutlinedIcon fontSize="inherit" />}
-        onClick={onEditDetails}
-      />
-    ) : null,
     <ActionIconButton
       key="comment"
       title="Редагувати коментар"
@@ -183,6 +176,14 @@ function ActionIconsRow({
       onClick={onBookmark}
       selected={msg.bookmarked}
     />,
+    onEditDetails != null ? (
+      <ActionIconButton
+        key="edit-details"
+        title="Редагувати додаткові поля та позивні"
+        icon={<EditOutlinedIcon fontSize="inherit" />}
+        onClick={onEditDetails}
+      />
+    ) : null,
     onDelete != null ? (
       <ActionIconButton
         key="delete"
@@ -358,7 +359,7 @@ function NetworkEtalonSection({
   const fallbackLabel = fallbackEtalonLabel?.trim() ?? '';
 
   const geoButton = hasLocationDetails ? (
-    <Tooltip title={location} placement="top">
+      <Tooltip title={location} placement="top">
       <Box
         component="span"
         aria-label={`Локація: ${location}`}
@@ -380,12 +381,7 @@ function NetworkEtalonSection({
           },
         }}
       >
-        <Box
-          component="i"
-          className="bi bi-geo-alt-fill"
-          aria-hidden
-          sx={{ fontSize: 12, lineHeight: 1, fontStyle: 'normal' }}
-        />
+        <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 12, lineHeight: 1 }} />
       </Box>
     </Tooltip>
   ) : null;

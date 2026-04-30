@@ -1,7 +1,17 @@
 import { Box, Button } from '@mui/material';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
-import type { CallsignInfoRes, InboxMessage, Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  InboxMessage,
+  MessageComment,
+  Network,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+  Unit,
+  User,
+} from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
@@ -13,9 +23,11 @@ import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 type Props = {
   authUserName: string | null;
   copiedFeedbackId: string | null;
+  currentUser: User | null;
   groupInfos: Record<string, SignalGroupEntry>;
   loading: boolean;
   paginationLoading: boolean;
+  messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   noMoreToLoad: boolean;
@@ -32,6 +44,7 @@ type Props = {
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   profiles: Record<string, SignalProfileEntry | null>;
+  users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
@@ -44,9 +57,11 @@ type Props = {
 type AnalysisMessageCardItemProps = {
   authUserName: string | null;
   copiedFeedbackId: string | null;
+  currentUser: User | null;
   groupInfos: Record<string, SignalGroupEntry>;
   id: number;
   message: InboxMessage;
+  messageComments: MessageComment[];
   networkDisplayMap: Record<number, string>;
   onCommentOpen: (id: number, message: InboxMessage) => void;
   onCopyFeedback: (value: string) => void;
@@ -65,14 +80,17 @@ type AnalysisMessageCardItemProps = {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
+  users: Record<string, User | null>;
 };
 
 const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   authUserName,
   copiedFeedbackId,
+  currentUser,
   groupInfos,
   id,
   message,
+  messageComments,
   networkDisplayMap,
   onCommentOpen,
   onCopyFeedback,
@@ -91,6 +109,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   callsignInfoMap,
   networks,
   unitsMap,
+  users,
 }: AnalysisMessageCardItemProps) {
   const normalizeCallsign = (value: string) => value.trim().toUpperCase();
   const saveCallsignPatch = (updater: (message: InboxMessage) => InboxMessage) => {
@@ -103,9 +122,11 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       msg={message}
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
+      currentUser={currentUser}
       groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
       senderName={buildSenderLabel(message.sender ? profiles[message.sender] : null, message.sender)}
       copiedFeedbackId={copiedFeedbackId}
+      messageComments={messageComments}
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
       tagsLoading={tagsLoading}
@@ -114,6 +135,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       callsignInfoMap={callsignInfoMap}
       networks={networks}
       unitsMap={unitsMap}
+      users={users}
       onBookmark={() => onToggleMessageBookmark(id, message.bookmarked)}
       onImportant={() => onToggleMessageImportant(id, message.important)}
       onCopyText={() => {
@@ -163,9 +185,11 @@ function AnalysisMessagesPaneComponent({
   copiedFeedbackId: copiedFeedbackIdProp,
   editorMessage,
   editorSaveInFlight,
+  currentUser,
   groupInfos,
   loading,
   paginationLoading,
+  messageComments,
   messages,
   networkDisplayMap,
   noMoreToLoad,
@@ -180,6 +204,7 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageImportant,
   onToggleMessageTag,
   profiles,
+  users,
   tagsMap,
   tagsLoading,
   tagsLayout,
@@ -194,6 +219,13 @@ function AnalysisMessagesPaneComponent({
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
+
+  const blurActiveElement = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  }, []);
 
   useEffect(() => {
     setCopiedFeedbackId(copiedFeedbackIdProp);
@@ -223,9 +255,26 @@ function AnalysisMessagesPaneComponent({
   }, []);
 
   const handleCommentOpen = useCallback((messageId: number, nextMessage: InboxMessage) => {
+    blurActiveElement();
     setCommentMessage({ id: messageId, message: nextMessage });
     setCommentDraft(nextMessage.extendedForm ?? '');
-  }, []);
+  }, [blurActiveElement]);
+
+  const handleDeleteOpen = useCallback(
+    (messageId: number) => {
+      blurActiveElement();
+      setDeleteMessageId(messageId);
+    },
+    [blurActiveElement],
+  );
+
+  const handleOpenEditor = useCallback(
+    (messageId: number) => {
+      blurActiveElement();
+      onOpenEditor(messageId);
+    },
+    [blurActiveElement, onOpenEditor],
+  );
 
   if (messages.length === 0 && !loading) {
     return (
@@ -264,14 +313,16 @@ function AnalysisMessagesPaneComponent({
               key={id}
               authUserName={authUserName}
               copiedFeedbackId={copiedFeedbackId}
+              currentUser={currentUser}
               groupInfos={groupInfos}
               id={id}
               message={message}
+              messageComments={messageComments[id] ?? []}
               networkDisplayMap={networkDisplayMap}
               onCommentOpen={handleCommentOpen}
               onCopyFeedback={showCopiedFeedback}
-              onDeleteOpen={setDeleteMessageId}
-              onOpenEditor={onOpenEditor}
+              onDeleteOpen={handleDeleteOpen}
+              onOpenEditor={handleOpenEditor}
               onSaveMessageUpdate={onSaveMessageUpdate}
               onToggleMessageBookmark={onToggleMessageBookmark}
               onToggleMessageImportant={onToggleMessageImportant}
@@ -285,6 +336,7 @@ function AnalysisMessagesPaneComponent({
               callsignInfoMap={callsignInfoMap}
               networks={networks}
               unitsMap={unitsMap}
+              users={users}
             />
           ))}
         </Box>

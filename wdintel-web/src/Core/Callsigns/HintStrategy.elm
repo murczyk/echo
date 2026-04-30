@@ -1,4 +1,4 @@
-module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), determineHintStrategyForCallsign, getCallsignHints, getCallsignsForStrategy, getIconClass, isCallsignRelatedToNetworks)
+module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), getCallsignHints)
 
 import Bindings as B
 import Core.Unit as Unit
@@ -10,22 +10,14 @@ import List.Extra as ListX
 -}
 filterNetworksByFreq : Dict Int B.Network -> Maybe String -> List B.Network
 filterNetworksByFreq networks mFreq =
-    networks
-        |> Dict.values
-        |> List.filterMap
-            (\network ->
-                case mFreq of
-                    Just freq ->
-                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of
-                            Just a ->
-                                Just network
+    case mFreq of
+        Just freq ->
+            networks
+                |> Dict.values
+                |> List.filter (\network -> ListX.find (\nFreq -> nFreq.freq == freq) network.freqs /= Nothing)
 
-                            Nothing ->
-                                Nothing
-
-                    Nothing ->
-                        Nothing
-            )
+        Nothing ->
+            []
 
 
 {-| Отримує мережі за списком ID з Dict
@@ -245,16 +237,15 @@ getCallsignHints hintContext message context callsign =
             determineHintStrategyForCallsign hintContext message context callsignInfo networksByFreq
 
         messageNetworkIdsForPriority =
-            case message.networkIds of
-                Just networkIds ->
-                    if List.isEmpty networkIds then
-                        Nothing
+            message.networkIds
+                |> Maybe.andThen
+                    (\networkIds ->
+                        if List.isEmpty networkIds then
+                            Nothing
 
-                    else
-                        Just networkIds
-
-                Nothing ->
-                    Nothing
+                        else
+                            Just networkIds
+                    )
 
         prioritizedCallsigns =
             getCallsignsForStrategy strategy messageNetworkIdsForPriority context.masterUnits context.callsignsInfo callsign
@@ -288,16 +279,15 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
                     False
 
         messageNetworkIds =
-            case message.networkIds of
-                Just networkIds ->
-                    if List.isEmpty networkIds then
-                        Nothing
+            message.networkIds
+                |> Maybe.andThen
+                    (\networkIds ->
+                        if List.isEmpty networkIds then
+                            Nothing
 
-                    else
-                        Just networkIds
-
-                Nothing ->
-                    Nothing
+                        else
+                            Just networkIds
+                    )
     in
     case hintContext of
         MessageContext ->
@@ -333,6 +323,7 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
                 let
                     networksFromMessage =
                         getNetworksByIds (Maybe.withDefault [] message.networkIds) context.networks
+
                     networkUnits =
                         getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
                 in
@@ -340,8 +331,8 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
                     { networks = networksFromMessage
                     , units = networkUnits
                     }
-
                 -- Пріоритет 2: мережі за частотою
+
             else if hasNetworksByFreq then
                 let
                     -- Персонально перевіряємо чи цей позивний пов'язаний з мережевими юнітами

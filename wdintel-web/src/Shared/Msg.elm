@@ -1,11 +1,10 @@
 module Shared.Msg exposing (Msg(..))
 
 import Bindings as B
-import Shared.Components.Toast
 import Core.Types exposing (ApiError, LocationRes)
 import Route.Path
+import Shared.Components.Toast
 import Shared.Model exposing (ThemeMode)
-import Time exposing (Posix)
 
 
 type Msg

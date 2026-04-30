@@ -5,6 +5,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 
 
+badgeNotSelectedHtml : List (Html msg) -> msg -> Html msg
 badgeNotSelectedHtml lblHtml toMsgSelect =
     span
         [ class "badge bg-light text-bg-light badge-selected"
@@ -13,6 +14,7 @@ badgeNotSelectedHtml lblHtml toMsgSelect =
         lblHtml
 
 
+badgeSelectedHtml : List (Html msg) -> Html msg
 badgeSelectedHtml inner =
     span
         [ class "badge bg-primary badge-selected"
@@ -20,6 +22,7 @@ badgeSelectedHtml inner =
         inner
 
 
+badgeSelectedCloseCounter : List (Html msg) -> msg -> List (Html msg)
 badgeSelectedCloseCounter lblHtml toMsgClose =
     [ badgeSelectedHtml lblHtml
     , sup

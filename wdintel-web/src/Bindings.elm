@@ -5,11 +5,9 @@
 module Bindings exposing (..)
 
 import Dict exposing (Dict)
-import Http
 import Maybe.Extra
 import Json.Decode
 import Json.Encode
-import Url.Builder
 
 
 resultEncoder : (e -> Json.Encode.Value) -> (t -> Json.Encode.Value) -> (Result e t -> Json.Encode.Value)

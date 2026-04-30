@@ -3,7 +3,7 @@ module Shared.Components.DateRangePicker exposing (Model, Msg(..), ViewParams, i
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Shared.Components.DateTime exposing (..)
+import Shared.Components.DateTime exposing (dateFormErrId)
 import Shared.Components.Popup
 import Time exposing (Posix, Zone)
 import Utils.Components exposing (hasError, isInvalidCls)

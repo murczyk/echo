@@ -2,7 +2,6 @@ module Pages.CoordsConverter exposing (Model, Msg, page)
 
 import Auth
 import Bindings as B
-import Shared.Components.Toast
 import Core.Coordinates as C
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -15,7 +14,7 @@ import Page exposing (Page)
 import PagePorts.HomePorts as Ports
 import Route exposing (Route)
 import Shared
-import Shared.Model exposing (isDarkMode)
+import Shared.Components.Toast
 import Utils.Components exposing (googleMapsOutLink)
 import Utils.Views
 import View exposing (View)
@@ -43,7 +42,7 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -54,7 +53,7 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "coords-converter"
@@ -176,7 +175,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.batch
         [ Ports.home_usk2000ToWgs84Res GotUsk2000ToWgs84Res
         , Ports.home_wgs84ToUsk2000Res GotWgs84ToUsk2000Res
@@ -186,7 +185,7 @@ subscriptions model =
 
 
 view : Shared.Model -> B.User -> Model -> View Msg
-view shared user model =
+view _ _ model =
     { title = "координати"
     , body =
         [ Utils.Views.headerAndContent "координати" ToastMsg model.toasts <|

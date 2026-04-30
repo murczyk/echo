@@ -1,22 +1,28 @@
-module Shared.Components.Watermark exposing (Watermark, new, view, withOpacity, withRotate, withFontSize, withPositioning)
-
+module Shared.Components.Watermark exposing (Watermark, new, view, withFontSize, withOpacity, withPositioning, withRotate)
 
 import Html exposing (Html, div, text)
 import Html.Attributes exposing (class, style)
-import Array exposing (set)
+
+
 
 -- Define the opaque Watermark type
+
+
 type Watermark msg
     = Settings
         { text : String
         , opacity : Float
         , rotate : Float
         , fontSize : String
-        , right: Int
-        , top: Int
+        , right : Int
+        , top : Int
         }
 
+
+
 -- Create a new Watermark with required properties
+
+
 new : String -> Watermark msg
 new text =
     Settings
@@ -28,28 +34,42 @@ new text =
         , top = 3
         }
 
+
+
 -- Modifier function to set opacity
+
+
 withOpacity : Float -> Watermark msg -> Watermark msg
 withOpacity opacity (Settings settings) =
     Settings { settings | opacity = opacity }
 
+
+
 -- Modifier function to set rotation
+
+
 withRotate : Float -> Watermark msg -> Watermark msg
 withRotate rotate (Settings settings) =
     Settings { settings | rotate = rotate }
 
+
+
 -- Modifier function to set font size
+
+
 withFontSize : String -> Watermark msg -> Watermark msg
 withFontSize fontSize (Settings settings) =
     Settings { settings | fontSize = fontSize }
 
-withPositioning: (Int, Int)-> Watermark msg -> Watermark msg
-withPositioning  (top, right) (Settings settings) =
+
+withPositioning : ( Int, Int ) -> Watermark msg -> Watermark msg
+withPositioning ( top, right ) (Settings settings) =
     Settings { settings | top = top, right = right }
+
 
 view : Watermark msg -> Html msg
 view (Settings settings) =
-     div
+    div
         [ class "absolute text-watermark select-none"
         , style "top" (String.fromInt settings.top ++ "%")
         , style "right" (String.fromInt settings.right ++ "%")
@@ -59,4 +79,3 @@ view (Settings settings) =
         , style "pointer-events" "none"
         ]
         [ text settings.text ]
-

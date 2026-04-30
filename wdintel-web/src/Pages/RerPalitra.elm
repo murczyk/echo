@@ -1508,7 +1508,7 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "palitra"
@@ -2212,7 +2212,7 @@ createPalitraSidebarContent isDark user model =
                     )
 
         accessOptions =
-            List.filterMap
+            List.map
                 (\accessType ->
                     let
                         normalized =
@@ -2220,13 +2220,13 @@ createPalitraSidebarContent isDark user model =
                     in
                     case normalized of
                         LoginsAccess _ ->
-                            Just { value = normalized, label = "Логіни" }
+                            { value = normalized, label = "Логіни" }
 
                         OrganismsAccess _ ->
-                            Just { value = normalized, label = "Підрозділи" }
+                            { value = normalized, label = "Підрозділи" }
 
                         AorAccess _ ->
-                            Just { value = normalized, label = "Смуги" }
+                            { value = normalized, label = "Смуги" }
                 )
                 availableAccessTypes
 
@@ -2777,7 +2777,7 @@ editPalitraSidebarContent isDark user model =
                             )
 
                 accessOptions =
-                    List.filterMap
+                    List.map
                         (\accessType ->
                             let
                                 normalized =
@@ -2785,13 +2785,13 @@ editPalitraSidebarContent isDark user model =
                             in
                             case normalized of
                                 LoginsAccess _ ->
-                                    Just { value = normalized, label = "Логіни" }
+                                    { value = normalized, label = "Логіни" }
 
                                 OrganismsAccess _ ->
-                                    Just { value = normalized, label = "Підрозділи" }
+                                    { value = normalized, label = "Підрозділи" }
 
                                 AorAccess _ ->
-                                    Just { value = normalized, label = "Смуги" }
+                                    { value = normalized, label = "Смуги" }
                         )
                         availableAccessTypes
 

@@ -1,20 +1,20 @@
 module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
-import Browser.Events
 import Auth
+import Browser.Events
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (attribute, class, id, title)
 import Html.Events exposing (onClick, stopPropagationOn)
+import Json.Decode
 import Layout exposing (Layout)
 import Process
-import Json.Decode
 import Route exposing (Route)
 import Shared
 import Shared.Components.Navbar
 import Shared.Components.Toast as Toast
-import Shared.Model exposing (ThemeMode(..))
+import Shared.Model
 import Task
 import View exposing (View)
 
@@ -187,13 +187,16 @@ view user activeName shared route { toContentMsg, model, content } =
             route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
 
         usesShellContentGap =
-            route.url.path == "/rer-palitra-neo"
-                || route.url.path == "/rer-callsigns-neo"
+            route.url.path
+                == "/rer-palitra-neo"
+                || route.url.path
+                == "/rer-callsigns-neo"
 
         usesFixedViewportLayout =
             usesShellContentGap
                 || supportsFullscreenToggle
-                || route.url.path == "/rer-analysis-neo"
+                || route.url.path
+                == "/rer-analysis-neo"
 
         navbarProps =
             { onToggleTheme = ToggleDarkTheme
@@ -208,9 +211,9 @@ view user activeName shared route { toContentMsg, model, content } =
             , mobileNavOpen = model.mobileNavOpen
             , onToggleMobileNav = ToggleMobileNav
             }
+
         navbarHtml =
             Shared.Components.Navbar.navBar user shared activeName navbarProps
-
     in
     { title = content.title
     , body =
@@ -264,7 +267,7 @@ view user activeName shared route { toContentMsg, model, content } =
                 )
              , onClick (toContentMsg (SetOpenDropdown Nothing))
              , attribute "data-auth-user-name" user.name
-            ]
+             ]
                 ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" then
                         [ attribute "data-auth-user-roles" (String.join "," user.roles) ]
 

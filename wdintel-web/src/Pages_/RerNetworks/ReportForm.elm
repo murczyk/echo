@@ -1,7 +1,5 @@
 module Pages_.RerNetworks.ReportForm exposing
     ( Config
-    , settingsForm
-    , typeSelector
     , view
     )
 

@@ -1,4 +1,4 @@
-module Core.UnitHierarchy exposing (Config, UnitGroup, UnitHierarchy, buildHierarchy, getUnitCount, calculateGroupCount, view)
+module Core.UnitHierarchy exposing (Config, UnitHierarchy, buildHierarchy, getUnitCount, calculateGroupCount, view)
 
 {-| UnitHierarchy module provides pure functions for organizing military units into hierarchical structures.
 
@@ -36,15 +36,15 @@ are rendered as clickable filter options rather than expandable dropdowns.
 
 ## API
 
-@docs Config, UnitGroup, UnitHierarchy, buildHierarchy, getUnitCount, calculateGroupCount, view
+@docs Config, UnitHierarchy, buildHierarchy, getUnitCount, calculateGroupCount, view
 
 -}
 
 import Bindings as B
 import Dict exposing (Dict)
-import Html exposing (Html, button, div, h3, i, p, span)
-import Html.Attributes as Attr exposing (class, title)
-import Html.Events exposing (onClick)
+import Html exposing (Html, div)
+import Html.Attributes as Attr exposing (class)
+import Html.Events
 import List.Extra as ListX
 
 
@@ -72,15 +72,6 @@ type alias Config msg =
     }
 
 
-{-| Represents a group of units at any hierarchy level with metadata
--}
-type alias UnitGroup =
-    { name : String
-    , units : List B.Unit
-    , count : Int
-    }
-
-
 {-| Represents the complete hierarchical structure of units
 -}
 type alias UnitHierarchy =
@@ -90,15 +81,6 @@ type alias UnitHierarchy =
 
 
 -- Internal types
-
-
-type alias InternalUnitGroup =
-    { name : String
-    , units : List B.Unit
-    }
-
-
-
 -- Core grouping function (internal)
 
 
@@ -250,16 +232,6 @@ countUnitsUnderRegiment armyName divisionName regimentName units =
         |> List.length
 
 
-{-| Counts total units under a specific battalion branch
--}
-countUnitsUnderBattalion : String -> String -> String -> String -> List B.Unit -> Int
-countUnitsUnderBattalion armyName divisionName regimentName battalionName units =
-    units
-        |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && u.division == divisionName && u.regiment == regimentName && u.battalion == battalionName)
-        |> List.length
-
-
 {-| Determines if a branch should be auto-expanded (≤ 3 total units)
 -}
 shouldAutoExpand : Int -> Bool
@@ -292,8 +264,7 @@ view config units unitStats =
             buildHierarchy units
     in
     div [ class "w-full h-full max-w-md bg-card border rounded-lg flex flex-col" ]
-        [
-         div [ class " overflow-y-auto grow-1" ]
+        [ div [ class " overflow-y-auto grow-1" ]
             (List.map (renderArmy config unitStats units) hierarchy.armies)
         ]
 
@@ -462,11 +433,6 @@ renderDivisions config unitStats units armyName =
                                 not hasChildLevels
 
                             -- Auto-expansion logic for division
-                            shouldAutoExpandDivision =
-                                config.autoExpandDivisions && shouldAutoExpand (countUnitsUnderDivision armyName divisionName units)
-
-                            effectiveIsDivisionExpanded =
-                                isDivisionExpanded || shouldAutoExpandDivision
                         in
                         if isClickableUnit then
                             -- Render as clickable unit
@@ -548,11 +514,6 @@ renderDivisions config unitStats units armyName =
                                 not hasChildLevels
 
                             -- Auto-expansion logic for regiment
-                            shouldAutoExpandRegiment =
-                                config.autoExpandRegiments && shouldAutoExpand (countUnitsUnderRegiment armyName "" regimentName units)
-
-                            effectiveIsRegimentExpanded =
-                                isRegimentExpanded || shouldAutoExpandRegiment
                         in
                         if isClickableUnit then
                             -- Render as clickable unit
@@ -665,11 +626,6 @@ renderRegiments config unitStats units armyName divisionName =
                                 not hasChildLevels
 
                             -- Auto-expansion logic for regiment
-                            shouldAutoExpandRegiment =
-                                config.autoExpandRegiments && shouldAutoExpand (countUnitsUnderRegiment armyName divisionName regimentName units)
-
-                            effectiveIsRegimentExpanded =
-                                isRegimentExpanded || shouldAutoExpandRegiment
                         in
                         if isClickableUnit then
                             -- Render as clickable unit
@@ -786,11 +742,6 @@ renderBattalions config unitStats units armyName divisionName regimentName =
                                 not hasChildLevels
 
                             -- Auto-expansion logic for battalion
-                            shouldAutoExpandBattalion =
-                                config.autoExpandBattalions && shouldAutoExpand (countUnitsUnderBattalion armyName divisionName regimentName battalionName units)
-
-                            effectiveIsBattalionExpanded =
-                                isBattalionExpanded || shouldAutoExpandBattalion
                         in
                         if isClickableUnit then
                             -- Render as clickable unit
@@ -919,10 +870,3 @@ battalionIndicator : Html msg
 battalionIndicator =
     Html.span [ class "badge badge--neutral font-mono font-bold mr-2", Attr.title "Батальйон" ]
         [ Html.text "II" ]
-
-
-companyIndicator : Html msg
-companyIndicator =
-    Html.span [ class "badge badge--neutral font-mono font-bold mr-2", Attr.title "Рота" ]
-        [ Html.text "II" ]
-

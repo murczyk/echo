@@ -11,7 +11,6 @@ import Api
 import Auth
 import Bindings as B
 import Core.Auth
-import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -19,7 +18,7 @@ import Html.Events exposing (onClick, onInput)
 import Html.Styled as Styled
 import List.Extra as ListX
 import Pages_.RerNetworks.Id_.Model exposing (Model)
-import Pages_.RerNetworks.Id_.Msg as Msgs exposing (KeysMsg(..))
+import Pages_.RerNetworks.Id_.Msg exposing (KeysMsg(..))
 import Select
 import Shared
 import Shared.Components.Button as Button
@@ -30,11 +29,11 @@ import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
-import Utils.Modulations as Modulations
-import Utils.Select
 import String
 import Utils.Api.ErrorHandling
+import Utils.Modulations as Modulations
 import Utils.RemoteData exposing (RemoteData(..))
+import Utils.Select
 
 
 initLoad : Int -> Effect KeysMsg
@@ -1120,6 +1119,7 @@ findSelectItems model selectedIds =
         _ ->
             []
 
+
 emptyKeysPlaceholder : Html msg
 emptyKeysPlaceholder =
     div
@@ -1371,16 +1371,15 @@ modulationLabelById model modulationId =
 
 normalizeModulationId : Maybe Int -> Maybe Int
 normalizeModulationId selectedId =
-    case selectedId of
-        Just modulationId ->
+    Maybe.andThen
+        (\modulationId ->
             if modulationId == Modulations.undefinedModulationId then
                 Nothing
 
             else
                 Just modulationId
-
-        Nothing ->
-            Nothing
+        )
+        selectedId
 
 
 type alias KeyRules =

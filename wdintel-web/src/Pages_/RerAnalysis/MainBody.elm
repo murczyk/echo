@@ -2,7 +2,6 @@ module Pages_.RerAnalysis.MainBody exposing (view)
 
 import Bindings as B
 import Dict
-import Dict.Extra as DE
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events as Events exposing (..)
@@ -10,8 +9,7 @@ import Html.Extra as HtmlX exposing (viewIf, viewMaybe)
 import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra as ListX exposing (frequencies)
-import Pages_.RerAnalysis.Constants exposing (..)
+import List.Extra as ListX
 import Pages_.RerAnalysis.Date
 import Pages_.RerAnalysis.Filters
 import Pages_.RerAnalysis.Graphs
@@ -32,9 +30,8 @@ import Shared.Model exposing (isDarkMode)
 import String exposing (fromInt)
 import Time
 import Utils.RemoteData as RD exposing (RemoteData(..))
-import Utils.Utils exposing (..)
 import Utils.Select
-import Utils.Views
+import Utils.Utils exposing (..)
 
 
 isLoadingStats : Model -> Bool
@@ -89,7 +86,7 @@ mainBody user model shared route =
                 ]
 
         messagesBlock =
-            if (not model.loadingInboxMessages) && List.isEmpty model.messages then
+            if not model.loadingInboxMessages && List.isEmpty model.messages then
                 div
                     [ class "text-center"
                     ]
@@ -592,19 +589,22 @@ view user model shared route =
                     "Звіт 1.2.13"
                     "Стислий звіт по радіомережах з частотою, часом, позивним вузла та координатами"
                 ]
+
             -- Add adjacent-freqs range selector when RTReo is chosen
             , HtmlX.viewIf (model.reportTemplate == RTReo) <|
                 let
-                    isDark = isDarkMode shared.themeMode
+                    isDark =
+                        isDarkMode shared.themeMode
 
-                    selDescription = p
-                                [ class "text-sm leading-relaxed"
-                                , classList
-                                    [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
-                                    , ( "text-gray-400", isDarkMode shared.themeMode )
-                                    ]
+                    selDescription =
+                        p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-400", isDarkMode shared.themeMode )
                                 ]
-                                [ text "Об'єднувати суміжні частоти в діапазоні, кГц" ]
+                            ]
+                            [ text "Об'єднувати суміжні частоти в діапазоні, кГц" ]
 
                     selItem =
                         Just
@@ -697,7 +697,6 @@ view user model shared route =
                             [ text "Без коментарів" ]
                         ]
                     ]
-
             , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|
                 let
                     isDark =
@@ -773,10 +772,13 @@ view user model shared route =
                             [ text "строго згідно форми 1.2.17" ]
                         ]
                     ]
-            , HtmlX.viewIf (List.member model.reportTemplate [
-            RTBabak,
-            RTInterception
-            ]) <|
+            , HtmlX.viewIf
+                (List.member model.reportTemplate
+                    [ RTBabak
+                    , RTInterception
+                    ]
+                )
+              <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]
                         [ input
@@ -794,20 +796,24 @@ view user model shared route =
                             [ text "без автоматичних тегів" ]
                         ]
                     ]
-            , HtmlX.viewIf (List.member model.reportTemplate [
-            RTTags,
-            RTPelengs,
-            RTBabak,
-            RTInterception,
-            RTPostsDocx,
-            RTMouse,
-            RTReo,
-            RTDigest,
-            RTReport1213
-             ]) <|
+            , HtmlX.viewIf
+                (List.member model.reportTemplate
+                    [ RTTags
+                    , RTPelengs
+                    , RTBabak
+                    , RTInterception
+                    , RTPostsDocx
+                    , RTMouse
+                    , RTReo
+                    , RTDigest
+                    , RTReport1213
+                    ]
+                )
+              <|
                 let
                     disableUnitCommentsFilter =
-                        model.reportTemplate == RTBabak
+                        model.reportTemplate
+                            == RTBabak
                             && model.reportWithoutComments
 
                     unitCommentsLabel =
@@ -1065,7 +1071,7 @@ view user model shared route =
                                             []
                                     )
                                     palitraRead.geometries
-                        
+
                         ( encodedPalitras, palitrasLoaded, palitrasLoadState ) =
                             case model.palitras of
                                 Success palitras ->

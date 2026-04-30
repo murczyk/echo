@@ -1,9 +1,8 @@
 module Core.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate, LocationRes, ModelWithErrorFields)
 
-import Shared.Components.Toast
 import Dict exposing (Dict)
 import Http
-import Time exposing (Posix)
+import Shared.Components.Toast
 
 
 type alias LocationRes =

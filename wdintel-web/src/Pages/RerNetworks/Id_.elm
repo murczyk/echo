@@ -8,17 +8,16 @@ import Dict
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (..)
 import Layouts
 import Page exposing (Page)
 import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables
 import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
 import Pages_.RerNetworks.Id_.KeysTable as KeysTable
-import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
+import Pages_.RerNetworks.Id_.Model as Types exposing (FreqActivityFilter(..), Mode(..))
 import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
 import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
-import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportTypeOption(..))
+import Pages_.RerNetworks.ReportConfig as ReportConfig
 import Pages_.RerNetworks.ReportModal as ReportModal
 import Pages_.RerNetworks.ReportUpdate as ReportUpdate
 import Route exposing (Route)
@@ -26,10 +25,8 @@ import Route.Path
 import Select
 import Set
 import Shared
-import Shared.CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
 import Shared.Components.DateTime
-import Shared.Components.DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
 import Shared.Components.Spinner
@@ -582,8 +579,7 @@ update shared msg model =
 
                                         _ ->
                                             []
-                            in
-                            let
+
                                 sel0 =
                                     model.editAorSelect
                             in
@@ -720,7 +716,7 @@ update shared msg model =
                         items =
                             case ( postsSelect.items, shared.posts ) of
                                 ( [], Success posts ) ->
-                                    if List.length (Dict.toList posts) > 0 then
+                                    if Dict.size posts > 0 then
                                         List.map (\post -> Select.basicMenuItem { item = post.id, label = post.name }) (Dict.values posts)
 
                                     else
@@ -810,10 +806,6 @@ update shared msg model =
                                     []
 
                         aorSelect2 =
-                            let
-                                _ =
-                                    model.editAorSelect
-                            in
                             { state = imodel
                             , selected = updatedAors
                             , items = items
@@ -1150,7 +1142,7 @@ contentBlock user shared network model =
         ]
     , Html.map Frequencies <| FrequenciesTable.view model user shared
     , Html.map Keys <| KeysTable.view model user
-    , Html.map Callsigns <| CallsignsTables.view model user shared
+    , Html.map Callsigns <| CallsignsTables.view shared model user
     ]
 
 

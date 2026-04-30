@@ -83,9 +83,9 @@ function getStrictMessageNetworkHintStrategy(
 function getIconClass(strategy: CallsignHintStrategy): string {
   switch (strategy) {
     case 'network':
-      return 'bi-info-circle-fill';
+      return 'info-circle-fill';
     case 'system':
-      return 'bi-info-circle';
+      return 'info-circle';
     case 'none':
       return '';
   }

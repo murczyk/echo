@@ -13,9 +13,11 @@ import Shared.Components.Toast
 import Url.Builder
 import Utils.Api.RetryableHttp as RetryableHttp
 import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
-import Utils.Utils exposing (..)
 
 
+{-| TODO: Refactor error handling to be more flexible and avoid code duplication.
+This function is a temporary solution for login-specific error handling.
+-}
 handleHttpError :
     (Shared.Components.Toast.Msg -> msg)
     -> ApiError
@@ -28,8 +30,6 @@ handleHttpError toMsg e m =
                 401 ->
                     ( m, E.logout )
 
-                -- 403 ->
-                --     ( m, Ports.needLoginRedirect () )
                 _ ->
                     case Dict.toList e.formErrors of
                         [] ->
@@ -64,60 +64,6 @@ handleHttpError toMsg e m =
             )
 
 
-handleHttpError2 :
-    (Shared.Components.Toast.Msg -> msg)
-    -> ApiError
-    ->
-        { formErrors : Dict String String
-        , cmds : Effect msg
-        }
-handleHttpError2 toMsg e =
-    case e.httpError of
-        Http.BadStatus code ->
-            case code of
-                401 ->
-                    { formErrors = e.formErrors, cmds = E.logout }
-
-                -- 403 ->
-                --     ( m, Ports.needLoginRedirect () )
-                _ ->
-                    case Dict.toList e.formErrors of
-                        [] ->
-                            case e.errors of
-                                [] ->
-                                    { formErrors = e.formErrors
-                                    , cmds = E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
-                                    }
-
-                                es ->
-                                    { formErrors = e.formErrors
-                                    , cmds = E.sendCmd <| Shared.Components.Toast.addErrors toMsg es
-                                    }
-
-                        _ ->
-                            { formErrors = e.formErrors
-                            , cmds = E.none
-                            }
-
-        Http.BadBody badBody ->
-            { formErrors = Dict.empty
-            , cmds =
-                E.sendCmd <|
-                    Cmd.batch
-                        [ Shared.Components.Toast.addError toMsg "There was an error, please try again later"
-                        , logError ("Bad Body: " ++ badBody) (toMsg << always Shared.Components.Toast.NoOp)
-                        ]
-            }
-
-        _ ->
-            { formErrors = Dict.empty
-            , cmds = E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
-            }
-
-
-{-| TODO: Refactor error handling to be more flexible and avoid code duplication.
-This function is a temporary solution for login-specific error handling.
--}
 handleLoginHttpError :
     (Shared.Components.Toast.Msg -> msg)
     -> ApiError
@@ -248,22 +194,6 @@ upload_screenshot_bytes bytes toMsg =
         }
 
 
-upload_pdf :
-    File.File
-    -> (Result ApiError UploadPdfRes -> msg)
-    -> Cmd msg
-upload_pdf file toMsg =
-    Http.request
-        { method = "PUT"
-        , headers = []
-        , url = "/api/terminal/upload-pdf"
-        , body = Http.multipartBody [ Http.filePart "image" file ]
-        , expect = leExpectJson toMsg uploadPdfResDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-
 bgtask_status_and_logs :
     (Result ApiError BgtaskStatusAndLogsRsp -> msg)
     -> Int
@@ -278,9 +208,24 @@ bgtask_status_and_logs toMsg taskId req =
                 , String.fromInt taskId
                 , "status-and-logs"
                 ]
-                [ Url.Builder.int "skip" req.skip
-                ]
+                [ Url.Builder.int "skip" req.skip ]
         , expect = leExpectJson toMsg bgtaskStatusAndLogsRspDecoder
+        }
+
+
+upload_pdf :
+    File.File
+    -> (Result ApiError UploadPdfRes -> msg)
+    -> Cmd msg
+upload_pdf file toMsg =
+    Http.request
+        { method = "PUT"
+        , headers = []
+        , url = "/api/terminal/upload-pdf"
+        , body = Http.multipartBody [ Http.filePart "image" file ]
+        , expect = leExpectJson toMsg uploadPdfResDecoder
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
@@ -319,6 +264,7 @@ alpine_convert toMsg file outputFormat =
         , timeout = Nothing
         , tracker = Nothing
         }
+
 
 alpine_download_result :
     (Result ApiError Bytes -> msg)
@@ -402,42 +348,6 @@ rer_importer_comment_save toMsg req =
         }
 
 
-rer_importer_inbox_cursor :
-    (Result ApiError (Maybe Int) -> msg)
-    -> Cmd msg
-rer_importer_inbox_cursor toMsg =
-    Http.get
-        { url =
-            Url.Builder.absolute
-                [ "api"
-                , "rer-importer"
-                , "inbox"
-                , "cursor"
-                ]
-                []
-        , expect = leExpectJson toMsg (Decode.nullable Decode.int)
-        }
-
-
-rer_importer_inbox_update_cursor :
-    (Result ApiError () -> msg)
-    -> UpdateCursorReq
-    -> Cmd msg
-rer_importer_inbox_update_cursor toMsg req =
-    Http.post
-        { url =
-            Url.Builder.absolute
-                [ "api"
-                , "rer-importer"
-                , "inbox"
-                , "cursor-update"
-                ]
-                []
-        , body = Http.jsonBody (updateCursorReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        }
-
-
 rer_importer_callsigns :
     (Result ApiError (List CallsignWithFrequencies) -> msg)
     -> RerImporterCallsignsReq
@@ -450,18 +360,6 @@ rer_importer_callsigns toMsg req =
         }
 
 
-rer_importer_unread_counters :
-    (Result ApiError UnreadCountersRsp -> msg)
-    -> UnreadCountersReq
-    -> Cmd msg
-rer_importer_unread_counters toMsg req =
-    Http.post
-        { url = "/api/rer-importer/unread-counters"
-        , body = Http.jsonBody (unreadCountersReqEncoder req)
-        , expect = leExpectJson toMsg unreadCountersRspDecoder
-        }
-
-
 rer_importer_signal_group_info_batch :
     (Result ApiError SignalGroupsRsp -> msg)
     -> BatchSignalGroupReq
@@ -471,17 +369,6 @@ rer_importer_signal_group_info_batch toMsg req =
         { url = "/api/rer-importer/signal-group-batch"
         , body = Http.jsonBody (batchSignalGroupReqEncoder req)
         , expect = leExpectJson toMsg signalGroupsRspDecoder
-        }
-
-
-orphan_signal_groups :
-    (Result ApiError (List OrphanSignalGroupEntry) -> msg)
-    -> Cmd msg
-orphan_signal_groups toMsg =
-    Http.post
-        { url = "/api/rer-importer/orphan-signal-groups"
-        , body = Http.emptyBody
-        , expect = leExpectJson toMsg (Decode.list orphanSignalGroupEntryDecoder)
         }
 
 
@@ -708,18 +595,6 @@ users_login toMsg req =
         }
 
 
-settings_save :
-    (Result ApiError () -> msg)
-    -> SettingsSaveReq
-    -> Cmd msg
-settings_save toMsg req =
-    Http.post
-        { url = "/api/user/settings-save"
-        , body = Http.jsonBody (settingsSaveReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        }
-
-
 user_sigint_groups :
     (Result ApiError (List String) -> msg)
     -> SigintGroupsReq
@@ -751,89 +626,6 @@ datasource_list toMsg =
         { url = "/api/datasources/list"
         , body = Http.jsonBody (Encode.object [])
         , expect = leExpectJson toMsg (Decode.list (jsonPair Decode.int datasourceDecoder))
-        }
-
-
-datasource_group_list :
-    (Result ApiError (List String) -> msg)
-    -> Int
-    -> Cmd msg
-datasource_group_list toMsg req =
-    Http.post
-        { url = "/api/datasources/group-list"
-        , body = Http.jsonBody (Encode.int req)
-        , expect = leExpectJson toMsg (Decode.list Decode.string)
-        }
-
-
-sigint_zones_list :
-    (Result ApiError (List ( Int, SigintZone )) -> msg)
-    -> Cmd msg
-sigint_zones_list toMsg =
-    Http.post
-        { url = "/api/sigint/zones/list"
-        , body = Http.jsonBody (Encode.object [])
-        , expect = leExpectJson toMsg (Decode.list (jsonPair Decode.int sigintZoneDecoder))
-        }
-
-
-zones_datasources_list :
-    (Result ApiError (List Int) -> msg)
-    -> Int
-    -> Cmd msg
-zones_datasources_list toMsg req =
-    Http.post
-        { url = "/api/sigint/zones/zone-datasources"
-        , body = Http.jsonBody (Encode.int req)
-        , expect = leExpectJson toMsg (Decode.list Decode.int)
-        }
-
-
-zones_datasources_groups_list :
-    (Result ApiError ZoneDatasourceGroupListRsp -> msg)
-    -> ZoneDatasourceGroupsReq
-    -> Cmd msg
-zones_datasources_groups_list toMsg req =
-    Http.post
-        { url = "/api/sigint/zones/zone-datasource-groups"
-        , body = Http.jsonBody (zoneDatasourceGroupsReqEncoder req)
-        , expect = leExpectJson toMsg zoneDatasourceGroupListRspDecoder
-        }
-
-
-zone_datasource_group_update :
-    (Result ApiError ZoneDatasourceGroup -> msg)
-    -> ZoneDatasourceGroupUpdateReq
-    -> Cmd msg
-zone_datasource_group_update toMsg req =
-    Http.post
-        { url = "/api/sigint/zones/zone-datasource-group-update"
-        , body = Http.jsonBody (zoneDatasourceGroupUpdateReqEncoder req)
-        , expect = leExpectJson toMsg zoneDatasourceGroupDecoder
-        }
-
-
-zone_datasource_group_add :
-    (Result ApiError ZoneDatasourceGroupAddRsp -> msg)
-    -> ZoneDatasourceGroupAddReq
-    -> Cmd msg
-zone_datasource_group_add toMsg req =
-    Http.post
-        { url = "/api/sigint/zones/zone-datasource-group-add"
-        , body = Http.jsonBody (zoneDatasourceGroupAddReqEncoder req)
-        , expect = leExpectJson toMsg zoneDatasourceGroupAddRspDecoder
-        }
-
-
-zone_datasource_group_delete :
-    (Result ApiError () -> msg)
-    -> Int
-    -> Cmd msg
-zone_datasource_group_delete toMsg sigintZoneDatasourceId =
-    Http.post
-        { url = "/api/sigint/zones/zone-datasource-group-delete"
-        , body = Http.jsonBody (Encode.int sigintZoneDatasourceId)
-        , expect = leExpectJson toMsg (Decode.succeed ())
         }
 
 
@@ -873,56 +665,6 @@ inbox_message_tags_model_error toMsg req =
         }
 
 
-admin_tags_list :
-    (Result ApiError (List TagAdmin) -> msg)
-    -> Cmd msg
-admin_tags_list toMsg =
-    Http.post
-        { url = "/api/admin/tags/list"
-        , body = Http.emptyBody
-        , expect = leExpectJson toMsg (Decode.list tagAdminDecoder)
-        }
-
-
-admin_create_tag :
-    (Result ApiError TagAdmin -> msg)
-    -> TagUpsertReq
-    -> Cmd msg
-admin_create_tag toMsg req =
-    Http.post
-        { url = "/api/admin/tags"
-        , body = Http.jsonBody (tagUpsertReqEncoder req)
-        , expect = leExpectJson toMsg tagAdminDecoder
-        }
-
-
-admin_update_tag :
-    (Result ApiError TagAdmin -> msg)
-    -> Int
-    -> TagUpsertReq
-    -> Cmd msg
-admin_update_tag toMsg tagId req =
-    Http.request
-        { method = "PUT"
-        , url = "/api/admin/tags/" ++ String.fromInt tagId
-        , body = Http.jsonBody (tagUpsertReqEncoder req)
-        , headers = []
-        , expect = leExpectJson toMsg tagAdminDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-admin_restart_echo :
-    (Result ApiError Bool -> msg)
-    -> RestartEchoRequest
-    -> Cmd msg
-admin_restart_echo toMsg req =
-    Http.post
-        { url = "/api/admin/restart-echo"
-        , body = Http.jsonBody (restartEchoRequestEncoder req)
-        , expect = leExpectJson toMsg Decode.bool
-        }
-
 admin_restart_datasource :
     (Result ApiError Bool -> msg)
     -> Int
@@ -932,60 +674,6 @@ admin_restart_datasource toMsg datasourceId =
         { url = "/api/admin/restart-datasource"
         , body = Http.jsonBody (Encode.int datasourceId)
         , expect = leExpectJson toMsg Decode.bool
-        }
-
-
-tag_keywords_add :
-    (Result ApiError (List TagKeyword) -> msg)
-    -> Int
-    -> List TagKeywordAddReq
-    -> Cmd msg
-tag_keywords_add toMsg tagId req =
-    Http.post
-        { url = "/api/tags/" ++ String.fromInt tagId ++ "/keywords"
-        , body = Http.jsonBody (Encode.list tagKeywordAddReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list tagKeywordDecoder)
-        }
-
-
-tag_keyword_update :
-    (Result ApiError () -> msg)
-    -> { tagId : Int, tagKeywordId : Int }
-    -> TagKeywordAddReq
-    -> Cmd msg
-tag_keyword_update toMsg params req =
-    Http.request
-        { method = "PUT"
-        , url =
-            "/api/tags/"
-                ++ String.fromInt params.tagId
-                ++ "/keywords/"
-                ++ String.fromInt params.tagKeywordId
-        , body = Http.jsonBody (tagKeywordAddReqEncoder req)
-        , headers = []
-        , expect = Http.expectStringResponse toMsg (resolve (\_ -> Ok ()))
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-
-tag_keyword_delete :
-    (Result ApiError () -> msg)
-    -> { tagId : Int, tagKeywordId : Int }
-    -> Cmd msg
-tag_keyword_delete toMsg params =
-    Http.request
-        { method = "DELETE"
-        , url =
-            "/api/tags/"
-                ++ String.fromInt params.tagId
-                ++ "/keywords/"
-                ++ String.fromInt params.tagKeywordId
-        , body = Http.emptyBody
-        , headers = []
-        , expect = Http.expectStringResponse toMsg (resolve (\_ -> Ok ()))
-        , timeout = Nothing
-        , tracker = Nothing
         }
 
 
@@ -1153,18 +841,6 @@ sigint_list_callsigns_xlsx toMsg req =
         }
 
 
-sigint_callsigns_with_units_from_inbox :
-    (Result ApiError GetCallsignsWithUnitsFromInboxRsp -> msg)
-    -> GetCallsignsWithUnitsFromInboxReq
-    -> Cmd msg
-sigint_callsigns_with_units_from_inbox toMsg req =
-    Http.post
-        { url = "/api/sigint/callsigns-with-units-from-inbox"
-        , body = Http.jsonBody (getCallsignsWithUnitsFromInboxReqEncoder req)
-        , expect = leExpectJson toMsg getCallsignsWithUnitsFromInboxRspDecoder
-        }
-
-
 sigint_callsign_create :
     (Result ApiError Callsign -> msg)
     -> CreateCallsignReq
@@ -1289,40 +965,6 @@ sigint_delete_key toMsg req =
         , expect = leExpectJson toMsg encryptionKeyDataDecoder
         }
 
-sigint_key_share_policy_list :
-    (Result ApiError (List SigintKeySharePolicy) -> msg)
-    -> Cmd msg
-sigint_key_share_policy_list toMsg =
-    Http.post
-        { url = "/api/sigint/key-share-policy/list"
-        , body = Http.jsonBody Encode.null
-        , expect = leExpectJson toMsg (Decode.list sigintKeySharePolicyDecoder)
-        }
-
-
-sigint_key_share_policy_create :
-    (Result ApiError SigintKeySharePolicy -> msg)
-    -> CreateSigintKeySharePolicyReq
-    -> Cmd msg
-sigint_key_share_policy_create toMsg req =
-    Http.post
-        { url = "/api/sigint/key-share-policy/create"
-        , body = Http.jsonBody (createSigintKeySharePolicyReqEncoder req)
-        , expect = leExpectJson toMsg sigintKeySharePolicyDecoder
-        }
-
-
-sigint_key_share_policy_delete :
-    (Result ApiError () -> msg)
-    -> DeleteSigintKeySharePolicyReq
-    -> Cmd msg
-sigint_key_share_policy_delete toMsg req =
-    Http.post
-        { url = "/api/sigint/key-share-policy/delete"
-        , body = Http.jsonBody (deleteSigintKeySharePolicyReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        }
-
 
 sigint_callsign_unit_stats :
     (Result ApiError CallsignUnitStatsRsp -> msg)
@@ -1359,18 +1001,6 @@ sigint_latest_frequencies toMsg =
         { url = "/api/sigint/latest-frequencies"
         , body = Http.jsonBody Encode.null
         , expect = leExpectJson toMsg (Decode.list Decode.string)
-        }
-
-
-sigint_update_freq_networks :
-    (Result ApiError (List Network) -> msg)
-    -> UpdateFreqNetworksReq
-    -> Cmd msg
-sigint_update_freq_networks toMsg req =
-    Http.post
-        { url = "/api/sigint/update-freq-networks"
-        , body = Http.jsonBody (updateFreqNetworksReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list networkDecoder)
         }
 
 
@@ -1471,75 +1101,12 @@ list_alt_units_by_freqs toMsg req =
         }
 
 
-create_login : (Result ApiError Login -> msg) -> CreateLoginReq -> Cmd msg
-create_login toMsg req =
-    Http.post
-        { url = "/api/login/create"
-        , body = Http.jsonBody (createLoginReqEncoder req)
-        , expect = leExpectJson toMsg loginDecoder
-        }
-
-
-update_login : (Result ApiError Login -> msg) -> UpdateLoginReq -> Cmd msg
-update_login toMsg req =
-    Http.post
-        { url = "/api/login/update"
-        , body = Http.jsonBody (updateLoginReqEncoder req)
-        , expect = leExpectJson toMsg loginDecoder
-        }
-
-
 list_logins : (Result ApiError ListLoginsRsp -> msg) -> ListLoginsReq -> Cmd msg
 list_logins toMsg req =
     Http.post
         { url = "/api/logins"
         , body = Http.jsonBody (listLoginsReqEncoder req)
         , expect = leExpectJson toMsg listLoginsRspDecoder
-        }
-
-
-add_group_to_organism : (Result ApiError () -> msg) -> AddGroupToOrganismReq -> Cmd msg
-add_group_to_organism toMsg req =
-    Http.post
-        { url = "/api/organism/add-group"
-        , body = Http.jsonBody (addGroupToOrganismReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        }
-
-
-remove_group_from_organism : (Result ApiError () -> msg) -> RemoveGroupFromOrganismReq -> Cmd msg
-remove_group_from_organism toMsg req =
-    Http.post
-        { url = "/api/organism/remove-group"
-        , body = Http.jsonBody (removeGroupFromOrganismReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        }
-
-
-update_organism : (Result ApiError Organism -> msg) -> UpdateOrganismReq -> Cmd msg
-update_organism toMsg req =
-    Http.post
-        { url = "/api/organism/update"
-        , body = Http.jsonBody (updateOrganismReqEncoder req)
-        , expect = leExpectJson toMsg organismDecoder
-        }
-
-
-delete_organism : (Result ApiError () -> msg) -> Int -> Cmd msg
-delete_organism toMsg organismId =
-    Http.post
-        { url = "/api/organism/delete"
-        , body = Http.jsonBody (Encode.int organismId)
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        }
-
-
-organism_active_logins : (Result ApiError (List String) -> msg) -> Int -> Cmd msg
-organism_active_logins toMsg organismId =
-    Http.post
-        { url = "/api/organism/active-logins"
-        , body = Http.jsonBody (Encode.int organismId)
-        , expect = leExpectJson toMsg (Decode.list Decode.string)
         }
 
 
@@ -1552,84 +1119,12 @@ my_scope toMsg =
         }
 
 
-create_organism : (Result ApiError Organism -> msg) -> CreateOrganismReq -> Cmd msg
-create_organism toMsg req =
-    Http.post
-        { url = "/api/organism/create"
-        , body = Http.jsonBody (createOrganismReqEncoder req)
-        , expect = leExpectJson toMsg organismDecoder
-        }
-
-
 list_organisms : (Result ApiError (List Organism) -> msg) -> ListOrganismsReq -> Cmd msg
 list_organisms toMsg req =
     Http.post
         { url = "/api/organisms"
         , body = Http.jsonBody (listOrganismsReqEncoder req)
         , expect = leExpectJson toMsg (Decode.list organismDecoder)
-        }
-
-
-organism_all_groups : (Result ApiError (List SignalGroupFull) -> msg) -> Cmd msg
-organism_all_groups toMsg =
-    Http.post
-        { url = "/api/organism/all-groups"
-        , body = Http.jsonBody Encode.null
-        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
-        }
-
-
-organism_group_list : (Result ApiError (List OrganismGroup) -> msg) -> Cmd msg
-organism_group_list toMsg =
-    Http.post
-        { url = "/api/organism/group-list"
-        , body = Http.jsonBody Encode.null
-        , expect = leExpectJson toMsg (Decode.list organismGroupDecoder)
-        }
-
-
-organism_available_groups : (Result ApiError (List SignalGroupFull) -> msg) -> Int -> Cmd msg
-organism_available_groups toMsg organismId =
-    Http.post
-        { url = "/api/organism/available-groups"
-        , body = Http.jsonBody (Encode.int organismId)
-        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
-        }
-
-
-organism_available_groups_batch : (Result ApiError (Dict Int (List SignalGroupFull)) -> msg) -> List Int -> Cmd msg
-organism_available_groups_batch toMsg organismIds =
-    Http.post
-        { url = "/api/organism/available-groups-batch"
-        , body = Http.jsonBody (Encode.list Encode.int organismIds)
-        , expect = leExpectJson toMsg (Decode.keyValuePairs (Decode.list signalGroupFullDecoder) |> Decode.map (Dict.fromList << List.map (\( k, v ) -> ( Maybe.withDefault 0 (String.toInt k), v ))))
-        }
-
-
-organism_compute_available_groups : (Result ApiError (List SignalGroupFull) -> msg) -> UpdateOrganismReq -> Cmd msg
-organism_compute_available_groups toMsg req =
-    Http.post
-        { url = "/api/organism/compute-available-groups"
-        , body = Http.jsonBody (updateOrganismReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
-        }
-
-
-organism_compute_available_groups_for_new : (Result ApiError (List SignalGroupFull) -> msg) -> CreateOrganismReq -> Cmd msg
-organism_compute_available_groups_for_new toMsg req =
-    Http.post
-        { url = "/api/organism/compute-available-groups-for-new"
-        , body = Http.jsonBody (createOrganismReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
-        }
-
-
-create_login_delta : (Result ApiError Login -> msg) -> CreateLoginReq -> Cmd msg
-create_login_delta toMsg req =
-    Http.post
-        { url = "/api/login/create-delta"
-        , body = Http.jsonBody (createLoginReqEncoder req)
-        , expect = leExpectJson toMsg loginDecoder
         }
 
 
@@ -1653,14 +1148,6 @@ rer_freqs_callsigns toMsg req =
         }
 
 
-get_networks_list toMsg req =
-    Http.post
-        { url = "/api/sigint/network-list"
-        , body = Http.jsonBody (listNetworksReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list networkDecoder)
-        }
-
-
 get_networks_list_with_tracker :
     (Result ApiError (List Network) -> msg)
     -> String
@@ -1677,29 +1164,15 @@ get_networks_list_with_tracker toMsg tracker req =
         , tracker = Just tracker
         }
 
-
+get_posts :
+    (Result ApiError (List Post) -> msg)
+    -> ListPostsReq
+    -> Cmd msg
 get_posts toMsg req =
     Http.post
         { url = "/api/sigint/posts"
         , body = Http.jsonBody (listPostsReqEncoder req)
         , expect = leExpectJson toMsg (Decode.list postDecoder)
-        }
-
-
-check_if_freq_exist :
-    (Result ApiError () -> msg)
-    -> String
-    -> FreqExistsReq
-    -> Cmd msg
-check_if_freq_exist toMsg tracker req =
-    Http.request
-        { method = "POST"
-        , headers = []
-        , url = "/api/sigint/freq/freq-exists"
-        , body = Http.jsonBody (freqExistsReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        , timeout = Nothing
-        , tracker = Just tracker
         }
 
 
@@ -1730,15 +1203,6 @@ messenger_list_accounts toMsg =
         { url = "/api/messenger/list"
         , body = Http.jsonBody Encode.null
         , expect = leExpectJson toMsg accountsRspDecoder
-        }
-
-
-messenger_get_qr : (Result ApiError QrCodeRsp -> msg) -> QrCodeReq -> Cmd msg
-messenger_get_qr toMsg req =
-    Http.post
-        { url = "/api/messenger/qr"
-        , body = Http.jsonBody (qrCodeReqEncoder req)
-        , expect = leExpectJson toMsg qrCodeRspDecoder
         }
 
 
@@ -1811,30 +1275,12 @@ messenger_link_operator toMsg req =
         }
 
 
-messenger_edit_group : (Result ApiError GroupEntryF1 -> msg) -> GroupUpdateReq -> Cmd msg
-messenger_edit_group toMsg req =
-    Http.post
-        { url = "/api/messenger/edit-group"
-        , body = Http.jsonBody (groupUpdateReqEncoder req)
-        , expect = leExpectJson toMsg groupEntryF1Decoder
-        }
-
-
 aor_list : (Result ApiError (List AreaOfResponsibility) -> msg) -> ListAreasOfResponsibilityReq -> Cmd msg
 aor_list toMsg req =
     Http.post
         { url = "/api/sigint/aor"
         , body = Http.jsonBody (listAreasOfResponsibilityReqEncoder req)
         , expect = leExpectJson toMsg (Decode.list areaOfResponsibilityDecoder)
-        }
-
-
-create_aor : (Result ApiError AreaOfResponsibility -> msg) -> AreaOfResponsibilityInsert -> Cmd msg
-create_aor toMsg req =
-    Http.post
-        { url = "/api/sigint/aor/create"
-        , body = Http.jsonBody (areaOfResponsibilityInsertEncoder req)
-        , expect = leExpectJson toMsg areaOfResponsibilityDecoder
         }
 
 
@@ -1853,24 +1299,6 @@ palitra_list_v2 toMsg =
         { url = "/api/palitra/v2/list"
         , body = Http.emptyBody
         , expect = leExpectJson toMsg (Decode.list palitraReadV2Decoder)
-        }
-
-
-palitra_list_detailed : (Result ApiError (List PalitraDetails) -> msg) -> Cmd msg
-palitra_list_detailed toMsg =
-    Http.post
-        { url = "/api/palitra/list-detailed"
-        , body = Http.emptyBody
-        , expect = leExpectJson toMsg (Decode.list palitraDetailsDecoder)
-        }
-
-
-palitra_points : (Result ApiError (List PalitraPoints) -> msg) -> PalitraPointsReq -> Cmd msg
-palitra_points toMsg req =
-    Http.post
-        { url = "/api/palitra/points"
-        , body = Http.jsonBody (palitraPointsReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list palitraPointsDecoder)
         }
 
 
@@ -1967,22 +1395,4 @@ palitra_create_with_kmz toMsg req file =
         , expect = leExpectJson toMsg palitraDecoder
         , timeout = Nothing
         , tracker = Nothing
-        }
-
-
-update_aor : (Result ApiError AreaOfResponsibility -> msg) -> UpdateAreaOfResponsibilityReq -> Cmd msg
-update_aor toMsg req =
-    Http.post
-        { url = "/api/sigint/aor/update"
-        , body = Http.jsonBody (updateAreaOfResponsibilityReqEncoder req)
-        , expect = leExpectJson toMsg areaOfResponsibilityDecoder
-        }
-
-
-delete_aor : (Result ApiError () -> msg) -> DeleteAreaOfResponsibilityReq -> Cmd msg
-delete_aor toMsg req =
-    Http.post
-        { url = "/api/sigint/aor/delete"
-        , body = Http.jsonBody (deleteAreaOfResponsibilityReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
         }

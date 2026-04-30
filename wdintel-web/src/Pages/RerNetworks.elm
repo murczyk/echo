@@ -20,8 +20,7 @@ import Json.Encode as Encode
 import Layouts
 import List.Extra as ListX
 import Page exposing (Page)
-import Pages_.RerFreqs.Model exposing (FurtherInvestigationFilter(..))
-import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportTypeOption(..))
+import Pages_.RerNetworks.ReportConfig as ReportConfig
 import Pages_.RerNetworks.ReportModal as ReportModal
 import Pages_.RerNetworks.ReportUpdate as ReportUpdate
 import Route exposing (Route)
@@ -29,7 +28,6 @@ import Route.Path
 import Select
 import Set
 import Shared
-import Shared.CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
 import Shared.Components.DateTime
@@ -756,7 +754,8 @@ update shared msg model =
 
         GoiReportDownloadReturnedByApi (Ok bytes) ->
             let
-                filename = "goi_report.xlsx"
+                filename =
+                    "goi_report.xlsx"
             in
             ( { model | goiReportDownloadInProgress = False }
             , E.downloadFile filename "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" bytes
@@ -1505,7 +1504,7 @@ renderNetworkFreq shared isInactive freq =
     in
     span
         [ class
-             (if isInactive then
+            (if isInactive then
                 "text-gray-500"
 
              else
@@ -1875,6 +1874,7 @@ view _ shared user model =
                             Button.new { label = "Звіт \"ГОІ\"", onClick = GoiReportDownloadClickedByUser }
                                 |> (if model.goiReportDownloadInProgress then
                                         Button.withIcon [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
                                     else
                                         identity
                                    )

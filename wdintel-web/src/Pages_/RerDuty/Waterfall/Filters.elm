@@ -7,7 +7,6 @@ import Pages_.RerDuty.Waterfall.Types exposing (..)
 import Select
 import Set
 import Shared.Components.RerMessage
-import Shared.Components.Toast
 import Utils.Select as LeSelect
 import Utils.Utils exposing (getLabelOrDefault)
 
@@ -83,16 +82,15 @@ extractSendersIds oldSendersNames newSendersNames profiles senders =
             |> Dict.toList
             |> List.filterMap
                 (\( k, v ) ->
-                    case v of
-                        Nothing ->
-                            Nothing
-
-                        Just profile ->
+                    Maybe.andThen
+                        (\profile ->
                             if List.member (Shared.Components.RerMessage.profileNameStr k profile) newSendersNames then
                                 Just k
 
                             else
                                 Nothing
+                        )
+                        v
                 )
 
 
@@ -155,6 +153,7 @@ freqSortKey freq =
             ( 1, 0, freq )
 
 
+groupNameToIds : String -> Dict comparable { a | name : String } -> List comparable
 groupNameToIds n dict =
     dict
         |> Dict.toList
@@ -176,12 +175,7 @@ buildSelectUsersItems profiles =
     Dict.toList profiles
         |> List.filterMap
             (\( uuid, mP ) ->
-                case mP of
-                    Nothing ->
-                        Nothing
-
-                    Just p ->
-                        Just (Shared.Components.RerMessage.profileNameStr uuid p)
+                Maybe.map (Shared.Components.RerMessage.profileNameStr uuid) mP
             )
         |> Set.fromList
         |> Set.toList

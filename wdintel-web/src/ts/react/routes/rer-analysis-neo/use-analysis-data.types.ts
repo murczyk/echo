@@ -4,12 +4,14 @@ import type {
   CountStatsRsp,
   FreqDailyActivityCount,
   InboxMessage,
+  MessageComment,
   NetJsonGraphAndMeta,
   Network,
   SignalGroupEntry,
   SignalProfileEntry,
   SummaryTableFreqRow,
   Tag,
+  User,
   Unit,
 } from '../../../../Bindings';
 import { buildInboxReq } from './helpers';
@@ -23,6 +25,7 @@ import type {
 } from './types';
 
 export type UseAnalysisDataProps = {
+  currentUser: User | null;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -69,6 +72,7 @@ export type UseAnalysisDataResult = {
   messageActionLoading: boolean;
   messagesLoading: boolean;
   messagesPaging: boolean;
+  messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
@@ -84,6 +88,7 @@ export type UseAnalysisDataResult = {
   onToggleMessageTag: (messageId: number, tagId: number) => Promise<void>;
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
+  users: Record<string, User | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   reload: () => Promise<void>;
   summaryLoading: boolean;

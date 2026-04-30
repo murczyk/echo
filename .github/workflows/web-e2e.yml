@@ -29,6 +29,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Read Chromium revision
+        id: chromium-revision
+        run: |
+          revision=$(node -e "const browsers = require('./node_modules/playwright-core/browsers.json').browsers; const chromium = browsers.find((browser) => browser.name === 'chromium'); console.log(chromium.revision)")
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-chromium-${{ steps.chromium-revision.outputs.revision }}-v1
+
       - name: Install Playwright browsers
         run: npm run e2e:install
 

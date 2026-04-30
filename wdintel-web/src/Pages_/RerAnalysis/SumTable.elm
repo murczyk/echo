@@ -1,7 +1,6 @@
 module Pages_.RerAnalysis.SumTable exposing (sumTableBlock)
 
 import Bindings as B
-import Core.Callsign
 import Core.Callsigns.HintStrategy
 import Core.Unit
 import Dict
@@ -23,14 +22,17 @@ import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Utils exposing (..)
 
 
+sumTableHeight : number
 sumTableHeight =
     300
 
 
+sumTableHeightMin : number
 sumTableHeightMin =
     60
 
 
+buttonBlockHeight : number
 buttonBlockHeight =
     40
 
