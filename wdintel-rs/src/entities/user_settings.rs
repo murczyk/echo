@@ -16,6 +16,7 @@ pub struct Model {
     pub tags_layout: UserSettingsTagsLayout,
     pub disable_auto_scroll: bool,
     pub updated_at: DateTime,
+    pub analysis_map_in_sidebar: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -2953,5 +2953,6 @@ export type DutyTagsLayout =
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
   disableAutoScroll: boolean;
+  analysisMapInSidebar: boolean;
 };
 

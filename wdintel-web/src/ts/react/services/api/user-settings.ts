@@ -9,11 +9,13 @@ export type { UserDutySettingsDto };
 export type UserDutySettings = {
   tagsLayout: TagsLayoutVariant;
   disableAutoScroll: boolean;
+  analysisMapInSidebar: boolean;
 };
 
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
-type UserDutySettingsWire = Omit<UserDutySettingsDto, 'tagsLayout'> & {
+type UserDutySettingsWire = Omit<UserDutySettingsDto, 'tagsLayout' | 'analysisMapInSidebar'> & {
   tagsLayout: DutyTagsLayoutWire;
+  analysisMapInSidebar?: boolean | null;
 };
 
 function normalizeTagsLayout(
@@ -53,6 +55,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
   return {
     tagsLayout: normalizeTagsLayout(raw.tagsLayout),
     disableAutoScroll: raw.disableAutoScroll,
+    analysisMapInSidebar: raw.analysisMapInSidebar ?? false,
   };
 }
 
@@ -73,6 +76,7 @@ export async function saveUserSettings(
     {
       tagsLayout: serializeTagsLayout(body.tagsLayout),
       disableAutoScroll: body.disableAutoScroll,
+      analysisMapInSidebar: body.analysisMapInSidebar,
     },
     { signal },
   );

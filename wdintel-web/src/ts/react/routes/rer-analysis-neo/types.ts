@@ -91,13 +91,23 @@ export type AnalysisMapAttrs = {
   palitrasLoadState: AnalysisPalitrasLoadState;
 };
 
+export type AnalysisCenterTab = 'messages' | 'summary' | 'map';
 export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';
+
+export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCenterTab[] {
+  return analysisMapInSidebar ? ['messages', 'summary'] : ['messages', 'map', 'summary'];
+}
+
+export function getAnalysisSidebarTabs(analysisMapInSidebar: boolean): AnalysisSidebarTab[] {
+  return analysisMapInSidebar ? ['map', 'stats', 'callsigns', 'newCallsigns'] : ['stats', 'callsigns', 'newCallsigns'];
+}
 
 export type AnalysisPageState = {
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];
   canResetFilters: boolean;
-  centerTab: 'messages' | 'summary';
+  analysisMapInSidebar: boolean;
+  centerTab: AnalysisCenterTab;
   centerTabPending: boolean;
   counts: CountStatsRsp | null;
   copiedFeedbackId: string | null;
@@ -195,7 +205,7 @@ export type AnalysisPageActions = {
   reload: () => void;
   resetFilters: () => void;
   saveAsNew: () => void;
-  setCenterTab: (tab: 'messages' | 'summary') => void;
+  setCenterTab: (tab: AnalysisCenterTab) => void;
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;

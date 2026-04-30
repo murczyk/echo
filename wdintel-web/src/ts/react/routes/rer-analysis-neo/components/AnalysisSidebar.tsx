@@ -6,6 +6,7 @@ import { Box, Tab, Tabs, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { getAnalysisSidebarTabs } from '../types';
 import { AnalysisCallsignsPane } from './AnalysisCallsignsPane';
 import { AnalysisMapPane } from './AnalysisMapPane';
 import { AnalysisStatsPane } from './AnalysisStatsPane';
@@ -25,6 +26,7 @@ type Props = Pick<
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
   | 'mapAttrs'
+  | 'analysisMapInSidebar'
   | 'newCallsigns'
   | 'newCallsignsLoading'
   | 'rightSidebarLoading'
@@ -62,6 +64,7 @@ export function AnalysisSidebar({
   groupsActivityPeriod,
   groupsActivityLoading,
   mapAttrs,
+  analysisMapInSidebar,
   loadCallsignGraph,
   loadCorrelatedFreqs,
   loadGroupsActivity,
@@ -85,7 +88,9 @@ export function AnalysisSidebar({
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const isSidebarVisible = rightPanelOpen || isMobileLayout;
-  const keepMapPaneMounted = isSidebarVisible;
+  const sidebarTabs = getAnalysisSidebarTabs(analysisMapInSidebar);
+  const sidebarTab = analysisMapInSidebar || rightSidebarTab !== 'map' ? rightSidebarTab : 'stats';
+  const keepMapPaneMounted = analysisMapInSidebar && isSidebarVisible;
 
   return (
     <Box
@@ -95,7 +100,7 @@ export function AnalysisSidebar({
     >
       <Box sx={{ pt: 1 }}>
         <Tabs
-          value={rightSidebarTab ?? false}
+          value={sidebarTab ?? false}
           onChange={(_event, value) => setRightSidebarTab(value as 'map' | 'stats' | 'callsigns' | 'newCallsigns')}
           variant="scrollable"
           scrollButtons={isMobileLayout ? false : 'auto'}
@@ -131,10 +136,24 @@ export function AnalysisSidebar({
             },
           }}
         >
-          <Tab value="map" icon={<MapOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Мапа" />
-          <Tab value="stats" icon={<BarChartOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Зведення" />
-          <Tab value="callsigns" icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Позивні" />
-          <Tab value="newCallsigns" icon={<PersonAddOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Нові" />
+          {sidebarTabs.map((tab) => {
+            if (tab === 'map') {
+              return <Tab key={tab} value={tab} icon={<MapOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Мапа" />;
+            }
+            if (tab === 'stats') {
+              return (
+                <Tab key={tab} value={tab} icon={<BarChartOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Зведення" />
+              );
+            }
+            if (tab === 'callsigns') {
+              return (
+                <Tab key={tab} value={tab} icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Позивні" />
+              );
+            }
+            return (
+              <Tab key={tab} value={tab} icon={<PersonAddOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Нові" />
+            );
+          })}
         </Tabs>
       </Box>
       <Box
@@ -158,11 +177,11 @@ export function AnalysisSidebar({
         }}
       >
         {keepMapPaneMounted ? (
-          <Box sx={{ height: '100%', minHeight: 0, display: rightSidebarTab === 'map' ? 'flex' : 'none' }}>
+          <Box sx={{ height: '100%', minHeight: 0, display: sidebarTab === 'map' ? 'flex' : 'none' }}>
             <AnalysisMapPane
               mapAttrs={mapAttrs}
               search={queryState.search}
-              visible={rightSidebarTab === 'map'}
+              visible={sidebarTab === 'map'}
               onDateRangeChange={refreshMapDateRange}
               onExit={() => setRightSidebarTab('stats')}
               onLoadMessages={loadMessagesForMap}
@@ -170,7 +189,7 @@ export function AnalysisSidebar({
             />
           </Box>
         ) : null}
-        {rightSidebarTab === 'stats' ? (
+        {sidebarTab === 'stats' ? (
           <>
             <Box>
           <AnalysisStatsPane
@@ -193,7 +212,7 @@ export function AnalysisSidebar({
             </Box>
           </>
         ) : null}
-        {rightSidebarTab === 'callsigns' ? (
+        {sidebarTab === 'callsigns' ? (
           <AnalysisCallsignsPane
             callsignGraph={callsignGraph}
             callsignGraphLoading={callsignGraphLoading}
@@ -206,7 +225,7 @@ export function AnalysisSidebar({
             topCallsigns={topCallsigns}
           />
         ) : null}
-        {rightSidebarTab === 'newCallsigns' ? (
+        {sidebarTab === 'newCallsigns' ? (
           <Box>
             <AnalysisNewCallsignsCard loading={newCallsignsLoading} newCallsigns={newCallsigns} />
           </Box>

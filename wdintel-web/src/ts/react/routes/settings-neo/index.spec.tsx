@@ -16,9 +16,20 @@ vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CircularProgress: () => <span>loading</span>,
+  FormControlLabel: ({ control, label }: { control: ReactNode; label: ReactNode }) => (
+    <div>
+      {control}
+      {label}
+    </div>
+  ),
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Tab: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (_event: unknown, value: boolean) => void }) => (
+    <button type="button" onClick={() => onChange?.(new Event('change'), !checked)}>
+      {checked ? 'on' : 'off'}
+    </button>
+  ),
   TextField: ({ label }: { label?: ReactNode }) => <label>{label}</label>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -53,7 +64,7 @@ vi.mock('../../services/api/user', () => ({
 }));
 
 vi.mock('../../services/api/user-settings', () => ({
-  fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact', disableAutoScroll: false }),
+  fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact', disableAutoScroll: false, analysisMapInSidebar: false }),
   saveUserSettings: saveUserDutySettings,
 }));
 
@@ -103,6 +114,7 @@ describe('SettingsNeoPage', () => {
 
   beforeEach(() => {
     saveUserDutySettings.mockReset();
+    saveUserDutySettings.mockResolvedValue(undefined);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -154,11 +166,40 @@ describe('SettingsNeoPage', () => {
     expect(saveUserDutySettings.mock.calls[1]?.[0]).toEqual({
       tagsLayout: 'full',
       disableAutoScroll: true,
+      analysisMapInSidebar: false,
     });
 
     await act(async () => {
       secondSave.resolve();
       await Promise.resolve();
+    });
+  });
+
+  it('saves analysis map placement and emits the updated settings event', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="analysis" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const switchButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'off');
+    expect(switchButton).toBeTruthy();
+
+    await act(async () => {
+      switchButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenCalledWith({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: true,
     });
   });
 });

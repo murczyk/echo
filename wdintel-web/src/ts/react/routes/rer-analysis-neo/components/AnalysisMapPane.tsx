@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { createElement, useEffect, useRef } from 'react';
+import { createElement, useEffect, useRef, useState } from 'react';
 
 import type { AnalysisMapAttrs } from '../types';
 
@@ -15,6 +15,22 @@ type Props = {
 
 export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, onLoadMessages, onUnitClick, onExit }: Props) {
   const hostRef = useRef<HTMLElement | null>(null);
+  const [renderedVisible, setRenderedVisible] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setRenderedVisible(false);
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      setRenderedVisible(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [visible]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -68,7 +84,7 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
         palitras: mapAttrs.palitras,
         'palitras-loaded': mapAttrs.palitrasLoaded,
         'palitras-load-state': mapAttrs.palitrasLoadState,
-        visibility: visible ? 'true' : 'false',
+        visibility: renderedVisible ? 'true' : 'false',
         search,
       })}
     </Box>
