@@ -81,6 +81,7 @@ pub async fn receive_thread_inner(
             mode,
             cancel_token,
             shutdown_handle,
+            &config,
             &dbx,
             &mut workers,
             &mut running_ids,
@@ -95,6 +96,7 @@ pub async fn receive_thread_inner_2(
     mode: Mode,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
+    config: &Config,
     dbx: &DatabaseConnection,
     workers: &mut JoinSet<WorkerStatus>,
     running_ids: &mut HashSet<i64>,
@@ -121,6 +123,7 @@ pub async fn receive_thread_inner_2(
             mode,
             cancel_token,
             shutdown_handle,
+            config,
             workers,
             running_ids,
             now,
@@ -136,13 +139,14 @@ pub async fn bl_spawn_worker_if_not_running(
     mode: Mode,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
+    config: &Config,
     workers: &mut JoinSet<WorkerStatus>,
     running_ids: &mut HashSet<i64>,
     now: NaiveDateTime,
     datasource: &EchoAccountF1,
 ) -> Result<(), AppError> {
     if has_unlinked_echo_account(datasource) {
-        notify_unlinked_datasource(datasource).await;
+        notify_unlinked_datasource(config, datasource).await;
         return Ok(());
     }
     clear_unlinked_datasource_notification(datasource.id);
@@ -169,6 +173,7 @@ pub async fn bl_spawn_worker_if_not_running(
                 spawn_new_worker(
                     datasource_id,
                     mode,
+                    config.clone(),
                     worker_name,
                     cancel_token_cloned,
                 )
@@ -182,6 +187,7 @@ pub async fn bl_spawn_worker_if_not_running(
 async fn spawn_new_worker(
     datasource_id: i64,
     mode: Mode,
+    config: Config,
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> WorkerStatus {
@@ -190,6 +196,7 @@ async fn spawn_new_worker(
     let failed = match run_new_worker(
         datasource_id,
         mode,
+        config,
         worker_name_val.clone(),
         cancel_token,
     )
@@ -212,6 +219,7 @@ async fn spawn_new_worker(
 async fn run_new_worker(
     datasource_id: i64,
     mode: Mode,
+    config: Config,
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
@@ -238,7 +246,7 @@ async fn run_new_worker(
                 return Ok(());
             };
             let sync_result =
-                sync_client_once(cli, &dbx).await;
+                sync_client_once(&config, cli, &dbx).await;
             if !sync_result.is_healthy {
                 sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
                     .await;
@@ -253,11 +261,12 @@ async fn run_new_worker(
 }
 
 async fn sync_client_once(
+    config: &Config,
     cli: EchoAccountF1,
     dbx: &DatabaseConnection,
 ) -> SyncResult {
     if has_unlinked_echo_account(&cli) {
-        notify_unlinked_datasource(&cli).await;
+        notify_unlinked_datasource(config, &cli).await;
         return SyncResult {
             is_healthy: false,
             num_synced_inbox_messages: 0,
@@ -298,13 +307,17 @@ fn clear_unlinked_datasource_notification(datasource_id: i64) {
     notification_state.remove(&datasource_id);
 }
 
-async fn notify_unlinked_datasource(datasource: &EchoAccountF1) {
+async fn notify_unlinked_datasource(
+    config: &Config,
+    datasource: &EchoAccountF1,
+) {
     let should_notify =
         reserve_unlinked_datasource_notification(datasource.id, Instant::now());
     if !should_notify {
         return;
     }
-    let send_result = send_unlinked_datasource_notification(datasource).await;
+    let send_result =
+        send_unlinked_datasource_notification(config, datasource).await;
     finish_unlinked_datasource_notification(
         datasource.id,
         send_result.is_ok(),
@@ -402,6 +415,7 @@ fn unlinked_datasource_notification_retry_delay(
 }
 
 async fn send_unlinked_datasource_notification(
+    config: &Config,
     datasource: &EchoAccountF1,
 ) -> Result<(), AppError> {
     let client_name = datasource
@@ -418,7 +432,7 @@ async fn send_unlinked_datasource_notification(
     );
     tokio::time::timeout(
         Duration::from_secs(MESSENGER_UNLINKED_DISCORD_ALERT_TIMEOUT_SEC),
-        crate::server::discord::discord_notify(&content),
+        crate::server::discord::discord_notify(config, &content),
     )
     .await
     .map_err(|e| anyhow::Error::new(e).c(h!()))??;

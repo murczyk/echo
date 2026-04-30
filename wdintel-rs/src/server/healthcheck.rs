@@ -52,7 +52,7 @@ pub async fn run_healthcheck_worker(
         .c(h!())?;
     if timeouts > 4 {
         let content = format!("Почалися таймаути на спробах отримати повідомлення, переприв'яжіть Signal на сервері {}", &config.public_host);
-        crate::server::discord::discord_notify(&content)
+        crate::server::discord::discord_notify(config, &content)
             .await
             .c(h!())?;
         Ok(Some(Utc::now().naive_utc()))

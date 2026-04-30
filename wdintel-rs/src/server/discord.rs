@@ -3,7 +3,13 @@ use crate::h;
 use crate::types::ShortContext;
 use serde::Serialize;
 
-pub async fn discord_notify(content: &str) -> Result<(), AppError> {
+pub async fn discord_notify(
+    config: &crate::config::Config,
+    content: &str,
+) -> Result<(), AppError> {
+    if config.skip_discord_notifications == Some(true) {
+        return Ok(());
+    }
     #[derive(Serialize)]
     struct DiscordReq {
         content: String,
