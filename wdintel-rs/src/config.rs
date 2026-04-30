@@ -209,7 +209,6 @@ pub struct Config {
     pub cookie_session_secret: String,
     pub storage_dir: String,
     pub signal_api_phone: String,
-    pub whatsapp_api_phone: String,
     pub signal_import_group_name: String,
     pub signal_import_fiven_name: String,
     pub rer_duty_test_source_window_minutes: Option<i64>,

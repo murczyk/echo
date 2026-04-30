@@ -86,13 +86,3 @@ impl AttachmentForDedupe for echo_im::types::MessageAttachmentF1 {
         self.name.as_deref()
     }
 }
-
-impl AttachmentForDedupe for crate::entities::whatsapp_queue_attachment::Model {
-    fn attachment_path(&self) -> &str {
-        &self.path
-    }
-
-    fn attachment_name(&self) -> Option<&str> {
-        None
-    }
-}

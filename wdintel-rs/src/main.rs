@@ -60,7 +60,6 @@ pub mod unit;
 pub mod user_settings;
 pub mod users;
 pub mod utils;
-pub mod whatsapp;
 
 #[macro_export]
 macro_rules! h {

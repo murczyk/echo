@@ -470,7 +470,7 @@ deploy _server_pos="" server:
       sudo systemctl disable --now wdintel-rs.service || true
 
       # Leave only wdintel-rs.socket on :8081; clean up legacy/generated sockets.
-      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-vector.socket; do
         if systemctl cat "$unit" >/dev/null 2>&1; then
           sudo systemctl disable --now "$unit" || true
         fi
@@ -600,7 +600,7 @@ deploy-from-local _server_pos="" server:
       sudo systemctl daemon-reload
       sudo systemctl disable --now wdintel-rs.service || true
 
-      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-vector.socket; do
         if systemctl cat "$unit" >/dev/null 2>&1; then
           sudo systemctl disable --now "$unit" || true
         fi
@@ -1363,7 +1363,7 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
     set -euo pipefail
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
-    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-vector.socket; do
       if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
         sudo systemctl disable --now "$unit" || true
       else
@@ -1371,7 +1371,7 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
       fi
     done'
     ssh {{ server }} 'sudo systemctl daemon-reload'
-    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-vector\\.socket|echo-signal-cli\\.socket|echo-signal-bot@\\.socket|echo-whatsapp-bot@\\.socket" || true'
+    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-vector\\.socket|echo-signal-bot@\\.socket|echo-whatsapp-bot@\\.socket" || true'
 
 [arg('server', long='server')]
 oneoff-2026-02-13-bgworker-01-post-deploy server='':
@@ -1432,7 +1432,7 @@ oneoff-2026-02-13-bgworker-01-post-deploy server='':
         sudo ss -ltnp | grep "LISTEN .*:8081" || true
 
         echo "Stopping conflict-prone socket units on this host."
-        for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+        for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-vector.socket; do
           if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
             sudo systemctl disable --now "$unit" || true
           fi
@@ -1759,10 +1759,6 @@ setup-server:
 setup-server-interactive:
     ssh {{ server }} 'sudo wdintel-rs --    mode=live oneoff-install --interactive'
 
-_build-whatsapp-bin-local:
-    (cd echo-whatsapp/whatsmeow/echo-whatsapp && go mod tidy && go build)
-    mv echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/echo-whatsapp
-
 deploy-rustdocs:
     #!/bin/bash
     set -euxo pipefail
@@ -1966,17 +1962,3 @@ bump-version-push:
     set -euo pipefail
     just message="{{ message }}" bump-version-commit
     git push
-
-whatsapp-update-fresh-whatsmeow:
-    #!/bin/bash
-    set -euxo pipefail
-
-    TMPDIR=$(mktemp -d)
-    trap 'rm -rf "${TMPDIR}"' EXIT
-
-    git clone --depth=1 https://github.com/tulir/whatsmeow "${TMPDIR}/whatsmeow"
-
-    rsync -a --delete \
-        --exclude '.git' \
-        --exclude 'echo-whatsapp/' \
-        "${TMPDIR}/whatsmeow/" echo-whatsapp/whatsmeow/
