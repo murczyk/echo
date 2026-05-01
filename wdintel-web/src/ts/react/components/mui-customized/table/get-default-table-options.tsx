@@ -53,6 +53,22 @@ export function withExplicitSelectAllOption(
   return [EXPLICIT_SELECT_ALL_OPTION, ...options];
 }
 
+export function getFilterModeHelperText(filterVariant?: string): string | null {
+  if (filterVariant === 'multi-select') {
+    return 'Режим фільтрації: Включає деякі';
+  }
+
+  if (filterVariant === 'select' || filterVariant === 'checkbox') {
+    return 'Режим фільтрації: Дорівнює';
+  }
+
+  if (filterVariant == null || filterVariant === 'text' || filterVariant === 'autocomplete') {
+    return 'Режим фільтрації: Нечіткий';
+  }
+
+  return null;
+}
+
 export function resolveExplicitSelectFilterValue(
   value: unknown,
   allowedValues: readonly string[],
@@ -72,10 +88,12 @@ export function resolveExplicitSelectFilterValue(
 export function buildExplicitSingleSelectColumnFilter<TData extends MRT_RowData>({
   options,
   fallbackValue,
+  helperText,
   onChange,
 }: {
   options: readonly ExplicitSelectFilterOption[];
   fallbackValue: string;
+  helperText?: string | null;
   onChange: (column: MRT_Column<TData>, nextValue: string) => void;
 }): NonNullable<MRT_ColumnDef<TData>['Filter']> {
   const allowedValues = options.map((option) => option.value);
@@ -86,6 +104,7 @@ export function buildExplicitSingleSelectColumnFilter<TData extends MRT_RowData>
       fullWidth
       margin="none"
       variant="standard"
+      helperText={helperText ?? undefined}
       value={resolveExplicitSelectFilterValue(column.getFilterValue(), allowedValues, fallbackValue)}
       onChange={(event) => onChange(column, event.target.value)}
       onClick={(event) => event.stopPropagation()}
@@ -123,40 +142,64 @@ export function buildExplicitSingleSelectColumnFilter<TData extends MRT_RowData>
 }
 
 export function getSharedFilterTextFieldProps(filterVariant?: string): TextFieldProps {
-  if (filterVariant !== 'select' && filterVariant !== 'multi-select') {
-    return {};
-  }
-
-  return {
+  const sharedProps: TextFieldProps = {
     sx: {
-      '& .MuiInputBase-root': {
-        cursor: 'pointer',
+      '& .MuiInput-root': {
+        pb: 0.75,
       },
-      '& .MuiInputAdornment-positionEnd': {
-        cursor: 'pointer',
-        pointerEvents: 'none',
-      },
-      '& .MuiInputAdornment-positionEnd .MuiIconButton-root': {
-        pointerEvents: 'auto',
-      },
-      '& .MuiSelect-select': {
-        cursor: 'pointer',
-        width: '100%',
+      '& .MuiFormHelperText-root': {
+        mt: 1,
       },
     },
     slotProps: {
-      input: {
-        onMouseDown: onSharedSelectFilterMouseDown,
-      },
-      select: {
-        SelectDisplayProps: {
-          style: {
-            cursor: 'pointer',
-            width: '100%',
-          },
+      formHelperText: {
+        sx: {
+          mt: 0.25,
         },
       },
     },
+  };
+
+  if (filterVariant === 'select' || filterVariant === 'multi-select') {
+    return {
+      ...sharedProps,
+      sx: {
+        ...sharedProps.sx,
+        '& .MuiInputBase-root': {
+          cursor: 'pointer',
+        },
+        '& .MuiInputAdornment-positionEnd': {
+          cursor: 'pointer',
+          pointerEvents: 'none',
+        },
+        '& .MuiInputAdornment-positionEnd .MuiIconButton-root': {
+          pointerEvents: 'auto',
+        },
+        '& .MuiSelect-select': {
+          cursor: 'pointer',
+          width: '100%',
+        },
+      },
+      slotProps: {
+        ...sharedProps.slotProps,
+        input: {
+          onMouseDown: onSharedSelectFilterMouseDown,
+        },
+        select: {
+          SelectDisplayProps: {
+            style: {
+              cursor: 'pointer',
+              width: '100%',
+            },
+          },
+        },
+      },
+    };
+  }
+
+  return {
+    ...sharedProps,
+    placeholder: filterVariant == null || filterVariant === 'text' ? 'Пошук' : undefined,
   };
 }
 
@@ -190,6 +233,10 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
     const hasFilters =
       Boolean(table.getState().globalFilter) ||
       Boolean(table.getState().columnFilters?.length);
+    const clearFilters = () => {
+      table.setColumnFilters([]);
+      table.setGlobalFilter('');
+    };
 
     return (
       <Box
@@ -202,7 +249,11 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
           px: 2,
         }}
       >
-        <TableEmptyState message={hasFilters ? 'Нічого не знайдено' : 'Немає даних'} />
+        <TableEmptyState
+          message={hasFilters ? 'Нічого не знайдено' : 'Немає даних'}
+          actionLabel={hasFilters ? 'Очистити фільтри' : undefined}
+          onAction={hasFilters ? clearFilters : undefined}
+        />
       </Box>
     );
   },

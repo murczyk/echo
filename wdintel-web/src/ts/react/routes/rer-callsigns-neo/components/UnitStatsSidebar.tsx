@@ -378,6 +378,7 @@ export function UnitStatsSidebar({
         display: 'flex',
         flexDirection: 'column',
         borderRadius: 0,
+        borderRight: isDesktopLayout ? 'none' : undefined,
       }}
       aria-busy={loading}
     >

@@ -27,7 +27,9 @@ import {
 import {
   buildExplicitSingleSelectColumnFilter,
   buildDefaultColumnOrder,
+  getFilterModeHelperText,
   getDefaultMRTOptions,
+  getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
   withExplicitSelectAllOption,
 } from '../../../components/mui-customized/table/get-default-table-options';
@@ -272,6 +274,7 @@ function CallsignsTableComponent({
         Filter: buildExplicitSingleSelectColumnFilter<CallsignRowView>({
           options: STATUS_FILTER_OPTIONS,
           fallbackValue: 'Відомий',
+          helperText: getFilterModeHelperText('select'),
           onChange: (column, nextValue) => {
             column.setFilterValue([nextValue]);
           },
@@ -372,6 +375,10 @@ function CallsignsTableComponent({
     enableRowActions: canEdit,
     positionActionsColumn: canEdit ? 'first' : undefined,
     columnFilterDisplayMode: 'popover',
+    muiFilterTextFieldProps: ({ column }) => ({
+      ...getSharedFilterTextFieldProps(column.columnDef.filterVariant),
+      helperText: getFilterModeHelperText(column.columnDef.filterVariant),
+    }),
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,

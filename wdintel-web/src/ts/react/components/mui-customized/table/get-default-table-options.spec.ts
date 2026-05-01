@@ -53,8 +53,42 @@ describe('getSharedFilterTextFieldProps', () => {
   });
 
   it('returns empty props for non-select filters', () => {
-    expect(getSharedFilterTextFieldProps('text')).toEqual({});
-    expect(getSharedFilterTextFieldProps(undefined)).toEqual({});
+    expect(getSharedFilterTextFieldProps('text')).toMatchObject({
+      sx: {
+        '& .MuiInput-root': {
+          pb: 0.75,
+        },
+        '& .MuiFormHelperText-root': {
+          mt: 1,
+        },
+      },
+      placeholder: 'Пошук',
+      slotProps: {
+        formHelperText: {
+          sx: {
+            mt: 0.25,
+          },
+        },
+      },
+    });
+    expect(getSharedFilterTextFieldProps(undefined)).toMatchObject({
+      sx: {
+        '& .MuiInput-root': {
+          pb: 0.75,
+        },
+        '& .MuiFormHelperText-root': {
+          mt: 1,
+        },
+      },
+      placeholder: 'Пошук',
+      slotProps: {
+        formHelperText: {
+          sx: {
+            mt: 0.25,
+          },
+        },
+      },
+    });
   });
 });
 
