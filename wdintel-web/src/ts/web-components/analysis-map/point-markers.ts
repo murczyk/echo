@@ -12,7 +12,7 @@ type CreatePointsMarkersGroupOptions = {
     latlng: L.LatLng,
     originalEvent?: MouseEvent | PointerEvent | Event,
   ) => void;
-  onClusterClick: (messageIds: number[], latlng: L.LatLng | null) => void;
+  onClusterClick: (messageIds: number[], latlng: L.LatLng | null, cluster: L.Layer) => void;
 };
 
 export function replacePointsLayer(params: {
@@ -121,6 +121,7 @@ export function createPointsMarkersGroup({
     onClusterClick(
       childMarkers.map((marker) => marker.data.messageId),
       latlng,
+      leafletEvent.layer,
     );
   });
 
@@ -222,7 +223,7 @@ function bindPelengLabel(
   point: MapPointDetailed,
   pelengLabelsPermanent: boolean,
 ): void {
-  const freqLabel = (point as MapPointDetailed & { freq?: string | null }).freq ?? '';
+  const freqLabel = point.freq ?? '';
   if (!freqLabel) {
     return;
   }

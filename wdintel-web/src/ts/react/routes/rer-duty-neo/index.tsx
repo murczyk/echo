@@ -239,7 +239,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                           },
                         }}
                       >
-                        Потік {index + 1}
+                        Стрічка {index + 1}
                       </ButtonBase>
                     );
                   })}

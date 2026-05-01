@@ -20,6 +20,7 @@ import type {
   AnalysisCountItem,
   AnalysisFilterOptions,
   AnalysisFilterSectionId,
+  AnalysisCenterTab,
   AnalysisGroupsActivityPeriod,
   AnalysisMapAttrs,
 } from './types';
@@ -31,7 +32,7 @@ export type UseAnalysisDataProps = {
   onUnauthorized: (error: unknown) => boolean;
   shouldLoadNewCallsigns: boolean;
   queryState: import('./types').AnalysisQueryState;
-  centerTab: 'messages' | 'summary';
+  centerTab: AnalysisCenterTab;
   rightPanelOpen: boolean;
   rightSidebarVisible: boolean;
   rightSidebarTab: import('./types').AnalysisSidebarTab | null;
@@ -67,7 +68,7 @@ export type UseAnalysisDataResult = {
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
   loadMoreMessages: () => Promise<void>;
-  loadMessagesForMap: (messageIds: number[]) => Promise<void>;
+  loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   messagesLoading: boolean;

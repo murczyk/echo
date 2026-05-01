@@ -237,6 +237,7 @@ mod m20260426_191910_add_slowlog_perf_indexes;
 mod m20260429_175416_add_signal_message_group_lookup_indexes;
 mod m20260429_181706_add_datasource_group_lookup_index;
 mod m20260429_212239_tune_datasource_autovacuum;
+mod m20260430_120000_add_analysis_map_in_sidebar;
 
 pub struct Migrator;
 
@@ -487,6 +488,7 @@ impl MigratorTrait for Migrator {
                 m20260429_181706_add_datasource_group_lookup_index::Migration,
             ),
             Box::new(m20260429_212239_tune_datasource_autovacuum::Migration),
+            Box::new(m20260430_120000_add_analysis_map_in_sidebar::Migration),
         ]
     }
 }

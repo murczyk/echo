@@ -7,6 +7,7 @@ type OpenMessagePopupOptions = {
   map: L.Map | null;
   clickedPoint: DataCircleMarker | null;
   clickedLatLng: L.LatLng | null;
+  preferClickedLatLng: boolean;
   messages: Message[];
   networkUnits: NetworkUnit[];
   selectedUnits: string[];
@@ -19,15 +20,16 @@ export function openMessagesPopup({
   map,
   clickedPoint,
   clickedLatLng,
+  preferClickedLatLng,
   messages,
   networkUnits,
   selectedUnits,
   findPointMarkerByMessageId,
   onUnitClicked,
   setClickedState,
-}: OpenMessagePopupOptions): void {
+}: OpenMessagePopupOptions): boolean {
   if ((!clickedPoint && !clickedLatLng) || messages.length === 0) {
-    return;
+    return false;
   }
 
   const sortedMessages = [...messages].sort((message1, message2) => {
@@ -38,19 +40,23 @@ export function openMessagesPopup({
   const popupContent = getPointPopupTemplate(sortedMessages, networkUnits, selectedUnits);
   const clickedMessageId = sortedMessages[0]?.[0];
   const isCluster = sortedMessages.length > 1;
+  const clickedPointOnMap =
+    !preferClickedLatLng && clickedPoint && clickedPoint.getElement() !== null ? clickedPoint : null;
   const restoredPoint =
-    !isCluster && clickedMessageId !== undefined ? findPointMarkerByMessageId(clickedMessageId) : null;
+    clickedPointOnMap ??
+    (!preferClickedLatLng && !isCluster && clickedMessageId !== undefined ? findPointMarkerByMessageId(clickedMessageId) : null);
   const canOpenOnRestoredPoint = restoredPoint ? restoredPoint.getElement() !== null : false;
+  const popupOptions = { offset: L.point(1, 3) };
 
   if (restoredPoint && canOpenOnRestoredPoint) {
     setClickedState(restoredPoint, restoredPoint.getLatLng());
-    restoredPoint.bindPopup(popupContent);
+    restoredPoint.bindPopup(popupContent, popupOptions);
     restoredPoint.openPopup();
   } else if (map && clickedLatLng) {
-    L.popup().setLatLng(clickedLatLng).setContent(popupContent).openOn(map);
+    L.popup(popupOptions).setLatLng(clickedLatLng).setContent(popupContent).openOn(map);
     setClickedState(null, clickedLatLng);
   } else {
-    return;
+    return false;
   }
 
   bindPopupUnitClickHandlers({
@@ -59,6 +65,8 @@ export function openMessagesPopup({
     onUnitClicked,
     setClickedState,
   });
+
+  return true;
 }
 
 function bindPopupUnitClickHandlers({

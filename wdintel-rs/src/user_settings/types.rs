@@ -36,6 +36,8 @@ pub struct UserDutySettingsDto {
     pub tags_layout: DutyTagsLayout,
     #[serde(default)]
     pub disable_auto_scroll: bool,
+    #[serde(default)]
+    pub analysis_map_in_sidebar: bool,
 }
 
 impl Default for UserDutySettingsDto {
@@ -43,6 +45,7 @@ impl Default for UserDutySettingsDto {
         Self {
             tags_layout: DutyTagsLayout::Compact,
             disable_auto_scroll: false,
+            analysis_map_in_sidebar: false,
         }
     }
 }

@@ -10,6 +10,7 @@ export type FeatureToggleState = {
 
 export interface LayerSwitchControl extends L.Control {
   updateFeatures: (state: FeatureToggleState) => void;
+  setCollapsed: (collapsed: boolean) => void;
 }
 
 export function createLayerSwitchControl(
@@ -84,6 +85,10 @@ export function createLayerSwitchControl(
     updateFeatures: function (state: FeatureToggleState) {
       this._featureState = state;
       this._syncElementState();
+    },
+
+    setCollapsed: function (collapsed: boolean) {
+      this._layerSwitchElement?.setCollapsed?.(collapsed);
     },
 
     _syncElementState: function () {

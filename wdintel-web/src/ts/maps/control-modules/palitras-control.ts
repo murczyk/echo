@@ -7,6 +7,7 @@ export interface PalitrasControl extends L.Control {
   updatePalitras: (palitras: PalitraDetails[], visibleIds: number[]) => void;
   setLoadState: (loadState: PalitrasLoadState) => void;
   setInteractionDisabled: (disabled: boolean) => void;
+  setCollapsed: (collapsed: boolean) => void;
 }
 
 function normalizeVisibleIds(input: number[]): number[] {
@@ -27,6 +28,7 @@ type PalitrasElementApi = HTMLElement & {
   setVisibleIds?: (visibleIds: number[]) => void;
   setLoadState?: (loadState: PalitrasLoadState) => void;
   setInteractionDisabled?: (disabled: boolean) => void;
+  setCollapsed?: (collapsed: boolean) => void;
 };
 
 export function createPalitrasControl(
@@ -97,6 +99,10 @@ export function createPalitrasControl(
     setInteractionDisabled: function (disabled: boolean) {
       this._interactionDisabled = disabled;
       this._syncElementState();
+    },
+
+    setCollapsed: function (collapsed: boolean) {
+      this._palitrasElement?.setCollapsed?.(collapsed);
     },
   });
 

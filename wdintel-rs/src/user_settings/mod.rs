@@ -24,6 +24,7 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
             DbTagsLayout::Hidden => DutyTagsLayout::Hidden,
         },
         disable_auto_scroll: m.disable_auto_scroll,
+        analysis_map_in_sidebar: m.analysis_map_in_sidebar,
     }
 }
 
@@ -65,6 +66,7 @@ pub async fn user_settings_put(
             DutyTagsLayout::Hidden => DbTagsLayout::Hidden,
         }),
         disable_auto_scroll: Set(dto.disable_auto_scroll),
+        analysis_map_in_sidebar: Set(dto.analysis_map_in_sidebar),
         updated_at: Set(now),
     })
     .on_conflict(
@@ -72,6 +74,7 @@ pub async fn user_settings_put(
             .update_columns([
                 user_settings::Column::TagsLayout,
                 user_settings::Column::DisableAutoScroll,
+                user_settings::Column::AnalysisMapInSidebar,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),

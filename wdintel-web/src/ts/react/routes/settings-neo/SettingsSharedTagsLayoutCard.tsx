@@ -1,3 +1,5 @@
+import { Box, List, ListItem, ListItemIcon, Stack, Typography } from '@mui/material';
+
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsTagsLayoutCard } from './SettingsTagsLayoutCard';
 
@@ -14,8 +16,40 @@ export function SettingsSharedTagsLayoutCard({
 }: SettingsSharedTagsLayoutCardProps) {
   return (
     <SettingsTagsLayoutCard
-      title="Вигляд тегів"
-      description="Оберіть, скільки деталей показувати в картці повідомлення."
+      title="Картка повідомлення"
+      description={
+        <Stack spacing={0.75}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Вигляд картки повідомлення:
+          </Typography>
+          <List disablePadding dense sx={{ color: 'text.secondary', pl: 0.75 }}>
+            <ListItem disableGutters disablePadding sx={{ alignItems: 'center', py: 0.25 }}>
+              <ListItemIcon sx={{ minWidth: 10, mr: 0.5 }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'text.secondary' }} />
+              </ListItemIcon>
+              <Typography variant="body2" component="span" sx={{ lineHeight: 1.4 }}>
+                <strong>Повний</strong> показує всі деталі
+              </Typography>
+            </ListItem>
+            <ListItem disableGutters disablePadding sx={{ alignItems: 'center', py: 0.25 }}>
+              <ListItemIcon sx={{ minWidth: 10, mr: 0.5 }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'text.secondary' }} />
+              </ListItemIcon>
+              <Typography variant="body2" component="span" sx={{ lineHeight: 1.4 }}>
+                <strong>Щільний</strong> робить картку коротшою і компактнішою
+              </Typography>
+            </ListItem>
+            <ListItem disableGutters disablePadding sx={{ alignItems: 'center', py: 0.25 }}>
+              <ListItemIcon sx={{ minWidth: 10, mr: 0.5 }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'text.secondary' }} />
+              </ListItemIcon>
+              <Typography variant="body2" component="span" sx={{ lineHeight: 1.4 }}>
+                <strong>Без тегів</strong> ховає теги
+              </Typography>
+            </ListItem>
+          </List>
+        </Stack>
+      }
       note="Спільне налаштування для Оперативного та Аналізу."
       tagsLayout={tagsLayout}
       onTagsLayoutChange={onTagsLayoutChange}

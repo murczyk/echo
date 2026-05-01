@@ -9,6 +9,7 @@ type BaseLayerName = 'openStreetMap' | 'googleHybrid';
 class AnalysisMapLayerSwitchElement extends HTMLElement {
   private root: Root | null = null;
   private currentLayer: BaseLayerName = 'googleHybrid';
+  private forceCollapsed = false;
   private pendingUnmountHandle: number | null = null;
   private features: FeatureToggleState = {
     palitrasEnabled: true,
@@ -43,6 +44,11 @@ class AnalysisMapLayerSwitchElement extends HTMLElement {
     this.renderComponent();
   }
 
+  setCollapsed(collapsed: boolean) {
+    this.forceCollapsed = collapsed;
+    this.renderComponent();
+  }
+
   private renderComponent() {
     if (!this.root) {
       return;
@@ -52,6 +58,7 @@ class AnalysisMapLayerSwitchElement extends HTMLElement {
       <AnalysisMapLayerSwitchControl
         currentLayer={this.currentLayer}
         features={this.features}
+        forceCollapsed={this.forceCollapsed}
         onLayerChange={(layer) => {
           this.currentLayer = layer;
           this.renderComponent();

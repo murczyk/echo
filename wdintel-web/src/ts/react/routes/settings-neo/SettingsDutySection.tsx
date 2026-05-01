@@ -30,7 +30,6 @@ export type SettingsDutySectionProps = {
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
-  saveSuccess: string | null;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
@@ -42,7 +41,6 @@ export function SettingsDutySection({
   loadInProgress,
   prefsLoadError,
   saveError,
-  saveSuccess,
   tagsLayout,
   onTagsLayoutChange,
   disableAutoScroll,
@@ -96,7 +94,7 @@ export function SettingsDutySection({
               >
                 <Stack spacing={1.5}>
                   <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
-                    Стрічка
+                    Стрічки
                   </Typography>
                   <FormControlLabel
                     sx={{
@@ -116,7 +114,7 @@ export function SettingsDutySection({
                     label={
                       <Stack spacing={0.75} sx={{ pt: 0.25 }}>
                         <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                          Автоматична прокрутка стрічки Оперативного
+                          Автоматична прокрутка стрічок Оперативного
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
                           Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим зазором.
@@ -185,11 +183,6 @@ export function SettingsDutySection({
             </Box>
           </Box>
 
-          {saveSuccess ? (
-            <Typography variant="caption" color="success.main" role="status" sx={{ alignSelf: 'flex-end' }}>
-              {saveSuccess}
-            </Typography>
-          ) : null}
         </Stack>
       </Stack>
     </Box>

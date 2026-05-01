@@ -1,4 +1,4 @@
-import { Autocomplete, Box, Card, CircularProgress, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, SyntheticEvent } from 'react';
 
@@ -77,10 +77,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
   const [initialDutyDisableAutoScroll, setInitialDutyDisableAutoScroll] = useState(false);
+  const [analysisMapInSidebar, setAnalysisMapInSidebar] = useState(false);
   const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
   const [dutySaveError, setDutySaveError] = useState<string | null>(null);
-  const [dutySaveSuccess, setDutySaveSuccess] = useState<string | null>(null);
-  const dutySavePendingRef = useRef<{ tagsLayout: TagsLayoutVariant; disableAutoScroll: boolean } | null>(null);
+  const dutySavePendingRef = useRef<{ tagsLayout: TagsLayoutVariant; disableAutoScroll: boolean; analysisMapInSidebar: boolean } | null>(null);
   const dutySaveRunningRef = useRef(false);
 
   const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
@@ -128,11 +128,13 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
           setDutyDisableAutoScroll(false);
           setInitialDutyDisableAutoScroll(false);
+          setAnalysisMapInSidebar(false);
         } else {
           setTagsLayout(prefsRsp.tagsLayout);
           setInitialTagsLayout(prefsRsp.tagsLayout);
           setDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
           setInitialDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
+          setAnalysisMapInSidebar(prefsRsp.analysisMapInSidebar);
         }
         try {
           const serverInfo = await fetchServerInfo(abortController.signal);
@@ -165,9 +167,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
-  function scheduleDutySave(nextSettings: { tagsLayout: TagsLayoutVariant; disableAutoScroll: boolean }) {
+  function scheduleDutySave(nextSettings: {
+    tagsLayout: TagsLayoutVariant;
+    disableAutoScroll: boolean;
+    analysisMapInSidebar: boolean;
+  }) {
     setDutySaveError(null);
-    setDutySaveSuccess(null);
     dutySavePendingRef.current = nextSettings;
     void flushDutySaveQueue();
   }
@@ -187,7 +192,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           setInitialTagsLayout(nextSettings.tagsLayout);
           setInitialDutyDisableAutoScroll(nextSettings.disableAutoScroll);
           window.dispatchEvent(new CustomEvent(USER_SETTINGS_UPDATED_EVENT, { detail: nextSettings }));
-          setDutySaveSuccess('Збережено');
         } catch (error) {
           if (isUnauthorizedError(error)) {
             shouldRetryPendingSave = false;
@@ -382,16 +386,19 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               loadInProgress={loadInProgress}
               prefsLoadError={dutyPrefsLoadError}
               saveError={dutySaveError}
-              saveSuccess={dutySaveSuccess}
               tagsLayout={tagsLayout}
               onTagsLayoutChange={(layout) => {
                 setTagsLayout(layout);
-                scheduleDutySave({ tagsLayout: layout, disableAutoScroll: dutyDisableAutoScroll });
+                scheduleDutySave({
+                  tagsLayout: layout,
+                  disableAutoScroll: dutyDisableAutoScroll,
+                  analysisMapInSidebar,
+                });
               }}
               disableAutoScroll={dutyDisableAutoScroll}
               onDisableAutoScrollChange={(value) => {
                 setDutyDisableAutoScroll(value);
-                scheduleDutySave({ tagsLayout, disableAutoScroll: value });
+                scheduleDutySave({ tagsLayout, disableAutoScroll: value, analysisMapInSidebar });
               }}
             />
           ) : null}
@@ -411,10 +418,61 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     tagsLayout={tagsLayout}
                     onTagsLayoutChange={(layout) => {
                       setTagsLayout(layout);
-                      scheduleDutySave({ tagsLayout: layout, disableAutoScroll: dutyDisableAutoScroll });
+                      scheduleDutySave({
+                        tagsLayout: layout,
+                        disableAutoScroll: dutyDisableAutoScroll,
+                        analysisMapInSidebar,
+                      });
                     }}
                     loadInProgress={loadInProgress}
                   />
+                  <Box
+                    sx={{
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      bgcolor: 'background.paper',
+                      p: { xs: 2, sm: 2.5 },
+                    }}
+                  >
+                    <Stack spacing={1.5}>
+                      <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+                        Мапа
+                      </Typography>
+                      <FormControlLabel
+                        sx={{
+                          alignItems: 'flex-start',
+                          m: 0,
+                          gap: 1.5,
+                          '& .MuiFormControlLabel-label': { width: '100%' },
+                        }}
+                        control={
+                          <Switch
+                            checked={analysisMapInSidebar}
+                            onChange={(_, checked) => {
+                              setAnalysisMapInSidebar(checked);
+                              scheduleDutySave({
+                                tagsLayout,
+                                disableAutoScroll: dutyDisableAutoScroll,
+                                analysisMapInSidebar: checked,
+                              });
+                            }}
+                            disabled={loadInProgress}
+                          />
+                        }
+                        label={
+                          <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+                            <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                              Мапа в бічній панелі
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                              Дозволяє одночасно переглядати мапу та повідомлення.
+                            </Typography>
+                          </Stack>
+                        }
+                      />
+                    </Stack>
+                  </Box>
                 </Stack>
               </Box>
             </Box>

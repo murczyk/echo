@@ -806,7 +806,8 @@ fn patch_generated_elm(output: String) -> String {
 
 fn patch_generated_elm_names(output: String) -> String {
     output
-        .replace("import Http", "import Http\nimport Maybe.Extra")
+        .replacen("import Http\n", "import Maybe.Extra\n", 1)
+        .replace("\nimport Url.Builder", "")
         .replace("= Folder (Folder)", "= NFolder Folder")
         .replace("| Document (Document)", "| NDocument Document")
         .replace("| NetworkLink (NetworkLink)", "| NNetworkLink NetworkLink")

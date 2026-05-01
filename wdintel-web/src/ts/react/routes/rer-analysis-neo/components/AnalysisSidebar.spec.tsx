@@ -73,6 +73,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     groupsActivityLoadedPeriod: null,
     groupsActivityPeriod: 'selected',
     groupsActivityLoading: false,
+    analysisMapInSidebar: false,
     mapAttrs: {
       daterange: '',
       daterangeLoading: '',
@@ -146,11 +147,25 @@ describe('AnalysisSidebar', () => {
   });
 
   it('renders the map content for the map tab', async () => {
-    const view = await renderComponent(buildProps({ rightSidebarTab: 'map' }));
+    const view = await renderComponent(buildProps({ analysisMapInSidebar: true, rightSidebarTab: 'map' }));
     rendered.push(view);
 
     expect(view.container.textContent).toContain('map-pane');
     expect(view.container.textContent).not.toContain('charts-panel');
+  });
+
+  it('hides the map tab when the map is not in the sidebar', async () => {
+    const view = await renderComponent(buildProps({ analysisMapInSidebar: false }));
+    rendered.push(view);
+
+    expect(Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('Мапа'))).toBe(false);
+  });
+
+  it('shows the map tab when the map is in the sidebar', async () => {
+    const view = await renderComponent(buildProps({ analysisMapInSidebar: true }));
+    rendered.push(view);
+
+    expect(Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('Мапа'))).toBe(true);
   });
 
   it('renders only the callsigns content for the callsigns tab', async () => {
@@ -166,12 +181,14 @@ describe('AnalysisSidebar', () => {
     const view = await renderComponent(buildProps({ setRightSidebarTab }));
     rendered.push(view);
 
-    const mapTab = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent?.includes('Мапа'));
-    expect(mapTab).toBeTruthy();
+    const statsTab = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Зведення'),
+    );
+    expect(statsTab).toBeTruthy();
 
-    await click(mapTab as HTMLButtonElement);
+    await click(statsTab as HTMLButtonElement);
 
-    expect(setRightSidebarTab).toHaveBeenCalledWith('map');
+    expect(setRightSidebarTab).toHaveBeenCalledWith('stats');
   });
 
   it('allows a null tab while the right panel is closed', async () => {

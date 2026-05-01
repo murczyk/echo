@@ -32,16 +32,37 @@ import { PowerChip } from '../../components/PowerChip';
 import { PowerAlert } from '../../components/PowerAlert';
 import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
+import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { AnalysisSidebar } from './components/AnalysisSidebar';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
-import type { AnalysisSidebarTab } from './types';
+import { getAnalysisCenterTabs, getAnalysisSidebarTabs } from './types';
+import type { AnalysisCenterTab, AnalysisSidebarTab } from './types';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
+};
+
+const ANALYSIS_CENTER_TAB_META: Record<
+  AnalysisCenterTab,
+  { icon: typeof MessageOutlinedIcon; label: string }
+> = {
+  messages: { icon: MessageOutlinedIcon, label: 'Повідомлення' },
+  summary: { icon: TableRowsOutlinedIcon, label: 'Таблиця: Частоти' },
+  map: { icon: MapOutlinedIcon, label: 'Мапа' },
+};
+
+const ANALYSIS_SIDEBAR_TAB_META: Record<
+  AnalysisSidebarTab,
+  { icon: typeof MessageOutlinedIcon; label: string }
+> = {
+  map: { icon: MapOutlinedIcon, label: 'Мапа' },
+  stats: { icon: BarChartOutlinedIcon, label: 'Зведення' },
+  callsigns: { icon: PeopleOutlineOutlinedIcon, label: 'Позивні' },
+  newCallsigns: { icon: PersonAddOutlinedIcon, label: 'Нові' },
 };
 
 export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPageProps = {}) {
@@ -58,7 +79,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const collapsedPanelWidth = '56px';
   const leftColumnWidth = page.leftPanelOpen ? fixedPanelWidth : collapsedPanelWidth;
   const rightColumnWidth = page.rightPanelOpen ? 'minmax(0,1fr)' : collapsedPanelWidth;
-  const activeTabId = page.centerTab === 'messages' ? messagesTabId : summaryTabId;
+  const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar);
+  const centerTab = page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
+  const activeTabId = centerTab === 'messages' ? messagesTabId : centerTab === 'summary' ? summaryTabId : `${centerTabsId}-map-tab`;
+  const rightSidebarTabs = getAnalysisSidebarTabs(page.analysisMapInSidebar);
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
   const gridTemplateColumns = {
     xs: '1fr',
@@ -70,6 +94,12 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     }
     page.setRightSidebarTab(tab);
   };
+  const messageCardSkeletons = [
+    { lines: [320, 180, 140], bodyHeight: 92 },
+    { lines: [240, 160], bodyHeight: 76 },
+    { lines: [280, 200, 160], bodyHeight: 88 },
+    { lines: [220, 180], bodyHeight: 76 },
+  ];
 
   return (
     <Box
@@ -237,17 +267,59 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 }}
               >
                 <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
-                  <Skeleton variant="text" width={320} height={40} />
-                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                  <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ minHeight: 40, alignItems: 'center' }}>
+                    <Skeleton variant="rounded" width={180} height={32} />
+                    <Skeleton variant="rounded" width={108} height={32} />
                     <Skeleton variant="rounded" width={160} height={32} />
-                    <Skeleton variant="rounded" width={88} height={32} />
-                    <Skeleton variant="rounded" width={112} height={32} />
+                  </Stack>
+                  <Stack direction="row" spacing={0.75} flexWrap="wrap" alignItems="center">
+                    <Skeleton variant="rounded" width={148} height={36} />
+                    <Box sx={{ flex: 1, minWidth: 0 }} />
+                    <Skeleton variant="rounded" width={94} height={28} />
+                    <Skeleton variant="rounded" width={104} height={28} />
                   </Stack>
                 </Stack>
-                <Box sx={{ flex: 1, minHeight: 0, px: { xs: 1, lg: 2 }, pb: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, overflow: 'hidden' }}>
-                  <Stack spacing={1.5}>
-                    {Array.from({ length: 7 }).map((_, index) => (
-                      <Skeleton key={index} variant="rounded" height={72} />
+                <Box
+                  sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    px: { xs: 1, lg: 2 },
+                    pb: { xs: 1, lg: 2 },
+                    pt: { xs: 0.5, lg: 1 },
+                    overflow: 'hidden',
+                  }}
+                >
+                  <Stack spacing={1.25}>
+                    {messageCardSkeletons.map((card, index) => (
+                      <Box
+                        key={index}
+                        sx={{
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          p: 1.5,
+                          bgcolor: 'rgba(255, 255, 255, 0.02)',
+                        }}
+                      >
+                        <Stack spacing={1}>
+                          <Stack spacing={0.75}>
+                            <Skeleton variant="rounded" width={card.lines[0]} height={20} />
+                            <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+                              <Skeleton variant="rounded" width={88} height={24} />
+                              <Skeleton variant="rounded" width={72} height={24} />
+                              <Skeleton variant="rounded" width={96} height={24} />
+                            </Stack>
+                          </Stack>
+                          <Stack spacing={0.75}>
+                            <Skeleton variant="rounded" height={card.bodyHeight} />
+                            <Stack direction="row" spacing={1} flexWrap="wrap">
+                              {card.lines.slice(1).map((lineWidth, lineIndex) => (
+                                <Skeleton key={lineIndex} variant="rounded" width={lineWidth} height={16} />
+                              ))}
+                            </Stack>
+                          </Stack>
+                        </Stack>
+                      </Box>
                     ))}
                   </Stack>
                 </Box>
@@ -297,20 +369,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     </IconButton>
                   </Box>
                   <Stack spacing={0.75} alignItems="center" sx={{ pt: 1.25 }}>
-                    {[
-                      { tab: 'map' as const, icon: MapOutlinedIcon, label: 'Мапа' },
-                      { tab: 'stats' as const, icon: BarChartOutlinedIcon, label: 'Зведення' },
-                      { tab: 'callsigns' as const, icon: PeopleOutlineOutlinedIcon, label: 'Позивні' },
-                      { tab: 'newCallsigns' as const, icon: PersonAddOutlinedIcon, label: 'Нові' },
-                    ].map((item) => {
-                      const Icon = item.icon;
-                      const active = page.rightSidebarTab === item.tab;
+                    {rightSidebarTabs.map((tab) => {
+                      const meta = ANALYSIS_SIDEBAR_TAB_META[tab];
+                      const Icon = meta.icon;
+                      const active = page.rightSidebarTab === tab;
                       return (
                         <IconButton
-                          key={item.tab}
+                          key={tab}
                           size="small"
                           disabled
-                          aria-label={item.label}
+                          aria-label={meta.label}
                           aria-pressed={active}
                           sx={{
                             width: 44,
@@ -443,9 +511,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   position: 'relative',
                 }}
               >
-                <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: page.centerTab === 'summary' ? 0 : 0.25 }}>
+                <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: centerTab === 'summary' || centerTab === 'map' ? 0 : 0.25 }}>
                   <Tabs
-                    value={page.centerTab}
+                    value={centerTab}
                     onChange={(_event, value) => page.setCenterTab(value)}
                     variant="scrollable"
                     scrollButtons={isMobileLayout ? false : 'auto'}
@@ -459,24 +527,49 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     }}
                     aria-label="Центральна панель аналізу"
                   >
-                    <Tab
-                      id={messagesTabId}
-                      aria-controls={messagesPanelId}
-                      value="messages"
-                      icon={<MessageOutlinedIcon />}
-                      iconPosition="start"
-                      label={`Повідомлення (${page.messages.length})`}
-                    />
-                    <Tab
-                      id={summaryTabId}
-                      aria-controls={summaryPanelId}
-                      value="summary"
-                      icon={<TableRowsOutlinedIcon sx={{ fontSize: 20 }} />}
-                      iconPosition="start"
-                      label="Таблиця: Частоти"
-                    />
+                    {centerTabs.map((tab) => {
+                      const meta = ANALYSIS_CENTER_TAB_META[tab];
+                      const Icon = meta.icon;
+                      if (tab === 'messages') {
+                        return (
+                          <Tab
+                            key={tab}
+                            id={messagesTabId}
+                            aria-controls={messagesPanelId}
+                            value="messages"
+                            icon={<Icon />}
+                            iconPosition="start"
+                            label={`${meta.label} (${page.messages.length})`}
+                          />
+                        );
+                      }
+                      if (tab === 'summary') {
+                        return (
+                          <Tab
+                            key={tab}
+                            id={summaryTabId}
+                            aria-controls={summaryPanelId}
+                            value="summary"
+                            icon={<Icon sx={{ fontSize: 20 }} />}
+                            iconPosition="start"
+                            label={meta.label}
+                          />
+                        );
+                      }
+                      return (
+                        <Tab
+                          key={tab}
+                          id={`${centerTabsId}-map-tab`}
+                          aria-controls={`${centerTabsId}-map-panel`}
+                          value="map"
+                          icon={<Icon />}
+                          iconPosition="start"
+                          label={meta.label}
+                        />
+                      );
+                    })}
                   </Tabs>
-                  {page.centerTab === 'summary' ? null : (
+                  {centerTab === 'summary' || centerTab === 'map' ? null : (
                     <Stack
                       direction="row"
                       spacing={0.75}
@@ -532,12 +625,12 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     </Stack>
                   )}
                 </Stack>
-                <Box
-                  sx={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
+                  <Box
+                    sx={{
+                      flex: 1,
+                      minHeight: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
                     overflowY: { xs: 'auto', lg: 'hidden' },
                     overflowX: 'hidden',
                     WebkitOverflowScrolling: 'touch',
@@ -547,7 +640,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   <Box
                     id={messagesPanelId}
                     role="tabpanel"
-                    hidden={page.centerTab !== 'messages'}
+                    hidden={centerTab !== 'messages'}
                     aria-labelledby={messagesTabId}
                     sx={{
                       flex: 1,
@@ -556,7 +649,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       px: { xs: 1, lg: 2 },
                       pb: { xs: 1, lg: 2 },
                       pt: { xs: 0.5, lg: 1 },
-                      display: page.centerTab === 'messages' ? 'flex' : 'none',
+                      display: centerTab === 'messages' ? 'flex' : 'none',
                       overflow: 'hidden',
                     }}
                   >
@@ -598,7 +691,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   <Box
                     id={summaryPanelId}
                     role="tabpanel"
-                    hidden={page.centerTab !== 'summary'}
+                    hidden={centerTab !== 'summary'}
                     aria-labelledby={summaryTabId}
                     sx={{
                       flex: 1,
@@ -606,11 +699,11 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       minHeight: 0,
                       px: 2,
                       pb: 2,
-                      display: page.centerTab === 'summary' ? 'flex' : 'none',
+                      display: centerTab === 'summary' ? 'flex' : 'none',
                       overflow: 'hidden',
                     }}
                   >
-                    {page.centerTab === 'summary' ? (
+                    {centerTab === 'summary' ? (
                       <AnalysisSummaryTableCard
                         callsignInfoMap={page.summaryCallsignsInfo}
                         networkDisplayMap={page.networkDisplayMap}
@@ -627,6 +720,33 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         tableContainerSx={{ maxHeight: '100%' }}
                         title="Таблиця частот"
                         unitsMap={page.unitsMap}
+                      />
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id={`${centerTabsId}-map-panel`}
+                    role="tabpanel"
+                    hidden={centerTab !== 'map'}
+                    aria-labelledby={`${centerTabsId}-map-tab`}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 0,
+                      px: 0,
+                      pb: 0,
+                      display: centerTab === 'map' ? 'flex' : 'none',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {centerTab === 'map' ? (
+                      <AnalysisMapPane
+                        mapAttrs={page.mapAttrs}
+                        search={page.queryState.search}
+                        visible
+                        onDateRangeChange={page.refreshMapDateRange}
+                        onLoadMessages={page.loadMessagesForMap}
+                        onUnitClick={page.toggleUnitFromMap}
                       />
                     ) : null}
                   </Box>
@@ -676,20 +796,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   </Tooltip>
                   <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
                   <Stack spacing={0.75} alignItems="center" sx={{ pt: 1.25 }}>
-                    {[
-                      { tab: 'map' as const, icon: MapOutlinedIcon, label: 'Мапа' },
-                      { tab: 'stats' as const, icon: BarChartOutlinedIcon, label: 'Зведення' },
-                      { tab: 'callsigns' as const, icon: PeopleOutlineOutlinedIcon, label: 'Позивні' },
-                      { tab: 'newCallsigns' as const, icon: PersonAddOutlinedIcon, label: 'Нові' },
-                    ].map((item) => {
-                      const Icon = item.icon;
-                      const active = page.rightSidebarTab === item.tab;
+                    {rightSidebarTabs.map((tab) => {
+                      const meta = ANALYSIS_SIDEBAR_TAB_META[tab];
+                      const Icon = meta.icon;
+                      const active = page.rightSidebarTab === tab;
                       return (
-                        <Tooltip key={item.tab} title={item.label} arrow placement="left">
+                        <Tooltip key={tab} title={meta.label} arrow placement="left">
                           <IconButton
                             size="small"
-                            onClick={() => openRightSidebarTab(item.tab)}
-                            aria-label={item.label}
+                            onClick={() => openRightSidebarTab(tab)}
+                            aria-label={meta.label}
                             aria-pressed={active}
                             sx={{
                               width: 44,

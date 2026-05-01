@@ -1,5 +1,7 @@
 import { Box, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
 
+import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 const cardSx = {
@@ -12,7 +14,7 @@ const cardSx = {
 
 export type SettingsTagsLayoutCardProps = {
   title: string;
-  description: string;
+  description?: ReactNode;
   note?: string;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
@@ -34,13 +36,10 @@ export function SettingsTagsLayoutCard({
           {title}
         </Typography>
         <Stack spacing={0.5}>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            {description}
-          </Typography>
-          {note ? (
-            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
-              {note}
-            </Typography>
+          {description ? (
+            <Box sx={{ color: 'text.secondary' }}>
+              {description}
+            </Box>
           ) : null}
         </Stack>
         <ToggleButtonGroup
@@ -64,9 +63,31 @@ export function SettingsTagsLayoutCard({
           }}
         >
           <ToggleButton value="full">повний</ToggleButton>
-          <ToggleButton value="compact">компактний</ToggleButton>
-          <ToggleButton value="hidden">не показувати</ToggleButton>
+          <ToggleButton value="compact">щільний</ToggleButton>
+          <ToggleButton value="hidden">без тегів</ToggleButton>
         </ToggleButtonGroup>
+        {note ? (
+          <PowerAlert
+            severity="info"
+            sx={{
+              mt: 0.25,
+              alignItems: 'center',
+              '& .MuiAlert-message': {
+                py: 0,
+                display: 'flex',
+                alignItems: 'center',
+              },
+              '& .MuiAlert-icon': {
+                py: 0,
+                alignItems: 'center',
+              },
+            }}
+          >
+            <Typography variant="body2" sx={{ lineHeight: 1.45 }}>
+              {note}
+            </Typography>
+          </PowerAlert>
+        ) : null}
       </Stack>
     </Box>
   );

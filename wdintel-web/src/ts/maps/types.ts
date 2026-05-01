@@ -6,9 +6,10 @@ export type MapPointShort = {
 }
 
 export type MapPointDetailed = Omit<MapPointShort, 'body'> & {
+  message_uid?: string | null;
   mgrs_coords: string;
   sk42_coords: string;
-  freq: string;
+  freq: string | null;
   message_id: number;
 }
 

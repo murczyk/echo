@@ -1,12 +1,13 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { Box, Checkbox, IconButton, ThemeProvider, Typography } from '@mui/material';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useNeoMuiTheme } from './mui-theme';
 
 type AnalysisMapSettingsControlProps = {
   visible: boolean;
+  forceCollapsed?: boolean;
   onVisibleChange: (visible: boolean) => void;
 };
 
@@ -20,6 +21,13 @@ function AnalysisMapSettingsControlInner(props: AnalysisMapSettingsControlProps)
   const toggleVisible = useCallback(() => {
     props.onVisibleChange(!props.visible);
   }, [props]);
+
+  useEffect(() => {
+    if (!props.forceCollapsed) {
+      return;
+    }
+    setCollapsed(true);
+  }, [props.forceCollapsed]);
 
   return (
     <Box className={`palitras-control map-settings-control ${isCollapsed ? 'collapsed' : ''}`}>

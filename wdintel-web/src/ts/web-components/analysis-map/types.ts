@@ -1,18 +1,20 @@
 import * as L from 'leaflet';
+import type { ContentNode } from '../../../Bindings';
 
 export type NetworkUnit = { frequencies: string[]; name: string };
 
 export type Message = [
   number,
   {
-    message_uid?: string;
-    freq?: string;
-    coords?: number[];
+    message_uid?: string | null;
+    freq?: string | null;
+    coords?: string | null;
     text: string;
-    date?: string;
-    time?: string;
+    date?: string | null;
+    time?: string | null;
     unit?: string | null;
     network_ids?: number[] | null;
+    text_marked?: ContentNode[] | null;
   },
 ];
 
