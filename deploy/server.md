@@ -155,7 +155,21 @@ just deploy-proj-db --server=$SERVER
 
 ## Nginx
 
-Don't upgrade NGINX! It has some bug that prevents it from starting properly after reboot sometimes.
+**Edit /etc/nginx/nginx.conf**
+
+```
+worker_rlimit_nofile 65535;
+
+...
+
+  events {
+      worker_connections 4096;
+  }
+
+...
+```
+
+**Setup and deploy new server config**
 
 Create `deploy/nginx/<server>`. Then do:
 
