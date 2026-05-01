@@ -76,6 +76,8 @@ sudo timedatectl set-timezone UTC
 
 ## Configure PostgreSQL
 
+**install**
+
 <details>
 
 ```
@@ -93,6 +95,14 @@ to
 ```
 local   all             all                                     md5
 ```
+
+**performance**
+
+```
+echo-install-utils ssh-sync-file deploy/postgresql/20-performance $server:/etc/postgresql/14/main/conf.d/20-performance.conf
+```
+
+**rest of the setup**
 
 - load (scp) `deploy/wd-2024-06-21-13-00-59.pgrestore` it into the
   server (command displayed at the end of gen-db-skeleton)
