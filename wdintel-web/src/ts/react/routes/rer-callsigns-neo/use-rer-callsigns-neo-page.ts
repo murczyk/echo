@@ -1064,6 +1064,14 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     });
   }
 
+  function onClearUnitFilter() {
+    setSelectedSidebarUnitFilter(null);
+    setFilters((prev) => ({
+      ...prev,
+      filterUnit: '',
+    }));
+  }
+
   return {
     user,
     permissions,
@@ -1134,5 +1142,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     onDownloadXlsx: () => onDownload('xlsx'),
     onLoadMore,
     onPickUnitFilter,
+    onClearUnitFilter,
   };
 }
