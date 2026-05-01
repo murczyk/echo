@@ -21,7 +21,7 @@ import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search", "palitras-load-state", "overlay-controls-collapsed"]
+  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "messages-loading", "messages-load-serial", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search", "palitras-load-state", "overlay-controls-collapsed"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -61,6 +61,14 @@ class AnalysisMap extends HTMLElement {
   private _isDateRangeLoading = false;
   private _isSearchLoading = false;
   private _overlayControlsCollapsed = false;
+  private _isVisible = false;
+  private _messagesLoading = false;
+  private _messagesPopupPending = false;
+  private _messagesLoadSerial = 0;
+  private _messagesLoadingTarget: L.Layer | null = null;
+  private _messagesPopupOpenFrame: number | null = null;
+  private _messagesPopupOpenRetryCount = 0;
+  private static readonly _messagesPopupOpenRetryLimit = 3;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
     if (this._isSearchInteractionLocked()) {
       return;
@@ -100,6 +108,8 @@ class AnalysisMap extends HTMLElement {
     this.removeEventListener('search-points', this._searchPointsHandler);
     window.removeEventListener('keydown', this._escapeHandler);
     this._closePointContextMenu();
+    this._cancelMessagesPopupOpen();
+    this._clearMessagesLoadingIndicator();
     this._setFullscreen(false);
   }
 
@@ -175,6 +185,12 @@ class AnalysisMap extends HTMLElement {
       case 'messages':
         this._handleMessagesAttributeChanged(newValue);
         break;
+      case 'messages-loading':
+        this._handleMessagesLoadingAttributeChanged(newValue);
+        break;
+      case 'messages-load-serial':
+        this._handleMessagesLoadSerialAttributeChanged(newValue);
+        break;
       case 'selected-units':
         this._handleSelectedUnitsAttributeChanged(newValue);
         break;
@@ -199,7 +215,10 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _handleVisibilityAttributeChanged(newValue: string): void {
-    if (newValue !== 'true') {
+    this._isVisible = newValue === 'true';
+    if (!this._isVisible) {
+      this._cancelMessagesPopupOpen();
+      this._clearMessagesLoadingIndicator();
       return;
     }
 
@@ -207,6 +226,7 @@ class AnalysisMap extends HTMLElement {
       setTimeout(() => {
         this._map?.invalidateSize();
         this._collapseOverlayControls();
+        this._openMessagesPopupIfReady();
       }, 0);
       return;
     }
@@ -216,6 +236,7 @@ class AnalysisMap extends HTMLElement {
       await this._initializeMap();
       this._initialized = true;
       this._collapseOverlayControls();
+      this._openMessagesPopupIfReady();
     }, 0);
   }
 
@@ -242,7 +263,24 @@ class AnalysisMap extends HTMLElement {
     const parsed = JSON.parse(newValue);
     this._messages = parsed['messages'];
     this._networkUnits = parsed['networkUnits'];
-    this._openMessagesPopup();
+    this._scheduleMessagesPopupOpen();
+  }
+
+  private _handleMessagesLoadingAttributeChanged(newValue: string): void {
+    this._messagesLoading = this._parseBooleanAttribute(newValue);
+    this._syncMessagesLoadingIndicator();
+    this._scheduleMessagesPopupOpen();
+  }
+
+  private _handleMessagesLoadSerialAttributeChanged(newValue: string): void {
+    const loadSerial = Number.parseInt(newValue, 10);
+    if (!Number.isFinite(loadSerial) || loadSerial === this._messagesLoadSerial) {
+      return;
+    }
+    this._messagesLoadSerial = loadSerial;
+    this._messagesPopupPending = true;
+    this._messagesPopupOpenRetryCount = 0;
+    this._scheduleMessagesPopupOpen();
   }
 
   private _handleSelectedUnitsAttributeChanged(newValue: string): void {
@@ -251,7 +289,6 @@ class AnalysisMap extends HTMLElement {
 
   private _handlePalitrasAttributeChanged(newValue: string): void {
     const palitras = JSON.parse(newValue);
-    console.log('[AnalysisMap] Palitras attribute changed, count:', palitras.length, 'manager exists:', !!this._palitraManager);
     this._palitras = palitras;
     this._syncVisiblePalitraIds();
     if (this._palitraManager) {
@@ -377,7 +414,6 @@ class AnalysisMap extends HTMLElement {
       this._switchTimeControl = result.switchTimeControl;
       this._coordMenuController = new AnalysisMapCoordMenuController(map, (target) => this._buildPointContextMenuContent(target));
 
-     // Initialize palitra manager
      this._palitraManager = new PalitraManager(
        this._map,
        {
@@ -411,19 +447,14 @@ class AnalysisMap extends HTMLElement {
        }
      );
      
-     // Set the control after manager is created
-     console.log('[AnalysisMap] Setting control, _palitrasEnabled:', this._palitrasEnabled, 'stored palitras:', this._palitras.length, 'visible IDs:', this._visiblePalitraIds.length);
      this._palitraManager.setControl(result.palitrasControl);
      this._palitraManager.setLoadState(this._palitrasLoadState);
      this._syncAsyncInteractionState();
      
-     // Update manager with any palitras that arrived before initialization
      if (this._palitras.length > 0) {
-       console.log('[AnalysisMap] Applying stored palitras to manager');
        this._palitraManager.updatePalitras(this._palitras);
      }
      if (this._visiblePalitraIds.length > 0) {
-       console.log('[AnalysisMap] Applying stored visible IDs to manager');
        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
      }
      
@@ -564,9 +595,10 @@ class AnalysisMap extends HTMLElement {
       points,
       pelengLabelsPermanent: this._pelengLabelsPermanent,
       onPointClick: (point, circle) => {
-        this._clickedLatLng = circle.getLatLng();
-        this._emitLoadMessagesDescriptions([circle.getData().messageId]);
         this._clickedPoint = circle;
+        this._clickedLatLng = circle.getLatLng();
+        this._setMessagesLoading(true, circle);
+        this._emitLoadMessagesDescriptions([circle.getData().messageId]);
       },
       onPointContextMenu: (target, latlng, originalEvent) => {
         originalEvent?.preventDefault();
@@ -575,9 +607,10 @@ class AnalysisMap extends HTMLElement {
         this._clickedLatLng = null;
         this._openPointContextMenu(target, latlng);
       },
-      onClusterClick: (messageIds, latlng) => {
+      onClusterClick: (messageIds, latlng, cluster) => {
         this._clickedPoint = null;
         this._clickedLatLng = latlng;
+        this._setMessagesLoading(true, cluster);
         this._emitLoadMessagesDescriptions(messageIds);
       },
     });
@@ -726,11 +759,12 @@ class AnalysisMap extends HTMLElement {
     this._updatePelengLabelsPermanent();
   }
 
-  private _openMessagesPopup(): void {
-    openMessagesPopup({
+  private _openMessagesPopup(): boolean {
+    const opened = openMessagesPopup({
       map: this._map,
       clickedPoint: this._clickedPoint,
       clickedLatLng: this._clickedLatLng,
+      preferClickedLatLng: this._clickedPoint === null,
       messages: this._messages,
       networkUnits: this._networkUnits,
       selectedUnits: this._selectedUnits,
@@ -741,6 +775,101 @@ class AnalysisMap extends HTMLElement {
         this._clickedLatLng = clickedLatLng;
       },
     });
+    if (!opened) {
+      return false;
+    }
+
+    this._messagesPopupPending = false;
+    this._setMessagesLoading(false);
+    return true;
+  }
+
+  private _openMessagesPopupIfReady(): void {
+    this._scheduleMessagesPopupOpen();
+  }
+
+  private _scheduleMessagesPopupOpen(): void {
+    if (this._messagesPopupOpenFrame !== null) {
+      return;
+    }
+
+    this._messagesPopupOpenFrame = window.requestAnimationFrame(() => {
+      this._messagesPopupOpenFrame = null;
+
+      if (!this._messagesPopupPending || !this._isVisible || !this._initialized || this._messagesLoading) {
+        return;
+      }
+
+      const opened = this._openMessagesPopup();
+      if (!opened && this._messagesPopupPending && this._messagesPopupOpenRetryCount < AnalysisMap._messagesPopupOpenRetryLimit) {
+        this._messagesPopupOpenRetryCount += 1;
+        this._scheduleMessagesPopupOpen();
+      } else if (opened) {
+        this._messagesPopupOpenRetryCount = 0;
+      }
+    });
+  }
+
+  private _cancelMessagesPopupOpen(): void {
+    if (this._messagesPopupOpenFrame !== null) {
+      window.cancelAnimationFrame(this._messagesPopupOpenFrame);
+      this._messagesPopupOpenFrame = null;
+    }
+    this._messagesPopupOpenRetryCount = 0;
+  }
+
+  private _syncMessagesLoadingIndicator(): void {
+    if (!this._messagesLoading || !this._messagesLoadingTarget) {
+      this._clearMessagesLoadingIndicator();
+      return;
+    }
+
+    if (this._messagesLoadingTarget instanceof DataCircleMarker) {
+      this._syncPointMessagesLoadingIndicator(this._messagesLoadingTarget);
+      return;
+    }
+
+    this._syncClusterMessagesLoadingIndicator(this._messagesLoadingTarget);
+  }
+
+  private _clearMessagesLoadingIndicator(): void {
+    if (this._messagesLoadingTarget instanceof DataCircleMarker) {
+      const path = this._messagesLoadingTarget.getElement() as (SVGPathElement & { classList: DOMTokenList }) | null;
+      if (path) {
+        path.classList.remove('analysis-map-message-loading-target');
+      }
+    } else if (this._messagesLoadingTarget) {
+      const icon = (this._messagesLoadingTarget as any).getElement?.() as (HTMLElement & { classList: DOMTokenList }) | null;
+      if (icon) {
+        icon.classList.remove('analysis-map-message-loading-target--cluster');
+      }
+    }
+    this._messagesLoadingTarget = null;
+  }
+
+  private _syncPointMessagesLoadingIndicator(target: DataCircleMarker): void {
+    const path = target.getElement() as (SVGPathElement & { classList: DOMTokenList }) | null;
+    if (!path) {
+      return;
+    }
+
+    path.classList.add('analysis-map-message-loading-target');
+    path.classList.remove('analysis-map-message-loading-target--cluster');
+  }
+
+  private _syncClusterMessagesLoadingIndicator(target: L.Layer): void {
+    const icon = (target as any).getElement?.() as (HTMLElement & { classList: DOMTokenList }) | null;
+    if (!icon) {
+      return;
+    }
+
+    icon.classList.add('analysis-map-message-loading-target--cluster');
+  }
+
+  private _setMessagesLoading(loading: boolean, target: L.Layer | null = null): void {
+    this._messagesLoading = loading;
+    this._messagesLoadingTarget = loading ? target : null;
+    this._syncMessagesLoadingIndicator();
   }
 
   private _emitMessageUnitClicked(networkUnitName: string | null): void {

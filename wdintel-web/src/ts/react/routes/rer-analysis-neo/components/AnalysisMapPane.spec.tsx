@@ -22,10 +22,18 @@ function buildProps(overrides: Partial<Parameters<typeof AnalysisMapPane>[0]> = 
     search: '',
     visible: true,
     onDateRangeChange: vi.fn(),
-    onLoadMessages: vi.fn(),
+    onLoadMessages: vi.fn(async () => true),
     onUnitClick: vi.fn(),
     ...overrides,
   };
+}
+
+function deferredPromise<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 describe('AnalysisMapPane', () => {
@@ -70,5 +78,31 @@ describe('AnalysisMapPane', () => {
 
     const map = container.querySelector('analysis-map');
     expect(map?.getAttribute('overlay-controls-collapsed')).toBe('true');
+  });
+
+  it('exposes a loading state while map messages are being fetched', async () => {
+    const load = deferredPromise<boolean>();
+    const onLoadMessages = vi.fn(() => load.promise);
+
+    await act(async () => {
+      root.render(<AnalysisMapPane {...buildProps({ onLoadMessages })} />);
+    });
+
+    const map = container.querySelector('analysis-map');
+    expect(map).not.toBeNull();
+
+    await act(async () => {
+      map?.dispatchEvent(new CustomEvent('load-messages-description', { detail: { messageIds: [1] }, bubbles: true }));
+    });
+
+    expect(map?.getAttribute('messages-loading')).toBe('true');
+
+    await act(async () => {
+      load.resolve(true);
+      await load.promise;
+    });
+
+    expect(map?.getAttribute('messages-loading')).toBe('false');
+    expect(map?.getAttribute('messages-load-serial')).toBe('1');
   });
 });

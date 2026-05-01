@@ -68,7 +68,7 @@ export type UseAnalysisDataResult = {
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
   loadMoreMessages: () => Promise<void>;
-  loadMessagesForMap: (messageIds: number[]) => Promise<void>;
+  loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   messagesLoading: boolean;

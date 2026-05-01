@@ -430,6 +430,72 @@ body.analysis-map-fullscreen-open {
 	z-index: -1;
 }
 
+.analysis-map-message-loading-ring {
+	transform-box: fill-box;
+	transform-origin: center;
+	stroke-dasharray: 10 7;
+	stroke-dashoffset: 0;
+	filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.28));
+	stroke: rgba(255, 255, 255, 0.96);
+	stroke-width: 2.5px;
+	stroke-linecap: round;
+	fill: rgba(237, 28, 35, 0.08);
+	animation: analysis-map-message-loading-spin 0.9s linear infinite;
+}
+
+.analysis-map-message-loading-target {
+	transform-box: fill-box;
+	transform-origin: center;
+	translate: 2px 2px;
+	stroke-dasharray: 10 7;
+	stroke-dashoffset: 0;
+	stroke: rgba(255, 255, 255, 0.96);
+	stroke-width: 2.5px;
+	stroke-linecap: round;
+	filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.28));
+	fill: rgba(237, 28, 35, 0.08);
+	animation: analysis-map-message-loading-spin 0.9s linear infinite;
+}
+
+.analysis-map-message-loading-ring--cluster {
+	position: absolute;
+	inset: -6px;
+	display: block;
+	box-sizing: border-box;
+	border-radius: 50%;
+	border: 2px solid rgba(255, 255, 255, 0.92);
+	border-top-color: transparent;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14);
+	animation: analysis-map-message-loading-spin 0.9s linear infinite;
+}
+
+.analysis-map-message-loading-target--cluster {
+	position: relative;
+	overflow: visible;
+}
+
+.analysis-map-message-loading-target--cluster::after {
+	content: '';
+	position: absolute;
+	inset: -4px;
+	translate: 2px 2px;
+	border: 2px solid rgba(255, 255, 255, 0.92);
+	border-top-color: transparent;
+	border-radius: 50%;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14);
+	animation: analysis-map-message-loading-spin 0.9s linear infinite;
+}
+
+@keyframes analysis-map-message-loading-spin {
+	from {
+		transform: rotate(0deg);
+	}
+
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 .leaflet-custom-control {
 	background: var(--bs-body-bg);
 	padding: 2px 4px;

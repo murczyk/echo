@@ -210,7 +210,7 @@ export function useAnalysisDataLoaders(params: Params) {
       if (cleanMessageIds.length === 0) {
         mapMessagesLoadVersionRef.current += 1;
         setMapOpenMessages([]);
-        return;
+        return false;
       }
 
       const loadVersion = mapMessagesLoadVersionRef.current + 1;
@@ -218,11 +218,13 @@ export function useAnalysisDataLoaders(params: Params) {
 
       try {
         const nextMessages = await fetchMessagesByIds(cleanMessageIds);
-        if (mapMessagesLoadVersionRef.current !== loadVersion) return;
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
         setMapOpenMessages(nextMessages);
+        return true;
       } catch (loadError) {
-        if (mapMessagesLoadVersionRef.current !== loadVersion) return;
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+        return false;
       }
     },
     [mapMessagesLoadVersionRef, onError, onUnauthorized, setMapOpenMessages],
