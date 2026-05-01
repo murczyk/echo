@@ -6,7 +6,7 @@ import { useState, act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import type { InboxMessage, InboxMessagesReq } from '../../../../Bindings';
+import type { InboxMessage, InboxMessagesReq, SavedFilterDuty } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { buildInboxReq, emptyFilter, type MessageFeedState } from './utils';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -63,6 +63,12 @@ type BuildReqOpts = Omit<
 type HarnessApi = ReturnType<typeof useRerDutyMessageActions> & {
   messageFeeds: MessageFeedState[];
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
+  savedFilters: SavedFilterDuty[];
+  setSavedFilters: Dispatch<SetStateAction<SavedFilterDuty[]>>;
+  selectedSavedIdByFeedId: Record<string, number | null>;
+  setSelectedSavedIdByFeedId: Dispatch<SetStateAction<Record<string, number | null>>>;
+  saveFilterNameByFeedId: Record<string, string>;
+  setSaveFilterNameByFeedId: Dispatch<SetStateAction<Record<string, string>>>;
 };
 
 function buildReqForFeed(_feed: MessageFeedState, opts: BuildReqOpts): InboxMessagesReq {
@@ -99,8 +105,12 @@ function buildFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState 
 function TestHarness(props: {
   apiRef: MutableRefObject<HarnessApi | null>;
   initialFeeds?: MessageFeedState[];
+  initialSavedFilters?: SavedFilterDuty[];
 }) {
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(props.initialFeeds ?? [buildFeed()]);
+  const [savedFilters, setSavedFilters] = useState<SavedFilterDuty[]>(props.initialSavedFilters ?? []);
+  const [selectedSavedIdByFeedId, setSelectedSavedIdByFeedId] = useState<Record<string, number | null>>({});
+  const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const actions = useRerDutyMessageActions({
     messageFeeds,
     setMessageFeeds,
@@ -116,15 +126,25 @@ function TestHarness(props: {
     authUserName: null,
     profiles: {},
     tagsMap: {},
-    savedFilters: [],
-    setSavedFilters: vi.fn(),
-    selectedSavedId: null,
-    setSelectedSavedId: vi.fn(),
-    saveFilterName: '',
-    setSaveFilterName: vi.fn(),
+    savedFilters,
+    setSavedFilters,
+    selectedSavedIdByFeedId,
+    setSelectedSavedIdByFeedId,
+    saveFilterNameByFeedId,
+    setSaveFilterNameByFeedId,
     dutyDisableAutoScroll: false,
   });
-  props.apiRef.current = { ...actions, messageFeeds, setMessageFeeds };
+  props.apiRef.current = {
+    ...actions,
+    messageFeeds,
+    setMessageFeeds,
+    savedFilters,
+    setSavedFilters,
+    selectedSavedIdByFeedId,
+    setSelectedSavedIdByFeedId,
+    saveFilterNameByFeedId,
+    setSaveFilterNameByFeedId,
+  };
   return null;
 }
 
@@ -256,5 +276,49 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleDeleteConfirm();
     });
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+  });
+
+  it('keeps saved-filter updates scoped to the feed that selected them', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    const firstFeed = buildFeed({ id: 'mf-0', filter: { ...emptyFilter(), groupsSelected: ['group-a'] } });
+    const secondFeed = buildFeed({ id: 'mf-1', filter: { ...emptyFilter(), groupsSelected: ['group-b'] } });
+    hoisted.savedFilterUpsert.mockResolvedValue([
+      { id: 1, name: 'Filter A', req: firstFeed.filter },
+    ]);
+
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[firstFeed, secondFeed]}
+          initialSavedFilters={[{ id: 1, name: 'Filter A', req: firstFeed.filter }]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.setSelectedSavedIdByFeedId((prev) => ({ ...prev, 'mf-0': 1 }));
+      apiRef.current!.setSaveFilterNameByFeedId((prev) => ({ ...prev, 'mf-0': 'Filter A', 'mf-1': '' }));
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleUpdateSelectedSavedFilter('mf-1');
+    });
+    expect(hoisted.savedFilterUpsert).not.toHaveBeenCalled();
+
+    await act(async () => {
+      apiRef.current!.setSelectedSavedIdByFeedId((prev) => ({ ...prev, 'mf-1': 1 }));
+      apiRef.current!.setSaveFilterNameByFeedId((prev) => ({ ...prev, 'mf-1': 'Filter A' }));
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleUpdateSelectedSavedFilter('mf-1');
+    });
+
+    expect(hoisted.savedFilterUpsert).toHaveBeenCalledTimes(1);
+    expect(hoisted.savedFilterUpsert).toHaveBeenCalledWith({ name: 'Filter A', req: secondFeed.filter });
   });
 });

@@ -111,10 +111,10 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     tagsMap,
     tagIdsList,
     savedFilters,
-    selectedSavedId,
-    setSelectedSavedId,
-    saveFilterName,
-    setSaveFilterName,
+    selectedSavedIdByFeedId,
+    setSelectedSavedIdByFeedId,
+    saveFilterNameByFeedId,
+    setSaveFilterNameByFeedId,
     reloadFreqsLoading,
     reloadLatestFrequencies,
     networkDisplayMap,
@@ -264,6 +264,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
               {narrowScreen ? (
                 messageFeeds.map((w) => {
+                  const selectedSavedId = selectedSavedIdByFeedId[w.id] ?? null;
+                  const saveFilterName = saveFilterNameByFeedId[w.id] ?? '';
                   const filterStable = {
                     groupsSelected: w.filter.groupsSelected ?? [],
                     deniedGroups: w.filter.groupsDenied ?? [],
@@ -347,8 +349,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                           loadFeedInitialMessages(w.id, { onlyMyUnitTagsEnabled: v });
                         }}
                         onReloadFreqs={reloadLatestFrequencies}
-                        onSavedFilterSelect={(id) => setSelectedSavedId(id === '' ? null : id)}
-                        onSaveFilterNameChange={setSaveFilterName}
+                        onSavedFilterSelect={(id) =>
+                          setSelectedSavedIdByFeedId((prev) => ({ ...prev, [w.id]: id === '' ? null : id }))
+                        }
+                        onSaveFilterNameChange={(value) =>
+                          setSaveFilterNameByFeedId((prev) => ({ ...prev, [w.id]: value }))
+                        }
                         onSaveFilter={handleSaveFilter}
                         onUpdateSelectedSavedFilter={handleUpdateSelectedSavedFilter}
                         onRenameSelectedSavedFilter={handleRenameSelectedSavedFilter}
@@ -410,6 +416,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   }}
                 >
                   {messageFeeds.map((w) => {
+                    const selectedSavedId = selectedSavedIdByFeedId[w.id] ?? null;
+                    const saveFilterName = saveFilterNameByFeedId[w.id] ?? '';
                     const filterStable = {
                       groupsSelected: w.filter.groupsSelected ?? [],
                       deniedGroups: w.filter.groupsDenied ?? [],
@@ -483,8 +491,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                           loadFeedInitialMessages(w.id, { onlyMyUnitTagsEnabled: v });
                         }}
                         onReloadFreqs={reloadLatestFrequencies}
-                        onSavedFilterSelect={(id) => setSelectedSavedId(id === '' ? null : id)}
-                        onSaveFilterNameChange={setSaveFilterName}
+                        onSavedFilterSelect={(id) =>
+                          setSelectedSavedIdByFeedId((prev) => ({ ...prev, [w.id]: id === '' ? null : id }))
+                        }
+                        onSaveFilterNameChange={(value) =>
+                          setSaveFilterNameByFeedId((prev) => ({ ...prev, [w.id]: value }))
+                        }
                         onSaveFilter={handleSaveFilter}
                         onUpdateSelectedSavedFilter={handleUpdateSelectedSavedFilter}
                         onRenameSelectedSavedFilter={handleRenameSelectedSavedFilter}

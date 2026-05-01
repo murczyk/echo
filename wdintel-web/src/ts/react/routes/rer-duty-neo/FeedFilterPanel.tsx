@@ -24,7 +24,6 @@ import { ADJACENT_FREQS_RANGE_OPTIONS, normalizeFeed } from './utils';
 
 export type FeedFilterPanelProps = {
   feedId: string;
-  mergedTop?: boolean;
   filterStable: {
     groupsSelected: string[];
     deniedGroups: string[];
@@ -64,14 +63,13 @@ export type FeedFilterPanelProps = {
   onSaveFilterNameChange: (value: string) => void;
   onSaveFilter: (feedId: string) => Promise<void>;
   onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
-  onRenameSelectedSavedFilter: () => Promise<void>;
-  onDeleteSelectedSavedFilter: () => Promise<void>;
+  onRenameSelectedSavedFilter: (feedId: string) => Promise<void>;
+  onDeleteSelectedSavedFilter: (feedId: string) => Promise<void>;
   onApplySavedFilter: (saved: SavedFilterDuty) => void;
 };
 
 export function FeedFilterPanel({
-  feedId: _feedId,
-  mergedTop = false,
+  feedId,
   filterStable,
   groupsList,
   groupInfos,
@@ -120,6 +118,52 @@ export function FeedFilterPanel({
   const [postMode, setPostMode] = useState<'include' | 'exclude'>(() =>
     postsDenied.length > 0 ? 'exclude' : 'include',
   );
+  const toggleGroupSx = {
+    flexShrink: 0,
+    height: 36,
+    borderRadius: 1,
+    border: '1px solid rgba(148, 163, 184, 0.34)',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    '& .MuiToggleButtonGroup-grouped': {
+      margin: 0,
+      borderRadius: 0,
+      border: 0,
+      minHeight: 36,
+      height: 36,
+      '&:not(:first-of-type)': {
+        borderLeft: '1px solid rgba(148, 163, 184, 0.34)',
+      },
+    },
+    '& .MuiToggleButtonGroup-firstButton': {
+      borderTopLeftRadius: 'inherit',
+      borderBottomLeftRadius: 'inherit',
+    },
+    '& .MuiToggleButtonGroup-lastButton': {
+      borderTopRightRadius: 'inherit',
+      borderBottomRightRadius: 'inherit',
+    },
+    '& .MuiToggleButton-root': {
+      minHeight: 36,
+      height: 36,
+      overflow: 'hidden',
+      textTransform: 'none',
+      fontSize: 13,
+      px: 2,
+      py: 0,
+      whiteSpace: 'nowrap',
+      color: 'text.primary',
+      backgroundColor: 'transparent',
+      '&:hover': {
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      },
+      '&.Mui-selected': {
+        backgroundColor: 'rgba(148, 163, 184, 0.18)',
+      },
+      '&.Mui-selected:hover': {
+        backgroundColor: 'rgba(148, 163, 184, 0.24)',
+      },
+    },
+  } as const;
 
   useEffect(() => {
     setGroupMode((m) => {
@@ -320,15 +364,34 @@ export function FeedFilterPanel({
   return (
     <Paper
       variant="outlined"
-      className="p-3 z-2"
+      className="z-2"
       sx={{
-        borderRadius: 1,
-        mt: mergedTop ? '-1px' : 0,
-        borderTopLeftRadius: mergedTop ? 0 : 1,
-        borderTopRightRadius: mergedTop ? 0 : 1,
+        display: 'flex',
+        flexDirection: 'column',
+        height: 'auto',
+        minHeight: 0,
+        overflow: 'hidden',
+        border: 0,
+        borderRadius: 0,
+        background: 'transparent',
+        boxShadow: 'none',
       }}
+      aria-label="Панель фільтрів"
     >
-      <Box className="flex flex-col gap-3">
+      <Box
+        className="flex flex-col gap-3"
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+          px: 2,
+          py: 1.5,
+          background:
+            'linear-gradient(180deg, rgba(16, 20, 28, 0.98) 0%, rgba(12, 16, 24, 0.98) 100%)',
+          borderTop: '1px solid rgba(148, 163, 184, 0.28)',
+          borderRadius: 0,
+        }}
+      >
         <Box>
           <Typography variant="subtitle2" className="mb-2 font-semibold">
             Групи
@@ -345,11 +408,7 @@ export function FeedFilterPanel({
                 else onGroupsChange([]);
               }}
               size="small"
-              sx={{
-                flexShrink: 0,
-                borderRadius: 3,
-                '& .MuiToggleButton-root': { borderRadius: 2, textTransform: 'lowercase' },
-              }}
+              sx={toggleGroupSx}
             >
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
@@ -395,11 +454,7 @@ export function FeedFilterPanel({
                 else onSendersChange([]);
               }}
               size="small"
-              sx={{
-                flexShrink: 0,
-                borderRadius: 3,
-                '& .MuiToggleButton-root': { borderRadius: 2, textTransform: 'lowercase' },
-              }}
+              sx={toggleGroupSx}
             >
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
@@ -466,11 +521,7 @@ export function FeedFilterPanel({
                 else onFreqsChange([]);
               }}
               size="small"
-              sx={{
-                flexShrink: 0,
-                borderRadius: 3,
-                '& .MuiToggleButton-root': { borderRadius: 2, textTransform: 'lowercase' },
-              }}
+              sx={toggleGroupSx}
             >
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
@@ -540,11 +591,7 @@ export function FeedFilterPanel({
                 else onPostsChange?.([]);
               }}
               size="small"
-              sx={{
-                flexShrink: 0,
-                borderRadius: 3,
-                '& .MuiToggleButton-root': { borderRadius: 2, textTransform: 'lowercase' },
-              }}
+              sx={toggleGroupSx}
             >
               <ToggleButton value="include">лише</ToggleButton>
               <ToggleButton value="exclude">окрім</ToggleButton>
@@ -656,7 +703,7 @@ export function FeedFilterPanel({
               <Button
                 size="small"
                 variant={hasLoadedFilter ? 'contained' : 'outlined'}
-                onClick={() => runSavedFilterAction(() => onUpdateSelectedSavedFilter(_feedId))}
+                onClick={() => runSavedFilterAction(() => onUpdateSelectedSavedFilter(feedId))}
                 disabled={!canUpdateExisting}
               >
                 Оновити вибраний
@@ -664,7 +711,7 @@ export function FeedFilterPanel({
               <Button
                 size="small"
                 variant="outlined"
-                onClick={() => runSavedFilterAction(onRenameSelectedSavedFilter)}
+                onClick={() => runSavedFilterAction(() => onRenameSelectedSavedFilter(feedId))}
                 disabled={!canRenameExisting}
               >
                 Перейменувати
@@ -672,7 +719,7 @@ export function FeedFilterPanel({
               <Button
                 size="small"
                 variant={hasLoadedFilter ? 'outlined' : 'contained'}
-                onClick={() => runSavedFilterAction(() => onSaveFilter(_feedId))}
+                onClick={() => runSavedFilterAction(() => onSaveFilter(feedId))}
                 disabled={saveInFlight || trimmedSavedFilterName === ''}
               >
                 Зберегти як новий
@@ -681,7 +728,7 @@ export function FeedFilterPanel({
                 size="small"
                 color="error"
                 variant="outlined"
-                onClick={() => runSavedFilterAction(onDeleteSelectedSavedFilter)}
+                onClick={() => runSavedFilterAction(() => onDeleteSelectedSavedFilter(feedId))}
                 disabled={saveInFlight || !hasLoadedFilter}
               >
                 Видалити

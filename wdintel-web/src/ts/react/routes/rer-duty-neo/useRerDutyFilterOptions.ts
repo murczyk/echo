@@ -20,8 +20,8 @@ export function useRerDutyFilterOptions() {
   const [groupsList, setGroupsList] = useState<string[]>([]);
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [savedFilters, setSavedFilters] = useState<SavedFilterDuty[]>([]);
-  const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
-  const [saveFilterName, setSaveFilterName] = useState('');
+  const [selectedSavedIdByFeedId, setSelectedSavedIdByFeedId] = useState<Record<string, number | null>>({});
+  const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
   const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
   const mountedRef = useRef(true);
@@ -88,6 +88,21 @@ export function useRerDutyFilterOptions() {
     }
   }, []);
 
+  const pruneSavedFilterUiState = useCallback((feedId: string) => {
+    setSelectedSavedIdByFeedId((prev) => {
+      if (!(feedId in prev)) return prev;
+      const next = { ...prev };
+      delete next[feedId];
+      return next;
+    });
+    setSaveFilterNameByFeedId((prev) => {
+      if (!(feedId in prev)) return prev;
+      const next = { ...prev };
+      delete next[feedId];
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     loadFilterOptions();
   }, [loadFilterOptions]);
@@ -103,10 +118,11 @@ export function useRerDutyFilterOptions() {
     tagsMap,
     savedFilters,
     setSavedFilters,
-    selectedSavedId,
-    setSelectedSavedId,
-    saveFilterName,
-    setSaveFilterName,
+    selectedSavedIdByFeedId,
+    setSelectedSavedIdByFeedId,
+    saveFilterNameByFeedId,
+    setSaveFilterNameByFeedId,
+    pruneSavedFilterUiState,
     reloadFreqsLoading,
     reloadLatestFrequencies,
     featureStrictNetworks,

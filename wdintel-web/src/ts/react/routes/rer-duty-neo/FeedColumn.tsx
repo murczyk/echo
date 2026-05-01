@@ -136,8 +136,8 @@ export type FeedColumnProps = {
   onSaveFilterNameChange: (value: string) => void;
   onSaveFilter: (feedId: string) => Promise<void>;
   onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
-  onRenameSelectedSavedFilter: () => Promise<void>;
-  onDeleteSelectedSavedFilter: () => Promise<void>;
+  onRenameSelectedSavedFilter: (feedId: string) => Promise<void>;
+  onDeleteSelectedSavedFilter: (feedId: string) => Promise<void>;
   onApplySavedFilter: (saved: SavedFilterDuty) => void;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
@@ -342,7 +342,15 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         scrollSnapStop: narrowScreen ? 'always' : undefined,
       }}
     >
-      <Box sx={{ backgroundColor: 'background.paper', borderRadius: 1, overflow: 'hidden' }}>
+      <Box
+        sx={{
+          backgroundColor: 'background.paper',
+          borderRadius: 0,
+          border: '1px solid rgba(148, 163, 184, 0.28)',
+          overflow: 'hidden',
+          flexShrink: 0,
+        }}
+      >
         <Box
           className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-[32px] shrink-0"
           sx={{
@@ -351,8 +359,10 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             zIndex: 1,
             backgroundColor: 'background.paper',
             overflow: 'hidden',
-            borderBottomLeftRadius: showFilters ? 0 : 1,
-            borderBottomRightRadius: showFilters ? 0 : 1,
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
+            borderBottom: 'none',
+            boxShadow: 'none',
             '& .MuiButton-root': {
               minHeight: 0,
               height: 32,
@@ -369,14 +379,20 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               startIcon={<SettingsOutlinedIcon />}
               endIcon={showFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               onClick={() => setShowFilters((s) => !s)}
+              aria-expanded={showFilters}
               sx={{
-                borderRadius: 1,
+                borderRadius: 0,
+                color: showFilters ? 'primary.light' : 'text.primary',
+                backgroundColor: 'transparent',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                },
               }}
             >
               Фільтри
             </Button>
           </div>
-          {!showFilters && canRemove && (
+          {canRemove && (
             <Button
               size="small"
               color="inherit"
@@ -389,43 +405,44 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           )}
         </Box>
         {showFilters && (
-          <FeedFilterPanel
-            feedId={feedId}
-            mergedTop
-            filterStable={filterStable}
-            groupsList={groupsList}
-            groupInfos={groupInfos}
-            profiles={profiles}
-            senderOptions={senderOptions}
-            freqs={freqs}
-            postsList={postsList}
-            adjacentFreqsRange={adjacentFreqsRange}
-            highlightSignalsEnabled={highlightSignalsEnabled}
-            onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
-            savedFilters={savedFilters}
-            selectedSavedId={selectedSavedId}
-            saveFilterName={saveFilterName}
-            reloadFreqsLoading={reloadFreqsLoading}
-            onGroupsChange={applyGroups}
-            onDeniedGroupsChange={applyDeniedGroups}
-            onSendersChange={applySenders}
-            onDeniedSendersChange={applyDeniedSenders}
-            onFreqsChange={applyFreqs}
-            onFreqsDeniedChange={applyFreqsDenied}
-            onPostsChange={onPostsChange}
-            onPostsDeniedChange={onPostsDeniedChange}
-            onAdjacentFreqsRangeChange={onAdjacentFreqsRangeChange}
-            onHighlightSignalsChange={onHighlightSignalsChange}
-            onOnlyMyUnitTagsChange={onOnlyMyUnitTagsChange}
-            onReloadFreqs={onReloadFreqs}
-            onSavedFilterSelect={onSavedFilterSelect}
-            onSaveFilterNameChange={onSaveFilterNameChange}
-            onSaveFilter={onSaveFilter}
-            onUpdateSelectedSavedFilter={onUpdateSelectedSavedFilter}
-            onRenameSelectedSavedFilter={onRenameSelectedSavedFilter}
-            onDeleteSelectedSavedFilter={onDeleteSelectedSavedFilter}
-            onApplySavedFilter={onApplySavedFilter}
-          />
+          <Box>
+            <FeedFilterPanel
+              feedId={feedId}
+              filterStable={filterStable}
+              groupsList={groupsList}
+              groupInfos={groupInfos}
+              profiles={profiles}
+              senderOptions={senderOptions}
+              freqs={freqs}
+              postsList={postsList}
+              adjacentFreqsRange={adjacentFreqsRange}
+              highlightSignalsEnabled={highlightSignalsEnabled}
+              onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
+              savedFilters={savedFilters}
+              selectedSavedId={selectedSavedId}
+              saveFilterName={saveFilterName}
+              reloadFreqsLoading={reloadFreqsLoading}
+              onGroupsChange={applyGroups}
+              onDeniedGroupsChange={applyDeniedGroups}
+              onSendersChange={applySenders}
+              onDeniedSendersChange={applyDeniedSenders}
+              onFreqsChange={applyFreqs}
+              onFreqsDeniedChange={applyFreqsDenied}
+              onPostsChange={onPostsChange}
+              onPostsDeniedChange={onPostsDeniedChange}
+              onAdjacentFreqsRangeChange={onAdjacentFreqsRangeChange}
+              onHighlightSignalsChange={onHighlightSignalsChange}
+              onOnlyMyUnitTagsChange={onOnlyMyUnitTagsChange}
+              onReloadFreqs={onReloadFreqs}
+              onSavedFilterSelect={onSavedFilterSelect}
+              onSaveFilterNameChange={onSaveFilterNameChange}
+              onSaveFilter={onSaveFilter}
+              onUpdateSelectedSavedFilter={onUpdateSelectedSavedFilter}
+              onRenameSelectedSavedFilter={onRenameSelectedSavedFilter}
+              onDeleteSelectedSavedFilter={onDeleteSelectedSavedFilter}
+              onApplySavedFilter={onApplySavedFilter}
+            />
+          </Box>
         )}
       </Box>
 
@@ -438,9 +455,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           variant="outlined"
           className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
           sx={{
-            mt: showFilters ? '-1px' : 0,
-            borderTopLeftRadius: showFilters ? 0 : 1,
-            borderTopRightRadius: showFilters ? 0 : 1,
+            mt: '-1px',
+            borderTopLeftRadius: 0,
+            borderTopRightRadius: 0,
           }}
         >
           <Virtuoso
