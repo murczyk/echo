@@ -975,6 +975,22 @@ async fn set_message_post(
     Ok(())
 }
 
+async fn set_message_freq(
+    db: &DatabaseConnection,
+    signal_message_id: i64,
+    freq: Option<&str>,
+) -> Result<(), AppError> {
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(signal_message_id)
+        .one(db)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.freq = Set(freq.map(str::to_string));
+    inbox_item.update(db).await.context(h!())?;
+    Ok(())
+}
+
 #[test]
 fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
     let q = signal_message::Entity::find();
@@ -1463,6 +1479,31 @@ async fn rer_analysis_without_network_filters_remove_networked_values() {
     )
     .await
     .unwrap();
+    mk_analysis_message(
+        db,
+        "doc-case-10-no-network-empty-freq",
+        "",
+        test_dt(2026, 3, 2, 10, 0),
+        &[&fixture.group_x],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let no_network_null_freq = mk_analysis_message(
+        db,
+        "doc-case-10-no-network-null-freq",
+        "906.2",
+        test_dt(2026, 3, 2, 10, 0),
+        &[&fixture.group_x],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_freq(db, no_network_null_freq.id, None)
+        .await
+        .unwrap();
     mk_analysis_message(
         db,
         "doc-case-10-networked",
