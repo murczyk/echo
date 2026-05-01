@@ -481,7 +481,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260420_114249_add_aor_order_for_report::Migration),
             Box::new(m20260420_193430_add_rer_duty_historical_replay::Migration),
             Box::new(m20260426_191910_add_slowlog_perf_indexes::Migration),
-            Box::new(m20260430_120000_add_analysis_map_in_sidebar::Migration),
             Box::new(
                 m20260429_175416_add_signal_message_group_lookup_indexes::Migration,
             ),
@@ -489,6 +488,7 @@ impl MigratorTrait for Migrator {
                 m20260429_181706_add_datasource_group_lookup_index::Migration,
             ),
             Box::new(m20260429_212239_tune_datasource_autovacuum::Migration),
+            Box::new(m20260430_120000_add_analysis_map_in_sidebar::Migration),
         ]
     }
 }
