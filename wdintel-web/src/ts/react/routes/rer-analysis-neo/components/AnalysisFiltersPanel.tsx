@@ -12,32 +12,33 @@ import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-d
 import { AnalysisFiltersPanelSections } from './analysis-filters-panel-sections';
 import { getInitialExpandedSections, type AnalysisFiltersPanelProps, type FilterSectionId } from './analysis-filters-panel-shared';
 
-export function AnalysisFiltersPanel({
-  isDirty,
-  counts,
-  canResetFilters,
-  aorEntries,
-  filtersLoading,
-  groupInfos,
-  includeOnlyNewFreqs,
-  loadedSavedFilter,
-  options,
-  queryState,
-  saveInFlight,
-  savedFilterName,
-  savedFilters,
-  tagsMap,
-  applySavedFilter,
-  deleteLoadedSavedFilter,
-  renameExistingSavedFilter,
-  resetFilters,
-  saveAsNew,
-  setIncludeOnlyNewFreqs,
-  setSavedFilterName,
-  loadFilterSection,
-  updateExisting,
-  updateQueryState,
-}: AnalysisFiltersPanelProps) {
+export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
+  const {
+    isDirty,
+    counts,
+    canResetFilters,
+    aorEntries,
+    filtersLoading,
+    groupInfos,
+    includeOnlyNewFreqs,
+    loadedSavedFilter,
+    options,
+    queryState,
+    saveInFlight,
+    savedFilterName,
+    savedFilters,
+    tagsMap,
+    applySavedFilter,
+    deleteLoadedSavedFilter,
+    renameExistingSavedFilter,
+    resetFilters,
+    saveAsNew,
+    setIncludeOnlyNewFreqs,
+    setSavedFilterName,
+    loadFilterSection,
+    updateExisting,
+    updateQueryState,
+  } = page;
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
@@ -235,7 +236,7 @@ export function AnalysisFiltersPanel({
 
               <Divider sx={{ my: 1, flexShrink: 0 }} />
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0, pb: 0.5 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0, pb: 1.5 }}>
                 <AnalysisSavedFiltersCard
                   isDirty={isDirty}
                   loadedSavedFilter={loadedSavedFilter}
@@ -283,19 +284,21 @@ export function AnalysisFiltersPanel({
 
               <Divider sx={{ my: 1.25 }} />
 
-              <AnalysisSavedFiltersCard
-                isDirty={isDirty}
-                loadedSavedFilter={loadedSavedFilter}
-                saveInFlight={saveInFlight}
-                savedFilterName={savedFilterName}
-                savedFilters={savedFilters}
-                onApplySavedFilter={applySavedFilter}
-                onDeleteLoadedSavedFilter={deleteLoadedSavedFilter}
-                onRenameExisting={renameExistingSavedFilter}
-                onSaveAsNew={saveAsNew}
-                onSavedFilterNameChange={setSavedFilterName}
-                onUpdateExisting={updateExisting}
-              />
+              <Box sx={{ pb: 1.5 }}>
+                <AnalysisSavedFiltersCard
+                  isDirty={isDirty}
+                  loadedSavedFilter={loadedSavedFilter}
+                  saveInFlight={saveInFlight}
+                  savedFilterName={savedFilterName}
+                  savedFilters={savedFilters}
+                  onApplySavedFilter={applySavedFilter}
+                  onDeleteLoadedSavedFilter={deleteLoadedSavedFilter}
+                  onRenameExisting={renameExistingSavedFilter}
+                  onSaveAsNew={saveAsNew}
+                  onSavedFilterNameChange={setSavedFilterName}
+                  onUpdateExisting={updateExisting}
+                />
+              </Box>
             </>
           )
         ) : null}

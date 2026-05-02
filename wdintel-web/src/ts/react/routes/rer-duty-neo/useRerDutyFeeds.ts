@@ -114,6 +114,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     testLimit,
     pollIntervalSec,
     disableAutoScroll: dutyDisableAutoScroll,
+    onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
   useEffect(() => attachDutyNotificationAudioPrimingListeners(), []);
@@ -290,10 +291,10 @@ export function useRerDutyFeeds(authUserName: string | null) {
     tagsMap: filterOpts.tagsMap,
     savedFilters: filterOpts.savedFilters,
     setSavedFilters: filterOpts.setSavedFilters,
-    selectedSavedId: filterOpts.selectedSavedId,
-    setSelectedSavedId: filterOpts.setSelectedSavedId,
-    saveFilterName: filterOpts.saveFilterName,
-    setSaveFilterName: filterOpts.setSaveFilterName,
+    selectedSavedIdByFeedId: filterOpts.selectedSavedIdByFeedId,
+    setSelectedSavedIdByFeedId: filterOpts.setSelectedSavedIdByFeedId,
+    saveFilterNameByFeedId: filterOpts.saveFilterNameByFeedId,
+    setSaveFilterNameByFeedId: filterOpts.setSaveFilterNameByFeedId,
     dutyDisableAutoScroll,
   });
 
@@ -359,10 +360,10 @@ export function useRerDutyFeeds(authUserName: string | null) {
     tagsMap: filterOpts.tagsMap,
     tagIdsList: actions.tagIdsList,
     savedFilters: filterOpts.savedFilters,
-    selectedSavedId: filterOpts.selectedSavedId,
-    setSelectedSavedId: filterOpts.setSelectedSavedId,
-    saveFilterName: filterOpts.saveFilterName,
-    setSaveFilterName: filterOpts.setSaveFilterName,
+    selectedSavedIdByFeedId: filterOpts.selectedSavedIdByFeedId,
+    setSelectedSavedIdByFeedId: filterOpts.setSelectedSavedIdByFeedId,
+    saveFilterNameByFeedId: filterOpts.saveFilterNameByFeedId,
+    setSaveFilterNameByFeedId: filterOpts.setSaveFilterNameByFeedId,
     reloadFreqsLoading: filterOpts.reloadFreqsLoading,
     reloadLatestFrequencies: filterOpts.reloadLatestFrequencies,
     networkDisplayMap: feedState.networkDisplayMap,

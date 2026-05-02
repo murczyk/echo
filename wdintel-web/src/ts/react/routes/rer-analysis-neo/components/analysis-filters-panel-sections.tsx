@@ -7,7 +7,7 @@ import type { AnalysisFiltersPanelDerivedData } from './analysis-filters-panel-d
 import {
   compactCheckboxLabelSx,
   FilterSection,
-  type AnalysisFiltersPanelProps,
+  type AnalysisFiltersPanelPage,
   type FilterSectionId,
   sectionCountLabel,
   unitsExactMatchModeFromState,
@@ -15,7 +15,7 @@ import {
   type UnitsExactMatchMode,
 } from './analysis-filters-panel-shared';
 
-type Props = Pick<AnalysisFiltersPanelProps, 'counts' | 'includeOnlyNewFreqs' | 'options' | 'queryState' | 'setIncludeOnlyNewFreqs' | 'updateQueryState'> & {
+type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'includeOnlyNewFreqs' | 'options' | 'queryState' | 'setIncludeOnlyNewFreqs' | 'updateQueryState'> & {
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
   filtersLoading: boolean;
@@ -27,7 +27,7 @@ type Props = Pick<AnalysisFiltersPanelProps, 'counts' | 'includeOnlyNewFreqs' | 
 
 type CoordsFilterMode = 'all' | 'with' | 'without';
 
-function coordsFilterModeFromState(queryState: AnalysisFiltersPanelProps['queryState']): CoordsFilterMode {
+function coordsFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): CoordsFilterMode {
   if (queryState.orWithCoords && queryState.orWithoutCoords) return 'all';
   if (queryState.orWithCoords) return 'with';
   if (queryState.orWithoutCoords) return 'without';

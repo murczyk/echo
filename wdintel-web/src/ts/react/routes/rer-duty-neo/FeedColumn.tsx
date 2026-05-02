@@ -11,8 +11,6 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type {
   CallsignInfoRes,
   Network,
-  RerDutyQueryStateWf as RerDutyFeedFilterState,
-  SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
   Tag,
@@ -21,7 +19,7 @@ import type {
 import type { TagsLayoutVariant } from './utils';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
-import { FeedFilterPanel } from './FeedFilterPanel';
+import { FeedFilterPanel, type FeedFilterPanelModel } from './FeedFilterPanel';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
 import { dutyTopActionButtonSx, dutyTopScrollButtonSx } from './top-action-styles';
@@ -74,149 +72,92 @@ const FeedList = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function Feed
   );
 });
 
-export type FeedColumnProps = {
+export type FeedColumnModel = {
   feed: MessageFeedState;
-  /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible Virtuoso min-height. */
-  narrowScreen?: boolean;
-  /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */
-  feedCount?: number;
-  filterStable: {
-    groupsSelected: string[];
-    deniedGroups: string[];
-    sendersSelected: string[];
-    deniedSenders: string[];
-    freqsSelected: string[];
-    freqsDenied: string[];
-    postsSelected: string[];
-    postsDenied: string[];
+  view: {
+    /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible Virtuoso min-height. */
+    narrowScreen?: boolean;
+    /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */
+    feedCount?: number;
+    canRemove: boolean;
+    maxWidth?: string | number;
+    isWatchMode?: boolean;
+    loadingNewer?: boolean;
+    arrowResultMessage?: string | null;
+    unreadCount?: number;
   };
-  groupsList: string[];
-  groupInfos: Record<string, SignalGroupEntry>;
-  profiles: Record<string, SignalProfileEntry | null>;
-  senderOptions: Array<{ id: string; label: string }>;
-  freqs: string[];
-  postsList: string[];
-  adjacentFreqsRange: number;
-  highlightSignalsEnabled: boolean;
-  onlyMyUnitTagsEnabled: boolean;
-  tagsLayout: TagsLayoutVariant;
-  savedFilters: SavedFilterDuty[];
-  selectedSavedId: number | null;
-  saveFilterName: string;
-  reloadFreqsLoading: boolean;
-  canRemove: boolean;
-  maxWidth?: string | number;
-  /** Current auth user display name for message watermarks */
-  authUserName: string | null;
-  copiedFeedbackId: string | null;
-  networkDisplayMap: Record<number, string>;
-  networkMap: Record<number, Network>;
-  unitsMap: Record<number, Unit>;
-  callsignInfoMap: Record<string, CallsignInfoRes>;
-  /** When true, empty network ids show "Не встановлена" only (no unit fallback). Server `featureStrictNetworks`. */
-  featureStrictNetworks: boolean;
-  tagsMap: Record<number, Tag>;
-  tagIdsList: number[];
-  onLoadOlder: () => void;
-  onRemoveColumn: () => void;
-  onApplyFilter: (f: RerDutyFeedFilterState) => void;
-  onGroupsChange: (v: string[]) => void;
-  onDeniedGroupsChange: (v: string[]) => void;
-  onSendersChange: (v: string[]) => void;
-  onDeniedSendersChange: (v: string[]) => void;
-  onFreqsChange: (v: string[]) => void;
-  onFreqsDeniedChange: (v: string[]) => void;
-  onPostsChange: (v: string[]) => void;
-  onPostsDeniedChange: (v: string[]) => void;
-  onAdjacentFreqsRangeChange: (v: number) => void;
-  onHighlightSignalsChange: (v: boolean) => void;
-  onOnlyMyUnitTagsChange: (v: boolean) => void;
-  onReloadFreqs: () => void;
-  onSavedFilterSelect: (id: number | '') => void;
-  onSaveFilterNameChange: (value: string) => void;
-  onSaveFilter: (feedId: string) => Promise<void>;
-  onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
-  onRenameSelectedSavedFilter: () => Promise<void>;
-  onDeleteSelectedSavedFilter: () => Promise<void>;
-  onApplySavedFilter: (saved: SavedFilterDuty) => void;
-  onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
-  onMessageCopy: (text: string, feedbackId: string) => void;
-  onMessageComment: (msgId: number, currentComment: string | null) => void;
-  onMessageToggleTag: (msgId: number, tagId: number) => void;
-  onScrollToTop?: () => void;
-  /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */
-  onReachedBottom?: () => void;
-  /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
-  onLeftBottom?: () => void;
-  /** Called when the visible range enters or leaves the "near bottom" zone (within LOAD_OLDER_BUFFER_ITEMS of the end). Used so the poll can load newer when count > 0 and user is below buffer. */
-  onNearBottomChange?: (near: boolean) => void;
-  /** Virtuoso pixel at-bottom (see DUTY_FEED_AT_BOTTOM_THRESHOLD_PX); used so auto-scroll follow only runs when the scroller is actually at the bottom. */
-  onAtBottomChange?: (atBottom: boolean) => void;
-  isWatchMode?: boolean;
-  loadingNewer?: boolean;
-  arrowResultMessage?: string | null;
-  onArrowClick?: () => void;
-  /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
-  onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
-  /** Unread count (items not in readIds); shown as badge when > 0. */
-  unreadCount?: number;
-  /** When true, message cards hide the left column (freq, date/time, buttons). Toggle is per feed. */
+  filterPanel: FeedFilterPanelModel;
+  messageCard: {
+    /** Current auth user display name for message watermarks */
+    authUserName: string | null;
+    copiedFeedbackId: string | null;
+    networkDisplayMap: Record<number, string>;
+    networkMap: Record<number, Network>;
+    unitsMap: Record<number, Unit>;
+    callsignInfoMap: Record<string, CallsignInfoRes>;
+    groupInfos: Record<string, SignalGroupEntry>;
+    profiles: Record<string, SignalProfileEntry | null>;
+    /** When true, empty network ids show "Не встановлена" only (no unit fallback). Server `featureStrictNetworks`. */
+    featureStrictNetworks: boolean;
+    tagsLayout: TagsLayoutVariant;
+    tagsMap: Record<number, Tag>;
+  };
+  actions: {
+    onLoadOlder: () => void;
+    onRemoveColumn: () => void;
+    onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
+    onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+    onMessageCopy: (text: string, feedbackId: string) => void;
+    onMessageComment: (msgId: number, currentComment: string | null) => void;
+    onMessageToggleTag: (msgId: number, tagId: number) => void;
+    onScrollToTop?: () => void;
+    /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */
+    onReachedBottom?: () => void;
+    /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
+    onLeftBottom?: () => void;
+    /** Called when the visible range enters or leaves the "near bottom" zone (within LOAD_OLDER_BUFFER_ITEMS of the end). Used so the poll can load newer when count > 0 and user is below buffer. */
+    onNearBottomChange?: (near: boolean) => void;
+    /** Virtuoso pixel at-bottom (see DUTY_FEED_AT_BOTTOM_THRESHOLD_PX); used so auto-scroll follow only runs when the scroller is actually at the bottom. */
+    onAtBottomChange?: (atBottom: boolean) => void;
+    onArrowClick?: () => void;
+    /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
+    onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
+  };
+};
+
+export type FeedColumnProps = {
+  column: FeedColumnModel;
 };
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
-export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
-  {
-    feed,
+export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn({ column }, ref) {
+  const { feed, view, filterPanel, messageCard, actions } = column;
+  const {
     narrowScreen = false,
     feedCount,
-    filterStable,
-    groupsList,
-    groupInfos,
-    profiles,
-    senderOptions,
-    freqs,
-    postsList,
-    adjacentFreqsRange,
-    highlightSignalsEnabled,
-    onlyMyUnitTagsEnabled,
-    tagsLayout,
-    savedFilters,
-    selectedSavedId,
-    saveFilterName,
-    reloadFreqsLoading,
     canRemove,
+    maxWidth,
+    isWatchMode = false,
+    loadingNewer = false,
+    arrowResultMessage = null,
+    unreadCount = 0,
+  } = view;
+  const {
     authUserName,
     copiedFeedbackId,
     networkDisplayMap,
     networkMap,
+    unitsMap,
     callsignInfoMap,
+    groupInfos,
+    profiles,
     featureStrictNetworks,
+    tagsLayout,
     tagsMap,
-    tagIdsList,
+  } = messageCard;
+  const {
     onLoadOlder,
     onRemoveColumn,
-    maxWidth,
-    onApplyFilter,
-    onGroupsChange,
-    onDeniedGroupsChange,
-    onSendersChange,
-    onDeniedSendersChange,
-    onFreqsChange,
-    onFreqsDeniedChange,
-    onPostsChange,
-    onPostsDeniedChange,
-    onAdjacentFreqsRangeChange,
-    onHighlightSignalsChange,
-    onOnlyMyUnitTagsChange,
-    onReloadFreqs,
-    onSavedFilterSelect,
-    onSaveFilterNameChange,
-    onSaveFilter,
-    onUpdateSelectedSavedFilter,
-    onRenameSelectedSavedFilter,
-    onDeleteSelectedSavedFilter,
-    onApplySavedFilter,
     onMessageBookmark,
     onMessageImportant,
     onMessageCopy,
@@ -227,17 +168,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     onLeftBottom,
     onNearBottomChange,
     onAtBottomChange,
-    isWatchMode = false,
-    loadingNewer = false,
-    arrowResultMessage = null,
     onArrowClick,
     onVisibleMessageIds,
-    unreadCount = 0,
-    unitsMap,
-  },
-  ref,
-) {
-  const feedId = feed.id;
+  } = actions;
   const [showFilters, setShowFilters] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const loadOlderTriggeredRef = useRef(false);
@@ -309,25 +242,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [firstItemIndex, feed.items, feed.items.length, onNearBottomChange, onVisibleMessageIds, tryLoadOlder],
   );
 
-  const applySenders = (v: string[]) => {
-    onApplyFilter({ ...feed.filter, sendersSelected: v.length ? v : null });
-  };
-  const applyGroups = (v: string[]) => {
-    onApplyFilter({ ...feed.filter, groupsSelected: v.length ? v : null });
-  };
-  const applyDeniedGroups = (v: string[]) => {
-    onApplyFilter({ ...feed.filter, groupsDenied: v.length ? v : null });
-  };
-  const applyDeniedSenders = (v: string[]) => {
-    onApplyFilter({ ...feed.filter, deniedSenders: v.length ? v : null });
-  };
-  const applyFreqs = (v: string[]) => {
-    onApplyFilter({ ...feed.filter, freqsSelected: v.length ? v : null });
-  };
-  const applyFreqsDenied = (v: string[]) => {
-    onApplyFilter({ ...feed.filter, freqsDenied: v.length ? v : null });
-  };
-
   return (
     <Box
       className={[
@@ -342,7 +256,15 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         scrollSnapStop: narrowScreen ? 'always' : undefined,
       }}
     >
-      <Box sx={{ backgroundColor: 'background.paper', borderRadius: 1, overflow: 'hidden' }}>
+      <Box
+        sx={{
+          backgroundColor: 'background.paper',
+          borderRadius: 0,
+          border: '1px solid rgba(148, 163, 184, 0.28)',
+          overflow: 'hidden',
+          flexShrink: 0,
+        }}
+      >
         <Box
           className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-[32px] shrink-0"
           sx={{
@@ -351,8 +273,10 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             zIndex: 1,
             backgroundColor: 'background.paper',
             overflow: 'hidden',
-            borderBottomLeftRadius: showFilters ? 0 : 1,
-            borderBottomRightRadius: showFilters ? 0 : 1,
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
+            borderBottom: 'none',
+            boxShadow: 'none',
             '& .MuiButton-root': {
               minHeight: 0,
               height: 32,
@@ -369,14 +293,20 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               startIcon={<SettingsOutlinedIcon />}
               endIcon={showFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               onClick={() => setShowFilters((s) => !s)}
+              aria-expanded={showFilters}
               sx={{
-                borderRadius: 1,
+                borderRadius: 0,
+                color: showFilters ? 'primary.light' : 'text.primary',
+                backgroundColor: 'transparent',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                },
               }}
             >
               Фільтри
             </Button>
           </div>
-          {!showFilters && canRemove && (
+          {canRemove && (
             <Button
               size="small"
               color="inherit"
@@ -389,43 +319,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           )}
         </Box>
         {showFilters && (
-          <FeedFilterPanel
-            feedId={feedId}
-            mergedTop
-            filterStable={filterStable}
-            groupsList={groupsList}
-            groupInfos={groupInfos}
-            profiles={profiles}
-            senderOptions={senderOptions}
-            freqs={freqs}
-            postsList={postsList}
-            adjacentFreqsRange={adjacentFreqsRange}
-            highlightSignalsEnabled={highlightSignalsEnabled}
-            onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
-            savedFilters={savedFilters}
-            selectedSavedId={selectedSavedId}
-            saveFilterName={saveFilterName}
-            reloadFreqsLoading={reloadFreqsLoading}
-            onGroupsChange={applyGroups}
-            onDeniedGroupsChange={applyDeniedGroups}
-            onSendersChange={applySenders}
-            onDeniedSendersChange={applyDeniedSenders}
-            onFreqsChange={applyFreqs}
-            onFreqsDeniedChange={applyFreqsDenied}
-            onPostsChange={onPostsChange}
-            onPostsDeniedChange={onPostsDeniedChange}
-            onAdjacentFreqsRangeChange={onAdjacentFreqsRangeChange}
-            onHighlightSignalsChange={onHighlightSignalsChange}
-            onOnlyMyUnitTagsChange={onOnlyMyUnitTagsChange}
-            onReloadFreqs={onReloadFreqs}
-            onSavedFilterSelect={onSavedFilterSelect}
-            onSaveFilterNameChange={onSaveFilterNameChange}
-            onSaveFilter={onSaveFilter}
-            onUpdateSelectedSavedFilter={onUpdateSelectedSavedFilter}
-            onRenameSelectedSavedFilter={onRenameSelectedSavedFilter}
-            onDeleteSelectedSavedFilter={onDeleteSelectedSavedFilter}
-            onApplySavedFilter={onApplySavedFilter}
-          />
+          <Box>
+            <FeedFilterPanel panel={filterPanel} />
+          </Box>
         )}
       </Box>
 
@@ -438,9 +334,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           variant="outlined"
           className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
           sx={{
-            mt: showFilters ? '-1px' : 0,
-            borderTopLeftRadius: showFilters ? 0 : 1,
-            borderTopRightRadius: showFilters ? 0 : 1,
+            mt: '-1px',
+            borderTopLeftRadius: 0,
+            borderTopRightRadius: 0,
           }}
         >
           <Virtuoso
@@ -514,7 +410,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             itemContent={(_index, [id, msg]) => {
               const senderName = msg.sender != null ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
               const groupName = msg.groupMasterKey != null ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
-              const card = (
+              return (
                 <DutyMessageCard
                   id={id}
                   msg={msg}
@@ -544,7 +440,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   rightHeaderInsetPx={0}
                 />
               );
-              return card;
             }}
           />
           {onArrowClick != null && (!isAtBottom || loadingNewer || unreadCount > 0) && (

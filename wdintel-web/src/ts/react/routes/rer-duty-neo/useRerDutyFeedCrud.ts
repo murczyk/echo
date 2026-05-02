@@ -17,6 +17,7 @@ const MAX_MESSAGE_FEEDS = 4;
 export function useRerDutyFeedCrud(
   messageFeeds: MessageFeedState[],
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>,
+  onFeedRemoved?: (feedId: string) => void,
 ) {
   const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
@@ -95,13 +96,15 @@ export function useRerDutyFeedCrud(
   const removeMessageFeed = useCallback(
     (feedId: string) => {
       if (messageFeeds.length <= 1) return;
+      if (!messageFeeds.some((w) => w.id === feedId)) return;
       setMessageFeeds((prev) => {
         const next = prev.filter((w) => w.id !== feedId);
         pushStateToUrl(toQueryState(next));
         return next;
       });
+      onFeedRemoved?.(feedId);
     },
-    [messageFeeds.length],
+    [messageFeeds, onFeedRemoved, setMessageFeeds],
   );
 
   return { applyFilter, toggleGroup, selectAllGroups, createMessageFeed, removeMessageFeed };

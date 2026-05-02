@@ -33,6 +33,7 @@ export type FeedStateDeps = {
   pollIntervalSec: number;
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
+  onFeedRemoved?: (feedId: string) => void;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
@@ -441,7 +442,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
 
-  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds);
+  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, deps.onFeedRemoved);
 
   return {
     messageFeeds,

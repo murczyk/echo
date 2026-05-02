@@ -1,9 +1,9 @@
 import type { AnalysisFilterOption } from '../types';
 import { normalizeFilterLabel, sortFilterOptionsByLabel } from '../use-analysis-data.shared';
 
-import type { AnalysisFiltersPanelProps } from './analysis-filters-panel-shared';
+import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
-type Params = Pick<AnalysisFiltersPanelProps, 'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap'>;
+type Params = Pick<AnalysisFiltersPanelPage, 'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap'>;
 
 export type AnalysisFiltersPanelDerivedData = {
   groupOptions: AnalysisFilterOption[];

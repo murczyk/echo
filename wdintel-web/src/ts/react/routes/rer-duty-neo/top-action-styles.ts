@@ -11,7 +11,7 @@ export const dutyTopActionButtonSx: SxProps<Theme> = {
   display: 'flex',
   justifyContent: 'center',
   alignItems: 'center',
-  borderRadius: 1,
+  borderRadius: 0,
   px: 0,
   py: 0,
   backgroundColor: 'background.paper',
