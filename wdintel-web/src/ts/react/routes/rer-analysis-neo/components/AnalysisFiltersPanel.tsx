@@ -235,7 +235,7 @@ export function AnalysisFiltersPanel({
 
               <Divider sx={{ my: 1, flexShrink: 0 }} />
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0, pb: 0.5 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0, pb: 1.5 }}>
                 <AnalysisSavedFiltersCard
                   isDirty={isDirty}
                   loadedSavedFilter={loadedSavedFilter}
@@ -283,19 +283,21 @@ export function AnalysisFiltersPanel({
 
               <Divider sx={{ my: 1.25 }} />
 
-              <AnalysisSavedFiltersCard
-                isDirty={isDirty}
-                loadedSavedFilter={loadedSavedFilter}
-                saveInFlight={saveInFlight}
-                savedFilterName={savedFilterName}
-                savedFilters={savedFilters}
-                onApplySavedFilter={applySavedFilter}
-                onDeleteLoadedSavedFilter={deleteLoadedSavedFilter}
-                onRenameExisting={renameExistingSavedFilter}
-                onSaveAsNew={saveAsNew}
-                onSavedFilterNameChange={setSavedFilterName}
-                onUpdateExisting={updateExisting}
-              />
+              <Box sx={{ pb: 1.5 }}>
+                <AnalysisSavedFiltersCard
+                  isDirty={isDirty}
+                  loadedSavedFilter={loadedSavedFilter}
+                  saveInFlight={saveInFlight}
+                  savedFilterName={savedFilterName}
+                  savedFilters={savedFilters}
+                  onApplySavedFilter={applySavedFilter}
+                  onDeleteLoadedSavedFilter={deleteLoadedSavedFilter}
+                  onRenameExisting={renameExistingSavedFilter}
+                  onSaveAsNew={saveAsNew}
+                  onSavedFilterNameChange={setSavedFilterName}
+                  onUpdateExisting={updateExisting}
+                />
+              </Box>
             </>
           )
         ) : null}

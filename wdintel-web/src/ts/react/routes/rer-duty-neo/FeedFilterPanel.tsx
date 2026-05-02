@@ -1,8 +1,6 @@
 import {
-  Alert,
   Autocomplete,
   Box,
-  Button,
   Checkbox,
   CircularProgress,
   FormControl,
@@ -20,6 +18,7 @@ import {
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { useEffect, useRef, useState } from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
+import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { ADJACENT_FREQS_RANGE_OPTIONS, normalizeFeed } from './utils';
 
 export type FeedFilterPanelProps = {
@@ -61,9 +60,9 @@ export type FeedFilterPanelProps = {
   onReloadFreqs: () => void;
   onSavedFilterSelect: (id: number | '') => void;
   onSaveFilterNameChange: (value: string) => void;
-  onSaveFilter: (feedId: string) => Promise<void>;
+  onSaveFilter: (feedId: string, name: string) => Promise<boolean>;
   onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
-  onRenameSelectedSavedFilter: (feedId: string) => Promise<void>;
+  onRenameSelectedSavedFilter: (feedId: string, name: string) => Promise<boolean>;
   onDeleteSelectedSavedFilter: (feedId: string) => Promise<void>;
   onApplySavedFilter: (saved: SavedFilterDuty) => void;
 };
@@ -238,13 +237,8 @@ export function FeedFilterPanel({
     filterStable.deniedGroups?.length > 0 ? filterStable.deniedGroups : (filterStable.groupsSelected ?? []),
   );
   const pendingGroupResyncRef = useRef<string | null>(null);
-  const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
   const loadedSavedFilter =
     selectedSavedId == null ? null : (savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
-  const trimmedSavedFilterName = saveFilterName.trim();
-  const hasLoadedFilter = loadedSavedFilter != null;
-  const isRenaming =
-    hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
   const loadedFilterNormalized =
     loadedSavedFilter == null ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>);
   const isDirty =
@@ -259,18 +253,12 @@ export function FeedFilterPanel({
       JSON.stringify(filterStable.postsSelected ?? []) === JSON.stringify(loadedFilterNormalized.postsSelected ?? []) &&
       JSON.stringify(filterStable.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? [])
     );
-  const canUpdateExisting = !saveInFlight && hasLoadedFilter && isDirty;
-  const canRenameExisting =
-    !saveInFlight &&
-    hasLoadedFilter &&
-    trimmedSavedFilterName !== '' &&
-    trimmedSavedFilterName !== loadedSavedFilter.name;
 
-  const runSavedFilterAction = async (action: () => Promise<void>) => {
+  const runSavedFilterAction = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
     if (saveInFlight) return;
     setSaveInFlight(true);
     try {
-      await action();
+      return await action();
     } finally {
       setSaveInFlight(false);
     }
@@ -385,7 +373,7 @@ export function FeedFilterPanel({
           minHeight: 0,
           overflow: 'auto',
           px: 2,
-          py: 1.5,
+          py: 2,
           background:
             'linear-gradient(180deg, rgba(16, 20, 28, 0.98) 0%, rgba(12, 16, 24, 0.98) 100%)',
           borderTop: '1px solid rgba(148, 163, 184, 0.28)',
@@ -549,7 +537,7 @@ export function FeedFilterPanel({
               className="min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1"
             />
           </Box>
-          <Box className="flex flex-wrap gap-2 justify-end mt-1">
+          <Box className="flex flex-wrap gap-2 justify-end mt-2">
             <Tooltip title="Частоти в діапазоні від обраних будуть автоматично додаватись до фільтра.">
               <Typography variant="caption" sx={{ alignSelf: 'center', fontSize: 12 }}>
                 автоматично додавати частоти в діапазоні:
@@ -650,91 +638,30 @@ export function FeedFilterPanel({
         </Box>
 
         <Box>
-          <Typography variant="subtitle2" className="mb-2 font-semibold">
-            Збережені фільтри
-          </Typography>
-          <Box className="flex flex-col gap-2">
-            {sortedSavedFilters.length > 0 ? (
-              <Autocomplete
-                size="small"
-                options={sortedSavedFilters}
-                getOptionLabel={(option) => option.name}
-                value={loadedSavedFilter}
-                onChange={(_event, next) => {
-                  if (next == null) {
-                    onSavedFilterSelect('');
-                    return;
-                  }
-                  onSavedFilterSelect(next.id);
-                  onApplySavedFilter(next);
-                }}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                openText="Відкрити"
-                closeText="Закрити"
-                clearText="Очистити"
-                noOptionsText="Немає варіантів"
-                renderOption={(props, option) => {
-                  const { key: _unusedKey, ...optionProps } = props;
-                  return (
-                    <li {...optionProps} key={option.id}>
-                      {option.name}
-                    </li>
-                  );
-                }}
-                renderInput={(params) => <TextField {...params} label="Збережений фільтр" />}
-              />
-            ) : null}
-            <TextField
-              size="small"
-              label="Назва фільтра"
-              value={saveFilterName}
-              onChange={(e) => onSaveFilterNameChange(e.target.value)}
-            />
-            {loadedSavedFilter ? (
-              <Alert severity={isDirty ? 'warning' : 'info'} sx={{ py: 0.5 }}>
-                {isRenaming
-                  ? `Фільтр "${loadedSavedFilter.name}": змінено назву.`
-                  : isDirty
-                    ? `Фільтр "${loadedSavedFilter.name}": є незбережені зміни.`
-                    : `Вибрано фільтр "${loadedSavedFilter.name}".`}
-              </Alert>
-            ) : null}
-            <Box className="flex flex-col gap-2">
-              <Button
-                size="small"
-                variant={hasLoadedFilter ? 'contained' : 'outlined'}
-                onClick={() => runSavedFilterAction(() => onUpdateSelectedSavedFilter(feedId))}
-                disabled={!canUpdateExisting}
-              >
-                Оновити вибраний
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => runSavedFilterAction(() => onRenameSelectedSavedFilter(feedId))}
-                disabled={!canRenameExisting}
-              >
-                Перейменувати
-              </Button>
-              <Button
-                size="small"
-                variant={hasLoadedFilter ? 'outlined' : 'contained'}
-                onClick={() => runSavedFilterAction(() => onSaveFilter(feedId))}
-                disabled={saveInFlight || trimmedSavedFilterName === ''}
-              >
-                Зберегти як новий
-              </Button>
-              <Button
-                size="small"
-                color="error"
-                variant="outlined"
-                onClick={() => runSavedFilterAction(() => onDeleteSelectedSavedFilter(feedId))}
-                disabled={saveInFlight || !hasLoadedFilter}
-              >
-                Видалити
-              </Button>
-            </Box>
-          </Box>
+          <SavedFiltersControl
+            savedFilters={savedFilters}
+            selectedSavedFilter={loadedSavedFilter}
+            savedFilterName={saveFilterName}
+            isDirty={isDirty}
+            saveInFlight={saveInFlight}
+            onApplySavedFilter={(saved) => {
+              if (saved == null) {
+                onSavedFilterSelect('');
+                return;
+              }
+              onSavedFilterSelect(saved.id);
+              onApplySavedFilter(saved);
+            }}
+            onSavedFilterNameChange={onSaveFilterNameChange}
+            onUpdateExisting={() => runSavedFilterAction(() => onUpdateSelectedSavedFilter(feedId))}
+            onSaveAsNew={(name) =>
+              runSavedFilterAction(() => onSaveFilter(feedId, name)).then((result) => result === true)
+            }
+            onRenameExisting={(name) =>
+              runSavedFilterAction(() => onRenameSelectedSavedFilter(feedId, name)).then((result) => result === true)
+            }
+            onDeleteExisting={() => runSavedFilterAction(() => onDeleteSelectedSavedFilter(feedId))}
+          />
         </Box>
       </Box>
     </Paper>

@@ -1,5 +1,5 @@
 import type { SavedFilter } from '../../../../Bindings';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
@@ -23,8 +23,8 @@ type Result = {
   deleteLoadedSavedFilter: () => Promise<void>;
   isDirty: boolean;
   loadedSavedFilter: SavedFilter | null;
-  renameExisting: () => Promise<void>;
-  saveAsNew: () => Promise<void>;
+  renameExisting: (name: string) => Promise<boolean>;
+  saveAsNew: (name: string) => Promise<boolean>;
   saveInFlight: boolean;
   savedFilterName: string;
   savedFilters: SavedFilter[];
@@ -42,6 +42,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
   const [savedFilterName, setSavedFilterName] = useState('');
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const hasSyncedLoadedSavedFilterRef = useRef(false);
 
   const loadedSavedFilter = useMemo(
     () => savedFilters.find((savedFilter) => savedFilter.id === loadedSavedFilterId) ?? null,
@@ -71,8 +72,33 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     })();
   }, [loadSavedFilters, onError, onUnauthorized]);
 
+  useEffect(() => {
+    if (savedFilters.length === 0) return;
+
+    if (loadedSavedFilterId != null) {
+      hasSyncedLoadedSavedFilterRef.current = true;
+      return;
+    }
+
+    if (hasSyncedLoadedSavedFilterRef.current) return;
+
+    const matchedSavedFilter = savedFilters.find((savedFilter) =>
+      queryStateMatchesSavedFilter(queryState, savedFilter, allFrequencies),
+    );
+    if (matchedSavedFilter == null) {
+      if (queryState.adjacentFreqsRange > 0 && allFrequencies.length === 0) return;
+      hasSyncedLoadedSavedFilterRef.current = true;
+      return;
+    }
+
+    setLoadedSavedFilterId(matchedSavedFilter.id);
+    setSavedFilterName(matchedSavedFilter.name);
+    hasSyncedLoadedSavedFilterRef.current = true;
+  }, [allFrequencies, loadedSavedFilterId, queryState, savedFilters]);
+
   const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
+      hasSyncedLoadedSavedFilterRef.current = true;
       if (savedFilter == null) {
         setLoadedSavedFilterId(null);
         setSavedFilterName('');
@@ -88,29 +114,34 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     [queryState, setQueryState],
   );
 
-  const saveAsNew = useCallback(async () => {
+  const saveAsNew = useCallback(async (name: string) => {
     const req = buildAnalysisReq(queryState, allFrequencies);
-    if (req == null || savedFilterName.trim() === '') return;
+    const nextName = name.trim();
+    if (req == null || nextName === '') return false;
     setSaveInFlight(true);
     onError('');
     try {
-      const next = await upsertAnalysisSavedFilter({ name: savedFilterName.trim(), req });
+      const next = await upsertAnalysisSavedFilter({ name: nextName, req });
       setSavedFilters(next);
-      const saved = next.find((item) => item.name === savedFilterName.trim()) ?? null;
+      const saved = next.find((item) => item.name === nextName) ?? null;
       setLoadedSavedFilterId(saved?.id ?? null);
+      setSavedFilterName(nextName);
+      hasSyncedLoadedSavedFilterRef.current = true;
+      return true;
     } catch (saveError) {
       if (!onUnauthorized(saveError)) {
         onError(toErrorMessage(saveError));
       }
+      return false;
     } finally {
       setSaveInFlight(false);
     }
-  }, [allFrequencies, onError, onUnauthorized, queryState, savedFilterName]);
+  }, [allFrequencies, onError, onUnauthorized, queryState]);
 
-  const renameExisting = useCallback(async () => {
-    if (!loadedSavedFilter) return;
-    const nextName = savedFilterName.trim();
-    if (nextName === '' || nextName === loadedSavedFilter.name) return;
+  const renameExisting = useCallback(async (name: string) => {
+    if (!loadedSavedFilter) return false;
+    const nextName = name.trim();
+    if (nextName === '' || nextName === loadedSavedFilter.name) return false;
     setSaveInFlight(true);
     onError('');
     try {
@@ -119,14 +150,17 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
       setSavedFilters(next);
       setLoadedSavedFilterId(loadedSavedFilter.id);
       setSavedFilterName(nextName);
+      hasSyncedLoadedSavedFilterRef.current = true;
+      return true;
     } catch (renameError) {
       if (!onUnauthorized(renameError)) {
         onError(toErrorMessage(renameError));
       }
+      return false;
     } finally {
       setSaveInFlight(false);
     }
-  }, [loadSavedFilters, loadedSavedFilter, onError, onUnauthorized, savedFilterName]);
+  }, [loadSavedFilters, loadedSavedFilter, onError, onUnauthorized]);
 
   const updateExisting = useCallback(async () => {
     if (!loadedSavedFilter) return;

@@ -104,11 +104,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [selectedSavedIdByFeedId],
   );
 
-  const getSaveFilterNameForFeed = useCallback(
-    (feedId: string) => saveFilterNameByFeedId[feedId] ?? '',
-    [saveFilterNameByFeedId],
-  );
-
   const setSavedFilterSelectionForFeed = useCallback(
     (feedId: string, savedId: number | null) => {
       setSelectedSavedIdByFeedId((prev) => (prev[feedId] === savedId ? prev : { ...prev, [feedId]: savedId }));
@@ -130,15 +125,15 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   }, []);
 
   const handleSaveFilter = useCallback(
-    async (feedId: string) => {
-      const trimmed = getSaveFilterNameForFeed(feedId).trim();
-      if (!trimmed) return;
+    async (feedId: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return false;
       if (savedFilters.some((savedFilter) => savedFilter.name === trimmed)) {
         setError(`Фільтр з назвою "${trimmed}" вже існує`);
-        return;
+        return false;
       }
       const w = messageFeeds.find((x) => x.id === feedId);
-      if (!w) return;
+      if (!w) return false;
       try {
         const list = await savedFilterUpsert({ name: trimmed, req: w.filter });
         setSavedFilters(list);
@@ -147,8 +142,10 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
           setSavedFilterSelectionForFeed(feedId, created.id);
           setSavedFilterNameForFeed(feedId, created.name);
         }
+        return true;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        return false;
       }
     },
     [
@@ -156,7 +153,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       savedFilters,
       setSavedFilters,
       setError,
-      getSaveFilterNameForFeed,
       setSavedFilterSelectionForFeed,
       setSavedFilterNameForFeed,
     ],
@@ -190,28 +186,40 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   );
 
   const handleRenameSelectedSavedFilter = useCallback(
-    async (feedId: string) => {
+    async (feedId: string, name: string) => {
       const selectedSavedId = getSelectedSavedIdForFeed(feedId);
-      if (selectedSavedId == null) return;
+      if (selectedSavedId == null) return false;
       const selectedSaved = savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId);
-      if (!selectedSaved) return;
-      const trimmed = getSaveFilterNameForFeed(feedId).trim();
-      if (!trimmed || trimmed === selectedSaved.name) return;
+      if (!selectedSaved) return false;
+      const trimmed = name.trim();
+      if (!trimmed || trimmed === selectedSaved.name) return false;
       if (savedFilters.some((savedFilter) => savedFilter.id !== selectedSaved.id && savedFilter.name === trimmed)) {
         setError(`Фільтр з назвою "${trimmed}" вже існує`);
-        return;
+        return false;
       }
       try {
         await savedFilterRename({ id: selectedSaved.id, name: trimmed });
         setSavedFilters((prev) =>
           prev.map((savedFilter) => (savedFilter.id === selectedSaved.id ? { ...savedFilter, name: trimmed } : savedFilter)),
         );
-        setSavedFilterNameForFeed(feedId, trimmed);
+        setSaveFilterNameByFeedId((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          Object.entries(selectedSavedIdByFeedId).forEach(([targetFeedId, targetSavedId]) => {
+            if (targetSavedId === selectedSaved.id && next[targetFeedId] !== trimmed) {
+              next[targetFeedId] = trimmed;
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
+        });
+        return true;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        return false;
       }
     },
-    [getSelectedSavedIdForFeed, getSaveFilterNameForFeed, savedFilters, setSavedFilters, setSavedFilterNameForFeed, setError],
+    [getSelectedSavedIdForFeed, savedFilters, selectedSavedIdByFeedId, setSavedFilters, setSaveFilterNameByFeedId, setError],
   );
 
   const clearDeletedSavedFilterFromFeeds = useCallback(

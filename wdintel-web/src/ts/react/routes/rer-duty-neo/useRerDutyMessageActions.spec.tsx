@@ -321,4 +321,40 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.savedFilterUpsert).toHaveBeenCalledTimes(1);
     expect(hoisted.savedFilterUpsert).toHaveBeenCalledWith({ name: 'Filter A', req: secondFeed.filter });
   });
+
+  it('updates draft names for every feed that shares a renamed saved filter', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    const firstFeed = buildFeed({ id: 'mf-0', filter: { ...emptyFilter(), groupsSelected: ['group-a'] } });
+    const secondFeed = buildFeed({ id: 'mf-1', filter: { ...emptyFilter(), groupsSelected: ['group-b'] } });
+    hoisted.savedFilterRename.mockResolvedValue(undefined);
+    hoisted.savedFilterUpsert.mockResolvedValue([
+      { id: 1, name: 'Renamed filter', req: firstFeed.filter },
+    ]);
+
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[firstFeed, secondFeed]}
+          initialSavedFilters={[{ id: 1, name: 'Filter A', req: firstFeed.filter }]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.setSelectedSavedIdByFeedId((prev) => ({ ...prev, 'mf-0': 1, 'mf-1': 1 }));
+      apiRef.current!.setSaveFilterNameByFeedId((prev) => ({ ...prev, 'mf-0': 'Filter A', 'mf-1': 'Filter A' }));
+    });
+
+    await act(async () => {
+      const result = await apiRef.current!.handleRenameSelectedSavedFilter('mf-0', 'Renamed filter');
+      expect(result).toBe(true);
+    });
+
+    expect(apiRef.current!.saveFilterNameByFeedId['mf-0']).toBe('Renamed filter');
+    expect(apiRef.current!.saveFilterNameByFeedId['mf-1']).toBe('Renamed filter');
+  });
 });

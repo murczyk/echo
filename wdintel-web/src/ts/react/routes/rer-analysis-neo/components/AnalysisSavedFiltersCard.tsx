@@ -1,7 +1,5 @@
-import { Autocomplete, Button, Paper, Stack, TextField, Typography } from '@mui/material';
-
 import type { SavedFilter } from '../../../../../Bindings';
-import { PowerAlert } from '../../../components/PowerAlert';
+import { SavedFiltersControl } from '../../../components/SavedFiltersControl';
 
 type Props = {
   isDirty: boolean;
@@ -11,10 +9,10 @@ type Props = {
   savedFilters: SavedFilter[];
   onApplySavedFilter: (savedFilter: SavedFilter | null) => void;
   onDeleteLoadedSavedFilter: () => void;
-  onRenameExisting: () => void;
-  onSaveAsNew: () => void;
+  onRenameExisting: (name: string) => boolean | Promise<boolean> | void;
+  onSaveAsNew: (name: string) => boolean | Promise<boolean> | void;
   onSavedFilterNameChange: (name: string) => void;
-  onUpdateExisting: () => void;
+  onUpdateExisting: () => void | Promise<void>;
 };
 
 export function AnalysisSavedFiltersCard({
@@ -30,96 +28,19 @@ export function AnalysisSavedFiltersCard({
   onSavedFilterNameChange,
   onUpdateExisting,
 }: Props) {
-  const hasSavedFilters = savedFilters.length > 0;
-  const trimmedSavedFilterName = savedFilterName.trim();
-  const hasLoadedFilter = loadedSavedFilter != null;
-  const isRenaming = hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
-  const canUpdateExisting = !saveInFlight && hasLoadedFilter && isDirty;
-  const canRenameExisting =
-    !saveInFlight && hasLoadedFilter && trimmedSavedFilterName !== '' && trimmedSavedFilterName !== loadedSavedFilter.name;
-  const sortedSavedFilters = [...savedFilters].sort((a, b) => a.name.localeCompare(b.name));
-
   return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
-      <Stack spacing={1.5}>
-        <Typography variant="subtitle2">Збережені фільтри</Typography>
-        {hasSavedFilters ? (
-          <Autocomplete
-            size="small"
-            options={sortedSavedFilters}
-            getOptionLabel={(option) => option.name}
-            value={loadedSavedFilter}
-            openText="Відкрити"
-            closeText="Закрити"
-            clearText="Очистити"
-            noOptionsText="Немає варіантів"
-            onChange={(_event, next) => onApplySavedFilter(next)}
-            renderOption={(props, option) => {
-              const { key: _unusedKey, ...optionProps } = props;
-              return (
-                <li {...optionProps} key={option.id}>
-                  {option.name}
-                </li>
-              );
-            }}
-            renderInput={(params) => <TextField {...params} label="Збережений фільтр" />}
-          />
-        ) : null}
-        <TextField
-          size="small"
-          label="Назва фільтра"
-          value={savedFilterName}
-          onChange={(event) => onSavedFilterNameChange(event.target.value)}
-        />
-        {loadedSavedFilter ? (
-          <PowerAlert severity={isDirty ? 'warning' : 'info'} sx={{ py: 0.5 }}>
-            {isRenaming
-              ? `Фільтр "${loadedSavedFilter.name}": змінено назву.`
-              : isDirty
-                ? `Фільтр "${loadedSavedFilter.name}": є незбережені зміни.`
-                : `Вибрано фільтр "${loadedSavedFilter.name}".`}
-          </PowerAlert>
-        ) : null}
-        <Stack spacing={1.25} sx={{ width: '100%' }}>
-          <Button
-            variant={hasLoadedFilter ? 'contained' : 'outlined'}
-            onClick={onUpdateExisting}
-            disabled={!canUpdateExisting}
-            fullWidth
-          >
-            Оновити вибраний
-          </Button>
-          <Button variant="outlined" onClick={onRenameExisting} disabled={!canRenameExisting} fullWidth>
-            Перейменувати
-          </Button>
-          <Button
-            variant={hasLoadedFilter ? 'outlined' : 'contained'}
-            onClick={onSaveAsNew}
-            disabled={saveInFlight || trimmedSavedFilterName === ''}
-            fullWidth
-          >
-            Зберегти як новий
-          </Button>
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={onDeleteLoadedSavedFilter}
-            disabled={saveInFlight || loadedSavedFilter == null}
-            fullWidth
-          >
-            Видалити
-          </Button>
-        </Stack>
-        {loadedSavedFilter ? (
-          <Typography variant="caption" color={isDirty ? 'warning.main' : 'text.secondary'}>
-            {trimmedSavedFilterName !== loadedSavedFilter.name
-              ? 'Назва відрізняється від вибраного фільтра. Можна перейменувати окремо.'
-              : isDirty
-                ? 'Є незбережені зміни відносно вибраного фільтра.'
-                : 'Поточний стан збігається із вибраним фільтром.'}
-          </Typography>
-        ) : null}
-      </Stack>
-    </Paper>
+    <SavedFiltersControl
+      savedFilters={savedFilters}
+      selectedSavedFilter={loadedSavedFilter}
+      savedFilterName={savedFilterName}
+      isDirty={isDirty}
+      saveInFlight={saveInFlight}
+      onApplySavedFilter={onApplySavedFilter}
+      onSavedFilterNameChange={onSavedFilterNameChange}
+      onUpdateExisting={onUpdateExisting}
+      onSaveAsNew={onSaveAsNew}
+      onRenameExisting={onRenameExisting}
+      onDeleteExisting={onDeleteLoadedSavedFilter}
+    />
   );
 }
