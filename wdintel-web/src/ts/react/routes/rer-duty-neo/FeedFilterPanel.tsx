@@ -21,9 +21,9 @@ import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../.
 import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { ADJACENT_FREQS_RANGE_OPTIONS, normalizeFeed } from './utils';
 
-export type FeedFilterPanelProps = {
+export type FeedFilterPanelModel = {
   feedId: string;
-  filterStable: {
+  filterState: {
     groupsSelected: string[];
     deniedGroups: string[];
     sendersSelected: string[];
@@ -33,87 +33,105 @@ export type FeedFilterPanelProps = {
     postsSelected?: string[];
     postsDenied?: string[];
   };
-  groupsList: string[];
-  groupInfos: Record<string, SignalGroupEntry>;
-  profiles: Record<string, SignalProfileEntry | null>;
-  senderOptions: Array<{ id: string; label: string }>;
-  freqs: string[];
-  postsList?: string[];
-  adjacentFreqsRange?: number;
-  highlightSignalsEnabled?: boolean;
-  onlyMyUnitTagsEnabled?: boolean;
-  savedFilters: SavedFilterDuty[];
-  selectedSavedId: number | null;
-  saveFilterName: string;
-  reloadFreqsLoading: boolean;
-  onGroupsChange: (v: string[]) => void;
-  onDeniedGroupsChange: (v: string[]) => void;
-  onSendersChange: (v: string[]) => void;
-  onDeniedSendersChange: (v: string[]) => void;
-  onFreqsChange: (v: string[]) => void;
-  onFreqsDeniedChange: (v: string[]) => void;
-  onPostsChange?: (v: string[]) => void;
-  onPostsDeniedChange?: (v: string[]) => void;
-  onAdjacentFreqsRangeChange?: (v: number) => void;
-  onHighlightSignalsChange?: (v: boolean) => void;
-  onOnlyMyUnitTagsChange?: (v: boolean) => void;
-  onReloadFreqs: () => void;
-  onSavedFilterSelect: (id: number | '') => void;
-  onSaveFilterNameChange: (value: string) => void;
-  onSaveFilter: (feedId: string, name: string) => Promise<boolean>;
-  onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
-  onRenameSelectedSavedFilter: (feedId: string, name: string) => Promise<boolean>;
-  onDeleteSelectedSavedFilter: (feedId: string) => Promise<void>;
-  onApplySavedFilter: (saved: SavedFilterDuty) => void;
+  sources: {
+    groupsList: string[];
+    groupInfos: Record<string, SignalGroupEntry>;
+    profiles: Record<string, SignalProfileEntry | null>;
+    senderOptions: Array<{ id: string; label: string }>;
+    freqs: string[];
+    postsList?: string[];
+  };
+  toggles: {
+    adjacentFreqsRange?: number;
+    highlightSignalsEnabled?: boolean;
+    onlyMyUnitTagsEnabled?: boolean;
+    reloadFreqsLoading: boolean;
+  };
+  savedFilters: {
+    savedFilters: SavedFilterDuty[];
+    selectedSavedId: number | null;
+    saveFilterName: string;
+  };
+  actions: {
+    onGroupsChange: (v: string[]) => void;
+    onDeniedGroupsChange: (v: string[]) => void;
+    onSendersChange: (v: string[]) => void;
+    onDeniedSendersChange: (v: string[]) => void;
+    onFreqsChange: (v: string[]) => void;
+    onFreqsDeniedChange: (v: string[]) => void;
+    onPostsChange?: (v: string[]) => void;
+    onPostsDeniedChange?: (v: string[]) => void;
+    onAdjacentFreqsRangeChange?: (v: number) => void;
+    onHighlightSignalsChange?: (v: boolean) => void;
+    onOnlyMyUnitTagsChange?: (v: boolean) => void;
+    onReloadFreqs: () => void;
+    onSavedFilterSelect: (id: number | '') => void;
+    onSaveFilterNameChange: (value: string) => void;
+    onSaveFilter: (feedId: string, name: string) => Promise<boolean>;
+    onUpdateSelectedSavedFilter: (feedId: string) => Promise<void>;
+    onRenameSelectedSavedFilter: (feedId: string, name: string) => Promise<boolean>;
+    onDeleteSelectedSavedFilter: (feedId: string) => Promise<void>;
+    onApplySavedFilter: (saved: SavedFilterDuty) => void;
+  };
 };
 
-export function FeedFilterPanel({
-  feedId,
-  filterStable,
-  groupsList,
-  groupInfos,
-  profiles,
-  senderOptions,
-  freqs,
-  postsList,
-  adjacentFreqsRange,
-  highlightSignalsEnabled,
-  onlyMyUnitTagsEnabled,
-  savedFilters,
-  selectedSavedId,
-  saveFilterName,
-  reloadFreqsLoading,
-  onGroupsChange,
-  onDeniedGroupsChange,
-  onSendersChange,
-  onDeniedSendersChange,
-  onFreqsChange,
-  onFreqsDeniedChange,
-  onPostsChange,
-  onPostsDeniedChange,
-  onAdjacentFreqsRangeChange,
-  onHighlightSignalsChange,
-  onOnlyMyUnitTagsChange,
-  onReloadFreqs,
-  onSavedFilterSelect,
-  onSaveFilterNameChange,
-  onSaveFilter,
-  onUpdateSelectedSavedFilter,
-  onRenameSelectedSavedFilter,
-  onDeleteSelectedSavedFilter,
-  onApplySavedFilter,
-}: FeedFilterPanelProps) {
+export type FeedFilterPanelProps = {
+  panel: FeedFilterPanelModel;
+};
+
+export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
+  const { feedId, filterState, sources, toggles, savedFilters, actions } = panel;
+  const {
+    groupsList,
+    groupInfos,
+    profiles,
+    senderOptions,
+    freqs,
+    postsList,
+  } = sources;
+  const {
+    adjacentFreqsRange,
+    highlightSignalsEnabled,
+    onlyMyUnitTagsEnabled,
+    reloadFreqsLoading,
+  } = toggles;
+  const {
+    savedFilters: savedFilterItems,
+    selectedSavedId,
+    saveFilterName,
+  } = savedFilters;
+  const {
+    onGroupsChange,
+    onDeniedGroupsChange,
+    onSendersChange,
+    onDeniedSendersChange,
+    onFreqsChange,
+    onFreqsDeniedChange,
+    onPostsChange,
+    onPostsDeniedChange,
+    onAdjacentFreqsRangeChange,
+    onHighlightSignalsChange,
+    onOnlyMyUnitTagsChange,
+    onReloadFreqs,
+    onSavedFilterSelect,
+    onSaveFilterNameChange,
+    onSaveFilter,
+    onUpdateSelectedSavedFilter,
+    onRenameSelectedSavedFilter,
+    onDeleteSelectedSavedFilter,
+    onApplySavedFilter,
+  } = actions;
   const [groupMode, setGroupMode] = useState<'include' | 'exclude'>(() =>
-    filterStable.deniedGroups.length > 0 ? 'exclude' : 'include',
+    filterState.deniedGroups.length > 0 ? 'exclude' : 'include',
   );
   const [senderMode, setSenderMode] = useState<'include' | 'exclude'>(() =>
-    filterStable.deniedSenders.length > 0 ? 'exclude' : 'include',
+    filterState.deniedSenders.length > 0 ? 'exclude' : 'include',
   );
   const [freqMode, setFreqMode] = useState<'include' | 'exclude'>(() =>
-    filterStable.freqsDenied.length > 0 ? 'exclude' : 'include',
+    filterState.freqsDenied.length > 0 ? 'exclude' : 'include',
   );
-  const postsSelected = filterStable.postsSelected ?? [];
-  const postsDenied = filterStable.postsDenied ?? [];
+  const postsSelected = filterState.postsSelected ?? [];
+  const postsDenied = filterState.postsDenied ?? [];
   const [postMode, setPostMode] = useState<'include' | 'exclude'>(() =>
     postsDenied.length > 0 ? 'exclude' : 'include',
   );
@@ -166,31 +184,31 @@ export function FeedFilterPanel({
 
   useEffect(() => {
     setGroupMode((m) => {
-      const includeLen = filterStable.groupsSelected.length;
-      const excludeLen = filterStable.deniedGroups.length;
+      const includeLen = filterState.groupsSelected.length;
+      const excludeLen = filterState.deniedGroups.length;
       if (m === 'include' && includeLen === 0 && excludeLen > 0) return 'exclude';
       if (m === 'exclude' && excludeLen === 0 && includeLen > 0) return 'include';
       return m;
     });
-  }, [filterStable.groupsSelected.length, filterStable.deniedGroups.length]);
+  }, [filterState.groupsSelected.length, filterState.deniedGroups.length]);
   useEffect(() => {
     setSenderMode((m) => {
-      const includeLen = filterStable.sendersSelected.length;
-      const excludeLen = filterStable.deniedSenders.length;
+      const includeLen = filterState.sendersSelected.length;
+      const excludeLen = filterState.deniedSenders.length;
       if (m === 'include' && includeLen === 0 && excludeLen > 0) return 'exclude';
       if (m === 'exclude' && excludeLen === 0 && includeLen > 0) return 'include';
       return m;
     });
-  }, [filterStable.sendersSelected.length, filterStable.deniedSenders.length]);
+  }, [filterState.sendersSelected.length, filterState.deniedSenders.length]);
   useEffect(() => {
     setFreqMode((m) => {
-      const includeLen = filterStable.freqsSelected.length;
-      const excludeLen = filterStable.freqsDenied.length;
+      const includeLen = filterState.freqsSelected.length;
+      const excludeLen = filterState.freqsDenied.length;
       if (m === 'include' && includeLen === 0 && excludeLen > 0) return 'exclude';
       if (m === 'exclude' && excludeLen === 0 && includeLen > 0) return 'include';
       return m;
     });
-  }, [filterStable.freqsSelected.length, filterStable.freqsDenied.length]);
+  }, [filterState.freqsSelected.length, filterState.freqsDenied.length]);
   useEffect(() => {
     setPostMode((m) => {
       const includeLen = postsSelected.length;
@@ -202,12 +220,12 @@ export function FeedFilterPanel({
   }, [postsSelected.length, postsDenied.length]);
 
   /** Stable deps for resync effects — parent uses `x ?? []` so empty filters get a new [] each render. */
-  const groupsSelectedKey = JSON.stringify(filterStable.groupsSelected);
-  const deniedGroupsKey = JSON.stringify(filterStable.deniedGroups);
-  const sendersSelectedKey = JSON.stringify(filterStable.sendersSelected);
-  const deniedSendersKey = JSON.stringify(filterStable.deniedSenders);
-  const freqsSelectedKey = JSON.stringify(filterStable.freqsSelected);
-  const freqsDeniedKey = JSON.stringify(filterStable.freqsDenied);
+  const groupsSelectedKey = JSON.stringify(filterState.groupsSelected);
+  const deniedGroupsKey = JSON.stringify(filterState.deniedGroups);
+  const sendersSelectedKey = JSON.stringify(filterState.sendersSelected);
+  const deniedSendersKey = JSON.stringify(filterState.deniedSenders);
+  const freqsSelectedKey = JSON.stringify(filterState.freqsSelected);
+  const freqsDeniedKey = JSON.stringify(filterState.freqsDenied);
   const postsSelectedKey = JSON.stringify(postsSelected);
   const postsDeniedKey = JSON.stringify(postsDenied);
 
@@ -216,7 +234,7 @@ export function FeedFilterPanel({
 
   const [localSenderValue, setLocalSenderValue] = useState<{ id: string; label: string }[]>(() => {
     const ids =
-      filterStable.deniedSenders?.length > 0 ? filterStable.deniedSenders : (filterStable.sendersSelected ?? []);
+      filterState.deniedSenders?.length > 0 ? filterState.deniedSenders : (filterState.sendersSelected ?? []);
     return ids.map((id) => {
       const o = senderOptions.find((opt) => opt.id === id);
       return o ?? { id, label: id };
@@ -225,7 +243,7 @@ export function FeedFilterPanel({
   const senderEmptyLabel = senderMode === 'include' ? 'всі' : 'ніхто';
   const groupEmptyLabel = groupMode === 'include' ? 'всі' : 'ніяка';
 
-  const freqValue = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
+  const freqValue = freqMode === 'include' ? filterState.freqsSelected : filterState.freqsDenied;
   const freqEmptyLabel = freqMode === 'include' ? 'всі' : 'ніяка';
   const [localFreqValue, setLocalFreqValue] = useState<string[]>(() => freqValue);
   const [localPostValue, setLocalPostValue] = useState<string[]>(() => postValue);
@@ -234,24 +252,24 @@ export function FeedFilterPanel({
     (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b),
   );
   const [localGroupValue, setLocalGroupValue] = useState<string[]>(() =>
-    filterStable.deniedGroups?.length > 0 ? filterStable.deniedGroups : (filterStable.groupsSelected ?? []),
+    filterState.deniedGroups?.length > 0 ? filterState.deniedGroups : (filterState.groupsSelected ?? []),
   );
   const pendingGroupResyncRef = useRef<string | null>(null);
   const loadedSavedFilter =
-    selectedSavedId == null ? null : (savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
+    selectedSavedId == null ? null : (savedFilterItems.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
   const loadedFilterNormalized =
     loadedSavedFilter == null ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>);
   const isDirty =
     loadedFilterNormalized != null &&
     !(
-      JSON.stringify(filterStable.groupsSelected) === JSON.stringify(loadedFilterNormalized.groupsSelected ?? []) &&
-      JSON.stringify(filterStable.deniedGroups) === JSON.stringify(loadedFilterNormalized.groupsDenied ?? []) &&
-      JSON.stringify(filterStable.sendersSelected) === JSON.stringify(loadedFilterNormalized.sendersSelected ?? []) &&
-      JSON.stringify(filterStable.deniedSenders) === JSON.stringify(loadedFilterNormalized.deniedSenders ?? []) &&
-      JSON.stringify(filterStable.freqsSelected) === JSON.stringify(loadedFilterNormalized.freqsSelected ?? []) &&
-      JSON.stringify(filterStable.freqsDenied) === JSON.stringify(loadedFilterNormalized.freqsDenied ?? []) &&
-      JSON.stringify(filterStable.postsSelected ?? []) === JSON.stringify(loadedFilterNormalized.postsSelected ?? []) &&
-      JSON.stringify(filterStable.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? [])
+      JSON.stringify(filterState.groupsSelected) === JSON.stringify(loadedFilterNormalized.groupsSelected ?? []) &&
+      JSON.stringify(filterState.deniedGroups) === JSON.stringify(loadedFilterNormalized.groupsDenied ?? []) &&
+      JSON.stringify(filterState.sendersSelected) === JSON.stringify(loadedFilterNormalized.sendersSelected ?? []) &&
+      JSON.stringify(filterState.deniedSenders) === JSON.stringify(loadedFilterNormalized.deniedSenders ?? []) &&
+      JSON.stringify(filterState.freqsSelected) === JSON.stringify(loadedFilterNormalized.freqsSelected ?? []) &&
+      JSON.stringify(filterState.freqsDenied) === JSON.stringify(loadedFilterNormalized.freqsDenied ?? []) &&
+      JSON.stringify(filterState.postsSelected ?? []) === JSON.stringify(loadedFilterNormalized.postsSelected ?? []) &&
+      JSON.stringify(filterState.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? [])
     );
 
   const runSavedFilterAction = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
@@ -268,7 +286,7 @@ export function FeedFilterPanel({
   // is in deps, this runs after user picks an option but before the parent applies it, and would
   // overwrite the selection with the old filter → fight with writeback + MUI Autocomplete loop.
   useEffect(() => {
-    const value = groupMode === 'include' ? filterStable.groupsSelected : filterStable.deniedGroups;
+    const value = groupMode === 'include' ? filterState.groupsSelected : filterState.deniedGroups;
     const next = value ?? [];
     setLocalGroupValue((prev) => {
       const nextSignature = `${groupMode}:${JSON.stringify(next)}`;
@@ -278,7 +296,7 @@ export function FeedFilterPanel({
     });
   }, [groupsSelectedKey, deniedGroupsKey, groupMode]);
   useEffect(() => {
-    const ids = senderMode === 'include' ? (filterStable.sendersSelected ?? []) : (filterStable.deniedSenders ?? []);
+    const ids = senderMode === 'include' ? (filterState.sendersSelected ?? []) : (filterState.deniedSenders ?? []);
     setLocalSenderValue((prev) => {
       const currentIds = prev.map((o) => o.id);
       if (ids.length === currentIds.length && ids.every((id, i) => id === currentIds[i])) return prev;
@@ -289,7 +307,7 @@ export function FeedFilterPanel({
     });
   }, [sendersSelectedKey, deniedSendersKey, senderMode, senderOptions]);
   useEffect(() => {
-    const value = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
+    const value = freqMode === 'include' ? filterState.freqsSelected : filterState.freqsDenied;
     const next = value ?? [];
     setLocalFreqValue((prev) => {
       if (next.length === prev.length && next.every((v, i) => v === prev[i])) return prev;
@@ -297,21 +315,21 @@ export function FeedFilterPanel({
     });
   }, [freqsSelectedKey, freqsDeniedKey, freqMode]);
   useEffect(() => {
-    const value = postMode === 'include' ? (filterStable.postsSelected ?? []) : (filterStable.postsDenied ?? []);
+    const value = postMode === 'include' ? (filterState.postsSelected ?? []) : (filterState.postsDenied ?? []);
     setLocalPostValue((prev) => {
       if (value.length === prev.length && value.every((v, i) => v === prev[i])) return prev;
       return value;
     });
   }, [postsSelectedKey, postsDeniedKey, postMode]);
 
-  // Push local selections to parent only when they differ from filterStable; avoid rewriting on mount
+  // Push local selections to parent only when they differ from the current feed state; avoid rewriting on mount.
   useEffect(() => {
     const nextSignature = `${groupMode}:${JSON.stringify(localGroupValue)}`;
     if (pendingGroupResyncRef.current === nextSignature) {
       pendingGroupResyncRef.current = null;
       return;
     }
-    const current = groupMode === 'include' ? filterStable.groupsSelected : filterStable.deniedGroups;
+    const current = groupMode === 'include' ? filterState.groupsSelected : filterState.deniedGroups;
     const next = localGroupValue;
     if (current.length === next.length && current.every((v, i) => v === next[i])) return;
     if (groupMode === 'include') onGroupsChange(next);
@@ -321,7 +339,7 @@ export function FeedFilterPanel({
 
   useEffect(() => {
     const ids = localSenderValue.map((o) => o.id);
-    const current = senderMode === 'include' ? filterStable.sendersSelected : filterStable.deniedSenders;
+    const current = senderMode === 'include' ? filterState.sendersSelected : filterState.deniedSenders;
     if (current == null && ids.length === 0) return;
     if (current != null && current.length === ids.length && current.every((id, i) => id === ids[i])) return;
     if (senderMode === 'include') onSendersChange(ids);
@@ -330,7 +348,7 @@ export function FeedFilterPanel({
   }, [localSenderValue]);
 
   useEffect(() => {
-    const current = freqMode === 'include' ? filterStable.freqsSelected : filterStable.freqsDenied;
+    const current = freqMode === 'include' ? filterState.freqsSelected : filterState.freqsDenied;
     if (current == null && localFreqValue.length === 0) return;
     if (current != null && current.length === localFreqValue.length && current.every((v, i) => v === localFreqValue[i]))
       return;
@@ -340,7 +358,7 @@ export function FeedFilterPanel({
   }, [localFreqValue]);
 
   useEffect(() => {
-    const current = postMode === 'include' ? filterStable.postsSelected : filterStable.postsDenied;
+    const current = postMode === 'include' ? filterState.postsSelected : filterState.postsDenied;
     if (current == null && localPostValue.length === 0) return;
     if (current != null && current.length === localPostValue.length && current.every((v, i) => v === localPostValue[i]))
       return;
@@ -639,7 +657,7 @@ export function FeedFilterPanel({
 
         <Box>
           <SavedFiltersControl
-            savedFilters={savedFilters}
+            savedFilters={savedFilterItems}
             selectedSavedFilter={loadedSavedFilter}
             savedFilterName={saveFilterName}
             isDirty={isDirty}

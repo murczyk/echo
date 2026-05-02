@@ -198,7 +198,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     height: '100%',
                   }}
                 >
-                  <AnalysisFiltersPanel {...page} />
+                  <AnalysisFiltersPanel page={page} />
                 </Box>
                 <Box
                   sx={{
@@ -444,7 +444,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     display: { xs: 'block', lg: page.leftPanelOpen ? 'block' : 'none' },
                   }}
                 >
-                  <AnalysisFiltersPanel {...page} />
+                  <AnalysisFiltersPanel page={page} />
                 </Box>
                 <Box
                   sx={{

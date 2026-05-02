@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 
-export type AnalysisFiltersPanelProps = Pick<
+export type AnalysisFiltersPanelPage = Pick<
   AnalysisPageState,
   | 'isDirty'
   | 'counts'
@@ -36,6 +36,10 @@ export type AnalysisFiltersPanelProps = Pick<
     | 'updateQueryState'
     | 'loadFilterSection'
   >;
+
+export type AnalysisFiltersPanelProps = {
+  page: AnalysisFiltersPanelPage;
+};
 
 export type FilterSectionId =
   | 'important'

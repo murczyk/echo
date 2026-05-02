@@ -98,6 +98,11 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   const [commentText, setCommentText] = useState('');
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null);
   const copiedFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedSavedIdByFeedIdRef = useRef(selectedSavedIdByFeedId);
+
+  useEffect(() => {
+    selectedSavedIdByFeedIdRef.current = selectedSavedIdByFeedId;
+  }, [selectedSavedIdByFeedId]);
 
   const getSelectedSavedIdForFeed = useCallback(
     (feedId: string) => selectedSavedIdByFeedId[feedId] ?? null,
@@ -205,7 +210,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
         setSaveFilterNameByFeedId((prev) => {
           let changed = false;
           const next = { ...prev };
-          Object.entries(selectedSavedIdByFeedId).forEach(([targetFeedId, targetSavedId]) => {
+          Object.entries(selectedSavedIdByFeedIdRef.current).forEach(([targetFeedId, targetSavedId]) => {
             if (targetSavedId === selectedSaved.id && next[targetFeedId] !== trimmed) {
               next[targetFeedId] = trimmed;
               changed = true;
@@ -219,7 +224,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
         return false;
       }
     },
-    [getSelectedSavedIdForFeed, savedFilters, selectedSavedIdByFeedId, setSavedFilters, setSaveFilterNameByFeedId, setError],
+    [getSelectedSavedIdForFeed, savedFilters, setSavedFilters, setSaveFilterNameByFeedId, setError],
   );
 
   const clearDeletedSavedFilterFromFeeds = useCallback(
@@ -239,7 +244,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
         let changed = false;
         const next = { ...prev };
         Object.entries(prev).forEach(([feedId, savedName]) => {
-          const savedId = selectedSavedIdByFeedId[feedId] ?? null;
+          const savedId = selectedSavedIdByFeedIdRef.current[feedId] ?? null;
           if (savedId === deletedSavedId && savedName !== '') {
             next[feedId] = '';
             changed = true;
@@ -248,7 +253,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
         return changed ? next : prev;
       });
     },
-    [selectedSavedIdByFeedId, setSaveFilterNameByFeedId, setSelectedSavedIdByFeedId],
+    [setSaveFilterNameByFeedId, setSelectedSavedIdByFeedId],
   );
 
   const handleDeleteSelectedSavedFilter = useCallback(

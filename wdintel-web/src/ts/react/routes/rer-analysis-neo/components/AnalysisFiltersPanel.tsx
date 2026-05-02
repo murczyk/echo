@@ -12,32 +12,33 @@ import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-d
 import { AnalysisFiltersPanelSections } from './analysis-filters-panel-sections';
 import { getInitialExpandedSections, type AnalysisFiltersPanelProps, type FilterSectionId } from './analysis-filters-panel-shared';
 
-export function AnalysisFiltersPanel({
-  isDirty,
-  counts,
-  canResetFilters,
-  aorEntries,
-  filtersLoading,
-  groupInfos,
-  includeOnlyNewFreqs,
-  loadedSavedFilter,
-  options,
-  queryState,
-  saveInFlight,
-  savedFilterName,
-  savedFilters,
-  tagsMap,
-  applySavedFilter,
-  deleteLoadedSavedFilter,
-  renameExistingSavedFilter,
-  resetFilters,
-  saveAsNew,
-  setIncludeOnlyNewFreqs,
-  setSavedFilterName,
-  loadFilterSection,
-  updateExisting,
-  updateQueryState,
-}: AnalysisFiltersPanelProps) {
+export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
+  const {
+    isDirty,
+    counts,
+    canResetFilters,
+    aorEntries,
+    filtersLoading,
+    groupInfos,
+    includeOnlyNewFreqs,
+    loadedSavedFilter,
+    options,
+    queryState,
+    saveInFlight,
+    savedFilterName,
+    savedFilters,
+    tagsMap,
+    applySavedFilter,
+    deleteLoadedSavedFilter,
+    renameExistingSavedFilter,
+    resetFilters,
+    saveAsNew,
+    setIncludeOnlyNewFreqs,
+    setSavedFilterName,
+    loadFilterSection,
+    updateExisting,
+    updateQueryState,
+  } = page;
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());

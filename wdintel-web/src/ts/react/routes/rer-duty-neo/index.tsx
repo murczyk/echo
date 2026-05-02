@@ -9,6 +9,7 @@ import {
   DEFAULT_DUTY_TAGS_LAYOUT,
   feedUnreadDisplayCount,
   feedsUnreadDisplayTotal,
+  type MessageFeedState,
   type TagsLayoutVariant,
 } from './utils';
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
@@ -67,6 +68,127 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
     };
   }, []);
+  const buildFeedColumnModel = (feed: MessageFeedState) => ({
+    feed,
+    view: {
+      narrowScreen,
+      feedCount: messageFeeds.length,
+      canRemove: messageFeeds.length > 1,
+      maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, narrowScreen),
+      isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? false),
+      loadingNewer: loadingNewerFeedId === feed.id,
+      arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
+      unreadCount: feedUnreadDisplayCount(feed),
+    },
+    filterPanel: {
+      feedId: feed.id,
+      filterState: {
+        groupsSelected: feed.filter.groupsSelected ?? [],
+        deniedGroups: feed.filter.groupsDenied ?? [],
+        sendersSelected: feed.filter.sendersSelected ?? [],
+        deniedSenders: feed.filter.deniedSenders ?? [],
+        freqsSelected: feed.filter.freqsSelected ?? [],
+        freqsDenied: feed.filter.freqsDenied ?? [],
+        postsSelected: feed.filter.postsSelected ?? [],
+        postsDenied: feed.filter.postsDenied ?? [],
+      },
+      sources: {
+        groupsList,
+        groupInfos,
+        profiles,
+        senderOptions,
+        freqs,
+        postsList,
+      },
+      toggles: {
+        adjacentFreqsRange: feed.adjacentFreqsRange,
+        highlightSignalsEnabled: feed.highlightSignalsEnabled,
+        onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
+        reloadFreqsLoading,
+      },
+      savedFilters: {
+        savedFilters,
+        selectedSavedId: selectedSavedIdByFeedId[feed.id] ?? null,
+        saveFilterName: saveFilterNameByFeedId[feed.id] ?? '',
+      },
+      actions: {
+        onGroupsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, groupsSelected: v.length ? v : null }),
+        onDeniedGroupsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, groupsDenied: v.length ? v : null }),
+        onSendersChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, sendersSelected: v.length ? v : null }),
+        onDeniedSendersChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, deniedSenders: v.length ? v : null }),
+        onFreqsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, freqsSelected: v.length ? v : null }),
+        onFreqsDeniedChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, freqsDenied: v.length ? v : null }),
+        onPostsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, postsSelected: v.length ? v : null }),
+        onPostsDeniedChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, postsDenied: v.length ? v : null }),
+        onAdjacentFreqsRangeChange: (v: number) =>
+          setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, adjacentFreqsRange: v } : f))),
+        onHighlightSignalsChange: (v: boolean) => {
+          setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, highlightSignalsEnabled: v } : f)));
+          loadFeedInitialMessages(feed.id, { highlightSignalsEnabled: v });
+        },
+        onOnlyMyUnitTagsChange: (v: boolean) => {
+          setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, onlyMyUnitTagsEnabled: v } : f)));
+          loadFeedInitialMessages(feed.id, { onlyMyUnitTagsEnabled: v });
+        },
+        onReloadFreqs: reloadLatestFrequencies,
+        onSavedFilterSelect: (id) =>
+          setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: id === '' ? null : id })),
+        onSaveFilterNameChange: (value) =>
+          setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: value })),
+        onSaveFilter: handleSaveFilter,
+        onUpdateSelectedSavedFilter: handleUpdateSelectedSavedFilter,
+        onRenameSelectedSavedFilter: handleRenameSelectedSavedFilter,
+        onDeleteSelectedSavedFilter: handleDeleteSelectedSavedFilter,
+        onApplySavedFilter: (saved) => handleApplySavedFilter(feed.id, saved),
+      },
+    },
+    messageCard: {
+      authUserName,
+      copiedFeedbackId,
+      networkDisplayMap,
+      networkMap,
+      unitsMap,
+      callsignInfoMap,
+      groupInfos,
+      profiles,
+      featureStrictNetworks,
+      tagsLayout,
+      tagsMap,
+    },
+    actions: {
+      onLoadOlder: () => loadFeedOlderMessages(feed.id),
+      onRemoveColumn: () => removeMessageFeed(feed.id),
+      onMessageBookmark: (msgId, currentlyBookmarked) => handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
+      onMessageImportant: (msgId, currentlyImportant) => handleMessageImportant(feed.id, msgId, currentlyImportant),
+      onMessageCopy: handleMessageCopy,
+      onMessageComment: (msgId, currentComment) => openCommentDialog(msgId, feed.id, currentComment),
+      onMessageToggleTag: (msgId, tagId) => handleToggleTag(feed.id, msgId, tagId),
+      onScrollToTop: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
+      onReachedBottom: () => {
+        if (!dutyDisableAutoScroll) {
+          setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
+        }
+        if (feed.items.length > 0) {
+          handleVisibleMessageIds(feed.id)(feed.items.map(([id]) => id), { atBottom: true });
+        }
+      },
+      onLeftBottom: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
+      onNearBottomChange: (near) => {
+        nearBottomByFeedIdRef.current = {
+          ...nearBottomByFeedIdRef.current,
+          [feed.id]: near,
+        };
+      },
+      onAtBottomChange: (atBottom) => {
+        atBottomByFeedIdRef.current = {
+          ...atBottomByFeedIdRef.current,
+          [feed.id]: atBottom,
+        };
+      },
+      onArrowClick: () => handleArrowClick(feed.id),
+      onVisibleMessageIds: handleVisibleMessageIds(feed.id),
+    },
+  });
   const {
     messageFeeds,
     error,
@@ -109,7 +231,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     groupsList,
     groupInfos,
     tagsMap,
-    tagIdsList,
     savedFilters,
     selectedSavedIdByFeedId,
     setSelectedSavedIdByFeedId,
@@ -264,18 +385,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
               {narrowScreen ? (
                 messageFeeds.map((w) => {
-                  const selectedSavedId = selectedSavedIdByFeedId[w.id] ?? null;
-                  const saveFilterName = saveFilterNameByFeedId[w.id] ?? '';
-                  const filterStable = {
-                    groupsSelected: w.filter.groupsSelected ?? [],
-                    deniedGroups: w.filter.groupsDenied ?? [],
-                    sendersSelected: w.filter.sendersSelected ?? [],
-                    deniedSenders: w.filter.deniedSenders ?? [],
-                    freqsSelected: w.filter.freqsSelected ?? [],
-                    freqsDenied: w.filter.freqsDenied ?? [],
-                    postsSelected: w.filter.postsSelected ?? [],
-                    postsDenied: w.filter.postsDenied ?? [],
-                  };
                   const isActive = w.id === activeFeedIdSafe;
                   return (
                     <Box
@@ -292,113 +401,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                         ref={(el) => {
                           columnRefsRef.current[w.id] = el;
                         }}
-                        narrowScreen={narrowScreen}
-                        feed={w}
-                        feedCount={messageFeeds.length}
-                        unreadCount={feedUnreadDisplayCount(w)}
-                        filterStable={filterStable}
-                        groupsList={groupsList}
-                        groupInfos={groupInfos}
-                        profiles={profiles}
-                        senderOptions={senderOptions}
-                        freqs={freqs}
-                        postsList={postsList}
-                        adjacentFreqsRange={w.adjacentFreqsRange}
-                        highlightSignalsEnabled={w.highlightSignalsEnabled}
-                        onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
-                        tagsLayout={tagsLayout}
-                        savedFilters={savedFilters}
-                        selectedSavedId={selectedSavedId}
-                        saveFilterName={saveFilterName}
-                        reloadFreqsLoading={reloadFreqsLoading}
-                        canRemove={messageFeeds.length > 1}
-                        maxWidth={dutyFeedColumnMaxWidth(messageFeeds.length, narrowScreen)}
-                        authUserName={authUserName}
-                        copiedFeedbackId={copiedFeedbackId}
-                        networkDisplayMap={networkDisplayMap}
-                        networkMap={networkMap}
-                        unitsMap={unitsMap}
-                        callsignInfoMap={callsignInfoMap}
-                        featureStrictNetworks={featureStrictNetworks}
-                        tagsMap={tagsMap}
-                        tagIdsList={tagIdsList}
-                        onLoadOlder={() => loadFeedOlderMessages(w.id)}
-                        onRemoveColumn={() => removeMessageFeed(w.id)}
-                        onApplyFilter={(f) => applyFilter(w.id, f)}
-                        onGroupsChange={(v) => applyFilter(w.id, { ...w.filter, groupsSelected: v.length ? v : null })}
-                        onDeniedGroupsChange={(v) => applyFilter(w.id, { ...w.filter, groupsDenied: v.length ? v : null })}
-                        onSendersChange={(v) => applyFilter(w.id, { ...w.filter, sendersSelected: v.length ? v : null })}
-                        onDeniedSendersChange={(v) => applyFilter(w.id, { ...w.filter, deniedSenders: v.length ? v : null })}
-                        onFreqsChange={(v) => applyFilter(w.id, { ...w.filter, freqsSelected: v.length ? v : null })}
-                        onFreqsDeniedChange={(v) => applyFilter(w.id, { ...w.filter, freqsDenied: v.length ? v : null })}
-                        onPostsChange={(v) => applyFilter(w.id, { ...w.filter, postsSelected: v.length ? v : null })}
-                        onPostsDeniedChange={(v) => applyFilter(w.id, { ...w.filter, postsDenied: v.length ? v : null })}
-                        onAdjacentFreqsRangeChange={(v) =>
-                          setMessageFeeds((prev) => prev.map((f) => (f.id === w.id ? { ...f, adjacentFreqsRange: v } : f)))
-                        }
-                        onHighlightSignalsChange={(v) => {
-                          setMessageFeeds((prev) =>
-                            prev.map((f) => (f.id === w.id ? { ...f, highlightSignalsEnabled: v } : f)),
-                          );
-                          loadFeedInitialMessages(w.id, { highlightSignalsEnabled: v });
-                        }}
-                        onOnlyMyUnitTagsChange={(v) => {
-                          setMessageFeeds((prev) =>
-                            prev.map((f) => (f.id === w.id ? { ...f, onlyMyUnitTagsEnabled: v } : f)),
-                          );
-                          loadFeedInitialMessages(w.id, { onlyMyUnitTagsEnabled: v });
-                        }}
-                        onReloadFreqs={reloadLatestFrequencies}
-                        onSavedFilterSelect={(id) =>
-                          setSelectedSavedIdByFeedId((prev) => ({ ...prev, [w.id]: id === '' ? null : id }))
-                        }
-                        onSaveFilterNameChange={(value) =>
-                          setSaveFilterNameByFeedId((prev) => ({ ...prev, [w.id]: value }))
-                        }
-                        onSaveFilter={handleSaveFilter}
-                        onUpdateSelectedSavedFilter={handleUpdateSelectedSavedFilter}
-                        onRenameSelectedSavedFilter={handleRenameSelectedSavedFilter}
-                        onDeleteSelectedSavedFilter={handleDeleteSelectedSavedFilter}
-                        onApplySavedFilter={(saved) => handleApplySavedFilter(w.id, saved)}
-                        onMessageBookmark={(msgId, currentlyBookmarked) =>
-                          handleMessageBookmark(w.id, msgId, currentlyBookmarked)
-                        }
-                        onMessageImportant={(msgId, currentlyImportant) =>
-                          handleMessageImportant(w.id, msgId, currentlyImportant)
-                        }
-                        onMessageCopy={handleMessageCopy}
-                        onMessageComment={(msgId, currentComment) => openCommentDialog(msgId, w.id, currentComment)}
-                        onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
-                        onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
-                        onReachedBottom={() => {
-                          if (!dutyDisableAutoScroll) {
-                            setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
-                          }
-                          if (w.items.length > 0) {
-                            handleVisibleMessageIds(w.id)(
-                              w.items.map(([id]) => id),
-                              { atBottom: true },
-                            );
-                          }
-                        }}
-                        onLeftBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
-                        onNearBottomChange={(near) => {
-                          nearBottomByFeedIdRef.current = {
-                            ...nearBottomByFeedIdRef.current,
-                            [w.id]: near,
-                          };
-                        }}
-                        onAtBottomChange={(atBottom) => {
-                          atBottomByFeedIdRef.current = {
-                            ...atBottomByFeedIdRef.current,
-                            [w.id]: atBottom,
-                          };
-                        }}
-                        isWatchMode={!dutyDisableAutoScroll && (watchModeByFeedId[w.id] ?? false)}
-                        loadingNewer={loadingNewerFeedId === w.id}
-                        arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
-                        onArrowClick={() => handleArrowClick(w.id)}
-                        onVisibleMessageIds={handleVisibleMessageIds(w.id)}
+                        column={buildFeedColumnModel(w)}
                       />
                     </Box>
                   );
@@ -416,131 +419,13 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   }}
                 >
                   {messageFeeds.map((w) => {
-                    const selectedSavedId = selectedSavedIdByFeedId[w.id] ?? null;
-                    const saveFilterName = saveFilterNameByFeedId[w.id] ?? '';
-                    const filterStable = {
-                      groupsSelected: w.filter.groupsSelected ?? [],
-                      deniedGroups: w.filter.groupsDenied ?? [],
-                      sendersSelected: w.filter.sendersSelected ?? [],
-                      deniedSenders: w.filter.deniedSenders ?? [],
-                      freqsSelected: w.filter.freqsSelected ?? [],
-                      freqsDenied: w.filter.freqsDenied ?? [],
-                      postsSelected: w.filter.postsSelected ?? [],
-                      postsDenied: w.filter.postsDenied ?? [],
-                    };
                     return (
                       <FeedColumn
                         key={w.id}
                         ref={(el) => {
                           columnRefsRef.current[w.id] = el;
                         }}
-                        narrowScreen={narrowScreen}
-                        feed={w}
-                        feedCount={messageFeeds.length}
-                        unreadCount={feedUnreadDisplayCount(w)}
-                        filterStable={filterStable}
-                        groupsList={groupsList}
-                        groupInfos={groupInfos}
-                        profiles={profiles}
-                        senderOptions={senderOptions}
-                        freqs={freqs}
-                        postsList={postsList}
-                        adjacentFreqsRange={w.adjacentFreqsRange}
-                        highlightSignalsEnabled={w.highlightSignalsEnabled}
-                        onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
-                        tagsLayout={tagsLayout}
-                        savedFilters={savedFilters}
-                        selectedSavedId={selectedSavedId}
-                        saveFilterName={saveFilterName}
-                        reloadFreqsLoading={reloadFreqsLoading}
-                        canRemove={messageFeeds.length > 1}
-                        maxWidth={dutyFeedColumnMaxWidth(messageFeeds.length, narrowScreen)}
-                        authUserName={authUserName}
-                        copiedFeedbackId={copiedFeedbackId}
-                        networkDisplayMap={networkDisplayMap}
-                        networkMap={networkMap}
-                        unitsMap={unitsMap}
-                        callsignInfoMap={callsignInfoMap}
-                        featureStrictNetworks={featureStrictNetworks}
-                        tagsMap={tagsMap}
-                        tagIdsList={tagIdsList}
-                        onLoadOlder={() => loadFeedOlderMessages(w.id)}
-                        onRemoveColumn={() => removeMessageFeed(w.id)}
-                        onApplyFilter={(f) => applyFilter(w.id, f)}
-                        onGroupsChange={(v) => applyFilter(w.id, { ...w.filter, groupsSelected: v.length ? v : null })}
-                        onDeniedGroupsChange={(v) => applyFilter(w.id, { ...w.filter, groupsDenied: v.length ? v : null })}
-                        onSendersChange={(v) => applyFilter(w.id, { ...w.filter, sendersSelected: v.length ? v : null })}
-                        onDeniedSendersChange={(v) => applyFilter(w.id, { ...w.filter, deniedSenders: v.length ? v : null })}
-                        onFreqsChange={(v) => applyFilter(w.id, { ...w.filter, freqsSelected: v.length ? v : null })}
-                        onFreqsDeniedChange={(v) => applyFilter(w.id, { ...w.filter, freqsDenied: v.length ? v : null })}
-                        onPostsChange={(v) => applyFilter(w.id, { ...w.filter, postsSelected: v.length ? v : null })}
-                        onPostsDeniedChange={(v) => applyFilter(w.id, { ...w.filter, postsDenied: v.length ? v : null })}
-                        onAdjacentFreqsRangeChange={(v) =>
-                          setMessageFeeds((prev) => prev.map((f) => (f.id === w.id ? { ...f, adjacentFreqsRange: v } : f)))
-                        }
-                        onHighlightSignalsChange={(v) => {
-                          setMessageFeeds((prev) =>
-                            prev.map((f) => (f.id === w.id ? { ...f, highlightSignalsEnabled: v } : f)),
-                          );
-                          loadFeedInitialMessages(w.id, { highlightSignalsEnabled: v });
-                        }}
-                        onOnlyMyUnitTagsChange={(v) => {
-                          setMessageFeeds((prev) =>
-                            prev.map((f) => (f.id === w.id ? { ...f, onlyMyUnitTagsEnabled: v } : f)),
-                          );
-                          loadFeedInitialMessages(w.id, { onlyMyUnitTagsEnabled: v });
-                        }}
-                        onReloadFreqs={reloadLatestFrequencies}
-                        onSavedFilterSelect={(id) =>
-                          setSelectedSavedIdByFeedId((prev) => ({ ...prev, [w.id]: id === '' ? null : id }))
-                        }
-                        onSaveFilterNameChange={(value) =>
-                          setSaveFilterNameByFeedId((prev) => ({ ...prev, [w.id]: value }))
-                        }
-                        onSaveFilter={handleSaveFilter}
-                        onUpdateSelectedSavedFilter={handleUpdateSelectedSavedFilter}
-                        onRenameSelectedSavedFilter={handleRenameSelectedSavedFilter}
-                        onDeleteSelectedSavedFilter={handleDeleteSelectedSavedFilter}
-                        onApplySavedFilter={(saved) => handleApplySavedFilter(w.id, saved)}
-                        onMessageBookmark={(msgId, currentlyBookmarked) =>
-                          handleMessageBookmark(w.id, msgId, currentlyBookmarked)
-                        }
-                        onMessageImportant={(msgId, currentlyImportant) =>
-                          handleMessageImportant(w.id, msgId, currentlyImportant)
-                        }
-                        onMessageCopy={handleMessageCopy}
-                        onMessageComment={(msgId, currentComment) => openCommentDialog(msgId, w.id, currentComment)}
-                        onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
-                        onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
-                        onReachedBottom={() => {
-                          if (!dutyDisableAutoScroll) {
-                            setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
-                          }
-                          if (w.items.length > 0) {
-                            handleVisibleMessageIds(w.id)(
-                              w.items.map(([id]) => id),
-                              { atBottom: true },
-                            );
-                          }
-                        }}
-                        onLeftBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
-                        onNearBottomChange={(near) => {
-                          nearBottomByFeedIdRef.current = {
-                            ...nearBottomByFeedIdRef.current,
-                            [w.id]: near,
-                          };
-                        }}
-                        onAtBottomChange={(atBottom) => {
-                          atBottomByFeedIdRef.current = {
-                            ...atBottomByFeedIdRef.current,
-                            [w.id]: atBottom,
-                          };
-                        }}
-                        isWatchMode={!dutyDisableAutoScroll && (watchModeByFeedId[w.id] ?? false)}
-                        loadingNewer={loadingNewerFeedId === w.id}
-                        arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
-                        onArrowClick={() => handleArrowClick(w.id)}
-                        onVisibleMessageIds={handleVisibleMessageIds(w.id)}
+                        column={buildFeedColumnModel(w)}
                       />
                     );
                   })}
