@@ -122,8 +122,8 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
 
     try {
       const result = current.kind === 'rename'
-        ? await Promise.resolve(onRenameExisting(nextName))
-        : await Promise.resolve(onSaveAsNew(nextName));
+        ? await onRenameExisting(nextName)
+        : await onSaveAsNew(nextName);
       if (result === false) return;
       onSavedFilterNameChange(nextName);
       closeActionDialog();
