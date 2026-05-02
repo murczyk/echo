@@ -1135,7 +1135,7 @@ fn network_filter_expr(
     }
 
     if without_network {
-        return Some(Expr::exists(network_exists_subquery()).not());
+        return Some(without_network_filter_expr());
     }
 
     selected_networks.map(|ids| {
@@ -1179,6 +1179,20 @@ fn network_filter_expr(
 
         Expr::exists(sub)
     })
+}
+
+fn without_network_filter_expr() -> SimpleExpr {
+    Expr::exists(network_exists_subquery()).not().and(
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Freq))
+            .is_not_null()
+            .and(
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Freq,
+                ))
+                .ne(""),
+            ),
+    )
 }
 
 fn network_exists_subquery() -> SelectStatement {
