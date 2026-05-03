@@ -311,6 +311,10 @@ export async function downloadAnalysisReportTaskResult(taskId: number): Promise<
   return postBytes('/api/rer/report-docx-task-download', transformCamelToSnake({ bgtaskId: taskId }));
 }
 
+export async function cancelAnalysisReportTask(taskId: number): Promise<void> {
+  await postVoid('/api/rer/report-docx-task-cancel', transformCamelToSnake({ bgtaskId: taskId }));
+}
+
 export async function submitAnalysisInboxMessages(req: InboxSubmitReq): Promise<void> {
   const snakeBody = transformCamelToSnake(req) as JsonValue;
   await postVoid('/api/rer-importer/inbox/submit', restoreContentNodeVariantKeys(snakeBody));
