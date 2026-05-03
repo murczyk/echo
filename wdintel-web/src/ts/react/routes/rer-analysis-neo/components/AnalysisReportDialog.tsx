@@ -42,7 +42,6 @@ type Props = {
   open: boolean;
   report: AnalysisReportState;
   onClose: () => void;
-  onCancelTaskRun: (id: number) => void;
   onDownload: () => void;
   onRepeatTaskRun: (id: number) => Promise<void>;
   onSetProgressExpanded: (expanded: boolean) => void;
@@ -106,7 +105,6 @@ export function AnalysisReportDialog({
   open,
   report,
   onClose,
-  onCancelTaskRun,
   onDownload,
   onRepeatTaskRun,
   onSetProgressExpanded,
@@ -344,11 +342,6 @@ export function AnalysisReportDialog({
                               );
                             })}
                             <Stack direction="row" justifyContent="flex-end">
-                              {run.running ? (
-                                <Button size="small" color="error" onClick={() => onCancelTaskRun(run.id)}>
-                                  Скасувати
-                                </Button>
-                              ) : null}
                               <Button size="small" onClick={() => void onRepeatTaskRun(run.id)} disabled={downloadInFlight || run.running}>
                                 Сформувати повторно
                               </Button>

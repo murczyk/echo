@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Mutex;
 
 use crate::config::CLEANUP_REPORT_DAYS;
 use crate::delta::{bgtask_log, finish_bgtask};
@@ -15,9 +14,7 @@ use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::{Days, NaiveDateTime, Utc};
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
-use once_cell::sync::Lazy;
 use sea_orm::*;
-use tokio_util::sync::CancellationToken;
 
 mod active_networks;
 pub mod babak;
@@ -34,10 +31,6 @@ mod senders;
 pub mod tag;
 pub mod types;
 mod util;
-
-static REPORT_TASK_CANCEL_TOKENS: Lazy<
-    Mutex<BTreeMap<i64, CancellationToken>>,
-> = Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
@@ -105,42 +98,6 @@ struct ReportTaskGenerated {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportTaskDownloadReq {
     pub bgtask_id: i64,
-}
-
-fn report_task_cancel_error() -> AppError {
-    AppError::BL {
-        msg: "Task cancelled by user".to_string(),
-    }
-}
-
-fn report_task_register_cancel_token(bgtask_id: i64, token: CancellationToken) {
-    if let Ok(mut task_tokens) = REPORT_TASK_CANCEL_TOKENS.lock() {
-        task_tokens.insert(bgtask_id, token);
-    }
-}
-
-fn report_task_take_cancel_token(bgtask_id: i64) -> Option<CancellationToken> {
-    REPORT_TASK_CANCEL_TOKENS
-        .lock()
-        .ok()
-        .and_then(|mut task_tokens| task_tokens.remove(&bgtask_id))
-}
-
-async fn report_task_is_cancelled(
-    bgtask_id: i64,
-    dbx: &DatabaseConnection,
-    token: &CancellationToken,
-) -> Result<bool, AppError> {
-    if token.is_cancelled() {
-        return Ok(true);
-    }
-    let task_running = bgtask::Entity::find_by_id(bgtask_id)
-        .one(dbx)
-        .await
-        .c(h!())?
-        .map(|task| task.running)
-        .unwrap_or(false);
-    Ok(!task_running)
 }
 
 fn report_file_extension(req: &types::ReportPreviewReq) -> &'static str {
@@ -358,46 +315,29 @@ pub async fn report_docx_task_launch(
     .await
     .c(h!())?;
     let bgtask_id = bgtask.id;
-    let cancel_token = CancellationToken::new();
-    report_task_register_cancel_token(bgtask_id, cancel_token.clone());
     let env_inner = env.get_ref().clone();
     let req_inner = req.into_inner();
     let task_owner_login = user_login.clone();
     actix_web::rt::spawn(async move {
         let dbx = env_inner.dbx.clone();
-        let cancel_token = cancel_token.clone();
         let res = async {
-            if report_task_is_cancelled(bgtask_id, &dbx, &cancel_token).await? {
-                return Err(report_task_cancel_error());
-            }
-            bgtask_log(Some(bgtask_id), "[1/4] Старт формування звіту", &dbx)
+            bgtask_log(Some(bgtask_id), "[1/4] Формування звіту", &dbx)
                 .await
                 .c(h!())?;
-            let generated = tokio::select! {
-                _ = cancel_token.cancelled() => {
-                    return Err(report_task_cancel_error());
-                }
-                generated = report_docx_generate_for_task(
-                    user_login.clone(),
-                    &env_inner,
-                    req_inner,
-                ) => {
-                    generated?
-                }
-            };
-            if report_task_is_cancelled(bgtask_id, &dbx, &cancel_token).await? {
-                return Err(report_task_cancel_error());
-            }
+            let generated = report_docx_generate_for_task(
+                user_login.clone(),
+                &env_inner,
+                req_inner,
+            )
+            .await
+            .c(h!())?;
             bgtask_log(Some(bgtask_id), "[2/4] Звіт сформовано", &dbx)
                 .await
                 .c(h!())?;
             let bytes = std::fs::read(&generated.outpath).c(h!())?;
-            if report_task_is_cancelled(bgtask_id, &dbx, &cancel_token).await? {
-                return Err(report_task_cancel_error());
-            }
             bgtask_log(
                 Some(bgtask_id),
-                "[3/4] Збереження результату задачі",
+                "[3/4] Збереження сформованого звіту",
                 &dbx,
             )
             .await
@@ -422,40 +362,9 @@ pub async fn report_docx_task_launch(
             Ok::<(), AppError>(())
         }
         .await;
-        let _ = report_task_take_cancel_token(bgtask_id);
         let _ = finish_bgtask(Some(bgtask_id), &dbx, &res).await;
     });
     Ok(Json(bgtask_id))
-}
-
-#[post("/api/rer/report-docx-task-cancel")]
-pub async fn report_docx_task_cancel(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<ReportTaskDownloadReq>,
-) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
-    if let Some(task_token) = report_task_take_cancel_token(req.bgtask_id) {
-        task_token.cancel();
-    }
-    if let Some(task) = bgtask::Entity::find_by_id(req.bgtask_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-    {
-        let mut task = task.into_active_model();
-        task.running = Set(false);
-        task.finished_with_error =
-            Set(Some("Task cancelled by user".to_string()));
-        task.update(&env.dbx).await.c(h!())?;
-        return Ok(HttpResponse::Ok().finish());
-    }
-
-    Err(AppError::BL {
-        msg: format!("task id not found: {}", req.bgtask_id),
-    })
 }
 
 #[post("/api/rer/report-docx-task-download")]

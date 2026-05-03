@@ -2,7 +2,6 @@ import type { AnalysisStatsReq, InboxMessagesReq } from '../../../../Bindings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  cancelAnalysisReportTask,
   downloadAnalysisSummaryTableXlsx,
   downloadAnalysisReportTaskResult,
   fetchAnalysisReportTaskStatus,
@@ -32,7 +31,6 @@ type Result = {
   reportDownloadInFlight: boolean;
   reportProgressExpanded: boolean;
   reportTaskRuns: AnalysisReportTaskRun[];
-  cancelReportTaskRun: (id: number) => void;
   closeReport: () => void;
   downloadReport: () => Promise<void>;
   openReport: () => void;
@@ -46,8 +44,6 @@ let reportTaskRunsMemory: AnalysisReportTaskRun[] = [];
 let reportProgressExpandedMemory = true;
 let reportTaskRunCounter = 0;
 const reportTaskRunStatesMemory: Record<number, AnalysisReportState> = {};
-const reportTaskRunTaskIdsMemory: Record<number, number> = {};
-const cancelledReportTaskRunsMemory = new Set<number>();
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return normalizeReportTaskError(error.message);
@@ -143,32 +139,6 @@ export function useAnalysisReport({
     setReportProgressExpandedState(expanded);
   }, []);
 
-  const cancelReportTaskRun = useCallback(
-    (id: number) => {
-      cancelledReportTaskRunsMemory.add(id);
-      const taskId = reportTaskRunTaskIdsMemory[id];
-      updateReportTaskRuns((current) =>
-        current.map((run) =>
-          run.id === id && run.running
-            ? {
-                ...run,
-                running: false,
-                cancelled: true,
-                error: null,
-                finishedAt: new Date().toISOString(),
-                expanded: true,
-              }
-            : run,
-        ),
-      );
-      if (taskId != null) {
-        void cancelAnalysisReportTask(taskId);
-      }
-      setReportDownloadInFlight(false);
-    },
-    [updateReportTaskRuns],
-  );
-
   const updateReport = useCallback((patch: Partial<AnalysisReportState>) => {
     setReport((current) => ({ ...current, ...patch }));
   }, []);
@@ -177,8 +147,7 @@ export function useAnalysisReport({
     async (state: AnalysisReportState) => {
       const sessionId = runSessionRef.current + 1;
       runSessionRef.current = sessionId;
-      const shouldStopRun = (runId: number | null) =>
-        !isMountedRef.current || runSessionRef.current !== sessionId || (runId != null && cancelledReportTaskRunsMemory.has(runId));
+      const shouldStopRun = () => !isMountedRef.current || runSessionRef.current !== sessionId;
 
       if (state.template === 'summary_table') {
         if (analysisReq == null) {
@@ -190,7 +159,7 @@ export function useAnalysisReport({
         onError('');
         try {
           const blob = await downloadAnalysisSummaryTableXlsx(analysisReq);
-          if (shouldStopRun(null)) {
+          if (shouldStopRun()) {
             return;
           }
           downloadBlob(blob, buildReportFilename(state, fromDateTimeStr, toDateTimeStr));
@@ -243,22 +212,18 @@ export function useAnalysisReport({
         ]);
 
         const taskId = await launchAnalysisReportTask(buildReportRequest(state, inboxReq));
-        if (runId != null) {
-          reportTaskRunTaskIdsMemory[runId] = taskId;
-        }
-        if (shouldStopRun(runId)) {
-          await cancelAnalysisReportTask(taskId).catch(() => undefined);
+        if (shouldStopRun()) {
           return;
         }
         let running = true;
         let skip = 0;
         let logs: string[] = [];
         while (running) {
-          if (shouldStopRun(runId)) {
+          if (shouldStopRun()) {
             break;
           }
           const rsp = await fetchAnalysisReportTaskStatus(taskId, skip);
-          if (shouldStopRun(runId)) {
+          if (shouldStopRun()) {
             break;
           }
           if (rsp.loglines.length > 0) {
@@ -295,12 +260,8 @@ export function useAnalysisReport({
         if (!isMountedRef.current || runSessionRef.current !== sessionId) {
           return;
         }
-        if (runId != null && cancelledReportTaskRunsMemory.has(runId)) {
-          cancelledReportTaskRunsMemory.delete(runId);
-          return;
-        }
         const blob = await downloadAnalysisReportTaskResult(taskId);
-        if (shouldStopRun(runId)) {
+        if (shouldStopRun()) {
           return;
         }
         downloadBlob(blob, buildReportFilename(state, fromDateTimeStr, toDateTimeStr));
@@ -316,9 +277,6 @@ export function useAnalysisReport({
           );
         }
       } finally {
-        if (runId != null) {
-          delete reportTaskRunTaskIdsMemory[runId];
-        }
         if (isMountedRef.current) {
           setReportDownloadInFlight(false);
         }
@@ -346,7 +304,6 @@ export function useAnalysisReport({
     reportDownloadInFlight,
     reportProgressExpanded,
     reportTaskRuns,
-    cancelReportTaskRun,
     closeReport,
     downloadReport,
     openReport,

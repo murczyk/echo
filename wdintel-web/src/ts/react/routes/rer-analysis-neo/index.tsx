@@ -849,7 +849,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         open={page.report.open}
         report={page.report}
         onClose={page.closeReport}
-        onCancelTaskRun={page.cancelReportTaskRun}
         onDownload={page.downloadReport}
         onRepeatTaskRun={page.repeatReportTaskRun}
         onSetProgressExpanded={page.setReportProgressExpanded}

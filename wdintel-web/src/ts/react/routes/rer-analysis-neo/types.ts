@@ -212,7 +212,6 @@ export type AnalysisPageActions = {
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   onUpdateLocalMessage: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => void;
   closeReport: () => void;
-  cancelReportTaskRun: (id: number) => void;
   downloadGeojson: () => void;
   downloadKmz: () => void;
   downloadSummaryXlsx: () => void;

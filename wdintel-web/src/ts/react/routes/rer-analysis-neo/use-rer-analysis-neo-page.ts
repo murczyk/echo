@@ -400,7 +400,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadMoreMessages: data.loadMoreMessages,
     loadMessagesForMap: data.loadMessagesForMap,
     toggleCallsignGraphNolimit: data.toggleCallsignGraphNolimit,
-    cancelReportTaskRun: report.cancelReportTaskRun,
     closeReport: report.closeReport,
     closeEditor: editor.closeEditor,
     downloadGeojson: data.downloadGeojson,

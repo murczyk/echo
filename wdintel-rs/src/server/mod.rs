@@ -636,7 +636,6 @@ pub async fn main_server(
             .service(crate::rer_importer::gdoc::rer_callsign_info_batch)
             .service(crate::rer_importer::reports::report_docx)
             .service(crate::rer_importer::reports::report_docx_task_launch)
-            .service(crate::rer_importer::reports::report_docx_task_cancel)
             .service(crate::rer_importer::reports::report_docx_task_download)
             .service(crate::location::find_locations)
             .service(crate::location::fetch_regions)
