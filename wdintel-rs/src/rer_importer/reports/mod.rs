@@ -85,6 +85,7 @@ pub(crate) async fn cleanup_old_reports_nofail(
 struct ReportTaskResultMeta {
     filename: String,
     content_type: String,
+    user_login: String,
 }
 
 #[derive(Debug, Clone)]
@@ -195,9 +196,14 @@ async fn report_docx_generate_for_task(
         .await
         .c(h!())?;
     } else if req.kind == "naushnom" {
-        self::naushnom::report_docx_kind_naushnom(&user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
+        self::naushnom::report_docx_kind_naushnom(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
     } else if req.kind == "reo" {
         crate::users::has_any_role(
             &env.dbx,
@@ -311,16 +317,20 @@ pub async fn report_docx_task_launch(
     let bgtask_id = bgtask.id;
     let env_inner = env.get_ref().clone();
     let req_inner = req.into_inner();
+    let task_owner_login = user_login.clone();
     actix_web::rt::spawn(async move {
         let dbx = env_inner.dbx.clone();
         let res = async {
             bgtask_log(Some(bgtask_id), "[1/4] Старт формування звіту", &dbx)
                 .await
                 .c(h!())?;
-            let generated =
-                report_docx_generate_for_task(user_login, &env_inner, req_inner)
-                    .await
-                    .c(h!())?;
+            let generated = report_docx_generate_for_task(
+                user_login.clone(),
+                &env_inner,
+                req_inner,
+            )
+            .await
+            .c(h!())?;
             bgtask_log(Some(bgtask_id), "[2/4] Звіт сформовано", &dbx)
                 .await
                 .c(h!())?;
@@ -335,6 +345,7 @@ pub async fn report_docx_task_launch(
             let result_meta = ReportTaskResultMeta {
                 filename: generated.filename,
                 content_type: generated.content_type,
+                user_login: task_owner_login.clone(),
             };
             bgtask_res::ActiveModel {
                 id: Set(bgtask_id),
@@ -362,7 +373,8 @@ pub async fn report_docx_task_download(
     env: actix_web::web::Data<Env>,
     req: Json<ReportTaskDownloadReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
     let bgtask_res = bgtask_res::Entity::find_by_id(req.bgtask_id)
@@ -376,6 +388,11 @@ pub async fn report_docx_task_download(
     ))?;
     let result_meta: ReportTaskResultMeta =
         serde_json::from_value(result_meta_value).c(h!())?;
+    if result_meta.user_login != user_login {
+        return Err(AppError::Forbidden(
+            "Task result belongs to another user".to_string(),
+        ));
+    }
     let data = bgtask_res.res_bytes.clone().ok_or(format!(
         "res_bytes must be non empty for task id: {}",
         req.bgtask_id
@@ -537,8 +554,8 @@ pub async fn report_docx(
             &req,
             &outpath,
         )
-            .await
-            .c(h!())?;
+        .await
+        .c(h!())?;
     } else if req.kind == "reo" {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
@@ -554,9 +571,14 @@ pub async fn report_docx(
         {
             return Ok(resp);
         }
-        self::digest::report_docx_kind_digest(&user_login, &env, &req, &outpath)
-            .await
-            .c(h!())?;
+        self::digest::report_docx_kind_digest(
+            &user_login,
+            &env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
     } else if req.kind == "posts_docx" {
         self::posts::report_docx_kind_posts(&user_login, &env, &req, &outpath)
             .await

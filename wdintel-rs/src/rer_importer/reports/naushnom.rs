@@ -34,9 +34,10 @@ pub async fn report_docx_kind_naushnom(
     let width_unit = 100;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let network_map = get_inbox_messages_report_network(user_login, env, &req.req)
-        .await
-        .c(h!())?;
+    let network_map =
+        get_inbox_messages_report_network(user_login, env, &inbox_req)
+            .await
+            .c(h!())?;
 
     let style_invisible = Style::new("Invisible", StyleType::Paragraph)
         .name("Invisible")
