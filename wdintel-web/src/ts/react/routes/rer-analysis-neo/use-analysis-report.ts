@@ -119,6 +119,26 @@ export function useAnalysisReport({
     [],
   );
 
+  const finalizeAbortedReportTaskRun = useCallback((id: number) => {
+    const updater = (current: AnalysisReportTaskRun[]) =>
+      current.map((run) =>
+        run.id === id && run.running
+          ? {
+              ...run,
+              running: false,
+              cancelled: true,
+              finishedAt: new Date().toISOString(),
+              expanded: true,
+            }
+          : run,
+      );
+
+    reportTaskRunsMemory = updater(reportTaskRunsMemory);
+    if (isMountedRef.current) {
+      setReportTaskRuns((current) => updater(current));
+    }
+  }, []);
+
   const openReport = useCallback(() => {
     setReport((current) => ({ ...current, open: true }));
   }, []);
@@ -213,6 +233,7 @@ export function useAnalysisReport({
 
         const taskId = await launchAnalysisReportTask(buildReportRequest(state, inboxReq));
         if (shouldStopRun()) {
+          finalizeAbortedReportTaskRun(runId);
           return;
         }
         let running = true;
@@ -220,11 +241,13 @@ export function useAnalysisReport({
         let logs: string[] = [];
         while (running) {
           if (shouldStopRun()) {
-            break;
+            finalizeAbortedReportTaskRun(runId);
+            return;
           }
           const rsp = await fetchAnalysisReportTaskStatus(taskId, skip);
           if (shouldStopRun()) {
-            break;
+            finalizeAbortedReportTaskRun(runId);
+            return;
           }
           if (rsp.loglines.length > 0) {
             logs = logs.concat(rsp.loglines);
@@ -258,10 +281,12 @@ export function useAnalysisReport({
           await new Promise((resolve) => window.setTimeout(resolve, 1000));
         }
         if (!isMountedRef.current || runSessionRef.current !== sessionId) {
+          finalizeAbortedReportTaskRun(runId);
           return;
         }
         const blob = await downloadAnalysisReportTaskResult(taskId);
         if (shouldStopRun()) {
+          finalizeAbortedReportTaskRun(runId);
           return;
         }
         downloadBlob(blob, buildReportFilename(state, fromDateTimeStr, toDateTimeStr));
@@ -282,7 +307,7 @@ export function useAnalysisReport({
         }
       }
     },
-    [analysisReq, fromDateTimeStr, inboxReq, onError, onUnauthorized, setReportProgressExpanded, toDateTimeStr, updateReportTaskRuns],
+    [analysisReq, finalizeAbortedReportTaskRun, fromDateTimeStr, inboxReq, onError, onUnauthorized, setReportProgressExpanded, toDateTimeStr, updateReportTaskRuns],
   );
 
   const repeatReportTaskRun = useCallback(

@@ -90,7 +90,6 @@ struct ReportTaskResultMeta {
 
 #[derive(Debug, Clone)]
 struct ReportTaskGenerated {
-    outpath: PathBuf,
     filename: String,
     content_type: String,
 }
@@ -287,7 +286,6 @@ async fn report_docx_generate_for_task(
     .context(h!())?;
 
     Ok(ReportTaskGenerated {
-        outpath,
         filename,
         content_type,
     })
@@ -334,7 +332,6 @@ pub async fn report_docx_task_launch(
             bgtask_log(Some(bgtask_id), "[2/4] Звіт сформовано", &dbx)
                 .await
                 .c(h!())?;
-            let bytes = std::fs::read(&generated.outpath).c(h!())?;
             bgtask_log(
                 Some(bgtask_id),
                 "[3/4] Збереження сформованого звіту",
@@ -350,7 +347,7 @@ pub async fn report_docx_task_launch(
             bgtask_res::ActiveModel {
                 id: Set(bgtask_id),
                 res_json: Set(Some(serde_json::to_value(result_meta).c(h!())?)),
-                res_bytes: Set(Some(bytes)),
+                res_bytes: Set(None),
                 res_s3_id: Set(None),
             }
             .insert(&dbx)
@@ -393,10 +390,18 @@ pub async fn report_docx_task_download(
             "Task result belongs to another user".to_string(),
         ));
     }
-    let data = bgtask_res.res_bytes.clone().ok_or(format!(
-        "res_bytes must be non empty for task id: {}",
-        req.bgtask_id
-    ))?;
+    let data = if let Some(bytes) = bgtask_res.res_bytes.clone() {
+        let mut bgtask_res = bgtask_res.into_active_model();
+        bgtask_res.res_bytes = Set(None);
+        bgtask_res.update(&env.dbx).await.c(h!())?;
+        bytes
+    } else {
+        let storage_dir =
+            std::path::PathBuf::from_str(&env.config.storage_dir).c(h!())?;
+        let outpath =
+            storage_dir.join("reports_log").join(&result_meta.filename);
+        std::fs::read(outpath).c(h!())?
+    };
     let content_disposition = header::ContentDisposition {
         disposition: header::DispositionType::Attachment,
         parameters: vec![header::DispositionParam::FilenameExt(
