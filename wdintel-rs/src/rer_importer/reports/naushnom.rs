@@ -5,7 +5,6 @@ use crate::sigint::network::display_network_type;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
-use actix_identity::Identity;
 use chrono::{NaiveDateTime, TimeZone};
 use docx_rs::*;
 use itertools::Itertools;
@@ -26,7 +25,7 @@ fn split_into_lines(mut cell: TableCell, text: &str) -> TableCell {
 }
 
 pub async fn report_docx_kind_naushnom(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -35,7 +34,7 @@ pub async fn report_docx_kind_naushnom(
     let width_unit = 100;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let network_map = get_inbox_messages_report_network(user, env, &inbox_req)
+    let network_map = get_inbox_messages_report_network(user_login, env, &req.req)
         .await
         .c(h!())?;
 
@@ -217,7 +216,7 @@ pub struct NetworkMessagesReport {
 }
 
 pub async fn get_inbox_messages_report_network(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
 ) -> Result<
@@ -232,7 +231,7 @@ pub async fn get_inbox_messages_report_network(
     AppError,
 > {
     let read_db = env.replica();
-    let login = user.id().c(h!())?;
+    let login = user_login.to_string();
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 

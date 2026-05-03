@@ -145,3 +145,30 @@ export function buildReportFilename(state: AnalysisReportState, fromDateTimeStr:
   const { extension } = reportDownloadMeta(state);
   return `report_${fromDateTimeStr}_${toDateTimeStr}.${extension}`;
 }
+
+export function reportTemplateToUiTitle(state: AnalysisReportState): string {
+  switch (state.template) {
+    case 'tags':
+      return 'донесення';
+    case 'pelengs':
+      return 'пеленги';
+    case 'babak':
+      return 'бабак';
+    case 'interception':
+      return 'перехоплення';
+    case 'senders':
+      return state.senderAggregation === 'ByPost' ? 'пости' : 'відправники';
+    case 'posts_docx':
+      return 'пости';
+    case 'mouse':
+      return 'мишка';
+    case 'reo':
+      return 'РЕО';
+    case 'digest':
+      return 'дайджест';
+    case 'active_networks':
+      return 'активні радіомережі';
+    case 'summary_table':
+      return 'підсумкова таблиця';
+  }
+}

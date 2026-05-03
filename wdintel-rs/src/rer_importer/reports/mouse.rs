@@ -4,7 +4,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
 use crate::utils::*;
-use actix_identity::Identity;
 use anyhow::Context;
 // Add this import if h!() uses anyhow::Context
 use crate::utils::orm::ArrayColumnOps;
@@ -26,7 +25,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 pub async fn report_docx_kind_mouse(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
@@ -36,8 +35,8 @@ pub async fn report_docx_kind_mouse(
         Some(label) => info!("Mouse report using replica {label}"),
         None => info!("Mouse report using primary database"),
     }
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&read_db, user)
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
         .await
         .c(h!())?;
     let width_unit = 1870;
@@ -1090,14 +1089,14 @@ pub async fn report_docx_kind_mouse(
 
 // report_xlsx_kind_pelengs
 pub async fn report_xlsx_kind_pelengs(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     _outpath: &PathBuf, // Marked as unused
 ) -> Result<(), AppError> {
     let read_db = env.replica();
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&read_db, user)
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
         .await
         .c(h!())?;
     let mut inbox_req = req.req.clone();

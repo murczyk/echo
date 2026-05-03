@@ -1,7 +1,15 @@
 import DownloadIcon from '@mui/icons-material/Download';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Alert,
   Button,
   Checkbox,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -10,6 +18,7 @@ import {
   FormControlLabel,
   InputLabel,
   ListItemText,
+  LinearProgress,
   MenuItem,
   Select,
   Stack,
@@ -23,17 +32,57 @@ import {
   type AnalysisReportState,
   type ReportTemplateId,
 } from '../report-helpers';
-import type { AnalysisAorEntry } from '../types';
+import type { AnalysisAorEntry, AnalysisReportTaskRun } from '../types';
 
 type Props = {
   aors: AnalysisAorEntry[];
   downloadInFlight: boolean;
+  progressExpanded: boolean;
+  taskRuns: AnalysisReportTaskRun[];
   open: boolean;
   report: AnalysisReportState;
   onClose: () => void;
+  onCancelTaskRun: (id: number) => void;
   onDownload: () => void;
+  onRepeatTaskRun: (id: number) => Promise<void>;
+  onSetProgressExpanded: (expanded: boolean) => void;
+  onToggleTaskRunLogs: (id: number, expanded: boolean) => void;
   onUpdate: (patch: Partial<AnalysisReportState>) => void;
 };
+
+type StageStatus = 'success' | 'running' | 'error' | 'cancelled' | 'pending';
+
+function extractStages(logs: string[]): Array<{ index: number; overall: number; text: string }> {
+  const stages = new Map<number, { index: number; overall: number; text: string }>();
+  for (const line of logs) {
+    const match = /^\[(\d+)\/(\d+)\]\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const index = Number(match[1]);
+    const overall = Number(match[2]);
+    if (!Number.isFinite(index) || !Number.isFinite(overall) || index <= 0 || overall <= 0) continue;
+    stages.set(index, { index, overall, text: match[3] });
+  }
+  return [...stages.values()].sort((left, right) => left.index - right.index);
+}
+
+function getStageStatus(run: AnalysisReportTaskRun, stageIndex: number): StageStatus {
+  if (run.running) {
+    if (stageIndex < run.curr) return 'success';
+    if (stageIndex === run.curr) return 'running';
+    return 'pending';
+  }
+  if (run.cancelled) {
+    if (stageIndex < run.curr) return 'success';
+    if (stageIndex === run.curr) return 'cancelled';
+    return 'pending';
+  }
+  if (run.error != null) {
+    if (stageIndex < run.curr) return 'success';
+    if (stageIndex === run.curr) return 'error';
+    return 'pending';
+  }
+  return 'success';
+}
 
 const templateOptions: Array<{ id: ReportTemplateId; title: string; description: string }> = [
   { id: 'tags', title: 'З донесенням', description: 'Простий перелік повідомлень разом з їх донесенням' },
@@ -49,8 +98,27 @@ const templateOptions: Array<{ id: ReportTemplateId; title: string; description:
   { id: 'summary_table', title: 'Підсумкова таблиця', description: 'XLSX-експорт підсумкової таблиці без обмеження в 1 тиждень' },
 ];
 
-export function AnalysisReportDialog({ aors, downloadInFlight, open, report, onClose, onDownload, onUpdate }: Props) {
+export function AnalysisReportDialog({
+  aors,
+  downloadInFlight,
+  progressExpanded,
+  taskRuns,
+  open,
+  report,
+  onClose,
+  onCancelTaskRun,
+  onDownload,
+  onRepeatTaskRun,
+  onSetProgressExpanded,
+  onToggleTaskRunLogs,
+  onUpdate,
+}: Props) {
   const titleId = useId().replace(/:/g, '-');
+  const latestTaskRun = taskRuns.length > 0 ? taskRuns[taskRuns.length - 1] : null;
+  const latestTaskRunDone = latestTaskRun != null && !latestTaskRun.running;
+  const latestTaskRunCancelled = latestTaskRunDone && latestTaskRun?.cancelled === true;
+  const latestTaskRunSuccess = latestTaskRunDone && !latestTaskRunCancelled && latestTaskRun.error == null;
+  const historyTaskRuns = taskRuns.length > 1 ? taskRuns.slice(0, -1) : [];
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" aria-labelledby={titleId}>
@@ -188,6 +256,125 @@ export function AnalysisReportDialog({ aors, downloadInFlight, open, report, onC
               control={<Checkbox checked={report.withoutModelTags} onChange={(_event, value) => onUpdate({ withoutModelTags: value })} />}
               label="Без автоматичних тегів"
             />
+          ) : null}
+
+          {latestTaskRun != null ? (
+            <Stack spacing={1.25}>
+              <Typography variant="subtitle1">{latestTaskRunSuccess ? 'Сформовано' : latestTaskRunCancelled ? 'Скасовано' : 'Прогрес формування'}</Typography>
+              <LinearProgress
+                variant="determinate"
+                color={latestTaskRun.error ? 'error' : latestTaskRunCancelled ? 'warning' : latestTaskRunSuccess ? 'success' : 'primary'}
+                value={Math.max(1, Math.min(100, Math.round((latestTaskRun.curr / Math.max(1, latestTaskRun.overall)) * 100)))}
+                sx={
+                  latestTaskRun.running
+                    ? {
+                        '& .MuiLinearProgress-bar': {
+                          backgroundImage: 'linear-gradient(90deg, #42a500, #66bb6a, #42a5f5)',
+                          backgroundSize: '200% 100%',
+                          animation: 'analysis-report-shimmer 1s linear infinite',
+                        },
+                        '@keyframes analysis-report-shimmer': {
+                          '0%': { backgroundPosition: '200% 0' },
+                          '100%': { backgroundPosition: '-200% 0' },
+                        },
+                      }
+                    : undefined
+                }
+              />
+              <Typography variant="body2" color="text.secondary">
+                {latestTaskRun.curr} / {latestTaskRun.overall}
+              </Typography>
+              {latestTaskRun.error ? <Alert severity="error">{latestTaskRun.error}</Alert> : null}
+              {progressExpanded ? (
+                <Stack spacing={1}>
+                  {latestTaskRunDone ? (
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Button size="small" onClick={() => onSetProgressExpanded(false)}>
+                        Згорнути звіти
+                      </Button>
+                    </Stack>
+                  ) : null}
+
+                  {[latestTaskRun, ...historyTaskRuns.slice().reverse()].map((run) => {
+                    const stages = extractStages(run.logs);
+                    return (
+                      <Accordion
+                        key={run.id}
+                        disableGutters
+                        elevation={0}
+                        expanded={run.expanded}
+                        onChange={(_event, expanded) => onToggleTaskRunLogs(run.id, expanded)}
+                      >
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Stack width="100%" direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {run.headerTitle}
+                            </Typography>
+                            <Typography variant="caption" color={run.error ? 'error.main' : run.cancelled ? 'warning.main' : run.running ? 'warning.main' : 'success.main'}>
+                              {run.error ? 'Помилка' : run.cancelled ? 'Скасовано' : run.running ? 'Формується…' : 'Успішно'}
+                            </Typography>
+                          </Stack>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ pt: 0 }}>
+                          <Stack spacing={1}>
+                            {stages.map((stage) => {
+                              const status = getStageStatus(run, stage.index);
+                              return (
+                                <Stack key={`${run.id}-${stage.index}`} spacing={0.5}>
+                                  <Stack direction="row" alignItems="center" spacing={1}>
+                                    {status === 'success' ? (
+                                      <CheckCircleIcon color="success" fontSize="small" />
+                                    ) : status === 'error' ? (
+                                      <HighlightOffIcon color="error" fontSize="small" />
+                                    ) : status === 'cancelled' ? (
+                                      <HighlightOffIcon color="warning" fontSize="small" />
+                                    ) : status === 'running' ? (
+                                      <CircularProgress size={14} />
+                                    ) : (
+                                      <Typography variant="caption" color="text.disabled">
+                                        ○
+                                      </Typography>
+                                    )}
+                                    <Typography variant="caption" color={status === 'error' ? 'error.main' : status === 'cancelled' ? 'warning.main' : 'text.secondary'}>
+                                      [{stage.index}/{stage.overall}] {stage.text}
+                                    </Typography>
+                                  </Stack>
+                                  {status === 'error' && run.error ? <Alert severity="error">{run.error}</Alert> : null}
+                                </Stack>
+                              );
+                            })}
+                            <Stack direction="row" justifyContent="flex-end">
+                              {run.running ? (
+                                <Button size="small" color="error" onClick={() => onCancelTaskRun(run.id)}>
+                                  Скасувати
+                                </Button>
+                              ) : null}
+                              <Button size="small" onClick={() => void onRepeatTaskRun(run.id)} disabled={downloadInFlight || run.running}>
+                                Сформувати повторно
+                              </Button>
+                            </Stack>
+                          </Stack>
+                        </AccordionDetails>
+                      </Accordion>
+                    );
+                  })}
+                </Stack>
+              ) : (
+                <Stack spacing={1}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {latestTaskRun.headerTitle}
+                  </Typography>
+                  <Stack direction="row" spacing={1}>
+                    <Button size="small" onClick={() => onSetProgressExpanded(true)}>
+                      Попередні звіти
+                    </Button>
+                    <Button size="small" onClick={() => void onRepeatTaskRun(latestTaskRun.id)} disabled={downloadInFlight || latestTaskRun.running}>
+                      Сформувати повторно
+                    </Button>
+                  </Stack>
+                </Stack>
+              )}
+            </Stack>
           ) : null}
         </Stack>
       </DialogContent>

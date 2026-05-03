@@ -47,7 +47,7 @@ import type {
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { emptyArrToNull } from '../../utils/misc';
-import { postBytes, postJson, postVoid } from './client';
+import { getJson, postBytes, postJson, postVoid } from './client';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -74,6 +74,11 @@ type NetworkStatsRsp = { networks: AnalysisStatsNetwork[]; networkNames: Array<{
 type AreaOfResponsibilityStatsRsp = { aors: AnalysisStatsAor[]; aorNames: AreaOfResponsibilityEntry[] };
 type MessageIdsRsp = { messages: Array<[number, InboxMessage]> };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
+type BgtaskStatusAndLogsRsp = {
+  running: boolean;
+  loglines: string[];
+  finishedWithError: string | null;
+};
 
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
   _c_n_text_c: 'CNTextC',
@@ -145,6 +150,27 @@ function analysisStatsReqBody(req: AnalysisStatsReq) {
   });
 
   return transformCamelToSnake(normalized);
+}
+
+function reportPreviewReqBody(req: ReportPreviewReq): JsonValue {
+  const body = transformCamelToSnake(req) as Record<string, unknown>;
+
+  if (req.reportType == null) {
+    body.report_type = null;
+    return body as JsonValue;
+  }
+
+  if (typeof req.reportType === 'string') {
+    body.report_type = req.reportType;
+    return body as JsonValue;
+  }
+
+  const [variant, payload] = Object.entries(req.reportType as Record<string, unknown>)[0] ?? [];
+  if (variant) {
+    body.report_type = { [variant]: transformCamelToSnake(payload) };
+  }
+
+  return body as JsonValue;
 }
 
 async function postAnalysisStats<T>(url: string, req: AnalysisStatsReq): Promise<T> {
@@ -269,7 +295,20 @@ export async function fetchAnalysisCallsignInfos(callsigns: string[]): Promise<C
 }
 
 export async function downloadAnalysisReport(req: ReportPreviewReq): Promise<Blob> {
-  return postBytes('/api/rer/report-docx', transformCamelToSnake(req));
+  return postBytes('/api/rer/report-docx', reportPreviewReqBody(req));
+}
+
+export async function launchAnalysisReportTask(req: ReportPreviewReq): Promise<number> {
+  return postJson<number>('/api/rer/report-docx-task-launch', reportPreviewReqBody(req));
+}
+
+export async function fetchAnalysisReportTaskStatus(taskId: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
+  const raw = await getJson<unknown>(`/api/bgtask/${taskId}/status-and-logs?skip=${skip}`);
+  return transformSnakeToCamel<BgtaskStatusAndLogsRsp>(raw);
+}
+
+export async function downloadAnalysisReportTaskResult(taskId: number): Promise<Blob> {
+  return postBytes('/api/rer/report-docx-task-download', transformCamelToSnake({ bgtaskId: taskId }));
 }
 
 export async function submitAnalysisInboxMessages(req: InboxSubmitReq): Promise<void> {

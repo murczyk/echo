@@ -844,10 +844,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
       <AnalysisReportDialog
         aors={page.aorEntries}
         downloadInFlight={page.reportDownloadInFlight}
+        progressExpanded={page.reportProgressExpanded}
+        taskRuns={page.reportTaskRuns}
         open={page.report.open}
         report={page.report}
         onClose={page.closeReport}
+        onCancelTaskRun={page.cancelReportTaskRun}
         onDownload={page.downloadReport}
+        onRepeatTaskRun={page.repeatReportTaskRun}
+        onSetProgressExpanded={page.setReportProgressExpanded}
+        onToggleTaskRunLogs={page.toggleReportTaskRunLogs}
         onUpdate={page.updateReport}
       />
     </Box>

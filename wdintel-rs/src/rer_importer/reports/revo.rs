@@ -6,7 +6,6 @@ use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
-use actix_identity::Identity;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
@@ -116,7 +115,7 @@ fn non_empty_comment_filter() -> SimpleExpr {
 }
 
 pub async fn report_docx_kind_revo(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
@@ -126,8 +125,8 @@ pub async fn report_docx_kind_revo(
 
     let start = Instant::now();
     let read_db = env.dbx.clone();
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&read_db, user)
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
         .await
         .context(h!())?;
     info!("get_organism_logins took: {:?}", start.elapsed());

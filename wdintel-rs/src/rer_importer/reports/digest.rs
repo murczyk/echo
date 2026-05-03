@@ -5,7 +5,6 @@ use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
-use actix_identity::Identity;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
@@ -80,7 +79,7 @@ pub struct NetworkSummary {
 }
 
 pub async fn report_docx_kind_digest(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
@@ -98,8 +97,8 @@ pub async fn report_docx_kind_digest(
         }
     };
     let show_date = check_should_show_date(report_since, report_till);
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&read_db, user)
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
         .await
         .context(h!())?;
     let mut request = req.req.clone();

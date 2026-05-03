@@ -9,7 +9,6 @@ use crate::rer_importer::types::InboxMessage;
 use crate::types::*;
 use crate::utils::dt_zoned_from_millis;
 use crate::utils::orm::ArrayColumnOps;
-use actix_identity::Identity;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use docx_rs::{
@@ -212,7 +211,7 @@ struct Report1213ActivityRanges {
 }
 
 pub async fn report_docx_kind_report_1213(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
@@ -223,8 +222,8 @@ pub async fn report_docx_kind_report_1213(
         None => info!("Report 1.2.13 using primary database"),
     }
 
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&read_db, user)
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
         .await
         .c(h!())?;
     let report_data =
