@@ -120,6 +120,35 @@ fn report_content_type(file_extension: &str) -> &'static str {
     }
 }
 
+async fn ensure_report_launch_permissions(
+    dbx: &DatabaseConnection,
+    user_login: &str,
+    kind: &str,
+) -> Result<(), AppError> {
+    match kind {
+        "reo"
+        | "digest"
+        | "active_networks"
+        | "network_frequencies"
+        | "report_1213" => {
+            crate::users::has_any_role(
+                dbx,
+                user_login,
+                vec![
+                    "UnitsEditor",
+                    "CallsignsEditor",
+                    "AdvancedReports",
+                    "Admin",
+                ],
+            )
+            .await
+            .c(h!())?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 async fn report_docx_generate_for_task(
     user_login: String,
     env: &Env,
@@ -301,6 +330,10 @@ pub async fn report_docx_task_launch(
         .await
         .c(h!())?;
     let user_login = user.id().c(h!())?;
+    let req_inner = req.into_inner();
+    ensure_report_launch_permissions(&env.dbx, &user_login, &req_inner.kind)
+        .await
+        .c(h!())?;
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
@@ -314,7 +347,6 @@ pub async fn report_docx_task_launch(
     .c(h!())?;
     let bgtask_id = bgtask.id;
     let env_inner = env.get_ref().clone();
-    let req_inner = req.into_inner();
     let task_owner_login = user_login.clone();
     actix_web::rt::spawn(async move {
         let dbx = env_inner.dbx.clone();
