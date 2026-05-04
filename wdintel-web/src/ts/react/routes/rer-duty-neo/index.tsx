@@ -260,7 +260,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       return;
     }
     setActiveFeedId((current) => {
-      const currentExists = current != null && messageFeeds.some((feed) => feed.id === current);
+      const currentExists = (current !== null && current !== undefined) && messageFeeds.some((feed) => feed.id === current);
       if (messageFeeds.length > previousFeedCountRef.current) {
         return messageFeeds[messageFeeds.length - 1].id;
       }
@@ -272,7 +272,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
   const dutyTabUnreadTotal = useMemo(() => feedsUnreadDisplayTotal(messageFeeds), [messageFeeds]);
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
-  const activeFeedIndex = activeFeedIdSafe == null ? -1 : messageFeeds.findIndex((feed) => feed.id === activeFeedIdSafe);
+  const activeFeedIndex = (activeFeedIdSafe === null || activeFeedIdSafe === undefined) ? -1 : messageFeeds.findIndex((feed) => feed.id === activeFeedIdSafe);
 
   useEffect(() => startDutyNeoDocumentTitleTracking(), []);
   useEffect(() => {
@@ -313,7 +313,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
           }}
         >
           <Box className="flex flex-1 min-w-0 min-h-0 flex-col gap-2">
-            {narrowScreen && messageFeeds.length > 1 && activeFeedIdSafe != null && (
+            {narrowScreen && messageFeeds.length > 1 && (activeFeedIdSafe !== null && activeFeedIdSafe !== undefined) && (
               <Box
                 role="tablist"
                 aria-label="Потоки"
@@ -460,7 +460,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       </Box>
 
       <CommentDialog
-        open={commentMessageId != null}
+        open={(commentMessageId !== null && commentMessageId !== undefined)}
         commentText={commentText}
         onCommentTextChange={setCommentText}
         onClose={() => {
@@ -471,7 +471,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       />
 
       <DeleteConfirmDialog
-        open={deleteConfirmId != null}
+        open={(deleteConfirmId !== null && deleteConfirmId !== undefined)}
         onClose={() => {
           setDeleteConfirmId(null);
           setDeleteConfirmFeedId(null);

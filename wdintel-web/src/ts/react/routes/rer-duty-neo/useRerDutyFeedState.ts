@@ -356,7 +356,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     );
     const newCountBySignature: Record<string, number> = {};
     for (const entry of counts) {
-      if (entry.skipped || entry.quantity == null) continue;
+      if (entry.skipped || (entry.quantity === null || entry.quantity === undefined)) continue;
       const { feedId } = entry;
       if (entry.failed) {
         continue;
@@ -367,7 +367,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       }
       const prevServerCount = lastServerCountByFeedIdRef.current[feedId] ?? (entry.hasItems ? 0 : null);
       const nextCount = entry.quantity;
-      if (prevServerCount != null) {
+      if ((prevServerCount !== null && prevServerCount !== undefined)) {
         const newCount = Math.max(0, nextCount - prevServerCount);
         const signatureKey = signatureByFeedId[feedId] ?? feedId;
         const prevCount = newCountBySignature[signatureKey] ?? 0;
@@ -432,7 +432,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useEffect(() => {
     const feedId = scrollToEndAfterNewerRef.current;
-    if (feedId == null) return;
+    if ((feedId === null || feedId === undefined)) return;
     scrollToEndAfterNewerRef.current = null;
     const refs = columnRefsRef.current;
     requestAnimationFrame(() => {

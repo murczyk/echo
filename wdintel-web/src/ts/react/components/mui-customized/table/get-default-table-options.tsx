@@ -62,7 +62,7 @@ export function getFilterModeHelperText(filterVariant?: string): string | null {
     return 'Режим фільтрації: Дорівнює';
   }
 
-  if (filterVariant == null || filterVariant === 'text' || filterVariant === 'autocomplete') {
+  if ((filterVariant === null || filterVariant === undefined) || filterVariant === 'text' || filterVariant === 'autocomplete') {
     return 'Режим фільтрації: Нечіткий';
   }
 
@@ -199,7 +199,7 @@ export function getSharedFilterTextFieldProps(filterVariant?: string): TextField
 
   return {
     ...sharedProps,
-    placeholder: filterVariant == null || filterVariant === 'text' ? 'Пошук' : undefined,
+    placeholder: (filterVariant === null || filterVariant === undefined) || filterVariant === 'text' ? 'Пошук' : undefined,
   };
 }
 

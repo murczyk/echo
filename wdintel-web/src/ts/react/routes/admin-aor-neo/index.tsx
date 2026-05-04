@@ -141,13 +141,13 @@ function useAorColumns(): MRT_ColumnDef<AorRow>[] {
       },
       {
         header: 'Ліва межа',
-        accessorFn: (row) => (row.leftBound == null ? '—' : String(row.leftBound)),
+        accessorFn: (row) => ((row.leftBound === null || row.leftBound === undefined) ? '—' : String(row.leftBound)),
         id: 'leftBound',
         size: 120,
       },
       {
         header: 'Права межа',
-        accessorFn: (row) => (row.rightBound == null ? '—' : String(row.rightBound)),
+        accessorFn: (row) => ((row.rightBound === null || row.rightBound === undefined) ? '—' : String(row.rightBound)),
         id: 'rightBound',
         size: 120,
       },

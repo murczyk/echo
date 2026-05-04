@@ -335,7 +335,7 @@ function AnalysisSummaryTableCardInner({
         </Box>
       </Box>
 
-      <Dialog open={renameDialog != null} onClose={closeRenameDialog}>
+      <Dialog open={(renameDialog !== null && renameDialog !== undefined)} onClose={closeRenameDialog}>
         <DialogTitle>Редагувати підрозділ</DialogTitle>
         <DialogContent>
           <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
@@ -377,7 +377,7 @@ function AnalysisSummaryTableCardInner({
           <Button onClick={closeRenameDialog} disabled={renameSaving}>
             Скасувати
           </Button>
-          <Button variant="contained" onClick={() => void saveRename()} disabled={renameDialog == null || renameSaving || renameValue.trim() === ''}>
+          <Button variant="contained" onClick={() => void saveRename()} disabled={(renameDialog === null || renameDialog === undefined) || renameSaving || renameValue.trim() === ''}>
             Зберегти
           </Button>
         </DialogActions>

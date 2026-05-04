@@ -47,7 +47,7 @@ export function SettingsTagsLayoutCard({
           exclusive
           color="primary"
           onChange={(_, v: TagsLayoutVariant | null) => {
-            if (v != null) onTagsLayoutChange(v);
+            if ((v !== null && v !== undefined)) onTagsLayoutChange(v);
           }}
           size="small"
           disabled={loadInProgress}

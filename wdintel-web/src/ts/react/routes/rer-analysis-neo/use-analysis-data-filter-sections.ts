@@ -52,7 +52,7 @@ export function useAnalysisFilterSections({
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
-      if (analysisReq == null) return;
+      if ((analysisReq === null || analysisReq === undefined)) return;
       const sectionAnalysisReq = buildAnalysisReqForFilterSection(section, analysisReq);
       const requestKey = filterSectionCacheKey(section, analysisReq);
       if (loadedFilterSectionKeyRef.current[section] === requestKey) return;

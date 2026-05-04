@@ -533,7 +533,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   const dateForRequest = isDateEqualToDefault ? undefined : date?.format('YYYY-MM-DD');
 
   function onTableInitialized(table: MRT_TableInstance<any>) {
-    if (tableInstanceRef.current == null) {
+    if ((tableInstanceRef.current === null || tableInstanceRef.current === undefined)) {
       tableInstanceRef.current = table;
       if (!tableInstanceReady) {
         setTableInstanceReady(true);
@@ -561,9 +561,9 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   useEffect(() => {
     const nextDate = parseDateFromSearchParams(searchParams, props.defaultDate);
     if (
-      (date == null && nextDate != null) ||
-      (date != null && nextDate == null) ||
-      (date != null && nextDate != null && !date.isSame(nextDate, 'date'))
+      ((date === null || date === undefined) && (nextDate !== null && nextDate !== undefined)) ||
+      ((date !== null && date !== undefined) && (nextDate === null || nextDate === undefined)) ||
+      ((date !== null && date !== undefined) && (nextDate !== null && nextDate !== undefined) && !date.isSame(nextDate, 'date'))
     ) {
       setDate(nextDate);
     }

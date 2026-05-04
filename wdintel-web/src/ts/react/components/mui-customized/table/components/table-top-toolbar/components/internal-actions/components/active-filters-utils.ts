@@ -18,7 +18,7 @@ function truncateText(value: string, maxLength: number): string {
 }
 
 function formatPreviewItem(value: unknown): string {
-  if (value == null || value === '') {
+  if ((value === null || value === undefined) || value === '') {
     return 'Порожньо';
   }
 
@@ -42,7 +42,7 @@ function formatPreviewItem(value: unknown): string {
 }
 
 export function formatFilterValuePreview(value: unknown): string {
-  if (value == null || value === '') {
+  if ((value === null || value === undefined) || value === '') {
     return 'Порожньо';
   }
 
@@ -88,7 +88,7 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
     }));
 
     const hasGlobalFilter =
-      typeof globalFilter === 'string' ? globalFilter.trim() !== '' : globalFilter != null && globalFilter !== '';
+      typeof globalFilter === 'string' ? globalFilter.trim() !== '' : (globalFilter !== null && globalFilter !== undefined) && globalFilter !== '';
 
     if (hasGlobalFilter) {
       activeFilters.push({
@@ -112,7 +112,7 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
   }));
 
   const hasGlobalFilter =
-    typeof globalFilter === 'string' ? globalFilter.trim() !== '' : globalFilter != null && globalFilter !== '';
+    typeof globalFilter === 'string' ? globalFilter.trim() !== '' : (globalFilter !== null && globalFilter !== undefined) && globalFilter !== '';
 
   if (hasGlobalFilter) {
     activeFilters.push({

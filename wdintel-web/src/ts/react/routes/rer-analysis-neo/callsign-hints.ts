@@ -31,7 +31,7 @@ function filterNetworksByFreq(networks: Network[], freq: string | null): Network
 }
 
 function getNetworksByIds(ids: number[], networks: Network[]): Network[] {
-  return ids.map((id) => networks.find((network) => network.id === id)).filter((network): network is Network => network != null);
+  return ids.map((id) => networks.find((network) => network.id === id)).filter((network): network is Network => (network !== null && network !== undefined));
 }
 
 function getAllUnitIdsForNetworks(networks: Network[]): number[] {
@@ -39,7 +39,7 @@ function getAllUnitIdsForNetworks(networks: Network[]): number[] {
 }
 
 function getUnitsInfoByIds(unitIds: number[], unitsMap: Record<number, Unit>): Unit[] {
-  return unitIds.map((id) => unitsMap[id]).filter((unit): unit is Unit => unit != null);
+  return unitIds.map((id) => unitsMap[id]).filter((unit): unit is Unit => (unit !== null && unit !== undefined));
 }
 
 function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
@@ -49,7 +49,7 @@ function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
 }
 
 function findCallsignUnits(callsigns: CallsignInfo[], unitsMap: Record<number, Unit>): Unit[] {
-  const unitIds = callsigns.map((callsign) => callsign.unitId).filter((unitId): unitId is number => unitId != null);
+  const unitIds = callsigns.map((callsign) => callsign.unitId).filter((unitId): unitId is number => (unitId !== null && unitId !== undefined));
   return getUnitsInfoByIds(unitIds, unitsMap);
 }
 

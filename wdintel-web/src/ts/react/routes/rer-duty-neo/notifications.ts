@@ -186,7 +186,7 @@ function stripDutyNeoDocumentTitleCountPrefix(title: string): string {
 }
 
 function applyDutyNeoDocumentTitle(): void {
-  if (typeof document === 'undefined' || dutyNeoDocumentTitleBase == null) return;
+  if (typeof document === 'undefined' || (dutyNeoDocumentTitleBase === null || dutyNeoDocumentTitleBase === undefined)) return;
   document.title =
     dutyNeoDocumentTitleCount > 0 ? `(${dutyNeoDocumentTitleCount}) ${dutyNeoDocumentTitleBase}` : dutyNeoDocumentTitleBase;
 }
@@ -207,14 +207,14 @@ export function startDutyNeoDocumentTitleTracking(): () => void {
     const base = dutyNeoDocumentTitleBase;
     dutyNeoDocumentTitleBase = null;
     dutyNeoDocumentTitleCount = 0;
-    if (base != null) {
+    if ((base !== null && base !== undefined)) {
       document.title = base;
     }
   };
 }
 
 export function setDutyNeoDocumentTitleUnreadCount(totalUnread: number): void {
-  if (!dutyNeoDocumentTitleTracking || dutyNeoDocumentTitleBase == null) return;
+  if (!dutyNeoDocumentTitleTracking || (dutyNeoDocumentTitleBase === null || dutyNeoDocumentTitleBase === undefined)) return;
   dutyNeoDocumentTitleCount = Math.max(0, Math.floor(totalUnread));
   applyDutyNeoDocumentTitle();
 }

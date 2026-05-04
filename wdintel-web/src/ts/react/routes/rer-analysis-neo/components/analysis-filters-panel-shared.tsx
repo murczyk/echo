@@ -108,7 +108,7 @@ export function getInitialExpandedSections(): Record<FilterSectionId, boolean> {
 }
 
 export function sectionCountLabel(selectedCount: number, overallCount: number | null | undefined): string | null {
-  if (overallCount == null) {
+  if ((overallCount === null || overallCount === undefined)) {
     return selectedCount > 0 ? String(selectedCount) : null;
   }
   return selectedCount > 0 ? `${selectedCount} з ${overallCount}` : String(overallCount);

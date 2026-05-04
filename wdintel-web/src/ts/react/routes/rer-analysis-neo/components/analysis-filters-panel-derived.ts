@@ -45,7 +45,7 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
     const label = (option.label ?? option.value).toUpperCase();
     const values = Array.from(new Set(option.values ?? [option.value]));
     const existingOption = acc.find((item) => item.label === label);
-    if (existingOption != null) {
+    if ((existingOption !== null && existingOption !== undefined)) {
       existingOption.values = Array.from(new Set([...(existingOption.values ?? []), ...values]));
       existingOption.count += option.count;
       return acc;

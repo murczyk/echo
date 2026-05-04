@@ -1,3 +1,5 @@
+import { emitUnauthorizedEvent } from '../../auth-redirect';
+
 type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
 
@@ -18,6 +20,17 @@ export class HttpRequestError extends Error {
 
 export function isUnauthorizedError(error: unknown): boolean {
   return error instanceof HttpRequestError && error.status === 401;
+}
+
+export async function tryRunAndReturnNullExceptUnauthorized<T>(request: () => Promise<T>): Promise<T | null> {
+  try {
+    return await request();
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      throw error;
+    }
+    return null;
+  }
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
@@ -65,6 +78,9 @@ async function requestJson<T>(
   const response = await fetch(url, init);
 
   if (!response.ok) {
+    if (response.status === 401) {
+      emitUnauthorizedEvent();
+    }
     const message = await parseErrorMessage(response);
     throw new HttpRequestError(response.status, message);
   }
@@ -103,6 +119,9 @@ async function requestBytes(
   const response = await fetch(url, init);
 
   if (!response.ok) {
+    if (response.status === 401) {
+      emitUnauthorizedEvent();
+    }
     const message = await parseErrorMessage(response);
     throw new HttpRequestError(response.status, message);
   }

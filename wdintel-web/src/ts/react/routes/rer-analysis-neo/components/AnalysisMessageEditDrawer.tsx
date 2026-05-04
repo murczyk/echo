@@ -33,11 +33,11 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
   const currentMessage = draftMessage ?? message?.message ?? null;
 
   const updateDraftField = <K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => {
-    setDraftMessage((current) => (current == null ? current : { ...current, [field]: value }));
+    setDraftMessage((current) => ((current === null || current === undefined) ? current : { ...current, [field]: value }));
   };
 
   const proposedCallsigns = useMemo(() => {
-    if (currentMessage == null) return [];
+    if ((currentMessage === null || currentMessage === undefined)) return [];
     const present = new Set((currentMessage.callsigns ?? []).map((item) => normalizeCallsign(item)));
     return (currentMessage.callsignsAlg2 ?? [])
       .map((item) => normalizeCallsign(item))
@@ -46,7 +46,7 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
   }, [currentMessage]);
 
   const addCallsign = () => {
-    if (currentMessage == null) return;
+    if ((currentMessage === null || currentMessage === undefined)) return;
     const nextCallsign = normalizeCallsign(callsignDraft);
     if (!nextCallsign) return;
     const currentCallsigns = currentMessage.callsigns ?? [];
@@ -60,7 +60,7 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
   };
 
   const removeCallsign = (callsign: string) => {
-    if (currentMessage == null) return;
+    if ((currentMessage === null || currentMessage === undefined)) return;
     updateDraftField(
       'callsigns',
       (currentMessage.callsigns ?? []).filter((item) => normalizeCallsign(item) !== normalizeCallsign(callsign)),
@@ -68,7 +68,7 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
   };
 
   const addSuggestedCallsign = (callsign: string) => {
-    if (currentMessage == null) return;
+    if ((currentMessage === null || currentMessage === undefined)) return;
     const currentCallsigns = currentMessage.callsigns ?? [];
     if (currentCallsigns.some((item) => normalizeCallsign(item) === callsign)) return;
     updateDraftField('callsigns', [...currentCallsigns, callsign]);
@@ -173,7 +173,7 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
         </Stack>
         <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           <Button onClick={onClose}>Скасувати</Button>
-          <Button variant="contained" onClick={() => currentMessage && onSave(currentMessage)} disabled={saveInFlight || currentMessage == null}>
+          <Button variant="contained" onClick={() => currentMessage && onSave(currentMessage)} disabled={saveInFlight || (currentMessage === null || currentMessage === undefined)}>
             {saveInFlight ? 'Зберігаємо...' : 'Зберегти'}
           </Button>
         </Stack>

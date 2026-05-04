@@ -75,7 +75,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   useEffect(() => {
     if (savedFilters.length === 0) return;
 
-    if (loadedSavedFilterId != null) {
+    if ((loadedSavedFilterId !== null && loadedSavedFilterId !== undefined)) {
       hasSyncedLoadedSavedFilterRef.current = true;
       return;
     }
@@ -85,7 +85,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     const matchedSavedFilter = savedFilters.find((savedFilter) =>
       queryStateMatchesSavedFilter(queryState, savedFilter, allFrequencies),
     );
-    if (matchedSavedFilter == null) {
+    if ((matchedSavedFilter === null || matchedSavedFilter === undefined)) {
       if (queryState.adjacentFreqsRange > 0 && allFrequencies.length === 0) return;
       hasSyncedLoadedSavedFilterRef.current = true;
       return;
@@ -99,7 +99,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
       hasSyncedLoadedSavedFilterRef.current = true;
-      if (savedFilter == null) {
+      if ((savedFilter === null || savedFilter === undefined)) {
         setLoadedSavedFilterId(null);
         setSavedFilterName('');
         return;
@@ -117,7 +117,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const saveAsNew = useCallback(async (name: string) => {
     const req = buildAnalysisReq(queryState, allFrequencies);
     const nextName = name.trim();
-    if (req == null || nextName === '') return false;
+    if ((req === null || req === undefined) || nextName === '') return false;
     setSaveInFlight(true);
     onError('');
     try {
@@ -165,7 +165,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const updateExisting = useCallback(async () => {
     if (!loadedSavedFilter) return;
     const req = buildAnalysisReq(queryState, allFrequencies);
-    if (req == null) return;
+    if ((req === null || req === undefined)) return;
     setSaveInFlight(true);
     onError('');
     try {

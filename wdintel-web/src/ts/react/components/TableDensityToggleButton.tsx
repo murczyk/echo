@@ -20,7 +20,7 @@ export function TableDensityToggleButton({
       sx={{
         width: slotWidth ?? 'auto',
         display: 'flex',
-        justifyContent: slotWidth == null ? 'flex-end' : 'center',
+        justifyContent: (slotWidth === null || slotWidth === undefined) ? 'flex-end' : 'center',
         flexShrink: 0,
       }}
     >

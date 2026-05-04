@@ -62,7 +62,7 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
   const [zoomHintVisible, setZoomHintVisible] = useState(false);
 
   useEffect(() => {
-    if (!visible || loading || graph != null || autoloadedVersionRef.current === loadVersion) return;
+    if (!visible || loading || (graph !== null && graph !== undefined) || autoloadedVersionRef.current === loadVersion) return;
     autoloadedVersionRef.current = loadVersion;
     onLoad();
   }, [graph, loadVersion, loading, onLoad, visible]);
@@ -90,7 +90,7 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) return;
       setZoomHintVisible(true);
-      if (zoomHintTimeoutRef.current != null) {
+      if ((zoomHintTimeoutRef.current !== null && zoomHintTimeoutRef.current !== undefined)) {
         window.clearTimeout(zoomHintTimeoutRef.current);
       }
       zoomHintTimeoutRef.current = window.setTimeout(() => {
@@ -108,7 +108,7 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
 
   useEffect(
     () => () => {
-      if (zoomHintTimeoutRef.current != null) {
+      if ((zoomHintTimeoutRef.current !== null && zoomHintTimeoutRef.current !== undefined)) {
         window.clearTimeout(zoomHintTimeoutRef.current);
       }
     },

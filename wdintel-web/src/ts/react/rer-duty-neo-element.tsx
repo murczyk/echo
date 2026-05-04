@@ -9,7 +9,7 @@ import { RerDutyNeoPage } from './routes/rer-duty-neo';
 function getAuthUserNameFromShell(el: Element): string | null {
   const shell = el.closest('.app-shell');
   const name = shell?.getAttribute('data-auth-user-name');
-  if (name == null || name === '' || name === 'anonymous') return null;
+  if ((name === null || name === undefined) || name === '' || name === 'anonymous') return null;
   return name;
 }
 

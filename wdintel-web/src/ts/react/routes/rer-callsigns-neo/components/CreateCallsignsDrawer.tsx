@@ -367,7 +367,7 @@ export function CreateCallsignsDrawer({
         <Button
           variant="contained"
           onClick={onSubmit}
-          disabled={formDisabled || addUnitId == null || !hasDraftContent}
+          disabled={formDisabled || (addUnitId === null || addUnitId === undefined) || !hasDraftContent}
         >
           {submitting ? 'Збереження…' : 'Додати'}
         </Button>

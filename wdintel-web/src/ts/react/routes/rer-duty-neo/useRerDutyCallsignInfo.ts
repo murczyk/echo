@@ -18,7 +18,7 @@ function mergeDutyCallsignTextField(existing: string | null | undefined, incomin
 }
 
 export function mergeDutyCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {
-  if (current == null) return incoming;
+  if ((current === null || current === undefined)) return incoming;
 
   const rowsById = new Map<number, CallsignInfoRes['res'][number]>();
   current.res.forEach((row) => {

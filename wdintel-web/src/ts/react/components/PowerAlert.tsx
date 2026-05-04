@@ -31,7 +31,7 @@ export function PowerAlert(props: PowerAlertProps) {
   );
 
   React.useEffect(() => {
-    if (!open || resolvedAutoHideDuration == null || resolvedAutoHideDuration <= 0) {
+    if (!open || (resolvedAutoHideDuration === null || resolvedAutoHideDuration === undefined) || resolvedAutoHideDuration <= 0) {
       return;
     }
     const timerId = window.setTimeout(() => {

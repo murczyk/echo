@@ -118,7 +118,7 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
 }
 
 function normalizeHierarchyFilterValue(value: UnitHierarchyFilter[keyof UnitHierarchyFilter] | undefined): string | null {
-  if (value == null) return null;
+  if ((value === null || value === undefined)) return null;
   return value.trim();
 }
 
@@ -252,7 +252,7 @@ function sanitizeCallsignAdditionalSourceIds(callsignAdditionalSourceIds: number
   const uniqueIds = Array.from(new Set(callsignAdditionalSourceIds.filter((item) => Number.isInteger(item) && item > 0))).sort(
     (left, right) => left - right,
   );
-  if (primarySourceId == null) return uniqueIds;
+  if ((primarySourceId === null || primarySourceId === undefined)) return uniqueIds;
   return uniqueIds.filter((sourceId) => sourceId !== primarySourceId);
 }
 
@@ -304,7 +304,7 @@ export function validateEditForm(form: CallsignEditForm | null): CallsignDraftVa
     [form.position, form.comment, form.radioFreq].some((value) => value.trim() !== '')
     || form.developing
     || form.unitId > 0
-    || form.sourceId != null
+    || (form.sourceId !== null && form.sourceId !== undefined)
     || form.callsignAdditionalSourceIds.length > 0;
   if (!hasIdentity && !hasLegacyContent) {
     return { valid: false, error: LEGACY_CALLSIGN_CLEAR_ERROR };
@@ -341,7 +341,7 @@ export function parseTabDelimitedInput(input: string): {
       return null;
     })();
 
-    if (nextRows == null) {
+    if ((nextRows === null || nextRows === undefined)) {
       return { rows: [], error: QUICK_PASTE_TSV_FORMAT_ERROR };
     }
 
@@ -388,7 +388,7 @@ export function buildRowViews(callsigns: Callsign[], unitsById: Map<number, Unit
       callsignAdditionalSourceIds,
       callsignAdditionalSourceNames,
       unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
-      sourceName: callsign.sourceId == null ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
+      sourceName: (callsign.sourceId === null || callsign.sourceId === undefined) ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
     };
   });
 
@@ -488,8 +488,8 @@ export function sortRowsClientSide(
       result = compareStrings(left.comment, right.comment);
     } else if (sort.column === 'sourceName') {
       result = compareStrings(
-        left.sourceId == null ? '—' : (sourcesById.get(left.sourceId)?.name ?? `#${left.sourceId}`),
-        right.sourceId == null ? '—' : (sourcesById.get(right.sourceId)?.name ?? `#${right.sourceId}`),
+        (left.sourceId === null || left.sourceId === undefined) ? '—' : (sourcesById.get(left.sourceId)?.name ?? `#${left.sourceId}`),
+        (right.sourceId === null || right.sourceId === undefined) ? '—' : (sourcesById.get(right.sourceId)?.name ?? `#${right.sourceId}`),
       );
     } else if (sort.column === 'radioFreq') {
       result = compareStrings(normalizeRadioFreq(left.radioFreq), normalizeRadioFreq(right.radioFreq));

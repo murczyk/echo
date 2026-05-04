@@ -65,7 +65,7 @@ export function useLoadNewCallsigns({
 }: UseLoadNewCallsignsParams) {
   return useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
-    if (analysisReq == null) {
+    if ((analysisReq === null || analysisReq === undefined)) {
       invalidateNewCallsignsLoadState({
         setNewCallsigns,
         setNewCallsignsLoading,

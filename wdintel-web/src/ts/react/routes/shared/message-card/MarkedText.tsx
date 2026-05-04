@@ -25,7 +25,7 @@ export const CALLSIGN_TOOLTIP_ITEM_SX = {
 function collectPointEtalons(nodes: ContentNode[]): string[] {
   const etalons: string[] = [];
   for (const n of nodes) {
-    if (typeof n !== 'string' && 'CNPointC' in n && n.CNPointC?.etalon != null) {
+    if (typeof n !== 'string' && 'CNPointC' in n && (n.CNPointC?.etalon !== null && n.CNPointC?.etalon !== undefined)) {
       const e = String(n.CNPointC.etalon).trim();
       if (e !== '') etalons.push(e);
     }
@@ -46,7 +46,7 @@ function collectHighlightedTexts(nodes: ContentNode[]): Set<string> {
 
 function collectSearchTerms(searchText?: string | null): Set<string> {
   const terms = new Set<string>();
-  if (searchText == null) return terms;
+  if ((searchText === null || searchText === undefined)) return terms;
 
   searchText
     .split(/[\s,;:]+/g)
@@ -226,7 +226,7 @@ function PointToken({
       <Menu
         id={menuId}
         anchorEl={menuAnchorEl}
-        open={menuAnchorEl != null}
+        open={(menuAnchorEl !== null && menuAnchorEl !== undefined)}
         onClose={() => setMenuAnchorEl(null)}
         MenuListProps={{ 'aria-label': 'Дії з точкою' }}
       >
@@ -355,7 +355,7 @@ function CallsignWithHint({
 
   const tooltipText = formatCallsignHintTooltipData(hintResult);
   const isNetworkHint = hintResult.strategy === 'network';
-  const shouldLinkCallsign = linkCallsigns && (tooltipText != null || hasCatalogMatch);
+  const shouldLinkCallsign = linkCallsigns && ((tooltipText !== null && tooltipText !== undefined) || hasCatalogMatch);
   const callsignDisplay = shouldLinkCallsign ? (
     <a
       href={href}
@@ -371,7 +371,7 @@ function CallsignWithHint({
     </Box>
   );
 
-  if (tooltipText == null) {
+  if ((tooltipText === null || tooltipText === undefined)) {
     if (hasMessageNetworks) {
       if (!hasCatalogMatch) {
         return wrapSearchHighlighted(renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }));
@@ -473,7 +473,7 @@ export function renderMarkedText(
   const highlightedTexts = collectHighlightedTexts(nodes);
   const searchTerms = collectSearchTerms(options?.searchText);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
-    messagePointEtalons != null && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
+    (messagePointEtalons !== null && messagePointEtalons !== undefined) && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
   );
   const renderedNodes: ReactNode[] = [];
 

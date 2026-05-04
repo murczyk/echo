@@ -1,7 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Callsign, CallsignUnitStatRow, Source, Unit, User } from '../../../../Bindings';
-import { isUnauthorizedError } from '../../services/api/client';
 import { downloadBlob } from '../../utils/download-blob';
 import {
   createCallsign,
@@ -142,7 +141,7 @@ function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter | null 
     battalion: decodeHierarchyParam(params.get('unit_battalion')),
   };
 
-  if (Object.values(hierarchy).every((value) => value == null)) {
+  if (Object.values(hierarchy).every((value) => (value === null || value === undefined))) {
     return null;
   }
 
@@ -152,7 +151,7 @@ function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter | null 
 function getSidebarGroupLabel(hierarchy: UnitHierarchyFilter): string {
   const lastDefinedEntry = (Object.entries(hierarchy) as Array<[keyof UnitHierarchyFilter, string | null]>)
     .reverse()
-    .find(([, value]) => value != null);
+    .find(([, value]) => (value !== null && value !== undefined));
 
   if (!lastDefinedEntry) return 'Підрозділ';
 
@@ -164,7 +163,7 @@ function areSidebarFiltersEqual(
   left: SelectedSidebarUnitFilter | null,
   right: SelectedSidebarUnitFilter | null,
 ): boolean {
-  if (left == null || right == null) return left === right;
+  if ((left === null || left === undefined) || (right === null || right === undefined)) return left === right;
   if (left.kind !== right.kind) return false;
 
   if (left.kind === 'leaf' && right.kind === 'leaf') {
@@ -211,7 +210,7 @@ function syncCallsignsStateToUrl(
 ) {
   updateUrlSearchParams((params) => {
     const setOrDelete = (key: string, value: string | null | undefined) => {
-      if (value == null || value === '') {
+      if ((value === null || value === undefined) || value === '') {
         params.delete(key);
         return;
       }
@@ -282,12 +281,12 @@ function areCallsignSortStatesEqual(left: CallsignsSortState, right: CallsignsSo
 }
 
 function decodeHierarchyParam(value: string | null): string | null {
-  if (value == null) return null;
+  if ((value === null || value === undefined)) return null;
   return value === EMPTY_HIERARCHY_PARAM ? '' : value;
 }
 
 function setHierarchyParam(params: URLSearchParams, key: string, value: string | null) {
-  if (value == null) {
+  if ((value === null || value === undefined)) {
     params.delete(key);
     return;
   }
@@ -295,14 +294,7 @@ function setHierarchyParam(params: URLSearchParams, key: string, value: string |
   params.set(key, value === '' ? EMPTY_HIERARCHY_PARAM : value);
 }
 
-function redirectToLogin() {
-  window.location.assign('/login');
-}
-
 function unauthorizedOrThrow(error: unknown): never {
-  if (isUnauthorizedError(error)) {
-    redirectToLogin();
-  }
   throw error;
 }
 
@@ -433,7 +425,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
             draftInput.positionInput === '' || positionValue.includes(draftInput.positionInput);
           return (callsignMatches || fullNameMatches) && positionMatches;
         });
-        const unitMatches = addUnitId == null || callsign.unitId === addUnitId;
+        const unitMatches = (addUnitId === null || addUnitId === undefined) || callsign.unitId === addUnitId;
 
         return rowMatches && unitMatches;
       })
@@ -539,7 +531,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       const [freshSources, freshStats] = await Promise.all([listSources(), getCallsignUnitStats()]);
       setSources(freshSources);
       setUnitStats(freshStats);
-      setAddSourceId((prev) => (prev == null ? freshSources[0]?.id ?? null : prev));
+      setAddSourceId((prev) => ((prev === null || prev === undefined) ? freshSources[0]?.id ?? null : prev));
     } catch (error) {
       try {
         unauthorizedOrThrow(error);
@@ -805,10 +797,10 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setStatus(null);
     setAddValidationError(null);
 
-    if (addUnitId == null) {
+    if ((addUnitId === null || addUnitId === undefined)) {
       return;
     }
-    if (addSourceId == null) {
+    if ((addSourceId === null || addSourceId === undefined)) {
       setAddValidationError('Оберіть джерело');
       return;
     }
@@ -840,10 +832,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
           );
           created.push(normalizeCallsign(item));
         } catch (error) {
-          if (isUnauthorizedError(error)) {
-            redirectToLogin();
-            return;
-          }
           failed.push({ row, error: formatErrorMessage(error) });
         }
       }

@@ -16,7 +16,7 @@ export function useMinDurationBusy(active: boolean, minDurationMs = 400): boolea
       return;
     }
 
-    const elapsed = startedAtRef.current == null ? minDurationMs : Date.now() - startedAtRef.current;
+    const elapsed = (startedAtRef.current === null || startedAtRef.current === undefined) ? minDurationMs : Date.now() - startedAtRef.current;
     const timeoutId = window.setTimeout(() => {
       startedAtRef.current = null;
       setVisible(false);

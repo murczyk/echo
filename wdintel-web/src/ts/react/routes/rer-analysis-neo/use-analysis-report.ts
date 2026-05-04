@@ -58,7 +58,7 @@ export function useAnalysisReport({
 
   const downloadReport = useCallback(async () => {
     if (report.template === 'summary_table') {
-      if (analysisReq == null) {
+      if ((analysisReq === null || analysisReq === undefined)) {
         onError('Перевірте дату та час перед експортом.');
         return;
       }
@@ -78,7 +78,7 @@ export function useAnalysisReport({
       return;
     }
 
-    if (inboxReq == null) {
+    if ((inboxReq === null || inboxReq === undefined)) {
       onError('Перевірте дату та час перед експортом.');
       return;
     }

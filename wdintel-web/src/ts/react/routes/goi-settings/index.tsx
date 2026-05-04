@@ -5,7 +5,6 @@ import React from 'react';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
-import { isUnauthorizedError } from '../../services/api/client';
 import {
   GoiRestartService,
   GoiUserIntegration,
@@ -26,10 +25,6 @@ function formatErrorMessage(error: unknown): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function redirectToLogin() {
-  window.location.assign('/login');
 }
 
 function restartServiceLabel(service: GoiRestartService): string {
@@ -144,10 +139,6 @@ export function GoiSettingsPage() {
         setLoadError(null);
       } catch (error) {
         if (abortController.signal.aborted || isAbortError(error)) return;
-        if (isUnauthorizedError(error)) {
-          redirectToLogin();
-          return;
-        }
         setLoadError(formatErrorMessage(error));
       } finally {
         if (!abortController.signal.aborted) {
@@ -174,10 +165,6 @@ export function GoiSettingsPage() {
         message: `${restartServiceLabel(service)} успішно перезапущено`,
       });
     } catch (error) {
-      if (isUnauthorizedError(error)) {
-        redirectToLogin();
-        return;
-      }
       setActionStatus({
         kind: 'error',
         integrationId,

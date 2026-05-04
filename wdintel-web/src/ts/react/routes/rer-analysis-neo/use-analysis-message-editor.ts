@@ -35,7 +35,7 @@ export function prepareQueuedMessageUpdate(
   updater: (message: InboxMessage) => InboxMessage,
 ): { currentMessage: InboxMessage | null; nextMessage: InboxMessage | null } {
   const currentMessage = draftMap.get(messageId) ?? messages.find(([id]) => id === messageId)?.[1] ?? null;
-  if (currentMessage == null) return { currentMessage: null, nextMessage: null };
+  if ((currentMessage === null || currentMessage === undefined)) return { currentMessage: null, nextMessage: null };
   const nextMessage = updater(currentMessage);
   if (nextMessage !== currentMessage) {
     draftMap.set(messageId, nextMessage);
@@ -74,7 +74,7 @@ export function useAnalysisMessageEditor({
   const openEditor = useCallback(
     (messageId: number) => {
       const entry = messages.find(([id]) => id === messageId) ?? null;
-      if (entry == null) return;
+      if ((entry === null || entry === undefined)) return;
       setEditorMessage({ id: entry[0], message: entry[1] });
     },
     [messages],
@@ -93,7 +93,7 @@ export function useAnalysisMessageEditor({
           messageId,
           updater,
         );
-        if (currentMessage == null || nextMessage == null) return false;
+        if ((currentMessage === null || currentMessage === undefined) || (nextMessage === null || nextMessage === undefined)) return false;
         if (nextMessage === currentMessage) return true;
 
         onError('');
@@ -115,7 +115,7 @@ export function useAnalysisMessageEditor({
 
   const saveEditor = useCallback(
     async (message: InboxMessage) => {
-      if (editorMessage == null) return;
+      if ((editorMessage === null || editorMessage === undefined)) return;
       setEditorSaveInFlight(true);
       try {
         const saved = await saveMessageUpdate(editorMessage.id, () => message);

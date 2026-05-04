@@ -2,7 +2,7 @@ import type { CallsignInfoRes } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 
 export function mergeAnalysisCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {
-  if (current == null) return incoming;
+  if ((current === null || current === undefined)) return incoming;
 
   const rowsById = new Map<number, CallsignInfoRes['res'][number]>();
   current.res.forEach((row) => {
@@ -41,7 +41,7 @@ export function mergeAnalysisCallsignInfoMap(
   const next = { ...prev };
   items.forEach((item) => {
     const key = normalizeCallsignLookupValue(item.callsign);
-    if (overwrite || next[key] == null) {
+    if (overwrite || (next[key] === null || next[key] === undefined)) {
       next[key] = item;
       return;
     }

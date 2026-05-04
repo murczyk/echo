@@ -684,7 +684,7 @@ export function MessageCardMessageBody({
           })(),
     [analysisCallsignActions, callsignInfoMap, msg, networks, searchText, showPointLinks, tagsMap, unitsMap],
   );
-  const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => node != null) : textPrimary != null;
+  const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => (node !== null && node !== undefined)) : (textPrimary !== null && textPrimary !== undefined);
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
   const otherComments = useMemo(
     () => filterOtherMessageComments(authUserName, currentUser, users, messageComments),
@@ -743,7 +743,7 @@ export function MessageCardMessageBody({
           {textPrimary}
         </Typography>
       ) : null}
-      {msg.extendedForm != null && msg.extendedForm.trim() !== '' ? (
+      {(msg.extendedForm !== null && msg.extendedForm !== undefined) && msg.extendedForm.trim() !== '' ? (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
           <ChatBubbleOutlineOutlinedIcon sx={{ fontSize: 13, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Коментар" />
           <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
@@ -787,7 +787,7 @@ export function MessageCardMessageBody({
           </span>
         </Box>
       ) : null}
-      {analysisCallsignActions != null ? (
+      {(analysisCallsignActions !== null && analysisCallsignActions !== undefined) ? (
         <AnalysisCallsignsSection msg={msg} actions={analysisCallsignActions} callsignInfoMap={callsignInfoMap} />
       ) : null}
     </Stack>

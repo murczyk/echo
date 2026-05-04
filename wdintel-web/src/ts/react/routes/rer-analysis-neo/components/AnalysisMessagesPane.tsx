@@ -237,14 +237,14 @@ function AnalysisMessagesPaneComponent({
 
   useEffect(() => {
     return () => {
-      if (copyFeedbackTimerRef.current != null) {
+      if ((copyFeedbackTimerRef.current !== null && copyFeedbackTimerRef.current !== undefined)) {
         window.clearTimeout(copyFeedbackTimerRef.current);
       }
     };
   }, []);
 
   const showCopiedFeedback = useCallback((value: string) => {
-    if (copyFeedbackTimerRef.current != null) {
+    if ((copyFeedbackTimerRef.current !== null && copyFeedbackTimerRef.current !== undefined)) {
       window.clearTimeout(copyFeedbackTimerRef.current);
     }
     setCopiedFeedbackId(value);
@@ -355,7 +355,7 @@ function AnalysisMessagesPaneComponent({
       {paginationLoading ? <SectionLoadingOverlay open ariaLabel="Завантаження ще повідомлень" sx={{ zIndex: 2 }} /> : null}
 
       <CommentDialog
-        open={commentMessage != null}
+        open={(commentMessage !== null && commentMessage !== undefined)}
         messagePreview={commentMessage?.message ?? null}
         commentText={commentDraft}
         onCommentTextChange={setCommentDraft}
@@ -368,10 +368,10 @@ function AnalysisMessagesPaneComponent({
       />
 
       <DeleteConfirmDialog
-        open={deleteMessageId != null}
+        open={(deleteMessageId !== null && deleteMessageId !== undefined)}
         onClose={() => setDeleteMessageId(null)}
         onConfirm={() => {
-          if (deleteMessageId == null) return;
+          if ((deleteMessageId === null || deleteMessageId === undefined)) return;
           onDeleteMessage(deleteMessageId);
           setDeleteMessageId(null);
         }}
@@ -379,7 +379,7 @@ function AnalysisMessagesPaneComponent({
 
       <AnalysisMessageEditDrawer
         message={editorMessage}
-        open={editorMessage != null}
+        open={(editorMessage !== null && editorMessage !== undefined)}
         saveInFlight={editorSaveInFlight}
         onClose={onCloseEditor}
         onSave={onSaveEditor}

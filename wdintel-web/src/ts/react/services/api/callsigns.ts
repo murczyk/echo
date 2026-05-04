@@ -13,6 +13,8 @@ import type {
 
 import { getUnitsList } from './units';
 import { HttpRequestError, postJson } from './client';
+import { emitUnauthorizedEvent } from '../../auth-redirect';
+import { isNullOrUndefined } from '../../utils/misc';
 import { fetchCurrentUser } from './user';
 
 type CallsignLike = Partial<Callsign> & {
@@ -111,7 +113,7 @@ function toNumber(value: number | string | null | undefined, fallback = 0): numb
 }
 
 function toNullableNumber(value: number | string | null | undefined): number | null {
-  if (value == null) return null;
+  if (isNullOrUndefined(value)) return null;
   const parsed = toNumber(value, Number.NaN);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -188,6 +190,9 @@ async function postBytes(url: string, body: unknown): Promise<Blob> {
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      emitUnauthorizedEvent();
+    }
     throw new HttpRequestError(response.status, await parseBinaryError(response));
   }
 

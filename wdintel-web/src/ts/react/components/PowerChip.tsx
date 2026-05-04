@@ -104,11 +104,11 @@ export function PowerChip({
   return (
     <Chip
       size={size}
-      {...(href != null ? { component: 'a' as const, href } : {})}
+      {...((href !== null && href !== undefined) ? { component: 'a' as const, href } : {})}
       color={hasExplicitPalette ? undefined : color}
       label={label}
       title={title}
-      onClick={isInteractive && href == null ? onClick : undefined}
+      onClick={isInteractive && (href === null || href === undefined) ? onClick : undefined}
       onDelete={onDelete}
       variant={variant}
       sx={[
@@ -132,7 +132,7 @@ export function PowerChip({
             lineHeight: 'normal',
           },
           '& .MuiChip-deleteIcon': {
-            cursor: onDelete != null ? 'pointer' : 'inherit',
+            cursor: (onDelete !== null && onDelete !== undefined) ? 'pointer' : 'inherit',
           },
           ...(isClickable
             ? {

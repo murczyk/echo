@@ -15,7 +15,7 @@ function shortUuid(uuid: string): string {
 
 function senderDisplayName(profile: SignalProfileEntry | null | undefined, fallback: string): string {
   const label = buildSenderLabel(profile, fallback);
-  return label == null || label.trim() === '' ? fallback : label.trim();
+  return (label === null || label === undefined) || label.trim() === '' ? fallback : label.trim();
 }
 
 export function buildNetworkDisplayMap(networks: Network[], unitsMap: Record<number, Unit>): Record<number, string> {

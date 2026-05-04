@@ -33,7 +33,7 @@ export function isOurOrganism(
   if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return true;
 
   const commentUser = users[commentLogin] ?? null;
-  if (currentUser?.organismId == null || commentUser?.organismId == null) return false;
+  if ((currentUser?.organismId === null || currentUser?.organismId === undefined) || (commentUser?.organismId === null || commentUser?.organismId === undefined)) return false;
   return currentUser.organismId === commentUser.organismId;
 }
 
@@ -49,7 +49,7 @@ function isKnownOtherOrganismComment(
   if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
 
   const commentUser = users[commentLogin] ?? null;
-  if (currentUser?.organismId == null || commentUser?.organismId == null) return false;
+  if ((currentUser?.organismId === null || currentUser?.organismId === undefined) || (commentUser?.organismId === null || commentUser?.organismId === undefined)) return false;
   return currentUser.organismId !== commentUser.organismId;
 }
 
@@ -71,7 +71,7 @@ export async function loadMissingMessageCommentsForMessages(
     new Set(
       messages
         .map(([messageId]) => messageId)
-        .filter((messageId) => Number.isInteger(messageId) && (forceReload || params.messageComments[messageId] == null)),
+        .filter((messageId) => Number.isInteger(messageId) && (forceReload || (params.messageComments[messageId] === null || params.messageComments[messageId] === undefined))),
     ),
   );
 
@@ -131,7 +131,7 @@ export async function loadMissingMessageCommentsForMessages(
     params.setUsers((current) => {
       const next = { ...current };
       for (const entry of nextUsers) {
-        if (entry == null) continue;
+        if ((entry === null || entry === undefined)) continue;
         next[entry.login] = entry.user;
       }
       return next;

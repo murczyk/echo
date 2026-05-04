@@ -131,7 +131,7 @@ export function createResetQueryState(now: Date = new Date()): AnalysisQueryStat
 export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): boolean {
   const stateKey = queryStateComparisonKey(state);
   const defaultKey = queryStateComparisonKey(createResetQueryState());
-  if (stateKey == null || defaultKey == null) return false;
+  if ((stateKey === null || stateKey === undefined) || (defaultKey === null || defaultKey === undefined)) return false;
 
   return stateKey !== defaultKey;
 }
@@ -180,7 +180,7 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
-  if (sinceDateInclusiveMs == null || tillDateNoninclusiveMs == null) {
+  if ((sinceDateInclusiveMs === null || sinceDateInclusiveMs === undefined) || (tillDateNoninclusiveMs === null || tillDateNoninclusiveMs === undefined)) {
     return null;
   }
 
@@ -225,7 +225,7 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
 
 export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[] = []): InboxMessagesReq | null {
   const req = buildAnalysisReq(state, allFrequencies);
-  if (req == null) return null;
+  if ((req === null || req === undefined)) return null;
 
   return {
     sinceIdNoninclusive: null,
@@ -294,7 +294,7 @@ export function shouldRebuildAnalysisRequests(
 
   const currentReq = buildAnalysisReq(state, currentFrequencies);
   const nextReq = buildAnalysisReq(state, nextFrequencies);
-  if (currentReq == null || nextReq == null) return false;
+  if ((currentReq === null || currentReq === undefined) || (nextReq === null || nextReq === undefined)) return false;
 
   return JSON.stringify(currentReq.selectedFreqs ?? []) !== JSON.stringify(nextReq.selectedFreqs ?? []);
 }
@@ -339,40 +339,40 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
 function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQueryState {
   const normalized = { ...req };
 
-  if (normalized.onlyWithMetadata == null) {
+  if ((normalized.onlyWithMetadata === null || normalized.onlyWithMetadata === undefined)) {
     normalized.onlyWithMetadata = false;
   }
-  if (normalized.withoutMetadata == null) {
+  if ((normalized.withoutMetadata === null || normalized.withoutMetadata === undefined)) {
     normalized.withoutMetadata = false;
   }
-  if (normalized.withoutNetwork == null) {
+  if ((normalized.withoutNetwork === null || normalized.withoutNetwork === undefined)) {
     normalized.withoutNetwork = false;
   }
-  if (normalized.orWithExtendedForm == null) {
+  if ((normalized.orWithExtendedForm === null || normalized.orWithExtendedForm === undefined)) {
     normalized.orWithExtendedForm = false;
   }
-  if (normalized.orBookmarked == null) {
+  if ((normalized.orBookmarked === null || normalized.orBookmarked === undefined)) {
     normalized.orBookmarked = false;
   }
-  if (normalized.orImportant == null) {
+  if ((normalized.orImportant === null || normalized.orImportant === undefined)) {
     normalized.orImportant = false;
   }
-  if (normalized.orWithCoords == null) {
+  if ((normalized.orWithCoords === null || normalized.orWithCoords === undefined)) {
     normalized.orWithCoords = false;
   }
-  if (normalized.orWithoutCoords == null) {
+  if ((normalized.orWithoutCoords === null || normalized.orWithoutCoords === undefined)) {
     normalized.orWithoutCoords = false;
   }
-  if (normalized.includePelengLocations == null) {
+  if ((normalized.includePelengLocations === null || normalized.includePelengLocations === undefined)) {
     normalized.includePelengLocations = true;
   }
-  if (normalized.filterTagsOption == null) {
+  if ((normalized.filterTagsOption === null || normalized.filterTagsOption === undefined)) {
     normalized.filterTagsOption = 'OneOfTags';
   }
-  if (normalized.withoutModelTags == null) {
+  if ((normalized.withoutModelTags === null || normalized.withoutModelTags === undefined)) {
     normalized.withoutModelTags = false;
   }
-  if (normalized.reportTagsOnlyThisUnit == null) {
+  if ((normalized.reportTagsOnlyThisUnit === null || normalized.reportTagsOnlyThisUnit === undefined)) {
     normalized.reportTagsOnlyThisUnit = false;
   }
 
@@ -414,7 +414,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
 
 function analysisReqComparisonKey(req: AnalysisStatsReq, allFrequencies: string[] = []): string | null {
   const normalized = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(req), allFrequencies);
-  if (normalized == null) return null;
+  if ((normalized === null || normalized === undefined)) return null;
 
   const { sinceDateInclusiveMs: _sinceDateInclusiveMs, tillDateNoninclusiveMs: _tillDateNoninclusiveMs, ...rest } = normalized;
   return JSON.stringify(rest);
@@ -422,7 +422,7 @@ function analysisReqComparisonKey(req: AnalysisStatsReq, allFrequencies: string[
 
 export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
   const req = buildAnalysisReq(state, allFrequencies);
-  if (req == null) return null;
+  if ((req === null || req === undefined)) return null;
 
   return analysisReqComparisonKey(req, allFrequencies);
 }
@@ -430,7 +430,7 @@ export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencie
 export function queryStateMatchesSavedFilter(state: AnalysisQueryState, savedFilter: SavedFilter, allFrequencies: string[] = []): boolean {
   const stateKey = queryStateComparisonKey(state, allFrequencies);
   const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
-  if (stateKey == null || savedFilterKey == null) return false;
+  if ((stateKey === null || stateKey === undefined) || (savedFilterKey === null || savedFilterKey === undefined)) return false;
 
   return stateKey === savedFilterKey;
 }

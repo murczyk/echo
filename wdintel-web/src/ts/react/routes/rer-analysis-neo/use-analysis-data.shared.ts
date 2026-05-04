@@ -17,7 +17,7 @@ export function isAnalysisInboxPageExhausted(
   items: Array<unknown> | null | undefined,
   pageLimit: number | null | undefined,
 ): boolean {
-  if (pageLimit == null) return false;
+  if ((pageLimit === null || pageLimit === undefined)) return false;
   return (items?.length ?? 0) < pageLimit;
 }
 
@@ -40,7 +40,7 @@ export function sortFilterOptionsByLabel<T extends { label: string; value: strin
     const leftPriority = priorities.get(left.label.trim());
     const rightPriority = priorities.get(right.label.trim());
 
-    if (leftPriority != null || rightPriority != null) {
+    if ((leftPriority !== null && leftPriority !== undefined) || (rightPriority !== null && rightPriority !== undefined)) {
       const leftIndex = leftPriority ?? Number.POSITIVE_INFINITY;
       const rightIndex = rightPriority ?? Number.POSITIVE_INFINITY;
       if (leftIndex !== rightIndex) {

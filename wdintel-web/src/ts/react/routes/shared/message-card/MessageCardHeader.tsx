@@ -176,7 +176,7 @@ function ActionIconsRow({
       onClick={onBookmark}
       selected={msg.bookmarked}
     />,
-    onEditDetails != null ? (
+    (onEditDetails !== null && onEditDetails !== undefined) ? (
       <ActionIconButton
         key="edit-details"
         title="Редагувати додаткові поля та позивні"
@@ -184,7 +184,7 @@ function ActionIconsRow({
         onClick={onEditDetails}
       />
     ) : null,
-    onDelete != null ? (
+    (onDelete !== null && onDelete !== undefined) ? (
       <ActionIconButton
         key="delete"
         title="Видалити"
@@ -225,7 +225,7 @@ function ActionIconsRow({
     updateLayout();
     const observer = new ResizeObserver(updateLayout);
     observer.observe(root);
-    if (header != null && header !== root) {
+    if ((header !== null && header !== undefined) && header !== root) {
       observer.observe(header);
     }
     return () => observer.disconnect();
@@ -335,9 +335,9 @@ function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; tex
 }
 
 function networkNeedsInvestigationBadge(network: Network | undefined): boolean {
-  if (network == null) return false;
+  if ((network === null || network === undefined)) return false;
   const ids = network.unitIds;
-  if (ids == null) return true;
+  if ((ids === null || ids === undefined)) return true;
   return ids.length === 0;
 }
 
@@ -355,7 +355,7 @@ function NetworkEtalonSection({
   fallbackEtalonLabel: string | null;
   location: string | null | undefined;
 }) {
-  const hasLocationDetails = location != null && location !== '' && location !== 'Не встановлена';
+  const hasLocationDetails = (location !== null && location !== undefined) && location !== '' && location !== 'Не встановлена';
   const fallbackLabel = fallbackEtalonLabel?.trim() ?? '';
 
   const geoButton = hasLocationDetails ? (
@@ -396,8 +396,8 @@ function NetworkEtalonSection({
     | null
   > = networkIds.map((networkId) => {
       const network = networkMap[networkId];
-      const label = networkDisplayMap[networkId] ?? (network != null ? `р/м ${network.name}` : null);
-      if (label == null || label.trim() === '') return null;
+      const label = networkDisplayMap[networkId] ?? ((network !== null && network !== undefined) ? `р/м ${network.name}` : null);
+      if ((label === null || label === undefined) || label.trim() === '') return null;
       return {
         networkId,
         network,
@@ -406,13 +406,13 @@ function NetworkEtalonSection({
       };
     });
   const renderedNetworksFiltered = renderedNetworks.filter(
-    (item): item is Exclude<(typeof renderedNetworks)[number], null> => item != null,
+    (item): item is Exclude<(typeof renderedNetworks)[number], null> => (item !== null && item !== undefined),
   );
   const uniqueRenderedNetworks = renderedNetworksFiltered.filter((item, index, all) => {
     return index === all.findIndex((other) => other.networkId === item.networkId);
   });
 
-  if (uniqueRenderedNetworks.length === 0 && fallbackLabel === '' && geoButton == null) {
+  if (uniqueRenderedNetworks.length === 0 && fallbackLabel === '' && (geoButton === null || geoButton === undefined)) {
     return null;
   }
 
@@ -594,7 +594,7 @@ export function MessageCardHeader({
         <ScheduleOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} />
         <Typography variant="caption">{formatTime(msg.time)}</Typography>
       </Stack>
-      {msg.date != null ? (
+      {(msg.date !== null && msg.date !== undefined) ? (
         <Stack direction="row" spacing={0.5} alignItems="center">
           <CalendarTodayOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} />
           <Typography variant="caption">{formatDateNoYear(msg.date)}</Typography>
@@ -604,7 +604,7 @@ export function MessageCardHeader({
   );
 
   const freqBlock =
-    msg.freq != null ? (
+    (msg.freq !== null && msg.freq !== undefined) ? (
       <CenteredInfoRow
         icon={
           <SettingsInputAntennaOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} titleAccess="Частота" />
@@ -687,14 +687,14 @@ export function MessageCardHeader({
         </Box>
         <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
           <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
-            {groupName != null ? (
+            {(groupName !== null && groupName !== undefined) ? (
               <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} />
             ) : (
               <Typography variant="caption" color="text.secondary">
                 —
               </Typography>
             )}
-            {senderName != null ? (
+            {(senderName !== null && senderName !== undefined) ? (
               <MetaLine
                 icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
                 title="Відправник"
@@ -810,14 +810,14 @@ export function MessageCardHeader({
       </Box>
       <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
         <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
-          {groupName != null ? (
+          {(groupName !== null && groupName !== undefined) ? (
             <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} />
           ) : (
             <Typography variant="caption" color="text.secondary">
               —
             </Typography>
           )}
-          {senderName != null ? (
+          {(senderName !== null && senderName !== undefined) ? (
             <MetaLine icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />} title="Відправник" text={senderName} />
           ) : (
             <Typography variant="caption" color="text.secondary">

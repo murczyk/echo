@@ -120,7 +120,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.messages.find(([id]) => id === messageId)?.[1] ??
         params.mapOpenMessages.find(([id]) => id === messageId)?.[1] ??
         null;
-      if (sourceMessage == null) return;
+      if ((sourceMessage === null || sourceMessage === undefined)) return;
 
       const enabled = getMessageTagEnabled(sourceMessage, tagId);
 
@@ -162,7 +162,7 @@ export function useAnalysisDataMessageActions(params: Params) {
   const renameSummaryUnit = useCallback(
     async (freq: string, unit: string, unitNew: string) => {
       const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
-      if (analysisReq == null) {
+      if ((analysisReq === null || analysisReq === undefined)) {
         params.onError('Перевірте дату та час перед збереженням підрозділу.');
         return;
       }

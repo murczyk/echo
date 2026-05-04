@@ -74,7 +74,7 @@ export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersB
   return (
     <>
       <PowerMenu
-        open={anchorEl != null}
+        open={(anchorEl !== null && anchorEl !== undefined)}
         anchorEl={anchorEl}
         onClose={onClose}
         MenuListProps={{

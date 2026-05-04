@@ -12,7 +12,7 @@ export function useRelativeTimeDisplayMs(
   const [inView, setInView] = useState(false);
   const [liveNowMs, setLiveNowMs] = useState<number | null>(null);
 
-  const enabled = messageTimestamp != null && referenceTimeMs != null && !Number.isNaN(messageTimestamp);
+  const enabled = (messageTimestamp !== null && messageTimestamp !== undefined) && (referenceTimeMs !== null && referenceTimeMs !== undefined) && !Number.isNaN(messageTimestamp);
 
   useEffect(() => {
     if (!enabled) {

@@ -90,7 +90,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
 
   const trimmedSavedFilterName = savedFilterName.trim();
   const selectedSavedFilterName = selectedSavedFilter?.name ?? '';
-  const hasLoadedFilter = selectedSavedFilter != null;
+  const hasLoadedFilter = (selectedSavedFilter !== null && selectedSavedFilter !== undefined);
   const canUpdateExisting = !saveInFlight && hasLoadedFilter && isDirty;
   const canSaveAsNewNow = !saveInFlight && canSaveAsNew;
   const canRenameExisting = !saveInFlight && hasLoadedFilter;
@@ -109,7 +109,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
   const closeActionDialog = () => setActionDialog(null);
 
   const updateActionName = (value: string) => {
-    setActionDialog((current) => (current == null ? current : { ...current, name: value }));
+    setActionDialog((current) => ((current === null || current === undefined) ? current : { ...current, name: value }));
   };
 
   const handleActionSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -244,7 +244,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
 
         <Menu
           anchorEl={menuAnchorEl}
-          open={menuAnchorEl != null}
+          open={(menuAnchorEl !== null && menuAnchorEl !== undefined)}
           onClose={closeMenu}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
@@ -269,7 +269,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
           </MenuItem>
         </Menu>
 
-        <Dialog open={actionDialog != null} onClose={saveInFlight ? undefined : closeActionDialog} fullWidth maxWidth="xs">
+        <Dialog open={(actionDialog !== null && actionDialog !== undefined)} onClose={saveInFlight ? undefined : closeActionDialog} fullWidth maxWidth="xs">
           <Box component="form" onSubmit={handleActionSubmit}>
             <DialogTitle>{actionConfig?.title}</DialogTitle>
             <DialogContent sx={{ pt: 2.5, overflow: 'visible' }}>

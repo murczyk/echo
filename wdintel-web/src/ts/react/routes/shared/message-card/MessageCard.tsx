@@ -108,11 +108,11 @@ export function MessageCard({
     pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons, msg) : buildAnalysisHref(msg, true);
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
-    msg.timestamp != null && relativeTimeMs != null ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
+    (msg.timestamp !== null && msg.timestamp !== undefined) && (relativeTimeMs !== null && relativeTimeMs !== undefined) ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
 
   const topRight =
     displayMode === 'duty' ? (
-      timeDistance != null ? (
+      (timeDistance !== null && timeDistance !== undefined) ? (
         <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
             {timeDistance}

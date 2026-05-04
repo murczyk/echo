@@ -154,7 +154,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
   useEffect(() => {
     const onSettingsUpdated = (event: Event) => {
       const detail = (event as CustomEvent<{ disableAutoScroll?: boolean }>).detail;
-      if (detail?.disableAutoScroll == null) return;
+      if ((detail?.disableAutoScroll === null || detail?.disableAutoScroll === undefined)) return;
       setDutyDisableAutoScroll(detail.disableAutoScroll);
     };
 
@@ -253,13 +253,13 @@ export function useRerDutyFeeds(authUserName: string | null) {
       if (enrichedCallsignsRef.current.has(callsign)) return;
       if (loadingCallsignsRef.current.has(callsign)) return;
       const retryAtMs = emptyResultRetryAfterMsRef.current.get(callsign);
-      if (retryAtMs == null || retryAtMs <= nowMs) return;
-      if (nextRetryAtMs == null || retryAtMs < nextRetryAtMs) {
+      if ((retryAtMs === null || retryAtMs === undefined) || retryAtMs <= nowMs) return;
+      if ((nextRetryAtMs === null || nextRetryAtMs === undefined) || retryAtMs < nextRetryAtMs) {
         nextRetryAtMs = retryAtMs;
       }
     });
 
-    if (nextRetryAtMs == null) return;
+    if ((nextRetryAtMs === null || nextRetryAtMs === undefined)) return;
 
     callsignRetryTimeoutRef.current = setTimeout(() => {
       callsignRetryTimeoutRef.current = null;

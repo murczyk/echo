@@ -5,8 +5,18 @@ import utc from 'dayjs/plugin/utc';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+export function isNullOrUndefined<T>(value: T | null | undefined): value is null | undefined {
+  return value === null || value === undefined;
+}
+
+export const isNullish = isNullOrUndefined;
+
+export function isPresent<T>(value: T | null | undefined): value is T {
+  return !isNullOrUndefined(value);
+}
+
 export function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
-  if (arr == null) return null;
+  if (isNullOrUndefined(arr)) return null;
   if (Array.isArray(arr) && arr.length === 0) return null;
   return arr;
 }
@@ -52,14 +62,14 @@ export function objectsEqual(obj1: { [key: string]: any }, obj2: { [key: string]
 }
 
 export function formatDate(value: number | null | undefined, timeFormat?: Intl.DateTimeFormatOptions): string {
-  if (!value) return '—';
+  if (isNullOrUndefined(value)) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleDateString('uk-UA', timeFormat);
 }
 
 export function formatDateTime24(value: number | null | undefined): string {
-  if (!value) return '—';
+  if (isNullOrUndefined(value)) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString('uk-UA', {

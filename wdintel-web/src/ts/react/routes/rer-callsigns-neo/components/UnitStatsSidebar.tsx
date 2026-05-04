@@ -283,7 +283,7 @@ function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter
   }
 
   const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>((lastIndex, key, index) => (
-    selectedUnitFilter.hierarchy[key] != null ? index : lastIndex
+    (selectedUnitFilter.hierarchy[key] !== null && selectedUnitFilter.hierarchy[key] !== undefined) ? index : lastIndex
   ), -1);
   const hierarchyLabel = deepestLevelIndex >= 0 ? HIERARCHY_LABELS[deepestLevelIndex] : 'Підрозділ';
 

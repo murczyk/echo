@@ -418,7 +418,7 @@ export function useAnalysisData({
 
   const loadAllMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, optionsFreqValues);
-    if (inboxReq == null) return;
+    if ((inboxReq === null || inboxReq === undefined)) return;
 
     setMessagesPaging(true);
     try {
@@ -441,7 +441,7 @@ export function useAnalysisData({
   const loadMoreMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, optionsFreqValues);
     const lastMessage = messages.at(-1);
-    if (inboxReq == null || lastMessage == null) return;
+    if ((inboxReq === null || inboxReq === undefined) || (lastMessage === null || lastMessage === undefined)) return;
 
     const requestId = loadMoreMessagesRequestRef.current + 1;
     loadMoreMessagesRequestRef.current = requestId;
