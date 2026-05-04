@@ -3,11 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import {
+  downloadAnalysisGeojson,
+  downloadAnalysisKmz,
   downloadAnalysisSummaryTableXlsx,
   downloadAnalysisReportTaskResult,
   fetchAnalysisReportTaskStatus,
   launchAnalysisReportTask,
 } from '../../services/api/analysis';
+import { HttpRequestError } from '../../services/api/client';
 import { downloadBlob } from '../../utils/download-blob';
 import {
   buildReportFilename,
@@ -41,12 +44,18 @@ type Result = {
   updateReport: (patch: Partial<AnalysisReportState>) => void;
 };
 
-let reportTaskRunsMemory: AnalysisReportTaskRun[] = [];
-let reportProgressExpandedMemory = true;
-let reportTaskRunCounter = 0;
-const reportTaskRunStatesMemory: Record<number, AnalysisReportState> = {};
+type ReportRunSnapshot = {
+  analysisReq: AnalysisStatsReq | null;
+  fromDateTimeStr: string;
+  inboxReq: InboxMessagesReq | null;
+  report: AnalysisReportState;
+  toDateTimeStr: string;
+};
 
 function toErrorMessage(error: unknown): string {
+  if (error instanceof HttpRequestError && error.status === 403) {
+    return 'Недостатньо прав для формування цього звіту.';
+  }
   if (error instanceof Error) return normalizeReportTaskError(error.message);
   return 'Сталася помилка під час формування звіту.';
 }
@@ -84,7 +93,7 @@ function parseLastProgress(logs: string[]): { curr: number; overall: number } {
       return { curr, overall };
     }
   }
-  return { curr: 1, overall: 100 };
+  return { curr: 1, overall: 4 };
 }
 
 export function useAnalysisReport({
@@ -97,10 +106,13 @@ export function useAnalysisReport({
 }: Props): Result {
   const [report, setReport] = useState(createDefaultReportState);
   const [reportDownloadInFlight, setReportDownloadInFlight] = useState(false);
-  const [reportProgressExpanded, setReportProgressExpandedState] = useState(reportProgressExpandedMemory);
-  const [reportTaskRuns, setReportTaskRuns] = useState<AnalysisReportTaskRun[]>(reportTaskRunsMemory);
+  const [reportProgressExpanded, setReportProgressExpandedState] = useState(true);
+  const [reportTaskRuns, setReportTaskRunsState] = useState<AnalysisReportTaskRun[]>([]);
   const isMountedRef = useRef(true);
   const runSessionRef = useRef(0);
+  const reportTaskRunCounterRef = useRef(0);
+  const reportTaskRunSnapshotsRef = useRef<Record<number, ReportRunSnapshot>>({});
+  const reportTaskRunsRef = useRef<AnalysisReportTaskRun[]>([]);
 
   useEffect(() => {
     return () => {
@@ -111,9 +123,9 @@ export function useAnalysisReport({
 
   const updateReportTaskRuns = useCallback(
     (updater: (current: AnalysisReportTaskRun[]) => AnalysisReportTaskRun[]) => {
-      setReportTaskRuns((current) => {
+      setReportTaskRunsState((current) => {
         const next = updater(current);
-        reportTaskRunsMemory = next;
+        reportTaskRunsRef.current = next;
         return next;
       });
     },
@@ -134,9 +146,9 @@ export function useAnalysisReport({
           : run,
       );
 
-    reportTaskRunsMemory = updater(reportTaskRunsMemory);
+    reportTaskRunsRef.current = updater(reportTaskRunsRef.current);
     if (isMountedRef.current) {
-      setReportTaskRuns((current) => updater(current));
+      setReportTaskRunsState((current) => updater(current));
     }
   }, []);
 
@@ -156,7 +168,6 @@ export function useAnalysisReport({
   );
 
   const setReportProgressExpanded = useCallback((expanded: boolean) => {
-    reportProgressExpandedMemory = expanded;
     setReportProgressExpandedState(expanded);
   }, []);
 
@@ -165,13 +176,20 @@ export function useAnalysisReport({
   }, []);
 
   const runReportDownload = useCallback(
-    async (state: AnalysisReportState) => {
+    async (state: AnalysisReportState, snapshot?: ReportRunSnapshot) => {
+      const runSnapshot: ReportRunSnapshot = snapshot ?? {
+        analysisReq,
+        fromDateTimeStr,
+        inboxReq,
+        report: state,
+        toDateTimeStr,
+      };
       const sessionId = runSessionRef.current + 1;
       runSessionRef.current = sessionId;
       const shouldStopRun = () => !isMountedRef.current || runSessionRef.current !== sessionId;
 
-      if (state.template === 'summary_table') {
-        if (isNullOrUndefined(analysisReq)) {
+      if (state.template === 'summary_table' || state.template === 'kmz' || state.template === 'geojson') {
+        if (isNullOrUndefined(runSnapshot.analysisReq)) {
           onError('Перевірте дату та час перед експортом.');
           return;
         }
@@ -179,11 +197,16 @@ export function useAnalysisReport({
         setReportDownloadInFlight(true);
         onError('');
         try {
-          const blob = await downloadAnalysisSummaryTableXlsx(analysisReq);
+          const blob =
+            state.template === 'summary_table'
+              ? await downloadAnalysisSummaryTableXlsx(runSnapshot.analysisReq)
+              : state.template === 'kmz'
+                ? await downloadAnalysisKmz(runSnapshot.analysisReq)
+                : await downloadAnalysisGeojson(runSnapshot.analysisReq);
           if (shouldStopRun()) {
             return;
           }
-          downloadBlob(blob, buildReportFilename(state, fromDateTimeStr, toDateTimeStr));
+          downloadBlob(blob, buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr));
         } catch (error) {
           if (isMountedRef.current && !onUnauthorized(error)) {
             onError(toErrorMessage(error));
@@ -196,7 +219,7 @@ export function useAnalysisReport({
         return;
       }
 
-      if (isNullOrUndefined(inboxReq)) {
+      if (isNullOrUndefined(runSnapshot.inboxReq)) {
         onError('Перевірте дату та час перед експортом.');
         return;
       }
@@ -206,13 +229,16 @@ export function useAnalysisReport({
       setReportProgressExpanded(true);
       let runId: number | null = null;
       try {
-        const reportName = buildReportFilename(state, fromDateTimeStr, toDateTimeStr);
+        const reportName = buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr);
         const reportTitle = reportTemplateToUiTitle(state);
         const headerTitle = `Звіт ${reportTitle}: ${reportName}`;
-        reportTaskRunCounter += 1;
-        const currentRunId = reportTaskRunCounter;
+        reportTaskRunCounterRef.current += 1;
+        const currentRunId = reportTaskRunCounterRef.current;
         runId = currentRunId;
-        reportTaskRunStatesMemory[currentRunId] = { ...state };
+        reportTaskRunSnapshotsRef.current[currentRunId] = {
+          ...runSnapshot,
+          report: { ...state },
+        };
         updateReportTaskRuns((current) => [
           ...current,
           {
@@ -232,7 +258,7 @@ export function useAnalysisReport({
           },
         ]);
 
-        const taskId = await launchAnalysisReportTask(buildReportRequest(state, inboxReq));
+        const taskId = await launchAnalysisReportTask(buildReportRequest(state, runSnapshot.inboxReq));
         if (shouldStopRun()) {
           finalizeAbortedReportTaskRun(runId);
           return;
@@ -290,7 +316,7 @@ export function useAnalysisReport({
           finalizeAbortedReportTaskRun(runId);
           return;
         }
-        downloadBlob(blob, buildReportFilename(state, fromDateTimeStr, toDateTimeStr));
+        downloadBlob(blob, buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr));
         setReportProgressExpanded(false);
       } catch (error) {
         if (isMountedRef.current && !onUnauthorized(error)) {
@@ -313,10 +339,10 @@ export function useAnalysisReport({
 
   const repeatReportTaskRun = useCallback(
     async (id: number) => {
-      const reportState = reportTaskRunStatesMemory[id];
-      if (isNullOrUndefined(reportState)) return;
-      setReport((current) => ({ ...current, ...reportState, open: true }));
-      await runReportDownload(reportState);
+      const snapshot = reportTaskRunSnapshotsRef.current[id];
+      if (isNullOrUndefined(snapshot)) return;
+      setReport((current) => ({ ...current, ...snapshot.report, open: true }));
+      await runReportDownload(snapshot.report, snapshot);
     },
     [runReportDownload],
   );

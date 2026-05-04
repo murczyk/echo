@@ -7,6 +7,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Box,
   Button,
   Checkbox,
   CircularProgress,
@@ -15,12 +16,13 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
-  FormControlLabel,
   InputLabel,
   ListItemText,
   LinearProgress,
   MenuItem,
   Select,
+  Tab,
+  Tabs,
   Stack,
   Typography,
 } from '@mui/material';
@@ -28,10 +30,13 @@ import { useId } from 'react';
 
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import {
+  describeAppliedReportFilters,
   REPORT_ADJACENT_FREQS_OPTIONS,
   type AnalysisReportState,
   type ReportTemplateId,
+  reportTemplateToMode,
 } from '../report-helpers';
+import type { AnalysisQueryState } from '../types';
 import type { AnalysisAorEntry, AnalysisReportTaskRun } from '../types';
 
 type Props = {
@@ -41,6 +46,7 @@ type Props = {
   taskRuns: AnalysisReportTaskRun[];
   open: boolean;
   report: AnalysisReportState;
+  queryState: AnalysisQueryState;
   onClose: () => void;
   onDownload: () => void;
   onRepeatTaskRun: (id: number) => Promise<void>;
@@ -83,19 +89,79 @@ function getStageStatus(run: AnalysisReportTaskRun, stageIndex: number): StageSt
   return 'success';
 }
 
-const templateOptions: Array<{ id: ReportTemplateId; title: string; description: string }> = [
+function formatRunStartedAt(iso: string): string {
+  return new Intl.DateTimeFormat('uk-UA', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(iso));
+}
+
+const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; description: string }> = [
   { id: 'tags', title: 'З донесенням', description: 'Простий перелік повідомлень разом з їх донесенням' },
   { id: 'pelengs', title: 'Пеленги', description: 'Таблиця з пеленгами' },
   { id: 'babak', title: 'Бабак', description: 'Детальний звіт по підрозділах' },
   { id: 'interception', title: 'Перехоплення', description: 'Звіт по перехопленнях' },
   { id: 'senders', title: 'Відправники', description: 'Аналіз відправників або постів' },
-  { id: 'posts_docx', title: 'Пости', description: 'Docx-звіт з узагальненими метриками по постах' },
+  { id: 'posts_docx', title: 'Пости', description: 'Узагальнені метрики по постах' },
   { id: 'mouse', title: 'Мишка', description: 'Детальний почастотний звіт по привʼязках' },
-  { id: 'reo', title: 'РЕО', description: 'Потрібні права редактора чи адміна' },
-  { id: 'digest', title: 'Дайджест', description: 'Потрібні права редактора чи адміна' },
-  { id: 'active_networks', title: 'Активні радіомережі', description: 'Потрібні права редактора чи адміна' },
-  { id: 'summary_table', title: 'Підсумкова таблиця', description: 'XLSX-експорт підсумкової таблиці без обмеження в 1 тиждень' },
+  { id: 'reo', title: 'РЕО', description: 'Доступно лише для розширених ролей звітів' },
+  { id: 'digest', title: 'Дайджест', description: 'Доступно лише для розширених ролей звітів' },
+  { id: 'active_networks', title: 'Активні радіомережі', description: 'Доступно лише для розширених ролей звітів' },
 ];
+
+const exportTemplateOptions: Array<{ id: ReportTemplateId; title: string; description: string }> = [
+  { id: 'summary_table', title: 'Підсумкова таблиця', description: 'Частоти, позивні, підрозділи, останні перехоплення й мережі' },
+  { id: 'kmz', title: 'KMZ', description: 'Точки повідомлень з частотою, координатами й коментарями' },
+  { id: 'geojson', title: 'GeoJSON', description: 'Точки повідомлень з частотою, координатами, мережами й коментарями' },
+];
+
+const checkboxLabelSx = {
+  display: 'inline-flex',
+  width: 'fit-content',
+  maxWidth: '100%',
+  alignSelf: 'flex-start',
+  alignItems: 'center',
+  gap: 1,
+  flexShrink: 0,
+  whiteSpace: 'nowrap',
+  cursor: 'pointer',
+};
+
+function ReportCheckboxLabel({
+  checked,
+  disabled = false,
+  label,
+  onChange,
+  sx,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+  sx?: object;
+}) {
+  return (
+    <Box
+      component="label"
+      sx={{
+        ...checkboxLabelSx,
+        ...(sx ?? {}),
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onChange={(_event, value) => onChange(value)}
+        sx={{ p: 0.5 }}
+      />
+      <Typography component="span" sx={{ whiteSpace: 'nowrap' }}>
+        {label}
+      </Typography>
+    </Box>
+  );
+}
 
 export function AnalysisReportDialog({
   aors,
@@ -104,6 +170,7 @@ export function AnalysisReportDialog({
   taskRuns,
   open,
   report,
+  queryState,
   onClose,
   onDownload,
   onRepeatTaskRun,
@@ -112,41 +179,87 @@ export function AnalysisReportDialog({
   onUpdate,
 }: Props) {
   const titleId = useId().replace(/:/g, '-');
+  const appliedFilters = describeAppliedReportFilters(queryState, report);
+  const builderMode = reportTemplateToMode(report.template);
+  const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
+  const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
+  const showReportTagsOnlyThisUnit = ['tags', 'pelengs', 'babak', 'interception', 'posts_docx', 'mouse', 'reo'].includes(report.template);
   const latestTaskRun = taskRuns.length > 0 ? taskRuns[taskRuns.length - 1] : null;
   const latestTaskRunDone = latestTaskRun != null && !latestTaskRun.running;
   const latestTaskRunCancelled = latestTaskRunDone && latestTaskRun?.cancelled === true;
   const latestTaskRunSuccess = latestTaskRunDone && !latestTaskRunCancelled && latestTaskRun.error == null;
   const historyTaskRuns = taskRuns.length > 1 ? taskRuns.slice(0, -1) : [];
+  const downloadButtonLabel =
+    builderMode === 'exports'
+      ? 'Завантажити'
+      : report.template === 'summary_table'
+        ? 'Завантажити xlsx'
+      : report.template === 'kmz'
+        ? 'Завантажити KMZ'
+        : report.template === 'geojson'
+          ? 'Завантажити GeoJSON'
+          : 'Завантажити docx/xlsx';
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" aria-labelledby={titleId}>
       <DialogTitle id={titleId}>Конструктор звітів</DialogTitle>
-      <DialogContent dividers>
+      <DialogContent dividers sx={{ pt: 0 }}>
         <Stack spacing={3}>
           <Stack spacing={1.5}>
-            <Typography variant="subtitle1">Шаблон</Typography>
-            <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
-              {templateOptions.map((option) => (
-                <Button
-                  key={option.id}
-                  variant={report.template === option.id ? 'contained' : 'outlined'}
-                  onClick={() => onUpdate({ template: option.id })}
-                  sx={{ alignItems: 'flex-start', justifyContent: 'flex-start', textAlign: 'left', p: 2, minWidth: 220 }}
-                >
-                  <Stack alignItems="flex-start" spacing={0.75}>
-                    <Typography variant="subtitle2">{option.title}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {option.description}
-                    </Typography>
-                  </Stack>
-                </Button>
-              ))}
-            </Stack>
+            <Tabs
+              value={builderMode}
+              onChange={(_event, value) => onUpdate({ template: value === 'exports' ? 'summary_table' : 'tags' })}
+              variant="scrollable"
+              allowScrollButtonsMobile
+            >
+              <Tab value="reports" label="Звіти" />
+              <Tab value="exports" label="Експорт" />
+            </Tabs>
+
+            {builderMode === 'reports' ? (
+              <Stack spacing={1}>
+                <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
+                  {reportTemplateOptions.map((option) => (
+                    <Button
+                      key={option.id}
+                      variant={report.template === option.id ? 'contained' : 'outlined'}
+                      onClick={() => onUpdate({ template: option.id })}
+                      sx={{ alignItems: 'flex-start', justifyContent: 'flex-start', textAlign: 'left', p: 2, minWidth: 0, width: 'fit-content' }}
+                    >
+                      <Stack alignItems="flex-start" spacing={0.75}>
+                        <Typography variant="subtitle2">{option.title}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {option.description}
+                        </Typography>
+                      </Stack>
+                    </Button>
+                  ))}
+                </Stack>
+              </Stack>
+            ) : (
+              <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
+                {exportTemplateOptions.map((option) => (
+                  <Button
+                    key={option.id}
+                    variant={report.template === option.id ? 'contained' : 'outlined'}
+                    onClick={() => onUpdate({ template: option.id })}
+                    sx={{ alignItems: 'flex-start', justifyContent: 'flex-start', textAlign: 'left', p: 2, minWidth: 0, width: 'fit-content' }}
+                  >
+                    <Stack alignItems="flex-start" spacing={0.75}>
+                      <Typography variant="subtitle2">{option.title}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {option.description}
+                      </Typography>
+                    </Stack>
+                  </Button>
+                ))}
+              </Stack>
+            )}
           </Stack>
 
           {report.template === 'senders' ? (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <FormControl fullWidth size="small">
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap">
+              <FormControl size="small" sx={{ flex: '1 1 240px', maxWidth: 300, minWidth: 220 }}>
                 <InputLabel id="analysis-report-aggregation-label">Агрегація</InputLabel>
                 <Select
                   labelId="analysis-report-aggregation-label"
@@ -158,16 +271,17 @@ export function AnalysisReportDialog({
                   <MenuItem value="ByPost">Пости</MenuItem>
                 </Select>
               </FormControl>
-              <FormControlLabel
-                control={<Checkbox checked={report.senderAdvancedFreqs} onChange={(_event, value) => onUpdate({ senderAdvancedFreqs: value })} />}
+              <ReportCheckboxLabel
+                checked={report.senderAdvancedFreqs}
                 label="Розширений звіт"
+                onChange={(value) => onUpdate({ senderAdvancedFreqs: value })}
               />
             </Stack>
           ) : null}
 
           {report.template === 'reo' ? (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <FormControl fullWidth size="small">
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap">
+              <FormControl size="small" sx={{ flex: '1 1 180px', maxWidth: 240, minWidth: 180 }}>
                 <InputLabel id="analysis-report-reo-adjacent-label">Суміжні частоти</InputLabel>
                 <Select
                   labelId="analysis-report-reo-adjacent-label"
@@ -182,7 +296,7 @@ export function AnalysisReportDialog({
                   ))}
                 </Select>
               </FormControl>
-              <FormControl fullWidth size="small">
+              <FormControl size="small" sx={{ flex: '1 1 180px', maxWidth: 220, minWidth: 180 }}>
                 <InputLabel id="analysis-report-reo-file-label">Формат</InputLabel>
                 <Select
                   labelId="analysis-report-reo-file-label"
@@ -194,105 +308,142 @@ export function AnalysisReportDialog({
                   <MenuItem value="Xlsx">xlsx</MenuItem>
                 </Select>
               </FormControl>
-              <FormControlLabel
-                control={<Checkbox checked={report.reoNoComments} onChange={(_event, value) => onUpdate({ reoNoComments: value })} />}
-                label="Без коментарів"
-              />
+              <ReportCheckboxLabel checked={report.reoNoComments} label="Без коментарів" onChange={(value) => onUpdate({ reoNoComments: value })} />
             </Stack>
           ) : null}
 
           {report.template === 'active_networks' ? (
-            <FormControl fullWidth size="small">
-              <InputLabel id="analysis-report-aors-label">Смуги відповідальності</InputLabel>
-              <Select
-                labelId="analysis-report-aors-label"
-                label="Смуги відповідальності"
-                multiple
-                value={report.activeNetworksAorIds.map(String)}
-                onChange={(event) =>
-                  onUpdate({ activeNetworksAorIds: (event.target.value as string[]).map((value) => Number(value)).filter(Number.isFinite) })
-                }
-                renderValue={(selected) =>
-                  (selected as string[])
-                    .map((value) => aors.find((aor) => aor.id === Number(value))?.name ?? value)
-                    .join(', ')
-                }
-              >
-                {aors.map((aor) => (
-                  <MenuItem key={aor.id} value={String(aor.id)}>
-                    <Checkbox checked={report.activeNetworksAorIds.includes(aor.id)} />
-                    <ListItemText primary={aor.name} />
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          ) : null}
-
-          {['tags', 'pelengs', 'babak', 'interception', 'posts_docx', 'mouse', 'reo'].includes(report.template) ? (
-            <Stack spacing={0.5}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={report.reportTagsOnlyThisUnit}
-                    disabled={report.template === 'babak' && report.withoutComments}
-                    onChange={(_event, value) => onUpdate({ reportTagsOnlyThisUnit: value })}
-                  />
-                }
-                label="Лише теги/коментарі мого підрозділу"
-              />
-              {report.template === 'babak' ? (
-                <FormControlLabel
-                  control={<Checkbox checked={report.withoutComments} onChange={(_event, value) => onUpdate({ withoutComments: value, reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit })} />}
-                  label="Не включати коментарі"
-                />
-              ) : null}
+            <Stack spacing={0.75}>
+              <FormControl size="small" sx={{ maxWidth: 320 }}>
+                <InputLabel id="analysis-report-aors-label">Смуги відповідальності</InputLabel>
+                <Select
+                  labelId="analysis-report-aors-label"
+                  label="Смуги відповідальності"
+                  multiple
+                  value={report.activeNetworksAorIds.map(String)}
+                  onChange={(event) =>
+                    onUpdate({ activeNetworksAorIds: (event.target.value as string[]).map((value) => Number(value)).filter(Number.isFinite) })
+                  }
+                  renderValue={(selected) =>
+                    (selected as string[])
+                      .map((value) => aors.find((aor) => aor.id === Number(value))?.name ?? value)
+                      .join(', ')
+                  }
+                >
+                  {aors.map((aor) => (
+                    <MenuItem key={aor.id} value={String(aor.id)}>
+                      <Checkbox checked={report.activeNetworksAorIds.includes(aor.id)} />
+                      <ListItemText primary={aor.name} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {appliedFilters.inPlaceHints.map((hint) => (
+                <Typography key={hint} variant="caption" color="text.secondary">
+                  {hint}
+                </Typography>
+              ))}
             </Stack>
           ) : null}
 
-          {['babak', 'interception'].includes(report.template) ? (
-            <FormControlLabel
-              control={<Checkbox checked={report.withoutModelTags} onChange={(_event, value) => onUpdate({ withoutModelTags: value })} />}
-              label="Без автоматичних тегів"
-            />
+          {showReportTagsOnlyThisUnit ? (
+            isBabakOrInterception ? (
+              <Stack spacing={0.5}>
+                <ReportCheckboxLabel
+                  checked={report.reportTagsOnlyThisUnit}
+                  disabled={disableBabakUnitCommentsFilter}
+                  label="Лише теги/коментарі мого підрозділу"
+                  onChange={(value) => onUpdate({ reportTagsOnlyThisUnit: value })}
+                  sx={{
+                    opacity: disableBabakUnitCommentsFilter ? 0.5 : 1,
+                  }}
+                />
+                {(() => {
+                  const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Лише для цього звіту'));
+                  return hint ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4.5 }}>
+                      {hint}
+                    </Typography>
+                  ) : null;
+                })()}
+                {report.template === 'babak' ? (
+                  <ReportCheckboxLabel
+                    checked={report.withoutComments}
+                    label="Не включати коментарі"
+                    onChange={(value) => onUpdate({ withoutComments: value, reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit })}
+                  />
+                ) : null}
+                <ReportCheckboxLabel
+                  checked={report.withoutModelTags}
+                  label="Без автоматичних тегів"
+                  onChange={(value) => onUpdate({ withoutModelTags: value })}
+                />
+                {(() => {
+                  const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Без автоматичних тегів'));
+                  return hint ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4.5 }}>
+                      {hint}
+                    </Typography>
+                  ) : null;
+                })()}
+              </Stack>
+            ) : (
+              <Stack spacing={0.5}>
+                <ReportCheckboxLabel
+                  checked={report.reportTagsOnlyThisUnit}
+                  label="Лише теги/коментарі мого підрозділу"
+                  onChange={(value) => onUpdate({ reportTagsOnlyThisUnit: value })}
+                />
+                {(() => {
+                  const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Лише для цього звіту'));
+                  return hint ? (
+                    <Typography variant="caption" color="text.secondary">
+                      {hint}
+                    </Typography>
+                  ) : null;
+                })()}
+              </Stack>
+            )
           ) : null}
 
           {latestTaskRun != null ? (
-            <Stack spacing={1.25}>
-              <Typography variant="subtitle1">{latestTaskRunSuccess ? 'Сформовано' : latestTaskRunCancelled ? 'Скасовано' : 'Прогрес формування'}</Typography>
+            <Stack spacing={1}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: 600 }}>
+                  {latestTaskRun.reportName}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    flexShrink: 0,
+                    color: latestTaskRun.error ? 'error.main' : latestTaskRunCancelled ? 'warning.main' : latestTaskRunSuccess ? 'success.main' : 'text.secondary',
+                  }}
+                >
+                  {latestTaskRun.error ? 'Помилка' : latestTaskRunCancelled ? 'Скасовано' : latestTaskRun.running ? 'Формується…' : 'Готово'}
+                </Typography>
+              </Stack>
               <LinearProgress
                 variant="determinate"
                 color={latestTaskRun.error ? 'error' : latestTaskRunCancelled ? 'warning' : latestTaskRunSuccess ? 'success' : 'primary'}
                 value={Math.max(1, Math.min(100, Math.round((latestTaskRun.curr / Math.max(1, latestTaskRun.overall)) * 100)))}
-                sx={
-                  latestTaskRun.running
-                    ? {
-                        '& .MuiLinearProgress-bar': {
-                          backgroundImage: 'linear-gradient(90deg, #42a500, #66bb6a, #42a5f5)',
-                          backgroundSize: '200% 100%',
-                          animation: 'analysis-report-shimmer 1s linear infinite',
-                        },
-                        '@keyframes analysis-report-shimmer': {
-                          '0%': { backgroundPosition: '200% 0' },
-                          '100%': { backgroundPosition: '-200% 0' },
-                        },
-                      }
-                    : undefined
-                }
+                sx={latestTaskRun.running ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
               />
-              <Typography variant="body2" color="text.secondary">
-                {latestTaskRun.curr} / {latestTaskRun.overall}
-              </Typography>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                <Typography variant="body2" color="text.secondary">
+                  {latestTaskRun.curr} / {latestTaskRun.overall}
+                </Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Button size="small" onClick={() => void onRepeatTaskRun(latestTaskRun.id)} disabled={downloadInFlight || latestTaskRun.running}>
+                    Сформувати повторно
+                  </Button>
+                  <Button size="small" onClick={() => onSetProgressExpanded(!progressExpanded)}>
+                    {progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
+                  </Button>
+                </Stack>
+              </Stack>
               {latestTaskRun.error ? <Alert severity="error">{latestTaskRun.error}</Alert> : null}
-              {progressExpanded ? (
+                  {progressExpanded ? (
                 <Stack spacing={1}>
-                  {latestTaskRunDone ? (
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <Button size="small" onClick={() => onSetProgressExpanded(false)}>
-                        Згорнути звіти
-                      </Button>
-                    </Stack>
-                  ) : null}
-
                   {[latestTaskRun, ...historyTaskRuns.slice().reverse()].map((run) => {
                     const stages = extractStages(run.logs);
                     return (
@@ -302,12 +453,18 @@ export function AnalysisReportDialog({
                         elevation={0}
                         expanded={run.expanded}
                         onChange={(_event, expanded) => onToggleTaskRunLogs(run.id, expanded)}
+                        sx={{ '&:before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 1 }}
                       >
-                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 44, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
                           <Stack width="100%" direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                              {run.headerTitle}
-                            </Typography>
+                            <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                                {run.reportTitle}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {formatRunStartedAt(run.startedAt)}
+                              </Typography>
+                            </Stack>
                             <Typography variant="caption" color={run.error ? 'error.main' : run.cancelled ? 'warning.main' : run.running ? 'warning.main' : 'success.main'}>
                               {run.error ? 'Помилка' : run.cancelled ? 'Скасовано' : run.running ? 'Формується…' : 'Успішно'}
                             </Typography>
@@ -352,30 +509,29 @@ export function AnalysisReportDialog({
                     );
                   })}
                 </Stack>
-              ) : (
-                <Stack spacing={1}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {latestTaskRun.headerTitle}
-                  </Typography>
-                  <Stack direction="row" spacing={1}>
-                    <Button size="small" onClick={() => onSetProgressExpanded(true)}>
-                      Попередні звіти
-                    </Button>
-                    <Button size="small" onClick={() => void onRepeatTaskRun(latestTaskRun.id)} disabled={downloadInFlight || latestTaskRun.running}>
-                      Сформувати повторно
-                    </Button>
-                  </Stack>
-                </Stack>
-              )}
+              ) : null}
             </Stack>
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={onClose}>Закрити</Button>
-        <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight}>
-          {downloadInFlight ? 'Готуємо...' : report.template === 'summary_table' ? 'Завантажити xlsx' : 'Завантажити docx/xlsx'}
-        </Button>
+      <DialogActions
+        sx={{
+          ...(STANDARD_DIALOG_ACTIONS_SX as Record<string, unknown>),
+          gap: 2,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <Typography variant="caption" color="text.secondary" sx={{ flex: '1 1 320px', minWidth: 0 }}>
+          {appliedFilters.globalHint}
+        </Typography>
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
+          <Button onClick={onClose}>Закрити</Button>
+          <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight}>
+            {downloadInFlight ? 'Готуємо...' : downloadButtonLabel}
+          </Button>
+        </Stack>
       </DialogActions>
     </Dialog>
   );

@@ -9,7 +9,7 @@
 
 ## NEXT
 
-- [#2289](https://github.com/echoua/echo/issues/2289) ✅ Звіти: прогрес-консоль
+- [#2289](https://github.com/echoua/echo/issues/2289) ✅ Звіти: прогрес-консоль.
 - [#2331](https://github.com/echoua/echo/issues/2331) 🐞 Оброблено не авторизовані запити на нових сторінках.
 - [#2292](https://github.com/echoua/echo/issues/2292) ✅ Оперативний (нова), Аналіз (нова): покращено UX/UI роботи зі збереженими фільтрами.
 - [#2309](https://github.com/echoua/echo/issues/2309) ✅ Оперативний (нова): збережені фільтри стали незалежними для кожної стрічки.
