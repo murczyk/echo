@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import type { CallsignInfoRes } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
@@ -18,7 +20,7 @@ function mergeDutyCallsignTextField(existing: string | null | undefined, incomin
 }
 
 export function mergeDutyCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {
-  if (current == null) return incoming;
+  if (isNullOrUndefined(current)) return incoming;
 
   const rowsById = new Map<number, CallsignInfoRes['res'][number]>();
   current.res.forEach((row) => {

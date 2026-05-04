@@ -1,5 +1,7 @@
 import type { InboxMessage } from '../../../../Bindings';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 
@@ -35,7 +37,7 @@ export function prepareQueuedMessageUpdate(
   updater: (message: InboxMessage) => InboxMessage,
 ): { currentMessage: InboxMessage | null; nextMessage: InboxMessage | null } {
   const currentMessage = draftMap.get(messageId) ?? messages.find(([id]) => id === messageId)?.[1] ?? null;
-  if (currentMessage == null) return { currentMessage: null, nextMessage: null };
+  if (isNullOrUndefined(currentMessage)) return { currentMessage: null, nextMessage: null };
   const nextMessage = updater(currentMessage);
   if (nextMessage !== currentMessage) {
     draftMap.set(messageId, nextMessage);
@@ -74,7 +76,7 @@ export function useAnalysisMessageEditor({
   const openEditor = useCallback(
     (messageId: number) => {
       const entry = messages.find(([id]) => id === messageId) ?? null;
-      if (entry == null) return;
+      if (isNullOrUndefined(entry)) return;
       setEditorMessage({ id: entry[0], message: entry[1] });
     },
     [messages],
@@ -93,7 +95,7 @@ export function useAnalysisMessageEditor({
           messageId,
           updater,
         );
-        if (currentMessage == null || nextMessage == null) return false;
+        if (isNullOrUndefined(currentMessage) || isNullOrUndefined(nextMessage)) return false;
         if (nextMessage === currentMessage) return true;
 
         onError('');
@@ -115,7 +117,7 @@ export function useAnalysisMessageEditor({
 
   const saveEditor = useCallback(
     async (message: InboxMessage) => {
-      if (editorMessage == null) return;
+      if (isNullOrUndefined(editorMessage)) return;
       setEditorSaveInFlight(true);
       try {
         const saved = await saveMessageUpdate(editorMessage.id, () => message);

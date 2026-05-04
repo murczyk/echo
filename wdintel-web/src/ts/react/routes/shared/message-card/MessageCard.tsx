@@ -6,6 +6,7 @@ import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit,
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
+import { isPresent } from '../../../utils/misc';
 import {
   buildAnalysisHref,
   buildAnalysisMapHrefWithSearch,
@@ -108,11 +109,11 @@ export function MessageCard({
     pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons, msg) : buildAnalysisHref(msg, true);
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
-    msg.timestamp != null && relativeTimeMs != null ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
+    isPresent(msg.timestamp) && isPresent(relativeTimeMs) ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
 
   const topRight =
     displayMode === 'duty' ? (
-      timeDistance != null ? (
+      isPresent(timeDistance) ? (
         <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
             {timeDistance}

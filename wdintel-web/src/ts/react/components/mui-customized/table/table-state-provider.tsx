@@ -3,8 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 
 import { useLocalStorage } from '../../../hooks/use-local-storage';
-import { objectsEqual, strArraysEqual } from '../../../utils/misc';
-
+import { isNullOrUndefined, isPresent, objectsEqual, strArraysEqual } from '../../../utils/misc';
 import {
   MRT_ColumnFiltersState,
   MRT_ColumnOrderState,
@@ -533,7 +532,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   const dateForRequest = isDateEqualToDefault ? undefined : date?.format('YYYY-MM-DD');
 
   function onTableInitialized(table: MRT_TableInstance<any>) {
-    if (tableInstanceRef.current == null) {
+    if (isNullOrUndefined(tableInstanceRef.current)) {
       tableInstanceRef.current = table;
       if (!tableInstanceReady) {
         setTableInstanceReady(true);
@@ -561,9 +560,9 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   useEffect(() => {
     const nextDate = parseDateFromSearchParams(searchParams, props.defaultDate);
     if (
-      (date == null && nextDate != null) ||
-      (date != null && nextDate == null) ||
-      (date != null && nextDate != null && !date.isSame(nextDate, 'date'))
+      (isNullOrUndefined(date) && isPresent(nextDate)) ||
+      (isPresent(date) && isNullOrUndefined(nextDate)) ||
+      (isPresent(date) && isPresent(nextDate) && !date.isSame(nextDate, 'date'))
     ) {
       setDate(nextDate);
     }

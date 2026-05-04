@@ -2,6 +2,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import EditIcon from '@mui/icons-material/Edit';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import MapIcon from '@mui/icons-material/Map';
+import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 import {
   Box,
   Button,
@@ -335,7 +336,7 @@ function AnalysisSummaryTableCardInner({
         </Box>
       </Box>
 
-      <Dialog open={renameDialog != null} onClose={closeRenameDialog}>
+      <Dialog open={isPresent(renameDialog)} onClose={closeRenameDialog}>
         <DialogTitle>Редагувати підрозділ</DialogTitle>
         <DialogContent>
           <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
@@ -377,7 +378,7 @@ function AnalysisSummaryTableCardInner({
           <Button onClick={closeRenameDialog} disabled={renameSaving}>
             Скасувати
           </Button>
-          <Button variant="contained" onClick={() => void saveRename()} disabled={renameDialog == null || renameSaving || renameValue.trim() === ''}>
+          <Button variant="contained" onClick={() => void saveRename()} disabled={isNullOrUndefined(renameDialog) || renameSaving || renameValue.trim() === ''}>
             Зберегти
           </Button>
         </DialogActions>

@@ -1,3 +1,4 @@
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import {
   Autocomplete,
   Box,
@@ -256,11 +257,11 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
   );
   const pendingGroupResyncRef = useRef<string | null>(null);
   const loadedSavedFilter =
-    selectedSavedId == null ? null : (savedFilterItems.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
+    isNullOrUndefined(selectedSavedId) ? null : (savedFilterItems.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
   const loadedFilterNormalized =
-    loadedSavedFilter == null ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>);
+    isNullOrUndefined(loadedSavedFilter) ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>);
   const isDirty =
-    loadedFilterNormalized != null &&
+    isPresent(loadedFilterNormalized) &&
     !(
       JSON.stringify(filterState.groupsSelected) === JSON.stringify(loadedFilterNormalized.groupsSelected ?? []) &&
       JSON.stringify(filterState.deniedGroups) === JSON.stringify(loadedFilterNormalized.groupsDenied ?? []) &&
@@ -340,8 +341,8 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
   useEffect(() => {
     const ids = localSenderValue.map((o) => o.id);
     const current = senderMode === 'include' ? filterState.sendersSelected : filterState.deniedSenders;
-    if (current == null && ids.length === 0) return;
-    if (current != null && current.length === ids.length && current.every((id, i) => id === ids[i])) return;
+    if (isNullOrUndefined(current) && ids.length === 0) return;
+    if (isPresent(current) && current.length === ids.length && current.every((id, i) => id === ids[i])) return;
     if (senderMode === 'include') onSendersChange(ids);
     else onDeniedSendersChange(ids);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localSenderValue so writeback runs after resync
@@ -349,8 +350,8 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
 
   useEffect(() => {
     const current = freqMode === 'include' ? filterState.freqsSelected : filterState.freqsDenied;
-    if (current == null && localFreqValue.length === 0) return;
-    if (current != null && current.length === localFreqValue.length && current.every((v, i) => v === localFreqValue[i]))
+    if (isNullOrUndefined(current) && localFreqValue.length === 0) return;
+    if (isPresent(current) && current.length === localFreqValue.length && current.every((v, i) => v === localFreqValue[i]))
       return;
     if (freqMode === 'include') onFreqsChange(localFreqValue);
     else onFreqsDeniedChange(localFreqValue);
@@ -359,8 +360,8 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
 
   useEffect(() => {
     const current = postMode === 'include' ? filterState.postsSelected : filterState.postsDenied;
-    if (current == null && localPostValue.length === 0) return;
-    if (current != null && current.length === localPostValue.length && current.every((v, i) => v === localPostValue[i]))
+    if (isNullOrUndefined(current) && localPostValue.length === 0) return;
+    if (isPresent(current) && current.length === localPostValue.length && current.every((v, i) => v === localPostValue[i]))
       return;
     if (postMode === 'include') onPostsChange?.(localPostValue);
     else onPostsDeniedChange?.(localPostValue);
@@ -407,7 +408,7 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
               value={groupMode}
               exclusive
               onChange={(_, v) => {
-                if (v == null) return;
+                if (isNullOrUndefined(v)) return;
                 setGroupMode(v);
                 setLocalGroupValue([]);
                 if (v === 'include') onDeniedGroupsChange([]);
@@ -453,7 +454,7 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
               value={senderMode}
               exclusive
               onChange={(_, v) => {
-                if (v == null) return;
+                if (isNullOrUndefined(v)) return;
                 setSenderMode(v);
                 setLocalSenderValue([]);
                 if (v === 'include') onDeniedSendersChange([]);
@@ -520,7 +521,7 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
               value={freqMode}
               exclusive
               onChange={(_, v) => {
-                if (v == null) return;
+                if (isNullOrUndefined(v)) return;
                 setFreqMode(v);
                 setLocalFreqValue([]);
                 if (v === 'include') onFreqsDeniedChange([]);
@@ -590,7 +591,7 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
               value={postMode}
               exclusive
               onChange={(_, v) => {
-                if (v == null) return;
+                if (isNullOrUndefined(v)) return;
                 setPostMode(v);
                 setLocalPostValue([]);
                 if (v === 'include') onPostsDeniedChange?.([]);
@@ -663,7 +664,7 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
             isDirty={isDirty}
             saveInFlight={saveInFlight}
             onApplySavedFilter={(saved) => {
-              if (saved == null) {
+              if (isNullOrUndefined(saved)) {
                 onSavedFilterSelect('');
                 return;
               }

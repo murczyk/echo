@@ -1,11 +1,12 @@
 import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, SyntheticEvent } from 'react';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 
 import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
-import { isUnauthorizedError } from '../../services/api/client';
 import { fetchServerInfo } from '../../services/api/server-info';
 import { fetchCurrentUser, saveUserSettings as saveAccountSettings } from '../../services/api/user';
 import {
@@ -86,7 +87,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
 
   useEffect(() => {
-    if (section == null) return;
+    if (isNullOrUndefined(section)) return;
     setSettingsSection(parseSettingsSection(section));
   }, [section]);
 
@@ -122,7 +123,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         setUserRoles(user.roles ?? []);
 
         setDutyPrefsLoadError(null);
-        if (prefsRsp == null) {
+        if (isNullOrUndefined(prefsRsp)) {
           setDutyPrefsLoadError('Не вдалося завантажити налаштування.');
           setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
           setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
@@ -148,10 +149,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         }
       } catch (error) {
         if (abortController.signal.aborted) return;
-        if (isUnauthorizedError(error)) {
-          window.location.assign('/login');
-          return;
-        }
         setLoadError(`Помилка завантаження налаштувань: ${formatErrorMessage(error)}`);
       } finally {
         if (abortController.signal.aborted) return;
@@ -183,7 +180,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     let shouldRetryPendingSave = true;
 
     try {
-      while (dutySavePendingRef.current != null) {
+      while (isPresent(dutySavePendingRef.current)) {
         const nextSettings = dutySavePendingRef.current;
         dutySavePendingRef.current = null;
 
@@ -193,11 +190,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           setInitialDutyDisableAutoScroll(nextSettings.disableAutoScroll);
           window.dispatchEvent(new CustomEvent(USER_SETTINGS_UPDATED_EVENT, { detail: nextSettings }));
         } catch (error) {
-          if (isUnauthorizedError(error)) {
-            shouldRetryPendingSave = false;
-            window.location.assign('/login');
-            return;
-          }
           setDutySaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
           break;
         }
@@ -205,7 +197,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     } finally {
       dutySaveRunningRef.current = false;
       // Retry any queued write after a transient failure; a newer payload may have arrived while the failed save was in flight.
-      if (shouldRetryPendingSave && dutySavePendingRef.current != null) {
+      if (shouldRetryPendingSave && isPresent(dutySavePendingRef.current)) {
         void flushDutySaveQueue();
       }
     }
@@ -225,10 +217,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       setInitialZoneId(zoneId);
       setSaveSuccess('Налаштування збережено');
     } catch (error) {
-      if (isUnauthorizedError(error)) {
-        window.location.assign('/login');
-        return;
-      }
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
     } finally {
       setSaveInProgress(false);

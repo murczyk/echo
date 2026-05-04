@@ -5,7 +5,6 @@ import type { FormEvent } from 'react';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
-import { isUnauthorizedError } from '../../services/api/client';
 import {
   createSystemSettings,
   listSystemSettings,
@@ -71,10 +70,6 @@ export function AdminSystemSettingsNeoPage() {
         setInitialDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
         setInitialDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
       } catch (error) {
-        if (isUnauthorizedError(error)) {
-          window.location.assign('/login');
-          return;
-        }
         setLoadError(
           `Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`,
         );
@@ -134,10 +129,6 @@ export function AdminSystemSettingsNeoPage() {
       setInitialDutyPollIntervalSec(pollIntervalSec);
       setSaveSuccess('Нове системне налаштування збережено.');
     } catch (error) {
-      if (isUnauthorizedError(error)) {
-        window.location.assign('/login');
-        return;
-      }
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
     } finally {
       setSaveInProgress(false);

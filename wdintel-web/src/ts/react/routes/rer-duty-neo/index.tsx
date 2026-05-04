@@ -1,6 +1,8 @@
 import { Box, ButtonBase, Fab, Paper, useMediaQuery, useTheme } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { setDutyNeoDocumentTitleUnreadCount, startDutyNeoDocumentTitleTracking } from './notifications';
@@ -260,7 +262,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       return;
     }
     setActiveFeedId((current) => {
-      const currentExists = current != null && messageFeeds.some((feed) => feed.id === current);
+      const currentExists = isPresent(current) && messageFeeds.some((feed) => feed.id === current);
       if (messageFeeds.length > previousFeedCountRef.current) {
         return messageFeeds[messageFeeds.length - 1].id;
       }
@@ -272,7 +274,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
   const dutyTabUnreadTotal = useMemo(() => feedsUnreadDisplayTotal(messageFeeds), [messageFeeds]);
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
-  const activeFeedIndex = activeFeedIdSafe == null ? -1 : messageFeeds.findIndex((feed) => feed.id === activeFeedIdSafe);
+  const activeFeedIndex = isNullOrUndefined(activeFeedIdSafe) ? -1 : messageFeeds.findIndex((feed) => feed.id === activeFeedIdSafe);
 
   useEffect(() => startDutyNeoDocumentTitleTracking(), []);
   useEffect(() => {
@@ -313,7 +315,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
           }}
         >
           <Box className="flex flex-1 min-w-0 min-h-0 flex-col gap-2">
-            {narrowScreen && messageFeeds.length > 1 && activeFeedIdSafe != null && (
+            {narrowScreen && messageFeeds.length > 1 && isPresent(activeFeedIdSafe) && (
               <Box
                 role="tablist"
                 aria-label="Потоки"
@@ -460,7 +462,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       </Box>
 
       <CommentDialog
-        open={commentMessageId != null}
+        open={isPresent(commentMessageId)}
         commentText={commentText}
         onCommentTextChange={setCommentText}
         onClose={() => {
@@ -471,7 +473,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       />
 
       <DeleteConfirmDialog
-        open={deleteConfirmId != null}
+        open={isPresent(deleteConfirmId)}
         onClose={() => {
           setDeleteConfirmId(null);
           setDeleteConfirmFeedId(null);

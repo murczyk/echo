@@ -1,3 +1,5 @@
+import { isNullOrUndefined } from './utils/misc';
+
 
 import { createRoot, Root } from 'react-dom/client';
 
@@ -7,7 +9,7 @@ import { RerAnalysisNeoPage } from './routes/rer-analysis-neo';
 function getAuthUserNameFromShell(el: Element): string | null {
   const shell = el.closest('.app-shell');
   const name = shell?.getAttribute('data-auth-user-name');
-  if (name == null || name === '' || name === 'anonymous') return null;
+  if (isNullOrUndefined(name) || name === '' || name === 'anonymous') return null;
   return name;
 }
 

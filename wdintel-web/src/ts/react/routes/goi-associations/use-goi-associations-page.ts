@@ -6,10 +6,7 @@ import {
 } from '../../../../Bindings';
 
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
-import {
-  HttpRequestError,
-  isUnauthorizedError,
-} from '../../services/api/client';
+import { HttpRequestError } from '../../services/api/client';
 import { listCurrentUserGoiAssociations } from '../../services/api/goi-associations';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -30,10 +27,6 @@ export type GoiAssociationRowView = GoiAssociation & {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function redirectToLogin() {
-  window.location.assign('/login');
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -202,10 +195,6 @@ export function useGoiAssociationsPage() {
         setNotice(null);
       } catch (error) {
         if (abortController.signal.aborted || isAbortError(error)) return;
-        if (isUnauthorizedError(error)) {
-          redirectToLogin();
-          return;
-        }
         const message = formatErrorMessage(error);
         if (hasExistingRows) {
           setNotice({ kind: 'error', text: message });
@@ -251,10 +240,6 @@ export function useGoiAssociationsPage() {
       setNotice(null);
     } catch (error) {
       if (abortController.signal.aborted || isAbortError(error)) return;
-      if (isUnauthorizedError(error)) {
-        redirectToLogin();
-        return;
-      }
       setNotice({ kind: 'error', text: formatErrorMessage(error) });
     } finally {
       if (loadMoreAbortControllerRef.current === abortController) {

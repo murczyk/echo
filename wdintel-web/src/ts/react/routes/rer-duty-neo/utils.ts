@@ -11,7 +11,7 @@ import type {
 import type { Network, Unit } from '../../../../Bindings';
 import type { RerAnalysisQueryState } from '../../../rer-analysis-query-state';
 import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-query-state';
-import { emptyArrToNull } from '../../utils/misc';
+import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 
 export type RerDutyState = {
@@ -60,8 +60,8 @@ export function emptyFilter(): RerDutyFeedFilterState {
 
 /** Distinguishes null/undefined from []. Backend treats None (no filter) vs Some([]) (empty filter → no rows) differently. */
 function optArrEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
-  if (a == null && b == null) return true;
-  if (a == null || b == null) return false;
+  if (isNullOrUndefined(a) && isNullOrUndefined(b)) return true;
+  if (isNullOrUndefined(a) || isNullOrUndefined(b)) return false;
   if (!Array.isArray(a) || !Array.isArray(b)) return false;
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
@@ -262,14 +262,14 @@ export function buildSenderOptions(
 }
 
 export function formatTime(time: string | null): string {
-  if (time == null || time === '') return '—';
+  if (isNullOrUndefined(time) || time === '') return '—';
   const parts = time.trim().split(':');
   if (parts.length >= 2) return `${parts[0]}:${parts[1]}`;
   return time;
 }
 
 export function formatDateNoYear(date: string | null): string {
-  if (date == null || date === '') return '—';
+  if (isNullOrUndefined(date) || date === '') return '—';
   const d = new Date(date.trim());
   if (Number.isNaN(d.getTime())) return date;
   const day = d.getDate();
@@ -285,12 +285,12 @@ export function etalonFallbackWhenNoNetworks(
   msg: InboxMessage,
   options?: { featureStrictNetworks?: boolean },
 ): string | null {
-  const hasFreq = msg.freq != null && String(msg.freq).trim() !== '';
+  const hasFreq = isPresent(msg.freq) && String(msg.freq).trim() !== '';
   if (!hasFreq) return null;
   const strict = options?.featureStrictNetworks ?? false;
   if (strict) return 'Не встановлена';
   const unit = msg.unit?.trim();
-  return unit != null && unit !== '' ? unit : 'Не встановлена';
+  return isPresent(unit) && unit !== '' ? unit : 'Не встановлена';
 }
 
 /** Relative time from event to now, same logic */
@@ -329,7 +329,7 @@ function rerAnalysisNeoQueryStateFromMessage(msg: InboxMessage, search: string):
   from.setDate(from.getDate() - 15);
   const to = new Date(now);
   to.setDate(to.getDate() + 1);
-  const freqStr = msg.freq != null ? String(msg.freq).trim() : '';
+  const freqStr = isPresent(msg.freq) ? String(msg.freq).trim() : '';
   const state: RerAnalysisQueryState = {
     // Neo deep links must use the combined datetime keys; the legacy split keys are no longer parsed.
     fromDateTimeStr: `${toDateStr(from)}T00:00`,
@@ -379,10 +379,10 @@ export function buildAnalysisMapHrefWithSearch(etalons: string | string[], msg?:
     ? uniquePointEtalonsForMapSearch(etalons).join(',')
     : String(etalons).trim();
   if (!searchStr) {
-    if (msg != null) return buildAnalysisHref(msg, true);
+    if (isPresent(msg)) return buildAnalysisHref(msg, true);
     return '/rer-analysis-neo?showMap=true';
   }
-  if (msg != null) {
+  if (isPresent(msg)) {
     return buildRerAnalysisNeoHref(rerAnalysisNeoQueryStateFromMessage(msg, searchStr), true);
   }
   return buildRerAnalysisNeoHref({ search: searchStr }, true);
@@ -399,17 +399,17 @@ export function messageHasPalitraTag(msg: InboxMessage, tagsMap: Record<number, 
 }
 
 export function getPointEtalonsFromMessage(msg: InboxMessage, tagsMap?: Record<number, Tag>): string[] {
-  if (tagsMap != null && !messageHasPalitraTag(msg, tagsMap)) {
+  if (isPresent(tagsMap) && !messageHasPalitraTag(msg, tagsMap)) {
     return [];
   }
   const fromTokens = (msg.pointTokens ?? [])
     .map((p) => p.etalon)
-    .filter((e) => e != null && String(e).trim() !== '');
+    .filter((e) => isPresent(e) && String(e).trim() !== '');
   if (fromTokens.length > 0) return uniquePointEtalonsForMapSearch(fromTokens.map(String));
   const nodes = msg.textMarked ?? [];
   const etalons: string[] = [];
   for (const n of nodes) {
-    if (typeof n !== 'string' && 'CNPointC' in n && (n as { CNPointC?: { etalon?: string } }).CNPointC?.etalon != null) {
+    if (typeof n !== 'string' && 'CNPointC' in n && isPresent((n as { CNPointC?: { etalon?: string } }).CNPointC?.etalon)) {
       const e = String((n as { CNPointC: { etalon: string } }).CNPointC.etalon).trim();
       if (e !== '') etalons.push(e);
     }

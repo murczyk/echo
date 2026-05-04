@@ -1,5 +1,6 @@
 import type { InboxMessage, PalitraReadV2, NetworkUnit } from '../../../../Bindings';
 import { transformCamelToSnake } from '../../../snake-to-camel';
+import { isNullOrUndefined } from '../../utils/misc';
 import type { AnalysisPalitrasLoadState } from './types';
 
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
@@ -16,7 +17,7 @@ function fallbackGeometryScopedId(palitraId: number): number {
 }
 
 function restoreContentNodeVariantKeys<T>(value: T): T {
-  if (value === null || value === undefined) return value;
+  if (isNullOrUndefined(value)) return value;
   if (Array.isArray(value)) {
     return value.map((item) => restoreContentNodeVariantKeys(item)) as T;
   }

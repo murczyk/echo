@@ -1,5 +1,7 @@
 import { Box, CircularProgress, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import type {
   AreaOfResponsibility,
@@ -7,7 +9,6 @@ import type {
 } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
-import { isUnauthorizedError } from '../../services/api/client';
 import { listAors, updateAorReportOrders } from '../../services/api/aor';
 
 type ReportsRow = {
@@ -89,10 +90,6 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
         setLoadStatus('ready');
       } catch (error) {
         if (abortController.signal.aborted) return;
-        if (isUnauthorizedError(error)) {
-          window.location.assign('/login');
-          return;
-        }
         setLoadError(`Помилка завантаження: ${formatErrorMessage(error)}`);
         setLoadStatus('error');
       }
@@ -105,7 +102,7 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
     };
   }, [active, canRead]);
 
-  const hasInvalidRows = rows.some((row) => parseOrderInput(row.orderInput) == null);
+  const hasInvalidRows = rows.some((row) => isNullOrUndefined(parseOrderInput(row.orderInput)));
   const isDirty = rows.some((row) => parseOrderInput(row.orderInput) !== row.initialOrder);
   const rowPairs = useMemo(() => {
     const pairs: Array<[ReportsRow, ReportsRow | null]> = [];
@@ -144,10 +141,6 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
       setRows(toRows(updated));
       setSaveSuccess('Порядок звітів збережено');
     } catch (error) {
-      if (isUnauthorizedError(error)) {
-        window.location.assign('/login');
-        return;
-      }
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
     } finally {
       setSaveInProgress(false);
@@ -215,8 +208,10 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
               </Box>
 
               {rowPairs.map(([leftRow, rightRow], rowIndex) => {
-                const leftInvalid = parseOrderInput(leftRow.orderInput) == null;
-                const rightInvalid = rightRow == null ? false : parseOrderInput(rightRow.orderInput) == null;
+                const leftInvalid = isNullOrUndefined(parseOrderInput(leftRow.orderInput));
+                const rightInvalid = isNullOrUndefined(rightRow)
+                  ? false
+                  : isNullOrUndefined(parseOrderInput(rightRow.orderInput));
                 const topBorderSx = rowIndex > 0 ? { borderTop: 1, borderColor: 'divider' } : undefined;
                 return (
                   <Box
@@ -301,7 +296,7 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
                   Смуга
                 </Typography>
                 {rows.map((row) => {
-                  const invalid = parseOrderInput(row.orderInput) == null;
+                  const invalid = isNullOrUndefined(parseOrderInput(row.orderInput));
                   return (
                     <Box
                       key={row.id}

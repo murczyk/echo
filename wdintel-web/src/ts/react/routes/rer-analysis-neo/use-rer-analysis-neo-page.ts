@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
-import { isUnauthorizedError } from '../../services/api/client';
+
 import { fetchCurrentUser } from '../../services/api/user';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import {
@@ -53,10 +54,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const setPageError = useCallback((message: string) => setError(message || null), []);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
-    if (isUnauthorizedError(errorValue)) {
-      window.location.assign('/login');
-      return true;
-    }
     return false;
   }, []);
 
@@ -101,7 +98,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
 
   const validationError = useMemo(
-    () => (analysisReq == null ? 'Перевірте дату та час. Дата раніше 2022-01-01 не допускається.' : null),
+    () => (isNullOrUndefined(analysisReq) ? 'Перевірте дату та час. Дата раніше 2022-01-01 не допускається.' : null),
     [analysisReq],
   );
 
@@ -155,10 +152,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       })
       .catch((error) => {
         if (abortController.signal.aborted) return;
-        if (isUnauthorizedError(error)) {
-          window.location.assign('/login');
-          return;
-        }
         setCurrentUser(null);
       });
 
@@ -172,7 +165,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       const detail = (event as CustomEvent<{ tagsLayout?: TagsLayoutVariant; analysisMapInSidebar?: boolean }>).detail;
       if (!detail?.tagsLayout) return;
       setTagsLayout(detail.tagsLayout);
-      if (detail.analysisMapInSidebar != null) {
+      if (isPresent(detail.analysisMapInSidebar)) {
         setAnalysisMapInSidebar(detail.analysisMapInSidebar);
       }
     };
@@ -190,7 +183,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         setRightPanelOpen(true);
         setRightSidebarTab('map');
       }
-      if ((rightPanelOpen || isMobileLayout) && rightSidebarTab == null) {
+      if ((rightPanelOpen || isMobileLayout) && isNullOrUndefined(rightSidebarTab)) {
         setRightSidebarTab(getAnalysisSidebarTabs(true)[0]);
       }
       return;
@@ -290,7 +283,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const toggleRightPanel = useCallback(() => {
     setRightPanelOpen((current) => {
       const next = !current;
-      if (next && rightSidebarTab == null) {
+      if (next && isNullOrUndefined(rightSidebarTab)) {
         setRightSidebarTab(getAnalysisSidebarTabs(analysisMapInSidebar)[0]);
       }
       return next;
@@ -305,7 +298,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const canResetFilters = useMemo(() => {
     const queryStateKey = queryStateComparisonKey(queryState);
     const lastResetStateKey = queryStateComparisonKey(lastResetState);
-    if (queryStateKey == null || lastResetStateKey == null) return false;
+    if (isNullOrUndefined(queryStateKey) || isNullOrUndefined(lastResetStateKey)) return false;
 
     return queryStateKey !== lastResetStateKey;
   }, [lastResetState, queryState]);

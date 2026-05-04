@@ -1,5 +1,7 @@
 import type { AnalysisStatsReq, InboxMessagesReq } from '../../../../Bindings';
 import { useCallback, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import { downloadAnalysisReport, downloadAnalysisSummaryTableXlsx } from '../../services/api/analysis';
 import { downloadBlob } from '../../utils/download-blob';
@@ -58,7 +60,7 @@ export function useAnalysisReport({
 
   const downloadReport = useCallback(async () => {
     if (report.template === 'summary_table') {
-      if (analysisReq == null) {
+      if (isNullOrUndefined(analysisReq)) {
         onError('Перевірте дату та час перед експортом.');
         return;
       }
@@ -78,7 +80,7 @@ export function useAnalysisReport({
       return;
     }
 
-    if (inboxReq == null) {
+    if (isNullOrUndefined(inboxReq)) {
       onError('Перевірте дату та час перед експортом.');
       return;
     }
