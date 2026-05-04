@@ -1,6 +1,8 @@
 import type { AnalysisCountItem, AnalysisFilterOptions } from './types';
 import type { NewCallsignsRes } from '../../../../Bindings';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 
 const FILTER_LABEL_COLLATOR = new Intl.Collator('uk', { sensitivity: 'base', numeric: true });
 
@@ -17,7 +19,7 @@ export function isAnalysisInboxPageExhausted(
   items: Array<unknown> | null | undefined,
   pageLimit: number | null | undefined,
 ): boolean {
-  if ((pageLimit === null || pageLimit === undefined)) return false;
+  if (isNullOrUndefined(pageLimit)) return false;
   return (items?.length ?? 0) < pageLimit;
 }
 
@@ -40,7 +42,7 @@ export function sortFilterOptionsByLabel<T extends { label: string; value: strin
     const leftPriority = priorities.get(left.label.trim());
     const rightPriority = priorities.get(right.label.trim());
 
-    if ((leftPriority !== null && leftPriority !== undefined) || (rightPriority !== null && rightPriority !== undefined)) {
+    if (isPresent(leftPriority) || isPresent(rightPriority)) {
       const leftIndex = leftPriority ?? Number.POSITIVE_INFINITY;
       const rightIndex = rightPriority ?? Number.POSITIVE_INFINITY;
       if (leftIndex !== rightIndex) {

@@ -1,6 +1,8 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Accordion, AccordionDetails, AccordionSummary, Box, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
+import { isNullOrUndefined } from '../../../utils/misc';
+
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 
@@ -108,7 +110,7 @@ export function getInitialExpandedSections(): Record<FilterSectionId, boolean> {
 }
 
 export function sectionCountLabel(selectedCount: number, overallCount: number | null | undefined): string | null {
-  if ((overallCount === null || overallCount === undefined)) {
+  if (isNullOrUndefined(overallCount)) {
     return selectedCount > 0 ? String(selectedCount) : null;
   }
   return selectedCount > 0 ? `${selectedCount} з ${overallCount}` : String(overallCount);

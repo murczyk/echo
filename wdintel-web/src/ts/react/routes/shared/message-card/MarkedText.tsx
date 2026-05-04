@@ -4,6 +4,8 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useId, useState } from 'react';
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 import type { Theme } from '@mui/material/styles';
+import { isNullOrUndefined, isPresent } from '../../../utils/misc';
+
 
 import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../../utils/callsign-normalization';
@@ -25,7 +27,7 @@ export const CALLSIGN_TOOLTIP_ITEM_SX = {
 function collectPointEtalons(nodes: ContentNode[]): string[] {
   const etalons: string[] = [];
   for (const n of nodes) {
-    if (typeof n !== 'string' && 'CNPointC' in n && (n.CNPointC?.etalon !== null && n.CNPointC?.etalon !== undefined)) {
+    if (typeof n !== 'string' && 'CNPointC' in n && isPresent(n.CNPointC?.etalon)) {
       const e = String(n.CNPointC.etalon).trim();
       if (e !== '') etalons.push(e);
     }
@@ -46,7 +48,7 @@ function collectHighlightedTexts(nodes: ContentNode[]): Set<string> {
 
 function collectSearchTerms(searchText?: string | null): Set<string> {
   const terms = new Set<string>();
-  if ((searchText === null || searchText === undefined)) return terms;
+  if (isNullOrUndefined(searchText)) return terms;
 
   searchText
     .split(/[\s,;:]+/g)
@@ -226,7 +228,7 @@ function PointToken({
       <Menu
         id={menuId}
         anchorEl={menuAnchorEl}
-        open={(menuAnchorEl !== null && menuAnchorEl !== undefined)}
+        open={isPresent(menuAnchorEl)}
         onClose={() => setMenuAnchorEl(null)}
         MenuListProps={{ 'aria-label': 'Дії з точкою' }}
       >
@@ -355,7 +357,7 @@ function CallsignWithHint({
 
   const tooltipText = formatCallsignHintTooltipData(hintResult);
   const isNetworkHint = hintResult.strategy === 'network';
-  const shouldLinkCallsign = linkCallsigns && ((tooltipText !== null && tooltipText !== undefined) || hasCatalogMatch);
+  const shouldLinkCallsign = linkCallsigns && (isPresent(tooltipText) || hasCatalogMatch);
   const callsignDisplay = shouldLinkCallsign ? (
     <a
       href={href}
@@ -371,7 +373,7 @@ function CallsignWithHint({
     </Box>
   );
 
-  if ((tooltipText === null || tooltipText === undefined)) {
+  if (isNullOrUndefined(tooltipText)) {
     if (hasMessageNetworks) {
       if (!hasCatalogMatch) {
         return wrapSearchHighlighted(renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }));
@@ -473,7 +475,7 @@ export function renderMarkedText(
   const highlightedTexts = collectHighlightedTexts(nodes);
   const searchTerms = collectSearchTerms(options?.searchText);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
-    (messagePointEtalons !== null && messagePointEtalons !== undefined) && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
+    isPresent(messagePointEtalons) && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
   );
   const renderedNodes: ReactNode[] = [];
 

@@ -1,5 +1,7 @@
 import type { MRT_RowData, MRT_TableInstance } from 'material-react-table';
 import type { MRT_ColumnFiltersState } from 'material-react-table';
+import { isNullOrUndefined, isPresent } from '../../../../../../../../utils/misc';
+
 
 export type ActiveFilterDescriptor = {
   id: string;
@@ -18,7 +20,7 @@ function truncateText(value: string, maxLength: number): string {
 }
 
 function formatPreviewItem(value: unknown): string {
-  if ((value === null || value === undefined) || value === '') {
+  if (isNullOrUndefined(value) || value === '') {
     return 'Порожньо';
   }
 
@@ -42,7 +44,7 @@ function formatPreviewItem(value: unknown): string {
 }
 
 export function formatFilterValuePreview(value: unknown): string {
-  if ((value === null || value === undefined) || value === '') {
+  if (isNullOrUndefined(value) || value === '') {
     return 'Порожньо';
   }
 
@@ -88,7 +90,7 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
     }));
 
     const hasGlobalFilter =
-      typeof globalFilter === 'string' ? globalFilter.trim() !== '' : (globalFilter !== null && globalFilter !== undefined) && globalFilter !== '';
+      typeof globalFilter === 'string' ? globalFilter.trim() !== '' : isPresent(globalFilter) && globalFilter !== '';
 
     if (hasGlobalFilter) {
       activeFilters.push({
@@ -112,7 +114,7 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
   }));
 
   const hasGlobalFilter =
-    typeof globalFilter === 'string' ? globalFilter.trim() !== '' : (globalFilter !== null && globalFilter !== undefined) && globalFilter !== '';
+    typeof globalFilter === 'string' ? globalFilter.trim() !== '' : isPresent(globalFilter) && globalFilter !== '';
 
   if (hasGlobalFilter) {
     activeFilters.push({

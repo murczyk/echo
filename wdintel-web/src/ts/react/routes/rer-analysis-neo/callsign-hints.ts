@@ -1,6 +1,8 @@
 import type { CallsignInfo, CallsignInfoRes, Network, Unit } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { formatLegacyCallsignTooltipLine } from './callsign-hints-utils';
+import { isPresent } from '../../utils/misc';
+
 
 export type CallsignHintContext = 'message' | 'frequency';
 export type CallsignHintStrategy = 'network' | 'system' | 'none';
@@ -31,7 +33,7 @@ function filterNetworksByFreq(networks: Network[], freq: string | null): Network
 }
 
 function getNetworksByIds(ids: number[], networks: Network[]): Network[] {
-  return ids.map((id) => networks.find((network) => network.id === id)).filter((network): network is Network => (network !== null && network !== undefined));
+  return ids.map((id) => networks.find((network) => network.id === id)).filter((network): network is Network => isPresent(network));
 }
 
 function getAllUnitIdsForNetworks(networks: Network[]): number[] {
@@ -39,7 +41,7 @@ function getAllUnitIdsForNetworks(networks: Network[]): number[] {
 }
 
 function getUnitsInfoByIds(unitIds: number[], unitsMap: Record<number, Unit>): Unit[] {
-  return unitIds.map((id) => unitsMap[id]).filter((unit): unit is Unit => (unit !== null && unit !== undefined));
+  return unitIds.map((id) => unitsMap[id]).filter((unit): unit is Unit => isPresent(unit));
 }
 
 function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
@@ -49,7 +51,7 @@ function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
 }
 
 function findCallsignUnits(callsigns: CallsignInfo[], unitsMap: Record<number, Unit>): Unit[] {
-  const unitIds = callsigns.map((callsign) => callsign.unitId).filter((unitId): unitId is number => (unitId !== null && unitId !== undefined));
+  const unitIds = callsigns.map((callsign) => callsign.unitId).filter((unitId): unitId is number => isPresent(unitId));
   return getUnitsInfoByIds(unitIds, unitsMap);
 }
 

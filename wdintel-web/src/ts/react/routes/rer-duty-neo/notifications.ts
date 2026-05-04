@@ -1,3 +1,5 @@
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 export type DutyNotificationSettings = {
   soundEnabled: boolean;
   browserEnabled: boolean;
@@ -186,7 +188,7 @@ function stripDutyNeoDocumentTitleCountPrefix(title: string): string {
 }
 
 function applyDutyNeoDocumentTitle(): void {
-  if (typeof document === 'undefined' || (dutyNeoDocumentTitleBase === null || dutyNeoDocumentTitleBase === undefined)) return;
+  if (typeof document === 'undefined' || isNullOrUndefined(dutyNeoDocumentTitleBase)) return;
   document.title =
     dutyNeoDocumentTitleCount > 0 ? `(${dutyNeoDocumentTitleCount}) ${dutyNeoDocumentTitleBase}` : dutyNeoDocumentTitleBase;
 }
@@ -207,14 +209,14 @@ export function startDutyNeoDocumentTitleTracking(): () => void {
     const base = dutyNeoDocumentTitleBase;
     dutyNeoDocumentTitleBase = null;
     dutyNeoDocumentTitleCount = 0;
-    if ((base !== null && base !== undefined)) {
+    if (isPresent(base)) {
       document.title = base;
     }
   };
 }
 
 export function setDutyNeoDocumentTitleUnreadCount(totalUnread: number): void {
-  if (!dutyNeoDocumentTitleTracking || (dutyNeoDocumentTitleBase === null || dutyNeoDocumentTitleBase === undefined)) return;
+  if (!dutyNeoDocumentTitleTracking || isNullOrUndefined(dutyNeoDocumentTitleBase)) return;
   dutyNeoDocumentTitleCount = Math.max(0, Math.floor(totalUnread));
   applyDutyNeoDocumentTitle();
 }

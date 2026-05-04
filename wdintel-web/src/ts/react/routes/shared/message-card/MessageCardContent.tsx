@@ -7,6 +7,8 @@ import AddIcon from '@mui/icons-material/Add';
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { Box, Button, Chip, CircularProgress, Collapse, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { isPresent } from '../../../utils/misc';
+
 
 import type {
   CallsignInfoRes,
@@ -684,7 +686,7 @@ export function MessageCardMessageBody({
           })(),
     [analysisCallsignActions, callsignInfoMap, msg, networks, searchText, showPointLinks, tagsMap, unitsMap],
   );
-  const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => (node !== null && node !== undefined)) : (textPrimary !== null && textPrimary !== undefined);
+  const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => isPresent(node)) : isPresent(textPrimary);
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
   const otherComments = useMemo(
     () => filterOtherMessageComments(authUserName, currentUser, users, messageComments),
@@ -743,7 +745,7 @@ export function MessageCardMessageBody({
           {textPrimary}
         </Typography>
       ) : null}
-      {(msg.extendedForm !== null && msg.extendedForm !== undefined) && msg.extendedForm.trim() !== '' ? (
+      {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
           <ChatBubbleOutlineOutlinedIcon sx={{ fontSize: 13, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Коментар" />
           <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
@@ -787,7 +789,7 @@ export function MessageCardMessageBody({
           </span>
         </Box>
       ) : null}
-      {(analysisCallsignActions !== null && analysisCallsignActions !== undefined) ? (
+      {isPresent(analysisCallsignActions) ? (
         <AnalysisCallsignsSection msg={msg} actions={analysisCallsignActions} callsignInfoMap={callsignInfoMap} />
       ) : null}
     </Stack>

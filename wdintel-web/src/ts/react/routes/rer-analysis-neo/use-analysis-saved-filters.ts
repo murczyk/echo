@@ -1,6 +1,8 @@
 import type { SavedFilter } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
 import {
@@ -75,7 +77,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   useEffect(() => {
     if (savedFilters.length === 0) return;
 
-    if ((loadedSavedFilterId !== null && loadedSavedFilterId !== undefined)) {
+    if (isPresent(loadedSavedFilterId)) {
       hasSyncedLoadedSavedFilterRef.current = true;
       return;
     }
@@ -85,7 +87,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
     const matchedSavedFilter = savedFilters.find((savedFilter) =>
       queryStateMatchesSavedFilter(queryState, savedFilter, allFrequencies),
     );
-    if ((matchedSavedFilter === null || matchedSavedFilter === undefined)) {
+    if (isNullOrUndefined(matchedSavedFilter)) {
       if (queryState.adjacentFreqsRange > 0 && allFrequencies.length === 0) return;
       hasSyncedLoadedSavedFilterRef.current = true;
       return;
@@ -99,7 +101,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const applySavedFilter = useCallback(
     (savedFilter: SavedFilter | null) => {
       hasSyncedLoadedSavedFilterRef.current = true;
-      if ((savedFilter === null || savedFilter === undefined)) {
+      if (isNullOrUndefined(savedFilter)) {
         setLoadedSavedFilterId(null);
         setSavedFilterName('');
         return;
@@ -117,7 +119,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const saveAsNew = useCallback(async (name: string) => {
     const req = buildAnalysisReq(queryState, allFrequencies);
     const nextName = name.trim();
-    if ((req === null || req === undefined) || nextName === '') return false;
+    if (isNullOrUndefined(req) || nextName === '') return false;
     setSaveInFlight(true);
     onError('');
     try {
@@ -165,7 +167,7 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
   const updateExisting = useCallback(async () => {
     if (!loadedSavedFilter) return;
     const req = buildAnalysisReq(queryState, allFrequencies);
-    if ((req === null || req === undefined)) return;
+    if (isNullOrUndefined(req)) return;
     setSaveInFlight(true);
     onError('');
     try {

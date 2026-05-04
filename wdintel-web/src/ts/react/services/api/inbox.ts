@@ -440,7 +440,7 @@ export async function getPostsList(): Promise<string[]> {
 /** User's sigint group keys (e.g. for filter dropdown). sinceDateInclusiveMs: optional ms, e.g. 2 days ago. */
 export async function getUserSigintGroups(sinceDateInclusiveMs: number | null): Promise<string[]> {
   const body: Record<string, number> =
-    (sinceDateInclusiveMs !== null && sinceDateInclusiveMs !== undefined) ? { since_date_inclusive_ms: sinceDateInclusiveMs } : {};
+    isPresent(sinceDateInclusiveMs) ? { since_date_inclusive_ms: sinceDateInclusiveMs } : {};
   const raw = await postJson<string[]>('/api/user/sigint-groups', body);
   return Array.isArray(raw) ? raw : [];
 }

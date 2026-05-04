@@ -2,6 +2,8 @@ import type { InboxMessage, MessageComment, User } from '../../../../Bindings';
 import { fetchMessageComments } from '../../services/api/analysis';
 import { fetchUserInfo } from '../../services/api/user';
 import { toErrorMessage } from './use-analysis-data.shared';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
@@ -33,7 +35,7 @@ export function isOurOrganism(
   if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return true;
 
   const commentUser = users[commentLogin] ?? null;
-  if ((currentUser?.organismId === null || currentUser?.organismId === undefined) || (commentUser?.organismId === null || commentUser?.organismId === undefined)) return false;
+  if (isNullOrUndefined(currentUser?.organismId) || isNullOrUndefined(commentUser?.organismId)) return false;
   return currentUser.organismId === commentUser.organismId;
 }
 
@@ -49,7 +51,7 @@ function isKnownOtherOrganismComment(
   if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
 
   const commentUser = users[commentLogin] ?? null;
-  if ((currentUser?.organismId === null || currentUser?.organismId === undefined) || (commentUser?.organismId === null || commentUser?.organismId === undefined)) return false;
+  if (isNullOrUndefined(currentUser?.organismId) || isNullOrUndefined(commentUser?.organismId)) return false;
   return currentUser.organismId !== commentUser.organismId;
 }
 
@@ -71,7 +73,7 @@ export async function loadMissingMessageCommentsForMessages(
     new Set(
       messages
         .map(([messageId]) => messageId)
-        .filter((messageId) => Number.isInteger(messageId) && (forceReload || (params.messageComments[messageId] === null || params.messageComments[messageId] === undefined))),
+        .filter((messageId) => Number.isInteger(messageId) && (forceReload || isNullOrUndefined(params.messageComments[messageId]))),
     ),
   );
 
@@ -131,7 +133,7 @@ export async function loadMissingMessageCommentsForMessages(
     params.setUsers((current) => {
       const next = { ...current };
       for (const entry of nextUsers) {
-        if ((entry === null || entry === undefined)) continue;
+        if (isNullOrUndefined(entry)) continue;
         next[entry.login] = entry.user;
       }
       return next;

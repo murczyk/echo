@@ -1,5 +1,7 @@
 import { Box, Button, CircularProgress, List, ListItem, Paper, Skeleton } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
+import { isNullOrUndefined } from '../../../utils/misc';
+
 
 import type { AnalysisCountItem } from '../types';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
@@ -17,7 +19,7 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
   const [expanded, setExpanded] = useState(false);
   const summaryItem = items.find((item) => item.key.trim().length === 0) ?? null;
   const detailItems = items.filter((item) => item.key.trim().length > 0);
-  const showLoadingSkeletons = loading && detailItems.length === 0 && (summaryItem === null || summaryItem === undefined);
+  const showLoadingSkeletons = loading && detailItems.length === 0 && isNullOrUndefined(summaryItem);
   const hasHiddenItems = detailItems.length > 12;
   const visibleItems = expanded || !hasHiddenItems ? detailItems : detailItems.slice(0, 12);
   const hiddenItemsCount = detailItems.length - visibleItems.length;

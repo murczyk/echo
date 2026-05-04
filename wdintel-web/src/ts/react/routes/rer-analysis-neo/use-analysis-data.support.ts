@@ -1,6 +1,8 @@
 import type { InboxMessage, Network, NewCallsignsRes, Unit } from '../../../../Bindings';
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import { fetchAnalysisNewCallsigns, fetchNetworksByIds } from '../../services/api/analysis';
 import { buildAnalysisReq } from './helpers';
@@ -65,7 +67,7 @@ export function useLoadNewCallsigns({
 }: UseLoadNewCallsignsParams) {
   return useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
-    if ((analysisReq === null || analysisReq === undefined)) {
+    if (isNullOrUndefined(analysisReq)) {
       invalidateNewCallsignsLoadState({
         setNewCallsigns,
         setNewCallsignsLoading,

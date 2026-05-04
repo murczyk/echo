@@ -1,5 +1,7 @@
 import type { AnalysisFilterOption } from '../types';
 import { normalizeFilterLabel, sortFilterOptionsByLabel } from '../use-analysis-data.shared';
+import { isPresent } from '../../../utils/misc';
+
 
 import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
@@ -45,7 +47,7 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
     const label = (option.label ?? option.value).toUpperCase();
     const values = Array.from(new Set(option.values ?? [option.value]));
     const existingOption = acc.find((item) => item.label === label);
-    if ((existingOption !== null && existingOption !== undefined)) {
+    if (isPresent(existingOption)) {
       existingOption.values = Array.from(new Set([...(existingOption.values ?? []), ...values]));
       existingOption.count += option.count;
       return acc;

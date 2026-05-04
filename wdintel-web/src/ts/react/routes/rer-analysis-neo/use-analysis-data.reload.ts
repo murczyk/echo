@@ -31,7 +31,7 @@ import {
   getTagsMapForDisplay,
 } from '../../services/api/analysis';
 import { getUnitsList } from '../../services/api/units';
-import { sortFrequenciesNumerically } from '../../utils/misc';
+import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq, shouldRebuildAnalysisRequests } from './helpers';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import {
@@ -223,7 +223,7 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       callsignsRsp.callsigns.forEach((item) => {
         const label = item.callsign.toUpperCase();
         const existing = groupedByLabel.get(label);
-        if ((existing !== null && existing !== undefined)) {
+        if (isPresent(existing)) {
           existing.count += item.count;
           existing.values = [...(existing.values ?? [existing.value]), item.callsign];
           return;
@@ -402,14 +402,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       const analysisReq = buildAnalysisReq(params.queryState, allFrequencies);
       const inboxReq = buildInboxReq(params.queryState, allFrequencies);
 
-      if ((analysisReq === null || analysisReq === undefined) || (inboxReq === null || inboxReq === undefined)) {
+      if (isNullOrUndefined(analysisReq) || isNullOrUndefined(inboxReq)) {
         params.invalidateSummaryLoads?.();
         params.invalidateTopSidebarLoads?.();
         params.clearAnalysisResults();
         if (
-          (params.newCallsignsRequestRef !== null && params.newCallsignsRequestRef !== undefined) &&
-          (params.newCallsignsLoadedKeyRef !== null && params.newCallsignsLoadedKeyRef !== undefined) &&
-          (params.newCallsignsPendingKeyRef !== null && params.newCallsignsPendingKeyRef !== undefined)
+          isPresent(params.newCallsignsRequestRef) &&
+          isPresent(params.newCallsignsLoadedKeyRef) &&
+          isPresent(params.newCallsignsPendingKeyRef)
         ) {
           invalidateNewCallsignsLoadState({
             setNewCallsigns: params.setNewCallsigns,
@@ -467,7 +467,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.optionsFreqsRef.current = nextFrequencies;
         const rebuiltAnalysisReq = buildAnalysisReq(params.queryState, nextFrequencies);
         const rebuiltInboxReq = buildInboxReq(params.queryState, nextFrequencies);
-        if ((rebuiltAnalysisReq !== null && rebuiltAnalysisReq !== undefined) && (rebuiltInboxReq !== null && rebuiltInboxReq !== undefined)) {
+        if (isPresent(rebuiltAnalysisReq) && isPresent(rebuiltInboxReq)) {
           try {
             const rebuiltInboxRsp = await fetchInboxMessages({ ...rebuiltInboxReq, newestFirst: params.newestFirst });
             const rebuiltFreqsRsp = await fetchAnalysisFreqs(rebuiltAnalysisReq);
@@ -526,7 +526,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     };
 
     const criticalData = await loadCriticalData(params.optionsFreqsRef.current);
-    if ((criticalData === null || criticalData === undefined) || isStaleReload()) return;
+    if (isNullOrUndefined(criticalData) || isStaleReload()) return;
 
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
     params.setMessagesLoading(false);

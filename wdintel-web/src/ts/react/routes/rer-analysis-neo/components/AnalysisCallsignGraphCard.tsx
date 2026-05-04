@@ -1,5 +1,7 @@
 import { Box, Button, CircularProgress, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
 import { useEffect, useId, useRef, useState } from 'react';
+import { isPresent } from '../../../utils/misc';
+
 
 import type { NetJsonGraphAndMeta } from '../../../../../Bindings';
 
@@ -62,7 +64,7 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
   const [zoomHintVisible, setZoomHintVisible] = useState(false);
 
   useEffect(() => {
-    if (!visible || loading || (graph !== null && graph !== undefined) || autoloadedVersionRef.current === loadVersion) return;
+    if (!visible || loading || isPresent(graph) || autoloadedVersionRef.current === loadVersion) return;
     autoloadedVersionRef.current = loadVersion;
     onLoad();
   }, [graph, loadVersion, loading, onLoad, visible]);
@@ -90,7 +92,7 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) return;
       setZoomHintVisible(true);
-      if ((zoomHintTimeoutRef.current !== null && zoomHintTimeoutRef.current !== undefined)) {
+      if (isPresent(zoomHintTimeoutRef.current)) {
         window.clearTimeout(zoomHintTimeoutRef.current);
       }
       zoomHintTimeoutRef.current = window.setTimeout(() => {
@@ -108,7 +110,7 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
 
   useEffect(
     () => () => {
-      if ((zoomHintTimeoutRef.current !== null && zoomHintTimeoutRef.current !== undefined)) {
+      if (isPresent(zoomHintTimeoutRef.current)) {
         window.clearTimeout(zoomHintTimeoutRef.current);
       }
     },

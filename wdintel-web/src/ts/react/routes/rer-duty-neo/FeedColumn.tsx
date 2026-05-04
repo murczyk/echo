@@ -7,6 +7,8 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 
 import type {
   CallsignInfoRes,
@@ -231,7 +233,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNearBottomChange?.(nearBottom);
       }
       // Report as read: all messages from start through bottom of viewport (everything "above" viewport is read by default)
-      if ((onVisibleMessageIds !== null && onVisibleMessageIds !== undefined) && len > 0) {
+      if (isPresent(onVisibleMessageIds) && len > 0) {
         const ids: number[] = [];
         for (let dataIndex = 0; dataIndex <= endDataIndex && dataIndex < len; dataIndex++) {
           ids.push(feed.items[dataIndex][0]);
@@ -370,7 +372,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               setIsAtBottom(atBottom);
               if (atBottom && hasSeenNotAtBottomRef.current) onReachedBottom?.();
               if (!atBottom && wasAtBottom) onLeftBottom?.();
-              if (atBottom && (onVisibleMessageIds !== null && onVisibleMessageIds !== undefined) && feed.items.length > 0) {
+              if (atBottom && isPresent(onVisibleMessageIds) && feed.items.length > 0) {
                 onVisibleMessageIds(
                   feed.items.map(([id]) => id),
                   { atBottom: true },
@@ -408,8 +410,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             }}
             className="m-0 list-none rer-duty pt-2"
             itemContent={(_index, [id, msg]) => {
-              const senderName = (msg.sender !== null && msg.sender !== undefined) ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
-              const groupName = (msg.groupMasterKey !== null && msg.groupMasterKey !== undefined) ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
+              const senderName = isPresent(msg.sender) ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
+              const groupName = isPresent(msg.groupMasterKey) ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
               return (
                 <DutyMessageCard
                   id={id}
@@ -442,7 +444,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               );
             }}
           />
-          {(onArrowClick !== null && onArrowClick !== undefined) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
+          {isPresent(onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
             <Box
               sx={{
                 position: 'absolute',
@@ -454,7 +456,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 zIndex: 1,
               }}
             >
-              {!loadingNewer && (arrowResultMessage !== null && arrowResultMessage !== undefined) && (
+              {!loadingNewer && isPresent(arrowResultMessage) && (
                 <PowerChip
                   size="small"
                   label={arrowResultMessage}
@@ -491,7 +493,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                     <ArrowDownwardIcon sx={{ fontSize: 20 }} />
                   )}
                 </Fab>
-                {!loadingNewer && unreadCount > 0 && !isWatchMode && (arrowResultMessage === null || arrowResultMessage === undefined) && (
+                {!loadingNewer && unreadCount > 0 && !isWatchMode && isNullOrUndefined(arrowResultMessage) && (
                   <PowerChip
                     size="small"
                     label={unreadCount}

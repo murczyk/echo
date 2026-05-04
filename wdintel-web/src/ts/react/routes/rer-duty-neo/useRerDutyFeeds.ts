@@ -3,7 +3,7 @@ import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
-import { sortFrequenciesNumerically } from '../../utils/misc';
+import { isNullOrUndefined, sortFrequenciesNumerically } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
@@ -154,7 +154,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
   useEffect(() => {
     const onSettingsUpdated = (event: Event) => {
       const detail = (event as CustomEvent<{ disableAutoScroll?: boolean }>).detail;
-      if ((detail?.disableAutoScroll === null || detail?.disableAutoScroll === undefined)) return;
+      if (isNullOrUndefined(detail?.disableAutoScroll)) return;
       setDutyDisableAutoScroll(detail.disableAutoScroll);
     };
 
@@ -253,13 +253,13 @@ export function useRerDutyFeeds(authUserName: string | null) {
       if (enrichedCallsignsRef.current.has(callsign)) return;
       if (loadingCallsignsRef.current.has(callsign)) return;
       const retryAtMs = emptyResultRetryAfterMsRef.current.get(callsign);
-      if ((retryAtMs === null || retryAtMs === undefined) || retryAtMs <= nowMs) return;
-      if ((nextRetryAtMs === null || nextRetryAtMs === undefined) || retryAtMs < nextRetryAtMs) {
+      if (isNullOrUndefined(retryAtMs) || retryAtMs <= nowMs) return;
+      if (isNullOrUndefined(nextRetryAtMs) || retryAtMs < nextRetryAtMs) {
         nextRetryAtMs = retryAtMs;
       }
     });
 
-    if ((nextRetryAtMs === null || nextRetryAtMs === undefined)) return;
+    if (isNullOrUndefined(nextRetryAtMs)) return;
 
     callsignRetryTimeoutRef.current = setTimeout(() => {
       callsignRetryTimeoutRef.current = null;

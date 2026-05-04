@@ -1,5 +1,7 @@
 import { Box, CircularProgress, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import type {
   AreaOfResponsibility,
@@ -100,7 +102,7 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
     };
   }, [active, canRead]);
 
-  const hasInvalidRows = rows.some((row) => (parseOrderInput(row.orderInput) === null || parseOrderInput(row.orderInput) === undefined));
+  const hasInvalidRows = rows.some((row) => isNullOrUndefined(parseOrderInput(row.orderInput)));
   const isDirty = rows.some((row) => parseOrderInput(row.orderInput) !== row.initialOrder);
   const rowPairs = useMemo(() => {
     const pairs: Array<[ReportsRow, ReportsRow | null]> = [];
@@ -206,8 +208,10 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
               </Box>
 
               {rowPairs.map(([leftRow, rightRow], rowIndex) => {
-                const leftInvalid = (parseOrderInput(leftRow.orderInput) === null || parseOrderInput(leftRow.orderInput) === undefined);
-                const rightInvalid = (rightRow === null || rightRow === undefined) ? false : (parseOrderInput(rightRow.orderInput) === null || parseOrderInput(rightRow.orderInput) === undefined);
+                const leftInvalid = isNullOrUndefined(parseOrderInput(leftRow.orderInput));
+                const rightInvalid = isNullOrUndefined(rightRow)
+                  ? false
+                  : isNullOrUndefined(parseOrderInput(rightRow.orderInput));
                 const topBorderSx = rowIndex > 0 ? { borderTop: 1, borderColor: 'divider' } : undefined;
                 return (
                   <Box
@@ -292,7 +296,7 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
                   Смуга
                 </Typography>
                 {rows.map((row) => {
-                  const invalid = (parseOrderInput(row.orderInput) === null || parseOrderInput(row.orderInput) === undefined);
+                  const invalid = isNullOrUndefined(parseOrderInput(row.orderInput));
                   return (
                     <Box
                       key={row.id}

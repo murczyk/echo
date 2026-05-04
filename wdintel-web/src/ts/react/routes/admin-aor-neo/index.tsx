@@ -6,6 +6,8 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import { Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputAdornment, MenuItem, OutlinedInput, Select, SelectChangeEvent, Stack, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
@@ -141,13 +143,13 @@ function useAorColumns(): MRT_ColumnDef<AorRow>[] {
       },
       {
         header: 'Ліва межа',
-        accessorFn: (row) => ((row.leftBound === null || row.leftBound === undefined) ? '—' : String(row.leftBound)),
+        accessorFn: (row) => (isNullOrUndefined(row.leftBound) ? '—' : String(row.leftBound)),
         id: 'leftBound',
         size: 120,
       },
       {
         header: 'Права межа',
-        accessorFn: (row) => ((row.rightBound === null || row.rightBound === undefined) ? '—' : String(row.rightBound)),
+        accessorFn: (row) => (isNullOrUndefined(row.rightBound) ? '—' : String(row.rightBound)),
         id: 'rightBound',
         size: 120,
       },

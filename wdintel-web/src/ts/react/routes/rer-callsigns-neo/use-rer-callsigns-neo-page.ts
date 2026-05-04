@@ -1,4 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 
 import type { Callsign, CallsignUnitStatRow, Source, Unit, User } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
@@ -141,7 +143,7 @@ function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter | null 
     battalion: decodeHierarchyParam(params.get('unit_battalion')),
   };
 
-  if (Object.values(hierarchy).every((value) => (value === null || value === undefined))) {
+  if (Object.values(hierarchy).every((value) => isNullOrUndefined(value))) {
     return null;
   }
 
@@ -151,7 +153,7 @@ function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter | null 
 function getSidebarGroupLabel(hierarchy: UnitHierarchyFilter): string {
   const lastDefinedEntry = (Object.entries(hierarchy) as Array<[keyof UnitHierarchyFilter, string | null]>)
     .reverse()
-    .find(([, value]) => (value !== null && value !== undefined));
+    .find(([, value]) => isPresent(value));
 
   if (!lastDefinedEntry) return 'Підрозділ';
 
@@ -163,7 +165,7 @@ function areSidebarFiltersEqual(
   left: SelectedSidebarUnitFilter | null,
   right: SelectedSidebarUnitFilter | null,
 ): boolean {
-  if ((left === null || left === undefined) || (right === null || right === undefined)) return left === right;
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return left === right;
   if (left.kind !== right.kind) return false;
 
   if (left.kind === 'leaf' && right.kind === 'leaf') {
@@ -210,7 +212,7 @@ function syncCallsignsStateToUrl(
 ) {
   updateUrlSearchParams((params) => {
     const setOrDelete = (key: string, value: string | null | undefined) => {
-      if ((value === null || value === undefined) || value === '') {
+      if (isNullOrUndefined(value) || value === '') {
         params.delete(key);
         return;
       }
@@ -281,12 +283,12 @@ function areCallsignSortStatesEqual(left: CallsignsSortState, right: CallsignsSo
 }
 
 function decodeHierarchyParam(value: string | null): string | null {
-  if ((value === null || value === undefined)) return null;
+  if (isNullOrUndefined(value)) return null;
   return value === EMPTY_HIERARCHY_PARAM ? '' : value;
 }
 
 function setHierarchyParam(params: URLSearchParams, key: string, value: string | null) {
-  if ((value === null || value === undefined)) {
+  if (isNullOrUndefined(value)) {
     params.delete(key);
     return;
   }
@@ -425,7 +427,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
             draftInput.positionInput === '' || positionValue.includes(draftInput.positionInput);
           return (callsignMatches || fullNameMatches) && positionMatches;
         });
-        const unitMatches = (addUnitId === null || addUnitId === undefined) || callsign.unitId === addUnitId;
+        const unitMatches = isNullOrUndefined(addUnitId) || callsign.unitId === addUnitId;
 
         return rowMatches && unitMatches;
       })
@@ -531,7 +533,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       const [freshSources, freshStats] = await Promise.all([listSources(), getCallsignUnitStats()]);
       setSources(freshSources);
       setUnitStats(freshStats);
-      setAddSourceId((prev) => ((prev === null || prev === undefined) ? freshSources[0]?.id ?? null : prev));
+      setAddSourceId((prev) => (isNullOrUndefined(prev) ? freshSources[0]?.id ?? null : prev));
     } catch (error) {
       try {
         unauthorizedOrThrow(error);
@@ -797,10 +799,10 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setStatus(null);
     setAddValidationError(null);
 
-    if ((addUnitId === null || addUnitId === undefined)) {
+    if (isNullOrUndefined(addUnitId)) {
       return;
     }
-    if ((addSourceId === null || addSourceId === undefined)) {
+    if (isNullOrUndefined(addSourceId)) {
       setAddValidationError('Оберіть джерело');
       return;
     }

@@ -9,7 +9,6 @@ import {
 
 import { postJson } from './client';
 import { isNullOrUndefined } from '../../utils/misc';
-
 type ListLoginsReqBody = {
   sort_by: ListLoginsReq['sortBy'];
   filter_by_roles: ListLoginsReq['filterByRoles'];

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
+
 
 import type {
   InboxMessage,
@@ -143,7 +145,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
         const list = await savedFilterUpsert({ name: trimmed, req: w.filter });
         setSavedFilters(list);
         const created = list.find((savedFilter) => savedFilter.name === trimmed);
-        if ((created !== null && created !== undefined)) {
+        if (isPresent(created)) {
           setSavedFilterSelectionForFeed(feedId, created.id);
           setSavedFilterNameForFeed(feedId, created.name);
         }
@@ -175,7 +177,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   const handleUpdateSelectedSavedFilter = useCallback(
     async (feedId: string) => {
       const selectedSavedId = getSelectedSavedIdForFeed(feedId);
-      if ((selectedSavedId === null || selectedSavedId === undefined)) return;
+      if (isNullOrUndefined(selectedSavedId)) return;
       const selectedSaved = savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId);
       if (!selectedSaved) return;
       const feed = messageFeeds.find((item) => item.id === feedId);
@@ -193,7 +195,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   const handleRenameSelectedSavedFilter = useCallback(
     async (feedId: string, name: string) => {
       const selectedSavedId = getSelectedSavedIdForFeed(feedId);
-      if ((selectedSavedId === null || selectedSavedId === undefined)) return false;
+      if (isNullOrUndefined(selectedSavedId)) return false;
       const selectedSaved = savedFilters.find((savedFilter) => savedFilter.id === selectedSavedId);
       if (!selectedSaved) return false;
       const trimmed = name.trim();
@@ -259,7 +261,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   const handleDeleteSelectedSavedFilter = useCallback(
     async (feedId: string) => {
       const selectedSavedId = getSelectedSavedIdForFeed(feedId);
-      if ((selectedSavedId === null || selectedSavedId === undefined)) return;
+      if (isNullOrUndefined(selectedSavedId)) return;
       try {
         await savedFilterDelete(selectedSavedId);
         setSavedFilters((prev) => prev.filter((x) => x.id !== selectedSavedId));
@@ -345,7 +347,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   }, []);
 
   const handleDeleteConfirm = useCallback(async () => {
-    if ((deleteConfirmId === null || deleteConfirmId === undefined) || (deleteConfirmFeedId === null || deleteConfirmFeedId === undefined)) return;
+    if (isNullOrUndefined(deleteConfirmId) || isNullOrUndefined(deleteConfirmFeedId)) return;
     try {
       await deleteMessage({ id: deleteConfirmId });
       setMessageFeeds((prev) =>
@@ -371,7 +373,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   }, []);
 
   const handleCommentSave = useCallback(async () => {
-    if ((commentMessageId === null || commentMessageId === undefined) || (commentFeedId === null || commentFeedId === undefined)) return;
+    if (isNullOrUndefined(commentMessageId) || isNullOrUndefined(commentFeedId)) return;
     const trimmed = commentText.trim() || null;
     try {
       await commentSave({ messageId: commentMessageId, comment: trimmed });

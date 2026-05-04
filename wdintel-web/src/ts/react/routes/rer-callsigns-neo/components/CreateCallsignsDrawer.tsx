@@ -3,6 +3,7 @@ import AddIcon from '@mui/icons-material/Add';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { isNullOrUndefined } from '../../../utils/misc';
 import {
   Alert,
   Autocomplete,
@@ -367,7 +368,7 @@ export function CreateCallsignsDrawer({
         <Button
           variant="contained"
           onClick={onSubmit}
-          disabled={formDisabled || (addUnitId === null || addUnitId === undefined) || !hasDraftContent}
+          disabled={formDisabled || isNullOrUndefined(addUnitId) || !hasDraftContent}
         >
           {submitting ? 'Збереження…' : 'Додати'}
         </Button>

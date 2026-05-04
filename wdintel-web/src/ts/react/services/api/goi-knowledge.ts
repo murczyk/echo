@@ -6,7 +6,6 @@ import {
 
 import { postJson } from './client';
 import { isNullOrUndefined } from '../../utils/misc';
-
 type GoiKnowledgeLike = {
   id?: number | string;
   integrationId?: number | string;

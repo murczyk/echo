@@ -2,6 +2,8 @@ import type { AnalysisStatsSender, InboxMessage, Network, SignalProfileEntry, Un
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { AnalysisFilterOption } from './types';
 import { createMasterUnitText } from '../rer-duty-neo/utils';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 export function buildSenderLabel(profile: SignalProfileEntry | null | undefined, fallback: string | null): string | null {
   const parts = [profile?.givenName, profile?.familyName].filter(Boolean);
@@ -15,7 +17,7 @@ function shortUuid(uuid: string): string {
 
 function senderDisplayName(profile: SignalProfileEntry | null | undefined, fallback: string): string {
   const label = buildSenderLabel(profile, fallback);
-  return (label === null || label === undefined) || label.trim() === '' ? fallback : label.trim();
+  return isNullOrUndefined(label) || label.trim() === '' ? fallback : label.trim();
 }
 
 export function buildNetworkDisplayMap(networks: Network[], unitsMap: Record<number, Unit>): Record<number, string> {
