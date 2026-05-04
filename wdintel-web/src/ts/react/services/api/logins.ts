@@ -8,7 +8,7 @@ import {
 } from '../../../../Bindings';
 
 import { postJson } from './client';
-
+import { isNullOrUndefined } from '../../utils/misc';
 type ListLoginsReqBody = {
   sort_by: ListLoginsReq['sortBy'];
   filter_by_roles: ListLoginsReq['filterByRoles'];
@@ -97,7 +97,7 @@ function normalizeNumber(value: number | string | null | undefined): number {
 }
 
 function normalizeOptionalNumber(value: number | string | null | undefined): number | null {
-  if (value === null || value === undefined) return null;
+  if (isNullOrUndefined(value)) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
     const parsed = Number(value);

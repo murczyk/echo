@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../Bindings';
-import { isUnauthorizedError } from '../../services/api/client';
 import {
   archivePalitraFolder,
   assignPalitraFolder,
@@ -235,14 +234,6 @@ export function useRerPalitraNeoPage() {
           });
         } catch (referencesError) {
           if (cancelled) return;
-
-          if (isUnauthorizedError(referencesError)) {
-            await palitrasPromise.catch(() => null);
-            if (cancelled) return;
-            window.location.assign('/login');
-            return;
-          }
-
           setStatus({ kind: 'error', text: 'Не вдалося завантажити довідники палітр: ' + formatErrorMessage(referencesError) });
         }
 
@@ -253,22 +244,10 @@ export function useRerPalitraNeoPage() {
           setPalitras(palitrasList);
         } catch (palitrasError) {
           if (cancelled) return;
-
-          if (isUnauthorizedError(palitrasError)) {
-            window.location.assign('/login');
-            return;
-          }
-
           setStatus({ kind: 'error', text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(palitrasError) });
         }
       } catch (loadError) {
         if (cancelled) return;
-
-        if (isUnauthorizedError(loadError)) {
-          window.location.assign('/login');
-          return;
-        }
-
         setStatus({ kind: 'error', text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(loadError) });
       } finally {
         if (!cancelled) setLoading(false);

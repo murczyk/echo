@@ -1,7 +1,6 @@
 import type { ChangeEvent, Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type { AnalyzeKmzResponse, MyScope, Palitra, User } from '../../../../Bindings';
-import { isUnauthorizedError } from '../../services/api/client';
 import { analyzePalitraKmz, archivePalitra, createPalitraBasicWithKmz, createPalitraWithKmz, deletePalitra, downloadPalitras, unarchivePalitra, updatePalitra, uploadPalitraPoints } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
 import { applyRestrictedAccess, buildPalitraNameWithSuffix, DEFAULT_COLOR_HEX, formatErrorMessage, getInitialCreateForm, isFormValid, kmzColorOptionsFromAnalysis, palitraToForm, toCreateReq } from './helpers';
@@ -136,11 +135,6 @@ export function createPalitraPageActionHandlers(props: Props) {
       replacePalitra(updatedPalitra);
       props.setArchiveDialogOpen(false);
     } catch (archiveError) {
-      if (isUnauthorizedError(archiveError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося перенести палітру в архів: ' + formatErrorMessage(archiveError) });
     } finally {
       props.setInFlightArchiveId(null);
@@ -162,11 +156,6 @@ export function createPalitraPageActionHandlers(props: Props) {
       const updatedPalitra = await unarchivePalitra(palitra.id);
       replacePalitra(updatedPalitra);
     } catch (archiveError) {
-      if (isUnauthorizedError(archiveError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося повернути палітру з архіву: ' + formatErrorMessage(archiveError) });
     } finally {
       props.setInFlightArchiveId(null);
@@ -197,11 +186,6 @@ export function createPalitraPageActionHandlers(props: Props) {
       props.setSelectedPalitraIds((prev) => prev.filter((id) => id !== palitra.id));
       props.setDeleteDialogOpen(false);
     } catch (deleteError) {
-      if (isUnauthorizedError(deleteError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося видалити палітру: ' + formatErrorMessage(deleteError) });
     } finally {
       props.setInFlightDeleteId(null);
@@ -250,11 +234,6 @@ export function createPalitraPageActionHandlers(props: Props) {
           props.setPalitras((prev) => prev.filter((item) => item.id !== palitra.id));
           props.setSelectedPalitraIds((prev) => prev.filter((id) => id !== palitra.id));
         } catch (deleteError) {
-          if (isUnauthorizedError(deleteError)) {
-            window.location.assign('/login');
-            return;
-          }
-
           failed.push(palitra.name + ': ' + formatErrorMessage(deleteError));
         } finally {
           props.setInFlightDeleteId(null);
@@ -292,11 +271,6 @@ export function createPalitraPageActionHandlers(props: Props) {
       const blob = await downloadPalitras([palitra.id]);
       downloadBlob(blob, 'palitra-' + String(palitra.id) + '.zip');
     } catch (downloadError) {
-      if (isUnauthorizedError(downloadError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося завантажити палітру: ' + formatErrorMessage(downloadError) });
     } finally {
       props.setInFlightDownloadId(null);
@@ -315,11 +289,6 @@ export function createPalitraPageActionHandlers(props: Props) {
       await uploadPalitraPoints(palitraId, file);
       await props.reloadPalitras();
     } catch (uploadError) {
-      if (isUnauthorizedError(uploadError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося завантажити точки: ' + formatErrorMessage(uploadError) });
     } finally {
       props.setInFlightUploadId(null);
@@ -358,11 +327,6 @@ export function createPalitraPageActionHandlers(props: Props) {
         name: analysis.filename || prev.name,
       }));
     } catch (analysisError) {
-      if (isUnauthorizedError(analysisError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося проаналізувати KMZ файл: ' + formatErrorMessage(analysisError) });
     } finally {
       props.setKmzAnalyzing(false);
@@ -399,11 +363,6 @@ export function createPalitraPageActionHandlers(props: Props) {
 
         const created = results.filter((result): result is PromiseFulfilledResult<Palitra> => result.status === 'fulfilled').map((result) => result.value);
         const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
-        if (rejected.some((result) => isUnauthorizedError(result.reason))) {
-          window.location.assign('/login');
-          return;
-        }
-
         const firstError = rejected[0];
         if (firstError) {
           props.setStatus({ kind: 'error', text: 'Помилка створення палітри: ' + formatErrorMessage(firstError.reason) });
@@ -427,11 +386,6 @@ export function createPalitraPageActionHandlers(props: Props) {
       props.setPalitras((prev) => [createdPalitra, ...prev]);
       resetCreateFlow();
     } catch (createError) {
-      if (isUnauthorizedError(createError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося створити палітру: ' + formatErrorMessage(createError) });
     } finally {
       props.setCreateInFlight(false);
@@ -452,11 +406,6 @@ export function createPalitraPageActionHandlers(props: Props) {
       props.setPalitras((prev) => prev.map((palitra) => (palitra.id === props.editPalitraId ? details.palitra : palitra)));
       closeEdit();
     } catch (updateError) {
-      if (isUnauthorizedError(updateError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося оновити палітру: ' + formatErrorMessage(updateError) });
     } finally {
       props.setEditInFlight(false);

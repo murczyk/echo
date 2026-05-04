@@ -26,7 +26,7 @@ import type {
   ContentNode,
 } from '../../../../Bindings';
 import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
-import { emptyArrToNull } from '../../utils/misc';
+import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { postJson, postVoid } from './client';
 
 const defaultGroupStats: SignalGroupStats = {
@@ -52,7 +52,7 @@ type InboxMessagesRspRaw = {
 function normalizeProfileEntry(
   v: InboxMessagesRspRaw['signal_profiles'][string]
 ): InboxMessagesRsp['signalProfiles'][string] {
-  if (v == null) return null;
+  if (isNullOrUndefined(v)) return null;
   return {
     givenName: v.givenName ?? v.given_name ?? null,
     familyName: v.familyName ?? v.family_name ?? null,
@@ -88,12 +88,12 @@ function normalizeInboxMessageTag(t: InboxMessageTagRaw): InboxMessageTag {
 
 function normalizeContentNode(node: unknown): ContentNode | null {
   if (typeof node === 'string') return node === 'CNNewlineC' ? node : null;
-  if (node == null || typeof node !== 'object') return null;
+  if (isNullOrUndefined(node) || typeof node !== 'object') return null;
   const candidate = node as ContentNodeCandidate;
-  if (candidate.CNHighlightC != null) {
+  if (isPresent(candidate.CNHighlightC)) {
     return String(candidate.CNHighlightC.text ?? '').trim() !== '' ? (node as ContentNode) : null;
   }
-  if (candidate.CNPointC != null) {
+  if (isPresent(candidate.CNPointC)) {
     const displayText = candidate.CNPointC.text ?? '';
     if (displayText.trim() === '') return null;
     if (String(candidate.CNPointC.etalon ?? '').trim() === '') return { CNTextC: { text: displayText } };
@@ -103,15 +103,15 @@ function normalizeContentNode(node: unknown): ContentNode | null {
 }
 
 function normalizeTextMarked(textMarked: InboxMessageType['textMarked']): InboxMessageType['textMarked'] {
-  if (textMarked == null || !Array.isArray(textMarked)) return null;
+  if (isNullOrUndefined(textMarked) || !Array.isArray(textMarked)) return null;
   return textMarked.flatMap((node) => {
     const normalizedNode = normalizeContentNode(node);
-    return normalizedNode == null ? [] : [normalizedNode];
+    return isPresent(normalizedNode) ? [normalizedNode] : [];
   });
 }
 
 function normalizePointTokens(pointTokens: InboxMessageType['pointTokens']): InboxMessageType['pointTokens'] {
-  if (pointTokens == null || !Array.isArray(pointTokens)) return null;
+  if (isNullOrUndefined(pointTokens) || !Array.isArray(pointTokens)) return null;
   return pointTokens.filter((pointToken) => String(pointToken.etalon ?? '').trim() !== '');
 }
 
@@ -133,7 +133,7 @@ function normalizeInboxMessage(
   const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
   const rawInboxTags = (raw.inbox_tags ?? m.inboxTags ?? null) as InboxMessageTagRaw[] | null | undefined;
   const inboxTags: InboxMessageType['inboxTags'] =
-    rawInboxTags != null && Array.isArray(rawInboxTags)
+    isPresent(rawInboxTags) && Array.isArray(rawInboxTags)
       ? rawInboxTags.map(normalizeInboxMessageTag)
       : null;
   const textMarked = normalizeTextMarked((raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked']);
@@ -440,7 +440,7 @@ export async function getPostsList(): Promise<string[]> {
 /** User's sigint group keys (e.g. for filter dropdown). sinceDateInclusiveMs: optional ms, e.g. 2 days ago. */
 export async function getUserSigintGroups(sinceDateInclusiveMs: number | null): Promise<string[]> {
   const body: Record<string, number> =
-    sinceDateInclusiveMs != null ? { since_date_inclusive_ms: sinceDateInclusiveMs } : {};
+    isPresent(sinceDateInclusiveMs) ? { since_date_inclusive_ms: sinceDateInclusiveMs } : {};
   const raw = await postJson<string[]>('/api/user/sigint-groups', body);
   return Array.isArray(raw) ? raw : [];
 }

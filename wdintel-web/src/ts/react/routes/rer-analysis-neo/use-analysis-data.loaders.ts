@@ -1,4 +1,6 @@
 import { useCallback, useRef } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import type {
   CallsignInfoRes,
@@ -162,7 +164,7 @@ export function useAnalysisDataLoaders(params: Params) {
   const refreshMapDateRange = useCallback(
     async (range: { startDate: number; endDate: number }) => {
       const inboxReq = buildInboxReq(queryState, optionsFreqs);
-      if (inboxReq == null) return;
+      if (isNullOrUndefined(inboxReq)) return;
 
       const loadVersion = mapDateRangeLoadVersionRef.current + 1;
       mapDateRangeLoadVersionRef.current = loadVersion;
@@ -256,7 +258,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const loadCorrelatedFreqs = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
-    if (analysisReq == null || queryState.freqsSelected.length === 0) {
+    if (isNullOrUndefined(analysisReq) || queryState.freqsSelected.length === 0) {
       correlatedFreqsRequestRef.current += 1;
       correlatedFreqsRequestKeyRef.current = null;
       setCorrelatedFreqs([]);
@@ -286,7 +288,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const loadCallsignGraph = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
-    if (analysisReq == null) return;
+    if (isNullOrUndefined(analysisReq)) return;
 
     const requestId = callsignGraphRequestRef.current + 1;
     callsignGraphRequestRef.current = requestId;
@@ -313,7 +315,7 @@ export function useAnalysisDataLoaders(params: Params) {
     async (period?: AnalysisGroupsActivityPeriod) => {
       const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
       const firstFreq = queryState.freqsSelected[0];
-      if (analysisReq == null || !firstFreq) {
+      if (isNullOrUndefined(analysisReq) || !firstFreq) {
         setGroupsActivity(null);
         setGroupsActivityLoadedFreq(null);
         setGroupsActivityLoadedPeriod(null);
@@ -361,7 +363,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const loadSummaryData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
-    if (analysisReq == null) {
+    if (isNullOrUndefined(analysisReq)) {
       summaryRequestRef.current += 1;
       summaryRequestKeyRef.current = null;
       setSummaryRows([]);
@@ -405,7 +407,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const loadTopSidebarData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
-    if (analysisReq == null) {
+    if (isNullOrUndefined(analysisReq)) {
       rightSidebarRequestRef.current += 1;
       rightSidebarRequestKeyRef.current = null;
       setTopCallsigns([]);
@@ -463,7 +465,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const downloadSummaryXlsx = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
-    if (analysisReq == null) {
+    if (isNullOrUndefined(analysisReq)) {
       onError('Перевірте дату та час перед експортом.');
       return;
     }
@@ -477,7 +479,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const downloadKmz = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
-    if (analysisReq == null) {
+    if (isNullOrUndefined(analysisReq)) {
       onError('Перевірте дату та час перед експортом.');
       return;
     }
@@ -491,7 +493,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const downloadGeojson = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
-    if (analysisReq == null) {
+    if (isNullOrUndefined(analysisReq)) {
       onError('Перевірте дату та час перед експортом.');
       return;
     }

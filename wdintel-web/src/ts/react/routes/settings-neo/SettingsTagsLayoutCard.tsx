@@ -1,5 +1,7 @@
 import { Box, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
+import { isPresent } from '../../utils/misc';
+
 
 import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
@@ -47,7 +49,7 @@ export function SettingsTagsLayoutCard({
           exclusive
           color="primary"
           onChange={(_, v: TagsLayoutVariant | null) => {
-            if (v != null) onTagsLayoutChange(v);
+            if (isPresent(v)) onTagsLayoutChange(v);
           }}
           size="small"
           disabled={loadInProgress}

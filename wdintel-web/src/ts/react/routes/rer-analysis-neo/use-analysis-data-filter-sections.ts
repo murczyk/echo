@@ -1,6 +1,8 @@
 import type { Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
 import { useCallback, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import { buildAnalysisReq } from './helpers';
 import {
@@ -52,7 +54,7 @@ export function useAnalysisFilterSections({
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
-      if (analysisReq == null) return;
+      if (isNullOrUndefined(analysisReq)) return;
       const sectionAnalysisReq = buildAnalysisReqForFilterSection(section, analysisReq);
       const requestKey = filterSectionCacheKey(section, analysisReq);
       if (loadedFilterSectionKeyRef.current[section] === requestKey) return;

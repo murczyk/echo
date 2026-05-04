@@ -1,6 +1,8 @@
 import ViewAgendaIcon from '@mui/icons-material/ViewAgenda';
 import ViewHeadlineIcon from '@mui/icons-material/ViewHeadline';
 import { Box, Button, Tooltip } from '@mui/material';
+import { isNullOrUndefined } from '../utils/misc';
+
 
 type Props = {
   dense: boolean;
@@ -20,7 +22,7 @@ export function TableDensityToggleButton({
       sx={{
         width: slotWidth ?? 'auto',
         display: 'flex',
-        justifyContent: slotWidth == null ? 'flex-end' : 'center',
+        justifyContent: isNullOrUndefined(slotWidth) ? 'flex-end' : 'center',
         flexShrink: 0,
       }}
     >

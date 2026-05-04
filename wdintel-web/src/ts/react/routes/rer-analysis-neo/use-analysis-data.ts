@@ -1,3 +1,4 @@
+import { isNullOrUndefined } from '../../utils/misc';
 import type {
   CallsignInfoRes,
   CorrelatedFreq,
@@ -418,7 +419,7 @@ export function useAnalysisData({
 
   const loadAllMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, optionsFreqValues);
-    if (inboxReq == null) return;
+    if (isNullOrUndefined(inboxReq)) return;
 
     setMessagesPaging(true);
     try {
@@ -441,7 +442,7 @@ export function useAnalysisData({
   const loadMoreMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, optionsFreqValues);
     const lastMessage = messages.at(-1);
-    if (inboxReq == null || lastMessage == null) return;
+    if (isNullOrUndefined(inboxReq) || isNullOrUndefined(lastMessage)) return;
 
     const requestId = loadMoreMessagesRequestRef.current + 1;
     loadMoreMessagesRequestRef.current = requestId;

@@ -4,6 +4,8 @@ import { Badge, Box, Divider, IconButton, Stack, Tooltip, Typography } from '@mu
 import { useState } from 'react';
 import type { MouseEvent } from 'react';
 import { MRT_ColumnFiltersState, MRT_RowData, MRT_TableInstance } from 'material-react-table';
+import { isPresent } from '../../../../../../../../utils/misc';
+
 
 import { PowerButton } from '../../../../../../../PowerButton';
 import { PowerIconButton } from '../../../../../../../PowerIconButton';
@@ -74,7 +76,7 @@ export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersB
   return (
     <>
       <PowerMenu
-        open={anchorEl != null}
+        open={isPresent(anchorEl)}
         anchorEl={anchorEl}
         onClose={onClose}
         MenuListProps={{

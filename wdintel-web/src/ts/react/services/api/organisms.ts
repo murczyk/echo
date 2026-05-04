@@ -10,7 +10,7 @@ import {
 } from '../../../../Bindings';
 
 import { postJson, postVoid } from './client';
-
+import { isNullOrUndefined } from '../../utils/misc';
 const GOI_SSH_PORT_DEFAULT = 22;
 const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
@@ -262,7 +262,7 @@ function normalizeNumber(value: number | string | null | undefined): number {
 }
 
 function normalizeOptionalNumber(value: number | string | null | undefined): number | null {
-  if (value === null || value === undefined) return null;
+  if (isNullOrUndefined(value)) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
     const parsed = Number(value);

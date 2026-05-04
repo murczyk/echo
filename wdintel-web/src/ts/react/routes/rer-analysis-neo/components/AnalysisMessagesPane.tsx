@@ -1,5 +1,7 @@
 import { Box, Button } from '@mui/material';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { isNullOrUndefined, isPresent } from '../../../utils/misc';
+
 
 import type {
   CallsignInfoRes,
@@ -237,14 +239,14 @@ function AnalysisMessagesPaneComponent({
 
   useEffect(() => {
     return () => {
-      if (copyFeedbackTimerRef.current != null) {
+      if (isPresent(copyFeedbackTimerRef.current)) {
         window.clearTimeout(copyFeedbackTimerRef.current);
       }
     };
   }, []);
 
   const showCopiedFeedback = useCallback((value: string) => {
-    if (copyFeedbackTimerRef.current != null) {
+    if (isPresent(copyFeedbackTimerRef.current)) {
       window.clearTimeout(copyFeedbackTimerRef.current);
     }
     setCopiedFeedbackId(value);
@@ -355,7 +357,7 @@ function AnalysisMessagesPaneComponent({
       {paginationLoading ? <SectionLoadingOverlay open ariaLabel="Завантаження ще повідомлень" sx={{ zIndex: 2 }} /> : null}
 
       <CommentDialog
-        open={commentMessage != null}
+        open={isPresent(commentMessage)}
         messagePreview={commentMessage?.message ?? null}
         commentText={commentDraft}
         onCommentTextChange={setCommentDraft}
@@ -368,10 +370,10 @@ function AnalysisMessagesPaneComponent({
       />
 
       <DeleteConfirmDialog
-        open={deleteMessageId != null}
+        open={isPresent(deleteMessageId)}
         onClose={() => setDeleteMessageId(null)}
         onConfirm={() => {
-          if (deleteMessageId == null) return;
+          if (isNullOrUndefined(deleteMessageId)) return;
           onDeleteMessage(deleteMessageId);
           setDeleteMessageId(null);
         }}
@@ -379,7 +381,7 @@ function AnalysisMessagesPaneComponent({
 
       <AnalysisMessageEditDrawer
         message={editorMessage}
-        open={editorMessage != null}
+        open={isPresent(editorMessage)}
         saveInFlight={editorSaveInFlight}
         onClose={onCloseEditor}
         onSave={onSaveEditor}

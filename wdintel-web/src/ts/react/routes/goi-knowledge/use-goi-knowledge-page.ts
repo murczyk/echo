@@ -6,10 +6,7 @@ import {
 } from '../../../../Bindings';
 
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
-import {
-  HttpRequestError,
-  isUnauthorizedError,
-} from '../../services/api/client';
+import { HttpRequestError } from '../../services/api/client';
 import { listCurrentUserGoiKnowledge } from '../../services/api/goi-knowledge';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -31,10 +28,6 @@ export type GoiKnowledgeRowView = GoiKnowledge & {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function redirectToLogin() {
-  window.location.assign('/login');
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -212,10 +205,6 @@ export function useGoiKnowledgePage() {
         setNotice(null);
       } catch (error) {
         if (abortController.signal.aborted || isAbortError(error)) return;
-        if (isUnauthorizedError(error)) {
-          redirectToLogin();
-          return;
-        }
         const message = formatErrorMessage(error);
         if (hasExistingRows) {
           setNotice({ kind: 'error', text: message });
@@ -262,10 +251,6 @@ export function useGoiKnowledgePage() {
       setNotice(null);
     } catch (error) {
       if (abortController.signal.aborted || isAbortError(error)) return;
-      if (isUnauthorizedError(error)) {
-        redirectToLogin();
-        return;
-      }
       setNotice({ kind: 'error', text: formatErrorMessage(error) });
     } finally {
       if (loadMoreAbortControllerRef.current === abortController) {

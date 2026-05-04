@@ -8,6 +8,8 @@ import { TableRowProps } from '@mui/material/TableRow';
 import { MRT_Column, MRT_ColumnDef, MRT_ColumnOrderState, MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
 import { MRT_Localization_UK } from 'material-react-table/locales/uk';
 import type { MouseEvent, ReactNode } from 'react';
+import { isNullOrUndefined } from '../../../utils/misc';
+
 
 import { TableEmptyState } from '../../TableEmptyState';
 import { CUSTOM_STYLES } from './custom-styles';
@@ -62,7 +64,7 @@ export function getFilterModeHelperText(filterVariant?: string): string | null {
     return 'Режим фільтрації: Дорівнює';
   }
 
-  if (filterVariant == null || filterVariant === 'text' || filterVariant === 'autocomplete') {
+  if (isNullOrUndefined(filterVariant) || filterVariant === 'text' || filterVariant === 'autocomplete') {
     return 'Режим фільтрації: Нечіткий';
   }
 
@@ -199,7 +201,7 @@ export function getSharedFilterTextFieldProps(filterVariant?: string): TextField
 
   return {
     ...sharedProps,
-    placeholder: filterVariant == null || filterVariant === 'text' ? 'Пошук' : undefined,
+    placeholder: isNullOrUndefined(filterVariant) || filterVariant === 'text' ? 'Пошук' : undefined,
   };
 }
 

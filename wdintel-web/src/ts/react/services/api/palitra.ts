@@ -14,7 +14,15 @@ import {
 } from '../../../../Bindings';
 
 import { listAors } from './aor';
-import { HttpRequestError, isUnauthorizedError, postBytes, postJson, postVoid } from './client';
+import {
+  HttpRequestError,
+  postBytes,
+  postJson,
+  postVoid,
+  tryRunAndReturnNullExceptUnauthorized,
+} from './client';
+import { emitUnauthorizedEvent } from '../../auth-redirect';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import { listLogins } from './logins';
 import { listOrganismLogins, listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
@@ -136,7 +144,7 @@ function normalizeNumber(value: number | string | null | undefined): number {
 }
 
 function normalizeOptionalNumber(value: number | string | null | undefined): number | null {
-  if (value === null || value === undefined) return null;
+  if (isNullOrUndefined(value)) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
     const parsed = Number(value);
@@ -149,7 +157,7 @@ function normalizeNumberArray(values: Array<number | string> | null | undefined)
   if (!Array.isArray(values)) return [];
   return values
     .map((value) => normalizeOptionalNumber(value))
-    .filter((value): value is number => value !== null);
+    .filter(isPresent);
 }
 
 function normalizePalitraBulkActionRsp(raw: PalitraBulkActionRspBody | null | undefined): number[] {
@@ -288,6 +296,9 @@ async function postMultipart<T>(url: string, formData: FormData, normalize: (raw
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      emitUnauthorizedEvent();
+    }
     throw new HttpRequestError(response.status, formatErrorMessage(response.status, await response.text()));
   }
 
@@ -307,6 +318,9 @@ async function postMultipartVoid(url: string, formData: FormData): Promise<void>
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      emitUnauthorizedEvent();
+    }
     throw new HttpRequestError(response.status, formatErrorMessage(response.status, await response.text()));
   }
 }
@@ -495,25 +509,11 @@ export async function fetchMyScope(): Promise<MyScope> {
 }
 
 async function fetchMyScopeOptional(): Promise<MyScope | null> {
-  try {
-    return await fetchMyScope();
-  } catch (error) {
-    if (isUnauthorizedError(error)) {
-      throw error;
-    }
-    return null;
-  }
+  return tryRunAndReturnNullExceptUnauthorized(fetchMyScope);
 }
 
 async function fetchAdminReferenceOptional<T>(fetchReference: () => Promise<T>): Promise<T | null> {
-  try {
-    return await fetchReference();
-  } catch (error) {
-    if (isUnauthorizedError(error)) {
-      throw error;
-    }
-    return null;
-  }
+  return tryRunAndReturnNullExceptUnauthorized(fetchReference);
 }
 
 export async function fetchPalitraReferenceData(user: User): Promise<{

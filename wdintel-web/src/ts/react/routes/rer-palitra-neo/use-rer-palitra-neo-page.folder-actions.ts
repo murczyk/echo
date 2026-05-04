@@ -1,7 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { Palitra } from '../../../../Bindings';
-import { isUnauthorizedError } from '../../services/api/client';
 import { archivePalitraFolder, assignPalitraFolder, deletePalitraFolder, renamePalitraFolder } from '../../services/api/palitra';
 import {
   buildAssignFolderPreview,
@@ -272,11 +271,6 @@ export function createPalitraFolderActionHandlers(props: Props) {
           break;
       }
     } catch (folderError) {
-      if (isUnauthorizedError(folderError)) {
-        window.location.assign('/login');
-        return;
-      }
-
       props.setStatus({ kind: 'error', text: 'Не вдалося виконати операцію з папкою: ' + formatErrorMessage(folderError) });
     } finally {
       props.setFolderActionInFlight(false);

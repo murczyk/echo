@@ -8,11 +8,7 @@ import {
   saveRerAnalysisQueryState,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
-import {
-  APP_TIME_ZONE,
-  combineDateTimeInputToMs,
-  formatDateTimeInputValueInTimeZone,
-} from '../../utils/misc';
+import { APP_TIME_ZONE, combineDateTimeInputToMs, formatDateTimeInputValueInTimeZone, isNullOrUndefined } from '../../utils/misc';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -131,7 +127,7 @@ export function createResetQueryState(now: Date = new Date()): AnalysisQueryStat
 export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): boolean {
   const stateKey = queryStateComparisonKey(state);
   const defaultKey = queryStateComparisonKey(createResetQueryState());
-  if (stateKey == null || defaultKey == null) return false;
+  if (isNullOrUndefined(stateKey) || isNullOrUndefined(defaultKey)) return false;
 
   return stateKey !== defaultKey;
 }
@@ -180,7 +176,7 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
-  if (sinceDateInclusiveMs == null || tillDateNoninclusiveMs == null) {
+  if (isNullOrUndefined(sinceDateInclusiveMs) || isNullOrUndefined(tillDateNoninclusiveMs)) {
     return null;
   }
 
@@ -225,7 +221,7 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
 
 export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[] = []): InboxMessagesReq | null {
   const req = buildAnalysisReq(state, allFrequencies);
-  if (req == null) return null;
+  if (isNullOrUndefined(req)) return null;
 
   return {
     sinceIdNoninclusive: null,
@@ -294,7 +290,7 @@ export function shouldRebuildAnalysisRequests(
 
   const currentReq = buildAnalysisReq(state, currentFrequencies);
   const nextReq = buildAnalysisReq(state, nextFrequencies);
-  if (currentReq == null || nextReq == null) return false;
+  if (isNullOrUndefined(currentReq) || isNullOrUndefined(nextReq)) return false;
 
   return JSON.stringify(currentReq.selectedFreqs ?? []) !== JSON.stringify(nextReq.selectedFreqs ?? []);
 }
@@ -339,40 +335,40 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
 function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQueryState {
   const normalized = { ...req };
 
-  if (normalized.onlyWithMetadata == null) {
+  if (isNullOrUndefined(normalized.onlyWithMetadata)) {
     normalized.onlyWithMetadata = false;
   }
-  if (normalized.withoutMetadata == null) {
+  if (isNullOrUndefined(normalized.withoutMetadata)) {
     normalized.withoutMetadata = false;
   }
-  if (normalized.withoutNetwork == null) {
+  if (isNullOrUndefined(normalized.withoutNetwork)) {
     normalized.withoutNetwork = false;
   }
-  if (normalized.orWithExtendedForm == null) {
+  if (isNullOrUndefined(normalized.orWithExtendedForm)) {
     normalized.orWithExtendedForm = false;
   }
-  if (normalized.orBookmarked == null) {
+  if (isNullOrUndefined(normalized.orBookmarked)) {
     normalized.orBookmarked = false;
   }
-  if (normalized.orImportant == null) {
+  if (isNullOrUndefined(normalized.orImportant)) {
     normalized.orImportant = false;
   }
-  if (normalized.orWithCoords == null) {
+  if (isNullOrUndefined(normalized.orWithCoords)) {
     normalized.orWithCoords = false;
   }
-  if (normalized.orWithoutCoords == null) {
+  if (isNullOrUndefined(normalized.orWithoutCoords)) {
     normalized.orWithoutCoords = false;
   }
-  if (normalized.includePelengLocations == null) {
+  if (isNullOrUndefined(normalized.includePelengLocations)) {
     normalized.includePelengLocations = true;
   }
-  if (normalized.filterTagsOption == null) {
+  if (isNullOrUndefined(normalized.filterTagsOption)) {
     normalized.filterTagsOption = 'OneOfTags';
   }
-  if (normalized.withoutModelTags == null) {
+  if (isNullOrUndefined(normalized.withoutModelTags)) {
     normalized.withoutModelTags = false;
   }
-  if (normalized.reportTagsOnlyThisUnit == null) {
+  if (isNullOrUndefined(normalized.reportTagsOnlyThisUnit)) {
     normalized.reportTagsOnlyThisUnit = false;
   }
 
@@ -414,7 +410,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
 
 function analysisReqComparisonKey(req: AnalysisStatsReq, allFrequencies: string[] = []): string | null {
   const normalized = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(req), allFrequencies);
-  if (normalized == null) return null;
+  if (isNullOrUndefined(normalized)) return null;
 
   const { sinceDateInclusiveMs: _sinceDateInclusiveMs, tillDateNoninclusiveMs: _tillDateNoninclusiveMs, ...rest } = normalized;
   return JSON.stringify(rest);
@@ -422,7 +418,7 @@ function analysisReqComparisonKey(req: AnalysisStatsReq, allFrequencies: string[
 
 export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
   const req = buildAnalysisReq(state, allFrequencies);
-  if (req == null) return null;
+  if (isNullOrUndefined(req)) return null;
 
   return analysisReqComparisonKey(req, allFrequencies);
 }
@@ -430,7 +426,7 @@ export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencie
 export function queryStateMatchesSavedFilter(state: AnalysisQueryState, savedFilter: SavedFilter, allFrequencies: string[] = []): boolean {
   const stateKey = queryStateComparisonKey(state, allFrequencies);
   const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
-  if (stateKey == null || savedFilterKey == null) return false;
+  if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;
 
   return stateKey === savedFilterKey;
 }

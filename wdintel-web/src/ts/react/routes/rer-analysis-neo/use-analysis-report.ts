@@ -1,5 +1,6 @@
 import type { AnalysisStatsReq, InboxMessagesReq } from '../../../../Bindings';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
 
 import {
   downloadAnalysisSummaryTableXlsx,
@@ -170,7 +171,7 @@ export function useAnalysisReport({
       const shouldStopRun = () => !isMountedRef.current || runSessionRef.current !== sessionId;
 
       if (state.template === 'summary_table') {
-        if (analysisReq == null) {
+        if (isNullOrUndefined(analysisReq)) {
           onError('Перевірте дату та час перед експортом.');
           return;
         }
@@ -195,7 +196,7 @@ export function useAnalysisReport({
         return;
       }
 
-      if (inboxReq == null) {
+      if (isNullOrUndefined(inboxReq)) {
         onError('Перевірте дату та час перед експортом.');
         return;
       }
@@ -313,7 +314,7 @@ export function useAnalysisReport({
   const repeatReportTaskRun = useCallback(
     async (id: number) => {
       const reportState = reportTaskRunStatesMemory[id];
-      if (reportState == null) return;
+      if (isNullOrUndefined(reportState)) return;
       setReport((current) => ({ ...current, ...reportState, open: true }));
       await runReportDownload(reportState);
     },

@@ -1,5 +1,7 @@
 import * as React from 'react';
 import Alert, { AlertProps } from '@mui/material/Alert';
+import { isNullOrUndefined } from '../utils/misc';
+
 
 type PowerAlertProps = AlertProps & {
   autoHideDuration?: number | null;
@@ -31,7 +33,7 @@ export function PowerAlert(props: PowerAlertProps) {
   );
 
   React.useEffect(() => {
-    if (!open || resolvedAutoHideDuration == null || resolvedAutoHideDuration <= 0) {
+    if (!open || isNullOrUndefined(resolvedAutoHideDuration) || resolvedAutoHideDuration <= 0) {
       return;
     }
     const timerId = window.setTimeout(() => {

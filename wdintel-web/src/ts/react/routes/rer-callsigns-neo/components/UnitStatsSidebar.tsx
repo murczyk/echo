@@ -6,6 +6,8 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
 import { Box, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
+import { isPresent } from '../../../utils/misc';
+
 
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
@@ -283,7 +285,7 @@ function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter
   }
 
   const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>((lastIndex, key, index) => (
-    selectedUnitFilter.hierarchy[key] != null ? index : lastIndex
+    isPresent(selectedUnitFilter.hierarchy[key]) ? index : lastIndex
   ), -1);
   const hierarchyLabel = deepestLevelIndex >= 0 ? HIERARCHY_LABELS[deepestLevelIndex] : 'Підрозділ';
 

@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import { isPresent } from '../../../utils/misc';
+
 
 const RELATIVE_TIME_TICK_MS = 60_000;
 
@@ -12,7 +14,7 @@ export function useRelativeTimeDisplayMs(
   const [inView, setInView] = useState(false);
   const [liveNowMs, setLiveNowMs] = useState<number | null>(null);
 
-  const enabled = messageTimestamp != null && referenceTimeMs != null && !Number.isNaN(messageTimestamp);
+  const enabled = isPresent(messageTimestamp) && isPresent(referenceTimeMs) && !Number.isNaN(messageTimestamp);
 
   useEffect(() => {
     if (!enabled) {

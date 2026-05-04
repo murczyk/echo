@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
+
 
 import type { InboxMessage, InboxMessageTag, SummaryTableFreqRow } from '../../../../Bindings';
 import {
@@ -120,7 +122,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.messages.find(([id]) => id === messageId)?.[1] ??
         params.mapOpenMessages.find(([id]) => id === messageId)?.[1] ??
         null;
-      if (sourceMessage == null) return;
+      if (isNullOrUndefined(sourceMessage)) return;
 
       const enabled = getMessageTagEnabled(sourceMessage, tagId);
 
@@ -162,7 +164,7 @@ export function useAnalysisDataMessageActions(params: Params) {
   const renameSummaryUnit = useCallback(
     async (freq: string, unit: string, unitNew: string) => {
       const analysisReq = buildAnalysisReq(params.queryState, params.optionsFreqs);
-      if (analysisReq == null) {
+      if (isNullOrUndefined(analysisReq)) {
         params.onError('Перевірте дату та час перед збереженням підрозділу.');
         return;
       }

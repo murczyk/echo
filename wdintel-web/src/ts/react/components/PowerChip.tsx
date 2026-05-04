@@ -1,6 +1,8 @@
 import Chip, { ChipProps } from '@mui/material/Chip';
 import { SxProps, Theme, getContrastRatio } from '@mui/material/styles';
 import type { ReactNode } from 'react';
+import { isNullOrUndefined, isPresent } from '../utils/misc';
+
 
 type PowerChipProps = {
   href?: string;
@@ -104,11 +106,11 @@ export function PowerChip({
   return (
     <Chip
       size={size}
-      {...(href != null ? { component: 'a' as const, href } : {})}
+      {...(isPresent(href) ? { component: 'a' as const, href } : {})}
       color={hasExplicitPalette ? undefined : color}
       label={label}
       title={title}
-      onClick={isInteractive && href == null ? onClick : undefined}
+      onClick={isInteractive && isNullOrUndefined(href) ? onClick : undefined}
       onDelete={onDelete}
       variant={variant}
       sx={[
@@ -132,7 +134,7 @@ export function PowerChip({
             lineHeight: 'normal',
           },
           '& .MuiChip-deleteIcon': {
-            cursor: onDelete != null ? 'pointer' : 'inherit',
+            cursor: isPresent(onDelete) ? 'pointer' : 'inherit',
           },
           ...(isClickable
             ? {
