@@ -74,7 +74,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const summaryTabId = `${centerTabsId}-summary-tab`;
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
-  const showLoadingSkeletons = !page.hasLoadedInitialMessages || page.messagesLoading;
+  const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.messages.length === 0;
   const fixedPanelWidth = '400px';
   const collapsedPanelWidth = '56px';
   const leftColumnWidth = page.leftPanelOpen ? fixedPanelWidth : collapsedPanelWidth;
