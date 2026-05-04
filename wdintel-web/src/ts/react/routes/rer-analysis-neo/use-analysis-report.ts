@@ -10,7 +10,6 @@ import {
   fetchAnalysisReportTaskStatus,
   launchAnalysisReportTask,
 } from '../../services/api/analysis';
-import { HttpRequestError } from '../../services/api/client';
 import { downloadBlob } from '../../utils/download-blob';
 import {
   buildReportFilename,
@@ -53,9 +52,6 @@ type ReportRunSnapshot = {
 };
 
 function toErrorMessage(error: unknown): string {
-  if (error instanceof HttpRequestError && error.status === 403) {
-    return 'Недостатньо прав для формування цього звіту.';
-  }
   if (error instanceof Error) return normalizeReportTaskError(error.message);
   return 'Сталася помилка під час формування звіту.';
 }

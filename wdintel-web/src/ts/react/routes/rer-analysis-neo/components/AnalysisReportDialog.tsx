@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import { useId } from 'react';
 
+import type { User } from '../../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import {
   describeAppliedReportFilters,
@@ -45,6 +46,7 @@ type Props = {
   progressExpanded: boolean;
   taskRuns: AnalysisReportTaskRun[];
   open: boolean;
+  currentUser: User | null;
   report: AnalysisReportState;
   queryState: AnalysisQueryState;
   onClose: () => void;
@@ -115,6 +117,8 @@ const exportTemplateOptions: Array<{ id: ReportTemplateId; title: string; descri
   { id: 'geojson', title: 'GeoJSON', description: 'Точки повідомлень з частотою, координатами, мережами й коментарями' },
 ];
 
+const ADVANCED_REPORT_ROLES = ['UnitsEditor', 'CallsignsEditor', 'AdvancedReports', 'Admin'] as const;
+
 const checkboxLabelSx = {
   display: 'inline-flex',
   width: 'fit-content',
@@ -163,12 +167,17 @@ function ReportCheckboxLabel({
   );
 }
 
+function canUseAdvancedReports(user: User | null): boolean {
+  return ADVANCED_REPORT_ROLES.some((role) => Boolean(user?.roles.includes(role)));
+}
+
 export function AnalysisReportDialog({
   aors,
   downloadInFlight,
   progressExpanded,
   taskRuns,
   open,
+  currentUser,
   report,
   queryState,
   onClose,
@@ -181,6 +190,7 @@ export function AnalysisReportDialog({
   const titleId = useId().replace(/:/g, '-');
   const appliedFilters = describeAppliedReportFilters(queryState, report);
   const builderMode = reportTemplateToMode(report.template);
+  const hasAdvancedReportAccess = canUseAdvancedReports(currentUser);
   const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
   const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
   const showReportTagsOnlyThisUnit = ['tags', 'pelengs', 'babak', 'interception', 'posts_docx', 'mouse', 'reo'].includes(report.template);
@@ -223,6 +233,7 @@ export function AnalysisReportDialog({
                     <Button
                       key={option.id}
                       variant={report.template === option.id ? 'contained' : 'outlined'}
+                      disabled={['reo', 'digest', 'active_networks'].includes(option.id) && !hasAdvancedReportAccess}
                       onClick={() => onUpdate({ template: option.id })}
                       sx={{ alignItems: 'flex-start', justifyContent: 'flex-start', textAlign: 'left', p: 2, minWidth: 0, width: 'fit-content' }}
                     >

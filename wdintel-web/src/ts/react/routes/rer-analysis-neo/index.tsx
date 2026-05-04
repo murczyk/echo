@@ -841,6 +841,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
 
       <AnalysisReportDialog
         aors={page.aorEntries}
+        currentUser={page.currentUser}
         downloadInFlight={page.reportDownloadInFlight}
         progressExpanded={page.reportProgressExpanded}
         taskRuns={page.reportTaskRuns}
