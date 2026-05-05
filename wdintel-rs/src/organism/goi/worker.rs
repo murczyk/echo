@@ -200,8 +200,12 @@ async fn sync_goi_palitra_folders_if_due(
     state
         .last_palitra_folder_sync_attempt_at
         .insert(integration.id, Instant::now());
-    let _ = env;
-    let _ = integration;
+    crate::organism::goi::callsigns_sync::sync_goi_callsigns_knowledge(
+        env,
+        integration,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -219,6 +223,9 @@ async fn load_goi_worker_integrations(
     let has_ssh_host = Condition::all()
         .add(goi_integration::Column::SshHost.is_not_null())
         .add(goi_integration::Column::SshHost.ne(""));
+    let has_ssh_user = Condition::all()
+        .add(goi_integration::Column::SshUser.is_not_null())
+        .add(goi_integration::Column::SshUser.ne(""));
     let has_host_for_api =
         Condition::any().add(has_api_host).add(has_ssh_host.clone());
     let has_api_login = Condition::all()
@@ -234,7 +241,10 @@ async fn load_goi_worker_integrations(
             .add(has_api_login)
             .add(has_api_password)
     } else {
-        has_ssh_host
+        Condition::all()
+            .add(is_full_integration)
+            .add(has_ssh_host)
+            .add(has_ssh_user)
     };
     Ok(goi_integration::Entity::find()
         .filter(filter)

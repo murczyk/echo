@@ -33,6 +33,7 @@ use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::{Deserialize, Serialize};
 
+mod callsigns_sync;
 mod goi_ssh;
 pub mod integrations;
 pub mod shared;
@@ -355,6 +356,19 @@ pub async fn goi_upload_file_loose(
             "Skipping GOI file upload for {ssh_target} {remote_file_path_for_log}: {err:#}"
         );
     }
+}
+
+pub async fn goi_download_file(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+) -> anyhow::Result<Vec<u8>> {
+    goi_validate_connection_req(&req)?;
+
+    tokio::task::spawn_blocking(move || {
+        goi_ssh::goi_download_file_sync(req, remote_file_path)
+    })
+    .await
+    .c(h!())?
 }
 
 pub async fn goi_delete_file(

@@ -103,6 +103,35 @@ pub fn goi_upload_file_sync(
     .context(h!()))
 }
 
+pub fn goi_download_file_sync(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+) -> anyhow::Result<Vec<u8>> {
+    let addr = format!("{}:{}", req.ssh_host.trim(), req.ssh_port);
+    let socket_addrs = goi_resolve_socket_addrs_ipv4_first(&addr)?;
+    let timeout = Duration::from_millis(ORGANISM_GOI_SSH_TIMEOUT_MS.into());
+
+    let mut errors = Vec::with_capacity(socket_addrs.len());
+    for socket_addr in socket_addrs {
+        match goi_try_download_file_for_socket(
+            socket_addr,
+            timeout,
+            ORGANISM_GOI_SSH_TIMEOUT_MS,
+            req.ssh_user.trim(),
+            &remote_file_path,
+        ) {
+            Ok(file_data) => return Ok(file_data),
+            Err(err) => errors.push(format!("{socket_addr}: {err:#}")),
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "GOI SSH file download failed for all resolved addresses for {addr}: {}",
+        errors.join("; ")
+    )
+    .context(h!()))
+}
+
 pub fn goi_delete_file_sync(
     req: CheckOrganismGoiConnectionReq,
     remote_file_path: String,
@@ -180,6 +209,25 @@ fn goi_try_upload_file_for_socket(
     remote_file.wait_eof().c(h!())?;
     remote_file.wait_close().c(h!())?;
     Ok(())
+}
+
+fn goi_try_download_file_for_socket(
+    socket_addr: SocketAddr,
+    timeout: Duration,
+    timeout_ms: u32,
+    ssh_user: &str,
+    remote_file_path: &str,
+) -> anyhow::Result<Vec<u8>> {
+    let session =
+        goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
+    let (mut remote_file, _) =
+        session.scp_recv(Path::new(remote_file_path)).c(h!())?;
+    let mut file_data = Vec::new();
+    remote_file.read_to_end(&mut file_data).c(h!())?;
+    remote_file.send_eof().c(h!())?;
+    remote_file.wait_eof().c(h!())?;
+    remote_file.wait_close().c(h!())?;
+    Ok(file_data)
 }
 
 fn goi_try_exec_command_for_socket(
