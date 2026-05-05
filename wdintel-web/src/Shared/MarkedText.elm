@@ -133,7 +133,7 @@ viewWithHintResults hintResultsDict signals networks mFreq bodyText pointTokenCl
                                 Nothing ->
                                     a2
                     in
-                    a [ class "content-token--ADP hover:cursor-pointer", Route.href { path = Route.Path.RerCallsigns, query = a3, hash = Nothing }, target "_blank" ]
+                    a [ class "content-token--ADP hover:cursor-pointer", Route.href { path = Route.Path.RerCallsignsNeo, query = a3, hash = Nothing }, target "_blank" ]
                         [ case Dict.get (String.toLower obj.text) hintResultsDict of
                             Just hintResult ->
                                 Shared.Callsign.viewWithHintResult obj.text hintResult

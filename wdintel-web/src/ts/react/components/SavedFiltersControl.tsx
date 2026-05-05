@@ -22,7 +22,6 @@ import {
 } from '@mui/material';
 import type { FormEvent, ReactNode } from 'react';
 import { useMemo, useState } from 'react';
-import { PowerChip } from './PowerChip';
 import { CompactText } from './CompactTypography';
 import { STANDARD_DIALOG_ACTIONS_SX } from './dialogStyles';
 
@@ -96,6 +95,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
   const canSaveAsNewNow = !saveInFlight && canSaveAsNew;
   const canRenameExisting = !saveInFlight && hasLoadedFilter;
   const canDeleteExisting = !saveInFlight && hasLoadedFilter;
+  const canOpenMenu = canSaveAsNewNow || canUpdateExisting || canRenameExisting || canDeleteExisting;
 
   const closeMenu = () => setMenuAnchorEl(null);
 
@@ -136,24 +136,32 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
   const actionConfig = actionDialog ? getActionConfig(actionDialog.kind) : null;
   const draftSavedFilterName = actionDialog?.name ?? savedFilterName;
   const trimmedDraftSavedFilterName = draftSavedFilterName.trim();
-  const hasDraftRenamedValue =
-    hasLoadedFilter && trimmedDraftSavedFilterName !== '' && trimmedDraftSavedFilterName !== selectedSavedFilterName;
-  const statusLabel = hasDraftRenamedValue ? 'Нова назва' : isDirty ? 'Змінено' : 'Вибрано';
-  const statusColor = hasDraftRenamedValue || isDirty ? 'warning' : 'success';
 
   return (
     <Paper
-      variant="outlined"
       sx={{
         p: 1.25,
         borderRadius: 2,
-        borderColor: 'rgba(148, 163, 184, 0.24)',
-        background: 'rgba(255, 255, 255, 0.02)',
+        border: 'none',
+        boxShadow: 'none',
+        background: 'transparent',
       }}
     >
-      <Stack spacing={1.25}>
-        <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+      <Stack spacing={1}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
           <TypographyLike>{title}</TypographyLike>
+          <Tooltip title="Дії">
+            <span>
+              <IconButton
+                size="small"
+                onClick={(event) => setMenuAnchorEl(event.currentTarget)}
+                disabled={!canOpenMenu}
+                aria-label="Дії зі збереженими фільтрами"
+              >
+                <MoreVertIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Box>
 
         <Box sx={{ minWidth: 0 }}>
@@ -197,52 +205,6 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
           )}
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flexWrap: 'wrap' }}>
-          <Tooltip title="Зберегти як новий">
-            <span>
-              <IconButton
-                size="small"
-                onClick={() => openActionDialog('save-as-new')}
-                disabled={!canSaveAsNewNow}
-                aria-label="Зберегти як новий"
-              >
-                <AddOutlinedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Оновити вибраний фільтр">
-            <span>
-              <IconButton
-                size="small"
-                onClick={() => {
-                  void onUpdateExisting();
-                }}
-                disabled={!canUpdateExisting}
-                aria-label="Оновити вибраний фільтр"
-              >
-                <RefreshOutlinedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Дії">
-            <span>
-              <IconButton
-                size="small"
-                onClick={(event) => setMenuAnchorEl(event.currentTarget)}
-                disabled={!canDeleteExisting && !canRenameExisting}
-                aria-label="Дії зі збереженим фільтром"
-              >
-                <MoreVertIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          {hasLoadedFilter ? (
-            <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'flex-end' }}>
-              <PowerChip label={statusLabel} selected color={statusColor} />
-            </Box>
-          ) : null}
-        </Box>
-
         <Menu
           anchorEl={menuAnchorEl}
           open={isPresent(menuAnchorEl)}
@@ -250,6 +212,26 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              openActionDialog('save-as-new');
+            }}
+            disabled={!canSaveAsNewNow}
+          >
+            <AddOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
+            Зберегти як новий
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              void onUpdateExisting();
+            }}
+            disabled={!canUpdateExisting}
+          >
+            <RefreshOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
+            Оновити вибраний фільтр
+          </MenuItem>
           <MenuItem
             onClick={() => openActionDialog('rename')}
             disabled={!canRenameExisting}
@@ -319,7 +301,7 @@ function TypographyLike({ children }: { children: ReactNode }) {
         lineHeight: 1.2,
         color: 'text.secondary',
         whiteSpace: 'nowrap',
-        mb: '8px',
+        mb: 0,
       }}
     >
       {children}

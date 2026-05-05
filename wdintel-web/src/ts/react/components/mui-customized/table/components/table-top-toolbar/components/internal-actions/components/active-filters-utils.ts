@@ -11,6 +11,10 @@ export type ActiveFilterDescriptor = {
   isGlobalFilter: boolean;
 };
 
+type ActiveFilterMeta = {
+  activeFilterDefaultValue?: unknown;
+};
+
 function truncateText(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
     return value;
@@ -75,6 +79,21 @@ export function resolveFilterLabel<TData extends MRT_RowData>(
   return filterId;
 }
 
+function shouldSkipActiveFilter<TData extends MRT_RowData>(
+  table: MRT_TableInstance<TData>,
+  filterId: string,
+  value: unknown,
+): boolean {
+  const column = table.getColumn(filterId);
+  const defaultValue = (column?.columnDef.meta as ActiveFilterMeta | undefined)?.activeFilterDefaultValue;
+
+  if (typeof defaultValue === 'undefined') {
+    return false;
+  }
+
+  return JSON.stringify(defaultValue) === JSON.stringify(value);
+}
+
 export function getActiveTableFilters<TData extends MRT_RowData>(
   table: MRT_TableInstance<TData> | null | undefined,
   columnFilters: MRT_ColumnFiltersState,
@@ -105,13 +124,15 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
     return activeFilters;
   }
 
-  const activeFilters = columnFilters.map((filter) => ({
-    id: filter.id,
-    label: resolveFilterLabel(table, filter.id),
-    value: filter.value,
-    valuePreview: formatFilterValuePreview(filter.value),
-    isGlobalFilter: false,
-  }));
+  const activeFilters = columnFilters
+    .filter((filter) => !shouldSkipActiveFilter(table, filter.id, filter.value))
+    .map((filter) => ({
+      id: filter.id,
+      label: resolveFilterLabel(table, filter.id),
+      value: filter.value,
+      valuePreview: formatFilterValuePreview(filter.value),
+      isGlobalFilter: false,
+    }));
 
   const hasGlobalFilter =
     typeof globalFilter === 'string' ? globalFilter.trim() !== '' : isPresent(globalFilter) && globalFilter !== '';

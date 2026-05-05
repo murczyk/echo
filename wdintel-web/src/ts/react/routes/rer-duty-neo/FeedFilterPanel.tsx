@@ -15,6 +15,7 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  useTheme,
 } from '@mui/material';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { useEffect, useRef, useState } from 'react';
@@ -81,6 +82,8 @@ export type FeedFilterPanelProps = {
 };
 
 export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
+  const theme = useTheme();
+  const isDarkMode = theme.palette.mode === 'dark';
   const { feedId, filterState, sources, toggles, savedFilters, actions } = panel;
   const {
     groupsList,
@@ -140,8 +143,9 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
     flexShrink: 0,
     height: 36,
     borderRadius: 1,
-    border: '1px solid rgba(148, 163, 184, 0.34)',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    border: '1px solid',
+    borderColor: 'divider',
+    backgroundColor: 'background.paper',
     '& .MuiToggleButtonGroup-grouped': {
       margin: 0,
       borderRadius: 0,
@@ -149,7 +153,8 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
       minHeight: 36,
       height: 36,
       '&:not(:first-of-type)': {
-        borderLeft: '1px solid rgba(148, 163, 184, 0.34)',
+        borderLeft: '1px solid',
+        borderLeftColor: 'divider',
       },
     },
     '& .MuiToggleButtonGroup-firstButton': {
@@ -172,13 +177,13 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
       color: 'text.primary',
       backgroundColor: 'transparent',
       '&:hover': {
-        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        backgroundColor: 'action.hover',
       },
       '&.Mui-selected': {
-        backgroundColor: 'rgba(148, 163, 184, 0.18)',
+        backgroundColor: 'action.selected',
       },
       '&.Mui-selected:hover': {
-        backgroundColor: 'rgba(148, 163, 184, 0.24)',
+        backgroundColor: 'action.selected',
       },
     },
   } as const;
@@ -393,9 +398,12 @@ export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
           overflow: 'auto',
           px: 2,
           py: 2,
-          background:
-            'linear-gradient(180deg, rgba(16, 20, 28, 0.98) 0%, rgba(12, 16, 24, 0.98) 100%)',
-          borderTop: '1px solid rgba(148, 163, 184, 0.28)',
+          backgroundColor: 'background.paper',
+          backgroundImage: isDarkMode
+            ? 'linear-gradient(180deg, rgba(16, 20, 28, 0.98) 0%, rgba(12, 16, 24, 0.98) 100%)'
+            : 'none',
+          borderTop: '1px solid',
+          borderTopColor: 'divider',
           borderRadius: 0,
         }}
       >

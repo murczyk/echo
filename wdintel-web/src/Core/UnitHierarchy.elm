@@ -2,7 +2,7 @@ module Core.UnitHierarchy exposing (Config, UnitHierarchy, buildHierarchy, getUn
 
 {-| UnitHierarchy module provides pure functions for organizing military units into hierarchical structures.
 
-This module extracts the unit filtering and grouping logic from the RerCallsigns page,
+This module extracts the unit filtering and grouping logic from the callsigns page,
 making it testable and reusable across the application.
 
 The hierarchy follows the military structure: Army -> Division -> Regiment -> Battalion -> Company

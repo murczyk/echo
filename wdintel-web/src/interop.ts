@@ -63,7 +63,6 @@ import timezone from 'dayjs/plugin/timezone';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-const RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY = 'rer-callsigns-neo-beta-banner-dismissed';
 const RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY = 'rer-analysis-neo-alpha-banner-dismissed';
 
 // Theme management functions
@@ -790,38 +789,19 @@ export const onReady = ({ app, env }) => {
 
     if (
         app.ports &&
-        app.ports.rer_callsigns_neo_saveBetaBannerDismissed &&
-        app.ports.rer_callsigns_neo_loadBetaBannerDismissed &&
-        app.ports.rer_callsigns_neo_loadBetaBannerDismissedRes
-    ) {
-        app.ports.rer_callsigns_neo_saveBetaBannerDismissed.subscribe((isDismissed: boolean) => {
-            sessionStorage.setItem(
-                RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY,
-                isDismissed ? '1' : '0'
-            );
-        });
-
-        app.ports.rer_callsigns_neo_loadBetaBannerDismissed.subscribe(() => {
-            const storedValue = sessionStorage.getItem(RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY);
-            app.ports.rer_callsigns_neo_loadBetaBannerDismissedRes.send(storedValue === '1');
-        });
-    }
-
-    if (
-        app.ports &&
         app.ports.rer_analysis_neo_saveAlphaBannerDismissed &&
         app.ports.rer_analysis_neo_loadAlphaBannerDismissed &&
         app.ports.rer_analysis_neo_loadAlphaBannerDismissedRes
     ) {
         app.ports.rer_analysis_neo_saveAlphaBannerDismissed.subscribe((isDismissed: boolean) => {
-            sessionStorage.setItem(
+            localStorage.setItem(
                 RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY,
                 isDismissed ? '1' : '0'
             );
         });
 
         app.ports.rer_analysis_neo_loadAlphaBannerDismissed.subscribe(() => {
-            const storedValue = sessionStorage.getItem(RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY);
+            const storedValue = localStorage.getItem(RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY);
             app.ports.rer_analysis_neo_loadAlphaBannerDismissedRes.send(storedValue === '1');
         });
     }
