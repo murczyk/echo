@@ -155,13 +155,18 @@ async fn messages_by_id(
     .await
     .c(h!())?;
     let login = user.id().c(h!())?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .context(h!())?;
 
-    let messages = messages_by_id_bl(&login, &env, &req.message_ids).await?;
+    let messages =
+        messages_by_id_bl(&login, &logins, &env, &req.message_ids).await?;
     Ok(Json(MessageIdsRsp { messages }))
 }
 
 async fn messages_by_id_bl(
     login: &str,
+    logins: &Vec<String>,
     env: &Env,
     message_ids: &[i64],
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -294,33 +299,10 @@ async fn messages_by_id_bl(
         highlight_points: Some(true),
         ..Default::default()
     };
-    let owned_logins = vec![login.to_string()];
-    let mut messages = aggregate_to_inbox_messages(
-        login,
-        messages,
-        &owned_logins,
-        &&req,
-        &env,
-    )
-    .await
-    .context(h!())?;
-    let owned_comments = sigint_comment::Entity::find()
-        .filter(
-            sigint_comment::Column::SignalMessageId
-                .eq_any(message_ids.to_vec()),
-        )
-        .filter(sigint_comment::Column::Login.eq(login))
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let owned_comments_by_message_id = owned_comments
-        .into_iter()
-        .map(|comment| (comment.signal_message_id, comment.comment))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    for (message_id, message) in &mut messages {
-        message.extended_form =
-            owned_comments_by_message_id.get(message_id).cloned();
-    }
+    let messages =
+        aggregate_to_inbox_messages(login, messages, logins, &&req, &env)
+            .await
+            .context(h!())?;
     Ok(messages)
 }
 

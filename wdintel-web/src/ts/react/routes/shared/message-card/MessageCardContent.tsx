@@ -18,11 +18,9 @@ import type {
   Network,
   Tag,
   Unit,
-  User,
 } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from '../../rer-duty-neo/utils';
-import { filterOtherMessageComments } from '../../rer-analysis-neo/use-analysis-data.comments';
 import { renderMarkedText } from './MarkedText';
 
 const PREVIEW_IMAGE_HEIGHT_PX = 100;
@@ -629,10 +627,7 @@ export function MessageCardMessageBody({
   callsignInfoMap,
   networks,
   unitsMap,
-  authUserName,
-  currentUser,
   messageComments = [],
-  users,
   searchText,
 }: {
   compact?: boolean;
@@ -645,10 +640,7 @@ export function MessageCardMessageBody({
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
-  authUserName: string | null;
-  currentUser: User | null;
   messageComments?: MessageComment[];
-  users: Record<string, User | null>;
   searchText?: string | null;
 }) {
   const imageHrefs = useMemo(() => collectMessageImageHrefs(msg), [msg]);
@@ -688,10 +680,7 @@ export function MessageCardMessageBody({
   );
   const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => isPresent(node)) : isPresent(textPrimary);
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
-  const otherComments = useMemo(
-    () => filterOtherMessageComments(authUserName, currentUser, users, messageComments),
-    [authUserName, currentUser, messageComments, users],
-  );
+  const otherComments = messageComments;
   const hasOtherCommentsRest = otherComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
   const visibleOtherComments = showOtherCommentsRest || !hasOtherCommentsRest ? otherComments : otherComments.slice(0, OTHER_COMMENTS_PREVIEW_COUNT);
   const otherCommentsExpandToggleButton = hasOtherCommentsRest ? (

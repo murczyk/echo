@@ -656,7 +656,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                     <AnalysisMessagesPane
                       authUserName={page.authUserName}
                       copiedFeedbackId={page.copiedFeedbackId}
-                      currentUser={page.currentUser}
                       editorMessage={page.editorMessage}
                       editorSaveInFlight={page.editorSaveInFlight}
                       groupInfos={page.groupInfos}
@@ -684,7 +683,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       callsignInfoMap={page.summaryCallsignsInfo}
                       networks={page.networks}
                       unitsMap={page.unitsMap}
-                      users={page.users}
                     />
                   </Box>
 

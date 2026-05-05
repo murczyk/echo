@@ -12,7 +12,6 @@ import type {
   SignalProfileEntry,
   Tag,
   Unit,
-  User,
 } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
@@ -25,7 +24,6 @@ import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 type Props = {
   authUserName: string | null;
   copiedFeedbackId: string | null;
-  currentUser: User | null;
   groupInfos: Record<string, SignalGroupEntry>;
   loading: boolean;
   paginationLoading: boolean;
@@ -46,7 +44,6 @@ type Props = {
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   profiles: Record<string, SignalProfileEntry | null>;
-  users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
@@ -59,7 +56,6 @@ type Props = {
 type AnalysisMessageCardItemProps = {
   authUserName: string | null;
   copiedFeedbackId: string | null;
-  currentUser: User | null;
   groupInfos: Record<string, SignalGroupEntry>;
   id: number;
   message: InboxMessage;
@@ -82,13 +78,11 @@ type AnalysisMessageCardItemProps = {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
-  users: Record<string, User | null>;
 };
 
 const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   authUserName,
   copiedFeedbackId,
-  currentUser,
   groupInfos,
   id,
   message,
@@ -111,7 +105,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   callsignInfoMap,
   networks,
   unitsMap,
-  users,
 }: AnalysisMessageCardItemProps) {
   const normalizeCallsign = (value: string) => value.trim().toUpperCase();
   const saveCallsignPatch = (updater: (message: InboxMessage) => InboxMessage) => {
@@ -124,7 +117,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       msg={message}
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
-      currentUser={currentUser}
       groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
       senderName={buildSenderLabel(message.sender ? profiles[message.sender] : null, message.sender)}
       copiedFeedbackId={copiedFeedbackId}
@@ -137,7 +129,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       callsignInfoMap={callsignInfoMap}
       networks={networks}
       unitsMap={unitsMap}
-      users={users}
       onBookmark={() => onToggleMessageBookmark(id, message.bookmarked)}
       onImportant={() => onToggleMessageImportant(id, message.important)}
       onCopyText={() => {
@@ -187,7 +178,6 @@ function AnalysisMessagesPaneComponent({
   copiedFeedbackId: copiedFeedbackIdProp,
   editorMessage,
   editorSaveInFlight,
-  currentUser,
   groupInfos,
   loading,
   paginationLoading,
@@ -206,7 +196,6 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageImportant,
   onToggleMessageTag,
   profiles,
-  users,
   tagsMap,
   tagsLoading,
   tagsLayout,
@@ -315,7 +304,6 @@ function AnalysisMessagesPaneComponent({
               key={id}
               authUserName={authUserName}
               copiedFeedbackId={copiedFeedbackId}
-              currentUser={currentUser}
               groupInfos={groupInfos}
               id={id}
               message={message}
@@ -338,7 +326,6 @@ function AnalysisMessagesPaneComponent({
               callsignInfoMap={callsignInfoMap}
               networks={networks}
               unitsMap={unitsMap}
-              users={users}
             />
           ))}
         </Box>
