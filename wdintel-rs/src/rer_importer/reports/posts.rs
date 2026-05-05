@@ -5,7 +5,6 @@ use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::rer_importer::types::InboxMessage;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
-use actix_identity::Identity;
 use anyhow::Context;
 use chrono::{Datelike, TimeZone};
 use docx_rs::*;
@@ -34,14 +33,14 @@ struct PostStats {
 }
 
 pub async fn report_docx_kind_posts(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     let read_db = env.replica();
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&read_db, user)
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
         .await
         .c(h!())?;
     let mut current_req = req.req.clone();

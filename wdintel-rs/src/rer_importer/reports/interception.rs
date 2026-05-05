@@ -4,7 +4,6 @@ use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::types::*;
-use actix_identity::Identity;
 use chrono::prelude::*;
 // Import necessary items from rust_xlsxwriter
 use crate::utils::orm::ArrayColumnOps;
@@ -290,13 +289,12 @@ async fn build_inbox_messages_report_sql(
 }
 
 async fn get_inbox_messages_report(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMessage>, AppError> {
-    let login = user.id().context(h!())?;
     let combined_query =
-        build_inbox_messages_report_sql(&login, env, req).await?;
+        build_inbox_messages_report_sql(user_login, env, req).await?;
     let read_db = env.replica();
 
     let results = read_db
@@ -342,7 +340,7 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
 }
 
 pub async fn report_xlsx_kind_interception(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -491,7 +489,7 @@ pub async fn report_xlsx_kind_interception(
     };
 
     let mut i = 1;
-    for m in get_inbox_messages_report(user, env, &inbox_req)
+    for m in get_inbox_messages_report(user_login, env, &inbox_req)
         .await
         .context(h!())?
     {

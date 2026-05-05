@@ -74,7 +74,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const summaryTabId = `${centerTabsId}-summary-tab`;
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
-  const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.messagesLoading;
+  const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
   const fixedPanelWidth = '400px';
   const collapsedPanelWidth = '56px';
   const leftColumnWidth = page.leftPanelOpen ? fixedPanelWidth : collapsedPanelWidth;
@@ -708,8 +708,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         callsignInfoMap={page.summaryCallsignsInfo}
                         networkDisplayMap={page.networkDisplayMap}
                         networks={page.networks}
-                        onDownloadGeojson={page.downloadGeojson}
-                        onDownloadKmz={page.downloadKmz}
                         onDownloadXlsx={page.downloadSummaryXlsx}
                         onRenameUnit={page.renameSummaryUnit}
                         onSelectFreq={page.selectOnlyFreq}
@@ -843,11 +841,18 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
 
       <AnalysisReportDialog
         aors={page.aorEntries}
+        currentUser={page.currentUser}
         downloadInFlight={page.reportDownloadInFlight}
+        progressExpanded={page.reportProgressExpanded}
+        taskRuns={page.reportTaskRuns}
         open={page.report.open}
         report={page.report}
+        queryState={page.queryState}
         onClose={page.closeReport}
         onDownload={page.downloadReport}
+        onRepeatTaskRun={page.repeatReportTaskRun}
+        onSetProgressExpanded={page.setReportProgressExpanded}
+        onToggleTaskRunLogs={page.toggleReportTaskRunLogs}
         onUpdate={page.updateReport}
       />
     </Box>

@@ -22,6 +22,22 @@ import type {
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
+export type AnalysisReportTaskRun = {
+  id: number;
+  reportTitle: string;
+  reportName: string;
+  headerTitle: string;
+  running: boolean;
+  cancelled: boolean;
+  curr: number;
+  overall: number;
+  logs: string[];
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  expanded: boolean;
+};
+
 export type AnalysisCountItem = {
   key: string;
   count: number;
@@ -157,6 +173,8 @@ export type AnalysisPageState = {
   rightSidebarTab: AnalysisSidebarTab | null;
   report: AnalysisReportState;
   reportDownloadInFlight: boolean;
+  reportProgressExpanded: boolean;
+  reportTaskRuns: AnalysisReportTaskRun[];
   saveInFlight: boolean;
   savedFilterName: string;
   savedFilters: SavedFilter[];
@@ -220,6 +238,9 @@ export type AnalysisPageActions = {
   updateQueryState: (patch: Partial<AnalysisQueryState>) => void;
   saveEditor: (message: InboxMessage) => void;
   saveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
+  repeatReportTaskRun: (id: number) => Promise<void>;
+  setReportProgressExpanded: (expanded: boolean) => void;
+  toggleReportTaskRunLogs: (id: number, expanded: boolean) => void;
 };
 
 export type AnalysisPageViewModel = AnalysisPageState & AnalysisPageActions;

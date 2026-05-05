@@ -3,7 +3,6 @@ use crate::error::AppError;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
-use actix_identity::Identity;
 use docx_rs::AlignmentType;
 use docx_rs::LineSpacing;
 use docx_rs::Paragraph;
@@ -15,7 +14,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 pub async fn report_docx_kind_tag(
-    user: Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -24,8 +23,8 @@ pub async fn report_docx_kind_tag(
     let txn = read_db.begin().await.context(h!())?;
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&txn, user)
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&txn, &login)
         .await
         .c(h!())?;
     let mut messages =

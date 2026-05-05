@@ -6,7 +6,6 @@ use crate::rer_importer::analysis::*;
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
-use actix_identity::Identity;
 use anyhow::bail;
 use chrono::prelude::*;
 use echo_migration::IntoCondition;
@@ -33,11 +32,11 @@ struct Message {
 }
 
 pub async fn get_inbox_messages_report(
-    user: &Identity,
+    user_login: &str,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = user_login.to_string();
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let read_db = env.replica();
@@ -197,7 +196,7 @@ pub async fn get_inbox_messages_report(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().c(h!())?,
+        &login,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_locations(
@@ -345,7 +344,7 @@ fn xls_title() -> rust_xlsxwriter::Format {
 
 /// XLSX report for "пеленги" with sender column ("Відправник")
 pub async fn report_xlsx_kind_pelengs1(
-    user: actix_identity::Identity,
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -430,7 +429,7 @@ pub async fn report_xlsx_kind_pelengs1(
     info!("[report_xlsx_kind_pelengs1] {}: querying data", Utc::now());
     let messages: Vec<(i64, Option<(f64, f64)>, InboxMessage)> =
         crate::rer_importer::reports::report_xlsx_kind_pelengs::get_inbox_messages_report(
-            &user,
+            user_login,
             env,
             &current_req,
         )

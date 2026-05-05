@@ -207,8 +207,6 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSummaryTabl
     },
     networkDisplayMap: { 11: 'р/м Сокіл' },
     networks: [buildNetwork()],
-    onDownloadGeojson: vi.fn(),
-    onDownloadKmz: vi.fn(),
     onDownloadXlsx: vi.fn(),
     onRenameUnit: vi.fn().mockResolvedValue(undefined),
     onSelectFreq: vi.fn(),
@@ -280,8 +278,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Локації');
     expect(view.container.textContent).toContain('Дії');
     expect(view.container.textContent).toContain('XLSX');
-    expect(view.container.textContent).toContain('KMZ');
-    expect(view.container.textContent).toContain('GEOJSON');
   });
 
   it('routes filter and map row actions to the existing callbacks', async () => {

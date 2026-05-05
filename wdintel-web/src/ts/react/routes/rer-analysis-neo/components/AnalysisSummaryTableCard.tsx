@@ -46,8 +46,6 @@ type Props = {
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   loading?: boolean;
-  onDownloadGeojson: () => void;
-  onDownloadKmz: () => void;
   onDownloadXlsx: () => void;
   onRenameUnit: (freq: string, unit: string, unitNew: string) => Promise<void>;
   onSelectFreq: (freq: string) => void;
@@ -77,8 +75,6 @@ function AnalysisSummaryTableCardInner({
   networkDisplayMap,
   networks,
   loading = false,
-  onDownloadGeojson,
-  onDownloadKmz,
   onDownloadXlsx,
   onRenameUnit,
   onSelectFreq,
@@ -317,12 +313,6 @@ function AnalysisSummaryTableCardInner({
           <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <Button startIcon={<DownloadIcon />} onClick={onDownloadXlsx} variant="outlined" aria-label="XLSX" title="XLSX">
               XLSX
-            </Button>
-            <Button startIcon={<DownloadIcon />} onClick={onDownloadKmz} variant="outlined" aria-label="KMZ" title="KMZ">
-              KMZ
-            </Button>
-            <Button startIcon={<DownloadIcon />} onClick={onDownloadGeojson} variant="outlined" aria-label="GEOJSON" title="GEOJSON">
-              GEOJSON
             </Button>
             <InternalTableActions table={table} filtersHidden rowNumberAppearanceControl />
           </Stack>

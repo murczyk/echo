@@ -3,10 +3,12 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::config::CLEANUP_REPORT_DAYS;
+use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
 use actix_identity::Identity;
+use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::{Days, NaiveDateTime, Utc};
@@ -29,6 +31,31 @@ mod senders;
 pub mod tag;
 pub mod types;
 mod util;
+
+mod kinds {
+    pub const TAGS: &str = "tags";
+    pub const INTERCEPTION: &str = "interception";
+    pub const BABAK: &str = "babak";
+    pub const MOUSE: &str = "mouse";
+    pub const PELENGS: &str = "pelengs";
+    pub const SENDERS: &str = "senders";
+    pub const POSTS: &str = "posts";
+    pub const NAUSHNOM: &str = "naushnom";
+    pub const REO: &str = "reo";
+    pub const DIGEST: &str = "digest";
+    pub const POSTS_DOCX: &str = "posts_docx";
+    pub const ACTIVE_NETWORKS: &str = "active_networks";
+    pub const NETWORK_FREQUENCIES: &str = "network_frequencies";
+    pub const REPORT_1213: &str = "report_1213";
+
+    pub const ADVANCED_REPORT_KINDS: [&str; 5] = [
+        REO,
+        DIGEST,
+        ACTIVE_NETWORKS,
+        NETWORK_FREQUENCIES,
+        REPORT_1213,
+    ];
+}
 
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
@@ -77,6 +104,341 @@ pub(crate) async fn cleanup_old_reports_nofail(
     } else {
         warn!("Unable to get datetime in job that cleans up old reports");
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReportTaskResultMeta {
+    filename: String,
+    content_type: String,
+    user_login: String,
+}
+
+#[derive(Debug, Clone)]
+struct ReportTaskGenerated {
+    filename: String,
+    content_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportTaskDownloadReq {
+    pub bgtask_id: i64,
+}
+
+fn report_file_extension(req: &types::ReportPreviewReq) -> &'static str {
+    match req.kind.as_str() {
+        kinds::INTERCEPTION
+        | kinds::PELENGS
+        | kinds::SENDERS
+        | kinds::POSTS => "xlsx",
+        kinds::REO => match req.report_type {
+            Some(types::ReportType::Reo(_, types::ReoReportFileType::Xlsx)) => {
+                "xlsx"
+            }
+            _ => "docx",
+        },
+        _ => "docx",
+    }
+}
+
+fn report_content_type(file_extension: &str) -> &'static str {
+    if file_extension == "xlsx" {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    } else {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    }
+}
+
+fn report_requires_advanced_permissions(kind: &str) -> bool {
+    kinds::ADVANCED_REPORT_KINDS.contains(&kind)
+}
+
+async fn ensure_report_launch_permissions(
+    dbx: &DatabaseConnection,
+    user_login: &str,
+    kind: &str,
+) -> Result<(), AppError> {
+    if report_requires_advanced_permissions(kind) {
+        crate::users::has_any_role(
+            dbx,
+            user_login,
+            vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn report_docx_generate_for_task(
+    user_login: String,
+    env: &Env,
+    mut req: types::ReportPreviewReq,
+) -> Result<ReportTaskGenerated, AppError> {
+    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
+    req.req.nolimit = Some(true);
+
+    let storage_dir =
+        std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
+    let outfolder = storage_dir.join("reports_log");
+    let _ = std::fs::create_dir_all(&outfolder);
+    let file_extension = report_file_extension(&req);
+    let content_type = report_content_type(file_extension).to_string();
+    let filename = format!(
+        "report_{}.{}",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"),
+        file_extension
+    );
+    let outpath = outfolder.join(&filename);
+    if req.kind == kinds::TAGS {
+        self::tag::report_docx_kind_tag(&user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == kinds::INTERCEPTION {
+        self::interception::report_xlsx_kind_interception(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::BABAK {
+        self::babak::report_docx_kind_babak(&user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == kinds::MOUSE {
+        self::mouse::report_docx_kind_mouse(&user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == kinds::PELENGS {
+        self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::SENDERS || req.kind == kinds::POSTS {
+        let (aggregation, advanced_freqs) = match &req.report_type {
+            Some(types::ReportType::Senders(settings)) => {
+                (settings.aggregation.clone(), settings.advanced_freqs)
+            }
+            _ => (
+                if req.kind == kinds::POSTS {
+                    types::ReportAggregation::ByPost
+                } else {
+                    types::ReportAggregation::ByProfile
+                },
+                false,
+            ),
+        };
+        self::senders::report_xlsx_kind_senders(
+            aggregation,
+            advanced_freqs,
+            &user_login,
+            env,
+            &req.req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::NAUSHNOM {
+        self::naushnom::report_docx_kind_naushnom(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::REO {
+        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
+            .await
+            .c(h!())?;
+        self::revo::report_docx_kind_revo(&user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == kinds::DIGEST {
+        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
+            .await
+            .c(h!())?;
+        self::digest::report_docx_kind_digest(&user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == kinds::POSTS_DOCX {
+        self::posts::report_docx_kind_posts(&user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == kinds::ACTIVE_NETWORKS {
+        self::active_networks::report_docx_kind_active_networks(
+            env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::NETWORK_FREQUENCIES {
+        self::network_frequencies::report_docx_kind_network_frequencies(
+            env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::REPORT_1213 {
+        self::report_1213::report_docx_kind_report_1213(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else {
+        return Err(format!("Unknown report kind {}", req.kind).into());
+    }
+
+    let request_json = serde_json::to_string(&req).context(h!())?;
+    save_report_log(
+        &env.dbx,
+        format!("reports_log/{filename}"),
+        &request_json,
+        &user_login,
+    )
+    .await
+    .context(h!())?;
+
+    Ok(ReportTaskGenerated {
+        filename,
+        content_type,
+    })
+}
+
+#[post("/api/rer/report-docx-task-launch")]
+pub async fn report_docx_task_launch(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<types::ReportPreviewReq>,
+) -> Result<Json<i64>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let user_login = user.id().c(h!())?;
+    let req_inner = req.into_inner();
+    ensure_report_launch_permissions(&env.dbx, &user_login, &req_inner.kind)
+        .await
+        .c(h!())?;
+    let loglines: Vec<String> = vec![];
+    let bgtask = bgtask::ActiveModel {
+        id: NotSet,
+        progress: Set(0),
+        loglines: Set(serde_json::to_value(loglines).c(h!())?),
+        running: Set(true),
+        finished_with_error: Set(None),
+    }
+    .insert(&env.dbx)
+    .await
+    .c(h!())?;
+    let bgtask_id = bgtask.id;
+    let env_inner = env.get_ref().clone();
+    let task_owner_login = user_login.clone();
+    actix_web::rt::spawn(async move {
+        let dbx = env_inner.dbx.clone();
+        let res = async {
+            bgtask_log(Some(bgtask_id), "[1/4] Формування звіту", &dbx)
+                .await
+                .c(h!())?;
+            let generated = report_docx_generate_for_task(
+                user_login.clone(),
+                &env_inner,
+                req_inner,
+            )
+            .await
+            .c(h!())?;
+            bgtask_log(Some(bgtask_id), "[2/4] Звіт сформовано", &dbx)
+                .await
+                .c(h!())?;
+            bgtask_log(
+                Some(bgtask_id),
+                "[3/4] Збереження сформованого звіту",
+                &dbx,
+            )
+            .await
+            .c(h!())?;
+            let result_meta = ReportTaskResultMeta {
+                filename: generated.filename,
+                content_type: generated.content_type,
+                user_login: task_owner_login.clone(),
+            };
+            bgtask_res::ActiveModel {
+                id: Set(bgtask_id),
+                res_json: Set(Some(serde_json::to_value(result_meta).c(h!())?)),
+                res_bytes: Set(None),
+                res_s3_id: Set(None),
+            }
+            .insert(&dbx)
+            .await
+            .c(h!())?;
+            bgtask_log(Some(bgtask_id), "[4/4] Готово до завантаження", &dbx)
+                .await
+                .c(h!())?;
+            Ok::<(), AppError>(())
+        }
+        .await;
+        let _ = finish_bgtask(Some(bgtask_id), &dbx, &res).await;
+    });
+    Ok(Json(bgtask_id))
+}
+
+#[post("/api/rer/report-docx-task-download")]
+pub async fn report_docx_task_download(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ReportTaskDownloadReq>,
+) -> Result<HttpResponse, AppError> {
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
+        .await
+        .c(h!())?;
+    let bgtask_res = bgtask_res::Entity::find_by_id(req.bgtask_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(format!("Result not found for task id: {}", req.bgtask_id))?;
+    let result_meta_value = bgtask_res.res_json.clone().ok_or(format!(
+        "res_json must be non empty for task id: {}",
+        req.bgtask_id
+    ))?;
+    let result_meta: ReportTaskResultMeta =
+        serde_json::from_value(result_meta_value).c(h!())?;
+    if result_meta.user_login != user_login {
+        return Err(AppError::Forbidden(
+            "Task result belongs to another user".to_string(),
+        ));
+    }
+    let data = if let Some(bytes) = bgtask_res.res_bytes.clone() {
+        let mut bgtask_res = bgtask_res.into_active_model();
+        bgtask_res.res_bytes = Set(None);
+        bgtask_res.update(&env.dbx).await.c(h!())?;
+        bytes
+    } else {
+        let storage_dir =
+            std::path::PathBuf::from_str(&env.config.storage_dir).c(h!())?;
+        let outpath =
+            storage_dir.join("reports_log").join(&result_meta.filename);
+        std::fs::read(outpath).c(h!())?
+    };
+    let content_disposition = header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::FilenameExt(
+            header::ExtendedValue {
+                charset: header::Charset::Ext("UTF-8".into()),
+                language_tag: None,
+                value: result_meta.filename.clone().into_bytes(),
+            },
+        )],
+    };
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, result_meta.content_type))
+        .insert_header(content_disposition)
+        .body(data))
 }
 
 pub(crate) async fn save_report_log(
@@ -159,37 +521,43 @@ pub async fn report_docx(
     );
     let outpath = outfolder.join(&filename);
     let user_login = user.id().context(h!())?;
-    if req.kind == "tags" {
-        self::tag::report_docx_kind_tag(user, &env, &req, &outpath)
+    if req.kind == kinds::TAGS {
+        self::tag::report_docx_kind_tag(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "interception" {
+    } else if req.kind == kinds::INTERCEPTION {
         self::interception::report_xlsx_kind_interception(
-            user, &env, &req, &outpath,
+            &user_login,
+            &env,
+            &req,
+            &outpath,
         )
         .await
         .c(h!())?;
-    } else if req.kind == "babak" {
+    } else if req.kind == kinds::BABAK {
         self::babak::report_docx_kind_babak(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "mouse" {
-        self::mouse::report_docx_kind_mouse(user, &env, &req, &outpath)
+    } else if req.kind == kinds::MOUSE {
+        self::mouse::report_docx_kind_mouse(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "pelengs" {
+    } else if req.kind == kinds::PELENGS {
         self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
-            user, &env, &req, &outpath,
+            &user_login,
+            &env,
+            &req,
+            &outpath,
         )
         .await
         .c(h!())?;
-    } else if req.kind == "senders" || req.kind == "posts" {
+    } else if req.kind == kinds::SENDERS || req.kind == kinds::POSTS {
         let (aggregation, advanced_freqs) = match &req.report_type {
             Some(types::ReportType::Senders(settings)) => {
                 (settings.aggregation.clone(), settings.advanced_freqs)
             }
             _ => (
-                if req.kind == "posts" {
+                if req.kind == kinds::POSTS {
                     types::ReportAggregation::ByPost
                 } else {
                     types::ReportAggregation::ByProfile
@@ -200,40 +568,50 @@ pub async fn report_docx(
         self::senders::report_xlsx_kind_senders(
             aggregation,
             advanced_freqs,
-            user,
+            &user_login,
             &env,
             &req.req,
             &outpath,
         )
         .await
         .c(h!())?;
-    } else if req.kind == "naushnom" {
-        self::naushnom::report_docx_kind_naushnom(user, &env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == "reo" {
+    } else if req.kind == kinds::NAUSHNOM {
+        self::naushnom::report_docx_kind_naushnom(
+            &user_login,
+            &env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::REO {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
             return Ok(resp);
         }
-        self::revo::report_docx_kind_revo(user, &env, &req, &outpath)
+        self::revo::report_docx_kind_revo(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "digest" {
+    } else if req.kind == kinds::DIGEST {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
             return Ok(resp);
         }
-        self::digest::report_docx_kind_digest(user, &env, &req, &outpath)
+        self::digest::report_docx_kind_digest(
+            &user_login,
+            &env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::POSTS_DOCX {
+        self::posts::report_docx_kind_posts(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "posts_docx" {
-        self::posts::report_docx_kind_posts(user, &env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == "active_networks" {
+    } else if req.kind == kinds::ACTIVE_NETWORKS {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
@@ -244,7 +622,7 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "network_frequencies" {
+    } else if req.kind == kinds::NETWORK_FREQUENCIES {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
@@ -255,14 +633,17 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "report_1213" {
+    } else if req.kind == kinds::REPORT_1213 {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
             return Ok(resp);
         }
         self::report_1213::report_docx_kind_report_1213(
-            user, &env, &req, &outpath,
+            &user_login,
+            &env,
+            &req,
+            &outpath,
         )
         .await
         .c(h!())?;

@@ -4,6 +4,8 @@ import type {
   ReportType,
   ReoReportFileType,
 } from '../../../../Bindings';
+import { hasMeaningfulFiltersBeyondDateRange } from './helpers';
+import type { AnalysisQueryState } from './types';
 
 export type ReportTemplateId =
   | 'tags'
@@ -16,7 +18,11 @@ export type ReportTemplateId =
   | 'reo'
   | 'digest'
   | 'active_networks'
-  | 'summary_table';
+  | 'summary_table'
+  | 'kmz'
+  | 'geojson';
+
+export type ReportBuilderMode = 'reports' | 'exports';
 
 export type SenderAggregation = 'ByProfile' | 'ByPost';
 
@@ -34,7 +40,20 @@ export type AnalysisReportState = {
   reportTagsOnlyThisUnit: boolean;
 };
 
+export type AppliedReportFilters = {
+  globalHint: string;
+  inPlaceHints: string[];
+};
+
 export const REPORT_ADJACENT_FREQS_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
+
+export function isExportReportTemplate(template: ReportTemplateId): boolean {
+  return template === 'summary_table' || template === 'kmz' || template === 'geojson';
+}
+
+export function reportTemplateToMode(template: ReportTemplateId): ReportBuilderMode {
+  return isExportReportTemplate(template) ? 'exports' : 'reports';
+}
 
 export function createDefaultReportState(): AnalysisReportState {
   return {
@@ -62,6 +81,10 @@ export function reportTemplateToKind(template: ReportTemplateId, senderAggregati
       return 'active_networks';
     case 'summary_table':
       return 'summary_table';
+    case 'kmz':
+      return 'kmz';
+    case 'geojson':
+      return 'geojson';
     default:
       return template;
   }
@@ -104,6 +127,9 @@ export function reportTemplateToType(state: AnalysisReportState): ReportType | n
       return { ActiveNetworks: { aorIds: state.activeNetworksAorIds } };
     case 'summary_table':
       return null;
+    case 'kmz':
+    case 'geojson':
+      return null;
   }
 }
 
@@ -136,6 +162,10 @@ export function reportDownloadMeta(state: AnalysisReportState): { extension: str
         : { extension: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
     case 'summary_table':
       return { extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+    case 'kmz':
+      return { extension: 'kmz', mimeType: 'application/vnd.google-earth.kmz' };
+    case 'geojson':
+      return { extension: 'geojson', mimeType: 'application/geo+json' };
     default:
       return { extension: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
   }
@@ -144,4 +174,78 @@ export function reportDownloadMeta(state: AnalysisReportState): { extension: str
 export function buildReportFilename(state: AnalysisReportState, fromDateTimeStr: string, toDateTimeStr: string) {
   const { extension } = reportDownloadMeta(state);
   return `report_${fromDateTimeStr}_${toDateTimeStr}.${extension}`;
+}
+
+export function reportTemplateToUiTitle(state: AnalysisReportState): string {
+  switch (state.template) {
+    case 'tags':
+      return 'донесення';
+    case 'pelengs':
+      return 'пеленги';
+    case 'babak':
+      return 'бабак';
+    case 'interception':
+      return 'перехоплення';
+    case 'senders':
+      return state.senderAggregation === 'ByPost' ? 'пости' : 'відправники';
+    case 'posts_docx':
+      return 'пости';
+    case 'mouse':
+      return 'мишка';
+    case 'reo':
+      return 'РЕО';
+    case 'digest':
+      return 'дайджест';
+    case 'active_networks':
+      return 'активні радіомережі';
+    case 'summary_table':
+      return 'підсумкова таблиця';
+    case 'kmz':
+      return 'KMZ';
+    case 'geojson':
+      return 'GeoJSON';
+  }
+}
+
+export function describeAppliedReportFilters(
+  queryState: AnalysisQueryState,
+  report: AnalysisReportState,
+): AppliedReportFilters {
+  const hasPageFilters = hasMeaningfulFiltersBeyondDateRange(queryState);
+  const hasReportOverrides =
+    report.reportTagsOnlyThisUnit ||
+    (report.template === 'babak' && report.withoutComments) ||
+    ((report.template === 'babak' || report.template === 'interception') && report.withoutModelTags) ||
+    (report.template === 'active_networks' && report.activeNetworksAorIds.length > 0);
+
+  let globalHint = 'Звіт буде сформовано за вибраний період без додаткових фільтрів.';
+  if (report.template === 'summary_table') {
+    globalHint = hasPageFilters
+      ? 'Підсумкова таблиця використовує поточні фільтри сторінки аналізу.'
+      : 'Підсумкова таблиця буде сформована за вибраний період без додаткових фільтрів.';
+  } else if (report.template === 'kmz' || report.template === 'geojson') {
+    globalHint = hasPageFilters
+      ? 'Експорт використовує поточні фільтри сторінки аналізу.'
+      : 'Експорт буде сформовано за вибраний період без додаткових фільтрів.';
+  } else if (hasPageFilters) {
+    globalHint = 'Застосуються поточні фільтри сторінки аналізу.';
+  } else if (hasReportOverrides) {
+    globalHint = 'Застосуються налаштування цього звіту.';
+  }
+
+  const inPlaceHints: string[] = [];
+  if (report.template === 'active_networks' && report.activeNetworksAorIds.length > 0) {
+    inPlaceHints.push('Використовуються AOR, обрані в конструкторі.');
+  }
+  if (report.reportTagsOnlyThisUnit) {
+    inPlaceHints.push('Лише для цього звіту: не змінює фільтри сторінки.');
+  }
+  if (report.template === 'babak' && report.withoutComments) {
+    inPlaceHints.push('Коментарі не включаються у звіт.');
+  }
+  if ((report.template === 'babak' || report.template === 'interception') && report.withoutModelTags) {
+    inPlaceHints.push('Без автоматичних тегів для цього шаблону.');
+  }
+
+  return { globalHint, inPlaceHints };
 }

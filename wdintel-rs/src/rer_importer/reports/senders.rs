@@ -38,14 +38,14 @@ struct MessageStatRecord {
 pub async fn report_xlsx_kind_senders(
     aggregation_kind: ReportAggregation,
     advanced_freqs: bool,
-    user: actix_identity::Identity,
+    user_login: &str,
     env: &Env,
     req: &InboxMessagesReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     info!("[report_xlsx_kind_senders] {}: started", Utc::now());
     let read_db = env.replica();
-    let login = user.id().c(h!())?;
+    let login = user_login.to_string();
     let mut req = req.to_owned();
     req.return_duplicates = Some(false);
     let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms else {
