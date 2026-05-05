@@ -15,6 +15,11 @@ type ActiveFilterMeta = {
   activeFilterDefaultValue?: unknown;
 };
 
+function areFilterValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function truncateText(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
     return value;
@@ -91,7 +96,7 @@ function shouldSkipActiveFilter<TData extends MRT_RowData>(
     return false;
   }
 
-  return JSON.stringify(defaultValue) === JSON.stringify(value);
+  return areFilterValuesEqual(defaultValue, value);
 }
 
 export function getActiveTableFilters<TData extends MRT_RowData>(
