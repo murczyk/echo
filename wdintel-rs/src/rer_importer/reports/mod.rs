@@ -32,6 +32,31 @@ pub mod tag;
 pub mod types;
 mod util;
 
+mod kinds {
+    pub const TAGS: &str = "tags";
+    pub const INTERCEPTION: &str = "interception";
+    pub const BABAK: &str = "babak";
+    pub const MOUSE: &str = "mouse";
+    pub const PELENGS: &str = "pelengs";
+    pub const SENDERS: &str = "senders";
+    pub const POSTS: &str = "posts";
+    pub const NAUSHNOM: &str = "naushnom";
+    pub const REO: &str = "reo";
+    pub const DIGEST: &str = "digest";
+    pub const POSTS_DOCX: &str = "posts_docx";
+    pub const ACTIVE_NETWORKS: &str = "active_networks";
+    pub const NETWORK_FREQUENCIES: &str = "network_frequencies";
+    pub const REPORT_1213: &str = "report_1213";
+
+    pub const ADVANCED_REPORT_KINDS: [&str; 5] = [
+        REO,
+        DIGEST,
+        ACTIVE_NETWORKS,
+        NETWORK_FREQUENCIES,
+        REPORT_1213,
+    ];
+}
+
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
     config: &crate::Config,
@@ -101,8 +126,11 @@ pub struct ReportTaskDownloadReq {
 
 fn report_file_extension(req: &types::ReportPreviewReq) -> &'static str {
     match req.kind.as_str() {
-        "interception" | "pelengs" | "senders" | "posts" => "xlsx",
-        "reo" => match req.report_type {
+        kinds::INTERCEPTION
+        | kinds::PELENGS
+        | kinds::SENDERS
+        | kinds::POSTS => "xlsx",
+        kinds::REO => match req.report_type {
             Some(types::ReportType::Reo(_, types::ReoReportFileType::Xlsx)) => {
                 "xlsx"
             }
@@ -120,31 +148,23 @@ fn report_content_type(file_extension: &str) -> &'static str {
     }
 }
 
+fn report_requires_advanced_permissions(kind: &str) -> bool {
+    kinds::ADVANCED_REPORT_KINDS.contains(&kind)
+}
+
 async fn ensure_report_launch_permissions(
     dbx: &DatabaseConnection,
     user_login: &str,
     kind: &str,
 ) -> Result<(), AppError> {
-    match kind {
-        "reo"
-        | "digest"
-        | "active_networks"
-        | "network_frequencies"
-        | "report_1213" => {
-            crate::users::has_any_role(
-                dbx,
-                user_login,
-                vec![
-                    "UnitsEditor",
-                    "CallsignsEditor",
-                    "AdvancedReports",
-                    "Admin",
-                ],
-            )
-            .await
-            .c(h!())?;
-        }
-        _ => {}
+    if report_requires_advanced_permissions(kind) {
+        crate::users::has_any_role(
+            dbx,
+            user_login,
+            vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -169,11 +189,11 @@ async fn report_docx_generate_for_task(
         file_extension
     );
     let outpath = outfolder.join(&filename);
-    if req.kind == "tags" {
+    if req.kind == kinds::TAGS {
         self::tag::report_docx_kind_tag(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "interception" {
+    } else if req.kind == kinds::INTERCEPTION {
         self::interception::report_xlsx_kind_interception(
             &user_login,
             env,
@@ -182,15 +202,15 @@ async fn report_docx_generate_for_task(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "babak" {
+    } else if req.kind == kinds::BABAK {
         self::babak::report_docx_kind_babak(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "mouse" {
+    } else if req.kind == kinds::MOUSE {
         self::mouse::report_docx_kind_mouse(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "pelengs" {
+    } else if req.kind == kinds::PELENGS {
         self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
             &user_login,
             env,
@@ -199,13 +219,13 @@ async fn report_docx_generate_for_task(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "senders" || req.kind == "posts" {
+    } else if req.kind == kinds::SENDERS || req.kind == kinds::POSTS {
         let (aggregation, advanced_freqs) = match &req.report_type {
             Some(types::ReportType::Senders(settings)) => {
                 (settings.aggregation.clone(), settings.advanced_freqs)
             }
             _ => (
-                if req.kind == "posts" {
+                if req.kind == kinds::POSTS {
                     types::ReportAggregation::ByPost
                 } else {
                     types::ReportAggregation::ByProfile
@@ -223,7 +243,7 @@ async fn report_docx_generate_for_task(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "naushnom" {
+    } else if req.kind == kinds::NAUSHNOM {
         self::naushnom::report_docx_kind_naushnom(
             &user_login,
             env,
@@ -232,66 +252,37 @@ async fn report_docx_generate_for_task(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "reo" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user_login,
-            vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
-        )
-        .await
-        .c(h!())?;
+    } else if req.kind == kinds::REO {
+        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
+            .await
+            .c(h!())?;
         self::revo::report_docx_kind_revo(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "digest" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user_login,
-            vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
-        )
-        .await
-        .c(h!())?;
+    } else if req.kind == kinds::DIGEST {
+        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
+            .await
+            .c(h!())?;
         self::digest::report_docx_kind_digest(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "posts_docx" {
+    } else if req.kind == kinds::POSTS_DOCX {
         self::posts::report_docx_kind_posts(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "active_networks" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user_login,
-            vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
-        )
-        .await
-        .c(h!())?;
+    } else if req.kind == kinds::ACTIVE_NETWORKS {
         self::active_networks::report_docx_kind_active_networks(
             env, &req, &outpath,
         )
         .await
         .c(h!())?;
-    } else if req.kind == "network_frequencies" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user_login,
-            vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
-        )
-        .await
-        .c(h!())?;
+    } else if req.kind == kinds::NETWORK_FREQUENCIES {
         self::network_frequencies::report_docx_kind_network_frequencies(
             env, &req, &outpath,
         )
         .await
         .c(h!())?;
-    } else if req.kind == "report_1213" {
-        crate::users::has_any_role(
-            &env.dbx,
-            &user_login,
-            vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
-        )
-        .await
-        .c(h!())?;
+    } else if req.kind == kinds::REPORT_1213 {
         self::report_1213::report_docx_kind_report_1213(
             &user_login,
             env,
@@ -530,11 +521,11 @@ pub async fn report_docx(
     );
     let outpath = outfolder.join(&filename);
     let user_login = user.id().context(h!())?;
-    if req.kind == "tags" {
+    if req.kind == kinds::TAGS {
         self::tag::report_docx_kind_tag(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "interception" {
+    } else if req.kind == kinds::INTERCEPTION {
         self::interception::report_xlsx_kind_interception(
             &user_login,
             &env,
@@ -543,15 +534,15 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "babak" {
+    } else if req.kind == kinds::BABAK {
         self::babak::report_docx_kind_babak(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "mouse" {
+    } else if req.kind == kinds::MOUSE {
         self::mouse::report_docx_kind_mouse(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "pelengs" {
+    } else if req.kind == kinds::PELENGS {
         self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
             &user_login,
             &env,
@@ -560,13 +551,13 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "senders" || req.kind == "posts" {
+    } else if req.kind == kinds::SENDERS || req.kind == kinds::POSTS {
         let (aggregation, advanced_freqs) = match &req.report_type {
             Some(types::ReportType::Senders(settings)) => {
                 (settings.aggregation.clone(), settings.advanced_freqs)
             }
             _ => (
-                if req.kind == "posts" {
+                if req.kind == kinds::POSTS {
                     types::ReportAggregation::ByPost
                 } else {
                     types::ReportAggregation::ByProfile
@@ -584,7 +575,7 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "naushnom" {
+    } else if req.kind == kinds::NAUSHNOM {
         self::naushnom::report_docx_kind_naushnom(
             &user_login,
             &env,
@@ -593,7 +584,7 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "reo" {
+    } else if req.kind == kinds::REO {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
@@ -602,7 +593,7 @@ pub async fn report_docx(
         self::revo::report_docx_kind_revo(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "digest" {
+    } else if req.kind == kinds::DIGEST {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
@@ -616,11 +607,11 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "posts_docx" {
+    } else if req.kind == kinds::POSTS_DOCX {
         self::posts::report_docx_kind_posts(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "active_networks" {
+    } else if req.kind == kinds::ACTIVE_NETWORKS {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
@@ -631,7 +622,7 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "network_frequencies" {
+    } else if req.kind == kinds::NETWORK_FREQUENCIES {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
@@ -642,7 +633,7 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "report_1213" {
+    } else if req.kind == kinds::REPORT_1213 {
         if let Some(resp) =
             ensure_editor_report_permissions(&env, &user_login).await?
         {
