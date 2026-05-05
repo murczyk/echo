@@ -297,10 +297,15 @@ export type UploadPdfRes = {
   rows: Array<RowInfo>;
 };
 
+export type BgtaskErrorCode =
+  | 'no_default_aor'
+;
+
 export type BgtaskStatusAndLogsRsp = {
   running: boolean;
   loglines: Array<string>;
   finishedWithError: string | null;
+  finishedWithErrorCode: BgtaskErrorCode | null;
 };
 
 export type BgtaskStatusAndLogsQuery = {

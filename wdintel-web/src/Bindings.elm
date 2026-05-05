@@ -833,10 +833,21 @@ uploadPdfResEncoder struct =
         ]
 
 
+type BgtaskErrorCode
+    = NoDefaultAor
+
+
+bgtaskErrorCodeEncoder : BgtaskErrorCode -> Json.Encode.Value
+bgtaskErrorCodeEncoder enum =
+    case enum of
+        NoDefaultAor ->
+            Json.Encode.string "no_default_aor"
+
 type alias BgtaskStatusAndLogsRsp =
     { running : Bool
     , loglines : List (String)
     , finishedWithError : Maybe (String)
+    , finishedWithErrorCode : Maybe (BgtaskErrorCode)
     }
 
 
@@ -846,6 +857,7 @@ bgtaskStatusAndLogsRspEncoder struct =
         [ ( "running", (Json.Encode.bool) struct.running )
         , ( "loglines", (Json.Encode.list (Json.Encode.string)) struct.loglines )
         , ( "finished_with_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.finishedWithError )
+        , ( "finished_with_error_code", (Maybe.withDefault Json.Encode.null << Maybe.map (bgtaskErrorCodeEncoder)) struct.finishedWithErrorCode )
         ]
 
 
@@ -8064,12 +8076,27 @@ uploadPdfResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rows" (Json.Decode.list (rowInfoDecoder))))
 
 
+bgtaskErrorCodeDecoder : Json.Decode.Decoder BgtaskErrorCode
+bgtaskErrorCodeDecoder = 
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "no_default_aor" ->
+                            Json.Decode.succeed NoDefaultAor
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 bgtaskStatusAndLogsRspDecoder : Json.Decode.Decoder BgtaskStatusAndLogsRsp
 bgtaskStatusAndLogsRspDecoder =
     Json.Decode.succeed BgtaskStatusAndLogsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "running" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "loglines" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "finished_with_error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "finished_with_error_code" (Json.Decode.nullable (bgtaskErrorCodeDecoder))))
 
 
 bgtaskStatusAndLogsQueryDecoder : Json.Decode.Decoder BgtaskStatusAndLogsQuery

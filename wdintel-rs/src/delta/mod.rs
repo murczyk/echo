@@ -726,10 +726,30 @@ pub async fn bgtask_log2(
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+#[serde(rename_all = "snake_case")]
+pub enum BgtaskErrorCode {
+    NoDefaultAor,
+}
+
+fn bgtask_error_code_from_message(
+    finished_with_error: Option<&String>,
+) -> Option<BgtaskErrorCode> {
+    let message = finished_with_error?;
+    if message.contains("No default AOR found") {
+        Some(BgtaskErrorCode::NoDefaultAor)
+    } else {
+        None
+    }
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct BgtaskStatusAndLogsRsp {
     pub running: bool,
     pub loglines: Vec<String>,
     pub finished_with_error: Option<String>,
+    pub finished_with_error_code: Option<BgtaskErrorCode>,
 }
 
 #[derive(
@@ -1091,6 +1111,7 @@ async fn bgtask_get_status_and_logs(
             })
         }
         Some(bgtask) => {
+            let finished_with_error = bgtask.finished_with_error.clone();
             let loglines: Vec<String> =
                 serde_json::from_value(bgtask.loglines).c(h!())?;
             let loglines =
@@ -1098,7 +1119,10 @@ async fn bgtask_get_status_and_logs(
             Ok(Json(BgtaskStatusAndLogsRsp {
                 running: bgtask.running,
                 loglines,
-                finished_with_error: bgtask.finished_with_error,
+                finished_with_error,
+                finished_with_error_code: bgtask_error_code_from_message(
+                    bgtask.finished_with_error.as_ref(),
+                ),
             }))
         }
     }

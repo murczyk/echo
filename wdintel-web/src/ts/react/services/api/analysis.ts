@@ -78,6 +78,7 @@ type BgtaskStatusAndLogsRsp = {
   running: boolean;
   loglines: string[];
   finishedWithError: string | null;
+  finishedWithErrorCode: string | null;
 };
 
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
@@ -304,7 +305,11 @@ export async function launchAnalysisReportTask(req: ReportPreviewReq): Promise<n
 
 export async function fetchAnalysisReportTaskStatus(taskId: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
   const raw = await getJson<unknown>(`/api/bgtask/${taskId}/status-and-logs?skip=${skip}`);
-  return transformSnakeToCamel<BgtaskStatusAndLogsRsp>(raw);
+  const rsp = transformSnakeToCamel<BgtaskStatusAndLogsRsp>(raw);
+  return {
+    ...rsp,
+    finishedWithErrorCode: rsp.finishedWithErrorCode ?? null,
+  };
 }
 
 export async function downloadAnalysisReportTaskResult(taskId: number): Promise<Blob> {

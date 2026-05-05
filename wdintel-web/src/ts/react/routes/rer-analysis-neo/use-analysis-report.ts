@@ -51,31 +51,31 @@ type ReportRunSnapshot = {
   toDateTimeStr: string;
 };
 
-function toErrorMessage(error: unknown): string {
-  if (error instanceof Error) return normalizeReportTaskError(error.message);
-  return 'Сталася помилка під час формування звіту.';
+type ReportTaskErrorCode = 'no_default_aor';
+
+class ReportTaskError extends Error {
+  code: ReportTaskErrorCode | null;
+
+  constructor(message: string, code: ReportTaskErrorCode | null) {
+    super(message);
+    this.name = 'ReportTaskError';
+    this.code = code;
+  }
 }
 
-function normalizeReportTaskError(message: string): string {
-  const compact = message.replace(/\s+/g, ' ').trim();
+function normalizeReportTaskErrorCode(code: string | null): ReportTaskErrorCode | null {
+  return code === 'no_default_aor' ? code : null;
+}
 
-  if (compact.includes('No default AOR found')) {
-    return 'Не знайдено AOR за замовчуванням для формування цього звіту.';
+function toErrorMessage(error: unknown): string {
+  if (error instanceof ReportTaskError) {
+    if (error.code === 'no_default_aor') {
+      return 'Не знайдено AOR за замовчуванням для формування цього звіту.';
+    }
+    return error.message || 'Сталася помилка під час формування звіту.';
   }
-
-  const noBacktrace = compact.split('Stack backtrace:')[0]?.trim() ?? compact;
-  if (!noBacktrace.startsWith('AnyhowError')) {
-    return noBacktrace;
-  }
-
-  const causes = [...noBacktrace.matchAll(/\d+:\s(.*?)(?=\s\d+:\s|$)/g)]
-    .map((match) => match[1]?.trim() ?? '')
-    .filter((part) => part.length > 0);
-  const rootCause = causes
-    .reverse()
-    .find((part) => !part.startsWith('at ') && !part.startsWith('anyhow error') && !part.startsWith('line '));
-
-  return rootCause ?? 'Сталася помилка під час формування звіту.';
+  if (error instanceof Error) return error.message || 'Сталася помилка під час формування звіту.';
+  return 'Сталася помилка під час формування звіту.';
 }
 
 function parseLastProgress(logs: string[]): { curr: number; overall: number } {
@@ -288,7 +288,14 @@ export function useAnalysisReport({
                     curr: rsp.running ? progress.curr : rsp.finishedWithError ? progress.curr : progress.overall,
                     overall: progress.overall,
                     logs: [run.headerTitle, ...logs],
-                    error: rsp.finishedWithError ? normalizeReportTaskError(rsp.finishedWithError) : null,
+                    error: rsp.finishedWithError
+                      ? toErrorMessage(
+                          new ReportTaskError(
+                            rsp.finishedWithError,
+                            normalizeReportTaskErrorCode(rsp.finishedWithErrorCode),
+                          ),
+                        )
+                      : null,
                     finishedAt: rsp.running ? null : new Date().toISOString(),
                     expanded: rsp.running ? true : rsp.finishedWithError != null,
                   },
@@ -296,7 +303,10 @@ export function useAnalysisReport({
           );
           if (!rsp.running) {
             if (rsp.finishedWithError) {
-              throw new Error(rsp.finishedWithError);
+              throw new ReportTaskError(
+                rsp.finishedWithError,
+                normalizeReportTaskErrorCode(rsp.finishedWithErrorCode),
+              );
             }
             running = false;
             break;
