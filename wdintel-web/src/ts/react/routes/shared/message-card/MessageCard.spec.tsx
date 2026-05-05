@@ -435,21 +435,20 @@ describe('MessageCard', () => {
     ]);
   });
 
-  it('shows comments from other organisms and hides comments from our organism', async () => {
+  it('shows comments from the same organism and hides comments from our user', async () => {
     const view = await renderCard({
       messageComments: [
-        { id: 11, messageId: 42, comment: 'visible comment', login: 'other-login' },
-        { id: 12, messageId: 42, comment: 'hidden comment', login: 'same-org-login' },
+        { id: 11, messageId: 42, comment: 'visible comment', login: 'peer-login' },
+        { id: 12, messageId: 42, comment: 'hidden comment', login: 'tester' },
       ],
       users: {
-        'other-login': { name: 'other-login', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-        'same-org-login': { name: 'same-org-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+        'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
       },
     });
     rendered.push(view);
 
     expect(view.container.textContent).toContain('visible comment');
-    expect(view.container.textContent).toContain('other-login');
+    expect(view.container.textContent).toContain('peer-login');
     expect(view.container.textContent).not.toContain('hidden comment');
   });
 
@@ -465,10 +464,10 @@ describe('MessageCard', () => {
           { id: 11, messageId: 42, comment: 'fourth comment', login: 'other-login-4' },
         ],
         users: {
-          'other-login-1': { name: 'other-login-1', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-          'other-login-2': { name: 'other-login-2', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-          'other-login-3': { name: 'other-login-3', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-          'other-login-4': { name: 'other-login-4', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'other-login-1': { name: 'other-login-1', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'other-login-2': { name: 'other-login-2', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'other-login-3': { name: 'other-login-3', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'other-login-4': { name: 'other-login-4', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
         },
       });
       rendered.push(view);

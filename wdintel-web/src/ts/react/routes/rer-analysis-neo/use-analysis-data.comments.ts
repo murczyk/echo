@@ -52,7 +52,7 @@ function isKnownOtherOrganismComment(
 
   const commentUser = users[commentLogin] ?? null;
   if (isNullOrUndefined(currentUser?.organismId) || isNullOrUndefined(commentUser?.organismId)) return false;
-  return currentUser.organismId !== commentUser.organismId;
+  return currentUser.organismId === commentUser.organismId;
 }
 
 export function filterOtherMessageComments(

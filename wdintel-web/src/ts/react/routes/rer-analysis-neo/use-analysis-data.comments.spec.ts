@@ -37,13 +37,13 @@ describe('filterOtherMessageComments', () => {
     expect(filterOtherMessageComments('tester', buildUser({ organismId: 1 }), { 'unknown-peer': null }, comments)).toEqual([]);
   });
 
-  it('keeps only confirmed different-organism comments', () => {
+  it('keeps only confirmed same-organism comments from other users', () => {
     const comments = [buildComment({ login: 'peer-login' }), buildComment({ login: 'tester' })];
     const currentUser = buildUser({ name: 'tester', organismId: 1 });
 
     expect(
       filterOtherMessageComments('tester', currentUser, {
-        'peer-login': buildUser({ name: 'peer-login', organismId: 2 }),
+        'peer-login': buildUser({ name: 'peer-login', organismId: 1 }),
       }, comments),
     ).toEqual([comments[0]]);
   });
