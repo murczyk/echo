@@ -8,7 +8,7 @@ goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.3.4"
+goi_version := "1.3.7"
 
 default:
     @just --list
