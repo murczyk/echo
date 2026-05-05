@@ -7,7 +7,7 @@ Usage:
   dev-post-clone.sh --ts-key <TS_KEY> --machine <MACHINE> --domain <DOMAIN> --ssh-public-key <SSH_PUBLIC_KEY>
 
 Required:
-  --domain           Tailscale DNS name, e.g. ziggy-dev-echo.eagle-atria.ts.net
+  --domain           Tailscale tailnet DNS name, e.g. eagle-atria.ts.net
   --ssh-public-key   Public SSH key to add for the dev user
 
 Optional:
@@ -77,7 +77,14 @@ done
 DOMAIN="${DOMAIN#https://}"
 DOMAIN="${DOMAIN#http://}"
 DOMAIN="${DOMAIN%%/*}"
-PUBLIC_HOST="${DOMAIN}"
+FULL_DOMAIN="$DOMAIN"
+if [[ -n "$MACHINE" ]]; then
+  machine_prefix="${MACHINE}."
+  if [[ "$DOMAIN" != "$machine_prefix"* ]]; then
+    FULL_DOMAIN="${MACHINE}.${DOMAIN}"
+  fi
+fi
+PUBLIC_HOST="${FULL_DOMAIN}"
 
 find_dev_user() {
   local user
@@ -173,8 +180,8 @@ update_nginx() {
   if [[ ! -f "$nginx_file" ]]; then
     local candidate
 
-    if [[ -f "$nginx_dir/$DOMAIN" ]]; then
-      candidate="$nginx_dir/$DOMAIN"
+    if [[ -f "$nginx_dir/$FULL_DOMAIN" ]]; then
+      candidate="$nginx_dir/$FULL_DOMAIN"
     else
       candidate=$(grep -rl "echo-dev-template" "$nginx_dir" 2>/dev/null | head -n1 || true)
     fi
@@ -193,11 +200,11 @@ update_nginx() {
   fi
 
   if [[ -f "$nginx_file" ]]; then
-    if [[ -f "$nginx_dir/$DOMAIN" && "$nginx_dir/$DOMAIN" != "$canonical_nginx_file" ]]; then
-      warn "Legacy nginx file kept as-is: $nginx_dir/$DOMAIN (canonical file is $canonical_nginx_file)"
+    if [[ -f "$nginx_dir/$FULL_DOMAIN" && "$nginx_dir/$FULL_DOMAIN" != "$canonical_nginx_file" ]]; then
+      warn "Legacy nginx file kept as-is: $nginx_dir/$FULL_DOMAIN (canonical file is $canonical_nginx_file)"
     fi
 
-    run_root sed -i -E "s|^\s*server_name\s+[^;]+;|    server_name ${DOMAIN};|" "$nginx_file"
+    run_root sed -i -E "s|^\s*server_name\s+[^;]+;|    server_name ${FULL_DOMAIN};|" "$nginx_file"
     log "Updated nginx server_name in $nginx_file"
 
     if command -v nginx >/dev/null 2>&1; then
@@ -213,8 +220,8 @@ update_nginx() {
 update_coolwsd() {
   local file="/etc/coolwsd/coolwsd.xml"
   if [[ -f "$file" ]]; then
-    run_root sed -i "s/oblik-os-dev-template\\.tawny-prometheus\\.ts\\.net/${DOMAIN}/g" "$file"
-    run_root sed -i "s/echo-dev-template\\.eagle-atria\\.ts\\.net/${DOMAIN}/g" "$file"
+    run_root sed -i "s/oblik-os-dev-template\\.tawny-prometheus\\.ts\\.net/${FULL_DOMAIN}/g" "$file"
+    run_root sed -i "s/echo-dev-template\\.eagle-atria\\.ts\\.net/${FULL_DOMAIN}/g" "$file"
     log "Updated $file"
 
     if command -v systemctl >/dev/null 2>&1; then
@@ -227,8 +234,8 @@ update_coolwsd() {
 
 renew_cert() {
   if command -v echo-install-utils >/dev/null 2>&1; then
-    run_root echo-install-utils renew-cert --cert-name https --reload --app-name echo --domain "$DOMAIN" --force --interactive=false
-    log "Renewed cert for $DOMAIN"
+    run_root echo-install-utils renew-cert --cert-name https --reload --app-name echo --domain "$FULL_DOMAIN" --force --interactive=false
+    log "Renewed cert for $FULL_DOMAIN"
   else
     warn "echo-install-utils not found; skipping cert renewal"
   fi
@@ -250,13 +257,13 @@ main() {
   renew_cert
 
   echo
-  echo "✅ Ready: https://${DOMAIN}:8300"
+  echo "✅ Ready: https://${FULL_DOMAIN}:8300"
   if [[ -n "$MACHINE" ]]; then
     echo
     echo "SSH config:"
     cat <<CFG
 Host ${MACHINE}
-    HostName ${DOMAIN}
+    HostName ${FULL_DOMAIN}
 CFG
     if [[ -n "$dev_user" ]]; then
       echo "    User ${dev_user}"
