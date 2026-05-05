@@ -50,6 +50,7 @@ import './ts/react/goi-integrations-neo-element'
 import './ts/react/goi-settings-element'
 import './ts/react/rer-duty-neo-element'
 import './ts/react/rer-analysis-neo-element'
+import './ts/react/rer-network-details-neo-element'
 import './ts/react/rer-palitra-neo-element'
 import './ts/react/rer-callsigns-neo-element'
 import { saveLegacyRerAnalysisQueryState } from "./ts/rer-analysis-query-state-legacy"

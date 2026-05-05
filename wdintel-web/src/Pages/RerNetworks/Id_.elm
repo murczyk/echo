@@ -54,7 +54,7 @@ page user shared route =
         { init = init route shared
         , update = update shared
         , subscriptions = subscriptions
-        , view = view user shared
+        , view = view user shared route
         }
         |> Page.withLayout (toLayout user)
 
@@ -72,6 +72,9 @@ init route _ () =
     let
         networkId =
             String.toInt route.params.id
+
+        neoView =
+            isNeoView route
 
         initialKeys =
             case networkId of
@@ -1116,14 +1119,29 @@ keyDisplay key hash =
 -- VIEW
 
 
-contentBlock : Auth.User -> Shared.Model -> B.Network -> Model -> List (Html Msg)
-contentBlock user shared network model =
+contentBlock : Auth.User -> Shared.Model -> Route { id : String } -> B.Network -> Model -> List (Html Msg)
+contentBlock user shared route network model =
     [ div [ class "flex justify-between items-center mb-[16px]" ]
         [ h2 []
             [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
             ]
         , div [ class "flex gap-[8px]" ]
-            [ Button.new { label = "Звіт \"Еталонний опис\"", onClick = ReportModalOpenedByUser } |> Button.view
+            [ a
+                [ class "inline-flex items-center gap-3 rounded-full border-0 bg-transparent pl-0 pr-2 py-0 text-sm font-semibold text-[#5f6f8c] transition-colors hover:bg-transparent focus-visible:outline-none dark:text-[#a9ccf2]"
+                , Route.href
+                    { path = Route.Path.RerNetworks_Id_ { id = route.params.id }
+                    , query = Dict.fromList [ ( "view", "neo" ) ]
+                    , hash = Nothing
+                    }
+                ]
+                [ span
+                    [ class "relative inline-flex h-[20px] w-[34px] shrink-0 rounded-full bg-[#6f7988] p-[2px] align-middle dark:bg-[#5c6675]"
+                    ]
+                    [ span [ class "inline-block h-[16px] w-[16px] rounded-full bg-[#c1cad7] shadow-[0_1px_2px_rgba(0,0,0,0.2)] dark:bg-[#b0bac7]" ] [] ]
+                , span [ class "text-lg font-normal leading-none text-[#9cc9fb] dark:text-[#a9ccf2]" ] [ text "Нова версія" ]
+                , span [ class "rounded-full bg-[#fff7dd] px-3 py-[3px] text-[11px] font-normal tracking-[0.18em] text-[#b85b16] dark:bg-[rgba(242,177,92,0.12)] dark:text-[#f2b15c]" ] [ text "ALPHA" ]
+                ]
+            , Button.new { label = "Звіт \"Еталонний опис\"", onClick = ReportModalOpenedByUser } |> Button.view
             , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
                     |> Button.withStyleDanger
@@ -1146,114 +1164,130 @@ contentBlock user shared network model =
     ]
 
 
-view : Auth.User -> Shared.Model -> Model -> View Msg
-view user shared model =
+view : Auth.User -> Shared.Model -> Route { id : String } -> Model -> View Msg
+view user shared route model =
     { title = "Мережа"
     , body =
-        [ div []
-            [ div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
-                [ div [ class "w-[85vw] mx-auto py-[16px]" ]
-                    (case model.network of
-                        Success network ->
-                            contentBlock user shared network model
-                                --TODO: виглядає тупо, ми в сайдбар ТРУ передаємо завжди
-                                ++ (if model.confirmationCreateSidebar then
-                                        [ Html.map Descriptions <| Descriptions.confirmationCreateSidebar network model user shared ]
-
-                                    else
-                                        []
-                                   )
-                                ++ (if model.signsCreateSidebar then
-                                        [ Html.map Descriptions <| Descriptions.signsCreateSidebar network model user shared ]
-
-                                    else
-                                        []
-                                   )
-                                ++ (if model.editDescriptionSidebar /= Nothing then
-                                        case model.editDescriptionSidebar of
-                                            Just ( _, description ) ->
-                                                [ Html.map Descriptions <|
-                                                    Descriptions.descriptionEditCloseSidebar description
-                                                        network
-                                                        model
-                                                        user
-                                                        shared
-                                                ]
-
-                                            Nothing ->
-                                                []
-
-                                    else
-                                        []
-                                   )
-
-                        _ ->
-                            [ div [ class "h-full" ] [ Shared.Components.Spinner.loadingSpinner ] ]
-                    )
-                , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
-                , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
-                , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
-                , Html.map Keys <| KeysTable.editSidebar model user shared
-                , Html.map Keys <| KeysTable.createSidebar model user shared
-                , let
-                    reportFormConfig =
-                        { onReportTypeChanged = ReportTypeChanged
-                        , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
-                        , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
-                        , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
-                        , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
-                        , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
-                        , reportFromDate = Just model.reportFromDate
-                        , reportToDate = Just model.reportToDate
-                        , onReportFromDateMsg = Just ReportDateTimeFromMsg
-                        , onReportToDateMsg = Just ReportDateTimeToMsg
-                        , showDateRange = True -- Показуємо дати для розширеного звіту
-                        }
-
-                    modalConfig =
-                        { isOpen = model.reportModalOpened
-                        , onClose = ReportModalClosedByUser
-                        , onDownload = ReportDownloadClickedByUser
-                        , isDownloading = model.reportDownloadInProgress
-                        , reportType = model.report
-                        , reportFormConfig = reportFormConfig
-                        , title = "Звіт \"Еталонний опис\""
-                        , description = "Еталонний опис для мережі"
-                        }
-                  in
-                  ReportModal.view modalConfig
-                , let
-                    deleteDialogContent =
-                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
-                            [ div [ class "pb-12" ]
-                                [ h2 [] [ text "Видалити мережу" ]
-                                , p [] [ text "Ви впевнені, що хочете видалити цю мережу?" ]
-                                ]
-                            , div [ class "flex justify-between" ]
-                                [ Button.new { label = "Скасувати", onClick = DeleteNetworkCanceledByUser } |> Button.withStyleSecondary |> Button.view
-                                , Button.new { label = "Видалити", onClick = DeleteNetworkConfirmedByUser }
-                                    |> Button.withStyleDanger
-                                    |> (if model.deleteNetworkLoading then
-                                            Button.withIcon
-                                                [ Shared.Components.Spinner.loadingSpinner2Sm
-                                                ]
-
-                                        else
-                                            identity
-                                       )
-                                    |> Button.view
-                                ]
-                            ]
-                        ]
-                  in
-                  ModalDialog.modalDialog (model.deleteNetworkConfirmation /= Nothing) DeleteNetworkCanceledByUser [] deleteDialogContent
-                , Html.map Frequencies <| FrequenciesTable.editSidebar model user shared
-                , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
-                , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
-                , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
-                , Html.map Keys <| KeysTable.deleteKeyConfirmationModal model
-                , Html.map Descriptions <| Descriptions.viewDeleteConfirmation model
+        if isNeoView route then
+            [ div [ class "app-shell-fill-height box-border min-h-0 px-6 py-4 w-full flex flex-col" ]
+                [ node "rer-network-details-neo"
+                    [ class "block w-full h-full"
+                    , attribute "network-id" route.params.id
+                    ]
+                    []
                 ]
             ]
-        ]
+
+        else
+            [ div []
+                [ div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
+                    [ div [ class "w-[85vw] mx-auto py-[16px]" ]
+                        (case model.network of
+                            Success network ->
+                                contentBlock user shared route network model
+                                    --TODO: виглядає тупо, ми в сайдбар ТРУ передаємо завжди
+                                    ++ (if model.confirmationCreateSidebar then
+                                            [ Html.map Descriptions <| Descriptions.confirmationCreateSidebar network model user shared ]
+
+                                        else
+                                            []
+                                       )
+                                    ++ (if model.signsCreateSidebar then
+                                            [ Html.map Descriptions <| Descriptions.signsCreateSidebar network model user shared ]
+
+                                        else
+                                            []
+                                       )
+                                    ++ (if model.editDescriptionSidebar /= Nothing then
+                                            case model.editDescriptionSidebar of
+                                                Just ( _, description ) ->
+                                                    [ Html.map Descriptions <|
+                                                        Descriptions.descriptionEditCloseSidebar description
+                                                            network
+                                                            model
+                                                            user
+                                                            shared
+                                                    ]
+
+                                                Nothing ->
+                                                    []
+
+                                        else
+                                            []
+                                       )
+
+                            _ ->
+                                [ div [ class "h-full" ] [ Shared.Components.Spinner.loadingSpinner ] ]
+                        )
+                    , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
+                    , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
+                    , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
+                    , Html.map Keys <| KeysTable.editSidebar model user shared
+                    , Html.map Keys <| KeysTable.createSidebar model user shared
+                    , let
+                        reportFormConfig =
+                            { onReportTypeChanged = ReportTypeChanged
+                            , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
+                            , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
+                            , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
+                            , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
+                            , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
+                            , reportFromDate = Just model.reportFromDate
+                            , reportToDate = Just model.reportToDate
+                            , onReportFromDateMsg = Just ReportDateTimeFromMsg
+                            , onReportToDateMsg = Just ReportDateTimeToMsg
+                            , showDateRange = True -- Показуємо дати для розширеного звіту
+                            }
+
+                        modalConfig =
+                            { isOpen = model.reportModalOpened
+                            , onClose = ReportModalClosedByUser
+                            , onDownload = ReportDownloadClickedByUser
+                            , isDownloading = model.reportDownloadInProgress
+                            , reportType = model.report
+                            , reportFormConfig = reportFormConfig
+                            , title = "Звіт \"Еталонний опис\""
+                            , description = "Еталонний опис для мережі"
+                            }
+                      in
+                      ReportModal.view modalConfig
+                    , let
+                        deleteDialogContent =
+                            [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                                [ div [ class "pb-12" ]
+                                    [ h2 [] [ text "Видалити мережу" ]
+                                    , p [] [ text "Ви впевнені, що хочете видалити цю мережу?" ]
+                                    ]
+                                , div [ class "flex justify-between" ]
+                                    [ Button.new { label = "Скасувати", onClick = DeleteNetworkCanceledByUser } |> Button.withStyleSecondary |> Button.view
+                                    , Button.new { label = "Видалити", onClick = DeleteNetworkConfirmedByUser }
+                                        |> Button.withStyleDanger
+                                        |> (if model.deleteNetworkLoading then
+                                                Button.withIcon
+                                                    [ Shared.Components.Spinner.loadingSpinner2Sm
+                                                    ]
+
+                                            else
+                                                identity
+                                           )
+                                        |> Button.view
+                                    ]
+                                ]
+                            ]
+                      in
+                      ModalDialog.modalDialog (model.deleteNetworkConfirmation /= Nothing) DeleteNetworkCanceledByUser [] deleteDialogContent
+                    , Html.map Frequencies <| FrequenciesTable.editSidebar model user shared
+                    , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
+                    , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
+                    , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
+                    , Html.map Keys <| KeysTable.deleteKeyConfirmationModal model
+                    , Html.map Descriptions <| Descriptions.viewDeleteConfirmation model
+                    ]
+                ]
+            ]
     }
+
+
+isNeoView : Route { id : String } -> Bool
+isNeoView route =
+    Dict.get "view" route.query == Just "neo"

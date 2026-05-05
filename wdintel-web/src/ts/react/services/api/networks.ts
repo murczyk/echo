@@ -1,5 +1,5 @@
-import type { ListNetworksReq, Network } from '../../../../Bindings';
-import { postJson } from './client';
+import type { ListNetworksReq, Network, SingleNetworkCallsignsListRsp } from '../../../../Bindings';
+import { postJson, postVoid } from './client';
 import { transformSnakeToCamel } from '../../../snake-to-camel';
 
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */
@@ -17,9 +17,8 @@ export async function getNetworksList(): Promise<Network[]> {
     sortBy: ['NameAsc'],
   };
   const data = await postJson<Network[]>('/api/sigint/network-list', req);
-  // add model normalization here
   const normalizedData = transformSnakeToCamel(data);
-  return Array.isArray(normalizedData) ? normalizedData : []; 
+  return Array.isArray(normalizedData) ? normalizedData : [];
 }
 
 /** Fetch networks by IDs */
@@ -28,4 +27,25 @@ export async function getNetworksByIds(ids: number[]): Promise<Network[]> {
   const data = await postJson<Network[]>('/api/sigint/network-info-batch-id', ids);
   if (!Array.isArray(data)) return [];
   return data.map((row) => transformSnakeToCamel<Network>(row));
+}
+
+export async function getNetworkById(id: number): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network-info-one', id);
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function getNetworkCallsignsList(
+  networkId: number,
+  includeActivityInfo = true,
+): Promise<SingleNetworkCallsignsListRsp> {
+  const data = await postJson<SingleNetworkCallsignsListRsp>('/api/sigint/network-callsigns-list', {
+    network_id: networkId,
+    include_activity_info: includeActivityInfo,
+  });
+  return transformSnakeToCamel<SingleNetworkCallsignsListRsp>(data);
+}
+
+export async function deleteNetwork(networkId: number): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/delete-network', { network_id: networkId });
+  return transformSnakeToCamel<Network>(data);
 }
