@@ -39,16 +39,15 @@ function resolveNetworkDescriptionFrequency(network: Network, networkFreqId: num
 }
 
 function syncNetworkRelations(editForm: NetworkEditForm) {
-  return Promise.all([
-    updateNetworkPosts({
-      networkId: editForm.id,
-      postIds: [...editForm.postIds],
-    }),
+  return updateNetworkPosts({
+    networkId: editForm.id,
+    postIds: [...editForm.postIds],
+  }).then(() =>
     updateNetworkUnits({
       networkId: editForm.id,
       unitIds: [...editForm.unitIds],
     }),
-  ]);
+  );
 }
 
 export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames }: Args) {
