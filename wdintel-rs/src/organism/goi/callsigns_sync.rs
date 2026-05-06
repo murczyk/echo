@@ -794,6 +794,125 @@ impl KnowledgeWorkbookData {
         let row_idx = row_ref.row_num.checked_sub(1)? as usize;
         (row_idx < sheet.rows.len()).then_some(row_idx)
     }
+
+    #[cfg(test)]
+    fn apply_goi_callsigns(
+        &mut self,
+        previous_callsigns: &[GoiCallsignState],
+        current_callsigns: &[GoiCallsignState],
+    ) -> Result<(), AppError> {
+        let target_sheet_name =
+            self.default_target_sheet_name(previous_callsigns).c(h!())?;
+        let mut affected_sheet_names = previous_callsigns
+            .iter()
+            .filter_map(|callsign| callsign.row_ref.as_ref())
+            .map(|row_ref| row_ref.sheet_name.clone())
+            .collect::<BTreeSet<_>>();
+        affected_sheet_names.insert(target_sheet_name.clone());
+
+        for sheet_name in affected_sheet_names {
+            let previous_sheet_callsigns = previous_callsigns
+                .iter()
+                .filter(|callsign| {
+                    callsign
+                        .row_ref
+                        .as_ref()
+                        .map(|row_ref| row_ref.sheet_name.as_str())
+                        == Some(sheet_name.as_str())
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let current_sheet_callsigns = if sheet_name == target_sheet_name {
+                current_callsigns
+            } else {
+                &[]
+            };
+            let sheet = self
+                .sheets
+                .iter_mut()
+                .find(|sheet| sheet.name == sheet_name)
+                .ok_or_else(|| AppError::BL {
+                    msg: format!(
+                        "GOI knowledge workbook has no sheet {sheet_name}"
+                    ),
+                })?;
+            sheet.rows = rewrite_sheet_rows_for_tests(
+                &sheet.rows,
+                &previous_sheet_callsigns,
+                current_sheet_callsigns,
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn rewrite_sheet_rows_for_tests(
+    rows: &[Vec<WorkbookCellValue>],
+    previous_callsigns: &[GoiCallsignState],
+    current_callsigns: &[GoiCallsignState],
+) -> Vec<Vec<WorkbookCellValue>> {
+    let worker_row_nums = previous_callsigns
+        .iter()
+        .filter_map(|callsign| callsign.row_ref.as_ref().map(|row| row.row_num))
+        .collect::<BTreeSet<_>>();
+    let insertion_row_num = if current_callsigns.is_empty() {
+        None
+    } else {
+        worker_row_nums
+            .iter()
+            .copied()
+            .min()
+            .or_else(|| rows.len().checked_add(1).map(|row_num| row_num as u32))
+            .or(Some(1))
+    };
+
+    let mut out_rows = Vec::new();
+    let mut inserted = false;
+    for (idx, row) in rows.iter().enumerate() {
+        let row_num = idx as u32 + 1;
+        if !inserted
+            && insertion_row_num.is_some_and(|insert_row| row_num >= insert_row)
+        {
+            out_rows.extend(
+                current_callsigns
+                    .iter()
+                    .map(build_worker_row_cells_for_tests),
+            );
+            inserted = true;
+        }
+        if worker_row_nums.contains(&row_num) {
+            continue;
+        }
+        out_rows.push(row.clone());
+    }
+    if !inserted && insertion_row_num.is_some() {
+        out_rows.extend(
+            current_callsigns
+                .iter()
+                .map(build_worker_row_cells_for_tests),
+        );
+    }
+    out_rows
+}
+
+#[cfg(test)]
+fn build_worker_row_cells_for_tests(
+    callsign: &GoiCallsignState,
+) -> Vec<WorkbookCellValue> {
+    vec![
+        WorkbookCellValue::String(callsign.callsign.clone()),
+        WorkbookCellValue::String(callsign.frequency.clone()),
+        WorkbookCellValue::String(KNOWLEDGE_KIND_CALL_SIGN.to_string()),
+        WorkbookCellValue::String(KNOWLEDGE_WORKER_AUTHOR.to_string()),
+        WorkbookCellValue::String(format!(
+            "{KNOWLEDGE_WORKER_ID_PREFIX}{}",
+            callsign.id
+        )),
+        WorkbookCellValue::Empty,
+        WorkbookCellValue::String(callsign.unit_name.clone()),
+        WorkbookCellValue::String(callsign.comment.clone()),
+    ]
 }
 
 fn apply_goi_callsigns_to_xlsx(
