@@ -1371,7 +1371,7 @@ fn update_sheet_dimension(sheet_xml: &str, rows_xml: &[String]) -> String {
     dimension_regex
         .replace(
             sheet_xml,
-            format!(r#"<dimension$1ref="A1:{max_col}{max_row_num}"$2"#),
+            format!(r#"<dimension${{1}}ref="A1:{max_col}{max_row_num}"${{2}}"#),
         )
         .into_owned()
 }
@@ -1553,6 +1553,21 @@ mod tests {
         let comment = merged_live_comment_text(&callsign);
 
         assert_eq!(comment, None);
+    }
+
+    #[test]
+    fn update_sheet_dimension_keeps_valid_ref_and_expands_last_row() {
+        let sheet_xml = r#"<worksheet><dimension ref="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2"/></row><row r="3"><c r="A3"/></row><row r="4"><c r="A4"/><c r="H4"/></row></sheetData></worksheet>"#;
+        let rows_xml = vec![
+            r#"<row r="1"><c r="A1"/></row>"#.to_string(),
+            r#"<row r="2"><c r="A2"/></row>"#.to_string(),
+            r#"<row r="3"><c r="A3"/></row>"#.to_string(),
+            r#"<row r="4"><c r="A4"/><c r="H4"/></row>"#.to_string(),
+        ];
+
+        let updated = update_sheet_dimension(sheet_xml, &rows_xml);
+
+        assert!(updated.contains(r#"<dimension ref="A1:H4"/>"#));
     }
 
     #[test]
