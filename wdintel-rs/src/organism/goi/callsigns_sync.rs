@@ -27,6 +27,8 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
 const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
 const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
+#[cfg(test)]
+const TEST_GOI_SYNC_TIMESTAMP: &str = "17.03.2026 23:06:40";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct GoiCallsignState {
@@ -110,6 +112,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     let ssh_req = goi_ssh_req_from_integration(integration)?;
     let remote_paths = goi_remote_data_paths(integration);
     let integration_label = goi_integration_log_label(integration);
+    let sync_timestamp = goi_sync_timestamp_kyiv();
     log::info!(
         "[goi-sync] Starting GOI callsigns knowledge sync for {integration_label}; remote workbook={}",
         remote_paths.knowledge_xlsx
@@ -177,6 +180,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         &workbook,
         &previous_callsigns,
         &current_callsigns,
+        &sync_timestamp,
     )
     .c(h!())?;
     log::info!(
@@ -554,7 +558,7 @@ fn merged_live_unit_name(
     callsign: &LiveCallsignRow,
     network_units: &BTreeMap<i64, String>,
 ) -> String {
-    callsign
+    let unit_name = callsign
         .unit_name
         .as_deref()
         .or_else(|| {
@@ -566,7 +570,8 @@ fn merged_live_unit_name(
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .or_else(|| network_units.get(&callsign.network_id).cloned())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    normalize_goi_unit_name(&unit_name)
 }
 
 fn merged_live_source_name(
@@ -587,6 +592,17 @@ fn merged_live_comment_text(callsign: &LiveCallsignRow) -> Option<String> {
             .then_some(callsign.sc_comment.clone())
             .flatten()
     })
+}
+
+fn normalize_goi_unit_name(unit_name: &str) -> String {
+    unit_name.trim().to_lowercase()
+}
+
+fn goi_sync_timestamp_kyiv() -> String {
+    Utc::now()
+        .with_timezone(&get_tz())
+        .format("%d.%m.%Y %H:%M:%S")
+        .to_string()
 }
 
 fn linked_sigint_callsign_is_active(callsign: &LiveCallsignRow) -> bool {
@@ -840,6 +856,7 @@ impl KnowledgeWorkbookData {
                 &sheet.rows,
                 &previous_sheet_callsigns,
                 current_sheet_callsigns,
+                TEST_GOI_SYNC_TIMESTAMP,
             );
         }
         Ok(())
@@ -851,6 +868,7 @@ fn rewrite_sheet_rows_for_tests(
     rows: &[Vec<WorkbookCellValue>],
     previous_callsigns: &[GoiCallsignState],
     current_callsigns: &[GoiCallsignState],
+    sync_timestamp: &str,
 ) -> Vec<Vec<WorkbookCellValue>> {
     let worker_row_nums = previous_callsigns
         .iter()
@@ -874,11 +892,9 @@ fn rewrite_sheet_rows_for_tests(
         if !inserted
             && insertion_row_num.is_some_and(|insert_row| row_num >= insert_row)
         {
-            out_rows.extend(
-                current_callsigns
-                    .iter()
-                    .map(build_worker_row_cells_for_tests),
-            );
+            out_rows.extend(current_callsigns.iter().map(|callsign| {
+                build_worker_row_cells_for_tests(callsign, sync_timestamp)
+            }));
             inserted = true;
         }
         if worker_row_nums.contains(&row_num) {
@@ -887,11 +903,9 @@ fn rewrite_sheet_rows_for_tests(
         out_rows.push(row.clone());
     }
     if !inserted && insertion_row_num.is_some() {
-        out_rows.extend(
-            current_callsigns
-                .iter()
-                .map(build_worker_row_cells_for_tests),
-        );
+        out_rows.extend(current_callsigns.iter().map(|callsign| {
+            build_worker_row_cells_for_tests(callsign, sync_timestamp)
+        }));
     }
     out_rows
 }
@@ -899,6 +913,7 @@ fn rewrite_sheet_rows_for_tests(
 #[cfg(test)]
 fn build_worker_row_cells_for_tests(
     callsign: &GoiCallsignState,
+    sync_timestamp: &str,
 ) -> Vec<WorkbookCellValue> {
     vec![
         WorkbookCellValue::String(callsign.callsign.clone()),
@@ -909,7 +924,7 @@ fn build_worker_row_cells_for_tests(
             "{KNOWLEDGE_WORKER_ID_PREFIX}{}",
             callsign.id
         )),
-        WorkbookCellValue::Empty,
+        WorkbookCellValue::String(sync_timestamp.to_string()),
         WorkbookCellValue::String(callsign.unit_name.clone()),
         WorkbookCellValue::String(callsign.comment.clone()),
     ]
@@ -920,6 +935,7 @@ fn apply_goi_callsigns_to_xlsx(
     workbook: &KnowledgeWorkbookData,
     previous_callsigns: &[GoiCallsignState],
     current_callsigns: &[GoiCallsignState],
+    sync_timestamp: &str,
 ) -> Result<Vec<u8>, AppError> {
     let target_sheet_name = workbook
         .default_target_sheet_name(previous_callsigns)
@@ -974,6 +990,7 @@ fn apply_goi_callsigns_to_xlsx(
             &sheet_xml,
             &previous_sheet_callsigns,
             current_sheet_callsigns,
+            sync_timestamp,
         )
         .c(h!())?;
         archive
@@ -1161,6 +1178,7 @@ fn rewrite_sheet_xml(
     sheet_xml: &str,
     previous_callsigns: &[GoiCallsignState],
     current_callsigns: &[GoiCallsignState],
+    sync_timestamp: &str,
 ) -> Result<String, AppError> {
     let (prefix, rows, suffix) = split_sheet_xml(sheet_xml).c(h!())?;
     let worker_row_nums = previous_callsigns
@@ -1215,6 +1233,7 @@ fn rewrite_sheet_xml(
             out_rows.extend(build_worker_rows_xml(
                 insertion_row_num.unwrap_or(1),
                 current_callsigns,
+                sync_timestamp,
             ));
             inserted = true;
         }
@@ -1230,6 +1249,7 @@ fn rewrite_sheet_xml(
             out_rows.extend(build_worker_rows_xml(
                 insertion_row_num,
                 current_callsigns,
+                sync_timestamp,
             ));
         }
     }
@@ -1292,17 +1312,26 @@ fn split_sheet_xml(
 fn build_worker_rows_xml(
     start_row_num: u32,
     callsigns: &[GoiCallsignState],
+    sync_timestamp: &str,
 ) -> Vec<String> {
     callsigns
         .iter()
         .enumerate()
         .map(|(idx, callsign)| {
-            build_worker_row_xml(start_row_num + idx as u32, callsign)
+            build_worker_row_xml(
+                start_row_num + idx as u32,
+                callsign,
+                sync_timestamp,
+            )
         })
         .collect()
 }
 
-fn build_worker_row_xml(row_num: u32, callsign: &GoiCallsignState) -> String {
+fn build_worker_row_xml(
+    row_num: u32,
+    callsign: &GoiCallsignState,
+    sync_timestamp: &str,
+) -> String {
     let mut cells = Vec::new();
     push_inline_string_cell(&mut cells, "A", row_num, &callsign.callsign);
     push_inline_string_cell(&mut cells, "B", row_num, &callsign.frequency);
@@ -1314,6 +1343,7 @@ fn build_worker_row_xml(row_num: u32, callsign: &GoiCallsignState) -> String {
         row_num,
         &format!("{KNOWLEDGE_WORKER_ID_PREFIX}{}", callsign.id),
     );
+    push_inline_string_cell(&mut cells, "F", row_num, sync_timestamp);
     push_inline_string_cell(&mut cells, "G", row_num, &callsign.unit_name);
     push_inline_string_cell(&mut cells, "H", row_num, &callsign.comment);
     format!(r#"<row r="{row_num}">{}</row>"#, cells.join(""))
@@ -1512,7 +1542,7 @@ mod tests {
             sc_comment: Some("fallback comment".to_string()),
             sc_source_id: Some(7),
             unit_name: None,
-            sc_unit_name: Some("fallback unit".to_string()),
+            sc_unit_name: Some("FALLBACK UNIT".to_string()),
         }
     }
 
@@ -1548,6 +1578,15 @@ mod tests {
         let unit_name = merged_live_unit_name(&callsign, &network_units);
 
         assert_eq!(unit_name, "network unit");
+    }
+
+    #[test]
+    fn merged_live_unit_name_normalizes_to_lowercase() {
+        let callsign = sample_live_callsign_row();
+
+        let unit_name = merged_live_unit_name(&callsign, &BTreeMap::new());
+
+        assert_eq!(unit_name, "fallback unit");
     }
 
     #[test]
@@ -1723,6 +1762,10 @@ mod tests {
         assert_eq!(next[1].id, 5);
         assert_eq!(next[1].row_ref.as_ref().map(|row| row.row_num), Some(3));
         assert_eq!(next[1].callsign, "EPSILON");
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[2][5])),
+            TEST_GOI_SYNC_TIMESTAMP
+        );
         assert_eq!(
             workbook_cell_text(Some(&workbook.sheets[0].rows[2][4])),
             "EXO ID 5"
