@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AreaOfResponsibility, ModulationRec, Network, NetworkStatus, Post, Unit, User } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
 import {
@@ -47,6 +47,7 @@ type NetworkDetailsNeoPageState = {
   referenceLoading: boolean;
   error: string | null;
   referenceWarning: string | null;
+  callsignWarning: string | null;
   deleteDialogOpen: boolean;
   deleteInProgress: boolean;
   menuAnchorEl: HTMLElement | null;
@@ -74,6 +75,7 @@ const EMPTY_STATE: NetworkDetailsNeoPageState = {
   referenceLoading: true,
   error: null,
   referenceWarning: null,
+  callsignWarning: null,
   deleteDialogOpen: false,
   deleteInProgress: false,
   menuAnchorEl: null,
@@ -186,6 +188,7 @@ function toNetworkEditForm(network: Network): NetworkEditForm {
 
 export function useRerNetworkDetailsNeoPage(networkId: number) {
   const [state, setState] = useState<NetworkDetailsNeoPageState>(EMPTY_STATE);
+  const reloadGeneration = useRef(0);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -199,8 +202,12 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const postOptions = useMemo<NetworkOption[]>(() => state.posts.map((post) => ({ id: post.id, label: post.name })), [state.posts]);
 
   const reload = useCallback(() => {
-    let cancelled = false;
+    reloadGeneration.current += 1;
+    const generation = reloadGeneration.current;
     setState(EMPTY_STATE);
+    reloadGeneration.current = generation;
+
+    const isCurrent = () => reloadGeneration.current === generation;
 
     const loadCore = async () => {
       if (!Number.isFinite(networkId) || networkId <= 0) {
@@ -210,7 +217,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
       try {
         const network = await getNetworkById(networkId);
-        if (cancelled) return;
+        if (!isCurrent()) return;
 
         setState((current) => ({
           ...current,
@@ -221,38 +228,39 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
         void getNetworkCallsignsList(networkId, true)
           .then((callsignsRes) => {
-            if (cancelled) return;
+            if (!isCurrent()) return;
             setState((current) => ({
               ...current,
               callsignCount: callsignsRes.callsigns.length,
+              callsignWarning: null,
             }));
           })
           .catch((error) => {
-            if (cancelled) return;
+            if (!isCurrent()) return;
             setState((current) => ({
               ...current,
               callsignCount: null,
-              referenceWarning: formatErrorMessage(error),
+              callsignWarning: formatErrorMessage(error),
             }));
           });
 
         void fetchCurrentUser()
           .then((currentUser) => {
-            if (cancelled) return;
+            if (!isCurrent()) return;
             setState((current) => ({
               ...current,
               currentUser,
             }));
           })
           .catch(() => {
-            if (cancelled) return;
+            if (!isCurrent()) return;
             setState((current) => ({
               ...current,
               currentUser: null,
             }));
           });
       } catch (error) {
-        if (cancelled) return;
+        if (!isCurrent()) return;
         setState((current) => ({
           ...current,
           loading: false,
@@ -269,7 +277,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
           listAors({ sortBy: null }),
           getModulations(),
         ]);
-        if (cancelled) return;
+        if (!isCurrent()) return;
         setState((current) => ({
           ...current,
           units,
@@ -280,7 +288,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
           referenceWarning: null,
         }));
       } catch (error) {
-        if (cancelled) return;
+        if (!isCurrent()) return;
         setState((current) => ({
           ...current,
           referenceLoading: false,
@@ -293,7 +301,9 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     void loadReferences();
 
     return () => {
-      cancelled = true;
+      if (reloadGeneration.current === generation) {
+        reloadGeneration.current += 1;
+      }
     };
   }, [networkId]);
 

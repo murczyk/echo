@@ -323,6 +323,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
 
       {page.error ? <PowerAlert severity="error">{page.error}</PowerAlert> : null}
       {page.referenceWarning ? <PowerAlert severity="warning">{page.referenceWarning}</PowerAlert> : null}
+      {page.callsignWarning ? <PowerAlert severity="warning">{page.callsignWarning}</PowerAlert> : null}
       <Box
         sx={{
           flex: 1,
