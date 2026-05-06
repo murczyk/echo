@@ -51,6 +51,7 @@ struct LiveCallsignRow {
     sigint_callsign: String,
     comment: Option<String>,
     source_id: Option<i64>,
+    sc_deleted: Option<bool>,
     sc_comment: Option<String>,
     sc_source_id: Option<i32>,
     unit_name: Option<String>,
@@ -290,18 +291,23 @@ async fn load_live_goi_callsigns(
             );
             continue;
         }
+        if callsign.sc_deleted == Some(true) {
+            log::info!(
+                "[goi-sync] Candidate GOI callsign row id={} network_id={} references a deleted sigint_callsign; exporting with network-local fields only",
+                callsign.id,
+                callsign.network_id
+            );
+        }
         let unit_name = merged_live_unit_name(&callsign, &network_units);
         let source_name = merged_live_source_name(&callsign, &source_names);
+        let comment = merged_live_comment_text(&callsign);
         let goi_callsign = GoiCallsignState {
             id: callsign.id,
             callsign: callsign_name,
             frequency: freqs.clone(),
             unit_name,
             comment: render_live_comment(
-                callsign
-                    .comment
-                    .as_deref()
-                    .or(callsign.sc_comment.as_deref()),
+                comment.as_deref(),
                 source_name.as_deref(),
             ),
             row_ref: None,
@@ -473,6 +479,13 @@ async fn load_live_callsign_rows(
         .column_as(
             Expr::col((
                 sigint_callsign::Entity,
+                sigint_callsign::Column::Deleted,
+            )),
+            "sc_deleted",
+        )
+        .column_as(
+            Expr::col((
+                sigint_callsign::Entity,
                 sigint_callsign::Column::Comment,
             )),
             "sc_comment",
@@ -495,11 +508,6 @@ async fn load_live_callsign_rows(
         .filter(sigint_network_callsign::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(goi_live_network_condition(today_start))
-        .filter(
-            Condition::any()
-                .add(sigint_callsign::Column::Deleted.eq(false))
-                .add(sigint_callsign::Column::Deleted.is_null()),
-        )
         .order_by_asc(sigint_network_callsign::Column::Id)
         .into_model::<LiveCallsignRow>()
         .all(db)
@@ -549,7 +557,11 @@ fn merged_live_unit_name(
     callsign
         .unit_name
         .as_deref()
-        .or(callsign.sc_unit_name.as_deref())
+        .or_else(|| {
+            linked_sigint_callsign_is_active(callsign)
+                .then_some(callsign.sc_unit_name.as_deref())
+                .flatten()
+        })
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
@@ -561,10 +573,24 @@ fn merged_live_source_name(
     callsign: &LiveCallsignRow,
     source_names: &BTreeMap<i64, String>,
 ) -> Option<String> {
-    let source_id = callsign
-        .source_id
-        .or(callsign.sc_source_id.map(i64::from))?;
+    let source_id = callsign.source_id.or_else(|| {
+        linked_sigint_callsign_is_active(callsign)
+            .then_some(callsign.sc_source_id.map(i64::from))
+            .flatten()
+    })?;
     source_names.get(&source_id).cloned()
+}
+
+fn merged_live_comment_text(callsign: &LiveCallsignRow) -> Option<String> {
+    callsign.comment.clone().or_else(|| {
+        linked_sigint_callsign_is_active(callsign)
+            .then_some(callsign.sc_comment.clone())
+            .flatten()
+    })
+}
+
+fn linked_sigint_callsign_is_active(callsign: &LiveCallsignRow) -> bool {
+    matches!(callsign.sc_deleted, Some(false))
 }
 
 fn render_live_comment(
@@ -669,12 +695,13 @@ fn format_goi_callsign_state_for_log(callsign: &GoiCallsignState) -> String {
 
 fn format_live_callsign_row_for_log(callsign: &LiveCallsignRow) -> String {
     format!(
-        "id={} network_id={} sigint_callsign={:?} comment={:?} source_id={:?} sc_comment={:?} sc_source_id={:?} unit_name={:?} sc_unit_name={:?}",
+        "id={} network_id={} sigint_callsign={:?} comment={:?} source_id={:?} sc_deleted={:?} sc_comment={:?} sc_source_id={:?} unit_name={:?} sc_unit_name={:?}",
         callsign.id,
         callsign.network_id,
         callsign.sigint_callsign,
         callsign.comment,
         callsign.source_id,
+        callsign.sc_deleted,
         callsign.sc_comment,
         callsign.sc_source_id,
         callsign.unit_name,
@@ -1319,6 +1346,7 @@ impl From<&Data> for WorkbookCellValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     fn sample_callsign(
         id: i64,
@@ -1335,6 +1363,21 @@ mod tests {
                 sheet_name: "Knowledge".to_string(),
                 row_num,
             }),
+        }
+    }
+
+    fn sample_live_callsign_row() -> LiveCallsignRow {
+        LiveCallsignRow {
+            id: 10,
+            network_id: 20,
+            sigint_callsign: "BARS".to_string(),
+            comment: None,
+            source_id: None,
+            sc_deleted: Some(false),
+            sc_comment: Some("fallback comment".to_string()),
+            sc_source_id: Some(7),
+            unit_name: None,
+            sc_unit_name: Some("fallback unit".to_string()),
         }
     }
 
@@ -1358,6 +1401,39 @@ mod tests {
         assert_eq!(diff.new_ids, vec![1]);
         assert_eq!(diff.edited_ids, vec![3]);
         assert_eq!(diff.deleted_ids, vec![4]);
+    }
+
+    #[test]
+    fn merged_live_unit_name_ignores_deleted_linked_callsign() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.sc_deleted = Some(true);
+        let network_units =
+            BTreeMap::from([(20_i64, "network unit".to_string())]);
+
+        let unit_name = merged_live_unit_name(&callsign, &network_units);
+
+        assert_eq!(unit_name, "network unit");
+    }
+
+    #[test]
+    fn merged_live_source_name_ignores_deleted_linked_callsign() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.sc_deleted = Some(true);
+        let source_names = BTreeMap::from([(7_i64, "source".to_string())]);
+
+        let source_name = merged_live_source_name(&callsign, &source_names);
+
+        assert_eq!(source_name, None);
+    }
+
+    #[test]
+    fn merged_live_comment_text_ignores_deleted_linked_callsign() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.sc_deleted = Some(true);
+
+        let comment = merged_live_comment_text(&callsign);
+
+        assert_eq!(comment, None);
     }
 
     #[test]
