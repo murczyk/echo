@@ -150,7 +150,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const aorVisible = showAllAors ? page.aorItems : page.aorItems.slice(0, 5);
   const aorCollapsedCount = Math.max(page.aorItems.length - aorVisible.length, 0);
   const statusDotColor = page.status.tone === 'success' ? 'success.main' : 'warning.main';
-  const classicHref = page.network ? `/rer-networks/${page.network.id}` : '/rer-networks';
+  const classicHref = `/rer-networks/${networkId}`;
   const title = page.network ? (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
       <Tooltip title={page.status.label} arrow placement="bottom-start">

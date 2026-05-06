@@ -344,27 +344,17 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     });
   }, []);
 
-  const syncNetworkRelations = useCallback(
-    async (editForm: NetworkEditForm) => {
-      try {
-        await updateNetworkPosts({
-          networkId: editForm.id,
-          postIds: [...editForm.postIds],
-        });
+  const syncNetworkRelations = useCallback(async (editForm: NetworkEditForm) => {
+    await updateNetworkPosts({
+      networkId: editForm.id,
+      postIds: [...editForm.postIds],
+    });
 
-        await updateNetworkUnits({
-          networkId: editForm.id,
-          unitIds: [...editForm.unitIds],
-        });
-      } catch (error) {
-        setState((current) => ({
-          ...current,
-          referenceWarning: formatErrorMessage(error),
-        }));
-      }
-    },
-    [reload],
-  );
+    await updateNetworkUnits({
+      networkId: editForm.id,
+      unitIds: [...editForm.unitIds],
+    });
+  }, []);
 
   const setEditForm = useCallback((editForm: NetworkEditForm | null) => {
     setState((current) => ({ ...current, editForm }));
@@ -399,6 +389,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
         status: editForm.status,
       });
 
+      await syncNetworkRelations(editForm);
+
       setState((current) => ({
         ...current,
         network: {
@@ -412,8 +404,6 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
         editInProgress: false,
         editError: null,
       }));
-
-      void syncNetworkRelations(editForm);
     } catch (error) {
       setState((current) => ({
         ...current,
