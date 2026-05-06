@@ -1363,17 +1363,33 @@ fn update_sheet_dimension(sheet_xml: &str, rows_xml: &[String]) -> String {
         .flat_map(|row_xml| extract_cell_cols(row_xml))
         .max_by_key(|col| col_letters_to_idx(col))
         .unwrap_or_else(|| "A".to_string());
-    let dimension_regex =
+    let next_ref = format!("A1:{max_col}{max_row_num}");
+    let valid_dimension_regex =
         match Regex::new(r#"<dimension\b([^>]*?)\bref="[^"]*"([^>]*/?>)"#) {
             Ok(regex) => regex,
             Err(_) => return sheet_xml.to_string(),
         };
-    dimension_regex
-        .replace(
-            sheet_xml,
-            format!(r#"<dimension${{1}}ref="A1:{max_col}{max_row_num}"${{2}}"#),
-        )
-        .into_owned()
+    if valid_dimension_regex.is_match(sheet_xml) {
+        return valid_dimension_regex
+            .replace(
+                sheet_xml,
+                format!(r#"<dimension${{1}}ref="{next_ref}"${{2}}"#),
+            )
+            .into_owned();
+    }
+
+    let malformed_dimension_regex =
+        match Regex::new(r#"<dimension="[^"]*"([^>]*/?>)"#) {
+            Ok(regex) => regex,
+            Err(_) => return sheet_xml.to_string(),
+        };
+    if malformed_dimension_regex.is_match(sheet_xml) {
+        return malformed_dimension_regex
+            .replace(sheet_xml, format!(r#"<dimension ref="{next_ref}"${{1}}"#))
+            .into_owned();
+    }
+
+    sheet_xml.to_string()
 }
 
 fn extract_row_num(row_xml: &str) -> Option<u32> {
@@ -1558,6 +1574,21 @@ mod tests {
     #[test]
     fn update_sheet_dimension_keeps_valid_ref_and_expands_last_row() {
         let sheet_xml = r#"<worksheet><dimension ref="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2"/></row><row r="3"><c r="A3"/></row><row r="4"><c r="A4"/><c r="H4"/></row></sheetData></worksheet>"#;
+        let rows_xml = vec![
+            r#"<row r="1"><c r="A1"/></row>"#.to_string(),
+            r#"<row r="2"><c r="A2"/></row>"#.to_string(),
+            r#"<row r="3"><c r="A3"/></row>"#.to_string(),
+            r#"<row r="4"><c r="A4"/><c r="H4"/></row>"#.to_string(),
+        ];
+
+        let updated = update_sheet_dimension(sheet_xml, &rows_xml);
+
+        assert!(updated.contains(r#"<dimension ref="A1:H4"/>"#));
+    }
+
+    #[test]
+    fn update_sheet_dimension_repairs_malformed_dimension_tag() {
+        let sheet_xml = r#"<worksheet><dimension="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2"/></row><row r="3"><c r="A3"/></row><row r="4"><c r="A4"/><c r="H4"/></row></sheetData></worksheet>"#;
         let rows_xml = vec![
             r#"<row r="1"><c r="A1"/></row>"#.to_string(),
             r#"<row r="2"><c r="A2"/></row>"#.to_string(),
