@@ -4,7 +4,6 @@ import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
 
 import type {
-  Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -16,8 +15,6 @@ import {
   rerDutyShortStateGet,
 } from '../../services/api/inbox';
 import { fetchServerInfo } from '../../services/api/server-info';
-import { getNetworksByIds } from '../../services/api/networks';
-import { getUnitsList } from '../../services/api/units';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
@@ -111,6 +108,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   const { inboxCallsignInfoMap, callsignInfoMap, mergeInboxCallsigns, mergeResolvedCallsigns, retainFeedIds } =
     useRerDutyCallsignInfo();
+  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -537,66 +535,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [messageFeeds]);
 
-  const allNetworkIds = useMemo(() => {
-    const ids = new Set<number>();
-    messageFeeds.forEach((w) => {
-      w.items.forEach(([, msg]) => {
-        (msg.networkIds ?? []).forEach((id) => ids.add(id));
-      });
-    });
-    return Array.from(ids);
-  }, [messageFeeds]);
-
-  const networkMapRef = useRef(networkMap);
-  networkMapRef.current = networkMap;
-  useEffect(() => {
-    const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
-    if (missing.length === 0) return;
-    let cancelled = false;
-    getNetworksByIds(missing)
-      .then((networks) => {
-        if (cancelled) return;
-        setNetworkMap((prev) => {
-          const next = { ...prev };
-          networks.forEach((n) => {
-            next[n.id] = n;
-          });
-          return next;
-        });
-      })
-      .catch((err) => console.error('Failed to load networks', err));
-    return () => {
-      cancelled = true;
-    };
-  }, [allNetworkIds.join(',')]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getUnitsList()
-      .then((units) => {
-        if (cancelled) return;
-        setUnitsMap((prev) => {
-          const next = { ...prev };
-          units.forEach((u) => {
-            next[u.id] = u;
-          });
-          return next;
-        });
-      })
-      .catch((err) => console.error('Failed to load units', err));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const networkDisplayMap = useMemo(() => {
-    const out: Record<number, string> = {};
-    Object.entries(networkMap).forEach(([idStr, n]) => {
-      const id = Number(idStr);
-      out[id] = createMasterUnitText(n, unitsMap);
-    });
-    return out;
-  }, [networkMap, unitsMap]);
 
   const persistStateToUrl = useCallback(
     (next: MessageFeedState[]) => {
@@ -635,9 +573,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [featureShortStateEnabled]
   );
 
-    const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
-
-  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, deps.onFeedRemoved, persistStateToUrl);
+  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, persistStateToUrl, deps.onFeedRemoved);
 
   return {
     messageFeeds,

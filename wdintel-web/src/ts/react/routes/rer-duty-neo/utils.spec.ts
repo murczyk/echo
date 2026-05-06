@@ -19,10 +19,14 @@ import {
   feedUnreadDisplayCount,
   feedsUnreadDisplayTotal,
   getPointEtalonsFromMessage,
+  getShortStateIdFromUrl,
   messageHasPalitraTag,
   uniquePointEtalonsForMapSearch,
   parseStateFromUrl,
+  pushShortStateToUrl,
   pushStateToUrl,
+  toRerDutyStateFromShort,
+  toShortQueryState,
 } from './utils';
 import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
 
@@ -33,6 +37,41 @@ describe('rer-duty utils', () => {
     expect(etalonFallbackWhenNoNetworks({ ...base, unit: null })).toBe('Не встановлена');
     expect(etalonFallbackWhenNoNetworks({ ...base, unit: 'x' }, { featureStrictNetworks: true })).toBe('Не встановлена');
     expect(etalonFallbackWhenNoNetworks({ freq: null, unit: 'unit' } as InboxMessage)).toBe(null);
+  });
+
+  it('writes short state ids and clears the long state param', () => {
+    const state = { messageFeeds: [['mf-1', { ...emptyFilter(), groupsSelected: ['g-1'] }]] };
+    pushStateToUrl(state);
+    expect(window.location.search).toContain('state=');
+
+    pushShortStateToUrl('short-123');
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('state')).toBeNull();
+    expect(params.get('state-short')).toBe('short-123');
+    expect(getShortStateIdFromUrl()).toBe('short-123');
+  });
+
+  it('converts between short query state and rer-duty state', () => {
+    const feeds = [
+      {
+        id: 'mf-1',
+        filter: { ...emptyFilter(), freqsSelected: ['100.1'] },
+        items: [],
+        loading: false,
+        loadingOlder: false,
+        hasReachedStart: false,
+        firstItemIndex: 0,
+        referenceTimeMs: null,
+        readIds: new Set<number>(),
+        unreadCount: 0,
+        adjacentFreqsRange: 0,
+        highlightSignalsEnabled: false,
+        onlyMyUnitTagsEnabled: false,
+      },
+    ];
+    const shortState = toShortQueryState(feeds);
+    const restored = toRerDutyStateFromShort(shortState);
+    expect(restored.messageFeeds).toEqual([['mf-1', { ...emptyFilter(), freqsSelected: ['100.1'] }]]);
   });
 
   it('builds network text with unit names and normalized location', () => {

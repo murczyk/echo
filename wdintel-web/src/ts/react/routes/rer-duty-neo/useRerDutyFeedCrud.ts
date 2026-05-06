@@ -15,25 +15,15 @@ const MAX_MESSAGE_FEEDS = 4;
 export function useRerDutyFeedCrud(
   messageFeeds: MessageFeedState[],
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>,
-  onFeedRemoved?: (feedId: string) => void,
   persistStateToUrl: (next: MessageFeedState[]) => void,
+  onFeedRemoved?: (feedId: string) => void,
 ) {
-  const pendingPersistRef = React.useRef<MessageFeedState[] | null>(null);
-
-  React.useEffect(() => {
-    if (!pendingPersistRef.current) return;
-    const next = pendingPersistRef.current;
-    pendingPersistRef.current = null;
-    requestPersist(next);
-  }, [messageFeeds, requestPersist]);
-
   const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
-      let nextState: MessageFeedState[] | null = null;
-      setMessageFeeds((prev) => {
+    setMessageFeeds((prev) => {
       const w = prev.find((w) => w.id === feedId);
       if (!w) return prev;
       if (filtersEqual(w.filter, f)) {
-        nextState = prev;
+        persistStateToUrl(prev);
         return prev;
       }
       const next = prev.map((w) =>
@@ -54,11 +44,10 @@ export function useRerDutyFeedCrud(
             }
           : w,
       );
-      pendingPersistRef.current = next;
+      persistStateToUrl(next);
       return next;
     });
-    if (nextState) requestPersist(nextState);
-  }, [requestPersist, setMessageFeeds]);
+  }, [persistStateToUrl, setMessageFeeds]);
 
   const toggleGroup = useCallback(
     (feedId: string, key: string) => {
@@ -102,23 +91,21 @@ export function useRerDutyFeedCrud(
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
       const next = [...prev, newFeed];
-      pendingPersistRef.current = next;
+      persistStateToUrl(next);
       return next;
     });
-  }, [setMessageFeeds]);
+  }, [persistStateToUrl, setMessageFeeds]);
 
   const removeMessageFeed = useCallback(
     (feedId: string) => {
       if (messageFeeds.length <= 1) return;
       if (!messageFeeds.some((w) => w.id === feedId)) return;
-      let nextState: MessageFeedState[] | null = null;
       setMessageFeeds((prev) => {
         const next = prev.filter((w) => w.id !== feedId);
-        nextState = next;
+        persistStateToUrl(next);
         return next;
       });
       onFeedRemoved?.(feedId);
-      if (nextState) requestPersist(nextState);
     },
     [messageFeeds, onFeedRemoved, setMessageFeeds, persistStateToUrl],
   );
