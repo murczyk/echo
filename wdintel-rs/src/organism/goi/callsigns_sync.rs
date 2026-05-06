@@ -792,7 +792,7 @@ impl KnowledgeWorkbookData {
                 };
                 callsigns.push(GoiCallsignState {
                     id,
-                    callsign: workbook_cell_text(row.get(0)),
+                    callsign: workbook_cell_text(row.first()),
                     frequency: workbook_cell_text(row.get(1)),
                     unit_name: workbook_cell_text(row.get(6)),
                     comment: extract_goi_callsign_comment(row),
