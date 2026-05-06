@@ -17,7 +17,7 @@ import { memo, useMemo } from 'react';
 import type { Network } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import type { NetworkDescriptionForm } from '../use-rer-network-details-neo-page';
+import type { NetworkDescriptionForm } from '../use-rer-network-details-neo-page.shared';
 
 type Props = {
   open: boolean;
