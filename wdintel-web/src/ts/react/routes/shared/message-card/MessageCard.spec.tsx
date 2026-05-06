@@ -268,11 +268,9 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
     groupName: "Куп'янськ пеленг",
     senderName: 'Dow_Jones_2',
     copiedFeedbackId: null,
-    currentUser: { name: 'tester', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
     networkDisplayMap: { 7: 'р/м Alpha' },
     networkMap,
     tagsMap,
-    users: {},
     onBookmark: vi.fn(),
     onImportant: vi.fn(),
     onCopyText: vi.fn(),
@@ -435,22 +433,19 @@ describe('MessageCard', () => {
     ]);
   });
 
-  it('shows comments from the same organism and hides comments from our user', async () => {
+  it('renders provided analysis comments', async () => {
     const view = await renderCard({
       displayMode: 'analysis',
       messageComments: [
         { id: 11, messageId: 42, comment: 'visible comment', login: 'peer-login' },
         { id: 12, messageId: 42, comment: 'hidden comment', login: 'tester' },
       ],
-      users: {
-        'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-      },
     });
     rendered.push(view);
 
     expect(view.container.textContent).toContain('visible comment');
     expect(view.container.textContent).toContain('peer-login');
-    expect(view.container.textContent).not.toContain('hidden comment');
+    expect(view.container.textContent).toContain('hidden comment');
   });
 
   it('collapses other comments after the first three and expands on demand', async () => {
@@ -464,12 +459,6 @@ describe('MessageCard', () => {
           { id: 11, messageId: 42, comment: 'third comment', login: 'other-login-3' },
           { id: 11, messageId: 42, comment: 'fourth comment', login: 'other-login-4' },
         ],
-        users: {
-          'other-login-1': { name: 'other-login-1', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-          'other-login-2': { name: 'other-login-2', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-          'other-login-3': { name: 'other-login-3', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-          'other-login-4': { name: 'other-login-4', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-        },
       });
       rendered.push(view);
 

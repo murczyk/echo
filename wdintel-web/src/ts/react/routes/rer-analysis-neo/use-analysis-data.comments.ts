@@ -23,6 +23,31 @@ function normalizeLogin(login: string): string {
   return login.trim();
 }
 
+export function isKnownOtherOrganismComment(
+  authUserName: string | null,
+  currentUser: User | null,
+  users: Record<string, User | null>,
+  login: string,
+): boolean {
+  const commentLogin = normalizeLogin(login);
+  if (commentLogin === '') return false;
+  if (normalizeLogin(authUserName ?? '') === commentLogin) return false;
+  if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
+
+  const commentUser = users[commentLogin] ?? null;
+  if (currentUser?.organismId == null || commentUser?.organismId == null) return false;
+  return currentUser.organismId === commentUser.organismId;
+}
+
+export function filterOtherMessageComments(
+  authUserName: string | null,
+  currentUser: User | null,
+  users: Record<string, User | null>,
+  comments: MessageComment[],
+): MessageComment[] {
+  return comments.filter((comment) => isKnownOtherOrganismComment(authUserName, currentUser, users, comment.login));
+}
+
 export async function loadMissingMessageCommentsForMessages(
   messages: Array<[number, InboxMessage]>,
   params: LoadMessageCommentsParams,
