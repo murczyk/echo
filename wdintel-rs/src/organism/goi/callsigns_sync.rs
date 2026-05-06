@@ -53,9 +53,11 @@ struct LiveCallsignRow {
     sigint_callsign: String,
     comment: Option<String>,
     source_id: Option<i64>,
+    radio_freq: Option<String>,
     sc_deleted: Option<bool>,
     sc_comment: Option<String>,
     sc_source_id: Option<i32>,
+    sc_radio_freq: Option<String>,
     unit_name: Option<String>,
     sc_unit_name: Option<String>,
 }
@@ -278,9 +280,11 @@ async fn load_live_goi_callsigns(
             "[goi-sync] Evaluating candidate GOI callsign row: {}",
             format_live_callsign_row_for_log(&callsign)
         );
-        let Some(freqs) = network_freqs.get(&callsign.network_id) else {
+        let Some(frequency) =
+            effective_live_callsign_frequency(&callsign, &network_freqs)
+        else {
             log::info!(
-                "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because the network has no active frequencies eligible for GOI sync",
+                "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because neither the callsign nor the network has a frequency eligible for GOI sync",
                 callsign.id,
                 callsign.network_id
             );
@@ -308,7 +312,7 @@ async fn load_live_goi_callsigns(
         let goi_callsign = GoiCallsignState {
             id: callsign.id,
             callsign: callsign_name,
-            frequency: freqs.clone(),
+            frequency,
             unit_name,
             comment: render_live_comment(
                 comment.as_deref(),
@@ -480,6 +484,7 @@ async fn load_live_callsign_rows(
         .column(sigint_network_callsign::Column::SigintCallsign)
         .column(sigint_network_callsign::Column::Comment)
         .column(sigint_network_callsign::Column::SourceId)
+        .column(sigint_network_callsign::Column::RadioFreq)
         .column_as(
             Expr::col((
                 sigint_callsign::Entity,
@@ -500,6 +505,13 @@ async fn load_live_callsign_rows(
                 sigint_callsign::Column::SourceId,
             )),
             "sc_source_id",
+        )
+        .column_as(
+            Expr::col((
+                sigint_callsign::Entity,
+                sigint_callsign::Column::RadioFreq,
+            )),
+            "sc_radio_freq",
         )
         .column_as(
             Expr::col((Alias::new("nc_unit"), sigint_unit::Column::Name)),
@@ -592,6 +604,26 @@ fn merged_live_comment_text(callsign: &LiveCallsignRow) -> Option<String> {
             .then_some(callsign.sc_comment.clone())
             .flatten()
     })
+}
+
+fn effective_live_callsign_frequency(
+    callsign: &LiveCallsignRow,
+    network_freqs: &BTreeMap<i64, String>,
+) -> Option<String> {
+    normalize_optional_trimmed(callsign.radio_freq.clone())
+        .or_else(|| {
+            linked_sigint_callsign_is_active(callsign)
+                .then_some(normalize_optional_trimmed(
+                    callsign.sc_radio_freq.clone(),
+                ))
+                .flatten()
+        })
+        .or_else(|| {
+            network_freqs
+                .get(&callsign.network_id)
+                .cloned()
+                .and_then(|freq| normalize_optional_trimmed(Some(freq)))
+        })
 }
 
 fn normalize_goi_unit_name(unit_name: &str) -> String {
@@ -711,15 +743,17 @@ fn format_goi_callsign_state_for_log(callsign: &GoiCallsignState) -> String {
 
 fn format_live_callsign_row_for_log(callsign: &LiveCallsignRow) -> String {
     format!(
-        "id={} network_id={} sigint_callsign={:?} comment={:?} source_id={:?} sc_deleted={:?} sc_comment={:?} sc_source_id={:?} unit_name={:?} sc_unit_name={:?}",
+        "id={} network_id={} sigint_callsign={:?} comment={:?} source_id={:?} radio_freq={:?} sc_deleted={:?} sc_comment={:?} sc_source_id={:?} sc_radio_freq={:?} unit_name={:?} sc_unit_name={:?}",
         callsign.id,
         callsign.network_id,
         callsign.sigint_callsign,
         callsign.comment,
         callsign.source_id,
+        callsign.radio_freq,
         callsign.sc_deleted,
         callsign.sc_comment,
         callsign.sc_source_id,
+        callsign.sc_radio_freq,
         callsign.unit_name,
         callsign.sc_unit_name
     )
@@ -751,7 +785,9 @@ impl KnowledgeWorkbookData {
                 if !is_worker_callsign_row(row) {
                     continue;
                 }
-                let Some(id) = parse_goi_callsign_id(row.get(4)) else {
+                let Some(id) = parse_goi_callsign_id(row.get(7))
+                    .or_else(|| parse_goi_callsign_id(row.get(4)))
+                else {
                     continue;
                 };
                 callsigns.push(GoiCallsignState {
@@ -759,7 +795,7 @@ impl KnowledgeWorkbookData {
                     callsign: workbook_cell_text(row.get(0)),
                     frequency: workbook_cell_text(row.get(1)),
                     unit_name: workbook_cell_text(row.get(6)),
-                    comment: workbook_cell_text(row.get(7)),
+                    comment: extract_goi_callsign_comment(row),
                     row_ref: Some(GoiWorkbookRowRef {
                         sheet_name: sheet.name.clone(),
                         row_num: (row_idx + 1) as u32,
@@ -920,13 +956,13 @@ fn build_worker_row_cells_for_tests(
         WorkbookCellValue::String(callsign.frequency.clone()),
         WorkbookCellValue::String(KNOWLEDGE_KIND_CALL_SIGN.to_string()),
         WorkbookCellValue::String(KNOWLEDGE_WORKER_AUTHOR.to_string()),
+        WorkbookCellValue::String(callsign.comment.clone()),
+        WorkbookCellValue::String(sync_timestamp.to_string()),
+        WorkbookCellValue::String(callsign.unit_name.clone()),
         WorkbookCellValue::String(format!(
             "{KNOWLEDGE_WORKER_ID_PREFIX}{}",
             callsign.id
         )),
-        WorkbookCellValue::String(sync_timestamp.to_string()),
-        WorkbookCellValue::String(callsign.unit_name.clone()),
-        WorkbookCellValue::String(callsign.comment.clone()),
     ]
 }
 
@@ -1337,15 +1373,15 @@ fn build_worker_row_xml(
     push_inline_string_cell(&mut cells, "B", row_num, &callsign.frequency);
     push_inline_string_cell(&mut cells, "C", row_num, KNOWLEDGE_KIND_CALL_SIGN);
     push_inline_string_cell(&mut cells, "D", row_num, KNOWLEDGE_WORKER_AUTHOR);
+    push_inline_string_cell(&mut cells, "E", row_num, &callsign.comment);
+    push_inline_string_cell(&mut cells, "F", row_num, sync_timestamp);
+    push_inline_string_cell(&mut cells, "G", row_num, &callsign.unit_name);
     push_inline_string_cell(
         &mut cells,
-        "E",
+        "H",
         row_num,
         &format!("{KNOWLEDGE_WORKER_ID_PREFIX}{}", callsign.id),
     );
-    push_inline_string_cell(&mut cells, "F", row_num, sync_timestamp);
-    push_inline_string_cell(&mut cells, "G", row_num, &callsign.unit_name);
-    push_inline_string_cell(&mut cells, "H", row_num, &callsign.comment);
     format!(r#"<row r="{row_num}">{}</row>"#, cells.join(""))
 }
 
@@ -1476,6 +1512,21 @@ fn is_worker_callsign_row(row: &[WorkbookCellValue]) -> bool {
     is_callsign_row(row) && row_text_equals(row, 3, KNOWLEDGE_WORKER_AUTHOR)
 }
 
+fn extract_goi_callsign_comment(row: &[WorkbookCellValue]) -> String {
+    let note = workbook_cell_text(row.get(4));
+    let extra = workbook_cell_text(row.get(7));
+    if parse_goi_callsign_id(row.get(7)).is_some() {
+        return note;
+    }
+    if parse_goi_callsign_id(row.get(4)).is_some() {
+        return extra;
+    }
+    if !note.is_empty() {
+        return note;
+    }
+    extra
+}
+
 fn parse_goi_callsign_id(cell: Option<&WorkbookCellValue>) -> Option<i64> {
     let value = workbook_cell_text(cell);
     let value = value.trim();
@@ -1538,9 +1589,11 @@ mod tests {
             sigint_callsign: "BARS".to_string(),
             comment: None,
             source_id: None,
+            radio_freq: None,
             sc_deleted: Some(false),
             sc_comment: Some("fallback comment".to_string()),
             sc_source_id: Some(7),
+            sc_radio_freq: Some("145.600".to_string()),
             unit_name: None,
             sc_unit_name: Some("FALLBACK UNIT".to_string()),
         }
@@ -1611,6 +1664,41 @@ mod tests {
     }
 
     #[test]
+    fn effective_live_callsign_frequency_prefers_network_callsign_radio_freq() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.radio_freq = Some(" 144.500 ".to_string());
+        let network_freqs =
+            BTreeMap::from([(20_i64, "111.111, 222.222".to_string())]);
+
+        let frequency =
+            effective_live_callsign_frequency(&callsign, &network_freqs);
+
+        assert_eq!(frequency, Some("144.500".to_string()));
+    }
+
+    #[test]
+    fn effective_live_callsign_frequency_uses_linked_callsign_radio_freq() {
+        let callsign = sample_live_callsign_row();
+
+        let frequency =
+            effective_live_callsign_frequency(&callsign, &BTreeMap::new());
+
+        assert_eq!(frequency, Some("145.600".to_string()));
+    }
+
+    #[test]
+    fn effective_live_callsign_frequency_ignores_deleted_linked_callsign() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.sc_deleted = Some(true);
+        let network_freqs = BTreeMap::from([(20_i64, "111.111".to_string())]);
+
+        let frequency =
+            effective_live_callsign_frequency(&callsign, &network_freqs);
+
+        assert_eq!(frequency, Some("111.111".to_string()));
+    }
+
+    #[test]
     fn update_sheet_dimension_keeps_valid_ref_and_expands_last_row() {
         let sheet_xml = r#"<worksheet><dimension ref="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2"/></row><row r="3"><c r="A3"/></row><row r="4"><c r="A4"/><c r="H4"/></row></sheetData></worksheet>"#;
         let rows_xml = vec![
@@ -1665,12 +1753,12 @@ mod tests {
                             WorkbookCellValue::String(
                                 KNOWLEDGE_WORKER_AUTHOR.to_string(),
                             ),
-                            WorkbookCellValue::String("EXO ID 2".to_string()),
-                            WorkbookCellValue::Empty,
-                            WorkbookCellValue::String("111".to_string()),
                             WorkbookCellValue::String(
                                 "джерело: Пролом".to_string(),
                             ),
+                            WorkbookCellValue::Empty,
+                            WorkbookCellValue::String("111".to_string()),
+                            WorkbookCellValue::String("EXO ID 2".to_string()),
                         ],
                     ],
                 },
@@ -1711,6 +1799,37 @@ mod tests {
     }
 
     #[test]
+    fn extract_goi_callsigns_state_reads_legacy_worker_comment_layout() {
+        let workbook = KnowledgeWorkbookData {
+            sheets: vec![WorkbookSheetData {
+                name: "Knowledge".to_string(),
+                rows: vec![vec![
+                    WorkbookCellValue::String("BETA".to_string()),
+                    WorkbookCellValue::String("145.500".to_string()),
+                    WorkbookCellValue::String(
+                        KNOWLEDGE_KIND_CALL_SIGN.to_string(),
+                    ),
+                    WorkbookCellValue::String(
+                        KNOWLEDGE_WORKER_AUTHOR.to_string(),
+                    ),
+                    WorkbookCellValue::String("EXO ID 2".to_string()),
+                    WorkbookCellValue::String(
+                        TEST_GOI_SYNC_TIMESTAMP.to_string(),
+                    ),
+                    WorkbookCellValue::String("111".to_string()),
+                    WorkbookCellValue::String("джерело: Пролом".to_string()),
+                ]],
+            }],
+        };
+
+        let state = workbook.extract_goi_callsigns_state();
+
+        assert_eq!(state.len(), 1);
+        assert_eq!(state[0].id, 2);
+        assert_eq!(state[0].comment, "джерело: Пролом");
+    }
+
+    #[test]
     fn apply_goi_callsigns_reuses_deleted_rows_and_updates_workbook_state() {
         let mut workbook = KnowledgeWorkbookData {
             sheets: vec![WorkbookSheetData {
@@ -1726,6 +1845,13 @@ mod tests {
                         WorkbookCellValue::String(
                             KNOWLEDGE_WORKER_AUTHOR.to_string(),
                         ),
+                        WorkbookCellValue::String(
+                            "джерело: Пролом".to_string(),
+                        ),
+                        WorkbookCellValue::String(
+                            TEST_GOI_SYNC_TIMESTAMP.to_string(),
+                        ),
+                        WorkbookCellValue::String("111".to_string()),
                         WorkbookCellValue::String("EXO ID 2".to_string()),
                     ],
                     vec![
@@ -1737,6 +1863,13 @@ mod tests {
                         WorkbookCellValue::String(
                             KNOWLEDGE_WORKER_AUTHOR.to_string(),
                         ),
+                        WorkbookCellValue::String(
+                            "джерело: Пролом".to_string(),
+                        ),
+                        WorkbookCellValue::String(
+                            TEST_GOI_SYNC_TIMESTAMP.to_string(),
+                        ),
+                        WorkbookCellValue::String("111".to_string()),
                         WorkbookCellValue::String("EXO ID 4".to_string()),
                     ],
                 ],
@@ -1768,6 +1901,10 @@ mod tests {
         );
         assert_eq!(
             workbook_cell_text(Some(&workbook.sheets[0].rows[2][4])),
+            "джерело: Пролом"
+        );
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[2][7])),
             "EXO ID 5"
         );
     }
