@@ -1,7 +1,10 @@
 import type {
+  AddNetworkDescriptionsReq,
+  DeleteNetworkDescriptionReq,
   ListNetworksReq,
   Network,
   SingleNetworkCallsignsListRsp,
+  UpdateNetworkDescriptionReq,
   UpdateNetworkPostsReq,
   UpdateNetworkReq,
   UpdateNetworkUnitsReq,
@@ -69,5 +72,20 @@ export async function updateNetworkUnits(req: UpdateNetworkUnitsReq): Promise<Ne
 
 export async function updateNetwork(req: UpdateNetworkReq): Promise<Network> {
   const data = await postJson<Network>('/api/sigint/update-network', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function addNetworkDescriptions(req: AddNetworkDescriptionsReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/add-descriptions', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function updateNetworkDescription(req: UpdateNetworkDescriptionReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/update-description', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function deleteNetworkDescription(req: DeleteNetworkDescriptionReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/delete-description', transformCamelToSnake(req));
   return transformSnakeToCamel<Network>(data);
 }

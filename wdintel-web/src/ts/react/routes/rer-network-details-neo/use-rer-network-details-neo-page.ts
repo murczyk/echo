@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AreaOfResponsibility, ModulationRec, Network, NetworkStatus, Post, Unit, User } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
 import {
+  addNetworkDescriptions,
   deleteNetwork,
+  deleteNetworkDescription,
   getNetworkById,
   getNetworkCallsignsList,
   updateNetwork,
+  updateNetworkDescription,
   updateNetworkPosts,
   updateNetworkUnits,
 } from '../../services/api/networks';
@@ -30,10 +33,17 @@ export type NetworkEditForm = {
   postIds: number[];
 };
 
+export type NetworkDescriptionForm = {
+  description: string;
+  networkFreqId: number | null;
+};
+
 type NetworkOption = {
   id: number;
   label: string;
 };
+
+type NetworkDescriptionMode = 'create' | 'edit';
 
 type NetworkDetailsNeoPageState = {
   network: Network | null;
@@ -48,6 +58,17 @@ type NetworkDetailsNeoPageState = {
   error: string | null;
   referenceWarning: string | null;
   callsignWarning: string | null;
+  expandedDescriptionIds: number[];
+  descriptionDrawerOpen: boolean;
+  descriptionDrawerMode: NetworkDescriptionMode;
+  descriptionDrawerDescriptionId: number | null;
+  descriptionDrawerForm: NetworkDescriptionForm;
+  descriptionDrawerSaving: boolean;
+  descriptionDrawerError: string | null;
+  deleteDescriptionDialogOpen: boolean;
+  deleteDescriptionTarget: Network['descriptions'][number] | null;
+  deleteDescriptionSubmitting: boolean;
+  deleteDescriptionError: string | null;
   deleteDialogOpen: boolean;
   deleteInProgress: boolean;
   menuAnchorEl: HTMLElement | null;
@@ -76,6 +97,20 @@ const EMPTY_STATE: NetworkDetailsNeoPageState = {
   error: null,
   referenceWarning: null,
   callsignWarning: null,
+  expandedDescriptionIds: [],
+  descriptionDrawerOpen: false,
+  descriptionDrawerMode: 'create',
+  descriptionDrawerDescriptionId: null,
+  descriptionDrawerForm: {
+    description: '',
+    networkFreqId: null,
+  },
+  descriptionDrawerSaving: false,
+  descriptionDrawerError: null,
+  deleteDescriptionDialogOpen: false,
+  deleteDescriptionTarget: null,
+  deleteDescriptionSubmitting: false,
+  deleteDescriptionError: null,
   deleteDialogOpen: false,
   deleteInProgress: false,
   menuAnchorEl: null,
@@ -169,6 +204,21 @@ function canEditNetwork(user: User | null): boolean {
   return roles.has('Admin') || roles.has('UnitsEditor');
 }
 
+function canManageDescriptions(user: User | null): boolean {
+  return canEditNetwork(user);
+}
+
+function sortDescriptionsByCreatedAtDesc(descriptions: Network['descriptions']): Network['descriptions'] {
+  return [...descriptions].sort((left, right) => right.createdAt - left.createdAt);
+}
+
+function toNetworkDescriptionForm(description: string, networkFreqId: number | null): NetworkDescriptionForm {
+  return {
+    description,
+    networkFreqId,
+  };
+}
+
 function toNetworkEditForm(network: Network): NetworkEditForm {
   return {
     id: network.id,
@@ -196,10 +246,15 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const modulationsById = useMemo(() => buildLookupMap(state.modulations), [state.modulations]);
   const canDelete = useMemo(() => canDeleteNetwork(state.currentUser), [state.currentUser]);
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
+  const canManageDescriptionActions = useMemo(() => canManageDescriptions(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const aorOptions = useMemo<NetworkOption[]>(() => state.aors.map((aor) => ({ id: aor.id, label: aor.name })), [state.aors]);
   const unitOptions = useMemo<NetworkOption[]>(() => state.units.map((unit) => ({ id: unit.id, label: unit.name })), [state.units]);
   const postOptions = useMemo<NetworkOption[]>(() => state.posts.map((post) => ({ id: post.id, label: post.name })), [state.posts]);
+  const confirmationDescriptions = useMemo(() => {
+    const descriptions = state.network?.descriptions ?? [];
+    return sortDescriptionsByCreatedAtDesc(descriptions.filter((description) => description.descrType === 'Confirmation'));
+  }, [state.network?.descriptions]);
 
   const reload = useCallback(() => {
     reloadGeneration.current += 1;
@@ -224,6 +279,20 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
           network,
           loading: false,
           error: null,
+          expandedDescriptionIds: [],
+          descriptionDrawerOpen: false,
+          descriptionDrawerMode: 'create',
+          descriptionDrawerDescriptionId: null,
+          descriptionDrawerForm: {
+            description: '',
+            networkFreqId: null,
+          },
+          descriptionDrawerSaving: false,
+          descriptionDrawerError: null,
+          deleteDescriptionDialogOpen: false,
+          deleteDescriptionTarget: null,
+          deleteDescriptionSubmitting: false,
+          deleteDescriptionError: null,
         }));
 
         void getNetworkCallsignsList(networkId, true)
@@ -353,6 +422,228 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       };
     });
   }, []);
+
+  const toggleDescriptionExpanded = useCallback((descriptionId: number) => {
+    setState((current) => {
+      const isExpanded = current.expandedDescriptionIds.includes(descriptionId);
+      return {
+        ...current,
+        expandedDescriptionIds: isExpanded
+          ? current.expandedDescriptionIds.filter((id) => id !== descriptionId)
+          : [...current.expandedDescriptionIds, descriptionId],
+      };
+    });
+  }, []);
+
+  const openDescriptionDrawerForCreate = useCallback(() => {
+    setState((current) => ({
+      ...current,
+      descriptionDrawerOpen: true,
+      descriptionDrawerMode: 'create',
+      descriptionDrawerDescriptionId: null,
+      descriptionDrawerForm: toNetworkDescriptionForm('', null),
+      descriptionDrawerSaving: false,
+      descriptionDrawerError: null,
+    }));
+  }, []);
+
+  const openDescriptionDrawerForEdit = useCallback((description: Network['descriptions'][number]) => {
+    setState((current) => ({
+      ...current,
+      descriptionDrawerOpen: true,
+      descriptionDrawerMode: 'edit',
+      descriptionDrawerDescriptionId: description.id,
+      descriptionDrawerForm: toNetworkDescriptionForm(description.description, description.networkFrequencyId ?? null),
+      descriptionDrawerSaving: false,
+      descriptionDrawerError: null,
+    }));
+  }, []);
+
+  const closeDescriptionDrawer = useCallback(() => {
+    setState((current) => {
+      if (current.descriptionDrawerSaving) return current;
+      return {
+        ...current,
+        descriptionDrawerOpen: false,
+        descriptionDrawerMode: 'create',
+        descriptionDrawerDescriptionId: null,
+        descriptionDrawerForm: toNetworkDescriptionForm('', null),
+        descriptionDrawerSaving: false,
+        descriptionDrawerError: null,
+      };
+    });
+  }, []);
+
+  const setDescriptionDrawerForm = useCallback((descriptionDrawerForm: NetworkDescriptionForm) => {
+    setState((current) => ({ ...current, descriptionDrawerForm }));
+  }, []);
+
+  const openDeleteDescriptionDialog = useCallback((description: Network['descriptions'][number]) => {
+    setState((current) => ({
+      ...current,
+      deleteDescriptionDialogOpen: true,
+      deleteDescriptionTarget: description,
+      deleteDescriptionSubmitting: false,
+      deleteDescriptionError: null,
+    }));
+  }, []);
+
+  const closeDeleteDescriptionDialog = useCallback(() => {
+    setState((current) => {
+      if (current.deleteDescriptionSubmitting) return current;
+      return {
+        ...current,
+        deleteDescriptionDialogOpen: false,
+        deleteDescriptionTarget: null,
+        deleteDescriptionSubmitting: false,
+        deleteDescriptionError: null,
+      };
+    });
+  }, []);
+
+  const resolveNetworkDescriptionFrequency = useCallback((network: Network, networkFreqId: number | null) => {
+    if (networkFreqId === null) {
+      return null;
+    }
+
+    return network.freqs.find((freq) => freq.id === networkFreqId) ?? null;
+  }, []);
+
+  const saveDescription = useCallback(async () => {
+    const network = state.network;
+    const form = state.descriptionDrawerForm;
+    const descriptionId = state.descriptionDrawerDescriptionId;
+
+    if (!network || state.descriptionDrawerSaving) return;
+
+    const description = form.description.trim();
+    if (description === '') {
+      setState((current) => ({
+        ...current,
+        descriptionDrawerError: 'Обґрунтування не може бути порожнім',
+      }));
+      return;
+    }
+
+    const selectedFreq = resolveNetworkDescriptionFrequency(network, form.networkFreqId);
+    if (form.networkFreqId !== null && !selectedFreq) {
+      setState((current) => ({
+        ...current,
+        descriptionDrawerError: 'Не вдалося знайти вибрану частоту',
+      }));
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      descriptionDrawerSaving: true,
+      descriptionDrawerError: null,
+    }));
+
+    try {
+      let updatedNetwork: Network;
+
+      if (state.descriptionDrawerMode === 'create') {
+        updatedNetwork = await addNetworkDescriptions({
+          networkId: network.id,
+          networkDescriptions:
+            selectedFreq === null
+              ? [
+                  {
+                    descrType: 'Confirmation',
+                    description,
+                  },
+                ]
+              : [],
+          frequencyDescriptions:
+            selectedFreq === null
+              ? []
+              : [
+                  {
+                    descrType: 'Confirmation',
+                    description,
+                    freq: selectedFreq.freq,
+                  },
+                ],
+        });
+      } else {
+        if (descriptionId === null) {
+          setState((current) => ({
+            ...current,
+            descriptionDrawerSaving: false,
+            descriptionDrawerError: 'Не вдалося знайти опис для редагування',
+          }));
+          return;
+        }
+
+        updatedNetwork = await updateNetworkDescription({
+          networkId: network.id,
+          descriptionId,
+          descrType: 'Confirmation',
+          description,
+          networkFreqId: form.networkFreqId,
+        });
+      }
+
+      setState((current) => ({
+        ...current,
+        network: updatedNetwork,
+        descriptionDrawerOpen: false,
+        descriptionDrawerMode: 'create',
+        descriptionDrawerDescriptionId: null,
+        descriptionDrawerForm: toNetworkDescriptionForm('', null),
+        descriptionDrawerSaving: false,
+        descriptionDrawerError: null,
+        expandedDescriptionIds: current.expandedDescriptionIds.filter((descriptionId) =>
+          updatedNetwork.descriptions.some((description) => description.id === descriptionId),
+        ),
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        descriptionDrawerSaving: false,
+        descriptionDrawerError: formatErrorMessage(error),
+      }));
+    }
+  }, [resolveNetworkDescriptionFrequency, state.descriptionDrawerDescriptionId, state.descriptionDrawerForm, state.descriptionDrawerMode, state.descriptionDrawerSaving, state.network]);
+
+  const deleteDescription = useCallback(async () => {
+    const network = state.network;
+    const target = state.deleteDescriptionTarget;
+
+    if (!network || !target || state.deleteDescriptionSubmitting) return;
+
+    setState((current) => ({
+      ...current,
+      deleteDescriptionSubmitting: true,
+      deleteDescriptionError: null,
+    }));
+
+    try {
+      const updatedNetwork = await deleteNetworkDescription({
+        networkId: network.id,
+        descriptionId: target.id,
+      });
+
+      setState((current) => ({
+        ...current,
+        network: updatedNetwork,
+        deleteDescriptionDialogOpen: false,
+        deleteDescriptionTarget: null,
+        deleteDescriptionSubmitting: false,
+        deleteDescriptionError: null,
+        expandedDescriptionIds: current.expandedDescriptionIds.filter((descriptionId) =>
+          updatedNetwork.descriptions.some((description) => description.id === descriptionId),
+        ),
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        deleteDescriptionSubmitting: false,
+        deleteDescriptionError: formatErrorMessage(error),
+      }));
+    }
+  }, [state.deleteDescriptionSubmitting, state.deleteDescriptionTarget, state.network]);
 
   const syncNetworkRelations = useCallback(async (editForm: NetworkEditForm) => {
     await updateNetworkPosts({
@@ -490,6 +781,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     status,
     canDelete,
     canEdit,
+    canManageDescriptionActions,
     unitNames,
     aorItems,
     postItems,
@@ -498,6 +790,27 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     aorOptions,
     unitOptions,
     postOptions,
+    confirmationDescriptions,
+    expandedDescriptionIds: state.expandedDescriptionIds,
+    toggleDescriptionExpanded,
+    descriptionDrawerOpen: state.descriptionDrawerOpen,
+    descriptionDrawerMode: state.descriptionDrawerMode,
+    descriptionDrawerDescriptionId: state.descriptionDrawerDescriptionId,
+    descriptionDrawerForm: state.descriptionDrawerForm,
+    descriptionDrawerSaving: state.descriptionDrawerSaving,
+    descriptionDrawerError: state.descriptionDrawerError,
+    openDescriptionDrawerForCreate,
+    openDescriptionDrawerForEdit,
+    setDescriptionDrawerForm,
+    closeDescriptionDrawer,
+    saveDescription,
+    deleteDescriptionDialogOpen: state.deleteDescriptionDialogOpen,
+    deleteDescriptionTarget: state.deleteDescriptionTarget,
+    deleteDescriptionSubmitting: state.deleteDescriptionSubmitting,
+    deleteDescriptionError: state.deleteDescriptionError,
+    openDeleteDescriptionDialog,
+    closeDeleteDescriptionDialog,
+    deleteDescription,
     openMenu,
     closeMenu,
     openDeleteDialog,
