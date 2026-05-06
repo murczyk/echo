@@ -437,6 +437,7 @@ describe('MessageCard', () => {
 
   it('shows comments from the same organism and hides comments from our user', async () => {
     const view = await renderCard({
+      displayMode: 'analysis',
       messageComments: [
         { id: 11, messageId: 42, comment: 'visible comment', login: 'peer-login' },
         { id: 12, messageId: 42, comment: 'hidden comment', login: 'tester' },

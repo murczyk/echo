@@ -2,7 +2,7 @@ import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useMemo } from 'react';
-import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit } from '../../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit, User } from '../../../../../Bindings';
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
@@ -33,10 +33,12 @@ export type MessageCardProps = {
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;
+  currentUser?: User | null;
   groupName: string | null;
   senderName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
+  users?: Record<string, User | null>;
   messageComments?: MessageComment[];
   searchText?: string | null;
   /** Loaded network models (for «в дорозвідці» badge); keys match `msg.networkIds`. */
@@ -68,10 +70,12 @@ export function MessageCard({
   tagsLoading = false,
   referenceTimeMs,
   authUserName,
+  currentUser,
   groupName,
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
+  users,
   messageComments = [],
   searchText,
   networkMap = {},
@@ -164,6 +168,7 @@ export function MessageCard({
     onDelete,
     onEditDetails,
   };
+  const visibleMessageComments = displayMode === 'analysis' ? messageComments : [];
 
   return (
     <Box
@@ -216,9 +221,12 @@ export function MessageCard({
           tagsLayout={tagsLayout}
           analysisCallsignActions={analysisCallsignActions}
           callsignInfoMap={callsignInfoMap}
+          authUserName={authUserName}
+          currentUser={currentUser}
+          users={users}
           networks={networks}
           unitsMap={unitsMap}
-          messageComments={messageComments}
+          messageComments={visibleMessageComments}
           searchText={searchText}
         />
       </Box>

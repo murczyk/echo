@@ -655,6 +655,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   >
                     <AnalysisMessagesPane
                       authUserName={page.authUserName}
+                      currentUser={page.currentUser}
                       copiedFeedbackId={page.copiedFeedbackId}
                       editorMessage={page.editorMessage}
                       editorSaveInFlight={page.editorSaveInFlight}
@@ -676,6 +677,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       onToggleMessageImportant={page.onToggleMessageImportant}
                       onToggleMessageTag={page.onToggleMessageTag}
                       profiles={page.profiles}
+                      users={page.users}
                       tagsMap={page.tagsMap}
                       tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
                       tagsLayout={page.tagsLayout}

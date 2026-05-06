@@ -18,6 +18,7 @@ import type {
   Network,
   Tag,
   Unit,
+  User,
 } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from '../../rer-duty-neo/utils';
@@ -107,6 +108,35 @@ function uniqueNormalizedCallsigns(values: string[]): string[] {
 function buildSuggestedCallsigns(msg: InboxMessage): string[] {
   const current = new Set(uniqueNormalizedCallsigns(msg.callsigns ?? []));
   return uniqueNormalizedCallsigns(msg.callsignsAlg2 ?? []).filter((callsign) => callsign.length <= 12 && !current.has(callsign));
+}
+
+function normalizeLogin(login: string): string {
+  return login.trim();
+}
+
+function isKnownOtherOrganismComment(
+  authUserName: string | null,
+  currentUser: User | null,
+  users: Record<string, User | null>,
+  login: string,
+): boolean {
+  const commentLogin = normalizeLogin(login);
+  if (commentLogin === '') return false;
+  if (normalizeLogin(authUserName ?? '') === commentLogin) return false;
+  if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
+
+  const commentUser = users[commentLogin] ?? null;
+  if (currentUser?.organismId == null || commentUser?.organismId == null) return false;
+  return currentUser.organismId === commentUser.organismId;
+}
+
+function filterOtherMessageComments(
+  authUserName: string | null,
+  currentUser: User | null,
+  users: Record<string, User | null>,
+  comments: MessageComment[],
+): MessageComment[] {
+  return comments.filter((comment) => isKnownOtherOrganismComment(authUserName, currentUser, users, comment.login));
 }
 
 function AnalysisCallsignsSection({
@@ -625,6 +655,9 @@ export function MessageCardMessageBody({
   tagsLayout = 'full',
   analysisCallsignActions,
   callsignInfoMap,
+  authUserName = null,
+  currentUser = null,
+  users = {},
   networks,
   unitsMap,
   messageComments = [],
@@ -638,6 +671,9 @@ export function MessageCardMessageBody({
   tagsLayout?: TagsLayoutVariant;
   analysisCallsignActions?: AnalysisCallsignActions;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
+  authUserName?: string | null;
+  currentUser?: User | null;
+  users?: Record<string, User | null>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   messageComments?: MessageComment[];
@@ -680,7 +716,10 @@ export function MessageCardMessageBody({
   );
   const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => isPresent(node)) : isPresent(textPrimary);
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
-  const otherComments = messageComments;
+  const otherComments = useMemo(
+    () => (currentUser == null || Object.keys(users).length === 0 ? messageComments : filterOtherMessageComments(authUserName, currentUser, users, messageComments)),
+    [authUserName, currentUser, messageComments, users],
+  );
   const hasOtherCommentsRest = otherComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
   const visibleOtherComments = showOtherCommentsRest || !hasOtherCommentsRest ? otherComments : otherComments.slice(0, OTHER_COMMENTS_PREVIEW_COUNT);
   const otherCommentsExpandToggleButton = hasOtherCommentsRest ? (

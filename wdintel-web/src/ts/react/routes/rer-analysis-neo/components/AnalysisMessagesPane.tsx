@@ -12,6 +12,7 @@ import type {
   SignalProfileEntry,
   Tag,
   Unit,
+  User,
 } from '../../../../../Bindings';
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
@@ -23,6 +24,7 @@ import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 
 type Props = {
   authUserName: string | null;
+  currentUser: User | null;
   copiedFeedbackId: string | null;
   groupInfos: Record<string, SignalGroupEntry>;
   loading: boolean;
@@ -44,6 +46,7 @@ type Props = {
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   profiles: Record<string, SignalProfileEntry | null>;
+  users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
@@ -55,6 +58,7 @@ type Props = {
 
 type AnalysisMessageCardItemProps = {
   authUserName: string | null;
+  currentUser: User | null;
   copiedFeedbackId: string | null;
   groupInfos: Record<string, SignalGroupEntry>;
   id: number;
@@ -71,6 +75,7 @@ type AnalysisMessageCardItemProps = {
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   referenceTimeMs: number | null;
+  users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
@@ -82,6 +87,7 @@ type AnalysisMessageCardItemProps = {
 
 const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   authUserName,
+  currentUser,
   copiedFeedbackId,
   groupInfos,
   id,
@@ -98,6 +104,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onToggleMessageTag,
   profiles,
   referenceTimeMs,
+  users,
   tagsMap,
   tagsLoading,
   tagsLayout,
@@ -117,11 +124,13 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       msg={message}
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
+      currentUser={currentUser}
       groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
       senderName={buildSenderLabel(message.sender ? profiles[message.sender] : null, message.sender)}
       copiedFeedbackId={copiedFeedbackId}
       messageComments={messageComments}
       networkDisplayMap={networkDisplayMap}
+      users={users}
       tagsMap={tagsMap}
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
@@ -175,6 +184,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
 
 function AnalysisMessagesPaneComponent({
   authUserName,
+  currentUser,
   copiedFeedbackId: copiedFeedbackIdProp,
   editorMessage,
   editorSaveInFlight,
@@ -196,6 +206,7 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageImportant,
   onToggleMessageTag,
   profiles,
+  users,
   tagsMap,
   tagsLoading,
   tagsLayout,
@@ -303,6 +314,7 @@ function AnalysisMessagesPaneComponent({
             <AnalysisMessageCardItem
               key={id}
               authUserName={authUserName}
+              currentUser={currentUser}
               copiedFeedbackId={copiedFeedbackId}
               groupInfos={groupInfos}
               id={id}
@@ -318,6 +330,7 @@ function AnalysisMessagesPaneComponent({
               onToggleMessageImportant={onToggleMessageImportant}
               onToggleMessageTag={onToggleMessageTag}
               profiles={profiles}
+              users={users}
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}
               tagsLoading={tagsLoading}
