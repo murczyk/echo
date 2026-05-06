@@ -89,34 +89,22 @@ function LeftPanelSkeleton() {
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
+        gap: 2,
       }}
     >
-      <Paper
-        variant="outlined"
-        sx={{
-          height: '100%',
-          minHeight: 0,
-          p: 2,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-          overflow: 'hidden',
-        }}
-      >
-        <Skeleton variant="text" width="28%" height={28} />
-        <Skeleton variant="rounded" height={28} />
-        <Skeleton variant="rounded" height={88} />
-        <Skeleton variant="rounded" height={28} />
-        <Skeleton variant="rounded" height={28} />
-        <Skeleton variant="text" width="24%" height={28} />
-        <Skeleton variant="rounded" height={28} />
-        <Skeleton variant="rounded" height={28} />
-        <Skeleton variant="rounded" height={88} />
-        <Skeleton variant="text" width="24%" height={28} />
-        <Skeleton variant="rounded" height={28} />
-        <Skeleton variant="rounded" height={28} />
-        <Skeleton variant="rounded" height={28} />
-      </Paper>
+      <Skeleton variant="text" width="28%" height={28} />
+      <Skeleton variant="rounded" height={28} />
+      <Skeleton variant="rounded" height={88} />
+      <Skeleton variant="rounded" height={28} />
+      <Skeleton variant="rounded" height={28} />
+      <Skeleton variant="text" width="24%" height={28} />
+      <Skeleton variant="rounded" height={28} />
+      <Skeleton variant="rounded" height={28} />
+      <Skeleton variant="rounded" height={88} />
+      <Skeleton variant="text" width="24%" height={28} />
+      <Skeleton variant="rounded" height={28} />
+      <Skeleton variant="rounded" height={28} />
+      <Skeleton variant="rounded" height={28} />
     </Box>
   );
 }
@@ -152,121 +140,144 @@ export function NetworkDetailsLeftPanel({
   transferTypeLabel,
   postItems,
 }: Props) {
-  if (isLoading) {
-    return <LeftPanelSkeleton />;
-  }
-
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, boxSizing: 'border-box' }}>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <SectionTitle>Основне</SectionTitle>
-        <FieldRow
-          label={formatUnitLabel(unitNames.length)}
-          value={
-            unitNames.length > 0 ? (
-              <Typography
-                variant="body2"
-                sx={{
-                  whiteSpace: 'normal',
-                  overflowWrap: 'anywhere',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {unitNames.join(', ')}
-              </Typography>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                —
-              </Typography>
-            )
-          }
-        />
-        <FieldRow label="Район функціонування" value={<Typography variant="body2">{formatNetworkName(network?.location)}</Typography>} />
-        <FieldRow
-          label="Смуги"
-          value={
-            aorVisible.length > 0 ? (
-              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                {aorVisible.map((item) => (
-                  <Chip key={item.id} size="small" label={item.label} />
-                ))}
-                {aorCollapsedCount > 0 ? (
-                  <Button size="small" onClick={onToggleShowAllAors} sx={{ minWidth: 0, px: 0.5 }}>
-                    {showAllAors ? 'Згорнути' : `+${aorCollapsedCount}`}
-                  </Button>
-                ) : null}
-              </Stack>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                —
-              </Typography>
-            )
-          }
-        />
-        <FieldRow label="Склад кореспондентів" value={<Typography variant="body2">{callsignCount ?? '—'}</Typography>} />
-        <FieldRow
-          label="Активність"
-          value={
-            statusTone === 'success' && network?.activeFrom ? (
-              <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 700 }}>
-                {formatDateOnly(network.activeFrom)} — досі
-              </Typography>
-            ) : (
-              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                <Chip size="small" color={statusTone === 'success' ? 'success' : 'warning'} label={statusLabel} />
-              </Stack>
-            )
-          }
-        />
+    <Paper
+      variant="outlined"
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
+        overflow: 'auto',
+      }}
+    >
+      <Box
+        sx={{
+          minHeight: 0,
+          p: 2,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2.5,
+          boxSizing: 'border-box',
+        }}
+      >
+        {isLoading ? (
+          <LeftPanelSkeleton />
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <SectionTitle>Основне</SectionTitle>
+              <FieldRow
+                label={formatUnitLabel(unitNames.length)}
+                value={
+                  unitNames.length > 0 ? (
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {unitNames.join(', ')}
+                    </Typography>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      —
+                    </Typography>
+                  )
+                }
+              />
+              <FieldRow label="Район функціонування" value={<Typography variant="body2">{formatNetworkName(network?.location)}</Typography>} />
+              <FieldRow
+                label="Смуги"
+                value={
+                  aorVisible.length > 0 ? (
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                      {aorVisible.map((item) => (
+                        <Chip key={item.id} size="small" label={item.label} />
+                      ))}
+                      {aorCollapsedCount > 0 ? (
+                        <Button size="small" onClick={onToggleShowAllAors} sx={{ minWidth: 0, px: 0.5 }}>
+                          {showAllAors ? 'Згорнути' : `+${aorCollapsedCount}`}
+                        </Button>
+                      ) : null}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      —
+                    </Typography>
+                  )
+                }
+              />
+              <FieldRow label="Склад кореспондентів" value={<Typography variant="body2">{callsignCount ?? '—'}</Typography>} />
+              <FieldRow
+                label="Активність"
+                value={
+                  statusTone === 'success' && network?.activeFrom ? (
+                    <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 700 }}>
+                      {formatDateOnly(network.activeFrom)} — досі
+                    </Typography>
+                  ) : (
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                      <Chip size="small" color={statusTone === 'success' ? 'success' : 'warning'} label={statusLabel} />
+                    </Stack>
+                  )
+                }
+              />
+            </Box>
+
+            <Divider />
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <SectionTitle>Операційні</SectionTitle>
+              <FieldRow label="Призначення" value={<Typography variant="body2">{formatNetworkName(network?.purpose)}</Typography>} />
+              <FieldRow label="Діапазон" value={<Typography variant="body2">{rangeLabel}</Typography>} />
+              <FieldRow label="Тип передачі" value={<Typography variant="body2">{transferTypeLabel}</Typography>} />
+              <FieldRow label="Режим" value={<Typography variant="body2">{formatNetworkName(network?.operationMode)}</Typography>} />
+              <FieldRow label="Характер" value={<Typography variant="body2">{formatNetworkName(network?.operationType)}</Typography>} />
+              <FieldRow
+                label="Період функціонування"
+                value={<Typography variant="body2">{formatNetworkName(network?.operationPeriod)}</Typography>}
+              />
+              <FieldRow
+                label="Пости"
+                value={
+                  postItems.length > 0 ? (
+                    <ChipList labels={postItems.map((item) => item.label)} />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      —
+                    </Typography>
+                  )
+                }
+              />
+              <FieldRow
+                label="Радіостанція"
+                value={
+                  network?.radioStation?.trim() ? (
+                    <Typography variant="body2">{formatNetworkName(network.radioStation)}</Typography>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      —
+                    </Typography>
+                  )
+                }
+              />
+            </Box>
+
+            <Divider />
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <SectionTitle>Додатково</SectionTitle>
+              <FieldRow label="Створено" value={<Typography variant="body2">{formatDateOnly(network?.createdAt)}</Typography>} />
+              <FieldRow label="Оновлено" value={<Typography variant="body2">{formatDateOnly(network?.lastUpdatedAt)}</Typography>} />
+              <FieldRow label="Оператор" value={<Typography variant="body2">{formatNetworkName(network?.lastUpdatedBy)}</Typography>} />
+            </Box>
+          </Box>
+        )}
       </Box>
-
-      <Divider />
-
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <SectionTitle>Операційні</SectionTitle>
-        <FieldRow label="Призначення" value={<Typography variant="body2">{formatNetworkName(network?.purpose)}</Typography>} />
-        <FieldRow label="Діапазон" value={<Typography variant="body2">{rangeLabel}</Typography>} />
-        <FieldRow label="Тип передачі" value={<Typography variant="body2">{transferTypeLabel}</Typography>} />
-        <FieldRow label="Режим" value={<Typography variant="body2">{formatNetworkName(network?.operationMode)}</Typography>} />
-        <FieldRow label="Характер" value={<Typography variant="body2">{formatNetworkName(network?.operationType)}</Typography>} />
-        <FieldRow
-          label="Період функціонування"
-          value={<Typography variant="body2">{formatNetworkName(network?.operationPeriod)}</Typography>}
-        />
-        <FieldRow
-          label="Пости"
-          value={
-            postItems.length > 0 ? (
-              <ChipList labels={postItems.map((item) => item.label)} />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                —
-              </Typography>
-            )
-          }
-        />
-        <FieldRow
-          label="Радіостанція"
-          value={
-            network?.radioStation?.trim() ? (
-              <Typography variant="body2">{formatNetworkName(network.radioStation)}</Typography>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                —
-              </Typography>
-            )
-          }
-        />
-      </Box>
-
-      <Divider />
-
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <SectionTitle>Додатково</SectionTitle>
-        <FieldRow label="Створено" value={<Typography variant="body2">{formatDateOnly(network?.createdAt)}</Typography>} />
-        <FieldRow label="Оновлено" value={<Typography variant="body2">{formatDateOnly(network?.lastUpdatedAt)}</Typography>} />
-        <FieldRow label="Оператор" value={<Typography variant="body2">{formatNetworkName(network?.lastUpdatedBy)}</Typography>} />
-      </Box>
-    </Box>
+    </Paper>
   );
 }
