@@ -1301,6 +1301,10 @@ fn rer_duty_short_state_key(id: &str) -> String {
     format!("{RER_DUTY_SHORT_STATE_REDIS_KEY_PREFIX}{id}")
 }
 
+fn rer_duty_short_state_hash_key(hash: &str) -> String {
+    format!("{RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX}{hash}")
+}
+
 #[post("/api/rer-duty/filters/create")]
 pub async fn rer_duty_filters_create(
     user: actix_identity::Identity,
@@ -1312,14 +1316,41 @@ pub async fn rer_duty_filters_create(
         .await
         .c(h!())?;
     let req = req.into_inner();
-    let id = Uuid::now_v7().to_string();
-    let key = rer_duty_short_state_key(&id);
     let payload =
         serde_json::to_string(&RerDutyShortStateGetRsp { state: req.state })
             .c(h!())?;
+    let hash = sha256::digest(payload.as_bytes());
+    let hash_key = rer_duty_short_state_hash_key(&hash);
     let mut redis = env.redis.clone();
+    let existing_id: Option<String> = redis.get(&hash_key).await.c(h!())?;
+    if let Some(existing_id) = existing_id {
+        let key = rer_duty_short_state_key(&existing_id);
+        let raw: Option<String> = redis.get(&key).await.c(h!())?;
+        if let Some(raw) = raw {
+            if raw == payload {
+                let _: () = redis
+                    .expire(&key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
+                    .await
+                    .c(h!())?;
+                let _: () = redis
+                    .expire(&hash_key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
+                    .await
+                    .c(h!())?;
+                info!(
+                    "rer duty short-state reused id={existing_id} login={login}"
+                );
+                return Ok(Json(RerDutyShortStateCreateRsp { id: existing_id }));
+            }
+        }
+    }
+    let id = Uuid::now_v7().to_string();
+    let key = rer_duty_short_state_key(&id);
     let _: () = redis
         .set_ex(&key, payload, RER_DUTY_SHORT_STATE_TTL_SEC)
+        .await
+        .c(h!())?;
+    let _: () = redis
+        .set_ex(&hash_key, id.clone(), RER_DUTY_SHORT_STATE_TTL_SEC)
         .await
         .c(h!())?;
     info!("rer duty short-state created id={id} login={login}");
