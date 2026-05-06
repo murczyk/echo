@@ -526,7 +526,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     }
 
     const selectedFreq = resolveNetworkDescriptionFrequency(network, form.networkFreqId);
-    if (form.networkFreqId !== null && !selectedFreq) {
+    if (state.descriptionDrawerMode === 'create' && form.networkFreqId !== null && !selectedFreq) {
       setState((current) => ({
         ...current,
         descriptionDrawerError: 'Не вдалося знайти вибрану частоту',
