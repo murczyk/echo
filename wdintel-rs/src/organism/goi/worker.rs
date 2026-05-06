@@ -122,7 +122,7 @@ async fn run_goi_folder_sync_jobs(
         {
             let label = integration.server_label.clone();
             log::warn!(
-                "Skipping GOI palitra folder sync for {label}: {err:#?}"
+                "[goi-sync] Skipping GOI palitra folder sync for {label}: {err:#?}"
             );
         }
         tokio::time::sleep(goi_worker_sleep_duration()).await;
