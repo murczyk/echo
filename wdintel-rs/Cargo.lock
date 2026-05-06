@@ -2316,7 +2316,7 @@ dependencies = [
 [[package]]
 name = "echo-im"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ccb6819a169fa81b904e5dcba686cae57c2570ea#ccb6819a169fa81b904e5dcba686cae57c2570ea"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=97a705c5a15c0d4f18d28659ae954a9c352112e2#97a705c5a15c0d4f18d28659ae954a9c352112e2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2341,7 +2341,7 @@ dependencies = [
 [[package]]
 name = "echo-im-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ccb6819a169fa81b904e5dcba686cae57c2570ea#ccb6819a169fa81b904e5dcba686cae57c2570ea"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=97a705c5a15c0d4f18d28659ae954a9c352112e2#97a705c5a15c0d4f18d28659ae954a9c352112e2"
 dependencies = [
  "async-std",
  "clap",
@@ -2351,13 +2351,13 @@ dependencies = [
 
 [[package]]
 name = "echo-im-signal"
-version = "0.1.1-rc.202605031438"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ccb6819a169fa81b904e5dcba686cae57c2570ea#ccb6819a169fa81b904e5dcba686cae57c2570ea"
+version = "0.1.0"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=97a705c5a15c0d4f18d28659ae954a9c352112e2#97a705c5a15c0d4f18d28659ae954a9c352112e2"
 
 [[package]]
 name = "echo-im-whatsapp"
-version = "0.1.1-rc.202605031438"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ccb6819a169fa81b904e5dcba686cae57c2570ea#ccb6819a169fa81b904e5dcba686cae57c2570ea"
+version = "0.1.0"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=97a705c5a15c0d4f18d28659ae954a9c352112e2#97a705c5a15c0d4f18d28659ae954a9c352112e2"
 
 [[package]]
 name = "echo-install-utils"
