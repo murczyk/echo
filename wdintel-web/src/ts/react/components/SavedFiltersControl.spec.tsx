@@ -161,7 +161,7 @@ describe('SavedFiltersControl', () => {
     }
   });
 
-  it('applies selected filters and reflects the clean state chip', async () => {
+  it('applies selected filters and reflects the selected value', async () => {
     const onApplySavedFilter = vi.fn();
     const view = await renderComponent(
       buildProps({
@@ -172,7 +172,8 @@ describe('SavedFiltersControl', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Вибрано');
+    expect(view.container.textContent).toContain('Збережені фільтри');
+    expect(view.container.querySelector('[data-testid="selected-filter"]')?.textContent).toBe('Base filter');
     await click(getButton(view.container, 'select-first'));
 
     expect(onApplySavedFilter).toHaveBeenCalledWith(expect.objectContaining({ id: 2, name: 'Alt filter' }));
@@ -189,38 +190,18 @@ describe('SavedFiltersControl', () => {
     expect(view.container.textContent).toContain('Збережені фільтри відсутні');
   });
 
-  it('can disable saving as new', async () => {
+  it('can disable saving as new from the menu', async () => {
     const view = await renderComponent(
       buildProps({
+        selectedSavedFilter: buildSavedFilter(1, 'Base filter'),
+        savedFilterName: 'Base filter',
         canSaveAsNew: false,
       }),
     );
     rendered.push(view);
 
-    expect(getButtonByAriaLabel(view.container, 'Зберегти як новий').disabled).toBe(true);
-  });
-
-  it('shows the dirty and renamed status chips', async () => {
-    const dirtyView = await renderComponent(
-      buildProps({
-        selectedSavedFilter: buildSavedFilter(1, 'Base filter'),
-        savedFilterName: 'Base filter',
-        isDirty: true,
-      }),
-    );
-    rendered.push(dirtyView);
-
-    expect(dirtyView.container.textContent).toContain('Змінено');
-
-    const renameView = await renderComponent(
-      buildProps({
-        selectedSavedFilter: buildSavedFilter(1, 'Base filter'),
-        savedFilterName: 'Renamed filter',
-      }),
-    );
-    rendered.push(renameView);
-
-    expect(renameView.container.textContent).toContain('Нова назва');
+    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
+    expect(getButton(view.container, 'Зберегти як новий').disabled).toBe(true);
   });
 
   it('saves as new and renames through compact dialogs', async () => {
@@ -238,7 +219,8 @@ describe('SavedFiltersControl', () => {
     );
     rendered.push(view);
 
-    await click(getButtonByAriaLabel(view.container, 'Зберегти як новий'));
+    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
+    await click(getButton(view.container, 'Зберегти як новий'));
     const saveDialogInput = getInput(view.container, 'Назва');
     await typeInput(saveDialogInput, 'New filter');
     await click(getButton(view.container, 'Зберегти'));
@@ -246,7 +228,7 @@ describe('SavedFiltersControl', () => {
     expect(onSaveAsNew).toHaveBeenCalledWith('New filter');
     expect(onSavedFilterNameChange).toHaveBeenCalledWith('New filter');
 
-    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженим фільтром'));
+    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
     await click(getButton(view.container, 'Перейменувати'));
     const renameDialogInput = getInput(view.container, 'Назва');
     await typeInput(renameDialogInput, 'Updated filter');
@@ -268,7 +250,8 @@ describe('SavedFiltersControl', () => {
     );
     rendered.push(view);
 
-    await click(getButtonByAriaLabel(view.container, 'Зберегти як новий'));
+    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
+    await click(getButton(view.container, 'Зберегти як новий'));
     await typeInput(getInput(view.container, 'Назва'), 'New filter');
     await click(getButton(view.container, 'Зберегти'));
 
@@ -277,7 +260,7 @@ describe('SavedFiltersControl', () => {
     expect(view.container.textContent).toContain('Зберегти як новий');
   });
 
-  it('runs update and delete actions from the compact toolbar', async () => {
+  it('runs update and delete actions from the menu', async () => {
     const onUpdateExisting = vi.fn();
     const onDeleteExisting = vi.fn();
     const view = await renderComponent(
@@ -291,11 +274,21 @@ describe('SavedFiltersControl', () => {
     );
     rendered.push(view);
 
-    await click(getButtonByAriaLabel(view.container, 'Оновити вибраний фільтр'));
-    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженим фільтром'));
+    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
+    await click(getButton(view.container, 'Оновити вибраний фільтр'));
+    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
     await click(getButton(view.container, 'Видалити'));
 
     expect(onUpdateExisting).toHaveBeenCalledTimes(1);
     expect(onDeleteExisting).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the menu enabled when no filter is selected', async () => {
+    const view = await renderComponent(buildProps());
+    rendered.push(view);
+
+    expect(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами').disabled).toBe(false);
+    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
+    expect(getButton(view.container, 'Зберегти як новий').disabled).toBe(false);
   });
 });

@@ -130,6 +130,22 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_cyrillic_cc_and_emoji_digits3() {
+        let metadata = metadata_without_spans(parse_metadata(
+            "25.02.2026 12:09:42 F=145.0260 (МГц)
+🔺УКХ р/м НВ підрозділу 151.600 МГц СС: 7 👥: 24538 🔐", // in case we have line like 👥: 24538 🔐 - we treat trimmed value between : and 🔐 as hash id
+        ));
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("7".to_string()),
+                hash_id: Some("24538".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
     fn parse_metadata_handles_plain_id_variants_without_arrows() {
         let metadata = metadata_without_spans(parse_metadata(
             "СС:8\nІD:21152\nID(CG):395251",

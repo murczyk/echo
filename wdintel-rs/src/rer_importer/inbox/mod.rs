@@ -1008,12 +1008,15 @@ mod tests {
         )
         .await
         .unwrap();
-
-        let logins = vec![login.login.clone()];
-        let messages =
-            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
+        let logins =
+            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
                 .await
                 .unwrap();
+
+        let messages =
+            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
+            .await
+            .unwrap();
 
         assert_eq!(messages.len(), 1);
         let inbox_tags = messages[0]

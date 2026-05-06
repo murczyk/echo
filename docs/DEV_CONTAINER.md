@@ -18,12 +18,12 @@
    - `add device -> linux server`
    - згенеруйте інсталяційний ключ
 
-3) Оберіть ім'я машини і повний домен (кореневий домен можна подивитись у вкладці DNS в Tailscale кабінеті):
+3) Оберіть ім'я машини і Tailnet DNS name (його можна подивитись у вкладці DNS в Tailscale кабінеті). Повна адреса буде `$MACHINE.$DOMAIN`:
 
 ```bash
 TS_KEY=tskey-auth-kB...7y
 MACHINE=ziggy-dev-echo
-DOMAIN=ziggy-dev-echo.eagle-atria.ts.net
+DOMAIN=eagle-atria.ts.net
 ```
 
 4) Підготуйте SSH публічний ключ, який буде додано в контейнер:
@@ -37,7 +37,7 @@ SSH_PUBLIC_KEY="ssh-ed25519 AAAA... user@host"
 ```bash
 TS_KEY=tskey-auth-kB...7y
 MACHINE=ziggy-dev-echo
-DOMAIN=ziggy-dev-echo.eagle-atria.ts.net
+DOMAIN=eagle-atria.ts.net
 SSH_PUBLIC_KEY="ssh-ed25519 AAAA... user@host"
 ```
 
@@ -88,12 +88,16 @@ TEMPLATE=echo-dev-template
 cd ~/workspace/echo-dev-env/
 
 echo-install-utils incus-clone --tailscale "$TS_KEY" --clear-all --ssh "$SSH_PUBLIC_KEY" -- "$TEMPLATE" "$MACHINE"
-incus file push ./deploy/dev-post-clone.sh "$MACHINE/var/tmp/dev-post-clone.sh"
-incus exec "$MACHINE" -- /var/tmp/dev-post-clone.sh \
+echo-install-utils incus-dev-post-clone-script > /tmp/dev-post-clone.sh
+incus exec "$MACHINE" -- bash -lc 'rm -f /tmp/dev-post-clone.sh /var/tmp/dev-post-clone.sh'
+incus file push /tmp/dev-post-clone.sh "$MACHINE/tmp/dev-post-clone.sh"
+incus exec "$MACHINE" -- chmod +x /tmp/dev-post-clone.sh
+incus exec "$MACHINE" -- /tmp/dev-post-clone.sh \
   --ts-key "$TS_KEY" \
   --machine "$MACHINE" \
   --domain "$DOMAIN" \
   --ssh-public-key "$SSH_PUBLIC_KEY"
+rm -f /tmp/dev-post-clone.sh
 ```
 
 Після виконання скрипт виведе банер:

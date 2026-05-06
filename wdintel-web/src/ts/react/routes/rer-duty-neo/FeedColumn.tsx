@@ -423,7 +423,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   groupName={groupName}
                   senderName={senderName}
                   copiedFeedbackId={copiedFeedbackId}
-                  currentUser={null}
                   networkDisplayMap={networkDisplayMap}
                   messageComments={[]}
                   networkMap={networkMap}
@@ -432,7 +431,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   networks={networkMap ? Object.values(networkMap) : undefined}
                   featureStrictNetworks={featureStrictNetworks}
                   tagsMap={tagsMap}
-                  users={{}}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
                   onImportant={() => onMessageImportant(id, msg.important)}
                   onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}

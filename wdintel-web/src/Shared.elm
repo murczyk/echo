@@ -488,9 +488,6 @@ pollEvents lastEventId =
 shouldRedirectUnauthorizedRerPage : Route.Path.Path -> B.User -> Bool
 shouldRedirectUnauthorizedRerPage path user =
     case path of
-        Route.Path.RerPalitra ->
-            not (Core.Auth.hasRole "Rer" user)
-
         Route.Path.RerPalitraNeo ->
             not (Core.Auth.hasRole "Rer" user)
 

@@ -86,8 +86,8 @@ view model =
                 ]
                 [ div
                     [ class "rounded-lg border border-amber-500/40 bg-amber-100 px-4 py-3 text-amber-900" ]
-                    [ div [ class "flex items-start justify-between gap-4" ]
-                        [ div [ class "min-w-0" ]
+                    [ div [ class "flex items-center justify-between gap-4" ]
+                        [ div [ class "min-w-0 leading-6" ]
                             [ span [ class "font-semibold" ] [ text "Альфа-версія: " ]
                             , text "ця сторінка перебуває у тестовому режимі. "
                             , a
@@ -101,7 +101,7 @@ view model =
                                 ]
                             ]
                         , button
-                            [ class "shrink-0 inline-flex items-center justify-center rounded-sm p-1 text-amber-900/80 hover:text-amber-900 hover:bg-amber-200/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)]"
+                            [ class "shrink-0 self-center inline-flex items-center justify-center rounded-sm p-1 text-amber-900/80 hover:text-amber-900 hover:bg-amber-200/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)]"
                             , type_ "button"
                             , onClick CloseAlphaBanner
                             , attribute "aria-label" "Закрити альфа-банер"

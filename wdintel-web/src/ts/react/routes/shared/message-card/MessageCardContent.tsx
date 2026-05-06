@@ -18,7 +18,6 @@ import type {
   Network,
   Tag,
   Unit,
-  User,
 } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from '../../rer-duty-neo/utils';
@@ -154,9 +153,6 @@ function AnalysisCallsignsSection({
 
   return (
     <Stack spacing={0.75} sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.4 }}>
-        Позивні
-      </Typography>
       <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
         {analysisVisibleCallsigns.length > 0
           ? analysisVisibleCallsigns.map((callsign) => (
@@ -184,7 +180,7 @@ function AnalysisCallsignsSection({
         <TextField
           size="small"
           value={callsignDraft}
-          placeholder="Новий"
+          placeholder="Позивний"
           autoComplete="off"
           onChange={(event) => setCallsignDraft(event.target.value.toUpperCase())}
           onKeyDown={(event) => {
@@ -629,10 +625,7 @@ export function MessageCardMessageBody({
   callsignInfoMap,
   networks,
   unitsMap,
-  authUserName,
-  currentUser,
   messageComments = [],
-  users,
   searchText,
 }: {
   compact?: boolean;
@@ -645,10 +638,7 @@ export function MessageCardMessageBody({
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
-  authUserName: string | null;
-  currentUser: User | null;
   messageComments?: MessageComment[];
-  users: Record<string, User | null>;
   searchText?: string | null;
 }) {
   const imageHrefs = useMemo(() => collectMessageImageHrefs(msg), [msg]);
@@ -688,10 +678,7 @@ export function MessageCardMessageBody({
   );
   const hasTextPrimary = Array.isArray(textPrimary) ? textPrimary.some((node) => isPresent(node)) : isPresent(textPrimary);
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
-  const otherComments = useMemo(
-    () => filterOtherMessageComments(authUserName, currentUser, users, messageComments),
-    [authUserName, currentUser, messageComments, users],
-  );
+  const otherComments = messageComments;
   const hasOtherCommentsRest = otherComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
   const visibleOtherComments = showOtherCommentsRest || !hasOtherCommentsRest ? otherComments : otherComments.slice(0, OTHER_COMMENTS_PREVIEW_COUNT);
   const otherCommentsExpandToggleButton = hasOtherCommentsRest ? (

@@ -141,7 +141,6 @@ navBar user shared activeName props =
             [ internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
             , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
             , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
-            , internalMenu Route.Path.Admin_Messenger "messenger" "Месенджери"
             , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
             , internalMenu Route.Path.Admin_DirectionsNeo "zones" "Напрямки"
             , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "Організми"
@@ -154,10 +153,8 @@ navBar user shared activeName props =
 
         databaseSubs =
             [ internalMenu Route.Path.RerNetworks "networks" "Мережі"
-            , internalMenu Route.Path.RerPalitra "palitra" "Палітри"
             , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
             , internalMenu Route.Path.RerUnits "rer-units" "Підрозділи"
-            , internalMenu Route.Path.RerCallsigns "callsigns" "Позивні"
             , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "Позивні"
             , internalMenu Route.Path.RerSignals "signals" "Сигнали"
             , internalMenu Route.Path.RerFreqs "freqs" "Частоти"
@@ -343,7 +340,7 @@ navBar user shared activeName props =
                     [ id "app-navbar-links-panel"
                     , class <|
                         String.join " "
-                            [ "app-navbar-links w-full min-w-0 basis-full border-t border-white/10"
+                            [ "app-navbar-links w-full min-w-0 basis-full border-t border-[var(--color-border)]"
                             , "lg:mt-0 lg:flex lg:w-auto lg:min-w-0 lg:flex-1 lg:basis-0 lg:border-t-0 lg:pt-0"
                             , if props.mobileNavOpen then
                                 "flex"
@@ -511,7 +508,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
 
                 MenuSeparator ->
                     li
-                        [ class "mx-2 my-2 border-t border-white/10"
+                        [ class "mx-2 my-2 border-t border-[var(--color-border)]"
                         , attribute "role" "separator"
                         ]
                         []
@@ -523,22 +520,9 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
             }
             -> Html msg
         menuItemLabel item =
-            let
-                betaPages =
-                    [ "callsigns-neo"
-                    , "palitra-neo"
-                    , "messenger-neo"
-                    ]
-            in
             span [ class "inline-flex items-center gap-2" ]
                 (text item.label
-                    :: (if List.member item.activeName betaPages then
-                            [ span
-                                [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
-                                [ text "Beta" ]
-                            ]
-
-                        else if item.activeName == "rer-duty-neo" || item.activeName == "rer-analysis-neo" then
+                    :: (if item.activeName == "rer-duty-neo" || item.activeName == "rer-analysis-neo" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
                                 [ text "Alpha" ]

@@ -269,7 +269,12 @@ pub fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
         static ref RE_HASH_ID: Regex =
             Regex::new(r#"(?i)ХЕШ\s+[іІiI][dD]\s*:\s*([0-9a-f]+)"#).unwrap();
     }
+    lazy_static! {
+        static ref RE_HASH_ID_EMOJI: Regex =
+            Regex::new(r#"👥\s*:\s*([^🔐\r\n]+?)\s*🔐"#).unwrap();
+    }
     parse_value_from_regexes(line, &[&RE_HASH_ID])
+        .or_else(|| parse_value_from_regexes(line, &[&RE_HASH_ID_EMOJI]))
         .map(MatchedValue::lowercase_value)
 }
 
