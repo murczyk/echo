@@ -17,7 +17,7 @@ import { memo, useMemo, type SyntheticEvent } from 'react';
 import type { NetworkStatus } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import type { NetworkEditForm } from '../use-rer-network-details-neo-page';
+import type { NetworkEditForm } from '../use-rer-network-details-neo-page.shared';
 
 type LookupOption = {
   id: number;
