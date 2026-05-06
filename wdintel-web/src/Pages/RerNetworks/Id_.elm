@@ -953,14 +953,11 @@ update shared msg model =
                 ( model, E.none )
 
             else
-                case ( model.network, model.classicNetworkLoading ) of
-                    ( Success _, _ ) ->
+                case model.classicNetworkLoading of
+                    True ->
                         ( model, E.none )
 
-                    ( _, True ) ->
-                        ( model, E.none )
-
-                    _ ->
+                    False ->
                         ( { model | classicNetworkLoading = True }, loadClassicNetworkData model.networkId )
 
         ModulationsReturnedByApi (Err e) ->
