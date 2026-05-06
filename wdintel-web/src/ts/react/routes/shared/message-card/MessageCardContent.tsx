@@ -153,9 +153,6 @@ function AnalysisCallsignsSection({
 
   return (
     <Stack spacing={0.75} sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.4 }}>
-        Позивні
-      </Typography>
       <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
         {analysisVisibleCallsigns.length > 0
           ? analysisVisibleCallsigns.map((callsign) => (
@@ -183,7 +180,7 @@ function AnalysisCallsignsSection({
         <TextField
           size="small"
           value={callsignDraft}
-          placeholder="Новий"
+          placeholder="Позивний"
           autoComplete="off"
           onChange={(event) => setCallsignDraft(event.target.value.toUpperCase())}
           onKeyDown={(event) => {

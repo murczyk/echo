@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AnalysisFilterSectionId } from './types';
 import { emptyQueryState } from './helpers';
-import { buildAnalysisReqForFilterSection, filterSectionsForInitialLoad, reloadAnalysisData } from './use-analysis-data.reload';
+import { buildAnalysisReqForFilterSection, filterSectionsForInitialLoad, mergeSignalProfiles, reloadAnalysisData } from './use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import { emptyNewCallsigns, emptyOptions } from './use-analysis-data.shared';
 
@@ -168,6 +168,28 @@ describe('buildAnalysisReqForFilterSection', () => {
 
       expect(req[key as keyof typeof req]).toBeNull();
     }
+  });
+});
+
+describe('mergeSignalProfiles', () => {
+  it('keeps existing profiles and fills only missing entries', () => {
+    expect(
+      mergeSignalProfiles(
+        {
+          existing: { givenName: 'BBC', familyName: 'SPORT' },
+          keepNull: null,
+        },
+        {
+          existing: null,
+          keepNull: { givenName: 'Should', familyName: 'NotReplace' },
+          nextOnly: { givenName: 'NEW', familyName: 'ENTRY' },
+        },
+      ),
+    ).toEqual({
+      existing: { givenName: 'BBC', familyName: 'SPORT' },
+      keepNull: { givenName: 'Should', familyName: 'NotReplace' },
+      nextOnly: { givenName: 'NEW', familyName: 'ENTRY' },
+    });
   });
 });
 
@@ -576,6 +598,106 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisUnits).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisLocations).not.toHaveBeenCalled();
+  });
+
+  it('seeds sender profiles from inbox results before the sender filter section loads', async () => {
+    mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
+    mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
+    mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
+    mocks.fetchInboxMessages.mockResolvedValue({
+      inboxItems: [[1, { networkIds: [] }]],
+      callsigns: [{ callsign: 'alpha', res: [] }],
+      signalProfiles: {
+        '195473172345082@lid': { givenName: 'BBC', familyName: 'SPORT' },
+      },
+      signalGroups: [
+        { masterKey: '120363419907122319@g.us', name: 'BBC NEWS', ignoreOperativny: false, groupStats: { activityLastDay: 0, activityLastWeek: 0 }, adminData: null, areasOfResponsibility: null },
+      ],
+      pageLimit: 20,
+    });
+    mocks.fetchAnalysisFreqs.mockResolvedValue({
+      freqs: [{ freq: '150.100', count: 1, isNew: false }],
+    });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+
+    const setProfiles = vi.fn();
+    const setGroupInfos = vi.fn();
+
+    const reloadPromise = reloadAnalysisData({
+      clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: vi.fn(),
+      setCounts: vi.fn(),
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos,
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworkDisplayMap: vi.fn(),
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
+      setNewCallsigns: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading: vi.fn(),
+      setNewCallsignsLoadedKey: vi.fn(),
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions: vi.fn(),
+      setProfiles,
+      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryLoading: vi.fn(),
+      setSummaryRows: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTopCallsigns: vi.fn(),
+      setTopFreqs: vi.fn(),
+      setTopLocations: vi.fn(),
+      setTopUnits: vi.fn(),
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+    });
+
+    await reloadPromise;
+    await flushPromises();
+
+    expect(setProfiles).toHaveBeenCalled();
+    const updater = setProfiles.mock.calls[0][0];
+    expect(typeof updater).toBe('function');
+    expect(updater({})).toEqual({
+      '195473172345082@lid': { givenName: 'BBC', familyName: 'SPORT' },
+    });
+    expect(setGroupInfos).toHaveBeenCalled();
+    const groupUpdater = setGroupInfos.mock.calls[0][0];
+    expect(typeof groupUpdater).toBe('function');
+    expect(groupUpdater({})).toEqual({
+      '120363419907122319@g.us': {
+        masterKey: '120363419907122319@g.us',
+        name: 'BBC NEWS',
+        ignoreOperativny: false,
+        groupStats: { activityLastDay: 0, activityLastWeek: 0 },
+        adminData: null,
+        areasOfResponsibility: null,
+      },
+    });
   });
 
   it('skips callsign-info batching when the top callsign list is empty', async () => {

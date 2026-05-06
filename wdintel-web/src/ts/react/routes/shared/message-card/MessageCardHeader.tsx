@@ -361,7 +361,7 @@ function NetworkEtalonSection({
   const fallbackLabel = fallbackEtalonLabel?.trim() ?? '';
 
   const geoButton = hasLocationDetails ? (
-      <Tooltip title={location} placement="top">
+    <Tooltip title={location} placement="top">
       <Box
         component="span"
         aria-label={`Локація: ${location}`}
@@ -370,8 +370,8 @@ function NetworkEtalonSection({
           alignItems: 'center',
           justifyContent: 'center',
           boxSizing: 'border-box',
-          width: 18,
-          height: 18,
+          width: 24,
+          height: 24,
           p: 0,
           border: '1px solid transparent',
           borderRadius: '50%',
@@ -383,7 +383,7 @@ function NetworkEtalonSection({
           },
         }}
       >
-        <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 12, lineHeight: 1 }} />
+        <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 16, lineHeight: 1 }} />
       </Box>
     </Tooltip>
   ) : null;

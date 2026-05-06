@@ -381,7 +381,7 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити мапу тут"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити мапу в новому вікні"]')).toBeNull();
     expect(view.container.textContent).toContain('Запропоновані позивні');
-    expect(view.container.textContent).toContain('Позивні');
+    expect(view.container.querySelector('input[placeholder="Позивний"]')).not.toBeNull();
     expect(view.container.textContent).toContain('ALPHA');
     expect(view.container.textContent).toContain('BRAVO');
     expect(view.container.textContent).toContain('перевірки вузького макета');
