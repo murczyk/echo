@@ -164,7 +164,7 @@ function canDeleteNetwork(user: User | null): boolean {
 
 function canEditNetwork(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || roles.has('UnitsEditor');
+  return roles.has('Admin') || (roles.has('Rer') && roles.has('UnitsEditor'));
 }
 
 function toNetworkEditForm(network: Network): NetworkEditForm {
@@ -387,7 +387,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       const updatedNetwork = await updateNetwork({
         id: editForm.id,
         restoreNetwork: network.deleted && editForm.status === 'NetworkActive' ? true : null,
-        areaOfResponsibilityIds: editForm.aorIds.length === 0 ? null : [...editForm.aorIds],
+        areaOfResponsibilityIds: [...editForm.aorIds],
         name: editForm.name,
         location: editForm.location,
         radioStation: editForm.radioStation.trim() === '' ? null : editForm.radioStation,
