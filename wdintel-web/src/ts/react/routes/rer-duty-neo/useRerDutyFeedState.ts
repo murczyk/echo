@@ -142,6 +142,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             const rsp = await rerDutyShortStateGet(shortId);
             if (cancelled) return;
             if (blockShortStateHydrationRef.current) return;
+            const currentHash = stableStringify(toShortQueryState(messageFeedsRef.current));
+            if (currentHash !== initialMessageFeedsHashRef.current) return;
             const state = toRerDutyStateFromShort(rsp.state);
             shortStateRef.current = { id: shortId, hash: stableStringify(rsp.state) };
             setMessageFeeds(
@@ -538,6 +540,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   const persistStateToUrl = useCallback(
     (next: MessageFeedState[]) => {
+      if (shortStateIdRef.current && !shortStateReady) {
+        blockShortStateHydrationRef.current = true;
+      }
       if (!featureShortStateEnabled) {
         pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
         return;
@@ -570,7 +575,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
         });
     },
-    [featureShortStateEnabled]
+    [featureShortStateEnabled, shortStateReady]
   );
 
   const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, persistStateToUrl, deps.onFeedRemoved);
