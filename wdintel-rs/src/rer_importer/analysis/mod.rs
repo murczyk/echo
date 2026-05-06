@@ -1344,6 +1344,24 @@ async fn rer_duty_short_state_create_or_reuse(
     Ok((id, false))
 }
 
+async fn rer_duty_short_state_get_and_refresh(
+    redis: &mut redis::aio::ConnectionManager,
+    id: &str,
+) -> Result<RerDutyShortStateGetRsp, AppError> {
+    let key = rer_duty_short_state_key(id);
+    let raw: Option<String> = redis.get(&key).await.c(h!())?;
+    let Some(raw) = raw else {
+        return Err(AppError::NotFound);
+    };
+    let payload: RerDutyShortStateGetRsp =
+        serde_json::from_str(&raw).c(h!())?;
+    let _: () = redis
+        .expire(&key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
+        .await
+        .c(h!())?;
+    Ok(payload)
+}
+
 #[post("/api/rer-duty/filters/create")]
 pub async fn rer_duty_filters_create(
     user: actix_identity::Identity,
@@ -1377,19 +1395,19 @@ pub async fn rer_duty_filters_get(
         .await
         .c(h!())?;
     let req = req.into_inner();
-    let key = rer_duty_short_state_key(&req.id);
     let mut redis = env.redis.clone();
-    let raw: Option<String> = redis.get(&key).await.c(h!())?;
-    let Some(raw) = raw else {
-        warn!("rer duty short-state missing id={} login={login}", req.id);
-        return Err(AppError::NotFound);
-    };
-    let payload: RerDutyShortStateGetRsp =
-        serde_json::from_str(&raw).c(h!())?;
-    let _: () = redis
-        .expire(&key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
-        .await
-        .c(h!())?;
+    let payload =
+        match rer_duty_short_state_get_and_refresh(&mut redis, &req.id).await {
+            Ok(payload) => payload,
+            Err(AppError::NotFound) => {
+                warn!(
+                    "rer duty short-state missing id={} login={login}",
+                    req.id
+                );
+                return Err(AppError::NotFound);
+            }
+            Err(err) => return Err(err),
+        };
     info!("rer duty short-state loaded id={} login={login}", req.id);
     Ok(Json(payload))
 }
