@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
+import { emptyFilter } from './utils';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 
 const hoisted = vi.hoisted(() => ({
@@ -379,6 +380,75 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
     expect(startedCount).toBeGreaterThanOrEqual(2);
+  });
+
+  describe('short state persistence', () => {
+    it('stores short state and updates url on create success', async () => {
+      hoisted.fetchServerInfo.mockResolvedValueOnce({
+        mode: '',
+        publicHost: '',
+        grafanaAddress: '',
+        featureDelta: false,
+        featureAnalysisMap: false,
+        featureRerDutyShortState: true,
+        featureStrictNetworks: false,
+        version: '',
+      });
+      hoisted.rerDutyShortStateCreate.mockResolvedValue({ id: 'short-123' });
+
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const params = new URLSearchParams(window.location.search);
+      expect(params.get('state-short')).toBe('short-123');
+      expect(params.get('state')).toBeNull();
+    });
+
+    it('falls back to long state url when short state create fails', async () => {
+      hoisted.fetchServerInfo.mockResolvedValueOnce({
+        mode: '',
+        publicHost: '',
+        grafanaAddress: '',
+        featureDelta: false,
+        featureAnalysisMap: false,
+        featureRerDutyShortState: true,
+        featureStrictNetworks: false,
+        version: '',
+      });
+      hoisted.rerDutyShortStateCreate.mockRejectedValue(new Error('create failed'));
+
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const params = new URLSearchParams(window.location.search);
+      expect(params.get('state-short')).toBeNull();
+      expect(params.get('state')).toBeTruthy();
+      expect(apiRef.current?.error).toBe('create failed');
+    });
   });
 
   describe('poll autoscroll (scrollToEndAfterLoad)', () => {

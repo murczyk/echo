@@ -1305,23 +1305,14 @@ fn rer_duty_short_state_hash_key(hash: &str) -> String {
     format!("{RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX}{hash}")
 }
 
-#[post("/api/rer-duty/filters/create")]
-pub async fn rer_duty_filters_create(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<RerDutyShortStateCreateReq>,
-) -> Result<Json<RerDutyShortStateCreateRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
-    let req = req.into_inner();
+async fn rer_duty_short_state_create_or_reuse(
+    redis: &mut redis::aio::ConnectionManager,
+    state: RerDutyQueryState,
+) -> Result<(String, bool), AppError> {
     let payload =
-        serde_json::to_string(&RerDutyShortStateGetRsp { state: req.state })
-            .c(h!())?;
+        serde_json::to_string(&RerDutyShortStateGetRsp { state }).c(h!())?;
     let hash = sha256::digest(payload.as_bytes());
     let hash_key = rer_duty_short_state_hash_key(&hash);
-    let mut redis = env.redis.clone();
     let existing_id: Option<String> = redis.get(&hash_key).await.c(h!())?;
     if let Some(existing_id) = existing_id {
         let key = rer_duty_short_state_key(&existing_id);
@@ -1336,10 +1327,7 @@ pub async fn rer_duty_filters_create(
                     .expire(&hash_key, RER_DUTY_SHORT_STATE_TTL_SEC as i64)
                     .await
                     .c(h!())?;
-                info!(
-                    "rer duty short-state reused id={existing_id} login={login}"
-                );
-                return Ok(Json(RerDutyShortStateCreateRsp { id: existing_id }));
+                return Ok((existing_id, true));
             }
         }
     }
@@ -1353,7 +1341,28 @@ pub async fn rer_duty_filters_create(
         .set_ex(&hash_key, id.clone(), RER_DUTY_SHORT_STATE_TTL_SEC)
         .await
         .c(h!())?;
-    info!("rer duty short-state created id={id} login={login}");
+    Ok((id, false))
+}
+
+#[post("/api/rer-duty/filters/create")]
+pub async fn rer_duty_filters_create(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<RerDutyShortStateCreateReq>,
+) -> Result<Json<RerDutyShortStateCreateRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let mut redis = env.redis.clone();
+    let (id, reused) =
+        rer_duty_short_state_create_or_reuse(&mut redis, req.state.clone())
+            .await?;
+    if reused {
+        info!("rer duty short-state reused id={id} login={login}");
+    } else {
+        info!("rer duty short-state created id={id} login={login}");
+    }
     Ok(Json(RerDutyShortStateCreateRsp { id }))
 }
 

@@ -51,6 +51,11 @@ describe('rer-duty utils', () => {
     expect(getShortStateIdFromUrl()).toBe('short-123');
   });
 
+  it('returns null when no short state id is present', () => {
+    window.history.replaceState({}, '', '/');
+    expect(getShortStateIdFromUrl()).toBeNull();
+  });
+
   it('converts between short query state and rer-duty state', () => {
     const feeds = [
       {
@@ -72,6 +77,34 @@ describe('rer-duty utils', () => {
     const shortState = toShortQueryState(feeds);
     const restored = toRerDutyStateFromShort(shortState);
     expect(restored.messageFeeds).toEqual([['mf-1', { ...emptyFilter(), freqsSelected: ['100.1'] }]]);
+  });
+
+  it('keeps default feeds when short waterfalls are empty or invalid', () => {
+    expect(toRerDutyStateFromShort({ waterfalls: [] }).messageFeeds).toEqual([['mf-0', emptyFilter()]]);
+    expect(toRerDutyStateFromShort({ waterfalls: [null as any] }).messageFeeds).toHaveLength(1);
+  });
+
+  it('serializes short query state with nulls and arrays', () => {
+    const feeds = [
+      {
+        id: 'mf-1',
+        filter: { ...emptyFilter(), groupsSelected: null, sendersSelected: ['sender-1'] },
+        items: [],
+        loading: false,
+        loadingOlder: false,
+        hasReachedStart: false,
+        firstItemIndex: 0,
+        referenceTimeMs: null,
+        readIds: new Set<number>(),
+        unreadCount: 0,
+        adjacentFreqsRange: 0,
+        highlightSignalsEnabled: false,
+        onlyMyUnitTagsEnabled: false,
+      },
+    ];
+    expect(toShortQueryState(feeds)).toEqual({
+      waterfalls: [['mf-1', { ...emptyFilter(), groupsSelected: null, sendersSelected: ['sender-1'] }]],
+    });
   });
 
   it('builds network text with unit names and normalized location', () => {
@@ -181,6 +214,11 @@ describe('rer-duty utils', () => {
     expect(parseStateFromUrl()).toEqual({
       messageFeeds: [['mf-2', { ...emptyFilter(), sendersSelected: ['sender'] }]],
     });
+  });
+
+  it('falls back to default when url state is corrupted', () => {
+    window.history.replaceState({}, '', '/?state=%7Bbad-json');
+    expect(parseStateFromUrl()).toEqual({ messageFeeds: [['mf-0', emptyFilter()]] });
   });
 
   it('builds map search hrefs from deduplicated etalons and extracts point etalons', () => {

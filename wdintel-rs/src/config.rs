@@ -142,7 +142,8 @@ pub const PALITRA_DOWNLOAD_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
 pub const RER_DUTY_SHORT_STATE_TTL_SEC: u64 = 7 * 24 * 60 * 60;
 pub const RER_DUTY_SHORT_STATE_REDIS_KEY_PREFIX: &str = "rer-duty:filters:";
-pub const RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX: &str = "rer-duty:filters:hash:";
+pub const RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX: &str =
+    "rer-duty:filters:hash:";
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
 pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
 pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.8;
