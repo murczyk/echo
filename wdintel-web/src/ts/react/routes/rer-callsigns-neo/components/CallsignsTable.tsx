@@ -269,6 +269,9 @@ function CallsignsTableComponent({
         header: 'Статус',
         accessorFn: (row) => (row.developing ? 'В дорозвідці' : 'Відомий'),
         id: 'developing',
+        meta: {
+          activeFilterDefaultValue: ['Відомий'],
+        },
         filterVariant: 'select',
         filterSelectOptions: [...STATUS_FILTER_OPTIONS],
         Filter: buildExplicitSingleSelectColumnFilter<CallsignRowView>({

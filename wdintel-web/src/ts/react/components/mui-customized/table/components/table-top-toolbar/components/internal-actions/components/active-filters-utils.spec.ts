@@ -17,6 +17,15 @@ function buildTable(overrides: Partial<MRT_TableInstance<any>> = {}): MRT_TableI
               header: 'Статус',
             },
           } as any)
+        : columnId === 'developing'
+          ? ({
+              columnDef: {
+                header: 'Статус',
+                meta: {
+                  activeFilterDefaultValue: ['Відомий'],
+                },
+              },
+            } as any)
         : undefined,
     ...overrides,
   };
@@ -65,5 +74,27 @@ describe('active-filters utils', () => {
         isGlobalFilter: true,
       },
     ]);
+  });
+
+  it('skips filters that match the configured default active value', () => {
+    const table = buildTable({
+      getState: () => ({
+        columnFilters: [{ id: 'developing', value: ['Відомий'] }],
+        globalFilter: '',
+      }),
+      getColumn: (columnId: string) =>
+        columnId === 'developing'
+          ? ({
+              columnDef: {
+                header: 'Статус',
+                meta: {
+                  activeFilterDefaultValue: ['Відомий'],
+                },
+              },
+            } as any)
+          : undefined,
+    });
+
+    expect(getActiveTableFilters(table, [{ id: 'developing', value: ['Відомий'] }], '')).toEqual([]);
   });
 });

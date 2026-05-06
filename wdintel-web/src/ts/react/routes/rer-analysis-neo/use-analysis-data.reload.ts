@@ -86,6 +86,26 @@ function mergeNetworks(existing: Network[], next: Network[]): Network[] {
   return Array.from(merged.values());
 }
 
+export function mergeSignalProfiles(
+  current: Record<string, SignalProfileEntry | null>,
+  next: Record<string, SignalProfileEntry | null>,
+): Record<string, SignalProfileEntry | null> {
+  const merged = { ...current };
+  for (const [login, profile] of Object.entries(next)) {
+    if (profile != null || !(login in merged)) {
+      merged[login] = profile;
+    }
+  }
+  return merged;
+}
+
+function mergeSignalGroups(
+  current: Record<string, SignalGroupEntry>,
+  next: Record<string, SignalGroupEntry>,
+): Record<string, SignalGroupEntry> {
+  return { ...current, ...next };
+}
+
 export function filterSectionsForQueryState(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
   const sections: AnalysisFilterSectionId[] = [];
   if (queryState.tags.length > 0) sections.push('tags');
@@ -209,7 +229,7 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
     case 'senders': {
       const [sendersRsp, senderProfilesRsp] = await Promise.all([fetchAnalysisSenders(context.analysisReq), getLatestSenders()]);
       if (isStale()) return;
-      context.setProfiles(senderProfilesRsp.data ?? {});
+      context.setProfiles((current) => mergeSignalProfiles(current, senderProfilesRsp.data ?? {}));
       context.setOptions((current) => ({
         ...current,
         senders: buildSenderFilterOptions(sendersRsp.senders, senderProfilesRsp.data ?? {}),
@@ -437,6 +457,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       if (isStaleReload()) return null;
 
       params.setMessages(inboxRsp.inboxItems ?? []);
+      params.setProfiles((current) => mergeSignalProfiles(current, inboxRsp.signalProfiles ?? {}));
+      params.setGroupInfos((current) => mergeSignalGroups(current, Object.fromEntries((inboxRsp.signalGroups ?? []).map((item) => [item.masterKey, item]))));
       params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(inboxRsp.callsigns, null));
       params.setNoMoreToLoad(isAnalysisInboxPageExhausted(inboxRsp.inboxItems, inboxRsp.pageLimit));
       params.setHasLoadedInitialMessages(true);
@@ -475,6 +497,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
             // rebuilt summary/count/map data with the old inbox response.
             params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
+            params.setProfiles((current) => mergeSignalProfiles(current, rebuiltInboxRsp.signalProfiles ?? {}));
+            params.setGroupInfos((current) => mergeSignalGroups(current, Object.fromEntries((rebuiltInboxRsp.signalGroups ?? []).map((item) => [item.masterKey, item]))));
             params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(rebuiltInboxRsp.callsigns, null));
             params.setNoMoreToLoad(isAnalysisInboxPageExhausted(rebuiltInboxRsp.inboxItems, rebuiltInboxRsp.pageLimit));
             resolvedAnalysisReq = rebuiltAnalysisReq;

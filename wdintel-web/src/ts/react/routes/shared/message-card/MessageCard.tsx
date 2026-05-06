@@ -2,7 +2,7 @@ import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useMemo } from 'react';
-import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit, User } from '../../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit } from '../../../../../Bindings';
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
@@ -36,7 +36,6 @@ export type MessageCardProps = {
   groupName: string | null;
   senderName: string | null;
   copiedFeedbackId: string | null;
-  currentUser: User | null;
   networkDisplayMap: Record<number, string>;
   messageComments?: MessageComment[];
   searchText?: string | null;
@@ -48,7 +47,6 @@ export type MessageCardProps = {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
-  users: Record<string, User | null>;
   onBookmark: () => void;
   onImportant: () => void;
   onCopyText: () => void;
@@ -73,7 +71,6 @@ export function MessageCard({
   groupName,
   senderName,
   copiedFeedbackId,
-  currentUser,
   networkDisplayMap,
   messageComments = [],
   searchText,
@@ -83,7 +80,6 @@ export function MessageCard({
   callsignInfoMap,
   networks,
   unitsMap,
-  users,
   onBookmark,
   onImportant,
   onCopyText,
@@ -168,6 +164,7 @@ export function MessageCard({
     onDelete,
     onEditDetails,
   };
+  const visibleMessageComments = displayMode === 'analysis' ? messageComments : [];
 
   return (
     <Box
@@ -222,10 +219,7 @@ export function MessageCard({
           callsignInfoMap={callsignInfoMap}
           networks={networks}
           unitsMap={unitsMap}
-          authUserName={authUserName}
-          currentUser={currentUser}
-          messageComments={messageComments}
-          users={users}
+          messageComments={visibleMessageComments}
           searchText={searchText}
         />
       </Box>

@@ -28,10 +28,12 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
     onDelete: () => void;
     onEditDetails: () => void;
     messageComments?: Array<{ id: number; login: string; comment: string }>;
+    senderName?: string | null;
     tagsLayout?: string;
     analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
     <div data-testid={`message-card-${props.id}`}>
+      <span data-testid={`sender-${props.id}`}>{props.senderName ?? ''}</span>
       <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
       <span data-testid={`comments-${props.id}`}>{(props.messageComments ?? []).map((comment) => `${comment.login}:${comment.comment}`).join('|')}</span>
       <button type="button" onClick={props.onComment}>
@@ -92,10 +94,13 @@ vi.mock('./AnalysisMessageEditDrawer', () => ({
     props.open ? <div data-testid={`editor-drawer-${props.message?.id ?? 'none'}`} /> : null,
 }));
 
-vi.mock('../message-utils', () => ({
-  buildSenderLabel: () => 'Sender',
-  copyMessageValue: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock('../message-utils', async () => {
+  const actual = await vi.importActual<typeof import('../message-utils')>('../message-utils');
+  return {
+    ...actual,
+    copyMessageValue: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 import { AnalysisMessagesPane } from './AnalysisMessagesPane';
 
@@ -229,6 +234,20 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.querySelector('[data-testid="tags-layout-7"]')?.textContent).toBe('hidden');
   });
 
+  it('passes the formatted sender label through to analysis message cards', async () => {
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage({ sender: 'sender-1' })]],
+        profiles: {
+          'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="sender-7"]')?.textContent).toBe('BBC SPORT');
+  });
+
   it('shows the loading spinner while loading more messages', async () => {
     const view = await renderComponent(
       buildProps({
@@ -269,16 +288,20 @@ describe('AnalysisMessagesPane', () => {
       buildProps({
         messages: [[7, buildMessage()]],
         messageComments: {
-          7: [{ id: 19, messageId: 7, comment: 'other-organism comment', login: 'peer-login' }],
+          7: [
+            { id: 19, messageId: 7, comment: 'same-organism comment', login: 'peer-login' },
+            { id: 20, messageId: 7, comment: 'hidden self comment', login: 'tester' },
+          ],
         },
         users: {
-          'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
         },
       }),
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain('peer-login:other-organism comment');
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain('peer-login:same-organism comment');
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('hidden self comment');
   });
 
   it('wires delete confirmation into the page callback', async () => {

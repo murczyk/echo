@@ -24,8 +24,11 @@ type ActiveFiltersButtonProps<T extends MRT_RowData> = {
 
 export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersButtonProps<T>) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const tableState = props.table?.getState();
+  const columnFilters = tableState?.columnFilters ?? props.columnFilters;
+  const globalFilter = tableState?.globalFilter ?? props.globalFilter;
   const activeFilters = [
-    ...getActiveTableFilters(props.table, props.columnFilters, props.globalFilter),
+    ...getActiveTableFilters(props.table, columnFilters, globalFilter),
     ...(props.additionalActiveFilters ?? []),
   ];
   const hasActiveFilters = activeFilters.length > 0;
