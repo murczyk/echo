@@ -1,12 +1,39 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AreaOfResponsibility, ModulationRec, Network, Post, Unit, User } from '../../../../Bindings';
+import type { AreaOfResponsibility, ModulationRec, Network, NetworkStatus, Post, Unit, User } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
-import { deleteNetwork, getNetworkById, getNetworkCallsignsList } from '../../services/api/networks';
+import {
+  deleteNetwork,
+  getNetworkById,
+  getNetworkCallsignsList,
+  updateNetwork,
+  updateNetworkPosts,
+  updateNetworkUnits,
+} from '../../services/api/networks';
 import { getModulations } from '../../services/api/modulations';
 import { getUnitsList } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
 import { fetchCurrentUser } from '../../services/api/user';
 import { navigateWithinSpa } from '../../utils/browser';
+
+export type NetworkEditForm = {
+  id: number;
+  name: string;
+  location: string;
+  radioStation: string;
+  purpose: string;
+  operationMode: string;
+  operationType: string;
+  operationPeriod: string;
+  status: NetworkStatus;
+  aorIds: number[];
+  unitIds: number[];
+  postIds: number[];
+};
+
+type NetworkOption = {
+  id: number;
+  label: string;
+};
 
 type NetworkDetailsNeoPageState = {
   network: Network | null;
@@ -24,6 +51,10 @@ type NetworkDetailsNeoPageState = {
   deleteInProgress: boolean;
   menuAnchorEl: HTMLElement | null;
   copyStatus: string | null;
+  editDrawerOpen: boolean;
+  editForm: NetworkEditForm | null;
+  editInProgress: boolean;
+  editError: string | null;
 };
 
 type DisplayNetworkStatus = {
@@ -47,6 +78,10 @@ const EMPTY_STATE: NetworkDetailsNeoPageState = {
   deleteInProgress: false,
   menuAnchorEl: null,
   copyStatus: null,
+  editDrawerOpen: false,
+  editForm: null,
+  editInProgress: false,
+  editError: null,
 };
 
 function formatErrorMessage(error: unknown): string {
@@ -127,6 +162,28 @@ function canDeleteNetwork(user: User | null): boolean {
   return roles.has('Admin') || (roles.has('Rer') && roles.has('UnitsEditor'));
 }
 
+function canEditNetwork(user: User | null): boolean {
+  const roles = new Set(user?.roles ?? []);
+  return roles.has('Admin') || roles.has('UnitsEditor');
+}
+
+function toNetworkEditForm(network: Network): NetworkEditForm {
+  return {
+    id: network.id,
+    name: network.name,
+    location: network.location,
+    radioStation: network.radioStation ?? '',
+    purpose: network.purpose ?? '',
+    operationMode: network.operationMode ?? '',
+    operationType: network.operationType ?? '',
+    operationPeriod: network.operationPeriod ?? '',
+    status: network.status,
+    aorIds: [...network.aorIds],
+    unitIds: [...(network.unitIds ?? [])],
+    postIds: [...network.postIds],
+  };
+}
+
 export function useRerNetworkDetailsNeoPage(networkId: number) {
   const [state, setState] = useState<NetworkDetailsNeoPageState>(EMPTY_STATE);
 
@@ -135,7 +192,11 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const aorsById = useMemo(() => buildLookupMap(state.aors), [state.aors]);
   const modulationsById = useMemo(() => buildLookupMap(state.modulations), [state.modulations]);
   const canDelete = useMemo(() => canDeleteNetwork(state.currentUser), [state.currentUser]);
+  const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
+  const aorOptions = useMemo<NetworkOption[]>(() => state.aors.map((aor) => ({ id: aor.id, label: aor.name })), [state.aors]);
+  const unitOptions = useMemo<NetworkOption[]>(() => state.units.map((unit) => ({ id: unit.id, label: unit.name })), [state.units]);
+  const postOptions = useMemo<NetworkOption[]>(() => state.posts.map((post) => ({ id: post.id, label: post.name })), [state.posts]);
 
   const reload = useCallback(() => {
     let cancelled = false;
@@ -256,6 +317,112 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setState((current) => ({ ...current, deleteDialogOpen: false }));
   }, []);
 
+  const openEditDrawer = useCallback(() => {
+    setState((current) => {
+      if (!current.network) return current;
+      return {
+        ...current,
+        editDrawerOpen: true,
+        editForm: toNetworkEditForm(current.network),
+        editInProgress: false,
+        editError: null,
+        menuAnchorEl: null,
+      };
+    });
+  }, []);
+
+  const closeEditDrawer = useCallback(() => {
+    setState((current) => {
+      if (current.editInProgress) return current;
+      return {
+        ...current,
+        editDrawerOpen: false,
+        editForm: null,
+        editError: null,
+        menuAnchorEl: null,
+      };
+    });
+  }, []);
+
+  const syncNetworkRelations = useCallback(
+    async (editForm: NetworkEditForm) => {
+      try {
+        await updateNetworkPosts({
+          networkId: editForm.id,
+          postIds: [...editForm.postIds],
+        });
+
+        await updateNetworkUnits({
+          networkId: editForm.id,
+          unitIds: [...editForm.unitIds],
+        });
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          referenceWarning: formatErrorMessage(error),
+        }));
+      }
+    },
+    [reload],
+  );
+
+  const setEditForm = useCallback((editForm: NetworkEditForm | null) => {
+    setState((current) => ({ ...current, editForm }));
+  }, []);
+
+  const saveNetworkEdit = useCallback(async () => {
+    const network = state.network;
+    const editForm = state.editForm;
+
+    if (!network || !editForm || state.editInProgress) return;
+
+    setState((current) => ({
+      ...current,
+      editInProgress: true,
+      editError: null,
+      menuAnchorEl: null,
+    }));
+
+    try {
+      const updatedNetwork = await updateNetwork({
+        id: editForm.id,
+        restoreNetwork: network.deleted && editForm.status === 'NetworkActive' ? true : null,
+        areaOfResponsibilityIds: editForm.aorIds.length === 0 ? null : [...editForm.aorIds],
+        name: editForm.name,
+        location: editForm.location,
+        radioStation: editForm.radioStation.trim() === '' ? null : editForm.radioStation,
+        purpose: editForm.purpose.trim() === '' ? null : editForm.purpose,
+        operationMode: editForm.operationMode.trim() === '' ? null : editForm.operationMode,
+        operationType: editForm.operationType.trim() === '' ? null : editForm.operationType,
+        operationPeriod: editForm.operationPeriod.trim() === '' ? null : editForm.operationPeriod,
+        descriptions: null,
+        status: editForm.status,
+      });
+
+      setState((current) => ({
+        ...current,
+        network: {
+          ...updatedNetwork,
+          aorIds: [...editForm.aorIds],
+          unitIds: [...editForm.unitIds],
+          postIds: [...editForm.postIds],
+        },
+        editDrawerOpen: false,
+        editForm: null,
+        editInProgress: false,
+        editError: null,
+      }));
+
+      void syncNetworkRelations(editForm);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        editInProgress: false,
+        editError: formatErrorMessage(error),
+      }));
+    }
+  }, [state.editForm, state.editInProgress, state.network, syncNetworkRelations]);
+
   const handleDelete = useCallback(async () => {
     if (!state.network) return;
     setState((current) => ({ ...current, deleteInProgress: true }));
@@ -322,15 +489,23 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     ...state,
     status,
     canDelete,
+    canEdit,
     unitNames,
     aorItems,
     postItems,
     rangeLabel,
     transferTypeLabel,
+    aorOptions,
+    unitOptions,
+    postOptions,
     openMenu,
     closeMenu,
     openDeleteDialog,
     closeDeleteDialog,
+    openEditDrawer,
+    closeEditDrawer,
+    setEditForm,
+    saveNetworkEdit,
     handleCopyNetworkInfo,
     handleDelete,
     reload,

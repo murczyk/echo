@@ -13,6 +13,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { navigateWithinSpa } from '../../utils/browser';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
+import { NetworkEditDrawer } from './components/NetworkEditDrawer';
 
 type Props = {
   networkId: number;
@@ -282,7 +283,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         anchorEl={page.menuAnchorEl}
         onClose={page.closeMenu}
       >
-        <MenuItem disabled>
+        <MenuItem onClick={page.openEditDrawer} disabled={!page.canEdit || !page.network}>
           <Stack direction="row" spacing={1} alignItems="center">
             <EditIcon fontSize="small" />
             <span>Редагувати</span>
@@ -420,10 +421,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
                 <SectionTitle>Операційні</SectionTitle>
                 <FieldRow label="Призначення" value={<Typography variant="body2">{formatNetworkName(page.network?.purpose)}</Typography>} />
                 <FieldRow label="Діапазон" value={<Typography variant="body2">{page.rangeLabel}</Typography>} />
-                <FieldRow
-                  label="Тип передачі"
-                  value={<Typography variant="body2">{page.transferTypeLabel}</Typography>}
-                />
+                <FieldRow label="Тип передачі" value={<Typography variant="body2">{page.transferTypeLabel}</Typography>} />
                 <FieldRow label="Режим" value={<Typography variant="body2">{formatNetworkName(page.network?.operationMode)}</Typography>} />
                 <FieldRow label="Характер" value={<Typography variant="body2">{formatNetworkName(page.network?.operationType)}</Typography>} />
                 <FieldRow
@@ -488,6 +486,20 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         description={`Видалити мережу «${formatClassicNetworkHeaderName(page.network?.name, page.unitNames)}»?`}
         submitting={page.deleteInProgress}
         disabled={!page.canDelete}
+      />
+
+      <NetworkEditDrawer
+        open={page.editDrawerOpen}
+        form={page.editForm}
+        saving={page.editInProgress}
+        error={page.editError}
+        referenceLoading={page.referenceLoading}
+        aorOptions={page.aorOptions}
+        unitOptions={page.unitOptions}
+        postOptions={page.postOptions}
+        onClose={page.closeEditDrawer}
+        onChange={page.setEditForm}
+        onSave={page.saveNetworkEdit}
       />
     </Box>
   );

@@ -1,6 +1,13 @@
-import type { ListNetworksReq, Network, SingleNetworkCallsignsListRsp } from '../../../../Bindings';
-import { postJson, postVoid } from './client';
-import { transformSnakeToCamel } from '../../../snake-to-camel';
+import type {
+  ListNetworksReq,
+  Network,
+  SingleNetworkCallsignsListRsp,
+  UpdateNetworkPostsReq,
+  UpdateNetworkReq,
+  UpdateNetworkUnitsReq,
+} from '../../../../Bindings';
+import { postJson } from './client';
+import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */
 export async function getNetworksList(): Promise<Network[]> {
@@ -47,5 +54,20 @@ export async function getNetworkCallsignsList(
 
 export async function deleteNetwork(networkId: number): Promise<Network> {
   const data = await postJson<Network>('/api/sigint/delete-network', { network_id: networkId });
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function updateNetworkPosts(req: UpdateNetworkPostsReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/update-posts', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function updateNetworkUnits(req: UpdateNetworkUnitsReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/update-units', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function updateNetwork(req: UpdateNetworkReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/update-network', transformCamelToSnake(req));
   return transformSnakeToCamel<Network>(data);
 }
