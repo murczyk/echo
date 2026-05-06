@@ -70,6 +70,7 @@ type
     | ReportIncludePelengsMapChanged Bool
     | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
     | ReportDateTimeToMsg (Shared.Components.DateTime.Msg Msg)
+    | NetworkViewQueryChanged { from : Maybe String, to : Maybe String }
 
 
 type CallsignsMsg

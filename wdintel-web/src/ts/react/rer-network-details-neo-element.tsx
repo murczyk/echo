@@ -29,6 +29,10 @@ function RerNetworkDetailsNeoRoot({ networkId }: { networkId: number | null }) {
 class RerNetworkDetailsNeoElement extends HTMLElement {
   private root: Root | null = null;
 
+  static get observedAttributes() {
+    return ['network-id'];
+  }
+
   private renderRoot() {
     if (!this.root) return;
     this.root.render(<RerNetworkDetailsNeoRoot networkId={readNetworkIdFromElement(this)} />);
@@ -45,6 +49,12 @@ class RerNetworkDetailsNeoElement extends HTMLElement {
     }
 
     this.renderRoot();
+  }
+
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
+    if (name === 'network-id' && oldValue !== newValue) {
+      this.renderRoot();
+    }
   }
 
   disconnectedCallback() {

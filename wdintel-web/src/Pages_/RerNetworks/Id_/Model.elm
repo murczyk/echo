@@ -48,7 +48,9 @@ type alias CallsignTableRow =
 
 
 type alias Model =
-    { network : RemoteData ApiError B.Network
+    { networkId : Maybe Int
+    , network : RemoteData ApiError B.Network
+    , classicNetworkLoading : Bool
     , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
     , mapPoints : RemoteData ApiError (List B.NetworkPoint)
     , groupsActivity : RemoteData ApiError GroupsByDate

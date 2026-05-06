@@ -159,12 +159,12 @@ function buildLookupMap<T extends { id: number; name: string }>(items: T[]): Map
 
 function canDeleteNetwork(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || (roles.has('Rer') && roles.has('UnitsEditor'));
+  return roles.has('Admin') || roles.has('UnitsEditor');
 }
 
 function canEditNetwork(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || (roles.has('Rer') && roles.has('UnitsEditor'));
+  return roles.has('Admin') || roles.has('UnitsEditor');
 }
 
 function toNetworkEditForm(network: Network): NetworkEditForm {

@@ -56,6 +56,10 @@ page user shared route =
         , subscriptions = subscriptions
         , view = view user shared route
         }
+        |> Page.withOnQueryParameterChanged
+            { key = "view"
+            , onChange = NetworkViewQueryChanged
+            }
         |> Page.withLayout (toLayout user)
 
 
@@ -85,6 +89,8 @@ init route _ () =
                     NotAsked
     in
     ( { network = Loading
+      , networkId = networkId
+      , classicNetworkLoading = not neoView
       , callsigns = NotAsked
       , mapPoints = NotAsked
       , groupsActivity = NotAsked
@@ -315,21 +321,11 @@ init route _ () =
       -- Delete confirmation dialog initialization
       , deleteDescriptionConfirmation = Nothing
       }
-    , case networkId of
-        Just id ->
-            E.batch
-                [ E.getSingleNetwork NetworkReturnedByApi id
-                , E.getModulations ModulationsReturnedByApi
-                , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
-                , E.map Callsigns CallsignsTables.initLoad
-                , E.map Keys (KeysTable.initLoad id)
-                ]
+    , if neoView then
+        E.none
 
-        Nothing ->
-            E.batch
-                [ E.getModulations ModulationsReturnedByApi
-                , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
-                ]
+      else
+        loadClassicNetworkData networkId
     )
 
 
@@ -457,7 +453,7 @@ update shared msg model =
             ( m2, E.batch [ E.map Keys keysEff, reloadFreqs ] )
 
         NetworkReturnedByApi (Err e) ->
-            ( { model | network = Failure e }
+            ( { model | network = Failure e, classicNetworkLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мережі" e
             )
 
@@ -498,6 +494,7 @@ update shared msg model =
             in
             ( { model
                 | network = Success res
+                , classicNetworkLoading = False
                 , editKindSelect = kindSelect
                 , editPostsSelect = postsSelect2
                 , editUnitsSelect = unitsSelect2
@@ -951,6 +948,21 @@ update shared msg model =
             in
             ( m2, eff2 )
 
+        NetworkViewQueryChanged { to } ->
+            if isNeoQuery to then
+                ( model, E.none )
+
+            else
+                case ( model.network, model.classicNetworkLoading ) of
+                    ( Success _, _ ) ->
+                        ( model, E.none )
+
+                    ( _, True ) ->
+                        ( model, E.none )
+
+                    _ ->
+                        ( { model | classicNetworkLoading = True }, loadClassicNetworkData model.networkId )
+
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
@@ -1291,3 +1303,27 @@ view user shared route model =
 isNeoView : Route { id : String } -> Bool
 isNeoView route =
     Dict.get "view" route.query == Just "neo"
+
+
+isNeoQuery : Maybe String -> Bool
+isNeoQuery viewValue =
+    viewValue == Just "neo"
+
+
+loadClassicNetworkData : Maybe Int -> Effect Msg
+loadClassicNetworkData networkId =
+    case networkId of
+        Just id ->
+            E.batch
+                [ E.getSingleNetwork NetworkReturnedByApi id
+                , E.getModulations ModulationsReturnedByApi
+                , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
+                , E.map Callsigns CallsignsTables.initLoad
+                , E.map Keys (KeysTable.initLoad id)
+                ]
+
+        Nothing ->
+            E.batch
+                [ E.getModulations ModulationsReturnedByApi
+                , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
+                ]
