@@ -188,7 +188,7 @@ export function canEditNetwork(user: User | null): boolean {
 
 export function canManageDescriptions(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || (roles.has('Rer') && roles.has('UnitsEditor'));
+  return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
 }
 
 export function sortDescriptionsByCreatedAtDesc(descriptions: Network['descriptions']): Network['descriptions'] {
