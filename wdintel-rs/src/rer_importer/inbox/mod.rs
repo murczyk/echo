@@ -1015,8 +1015,8 @@ mod tests {
 
         let messages =
             messages_by_id_bl(&login.login, &logins, &env, &[message.id])
-            .await
-            .unwrap();
+                .await
+                .unwrap();
 
         assert_eq!(messages.len(), 1);
         let inbox_tags = messages[0]
