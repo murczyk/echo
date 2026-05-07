@@ -1,4 +1,8 @@
-use crate::config::{ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT};
+use crate::config::{
+    ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
+    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
+    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -29,6 +33,7 @@ use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
 
 pub(crate) mod bl;
+pub mod goi_sync_worker;
 mod kmz;
 pub mod oneoff;
 pub mod types;
@@ -91,11 +96,6 @@ pub async fn create_palitra_with_kmz(
 
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
-    let remote_filename = palitra_goi_remote_file_name(
-        palitra.id,
-        Some(&palitra.name),
-        Some(&multipart_payload.filename),
-    );
     let upload = kmz::load_coordinates_from_file(
         multipart_payload.filename.clone(),
         multipart_payload.kmz_data.clone(),
@@ -124,16 +124,14 @@ pub async fn create_palitra_with_kmz(
         .await
         .c(h!())?;
 
-    sync_upload_palitra_to_connected_organisms(
+    txn.commit().await.c(h!())?;
+    schedule_palitra_goi_upload(
         &env.dbx,
-        &access,
-        &remote_filename,
+        palitra.id,
         multipart_payload.kmz_data,
     )
     .await
     .c(h!())?;
-
-    txn.commit().await.c(h!())?;
     let palitra_response =
         render_created_palitra_response(&env.dbx, palitra.id)
             .await
@@ -230,22 +228,16 @@ pub async fn create_palitra_basic(
             .c(h!())?;
     }
 
+    txn.commit().await.c(h!())?;
     for palitra_id in &created_palitra_ids {
-        let remote_filename = palitra_goi_remote_file_name(
-            *palitra_id,
-            Some(&multipart_payload.name),
-            Some(&multipart_payload.filename),
-        );
-        sync_upload_palitra_to_connected_organisms(
+        schedule_palitra_goi_upload(
             &env.dbx,
-            &access,
-            &remote_filename,
+            *palitra_id,
             multipart_payload.kmz_data.clone(),
         )
         .await
         .c(h!())?;
     }
-    txn.commit().await.c(h!())?;
 
     let first_palitra_id = created_palitra_ids.first().copied().c(h!())?;
     let palitra_response =
@@ -355,20 +347,14 @@ pub async fn create_palitra_basic_v2(
         .await
         .c(h!())?;
 
-    let remote_filename = palitra_goi_remote_file_name(
-        palitra.id,
-        Some(&palitra.name),
-        Some(&multipart_payload.filename),
-    );
-    sync_upload_palitra_to_connected_organisms(
+    txn.commit().await.c(h!())?;
+    schedule_palitra_goi_upload(
         &env.dbx,
-        &access,
-        &remote_filename,
+        palitra.id,
         multipart_payload.kmz_data,
     )
     .await
     .c(h!())?;
-    txn.commit().await.c(h!())?;
 
     let palitra_response =
         render_created_palitra_response(&env.dbx, palitra.id)
@@ -453,8 +439,6 @@ pub async fn upload_palitra_points(
             "Only author or Admin may upload palitra points".into(),
         ));
     }
-    let existing_access =
-        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let raw_filename = field
         .content_disposition()
@@ -553,21 +537,10 @@ pub async fn upload_palitra_points(
         .await
         .c(h!())?;
 
-    let remote_filename = palitra_goi_remote_file_name(
-        palitra.id,
-        Some(&palitra.name),
-        Some(&filename),
-    );
-    sync_upload_palitra_to_connected_organisms(
-        &env.dbx,
-        &existing_access,
-        &remote_filename,
-        raw_kmz_data,
-    )
-    .await
-    .c(h!())?;
-
     txn.commit().await.c(h!())?;
+    schedule_palitra_goi_upload(&env.dbx, palitra.id, raw_kmz_data)
+        .await
+        .c(h!())?;
     env.palitra_worker_context.flush_cache(palitra_id).await;
 
     Ok(Json(()))
@@ -806,10 +779,10 @@ pub async fn assign_palitra_folder(
     )
     .await
     .c(h!())?;
-    sync_move_palitra_files_to_connected_organisms(&txn, &sync_items)
+    txn.commit().await.c(h!())?;
+    schedule_palitra_goi_moves(&env.dbx, &sync_items)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
     let palitra_ids =
         sync_items.iter().map(|item| item.palitra_id).collect_vec();
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
@@ -836,10 +809,10 @@ pub async fn rename_palitra_folder(
     )
     .await
     .c(h!())?;
-    sync_move_palitra_files_to_connected_organisms(&txn, &sync_items)
+    txn.commit().await.c(h!())?;
+    schedule_palitra_goi_moves(&env.dbx, &sync_items)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
     let palitra_ids =
         sync_items.iter().map(|item| item.palitra_id).collect_vec();
     Ok(Json(PalitraBulkActionRsp { palitra_ids }))
@@ -1631,67 +1604,96 @@ fn parse_access(
     }
 }
 
-async fn sync_upload_palitra_to_connected_organisms(
+pub(crate) async fn schedule_palitra_goi_upload(
     dbx: &DatabaseConnection,
-    access: &PalitraAccess,
-    remote_file_name: &str,
+    palitra_id: i64,
     file_data: Vec<u8>,
 ) -> anyhow::Result<()> {
-    let PalitraAccess::ByOrganisms { organism_ids } = access else {
-        return Ok(());
-    };
-
-    let goi_targets =
-        collect_connected_goi_targets(dbx, organism_ids.as_slice())
-            .await
-            .c(h!())?;
-
-    for target in goi_targets {
-        let remote_file_path =
-            compose_goi_palette_remote_path(&target.path, remote_file_name);
-        crate::organism::goi::goi_upload_file_loose(
-            target,
-            remote_file_path,
-            file_data.clone(),
-        )
-        .await;
-    }
-
+    palitra_goi_sync_job::Entity::insert(palitra_goi_sync_job::ActiveModel {
+        palitra_id: Set(palitra_id),
+        kind: Set(PALITRA_GOI_SYNC_JOB_KIND_UPLOAD.to_string()),
+        source_folder: Set(String::new()),
+        file_data: Set(Some(file_data)),
+        ..Default::default()
+    })
+    .on_conflict(
+        sea_orm::sea_query::OnConflict::columns([
+            palitra_goi_sync_job::Column::PalitraId,
+            palitra_goi_sync_job::Column::Kind,
+            palitra_goi_sync_job::Column::SourceFolder,
+        ])
+        .update_columns([palitra_goi_sync_job::Column::FileData])
+        .to_owned(),
+    )
+    .exec(dbx)
+    .await
+    .c(h!())?;
     Ok(())
 }
 
-async fn sync_delete_palitra_from_connected_organisms(
+pub(crate) async fn schedule_palitra_goi_moves(
+    dbx: &DatabaseConnection,
+    sync_items: &[bl::PalitraFolderSyncItem],
+) -> anyhow::Result<()> {
+    for item in sync_items {
+        palitra_goi_sync_job::Entity::insert(
+            palitra_goi_sync_job::ActiveModel {
+                palitra_id: Set(item.palitra_id),
+                kind: Set(PALITRA_GOI_SYNC_JOB_KIND_MOVE.to_string()),
+                source_folder: Set(item
+                    .source_folder
+                    .clone()
+                    .unwrap_or_default()),
+                ..Default::default()
+            },
+        )
+        .on_conflict(
+            sea_orm::sea_query::OnConflict::columns([
+                palitra_goi_sync_job::Column::PalitraId,
+                palitra_goi_sync_job::Column::Kind,
+                palitra_goi_sync_job::Column::SourceFolder,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn schedule_palitra_goi_delete(
     dbx: &DatabaseConnection,
     palitra_id: i64,
-    palitra_name: &str,
-    access: &PalitraAccess,
-    source_file_name: &Option<String>,
 ) -> anyhow::Result<()> {
-    let PalitraAccess::ByOrganisms { organism_ids } = access else {
-        return Ok(());
-    };
-    let goi_targets =
-        collect_connected_goi_targets(dbx, organism_ids.as_slice())
-            .await
-            .c(h!())?;
-    let file_names = palitra_goi_remote_file_names(
-        palitra_id,
-        Some(palitra_name),
-        source_file_name.as_deref(),
-    );
-
-    for target in goi_targets {
-        for file_name in &file_names {
-            let remote_file_path =
-                compose_goi_palette_remote_path(&target.path, file_name);
-            crate::organism::goi::goi_delete_file_loose(
-                target.clone(),
-                remote_file_path,
-            )
-            .await;
-        }
-    }
-
+    palitra_goi_sync_job::Entity::delete_many()
+        .filter(palitra_goi_sync_job::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_goi_sync_job::Column::Kind.is_in([
+            PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+            PALITRA_GOI_SYNC_JOB_KIND_MOVE,
+        ]))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    palitra_goi_sync_job::Entity::insert(palitra_goi_sync_job::ActiveModel {
+        palitra_id: Set(palitra_id),
+        kind: Set(PALITRA_GOI_SYNC_JOB_KIND_DELETE.to_string()),
+        source_folder: Set(String::new()),
+        ..Default::default()
+    })
+    .on_conflict(
+        sea_orm::sea_query::OnConflict::columns([
+            palitra_goi_sync_job::Column::PalitraId,
+            palitra_goi_sync_job::Column::Kind,
+            palitra_goi_sync_job::Column::SourceFolder,
+        ])
+        .do_nothing()
+        .to_owned(),
+    )
+    .exec(dbx)
+    .await
+    .c(h!())?;
     Ok(())
 }
 

@@ -61,6 +61,7 @@ pub use super::palitra_access_aor::Entity as PalitraAccessAor;
 pub use super::palitra_access_login::Entity as PalitraAccessLogin;
 pub use super::palitra_access_organism::Entity as PalitraAccessOrganism;
 pub use super::palitra_geometry::Entity as PalitraGeometry;
+pub use super::palitra_goi_sync_job::Entity as PalitraGoiSyncJob;
 pub use super::palitra_highlight_worker_job::Entity as PalitraHighlightWorkerJob;
 pub use super::palitra_point::Entity as PalitraPoint;
 pub use super::palitra_point_lexeme::Entity as PalitraPointLexeme;
