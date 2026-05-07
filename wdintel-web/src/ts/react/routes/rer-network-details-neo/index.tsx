@@ -23,7 +23,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { navigateWithinSpa } from '../../utils/browser';
 import { NetworkDescriptionDrawer } from './components/NetworkDescriptionDrawer';
-import { NetworkDetailsJustificationsPanel } from './components/NetworkDetailsJustificationsPanel';
+import { NetworkDetailsDescriptionsPanel } from './components/NetworkDetailsJustificationsPanel';
 import { NetworkDetailsLeftPanel } from './components/NetworkDetailsLeftPanel';
 import { NetworkEditDrawer } from './components/NetworkEditDrawer';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
@@ -68,6 +68,11 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const copyText = page.network ? `${formatClassicNetworkHeaderName(page.network.name, page.unitNames)}, ${page.network.location}` : '';
   const descriptionDrawerNetwork = page.network;
   const isLoading = page.loading && !page.network;
+  const deleteDescriptionTitle = page.deleteDescriptionTarget?.descrType === 'Sign' ? 'Видалити розвідувальні ознаки' : 'Видалити обґрунтування';
+  const deleteDescriptionMessage =
+    page.deleteDescriptionTarget?.descrType === 'Sign'
+      ? 'Ви впевнені, що хочете видалити ці розвідувальні ознаки?'
+      : 'Ви впевнені, що хочете видалити це обґрунтування?';
 
   const actions = (
     <Stack direction="row" spacing={1} alignItems="center">
@@ -231,12 +236,15 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           />
         </Box>
 
-        <NetworkDetailsJustificationsPanel
+        <NetworkDetailsDescriptionsPanel
           network={descriptionDrawerNetwork}
           loading={page.loading}
-          descriptions={page.confirmationDescriptions}
+          confirmationDescriptions={page.confirmationDescriptions}
+          signDescriptions={page.signDescriptions}
           canManage={page.canManageDescriptionActions}
+          activeDescriptionTab={page.activeDescriptionTab}
           expandedDescriptionIds={page.expandedDescriptionIds}
+          onSetActiveDescriptionTab={page.setActiveDescriptionTab}
           onToggleExpanded={page.toggleDescriptionExpanded}
           onEdit={page.openDescriptionDrawerForEdit}
           onDelete={page.openDeleteDescriptionDialog}
@@ -258,8 +266,8 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         open={page.deleteDescriptionDialogOpen}
         onClose={page.closeDeleteDescriptionDialog}
         onConfirm={page.deleteDescription}
-        title="Видалити обґрунтування"
-        description="Ви впевнені, що хочете видалити це обґрунтування?"
+        title={deleteDescriptionTitle}
+        description={deleteDescriptionMessage}
         submitting={page.deleteDescriptionSubmitting}
         disabled={!page.canManageDescriptionActions || page.deleteDescriptionTarget === null}
       >
@@ -269,6 +277,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
       <NetworkDescriptionDrawer
         open={page.descriptionDrawerOpen}
         mode={page.descriptionDrawerMode}
+        descrType={page.descriptionDrawerDescrType}
         form={page.descriptionDrawerForm}
         saving={page.descriptionDrawerSaving}
         error={page.descriptionDrawerError}

@@ -1,4 +1,4 @@
-import type { AreaOfResponsibility, ModulationRec, Network, NetworkStatus, Post, Unit, User } from '../../../../Bindings';
+import type { AreaOfResponsibility, ModulationRec, Network, NetworkDescrType, NetworkStatus, Post, Unit, User } from '../../../../Bindings';
 
 export type NetworkEditForm = {
   id: number;
@@ -27,6 +27,8 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
+export type NetworkDescriptionTab = 'justifications' | 'signs';
+
 export type NetworkDetailsNeoPageState = {
   network: Network | null;
   callsignCount: number | null;
@@ -43,10 +45,12 @@ export type NetworkDetailsNeoPageState = {
   expandedDescriptionIds: number[];
   descriptionDrawerOpen: boolean;
   descriptionDrawerMode: NetworkDescriptionMode;
+  descriptionDrawerDescrType: NetworkDescrType;
   descriptionDrawerDescriptionId: number | null;
   descriptionDrawerForm: NetworkDescriptionForm;
   descriptionDrawerSaving: boolean;
   descriptionDrawerError: string | null;
+  activeDescriptionTab: NetworkDescriptionTab;
   deleteDescriptionDialogOpen: boolean;
   deleteDescriptionTarget: Network['descriptions'][number] | null;
   deleteDescriptionSubmitting: boolean;
@@ -82,6 +86,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   expandedDescriptionIds: [],
   descriptionDrawerOpen: false,
   descriptionDrawerMode: 'create',
+  descriptionDrawerDescrType: 'Confirmation',
   descriptionDrawerDescriptionId: null,
   descriptionDrawerForm: {
     description: '',
@@ -89,6 +94,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   },
   descriptionDrawerSaving: false,
   descriptionDrawerError: null,
+  activeDescriptionTab: 'justifications',
   deleteDescriptionDialogOpen: false,
   deleteDescriptionTarget: null,
   deleteDescriptionSubmitting: false,
