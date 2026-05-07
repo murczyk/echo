@@ -269,7 +269,7 @@ export function NetworkDetailsLeftPanel({
 
             <Divider />
 
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pb: 2 }}>
               <SectionTitle>Додатково</SectionTitle>
               <FieldRow label="Створено" value={<Typography variant="body2">{formatDateOnly(network?.createdAt)}</Typography>} />
               <FieldRow label="Оновлено" value={<Typography variant="body2">{formatDateOnly(network?.lastUpdatedAt)}</Typography>} />

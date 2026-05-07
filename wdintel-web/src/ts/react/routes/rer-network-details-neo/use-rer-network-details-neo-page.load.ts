@@ -46,6 +46,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           expandedDescriptionIds: [],
           descriptionDrawerOpen: false,
           descriptionDrawerMode: 'create',
+          descriptionDrawerDescrType: 'Confirmation',
           descriptionDrawerDescriptionId: null,
           descriptionDrawerForm: {
             description: '',
@@ -53,6 +54,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           },
           descriptionDrawerSaving: false,
           descriptionDrawerError: null,
+          activeDescriptionTab: 'justifications',
           deleteDescriptionDialogOpen: false,
           deleteDescriptionTarget: null,
           deleteDescriptionSubmitting: false,

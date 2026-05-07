@@ -44,6 +44,11 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     return sortDescriptionsByCreatedAtDesc(descriptions.filter((description) => description.descrType === 'Confirmation'));
   }, [state.network?.descriptions]);
 
+  const signDescriptions = useMemo(() => {
+    const descriptions = state.network?.descriptions ?? [];
+    return sortDescriptionsByCreatedAtDesc(descriptions.filter((description) => description.descrType === 'Sign'));
+  }, [state.network?.descriptions]);
+
   const unitNames = useMemo(() => {
     const unitIds = state.network?.unitIds ?? [];
     return unitIds
@@ -86,10 +91,14 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     unitOptions,
     postOptions,
     confirmationDescriptions,
+    signDescriptions,
+    activeDescriptionTab: state.activeDescriptionTab,
+    setActiveDescriptionTab: actions.setActiveDescriptionTab,
     expandedDescriptionIds: state.expandedDescriptionIds,
     toggleDescriptionExpanded: actions.toggleDescriptionExpanded,
     descriptionDrawerOpen: state.descriptionDrawerOpen,
     descriptionDrawerMode: state.descriptionDrawerMode,
+    descriptionDrawerDescrType: state.descriptionDrawerDescrType,
     descriptionDrawerDescriptionId: state.descriptionDrawerDescriptionId,
     descriptionDrawerForm: state.descriptionDrawerForm,
     descriptionDrawerSaving: state.descriptionDrawerSaving,

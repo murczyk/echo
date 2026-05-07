@@ -3,7 +3,9 @@ import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Divider, IconButton, Paper, Skeleton, Stack, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import type { Network } from '../../../../../Bindings';
+
+import type { Network, NetworkDescrType } from '../../../../../Bindings';
+import type { NetworkDescriptionTab } from '../use-rer-network-details-neo-page.shared';
 
 type NetworkDescription = Network['descriptions'][number];
 
@@ -11,7 +13,23 @@ function formatCollapsedDescriptionText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-function JustificationsSkeleton() {
+function getDescriptionTypeLabel(descrType: NetworkDescrType): string {
+  return descrType === 'Sign' ? 'розвідувальні ознаки' : 'обґрунтування';
+}
+
+function getDescriptionSectionTitle(descrType: NetworkDescrType): string {
+  return descrType === 'Sign' ? 'Розвідувальні ознаки' : 'Обґрунтування';
+}
+
+function getDescriptionEmptyText(descrType: NetworkDescrType): string {
+  return descrType === 'Sign' ? 'Немає розвідувальних ознак' : "Немає обґрунтувань прив'язки";
+}
+
+function getDescriptionDescrType(tab: NetworkDescriptionTab): NetworkDescrType {
+  return tab === 'signs' ? 'Sign' : 'Confirmation';
+}
+
+function DescriptionsSkeleton() {
   return (
     <Stack spacing={1.5} sx={{ minHeight: 0, height: '100%' }}>
       <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
@@ -26,7 +44,7 @@ function JustificationsSkeleton() {
   );
 }
 
-function JustificationItem({
+function DescriptionItem({
   description,
   frequencyLabel,
   expanded,
@@ -43,6 +61,8 @@ function JustificationItem({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const descriptionTypeLabel = getDescriptionTypeLabel(description.descrType);
+
   return (
     <Accordion
       expanded={expanded}
@@ -148,12 +168,12 @@ function JustificationItem({
             {canManage ? (
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
                 <Tooltip title="Редагувати" arrow>
-                  <IconButton aria-label="Редагувати обґрунтування" onClick={onEdit} size="small">
+                  <IconButton aria-label={`Редагувати ${descriptionTypeLabel}`} onClick={onEdit} size="small">
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Видалити" arrow>
-                  <IconButton aria-label="Видалити обґрунтування" onClick={onDelete} size="small" color="error">
+                  <IconButton aria-label={`Видалити ${descriptionTypeLabel}`} onClick={onDelete} size="small" color="error">
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -166,12 +186,13 @@ function JustificationItem({
   );
 }
 
-function JustificationsTab({
+function DescriptionsList({
   network,
   loading,
   descriptions,
   canManage,
   expandedDescriptionIds,
+  descrType,
   onToggleExpanded,
   onEdit,
   onDelete,
@@ -181,6 +202,7 @@ function JustificationsTab({
   descriptions: NetworkDescription[];
   canManage: boolean;
   expandedDescriptionIds: number[];
+  descrType: NetworkDescrType;
   onToggleExpanded: (descriptionId: number) => void;
   onEdit: (description: NetworkDescription) => void;
   onDelete: (description: NetworkDescription) => void;
@@ -188,7 +210,7 @@ function JustificationsTab({
   if (loading && !network) {
     return (
       <Box sx={{ minHeight: 0, height: '100%' }}>
-        <JustificationsSkeleton />
+        <DescriptionsSkeleton />
       </Box>
     );
   }
@@ -208,7 +230,7 @@ function JustificationsTab({
           }}
         >
           <Typography variant="body2" color="text.secondary">
-            Немає обґрунтувань прив'язки
+            {getDescriptionEmptyText(descrType)}
           </Typography>
         </Box>
       ) : (
@@ -220,7 +242,7 @@ function JustificationsTab({
                 : network?.freqs.find((freq) => freq.id === description.networkFrequencyId)?.freq ?? `#${description.networkFrequencyId}`;
 
             return (
-              <JustificationItem
+              <DescriptionItem
                 key={description.id}
                 description={description}
                 frequencyLabel={frequencyLabel}
@@ -241,26 +263,36 @@ function JustificationsTab({
 type Props = {
   network: Network | null;
   loading: boolean;
-  descriptions: NetworkDescription[];
+  confirmationDescriptions: NetworkDescription[];
+  signDescriptions: NetworkDescription[];
   canManage: boolean;
+  activeDescriptionTab: NetworkDescriptionTab;
   expandedDescriptionIds: number[];
+  onSetActiveDescriptionTab: (tab: NetworkDescriptionTab) => void;
   onToggleExpanded: (descriptionId: number) => void;
   onEdit: (description: NetworkDescription) => void;
   onDelete: (description: NetworkDescription) => void;
-  onCreate: () => void;
+  onCreate: (descrType: NetworkDescrType) => void;
 };
 
-export function NetworkDetailsJustificationsPanel({
+export function NetworkDetailsDescriptionsPanel({
   network,
   loading,
-  descriptions,
+  confirmationDescriptions,
+  signDescriptions,
   canManage,
+  activeDescriptionTab,
   expandedDescriptionIds,
+  onSetActiveDescriptionTab,
   onToggleExpanded,
   onEdit,
   onDelete,
   onCreate,
 }: Props) {
+  const descrType = getDescriptionDescrType(activeDescriptionTab);
+  const sectionTitle = getDescriptionSectionTitle(descrType);
+  const descriptions = activeDescriptionTab === 'signs' ? signDescriptions : confirmationDescriptions;
+
   return (
     <Paper
       variant="outlined"
@@ -284,7 +316,8 @@ export function NetworkDetailsJustificationsPanel({
         }}
       >
         <Tabs
-          value="justifications"
+          value={activeDescriptionTab}
+          onChange={(_, nextTab: NetworkDescriptionTab) => onSetActiveDescriptionTab(nextTab)}
           variant="standard"
           sx={{
             minHeight: 42,
@@ -294,27 +327,29 @@ export function NetworkDetailsJustificationsPanel({
           }}
         >
           <Tab value="justifications" label="Обґрунтування" />
+          <Tab value="signs" label="Розвід. ознаки" />
         </Tabs>
       </Box>
       <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
-          <Typography variant="h6">Обґрунтування</Typography>
+          <Typography variant="h6">{sectionTitle}</Typography>
           {canManage ? (
             loading ? (
               <Skeleton variant="rounded" width={104} height={36} />
             ) : (
-              <Button variant="contained" onClick={onCreate}>
+              <Button variant="contained" onClick={() => onCreate(descrType)}>
                 Додати
               </Button>
             )
           ) : null}
         </Box>
-        <JustificationsTab
+        <DescriptionsList
           network={network ? { freqs: network.freqs } : null}
           loading={loading}
           descriptions={descriptions}
           canManage={canManage}
           expandedDescriptionIds={expandedDescriptionIds}
+          descrType={descrType}
           onToggleExpanded={onToggleExpanded}
           onEdit={onEdit}
           onDelete={onDelete}

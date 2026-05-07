@@ -14,7 +14,7 @@ import {
 import type { SelectChangeEvent } from '@mui/material/Select';
 import { memo, useMemo } from 'react';
 
-import type { Network } from '../../../../../Bindings';
+import type { Network, NetworkDescrType } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { NetworkDescriptionForm } from '../use-rer-network-details-neo-page.shared';
@@ -22,6 +22,7 @@ import type { NetworkDescriptionForm } from '../use-rer-network-details-neo-page
 type Props = {
   open: boolean;
   mode: 'create' | 'edit';
+  descrType: NetworkDescrType;
   form: NetworkDescriptionForm;
   saving: boolean;
   error: string | null;
@@ -31,9 +32,34 @@ type Props = {
   onSave: () => void;
 };
 
+function getDrawerTitle(mode: Props['mode'], descrType: NetworkDescrType): string {
+  if (mode === 'edit') {
+    return 'Редагувати опис';
+  }
+
+  return descrType === 'Sign' ? 'Створити розвідувальні ознаки' : "Створити обґрунтування прив'язки";
+}
+
+function getDescriptionLabel(mode: Props['mode'], descrType: NetworkDescrType): string {
+  if (mode === 'edit') {
+    return 'Текст опису *';
+  }
+
+  return descrType === 'Sign' ? 'Розвідувальні ознаки *' : "Обґрунтування прив'язки *";
+}
+
+function getDescriptionPlaceholder(mode: Props['mode'], descrType: NetworkDescrType): string {
+  if (mode === 'edit') {
+    return 'Введіть текст опису';
+  }
+
+  return descrType === 'Sign' ? 'Введіть розвідувальні ознаки' : "Введіть обґрунтування прив'язки";
+}
+
 function NetworkDescriptionDrawerComponent({
   open,
   mode,
+  descrType,
   form,
   saving,
   error,
@@ -45,6 +71,7 @@ function NetworkDescriptionDrawerComponent({
   const titleId = 'network-description-drawer-title';
   const formBlocked = saving;
   const saveDisabled = saving || form.description.trim() === '';
+  const showFrequencyField = true;
 
   const frequencyItems = useMemo(() => {
     return networkFreqs.map((freq) => (
@@ -87,7 +114,7 @@ function NetworkDescriptionDrawerComponent({
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Typography variant="h6" id={titleId}>
-          {mode === 'create' ? 'Створити обґрунтування прив\'язки' : 'Редагувати опис'}
+          {getDrawerTitle(mode, descrType)}
         </Typography>
       </Box>
 
@@ -95,23 +122,26 @@ function NetworkDescriptionDrawerComponent({
         <Stack spacing={2.5} sx={{ height: '100%' }}>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
-          <FormControl fullWidth size="small" disabled={formBlocked}>
-            <InputLabel id="network-description-freq-label">Частота (необов&apos;язково)</InputLabel>
-            <Select
-              labelId="network-description-freq-label"
-              label="Частота (необов'язково)"
-              value={form.networkFreqId === null ? '' : String(form.networkFreqId)}
-              onChange={handleFrequencyChange}
-            >
-              <MenuItem value="">
-                <em>Без частоти</em>
-              </MenuItem>
-              {frequencyItems}
-            </Select>
-          </FormControl>
+          {showFrequencyField ? (
+            <FormControl fullWidth size="small" disabled={formBlocked}>
+              <InputLabel id="network-description-freq-label">Частота (необов&apos;язково)</InputLabel>
+              <Select
+                labelId="network-description-freq-label"
+                label="Частота (необов'язково)"
+                value={form.networkFreqId === null ? '' : String(form.networkFreqId)}
+                onChange={handleFrequencyChange}
+              >
+                <MenuItem value="">
+                  <em>Без частоти</em>
+                </MenuItem>
+                {frequencyItems}
+              </Select>
+            </FormControl>
+          ) : null}
 
           <TextField
-            label="Обґрунтування прив'язки *"
+            label={getDescriptionLabel(mode, descrType)}
+            placeholder={getDescriptionPlaceholder(mode, descrType)}
             value={form.description}
             onChange={(event) => onChange({ ...form, description: event.target.value })}
             disabled={formBlocked}
