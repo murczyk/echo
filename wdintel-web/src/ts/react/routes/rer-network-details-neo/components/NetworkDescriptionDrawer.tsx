@@ -67,11 +67,10 @@ function NetworkDescriptionDrawerComponent({
   onClose,
   onChange,
   onSave,
-}: Props) {
+  }: Props) {
   const titleId = 'network-description-drawer-title';
   const formBlocked = saving;
   const saveDisabled = saving || form.description.trim() === '';
-  const showFrequencyField = true;
 
   const frequencyItems = useMemo(() => {
     return networkFreqs.map((freq) => (
@@ -122,22 +121,20 @@ function NetworkDescriptionDrawerComponent({
         <Stack spacing={2.5} sx={{ height: '100%' }}>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
-          {showFrequencyField ? (
-            <FormControl fullWidth size="small" disabled={formBlocked}>
-              <InputLabel id="network-description-freq-label">Частота (необов&apos;язково)</InputLabel>
-              <Select
-                labelId="network-description-freq-label"
-                label="Частота (необов'язково)"
-                value={form.networkFreqId === null ? '' : String(form.networkFreqId)}
-                onChange={handleFrequencyChange}
-              >
-                <MenuItem value="">
-                  <em>Без частоти</em>
-                </MenuItem>
-                {frequencyItems}
-              </Select>
-            </FormControl>
-          ) : null}
+          <FormControl fullWidth size="small" disabled={formBlocked}>
+            <InputLabel id="network-description-freq-label">Частота (необов&apos;язково)</InputLabel>
+            <Select
+              labelId="network-description-freq-label"
+              label="Частота (необов'язково)"
+              value={form.networkFreqId === null ? '' : String(form.networkFreqId)}
+              onChange={handleFrequencyChange}
+            >
+              <MenuItem value="">
+                <em>Без частоти</em>
+              </MenuItem>
+              {frequencyItems}
+            </Select>
+          </FormControl>
 
           <TextField
             label={getDescriptionLabel(mode, descrType)}
