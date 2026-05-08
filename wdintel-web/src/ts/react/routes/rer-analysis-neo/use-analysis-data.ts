@@ -186,6 +186,15 @@ export function useAnalysisData({
     setTagsMap,
   });
 
+  const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
+    networksRef,
+    onError,
+    onUnauthorized,
+    setNetworkDisplayMap,
+    setNetworks,
+    unitsMap,
+  });
+
   const {
     downloadGeojson,
     downloadKmz,
@@ -210,6 +219,7 @@ export function useAnalysisData({
     mapDateRangeLoadVersionRef,
     mapMessagesLoadVersionRef,
     newestFirst,
+    loadMissingNetworksForMessages,
     onError,
     onUnauthorized,
     optionsFreqs: optionsFreqValues,
@@ -253,15 +263,6 @@ export function useAnalysisData({
     newCallsignsRequestRef,
     newCallsignsLoadedKeyRef,
     newCallsignsPendingKeyRef,
-  });
-
-  const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
-    networksRef,
-    onError,
-    onUnauthorized,
-    setNetworkDisplayMap,
-    setNetworks,
-    unitsMap,
   });
 
   const { clearAnalysisResults, onUpdateLocalMessage, patchMessages } = useAnalysisDataStateUtils({

@@ -89,71 +89,6 @@ function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: numbe
   return state.freqs.find((freq) => freq.networkFreqId === networkFreqId) ?? null;
 }
 
-function buildCreatedFreqLabel(key: { id: number | null; key?: string | null; description?: string | null }): string {
-  const parts = [key.description?.trim(), key.key?.trim()].filter((value) => value && value !== '');
-  if (parts.length === 0) {
-    return `#${key.id ?? '—'}`;
-  }
-
-  return parts.join(' • ');
-}
-
-function buildCreatedFreq(
-  currentFreqs: NetworkFreqsRes[],
-  updatedNetwork: Network,
-  form: NetworkFreqCreateWizardForm,
-  modulationsById: Map<number, string>,
-): NetworkFreqsRes | null {
-  const currentFreqIds = new Set(currentFreqs.map((freq) => freq.networkFreqId));
-  const createdFreq = updatedNetwork.freqs.find((freq) => !currentFreqIds.has(freq.id)) ?? null;
-  if (!createdFreq) return null;
-
-  return {
-    networkFreqId: createdFreq.id,
-    freq: createdFreq.freq,
-    modulationId: createdFreq.modulationId,
-    modulation: createdFreq.modulationId === null ? null : modulationsById.get(createdFreq.modulationId) ?? null,
-    encryptionKeyIds: [...form.encryptionKeyIds],
-    encryptionKeys: createdFreq.encryptionKeys.map((key) => buildCreatedFreqLabel(key)),
-    messageCount: 0,
-    callsigns: [],
-    lastDatetime: null,
-    lastDatetimeInAor: null,
-    createdAt: createdFreq.createdAt,
-    isActive: createdFreq.activeTo === null,
-    activeFrom: createdFreq.activeFrom,
-    activeTo: createdFreq.activeTo,
-    kind: createdFreq.kind === 'DMR' ? 'DMR' : 'VHF',
-  };
-}
-
-function syncUpdatedFreqs(
-  currentFreqs: NetworkFreqsRes[],
-  updatedNetwork: Network,
-  modulationsById: Map<number, string>,
-): NetworkFreqsRes[] {
-  const updatedFreqsById = new Map(updatedNetwork.freqs.map((freq) => [freq.id, freq]));
-
-  return currentFreqs.map((freq) => {
-    const updatedFreq = updatedFreqsById.get(freq.networkFreqId);
-    if (!updatedFreq) return freq;
-
-    return {
-      ...freq,
-      freq: updatedFreq.freq,
-      modulationId: updatedFreq.modulationId,
-      modulation: updatedFreq.modulationId === null ? null : modulationsById.get(updatedFreq.modulationId) ?? null,
-      encryptionKeyIds: updatedFreq.encryptionKeys.flatMap((key) => (key.id === null ? [] : [key.id])),
-      encryptionKeys: updatedFreq.encryptionKeys.map((key) => buildCreatedFreqLabel(key)),
-      activeFrom: updatedFreq.activeFrom,
-      activeTo: updatedFreq.activeTo,
-      createdAt: updatedFreq.createdAt,
-      kind: updatedFreq.kind === 'DMR' ? 'DMR' : 'VHF',
-      isActive: updatedFreq.activeTo === null,
-    };
-  });
-}
-
 export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }: Args) {
   const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
     setState((current) => ({ ...current, activeNetworkDetailsTab }));
@@ -341,20 +276,12 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
 
     try {
       const updatedNetwork = await addFreqToNetwork(toCreateNetworkFreqReq(form, network.id));
-      const modulationsById = new Map(state.modulations.map((modulation) => [modulation.id, modulation.name]));
-      const createdFreq = buildCreatedFreq(state.freqs, updatedNetwork, form, modulationsById);
       setState((current) => ({
         ...current,
         ...resetFreqCreateWizardState(current),
         network: updatedNetwork,
-        freqs: createdFreq ? [...current.freqs, createdFreq] : current.freqs,
-        freqActivityByFreq: createdFreq
-          ? {
-              ...current.freqActivityByFreq,
-              [createdFreq.networkFreqId]: [],
-            }
-          : current.freqActivityByFreq,
       }));
+      await loadFrequencies(network.id);
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -401,12 +328,8 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
         ...current,
         ...resetFreqEditDrawerState(current),
         network: updatedNetwork,
-        freqs: syncUpdatedFreqs(
-          current.freqs,
-          updatedNetwork,
-          new Map(current.modulations.map((modulation) => [modulation.id, modulation.name])),
-        ),
       }));
+      await loadFrequencies(network.id);
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -414,7 +337,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
         freqEditDrawerError: formatErrorMessage(error),
       }));
     }
-  }, [state.freqEditDrawerForm, state.freqEditDrawerSaving, state.freqs, state.network, setState]);
+  }, [loadFrequencies, state.freqEditDrawerForm, state.freqEditDrawerSaving, state.freqs, state.network, setState]);
 
   const saveFreqTechDrawer = useCallback(async () => {
     const network = state.network;
@@ -453,12 +376,8 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
         ...current,
         ...resetFreqTechDrawerState(current),
         network: updatedNetwork,
-        freqs: syncUpdatedFreqs(
-          current.freqs,
-          updatedNetwork,
-          new Map(current.modulations.map((modulation) => [modulation.id, modulation.name])),
-        ),
       }));
+      await loadFrequencies(network.id);
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -466,7 +385,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
         freqTechDrawerError: formatErrorMessage(error),
       }));
     }
-  }, [state.freqTechDrawerForm, state.freqTechDrawerSaving, state.freqs, state.network, setState]);
+  }, [loadFrequencies, state.freqTechDrawerForm, state.freqTechDrawerSaving, state.freqs, state.network, setState]);
 
   const deleteFreq = useCallback(async () => {
     const network = state.network;
@@ -490,17 +409,12 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
       setState((current) => ({
         ...current,
         network: updatedNetwork,
-        freqs: current.freqs.filter((freq) => freq.networkFreqId !== target.networkFreqId),
-        freqActivityByFreq: (() => {
-          const next = { ...current.freqActivityByFreq };
-          delete next[target.networkFreqId];
-          return next;
-        })(),
         freqDeleteDialogOpen: false,
         freqDeleteTarget: null,
         freqDeleteSubmitting: false,
         freqDeleteError: null,
       }));
+      await loadFrequencies(network.id);
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -508,7 +422,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
         freqDeleteError: formatErrorMessage(error),
       }));
     }
-  }, [state.freqDeleteSubmitting, state.freqDeleteTarget, state.network, setState]);
+  }, [loadFrequencies, state.freqDeleteSubmitting, state.freqDeleteTarget, state.network, setState]);
 
   return {
     setActiveNetworkDetailsTab,

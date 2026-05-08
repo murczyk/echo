@@ -393,6 +393,7 @@ function NetworkDetailsFrequenciesPanelContent({
       columnOrder: tableStateContext.columnOrder,
       columnSizing: tableStateContext.columnSizing,
       isLoading: freqsLoading && freqsLoaded,
+      showLoadingOverlay: freqsLoading && freqsLoaded,
       showSkeletons: freqsLoading && !freqsLoaded,
       showProgressBars: false,
     },

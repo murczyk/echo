@@ -3918,7 +3918,7 @@ update user shared route msg model =
                 ( model, E.none )
 
             else
-                ( model
+                ( { model | mapOpenMessages = Failure err }
                 , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
                 )
 

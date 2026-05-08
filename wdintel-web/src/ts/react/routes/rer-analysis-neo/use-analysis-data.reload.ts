@@ -582,7 +582,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           fetchAnalysisNetworks(criticalData.resolvedAnalysisReq),
         ]);
         if (isStaleReload()) return;
-        params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
+        const unitsMap = Object.fromEntries(units.map((unit) => [unit.id, unit]));
+        params.setUnitsMap(unitsMap);
         const networkIds = Array.from(
           new Set([
             ...networksStatsRsp.networks.map((item) => item.networkId),
@@ -591,7 +592,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         );
         const networksByAnalysisIds = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
         if (isStaleReload()) return;
-        params.setNetworks((current) => mergeNetworks(current, networksByAnalysisIds));
+        params.setNetworks((current) => {
+          const mergedNetworks = mergeNetworks(current, networksByAnalysisIds);
+          params.setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
+          return mergedNetworks;
+        });
       } catch (loadError) {
         if (isStaleReload()) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));

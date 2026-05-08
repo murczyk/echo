@@ -1101,6 +1101,8 @@ view user model shared route =
                             , attribute "daterange-loading" (Encode.encode 0 (Encode.bool (model.mapPoints == Loading)))
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
+                            , attribute "messages-loading" (Encode.encode 0 (Encode.bool (model.mapOpenMessages == Loading)))
+                            , attribute "messages-load-serial" (String.fromInt model.mapOpenMessagesRequestId)
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
                             , attribute "palitras" (Encode.encode 0 encodedPalitras)
                             , attribute "palitras-loaded" (Encode.encode 0 (Encode.bool palitrasLoaded))
