@@ -96,13 +96,23 @@ fn sanitize_preview_line(line: &str) -> Option<String> {
         .strip_prefix("- ")
         .or_else(|| trimmed_line.strip_prefix("* "))
         .unwrap_or(trimmed_line);
-    let without_tasks = strip_task_tokens(without_bullet);
+    let without_issue_ref = strip_issue_reference(without_bullet);
+    let without_tasks = strip_task_tokens(&without_issue_ref);
     let cleaned = without_tasks.trim();
     if cleaned.is_empty() {
         None
     } else {
         Some(cleaned.to_string())
     }
+}
+
+fn strip_issue_reference(line: &str) -> String {
+    if line.starts_with("[#") {
+        if let Some(close_link_index) = line.find(')') {
+            return line[(close_link_index + 1)..].trim().to_string();
+        }
+    }
+    line.to_string()
 }
 
 fn strip_task_tokens(value: &str) -> String {
@@ -197,33 +207,55 @@ pub struct ChangelogPreview {
 #[get("/api-public/changelog")]
 async fn changelog_raw() -> Result<HttpResponse, AppError> {
     let content = read_changelog_content().await?;
-    let filtered = format_public_changelog(&content);
+    let html = format_public_changelog_html(&content);
     Ok(HttpResponse::Ok()
-        .content_type("text/markdown; charset=utf-8")
-        .body(filtered))
+        .content_type("text/html; charset=utf-8")
+        .body(html))
 }
 
-fn format_public_changelog(content: &str) -> String {
-    let mut output = String::new();
+fn collect_public_changelog_sections(
+    content: &str,
+) -> Vec<(String, Vec<String>)> {
+    let mut sections: Vec<(String, Vec<String>)> = Vec::new();
     let mut in_date_section = false;
+    let mut current_date = String::new();
+    let mut current_items: Vec<String> = Vec::new();
+
+    let push_current =
+        |sections: &mut Vec<(String, Vec<String>)>,
+         current_date: &mut String,
+         current_items: &mut Vec<String>| {
+            if !current_date.is_empty() {
+                sections.push((
+                    current_date.clone(),
+                    std::mem::take(current_items),
+                ));
+                current_date.clear();
+            }
+        };
+
     for raw_line in content.lines() {
         let line = raw_line.trim();
         if line.starts_with("## ") {
             if is_date_heading(line) {
+                push_current(
+                    &mut sections,
+                    &mut current_date,
+                    &mut current_items,
+                );
                 in_date_section = true;
-                if !output.is_empty() {
-                    output.push('\n');
-                }
-                let date = line
+                current_date = line
                     .trim_start_matches("## ")
                     .split_whitespace()
                     .next()
-                    .unwrap_or("");
-                output.push_str(date);
-                output.push('\n');
-                output.push_str("----");
-                output.push('\n');
+                    .unwrap_or("")
+                    .to_string();
             } else {
+                push_current(
+                    &mut sections,
+                    &mut current_date,
+                    &mut current_items,
+                );
                 in_date_section = false;
             }
             continue;
@@ -231,12 +263,61 @@ fn format_public_changelog(content: &str) -> String {
         if !in_date_section {
             continue;
         }
-        if is_issue_line(line) {
-            output.push_str(line);
-            output.push('\n');
+
+        if let Some(description) = extract_issue_description(line) {
+            current_items.push(description);
         }
     }
-    output
+
+    push_current(&mut sections, &mut current_date, &mut current_items);
+    sections
+}
+
+fn format_public_changelog_html(content: &str) -> String {
+    let sections = collect_public_changelog_sections(content);
+    let mut html = String::new();
+    html.push_str(
+        "<!doctype html><html lang=\"uk\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Оновлення</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:920px;margin:0 auto;padding:24px;line-height:1.5;color:#111}h1{margin:0 0 20px;font-size:30px}h2{margin:24px 0 8px;font-size:22px}ul{margin:0 0 8px 20px;padding:0}li{margin:6px 0}</style></head><body><h1>Оновлення</h1>",
+    );
+
+    for (date, items) in sections {
+        html.push_str("<section>");
+        html.push_str("<h2>");
+        html.push_str(&html_escape(&date));
+        html.push_str("</h2><ul>");
+        for item in items {
+            html.push_str("<li>");
+            html.push_str(&html_escape(&item));
+            html.push_str("</li>");
+        }
+        html.push_str("</ul></section>");
+    }
+
+    html.push_str("</body></html>");
+    html
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn extract_issue_description(line: &str) -> Option<String> {
+    if !is_issue_line(line) {
+        return None;
+    }
+
+    let close_link_index = line.find(')')?;
+    let rest = line[(close_link_index + 1)..].trim();
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest.to_string())
+    }
 }
 
 fn is_issue_line(line: &str) -> bool {

@@ -451,23 +451,23 @@ changelogDropdown props maybeData =
                 badge =
                     if data.unseen then
                         span
-                            [ class "ml-1 inline-flex items-center rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-900" ]
-                            [ text "нове" ]
+                            [ class "ml-1 inline-block h-2 w-2 rounded-full bg-amber-300" ]
+                            []
 
                     else
                         text ""
             in
             div [ class "relative" ]
                 [ button
-                    [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center gap-1"
+                    [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center"
                     , onClick toggleMsg
                     , onDropdownTriggerKey toggleMsg
                     , attribute "aria-haspopup" "true"
                     , attribute "aria-expanded" (if isOpen then "true" else "false")
+                    , attribute "aria-label" "Останні зміни"
                     , type_ "button"
                     ]
-                    [ i [ class "bi bi-stars text-lg" ] []
-                    , span [ class "hidden md:inline" ] [ text "що нового" ]
+                    [ i [ class "bi bi-bell-fill text-lg" ] []
                     , badge
                     ]
                 , div [ class "absolute right-0 pt-2 z-[3001]" ]
@@ -612,27 +612,7 @@ renderChangelogLine line =
             [ text (String.dropLeft 3 line) ]
 
     else
-        case parseMarkdownLink line of
-            Just parsed ->
-                span []
-                    ([ a
-                        [ href parsed.url
-                        , target "_blank"
-                        , rel "noopener noreferrer"
-                        , class "font-semibold text-amber-600 hover:text-amber-500"
-                        ]
-                        [ text parsed.label ]
-                     ]
-                        ++ (if String.isEmpty parsed.rest then
-                                []
-
-                            else
-                                [ text (" " ++ parsed.rest) ]
-                           )
-                    )
-
-            Nothing ->
-                text line
+        text line
 
 
 isDateHeading : String -> Bool
@@ -672,36 +652,6 @@ isDateChar index value =
 
         [] ->
             False
-
-
-parseMarkdownLink : String -> Maybe { label : String, url : String, rest : String }
-parseMarkdownLink line =
-    if String.startsWith "[" line then
-        case String.split "](" line of
-            before :: after :: [] ->
-                let
-                    label =
-                        String.dropLeft 1 before
-
-                    urlAndRest =
-                        String.split ")" after
-                in
-                case urlAndRest of
-                    url :: restParts ->
-                        Just
-                            { label = label
-                            , url = url
-                            , rest = String.join ")" restParts |> String.trim
-                            }
-
-                    [] ->
-                        Nothing
-
-            _ ->
-                Nothing
-
-    else
-        Nothing
 
 
 menuItemRoute : { a | onDropdownToggle : Maybe b -> msg } -> String -> { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String } -> String -> String -> Html msg
