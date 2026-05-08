@@ -477,8 +477,8 @@ changelogDropdown props maybeData =
                             ]
                         ]
                         ([ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ] [ text "Останні зміни" ]
-                         , ul [ class "space-y-2 text-sm text-[var(--color-text)]" ]
-                            (List.map (\line -> li [ class "leading-snug" ] [ renderChangelogLine line ]) data.preview)
+                         , ul [ class "space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1" ]
+                            (List.map renderChangelogLine data.preview)
                          , div [ class "mt-3 flex items-center justify-between" ]
                             [ a
                                 [ href data.fullUrl
@@ -488,12 +488,6 @@ changelogDropdown props maybeData =
                                 , onClick (props.onChangelogSeen data.version)
                                 ]
                                 [ text "Читати повністю" ]
-                            , button
-                                [ class "text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                                , onClick (props.onChangelogSeen data.version)
-                                , type_ "button"
-                                ]
-                                [ text "Позначити прочитаним" ]
                             ]
                          ]
                         )
@@ -507,11 +501,11 @@ changelogDropdown props maybeData =
 renderChangelogLine : String -> Html msg
 renderChangelogLine line =
     if isDateHeading line then
-        span [ class "block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]" ]
+        li [ class "pt-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]" ]
             [ text (String.dropLeft 3 line) ]
 
     else
-        text line
+        li [ class "ml-4 list-disc leading-snug break-words" ] [ text line ]
 
 
 isDateHeading : String -> Bool
