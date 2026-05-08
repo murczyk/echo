@@ -31,26 +31,13 @@ fn is_date_heading(line: &str) -> bool {
     false
 }
 
-fn first_date_heading(content: &str) -> Option<String> {
-    for raw_line in content.lines() {
-        let line = raw_line.trim();
-        if line.starts_with("## ") && is_date_heading(line) {
-            return line
-                .trim_start_matches("## ")
-                .split_whitespace()
-                .next()
-                .map(|value| value.to_string());
-        }
-    }
-    None
-}
-
 fn changelog_paths() -> Vec<std::path::PathBuf> {
     if let Ok(path) = env::var(crate::config::CHANGELOG_ENV_PATH_KEY) {
         return vec![std::path::PathBuf::from(path)];
     }
     vec![
-        std::path::PathBuf::from(".").join(crate::config::CHANGELOG_DEFAULT_FILENAME),
+        std::path::PathBuf::from(".")
+            .join(crate::config::CHANGELOG_DEFAULT_FILENAME),
         std::path::PathBuf::from(crate::config::CHANGELOG_PACKAGED_PATH),
     ]
 }
@@ -60,7 +47,9 @@ async fn read_changelog_content() -> Result<String, AppError> {
     for changelog_path in changelog_paths() {
         match tokio::fs::read_to_string(&changelog_path).await {
             Ok(content) => return Ok(content),
-            Err(err) => errors.push(format!("{}: {}", changelog_path.display(), err)),
+            Err(err) => {
+                errors.push(format!("{}: {}", changelog_path.display(), err))
+            }
         }
     }
     warn!(
