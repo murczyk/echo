@@ -397,26 +397,6 @@ pub async fn goi_delete_file_loose(
     }
 }
 
-pub async fn goi_delete_file_names_in_tree(
-    req: CheckOrganismGoiConnectionReq,
-    file_names: Vec<String>,
-) -> anyhow::Result<()> {
-    goi_validate_connection_req(&req)?;
-    let file_names = normalize_goi_file_names(file_names).c(h!())?;
-    let entries = goi_list_relative_files(req.clone()).await.c(h!())?;
-    let relative_paths =
-        goi_matching_relative_paths(entries.as_slice(), file_names.as_slice());
-
-    for relative_path in relative_paths {
-        let remote_file_path =
-            goi_build_remote_file_path(&req.path, &relative_path);
-        goi_delete_file(req.clone(), remote_file_path)
-            .await
-            .c(h!())?;
-    }
-    Ok(())
-}
-
 pub async fn goi_list_relative_files(
     req: CheckOrganismGoiConnectionReq,
 ) -> anyhow::Result<Vec<String>> {
@@ -536,28 +516,6 @@ fn goi_relative_path_exists(entries: &[String], rel_path: &str) -> bool {
             .as_deref()
             == Some(rel_path)
     })
-}
-
-fn goi_matching_relative_paths(
-    entries: &[String],
-    file_names: &[String],
-) -> Vec<String> {
-    let mut relative_paths = Vec::new();
-    for entry in entries {
-        let Some((folder, file_name)) = goi_parse_relative_file_entry(entry)
-        else {
-            continue;
-        };
-        if !file_names.contains(&file_name) {
-            continue;
-        }
-        let relative_path =
-            goi_build_relative_path(folder.as_deref(), &file_name);
-        if !relative_paths.contains(&relative_path) {
-            relative_paths.push(relative_path);
-        }
-    }
-    relative_paths
 }
 
 fn goi_find_source_relative_path(
@@ -723,19 +681,6 @@ fn goi_relative_parent_dir(path: &str) -> String {
         .map(|(dir, _)| dir.to_string())
         .filter(|dir| !dir.trim().is_empty())
         .unwrap_or_else(|| ".".to_string())
-}
-
-fn goi_build_remote_file_path(base_path: &str, relative_path: &str) -> String {
-    let base_path = base_path.trim().trim_end_matches('/');
-    let relative_path = relative_path
-        .trim()
-        .trim_start_matches("./")
-        .trim_start_matches('/');
-    if base_path.is_empty() {
-        format!("/{relative_path}")
-    } else {
-        format!("{base_path}/{relative_path}")
-    }
 }
 
 fn goi_shell_quote_single(value: &str) -> String {
@@ -1566,40 +1511,5 @@ mod tests {
             entries.as_slice(),
             "North/Sub/other.kmz"
         ));
-    }
-
-    #[test]
-    fn goi_matching_relative_paths_finds_root_and_folder_matches() {
-        let entries = vec![
-            "./palitra.kmz".to_string(),
-            "./folder_a/palitra.kmz".to_string(),
-            "./folder_b/other.kmz".to_string(),
-            "./folder_b/source.kmz".to_string(),
-            "./folder_b/source.kmz".to_string(),
-        ];
-        let paths = goi_matching_relative_paths(
-            entries.as_slice(),
-            &["palitra.kmz".to_string(), "source.kmz".to_string()],
-        );
-        assert_eq!(
-            paths,
-            vec![
-                "palitra.kmz".to_string(),
-                "folder_a/palitra.kmz".to_string(),
-                "folder_b/source.kmz".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn goi_build_remote_file_path_joins_base_and_relative_path() {
-        assert_eq!(
-            goi_build_remote_file_path("/srv/goi/", "./folder/p.kmz"),
-            "/srv/goi/folder/p.kmz".to_string()
-        );
-        assert_eq!(
-            goi_build_remote_file_path("", "folder/p.kmz"),
-            "/folder/p.kmz".to_string()
-        );
     }
 }

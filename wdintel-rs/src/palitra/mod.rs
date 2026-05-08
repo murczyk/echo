@@ -1680,24 +1680,16 @@ async fn sync_delete_palitra_from_connected_organisms(
         source_file_name.as_deref(),
     );
 
-    let mut errors = Vec::new();
     for target in goi_targets {
-        let target_label =
-            format!("{}:{} {}", target.ssh_host, target.ssh_port, target.path);
-        if let Err(err) = crate::organism::goi::goi_delete_file_names_in_tree(
-            target,
-            file_names.clone(),
-        )
-        .await
-        {
-            errors.push(format!("{target_label}: {err:#}"));
+        for file_name in &file_names {
+            let remote_file_path =
+                compose_goi_palette_remote_path(&target.path, file_name);
+            crate::organism::goi::goi_delete_file_loose(
+                target.clone(),
+                remote_file_path,
+            )
+            .await;
         }
-    }
-    if !errors.is_empty() {
-        log::warn!(
-            "Skipping some GOI palette file deletes for palitra {palitra_id}: {}",
-            errors.join("; ")
-        );
     }
 
     Ok(())
