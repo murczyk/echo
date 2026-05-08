@@ -1,13 +1,25 @@
 import type {
+  AddNetworkFreqReq,
+  CreateEncryptionKeyReq,
   AddNetworkDescriptionsReq,
   DeleteNetworkDescriptionReq,
+  DeleteNetworkFreqReq,
   ListNetworksReq,
+  ListKeysReq,
   Network,
+  NetworkFreqCallsignsReq,
+  NetworkFreqsActivityReq,
+  ReactivateNetworkFreqReq,
+  SingleNetworkFreqsListRsp,
+  SingleNetworkFreqsReq,
+  ListKeysRsp,
   SingleNetworkCallsignsListRsp,
   UpdateNetworkDescriptionReq,
+  UpdateNetworkFreqReq,
   UpdateNetworkPostsReq,
   UpdateNetworkReq,
   UpdateNetworkUnitsReq,
+  EncryptionKeyData,
 } from '../../../../Bindings';
 import { postJson } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
@@ -53,6 +65,62 @@ export async function getNetworkCallsignsList(
     include_activity_info: includeActivityInfo,
   });
   return transformSnakeToCamel<SingleNetworkCallsignsListRsp>(data);
+}
+
+export async function getSingleNetworkFreqs(
+  networkId: number,
+  includeCallsigns = true,
+): Promise<SingleNetworkFreqsListRsp> {
+  const data = await postJson<SingleNetworkFreqsListRsp>('/api/sigint/network-freqs-list', transformCamelToSnake({
+    networkId,
+    includeCallsigns,
+  } satisfies SingleNetworkFreqsReq));
+  return transformSnakeToCamel<SingleNetworkFreqsListRsp>(data);
+}
+
+export async function getNetworkFreqsActivity(networkId: number): Promise<Record<string, Record<string, number>>> {
+  const data = await postJson<Record<string, Record<string, number>>>('/api/sigint/network-freqs-activity-one', transformCamelToSnake({
+    networkId,
+  } satisfies NetworkFreqsActivityReq));
+  return transformSnakeToCamel<Record<string, Record<string, number>>>(data);
+}
+
+export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<string[]> {
+  const data = await postJson<{ networkFreqId: number; callsigns: string[] }>('/api/sigint/network-freq-callsigns', transformCamelToSnake({
+    networkFreqId,
+  } satisfies NetworkFreqCallsignsReq));
+  const normalized = transformSnakeToCamel<{ networkFreqId: number; callsigns: string[] }>(data);
+  return normalized.callsigns ?? [];
+}
+
+export async function addFreqToNetwork(req: AddNetworkFreqReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/add-freq', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function updateNetworkFreq(req: UpdateNetworkFreqReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/update-freq', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function deleteNetworkFreq(req: DeleteNetworkFreqReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/delete-freq', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function reactivateNetworkFreq(req: ReactivateNetworkFreqReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/network/reactivate-freq', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function listKeys(req: ListKeysReq): Promise<ListKeysRsp> {
+  const data = await postJson<ListKeysRsp>('/api/sigint/keys', transformCamelToSnake(req));
+  return transformSnakeToCamel<ListKeysRsp>(data);
+}
+
+export async function createKey(req: CreateEncryptionKeyReq): Promise<EncryptionKeyData> {
+  const data = await postJson<EncryptionKeyData>('/api/sigint/keys/create', transformCamelToSnake(req));
+  return transformSnakeToCamel<EncryptionKeyData>(data);
 }
 
 export async function deleteNetwork(networkId: number): Promise<Network> {

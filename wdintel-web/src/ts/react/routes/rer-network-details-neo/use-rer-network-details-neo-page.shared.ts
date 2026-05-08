@@ -1,4 +1,15 @@
-import type { AreaOfResponsibility, ModulationRec, Network, NetworkDescrType, NetworkStatus, Post, Unit, User } from '../../../../Bindings';
+import type {
+  AreaOfResponsibility,
+  ModulationRec,
+  Network,
+  NetworkDescrType,
+  NetworkStatus,
+  NetworkFreqsRes,
+  Post,
+  Unit,
+  User,
+} from '../../../../Bindings';
+import type { NetworkFreqActivityByFreq } from './frequency-utils';
 
 export type NetworkEditForm = {
   id: number;
@@ -27,10 +38,58 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDescriptionTab = 'justifications' | 'signs';
+export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies';
+
+export type NetworkFreqCreateWizardForm = {
+  freq: string;
+  kind: 'DMR' | 'NFM';
+  modulationId: number | null;
+  description: string;
+  activeFrom: string;
+  activeTo: string;
+  encryptionKeyIds: number[];
+};
+
+export type NetworkFreqEditForm = {
+  networkFreqId: number;
+  kind: 'DMR' | 'NFM';
+  modulationId: number | null;
+  activeFrom: string;
+  activeTo: string;
+};
+
+export type NetworkFreqTechDataForm = {
+  networkFreqId: number;
+  encryptionKeyIds: number[];
+};
+
+export const FREQUENCY_FORMAT_ERROR = 'Невірний формат частоти (наприклад: 146.5000)';
+
+export function isValidFrequencyFormat(freq: string): boolean {
+  const trimmed = freq.trim();
+  if (trimmed === '') return false;
+
+  const parts = trimmed.split('.');
+  if (parts.length !== 2) return false;
+
+  const [wholePart, decimalPart] = parts;
+  return wholePart.length === 3 && decimalPart.length === 4 && /^\d{3}$/.test(wholePart) && /^\d{4}$/.test(decimalPart);
+}
+
+export function getFrequencyFormatError(freq: string): string | null {
+  const trimmed = freq.trim();
+  if (trimmed === '') return 'Це поле обов\'язкове';
+  if (!isValidFrequencyFormat(trimmed)) return FREQUENCY_FORMAT_ERROR;
+  return null;
+}
 
 export type NetworkDetailsNeoPageState = {
   network: Network | null;
+  freqs: NetworkFreqsRes[];
+  freqsLoaded: boolean;
+  freqsLoading: boolean;
+  freqsError: string | null;
+  freqActivityByFreq: NetworkFreqActivityByFreq;
   callsignCount: number | null;
   currentUser: User | null;
   units: Unit[];
@@ -43,6 +102,7 @@ export type NetworkDetailsNeoPageState = {
   referenceWarning: string | null;
   callsignWarning: string | null;
   expandedDescriptionIds: number[];
+  activeNetworkDetailsTab: NetworkDetailsTab;
   descriptionDrawerOpen: boolean;
   descriptionDrawerMode: NetworkDescriptionMode;
   descriptionDrawerDescrType: NetworkDescrType;
@@ -50,11 +110,30 @@ export type NetworkDetailsNeoPageState = {
   descriptionDrawerForm: NetworkDescriptionForm;
   descriptionDrawerSaving: boolean;
   descriptionDrawerError: string | null;
-  activeDescriptionTab: NetworkDescriptionTab;
   deleteDescriptionDialogOpen: boolean;
   deleteDescriptionTarget: Network['descriptions'][number] | null;
   deleteDescriptionSubmitting: boolean;
   deleteDescriptionError: string | null;
+  expandedFrequencyGroupIds: string[];
+  freqRowActionMenuAnchorEl: HTMLElement | null;
+  freqRowActionTargetId: number | null;
+  freqCreateWizardOpen: boolean;
+  freqCreateWizardStep: 1 | 2;
+  freqCreateWizardForm: NetworkFreqCreateWizardForm;
+  freqCreateWizardSaving: boolean;
+  freqCreateWizardError: string | null;
+  freqEditDrawerOpen: boolean;
+  freqEditDrawerForm: NetworkFreqEditForm | null;
+  freqEditDrawerSaving: boolean;
+  freqEditDrawerError: string | null;
+  freqTechDrawerOpen: boolean;
+  freqTechDrawerForm: NetworkFreqTechDataForm | null;
+  freqTechDrawerSaving: boolean;
+  freqTechDrawerError: string | null;
+  freqDeleteDialogOpen: boolean;
+  freqDeleteTarget: NetworkFreqsRes | null;
+  freqDeleteSubmitting: boolean;
+  freqDeleteError: string | null;
   deleteDialogOpen: boolean;
   deleteInProgress: boolean;
   menuAnchorEl: HTMLElement | null;
@@ -72,6 +151,11 @@ export type DisplayNetworkStatus = {
 
 export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   network: null,
+  freqs: [],
+  freqsLoaded: false,
+  freqsLoading: false,
+  freqsError: null,
+  freqActivityByFreq: {},
   callsignCount: null,
   currentUser: null,
   units: [],
@@ -84,6 +168,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   referenceWarning: null,
   callsignWarning: null,
   expandedDescriptionIds: [],
+  activeNetworkDetailsTab: 'descriptions',
   descriptionDrawerOpen: false,
   descriptionDrawerMode: 'create',
   descriptionDrawerDescrType: 'Confirmation',
@@ -94,11 +179,38 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   },
   descriptionDrawerSaving: false,
   descriptionDrawerError: null,
-  activeDescriptionTab: 'justifications',
   deleteDescriptionDialogOpen: false,
   deleteDescriptionTarget: null,
   deleteDescriptionSubmitting: false,
   deleteDescriptionError: null,
+  expandedFrequencyGroupIds: [],
+  freqRowActionMenuAnchorEl: null,
+  freqRowActionTargetId: null,
+  freqCreateWizardOpen: false,
+  freqCreateWizardStep: 1,
+  freqCreateWizardForm: {
+    freq: '',
+    kind: 'DMR',
+    modulationId: null,
+    description: '',
+    activeFrom: '',
+    activeTo: '',
+    encryptionKeyIds: [],
+  },
+  freqCreateWizardSaving: false,
+  freqCreateWizardError: null,
+  freqEditDrawerOpen: false,
+  freqEditDrawerForm: null,
+  freqEditDrawerSaving: false,
+  freqEditDrawerError: null,
+  freqTechDrawerOpen: false,
+  freqTechDrawerForm: null,
+  freqTechDrawerSaving: false,
+  freqTechDrawerError: null,
+  freqDeleteDialogOpen: false,
+  freqDeleteTarget: null,
+  freqDeleteSubmitting: false,
+  freqDeleteError: null,
   deleteDialogOpen: false,
   deleteInProgress: false,
   menuAnchorEl: null,
@@ -189,7 +301,7 @@ export function canDeleteNetwork(user: User | null): boolean {
 
 export function canEditNetwork(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || roles.has('UnitsEditor');
+  return roles.has('Admin') || (roles.has('Rer') && roles.has('UnitsEditor'));
 }
 
 export function canManageDescriptions(user: User | null): boolean {
@@ -208,6 +320,45 @@ export function toNetworkDescriptionForm(description: string, networkFreqId: num
   };
 }
 
+export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
+  return {
+    freq: '',
+    kind: 'DMR',
+    modulationId: null,
+    description: '',
+    activeFrom: '',
+    activeTo: '',
+    encryptionKeyIds: [],
+  };
+}
+
+export function toNetworkFreqEditForm(freq: NetworkFreqsRes): NetworkFreqEditForm {
+  return {
+    networkFreqId: freq.networkFreqId,
+    kind: typeLabelFromKind(freq.kind),
+    modulationId: freq.modulationId,
+    activeFrom: formatDateInputValue(freq.activeFrom),
+    activeTo: formatDateInputValue(freq.activeTo),
+  };
+}
+
+export function toNetworkFreqTechDataForm(freq: NetworkFreqsRes): NetworkFreqTechDataForm {
+  return {
+    networkFreqId: freq.networkFreqId,
+    encryptionKeyIds: [...freq.encryptionKeyIds],
+  };
+}
+
+export function formatDateInputValue(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = String(date.getUTCFullYear()).padStart(4, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function toNetworkEditForm(network: Network): NetworkEditForm {
   return {
     id: network.id,
@@ -223,4 +374,17 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
     unitIds: [...(network.unitIds ?? [])],
     postIds: [...network.postIds],
   };
+}
+
+export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'NFM' {
+  const normalized = kind?.trim().toUpperCase() ?? '';
+  if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
+  return 'NFM';
+}
+
+export function parseNetworkDetailsDateInput(value: string): number | null {
+  const text = value.trim();
+  if (text === '') return null;
+  const parsed = Date.parse(`${text}T00:00:00Z`);
+  return Number.isFinite(parsed) ? parsed : null;
 }

@@ -1,11 +1,10 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Divider, IconButton, Paper, Skeleton, Stack, Tab, Tabs, Tooltip, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Divider, IconButton, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 
 import type { Network, NetworkDescrType } from '../../../../../Bindings';
-import type { NetworkDescriptionTab } from '../use-rer-network-details-neo-page.shared';
 
 type NetworkDescription = Network['descriptions'][number];
 
@@ -23,10 +22,6 @@ function getDescriptionSectionTitle(descrType: NetworkDescrType): string {
 
 function getDescriptionEmptyText(descrType: NetworkDescrType): string {
   return descrType === 'Sign' ? 'Немає розвідувальних ознак' : "Немає обґрунтувань прив'язки";
-}
-
-function getDescriptionDescrType(tab: NetworkDescriptionTab): NetworkDescrType {
-  return tab === 'signs' ? 'Sign' : 'Confirmation';
 }
 
 function DescriptionsSkeleton() {
@@ -265,14 +260,13 @@ type Props = {
   loading: boolean;
   confirmationDescriptions: NetworkDescription[];
   signDescriptions: NetworkDescription[];
-  canManage: boolean;
-  activeDescriptionTab: NetworkDescriptionTab;
+  canManageDescriptions: boolean;
   expandedDescriptionIds: number[];
-  onSetActiveDescriptionTab: (tab: NetworkDescriptionTab) => void;
   onToggleExpanded: (descriptionId: number) => void;
   onEdit: (description: NetworkDescription) => void;
   onDelete: (description: NetworkDescription) => void;
   onCreate: (descrType: NetworkDescrType) => void;
+  descrType: NetworkDescrType;
 };
 
 export function NetworkDetailsDescriptionsPanel({
@@ -280,60 +274,23 @@ export function NetworkDetailsDescriptionsPanel({
   loading,
   confirmationDescriptions,
   signDescriptions,
-  canManage,
-  activeDescriptionTab,
+  canManageDescriptions,
   expandedDescriptionIds,
-  onSetActiveDescriptionTab,
   onToggleExpanded,
   onEdit,
   onDelete,
   onCreate,
+  descrType,
 }: Props) {
-  const descrType = getDescriptionDescrType(activeDescriptionTab);
   const sectionTitle = getDescriptionSectionTitle(descrType);
-  const descriptions = activeDescriptionTab === 'signs' ? signDescriptions : confirmationDescriptions;
+  const descriptions = descrType === 'Sign' ? signDescriptions : confirmationDescriptions;
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'auto',
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 2,
-          px: 2,
-          pt: 0.5,
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Tabs
-          value={activeDescriptionTab}
-          onChange={(_, nextTab: NetworkDescriptionTab) => onSetActiveDescriptionTab(nextTab)}
-          variant="standard"
-          sx={{
-            minHeight: 42,
-            '& .MuiTabs-indicator': {
-              height: 2,
-            },
-          }}
-        >
-          <Tab value="justifications" label="Обґрунтування" />
-          <Tab value="signs" label="Розвід. ознаки" />
-        </Tabs>
-      </Box>
+    <Box sx={{ minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', flex: 1 }}>
       <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
           <Typography variant="h6">{sectionTitle}</Typography>
-          {canManage ? (
+          {canManageDescriptions ? (
             loading ? (
               <Skeleton variant="rounded" width={104} height={36} />
             ) : (
@@ -347,7 +304,7 @@ export function NetworkDetailsDescriptionsPanel({
           network={network ? { freqs: network.freqs } : null}
           loading={loading}
           descriptions={descriptions}
-          canManage={canManage}
+          canManage={canManageDescriptions}
           expandedDescriptionIds={expandedDescriptionIds}
           descrType={descrType}
           onToggleExpanded={onToggleExpanded}
@@ -355,6 +312,6 @@ export function NetworkDetailsDescriptionsPanel({
           onDelete={onDelete}
         />
       </Box>
-    </Paper>
+    </Box>
   );
 }

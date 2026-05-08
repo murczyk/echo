@@ -22,8 +22,11 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { navigateWithinSpa } from '../../utils/browser';
+import { NetworkFreqCreateWizard } from './components/NetworkFreqCreateWizard';
+import { NetworkFreqEditDrawer } from './components/NetworkFreqEditDrawer';
+import { NetworkFreqTechDataDrawer } from './components/NetworkFreqTechDataDrawer';
 import { NetworkDescriptionDrawer } from './components/NetworkDescriptionDrawer';
-import { NetworkDetailsDescriptionsPanel } from './components/NetworkDetailsJustificationsPanel';
+import { NetworkDetailsTabPanel } from './components/NetworkDetailsTabPanel';
 import { NetworkDetailsLeftPanel } from './components/NetworkDetailsLeftPanel';
 import { NetworkEditDrawer } from './components/NetworkEditDrawer';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
@@ -73,6 +76,12 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
     page.deleteDescriptionTarget?.descrType === 'Sign'
       ? 'Ви впевнені, що хочете видалити ці розвідувальні ознаки?'
       : 'Ви впевнені, що хочете видалити це обґрунтування?';
+  const editFreq = page.freqEditDrawerForm
+    ? page.freqs.find((freq) => freq.networkFreqId === page.freqEditDrawerForm?.networkFreqId) ?? null
+    : null;
+  const techFreq = page.freqTechDrawerForm
+    ? page.freqs.find((freq) => freq.networkFreqId === page.freqTechDrawerForm?.networkFreqId) ?? null
+    : null;
 
   const actions = (
     <Stack direction="row" spacing={1} alignItems="center">
@@ -115,24 +124,31 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
                 transitionDuration: '150ms',
                 '&.Mui-checked': {
                   transform: 'translateX(16px)',
-                  color: '#9cc9fb',
+                  color: isDark ? '#9cc9fb' : theme.palette.primary.main,
                 },
               },
               '& .MuiSwitch-thumb': {
                 width: 18,
                 height: 18,
                 boxShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
-                bgcolor: '#9cc9fb',
+                bgcolor: isDark ? '#9cc9fb' : theme.palette.primary.main,
               },
               '& .MuiSwitch-track': {
                 borderRadius: 999,
-                bgcolor: isDark ? '#55647a' : '#6d7f98',
+                bgcolor: isDark ? '#55647a' : alpha(theme.palette.primary.main, 0.45),
                 opacity: 1,
               },
             }}
           />
           <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ minWidth: 0 }}>
-            <Typography component="span" sx={{ fontSize: '1rem', fontWeight: 400, color: isDark ? '#a9ccf2' : '#9cc9fb' }}>
+            <Typography
+              component="span"
+              sx={{
+                fontSize: '1rem',
+                fontWeight: 400,
+                color: isDark ? '#a9ccf2' : theme.palette.primary.dark,
+              }}
+            >
               Нова версія
             </Typography>
             <Chip
@@ -143,8 +159,8 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
                 fontSize: '0.72rem',
                 fontWeight: 400,
                 letterSpacing: '0.18em',
-                color: isDark ? '#f2b15c' : '#b85b16',
-                bgcolor: isDark ? alpha(theme.palette.warning.main, 0.12) : '#fff7dd',
+                color: isDark ? '#f2b15c' : theme.palette.warning.dark,
+                bgcolor: isDark ? alpha(theme.palette.warning.main, 0.12) : alpha(theme.palette.warning.main, 0.16),
                 border: 'none',
                 '& .MuiChip-label': { px: 1.1 },
               }}
@@ -236,19 +252,36 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           />
         </Box>
 
-        <NetworkDetailsDescriptionsPanel
+        <NetworkDetailsTabPanel
           network={descriptionDrawerNetwork}
           loading={page.loading}
           confirmationDescriptions={page.confirmationDescriptions}
           signDescriptions={page.signDescriptions}
-          canManage={page.canManageDescriptionActions}
-          activeDescriptionTab={page.activeDescriptionTab}
+          canManageDescriptions={page.canManageDescriptionActions}
+          canManageFrequencies={page.canEdit}
+          activeNetworkDetailsTab={page.activeNetworkDetailsTab}
           expandedDescriptionIds={page.expandedDescriptionIds}
-          onSetActiveDescriptionTab={page.setActiveDescriptionTab}
+          onSetActiveNetworkDetailsTab={page.setActiveNetworkDetailsTab}
           onToggleExpanded={page.toggleDescriptionExpanded}
           onEdit={page.openDescriptionDrawerForEdit}
           onDelete={page.openDeleteDescriptionDialog}
           onCreate={page.openDescriptionDrawerForCreate}
+          freqs={page.freqs}
+          freqsLoaded={page.freqsLoaded}
+          freqsLoading={page.freqsLoading}
+          freqsError={page.freqsError}
+          modulations={page.modulations}
+          expandedFrequencyGroupIds={page.expandedFrequencyGroupIds}
+          toggleFrequencyGroupExpanded={page.toggleFrequencyGroupExpanded}
+          onOpenFreqCreateWizard={page.openFreqCreateWizard}
+          onOpenFreqEditDrawer={page.openFreqEditDrawer}
+          onOpenFreqTechDrawer={page.openFreqTechDrawer}
+          onOpenDeleteFreqDialog={page.openDeleteFreqDialog}
+          onOpenFreqRowActions={page.openFreqRowActions}
+          onCloseFreqRowActions={page.closeFreqRowActions}
+          freqRowActionMenuAnchorEl={page.freqRowActionMenuAnchorEl}
+          freqRowActionTargetId={page.freqRowActionTargetId}
+          onReloadFrequencies={page.loadFrequencies}
         />
       </Box>
 
@@ -300,6 +333,60 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
       />
+
+      <NetworkFreqCreateWizard
+        open={page.freqCreateWizardOpen}
+        step={page.freqCreateWizardStep}
+        form={page.freqCreateWizardForm}
+        saving={page.freqCreateWizardSaving}
+        error={page.freqCreateWizardError}
+        networkId={page.network?.id ?? null}
+        canManageKeys={page.canEdit}
+        modulations={page.modulations}
+        onClose={page.closeFreqCreateWizard}
+        onChange={page.setFreqCreateWizardForm}
+        onStepChange={page.setFreqCreateWizardStep}
+        onSave={page.saveFreqCreateWizard}
+      />
+
+      <NetworkFreqEditDrawer
+        open={page.freqEditDrawerOpen}
+        form={page.freqEditDrawerForm}
+        freq={editFreq}
+        saving={page.freqEditDrawerSaving}
+        error={page.freqEditDrawerError}
+        modulations={page.modulations}
+        onClose={page.closeFreqEditDrawer}
+        onChange={page.setFreqEditDrawerForm}
+        onSave={page.saveFreqEditDrawer}
+      />
+
+      <NetworkFreqTechDataDrawer
+        open={page.freqTechDrawerOpen}
+        networkId={page.network?.id ?? null}
+        freq={techFreq}
+        form={page.freqTechDrawerForm}
+        saving={page.freqTechDrawerSaving}
+        error={page.freqTechDrawerError}
+        canManageKeys={page.canEdit}
+        modulations={page.modulations}
+        onClose={page.closeFreqTechDrawer}
+        onChange={page.setFreqTechDrawerForm}
+        onSave={page.saveFreqTechDrawer}
+        onReloadFrequencies={page.loadFrequencies}
+      />
+
+      <ConfirmDangerDialog
+        open={page.freqDeleteDialogOpen}
+        onClose={page.closeDeleteFreqDialog}
+        onConfirm={page.deleteFreq}
+        title="Підтвердження видалення частоти"
+        description={`Видалити частоту «${page.freqDeleteTarget?.freq ?? '—'}»?`}
+        submitting={page.freqDeleteSubmitting}
+        disabled={!page.canEdit || page.freqDeleteTarget === null}
+      >
+        {page.freqDeleteError ? <PowerAlert severity="error">{page.freqDeleteError}</PowerAlert> : null}
+      </ConfirmDangerDialog>
     </Box>
   );
 }

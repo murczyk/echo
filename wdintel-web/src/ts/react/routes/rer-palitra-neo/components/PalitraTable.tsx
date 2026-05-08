@@ -6,6 +6,7 @@ import { useEffect, useMemo } from 'react';
 import type { Palitra } from '../../../../../Bindings';
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import { TableEmptyState } from '../../../components/TableEmptyState';
+import { ActiveFiltersButton } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-button';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -288,6 +289,13 @@ export function PalitraTable({
       }}
     >
       <Stack sx={{ height: '100%', minHeight: 0 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', pb: 1.5 }}>
+          <ActiveFiltersButton
+            table={table}
+            columnFilters={tableStateContext.columnFilters}
+            globalFilter={tableStateContext.globalFilter}
+          />
+        </Box>
         <MaterialReactTable table={table} />
       </Stack>
     </Box>

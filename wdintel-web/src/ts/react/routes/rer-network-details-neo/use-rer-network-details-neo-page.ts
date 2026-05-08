@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRerNetworkDetailsNeoPageActions } from './use-rer-network-details-neo-page.actions';
 import {
   EMPTY_STATE,
@@ -34,6 +34,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
   const canManageDescriptionActions = useMemo(() => canManageDescriptions(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
+  const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
 
   const aorOptions = useMemo(() => buildOptions(state.aors), [state.aors]);
   const unitOptions = useMemo(() => buildOptions(state.units), [state.units]);
@@ -57,6 +58,12 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   }, [state.network?.unitIds, unitsById]);
 
   const actions = useRerNetworkDetailsNeoPageActions({ state, setState, unitNames });
+
+  useEffect(() => {
+    if (state.network === null) return;
+    if (state.freqsLoaded || state.freqsLoading || state.freqsError !== null) return;
+    void actions.loadFrequencies(state.network.id);
+  }, [actions.loadFrequencies, state.freqsError, state.freqsLoaded, state.freqsLoading, state.network]);
 
   const aorItems = useMemo(() => {
     const aorIds = state.network?.aorIds ?? [];
@@ -82,6 +89,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     canDelete,
     canEdit,
     canManageDescriptionActions,
+    isAdmin,
     unitNames,
     aorItems,
     postItems,
@@ -92,10 +100,55 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     postOptions,
     confirmationDescriptions,
     signDescriptions,
-    activeDescriptionTab: state.activeDescriptionTab,
-    setActiveDescriptionTab: actions.setActiveDescriptionTab,
+    activeNetworkDetailsTab: state.activeNetworkDetailsTab,
+    setActiveNetworkDetailsTab: actions.setActiveNetworkDetailsTab,
+    loadFrequencies: actions.loadFrequencies,
     expandedDescriptionIds: state.expandedDescriptionIds,
     toggleDescriptionExpanded: actions.toggleDescriptionExpanded,
+    freqs: state.freqs,
+    freqsLoaded: state.freqsLoaded,
+    freqsLoading: state.freqsLoading,
+    freqsError: state.freqsError,
+    freqActivityByFreq: state.freqActivityByFreq,
+    expandedFrequencyGroupIds: state.expandedFrequencyGroupIds,
+    toggleFrequencyGroupExpanded: actions.toggleFrequencyGroupExpanded,
+    openFreqCreateWizard: actions.openFreqCreateWizard,
+    closeFreqCreateWizard: actions.closeFreqCreateWizard,
+    setFreqCreateWizardForm: actions.setFreqCreateWizardForm,
+    setFreqCreateWizardStep: actions.setFreqCreateWizardStep,
+    freqCreateWizardOpen: state.freqCreateWizardOpen,
+    freqCreateWizardStep: state.freqCreateWizardStep,
+    freqCreateWizardForm: state.freqCreateWizardForm,
+    freqCreateWizardSaving: state.freqCreateWizardSaving,
+    freqCreateWizardError: state.freqCreateWizardError,
+    saveFreqCreateWizard: actions.saveFreqCreateWizard,
+    openFreqEditDrawer: actions.openFreqEditDrawer,
+    closeFreqEditDrawer: actions.closeFreqEditDrawer,
+    setFreqEditDrawerForm: actions.setFreqEditDrawerForm,
+    freqEditDrawerOpen: state.freqEditDrawerOpen,
+    freqEditDrawerForm: state.freqEditDrawerForm,
+    freqEditDrawerSaving: state.freqEditDrawerSaving,
+    freqEditDrawerError: state.freqEditDrawerError,
+    saveFreqEditDrawer: actions.saveFreqEditDrawer,
+    openFreqTechDrawer: actions.openFreqTechDrawer,
+    closeFreqTechDrawer: actions.closeFreqTechDrawer,
+    setFreqTechDrawerForm: actions.setFreqTechDrawerForm,
+    freqTechDrawerOpen: state.freqTechDrawerOpen,
+    freqTechDrawerForm: state.freqTechDrawerForm,
+    freqTechDrawerSaving: state.freqTechDrawerSaving,
+    freqTechDrawerError: state.freqTechDrawerError,
+    saveFreqTechDrawer: actions.saveFreqTechDrawer,
+    openFreqRowActions: actions.openFreqRowActions,
+    closeFreqRowActions: actions.closeFreqRowActions,
+    freqRowActionMenuAnchorEl: state.freqRowActionMenuAnchorEl,
+    freqRowActionTargetId: state.freqRowActionTargetId,
+    openDeleteFreqDialog: actions.openDeleteFreqDialog,
+    closeDeleteFreqDialog: actions.closeDeleteFreqDialog,
+    freqDeleteDialogOpen: state.freqDeleteDialogOpen,
+    freqDeleteTarget: state.freqDeleteTarget,
+    freqDeleteSubmitting: state.freqDeleteSubmitting,
+    freqDeleteError: state.freqDeleteError,
+    deleteFreq: actions.deleteFreq,
     descriptionDrawerOpen: state.descriptionDrawerOpen,
     descriptionDrawerMode: state.descriptionDrawerMode,
     descriptionDrawerDescrType: state.descriptionDrawerDescrType,
