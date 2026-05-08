@@ -109,9 +109,8 @@ fn strip_task_tokens(value: &str) -> String {
 }
 
 fn is_task_token(token: &str) -> bool {
-    let trimmed = token.trim_matches(|c: char| {
-        !c.is_alphanumeric() && c != '#' && c != '-'
-    });
+    let trimmed = token
+        .trim_matches(|c: char| !c.is_alphanumeric() && c != '#' && c != '-');
     if trimmed.is_empty() {
         return false;
     }
@@ -121,7 +120,9 @@ fn is_task_token(token: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_digit());
     }
-    if trimmed.starts_with("https://github.com/") || trimmed.starts_with("http://github.com/") {
+    if trimmed.starts_with("https://github.com/")
+        || trimmed.starts_with("http://github.com/")
+    {
         return true;
     }
     if let Some(dash_index) = trimmed.find('-') {
