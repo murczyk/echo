@@ -15,6 +15,13 @@ async fn ping() -> impl Responder {
     HttpResponse::Ok().body("pong")
 }
 
+fn strip_leading_markers(value: &str) -> String {
+    value
+        .trim_start_matches(|c: char| !c.is_alphanumeric())
+        .trim_start()
+        .to_string()
+}
+
 fn is_date_heading(line: &str) -> bool {
     if let Some(rest) = line.strip_prefix("## ") {
         let mut parts = rest.split_whitespace();
@@ -62,12 +69,51 @@ async fn read_changelog_content() -> Result<String, AppError> {
 fn extract_dated_preview(content: &str) -> Vec<String> {
     let mut preview = Vec::new();
     let mut in_date_section = false;
+    let mut current_date: Option<String> = None;
+    let mut current_items: Vec<String> = Vec::new();
+
+    let flush_section =
+        |preview: &mut Vec<String>,
+         current_date: &mut Option<String>,
+         current_items: &mut Vec<String>| {
+            if current_items.is_empty() {
+                current_date.take();
+                return;
+            }
+
+            if let Some(date) = current_date.take() {
+                preview.push(format!("## {date}"));
+                preview.extend(std::mem::take(current_items));
+            }
+        };
+
     for raw_line in content.lines() {
         let line = raw_line.trim();
         if line.starts_with("## ") {
-            in_date_section = is_date_heading(line);
+            let is_date = is_date_heading(line);
+            if !is_date {
+                flush_section(
+                    &mut preview,
+                    &mut current_date,
+                    &mut current_items,
+                );
+                in_date_section = false;
+                continue;
+            }
+
             if in_date_section {
-                preview.push(line.to_string());
+                flush_section(
+                    &mut preview,
+                    &mut current_date,
+                    &mut current_items,
+                );
+            }
+
+            in_date_section = true;
+            current_date = Some(line.trim_start_matches("## ").to_string());
+
+            if preview.len() >= crate::config::CHANGELOG_PREVIEW_MAX_LINES {
+                break;
             }
             continue;
         }
@@ -78,12 +124,26 @@ fn extract_dated_preview(content: &str) -> Vec<String> {
             continue;
         }
         if let Some(cleaned_line) = sanitize_preview_line(line) {
-            preview.push(cleaned_line);
+            current_items.push(cleaned_line);
+
+            if preview.len() + current_items.len() + 1
+                >= crate::config::CHANGELOG_PREVIEW_MAX_LINES
+            {
+                flush_section(
+                    &mut preview,
+                    &mut current_date,
+                    &mut current_items,
+                );
+            }
+
             if preview.len() >= crate::config::CHANGELOG_PREVIEW_MAX_LINES {
                 break;
             }
         }
     }
+
+    flush_section(&mut preview, &mut current_date, &mut current_items);
+    preview.truncate(crate::config::CHANGELOG_PREVIEW_MAX_LINES);
     preview
 }
 
@@ -97,7 +157,8 @@ fn sanitize_preview_line(line: &str) -> Option<String> {
         .or_else(|| trimmed_line.strip_prefix("* "))
         .unwrap_or(trimmed_line);
     let without_issue_ref = strip_issue_reference(without_bullet);
-    let without_tasks = strip_task_tokens(&without_issue_ref);
+    let without_markers = strip_leading_markers(&without_issue_ref);
+    let without_tasks = strip_task_tokens(&without_markers);
     let cleaned = without_tasks.trim();
     if cleaned.is_empty() {
         None
@@ -225,7 +286,7 @@ fn collect_public_changelog_sections(
         |sections: &mut Vec<(String, Vec<String>)>,
          current_date: &mut String,
          current_items: &mut Vec<String>| {
-            if !current_date.is_empty() {
+            if !current_date.is_empty() && !current_items.is_empty() {
                 sections.push((
                     current_date.clone(),
                     std::mem::take(current_items),
@@ -313,10 +374,13 @@ fn extract_issue_description(line: &str) -> Option<String> {
 
     let close_link_index = line.find(')')?;
     let rest = line[(close_link_index + 1)..].trim();
-    if rest.is_empty() {
+    let without_markers = strip_leading_markers(rest);
+    let without_tasks = strip_task_tokens(&without_markers);
+    let cleaned = without_tasks.trim();
+    if cleaned.is_empty() {
         None
     } else {
-        Some(rest.to_string())
+        Some(cleaned.to_string())
     }
 }
 

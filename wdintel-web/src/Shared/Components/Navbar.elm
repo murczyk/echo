@@ -467,9 +467,7 @@ changelogDropdown props maybeData =
                     , attribute "aria-label" "Останні зміни"
                     , type_ "button"
                     ]
-                    [ i [ class "bi bi-bell-fill text-lg" ] []
-                    , badge
-                    ]
+                    [ text "New" ]
                 , div [ class "absolute right-0 pt-2 z-[3001]" ]
                     [ ul
                         [ class "w-72 p-3 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
@@ -502,105 +500,6 @@ changelogDropdown props maybeData =
                     ]
                 ]
 
-
-
---renderChangelogLine : String -> Html msg
---renderChangelogLine line =
---    if isDateHeading line then
---        span [ class "block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]" ]
---            [ text (String.dropLeft 3 line) ]
---
---    else
---        case parseMarkdownLink line of
---            Just parsed ->
---                span []
---                    ([ a
---                        [ href parsed.url
---                        , target "_blank"
---                        , rel "noopener noreferrer"
---                        , class "font-semibold text-amber-600 hover:text-amber-500"
---                        ]
---                        [ text parsed.label ]
---                     ]
---                        ++ (if String.isEmpty parsed.rest then
---                                []
---
---                            else
---                                [ text (" " ++ parsed.rest) ]
---                           )
---                    )
---
---            Nothing ->
---                text line
---
---
---isDateHeading : String -> Bool
---isDateHeading line =
---    if String.startsWith "## " line then
---        case String.split " " (String.dropLeft 3 line) of
---            date :: _ ->
---                isDateString date
---
---            [] ->
---                False
---
---    else
---        False
---
---
---isDateString : String -> Bool
---isDateString date =
---    String.length date == 10
---        && isDateChar 0 date
---        && isDateChar 1 date
---        && isDateChar 2 date
---        && isDateChar 3 date
---        && String.slice 4 5 date == "-"
---        && isDateChar 5 date
---        && isDateChar 6 date
---        && String.slice 7 8 date == "-"
---        && isDateChar 8 date
---        && isDateChar 9 date
---
---
---isDateChar : Int -> String -> Bool
---isDateChar index value =
---    case String.slice index (index + 1) value |> String.toList of
---        char :: _ ->
---            Char.isDigit char
---
---        [] ->
---            False
-
-
---parseMarkdownLink : String -> Maybe { label : String, url : String, rest : String }
---parseMarkdownLink line =
---    if String.startsWith "[" line then
---        case String.split "](" line of
---            before :: after :: [] ->
---                let
---                    label =
---                        String.dropLeft 1 before
---
---                    urlAndRest =
---                        String.split ")" after
---                in
---                case urlAndRest of
---                    url :: restParts ->
---                        Just
---                            { label = label
---                            , url = url
---                            , rest = String.join ")" restParts |> String.trim
---                            }
---
---                    [] ->
---                        Nothing
---
---            _ ->
---                Nothing
---
---    else
---        Nothing
 
 -- Main navbar links: always white text
 
