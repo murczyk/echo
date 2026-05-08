@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type { AddNetworkFreqReq, Network, NetworkFreqsRes } from '../../../../Bindings';
 import {
@@ -26,6 +26,7 @@ type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
+  reloadGeneration: MutableRefObject<number>;
 };
 
 function resetFreqCreateWizardState(current: NetworkDetailsNeoPageState): NetworkDetailsNeoPageState {
@@ -89,7 +90,7 @@ function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: numbe
   return state.freqs.find((freq) => freq.networkFreqId === networkFreqId) ?? null;
 }
 
-export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }: Args) {
+export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration }: Args) {
   const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
     setState((current) => ({ ...current, activeNetworkDetailsTab }));
   }, [setState]);
@@ -98,17 +99,24 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
     const networkId = networkIdArg ?? state.network?.id;
     if (!networkId || state.freqsLoading) return;
 
+    reloadGeneration.current += 1;
+    const generation = reloadGeneration.current;
+
     setState((current) => ({
       ...current,
       freqsLoading: true,
       freqsError: null,
     }));
 
+    const isCurrent = () => reloadGeneration.current === generation && state.network?.id === networkId;
+
     try {
       const [freqsResponse, activityResponse] = await Promise.all([
         getSingleNetworkFreqs(networkId, true),
         getNetworkFreqsActivity(networkId),
       ]);
+
+      if (!isCurrent()) return;
 
       setState((current) => ({
         ...current,
@@ -119,6 +127,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
         freqsError: null,
       }));
     } catch (error) {
+      if (!isCurrent()) return;
       setState((current) => ({
         ...current,
         freqsLoading: false,
@@ -126,7 +135,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState }:
         freqsError: formatErrorMessage(error),
       }));
     }
-  }, [setState, state.freqsLoading, state.network?.id]);
+  }, [reloadGeneration, setState, state.freqsLoading, state.network?.id]);
 
   const openFreqCreateWizard = useCallback(() => {
     setState((current) => ({

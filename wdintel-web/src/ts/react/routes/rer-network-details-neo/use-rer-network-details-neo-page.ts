@@ -57,7 +57,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       .filter((label) => label.trim() !== '');
   }, [state.network?.unitIds, unitsById]);
 
-  const actions = useRerNetworkDetailsNeoPageActions({ state, setState, unitNames });
+  const actions = useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration });
 
   useEffect(() => {
     if (state.network === null) return;

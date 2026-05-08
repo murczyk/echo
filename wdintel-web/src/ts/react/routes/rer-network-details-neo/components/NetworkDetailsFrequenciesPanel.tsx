@@ -376,7 +376,7 @@ function NetworkDetailsFrequenciesPanelContent({
     enableRowVirtualization: false,
     enableRowSelection: false,
     enableRowNumbers: true,
-    enableRowActions: canManage,
+    enableRowActions: true,
     positionActionsColumn: 'first',
     columnFilterDisplayMode: 'popover',
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
@@ -491,10 +491,6 @@ function NetworkDetailsFrequenciesPanelContent({
         return <Box sx={{ minHeight: 28 }} />;
       }
 
-      if (!canManage) {
-        return <Box sx={{ minHeight: 28 }} />;
-      }
-
       if (row.original.kind === 'group') {
         const groupRow = row.original;
         const isExpanded = expandedFrequencyGroupIds.includes(groupRow.groupId);
@@ -508,6 +504,10 @@ function NetworkDetailsFrequenciesPanelContent({
             />
           </Box>
         );
+      }
+
+      if (!canManage) {
+        return <Box sx={{ minHeight: 28 }} />;
       }
 
       const freqRow = row.original.freq;

@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import {
   deleteNetwork,
@@ -24,6 +24,7 @@ type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
   unitNames: string[];
+  reloadGeneration: MutableRefObject<number>;
 };
 
 function syncNetworkRelations(editForm: NetworkEditForm) {
@@ -38,9 +39,9 @@ function syncNetworkRelations(editForm: NetworkEditForm) {
   );
 }
 
-export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames }: Args) {
+export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration }: Args) {
   const descriptionActions = useRerNetworkDetailsNeoPageDescriptionActions({ state, setState });
-  const frequencyActions = useRerNetworkDetailsNeoPageFrequencyActions({ state, setState });
+  const frequencyActions = useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration });
 
   const openMenu = useCallback((anchorEl: HTMLElement) => {
     setState((current) => ({ ...current, menuAnchorEl: anchorEl }));
