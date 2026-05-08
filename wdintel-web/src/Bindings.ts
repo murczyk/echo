@@ -304,6 +304,11 @@ export type ChangelogPreview = {
   fullUrl: string;
 };
 
+export type ChangelogSection = {
+  date: string;
+  items: Array<string>;
+};
+
 export type BgtaskErrorCode =
   | 'no_default_aor'
 ;

@@ -265,13 +265,28 @@ pub struct ChangelogPreview {
     pub full_url: String,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ChangelogSection {
+    pub date: String,
+    pub items: Vec<String>,
+}
+
 #[get("/api-public/changelog")]
-async fn changelog_raw() -> Result<HttpResponse, AppError> {
+async fn changelog_raw() -> Result<Json<Vec<ChangelogSection>>, AppError> {
     let content = read_changelog_content().await?;
-    let html = format_public_changelog_html(&content);
-    Ok(HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(html))
+    let sections = collect_public_changelog_sections(&content);
+
+    Ok(Json(
+        sections
+            .iter()
+            .map(|section| ChangelogSection {
+                date: section.0.clone(),
+                items: section.1.clone(),
+            })
+            .collect(),
+    ))
 }
 
 fn collect_public_changelog_sections(
@@ -334,39 +349,6 @@ fn collect_public_changelog_sections(
     sections
 }
 
-fn format_public_changelog_html(content: &str) -> String {
-    let sections = collect_public_changelog_sections(content);
-    let mut html = String::new();
-    html.push_str(
-        "<!doctype html><html lang=\"uk\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Оновлення</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:920px;margin:0 auto;padding:24px;line-height:1.5;color:#111}h1{margin:0 0 20px;font-size:30px}h2{margin:24px 0 8px;font-size:22px}ul{margin:0 0 8px 20px;padding:0}li{margin:6px 0}</style></head><body><h1>Оновлення</h1>",
-    );
-
-    for (date, items) in sections {
-        html.push_str("<section>");
-        html.push_str("<h2>");
-        html.push_str(&html_escape(&date));
-        html.push_str("</h2><ul>");
-        for item in items {
-            html.push_str("<li>");
-            html.push_str(&html_escape(&item));
-            html.push_str("</li>");
-        }
-        html.push_str("</ul></section>");
-    }
-
-    html.push_str("</body></html>");
-    html
-}
-
-fn html_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
-
 fn extract_issue_description(line: &str) -> Option<String> {
     if !is_issue_line(line) {
         return None;
@@ -411,7 +393,7 @@ async fn changelog_preview() -> Result<Json<ChangelogPreview>, AppError> {
 }
 
 fn changelog_docs_url() -> String {
-    "/api-public/changelog".to_string()
+    "/updates".to_string()
 }
 
 fn changelog_version(content: &str) -> String {

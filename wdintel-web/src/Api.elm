@@ -629,6 +629,16 @@ changelog_preview toMsg =
         }
 
 
+changelog :
+    (Result ApiError (List ChangelogSection) -> msg)
+    -> Cmd msg
+changelog toMsg =
+    Http.get
+        { url = "/api-public/changelog"
+        , expect = leExpectJson toMsg (Decode.list changelogSectionDecoder)
+        }
+
+
 datasource_list :
     (Result ApiError (List ( Int, Datasource )) -> msg)
     -> Cmd msg

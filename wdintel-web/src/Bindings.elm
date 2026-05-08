@@ -851,6 +851,20 @@ changelogPreviewEncoder struct =
         ]
 
 
+type alias ChangelogSection =
+    { date : String
+    , items : List (String)
+    }
+
+
+changelogSectionEncoder : ChangelogSection -> Json.Encode.Value
+changelogSectionEncoder struct =
+    Json.Encode.object
+        [ ( "date", (Json.Encode.string) struct.date )
+        , ( "items", (Json.Encode.list (Json.Encode.string)) struct.items )
+        ]
+
+
 type BgtaskErrorCode
     = NoDefaultAor
 
@@ -8159,6 +8173,13 @@ changelogPreviewDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "preview" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_url" (Json.Decode.string)))
+
+
+changelogSectionDecoder : Json.Decode.Decoder ChangelogSection
+changelogSectionDecoder =
+    Json.Decode.succeed ChangelogSection
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (Json.Decode.string))))
 
 
 bgtaskErrorCodeDecoder : Json.Decode.Decoder BgtaskErrorCode
