@@ -4,6 +4,7 @@ use actix_web::web::Json;
 use actix_web::{get, post, HttpResponse, Responder};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use fs2::available_space;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::hash::{Hash, Hasher};
@@ -44,15 +45,29 @@ fn first_date_heading(content: &str) -> Option<String> {
     None
 }
 
-fn changelog_path() -> Result<std::path::PathBuf, AppError> {
-    let changelog_path = env::var(crate::config::CHANGELOG_ENV_PATH_KEY)
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::env::current_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                .join(crate::config::CHANGELOG_DEFAULT_FILENAME)
-        });
-    Ok(changelog_path)
+fn changelog_paths() -> Vec<std::path::PathBuf> {
+    if let Ok(path) = env::var(crate::config::CHANGELOG_ENV_PATH_KEY) {
+        return vec![std::path::PathBuf::from(path)];
+    }
+    vec![
+        std::path::PathBuf::from(".").join(crate::config::CHANGELOG_DEFAULT_FILENAME),
+        std::path::PathBuf::from(crate::config::CHANGELOG_PACKAGED_PATH),
+    ]
+}
+
+async fn read_changelog_content() -> Result<String, AppError> {
+    let mut errors = Vec::new();
+    for changelog_path in changelog_paths() {
+        match tokio::fs::read_to_string(&changelog_path).await {
+            Ok(content) => return Ok(content),
+            Err(err) => errors.push(format!("{}: {}", changelog_path.display(), err)),
+        }
+    }
+    warn!(
+        "failed to read changelog from known paths, serving empty changelog: {}",
+        errors.join(" | ")
+    );
+    Ok(String::new())
 }
 
 fn extract_dated_preview(content: &str) -> Vec<String> {
@@ -192,8 +207,7 @@ pub struct ChangelogPreview {
 
 #[get("/api-public/changelog")]
 async fn changelog_raw() -> Result<HttpResponse, AppError> {
-    let changelog_path = changelog_path()?;
-    let content = tokio::fs::read_to_string(&changelog_path).await.c(h!())?;
+    let content = read_changelog_content().await?;
     let filtered = format_public_changelog(&content);
     Ok(HttpResponse::Ok()
         .content_type("text/markdown; charset=utf-8")
@@ -217,6 +231,8 @@ fn format_public_changelog(content: &str) -> String {
                     .next()
                     .unwrap_or("");
                 output.push_str(date);
+                output.push('\n');
+                output.push_str("----");
                 output.push('\n');
             } else {
                 in_date_section = false;
@@ -249,11 +265,10 @@ fn is_issue_line(line: &str) -> bool {
 
 #[post("/api-public/changelog-preview")]
 async fn changelog_preview() -> Result<Json<ChangelogPreview>, AppError> {
-    let changelog_path = changelog_path()?;
-    let content = tokio::fs::read_to_string(&changelog_path).await.c(h!())?;
+    let content = read_changelog_content().await?;
     let preview = extract_dated_preview(&content);
     let version = changelog_version(&content);
-    let full_url = changelog_docs_url(&content);
+    let full_url = changelog_docs_url();
     Ok(Json(ChangelogPreview {
         version,
         preview,
@@ -261,12 +276,8 @@ async fn changelog_preview() -> Result<Json<ChangelogPreview>, AppError> {
     }))
 }
 
-fn changelog_docs_url(content: &str) -> String {
-    if let Some(date) = first_date_heading(content) {
-        format!("/docs/updates/#{date}")
-    } else {
-        "/docs/updates/".to_string()
-    }
+fn changelog_docs_url() -> String {
+    "/api-public/changelog".to_string()
 }
 
 fn changelog_version(content: &str) -> String {

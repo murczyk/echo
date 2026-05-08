@@ -90,6 +90,7 @@ pub const NETWORK_INVALIDATION_QUERY_MAX_PARAMS: usize = 60_000; // keep under P
 pub const NETWORK_INVALIDATION_DELETE_MAX_IDS: usize = 60_000; // keep under PG 65_535 parameter cap
 pub const CHANGELOG_ENV_PATH_KEY: &str = "ECHO_CHANGELOG_PATH";
 pub const CHANGELOG_DEFAULT_FILENAME: &str = "CHANGELOG.md";
+pub const CHANGELOG_PACKAGED_PATH: &str = "/usr/share/doc/echo/changelog.md";
 pub const CHANGELOG_PREVIEW_MAX_LINES: usize = 5;
 
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;

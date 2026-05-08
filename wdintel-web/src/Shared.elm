@@ -29,7 +29,6 @@ import Task
 import TimeZone
 import Url
 import Utils.Api.Temp exposing (leExpectJson)
-import Utils.Api.ErrorHandling
 import Utils.RemoteData exposing (RemoteData(..))
 
 
@@ -235,11 +234,11 @@ update req msg model =
             ( { model | serverInfo = Just v }, E.none )
 
         GotChangelogPreview (Err err) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails
-                "Помилка завантаження ченджлогу"
-                err
-            )
+            let
+                _ =
+                    err
+            in
+            ( model, E.none )
 
         GotChangelogPreview (Ok preview) ->
             ( { model | changelogPreview = Just preview }, E.none )
