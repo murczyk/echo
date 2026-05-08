@@ -1,6 +1,7 @@
 module Shared.Components.Navbar exposing (navBar)
 
 import Auth
+import Char
 import Core.Auth exposing (hasRole, serverModeIs)
 import Dict
 import Html exposing (..)
@@ -383,7 +384,8 @@ navBar user shared activeName props =
                     ]
                 , div
                     [ class "app-navbar-toolbar ml-auto flex shrink-0 items-center gap-2" ]
-                    [ if props.supportsFullscreenToggle then
+                    [ changelogDropdown props changelogData
+                    , if props.supportsFullscreenToggle then
                         button
                             [ class "flex appearance-none items-center border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
                             , onClick props.onNavbarVisibilityChange
@@ -478,7 +480,7 @@ changelogDropdown props maybeData =
                         ]
                         ([ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ] [ text "Останні зміни" ]
                          , ul [ class "space-y-2 text-sm text-[var(--color-text)]" ]
-                            (List.map (\line -> li [ class "leading-snug" ] [ text line ]) data.preview)
+                            (List.map (\line -> li [ class "leading-snug" ] [ renderChangelogLine line ]) data.preview)
                          , div [ class "mt-3 flex items-center justify-between" ]
                             [ a
                                 [ href data.fullUrl
@@ -502,9 +504,204 @@ changelogDropdown props maybeData =
 
 
 
+--renderChangelogLine : String -> Html msg
+--renderChangelogLine line =
+--    if isDateHeading line then
+--        span [ class "block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]" ]
+--            [ text (String.dropLeft 3 line) ]
+--
+--    else
+--        case parseMarkdownLink line of
+--            Just parsed ->
+--                span []
+--                    ([ a
+--                        [ href parsed.url
+--                        , target "_blank"
+--                        , rel "noopener noreferrer"
+--                        , class "font-semibold text-amber-600 hover:text-amber-500"
+--                        ]
+--                        [ text parsed.label ]
+--                     ]
+--                        ++ (if String.isEmpty parsed.rest then
+--                                []
+--
+--                            else
+--                                [ text (" " ++ parsed.rest) ]
+--                           )
+--                    )
+--
+--            Nothing ->
+--                text line
+--
+--
+--isDateHeading : String -> Bool
+--isDateHeading line =
+--    if String.startsWith "## " line then
+--        case String.split " " (String.dropLeft 3 line) of
+--            date :: _ ->
+--                isDateString date
+--
+--            [] ->
+--                False
+--
+--    else
+--        False
+--
+--
+--isDateString : String -> Bool
+--isDateString date =
+--    String.length date == 10
+--        && isDateChar 0 date
+--        && isDateChar 1 date
+--        && isDateChar 2 date
+--        && isDateChar 3 date
+--        && String.slice 4 5 date == "-"
+--        && isDateChar 5 date
+--        && isDateChar 6 date
+--        && String.slice 7 8 date == "-"
+--        && isDateChar 8 date
+--        && isDateChar 9 date
+--
+--
+--isDateChar : Int -> String -> Bool
+--isDateChar index value =
+--    case String.slice index (index + 1) value |> String.toList of
+--        char :: _ ->
+--            Char.isDigit char
+--
+--        [] ->
+--            False
 
+
+--parseMarkdownLink : String -> Maybe { label : String, url : String, rest : String }
+--parseMarkdownLink line =
+--    if String.startsWith "[" line then
+--        case String.split "](" line of
+--            before :: after :: [] ->
+--                let
+--                    label =
+--                        String.dropLeft 1 before
+--
+--                    urlAndRest =
+--                        String.split ")" after
+--                in
+--                case urlAndRest of
+--                    url :: restParts ->
+--                        Just
+--                            { label = label
+--                            , url = url
+--                            , rest = String.join ")" restParts |> String.trim
+--                            }
+--
+--                    [] ->
+--                        Nothing
+--
+--            _ ->
+--                Nothing
+--
+--    else
+--        Nothing
 
 -- Main navbar links: always white text
+
+
+renderChangelogLine : String -> Html msg
+renderChangelogLine line =
+    if isDateHeading line then
+        span [ class "block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]" ]
+            [ text (String.dropLeft 3 line) ]
+
+    else
+        case parseMarkdownLink line of
+            Just parsed ->
+                span []
+                    ([ a
+                        [ href parsed.url
+                        , target "_blank"
+                        , rel "noopener noreferrer"
+                        , class "font-semibold text-amber-600 hover:text-amber-500"
+                        ]
+                        [ text parsed.label ]
+                     ]
+                        ++ (if String.isEmpty parsed.rest then
+                                []
+
+                            else
+                                [ text (" " ++ parsed.rest) ]
+                           )
+                    )
+
+            Nothing ->
+                text line
+
+
+isDateHeading : String -> Bool
+isDateHeading line =
+    if String.startsWith "## " line then
+        case String.split " " (String.dropLeft 3 line) of
+            date :: _ ->
+                isDateString date
+
+            [] ->
+                False
+
+    else
+        False
+
+
+isDateString : String -> Bool
+isDateString date =
+    String.length date == 10
+        && isDateChar 0 date
+        && isDateChar 1 date
+        && isDateChar 2 date
+        && isDateChar 3 date
+        && String.slice 4 5 date == "-"
+        && isDateChar 5 date
+        && isDateChar 6 date
+        && String.slice 7 8 date == "-"
+        && isDateChar 8 date
+        && isDateChar 9 date
+
+
+isDateChar : Int -> String -> Bool
+isDateChar index value =
+    case String.slice index (index + 1) value |> String.toList of
+        char :: _ ->
+            Char.isDigit char
+
+        [] ->
+            False
+
+
+parseMarkdownLink : String -> Maybe { label : String, url : String, rest : String }
+parseMarkdownLink line =
+    if String.startsWith "[" line then
+        case String.split "](" line of
+            before :: after :: [] ->
+                let
+                    label =
+                        String.dropLeft 1 before
+
+                    urlAndRest =
+                        String.split ")" after
+                in
+                case urlAndRest of
+                    url :: restParts ->
+                        Just
+                            { label = label
+                            , url = url
+                            , rest = String.join ")" restParts |> String.trim
+                            }
+
+                    [] ->
+                        Nothing
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
 
 
 menuItemRoute : { a | onDropdownToggle : Maybe b -> msg } -> String -> { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String } -> String -> String -> Html msg
@@ -701,3 +898,4 @@ onDropdownTriggerKey msg =
             )
             (Json.Decode.field "key" Json.Decode.string)
         )
+

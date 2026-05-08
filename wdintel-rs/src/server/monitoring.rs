@@ -14,6 +14,36 @@ async fn ping() -> impl Responder {
     HttpResponse::Ok().body("pong")
 }
 
+fn is_date_heading(line: &str) -> bool {
+    if let Some(rest) = line.strip_prefix("## ") {
+        let mut parts = rest.split_whitespace();
+        if let Some(date) = parts.next() {
+            let mut chars = date.chars();
+            let y = chars.by_ref().take(4).all(|c| c.is_ascii_digit());
+            let dash1 = chars.next() == Some('-');
+            let m = chars.by_ref().take(2).all(|c| c.is_ascii_digit());
+            let dash2 = chars.next() == Some('-');
+            let d = chars.by_ref().take(2).all(|c| c.is_ascii_digit());
+            return y && dash1 && m && dash2 && d && chars.next().is_none();
+        }
+    }
+    false
+}
+
+fn first_date_heading(content: &str) -> Option<String> {
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.starts_with("## ") && is_date_heading(line) {
+            return line
+                .trim_start_matches("## ")
+                .split_whitespace()
+                .next()
+                .map(|value| value.to_string());
+        }
+    }
+    None
+}
+
 fn changelog_path() -> Result<std::path::PathBuf, AppError> {
     let changelog_path = env::var(crate::config::CHANGELOG_ENV_PATH_KEY)
         .map(std::path::PathBuf::from)
@@ -25,19 +55,19 @@ fn changelog_path() -> Result<std::path::PathBuf, AppError> {
     Ok(changelog_path)
 }
 
-fn extract_next_preview(content: &str) -> Vec<String> {
+fn extract_dated_preview(content: &str) -> Vec<String> {
     let mut preview = Vec::new();
-    let mut in_next = false;
+    let mut in_date_section = false;
     for raw_line in content.lines() {
         let line = raw_line.trim();
         if line.starts_with("## ") {
-            if in_next {
-                break;
+            in_date_section = is_date_heading(line);
+            if in_date_section {
+                preview.push(line.to_string());
             }
-            in_next = line == "## NEXT";
             continue;
         }
-        if !in_next {
+        if !in_date_section {
             continue;
         }
         if line.is_empty() {
@@ -62,42 +92,13 @@ fn sanitize_preview_line(line: &str) -> Option<String> {
         .strip_prefix("- ")
         .or_else(|| trimmed_line.strip_prefix("* "))
         .unwrap_or(trimmed_line);
-    let without_links = strip_markdown_links(without_bullet);
-    let without_tasks = strip_task_tokens(&without_links);
+    let without_tasks = strip_task_tokens(without_bullet);
     let cleaned = without_tasks.trim();
     if cleaned.is_empty() {
         None
     } else {
         Some(cleaned.to_string())
     }
-}
-
-fn strip_markdown_links(value: &str) -> String {
-    let mut result = String::new();
-    let mut cursor = 0;
-    let bytes = value.as_bytes();
-    while let Some(open_rel) = value[cursor..].find('[') {
-        let open = cursor + open_rel;
-        if let Some(mid_rel) = value[open + 1..].find("](") {
-            let mid = open + 1 + mid_rel;
-            if let Some(close_rel) = value[mid + 2..].find(')') {
-                let close = mid + 2 + close_rel;
-                result.push_str(&value[cursor..open]);
-                let text = &value[open + 1..mid];
-                let url = &value[mid + 2..close];
-                if !url.contains("github.com") {
-                    result.push_str(text);
-                }
-                cursor = close + 1;
-                continue;
-            }
-        }
-        break;
-    }
-    if cursor < bytes.len() {
-        result.push_str(&value[cursor..]);
-    }
-    result
 }
 
 fn strip_task_tokens(value: &str) -> String {
@@ -193,42 +194,99 @@ pub struct ChangelogPreview {
 async fn changelog_raw() -> Result<HttpResponse, AppError> {
     let changelog_path = changelog_path()?;
     let content = tokio::fs::read_to_string(&changelog_path).await.c(h!())?;
+    let filtered = format_public_changelog(&content);
     Ok(HttpResponse::Ok()
         .content_type("text/markdown; charset=utf-8")
-        .body(content))
+        .body(filtered))
+}
+
+fn format_public_changelog(content: &str) -> String {
+    let mut output = String::new();
+    let mut in_date_section = false;
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.starts_with("## ") {
+            if is_date_heading(line) {
+                in_date_section = true;
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                let date = line
+                    .trim_start_matches("## ")
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
+                output.push_str(date);
+                output.push('\n');
+            } else {
+                in_date_section = false;
+            }
+            continue;
+        }
+        if !in_date_section {
+            continue;
+        }
+        if is_issue_line(line) {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+    output
+}
+
+fn is_issue_line(line: &str) -> bool {
+    if !line.starts_with("- [#") {
+        return false;
+    }
+    let mut parts = line.split("](");
+    let _label = parts.next();
+    let link_part = parts.next();
+    if let Some(link_part) = link_part {
+        return link_part.contains(')');
+    }
+    false
 }
 
 #[post("/api-public/changelog-preview")]
 async fn changelog_preview() -> Result<Json<ChangelogPreview>, AppError> {
     let changelog_path = changelog_path()?;
     let content = tokio::fs::read_to_string(&changelog_path).await.c(h!())?;
-    let preview = extract_next_preview(&content);
+    let preview = extract_dated_preview(&content);
     let version = changelog_version(&content);
+    let full_url = changelog_docs_url(&content);
     Ok(Json(ChangelogPreview {
         version,
         preview,
-        full_url: "/api-public/changelog".to_string(),
+        full_url,
     }))
+}
+
+fn changelog_docs_url(content: &str) -> String {
+    if let Some(date) = first_date_heading(content) {
+        format!("/docs/updates/#{date}")
+    } else {
+        "/docs/updates/".to_string()
+    }
 }
 
 fn changelog_version(content: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    let mut in_next = false;
+    let mut in_date_section = false;
     for raw_line in content.lines() {
         let line = raw_line.trim_end();
         if line.starts_with("## ") {
-            if in_next {
-                break;
+            in_date_section = is_date_heading(line);
+            if in_date_section {
+                line.hash(&mut hasher);
             }
-            in_next = line == "## NEXT";
             continue;
         }
-        if !in_next {
+        if !in_date_section {
             continue;
         }
         line.hash(&mut hasher);
     }
-    format!("next-{:#x}", hasher.finish())
+    format!("dated-{:#x}", hasher.finish())
 }
 
 #[derive(
