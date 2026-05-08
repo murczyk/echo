@@ -1614,6 +1614,9 @@ pub(crate) async fn schedule_palitra_goi_upload(
         kind: Set(PALITRA_GOI_SYNC_JOB_KIND_UPLOAD.to_string()),
         source_folder: Set(String::new()),
         file_data: Set(Some(file_data)),
+        last_attempt_at: Set(None),
+        attempt_count: Set(0),
+        last_error: Set(None),
         ..Default::default()
     })
     .on_conflict(
@@ -1622,7 +1625,12 @@ pub(crate) async fn schedule_palitra_goi_upload(
             palitra_goi_sync_job::Column::Kind,
             palitra_goi_sync_job::Column::SourceFolder,
         ])
-        .update_columns([palitra_goi_sync_job::Column::FileData])
+        .update_columns([
+            palitra_goi_sync_job::Column::FileData,
+            palitra_goi_sync_job::Column::LastAttemptAt,
+            palitra_goi_sync_job::Column::AttemptCount,
+            palitra_goi_sync_job::Column::LastError,
+        ])
         .to_owned(),
     )
     .exec(dbx)
@@ -1667,6 +1675,18 @@ pub(crate) async fn schedule_palitra_goi_delete(
     dbx: &DatabaseConnection,
     palitra_id: i64,
 ) -> anyhow::Result<()> {
+    let source_folders = palitra_goi_sync_job::Entity::find()
+        .filter(palitra_goi_sync_job::Column::PalitraId.eq(palitra_id))
+        .filter(
+            palitra_goi_sync_job::Column::Kind
+                .eq(PALITRA_GOI_SYNC_JOB_KIND_MOVE),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|job| job.source_folder)
+        .collect::<std::collections::BTreeSet<_>>();
     palitra_goi_sync_job::Entity::delete_many()
         .filter(palitra_goi_sync_job::Column::PalitraId.eq(palitra_id))
         .filter(palitra_goi_sync_job::Column::Kind.is_in([
@@ -1676,24 +1696,31 @@ pub(crate) async fn schedule_palitra_goi_delete(
         .exec(dbx)
         .await
         .c(h!())?;
-    palitra_goi_sync_job::Entity::insert(palitra_goi_sync_job::ActiveModel {
-        palitra_id: Set(palitra_id),
-        kind: Set(PALITRA_GOI_SYNC_JOB_KIND_DELETE.to_string()),
-        source_folder: Set(String::new()),
-        ..Default::default()
-    })
-    .on_conflict(
-        sea_orm::sea_query::OnConflict::columns([
-            palitra_goi_sync_job::Column::PalitraId,
-            palitra_goi_sync_job::Column::Kind,
-            palitra_goi_sync_job::Column::SourceFolder,
-        ])
-        .do_nothing()
-        .to_owned(),
-    )
-    .exec(dbx)
-    .await
-    .c(h!())?;
+    let source_folders = std::iter::once(String::new())
+        .chain(source_folders)
+        .collect::<std::collections::BTreeSet<_>>();
+    for source_folder in source_folders {
+        palitra_goi_sync_job::Entity::insert(
+            palitra_goi_sync_job::ActiveModel {
+                palitra_id: Set(palitra_id),
+                kind: Set(PALITRA_GOI_SYNC_JOB_KIND_DELETE.to_string()),
+                source_folder: Set(source_folder),
+                ..Default::default()
+            },
+        )
+        .on_conflict(
+            sea_orm::sea_query::OnConflict::columns([
+                palitra_goi_sync_job::Column::PalitraId,
+                palitra_goi_sync_job::Column::Kind,
+                palitra_goi_sync_job::Column::SourceFolder,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    }
     Ok(())
 }
 

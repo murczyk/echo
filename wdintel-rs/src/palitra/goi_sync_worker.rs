@@ -57,6 +57,14 @@ async fn palitra_goi_sync_worker_step(env: &Env) -> Result<bool, AppError> {
         Ok(()) => {
             palitra_goi_sync_job::Entity::delete_many()
                 .filter(palitra_goi_sync_job::Column::Id.eq(job.id))
+                .filter(
+                    palitra_goi_sync_job::Column::LastAttemptAt
+                        .eq(job.last_attempt_at),
+                )
+                .filter(
+                    palitra_goi_sync_job::Column::AttemptCount
+                        .eq(job.attempt_count),
+                )
                 .exec(&env.dbx)
                 .await
                 .c(h!())?;
@@ -64,6 +72,14 @@ async fn palitra_goi_sync_worker_step(env: &Env) -> Result<bool, AppError> {
         Err(err) => {
             palitra_goi_sync_job::Entity::update_many()
                 .filter(palitra_goi_sync_job::Column::Id.eq(job.id))
+                .filter(
+                    palitra_goi_sync_job::Column::LastAttemptAt
+                        .eq(job.last_attempt_at),
+                )
+                .filter(
+                    palitra_goi_sync_job::Column::AttemptCount
+                        .eq(job.attempt_count),
+                )
                 .col_expr(
                     palitra_goi_sync_job::Column::LastError,
                     Expr::value(Some(format!("{err:#}"))),
@@ -217,8 +233,19 @@ async fn sync_delete_job(
         return Ok(());
     };
     let access = super::read_palitra_access(dbx, palitra.id).await.c(h!())?;
-    let target_folder =
-        super::bl::normalize_palitra_folder_from_db(palitra.folder.clone());
+    let target_folders = if job.source_folder.is_empty() {
+        let target_folder =
+            super::bl::normalize_palitra_folder_from_db(palitra.folder.clone());
+        if target_folder.is_some() {
+            vec![target_folder, None]
+        } else {
+            vec![None]
+        }
+    } else {
+        vec![super::bl::normalize_palitra_folder_from_db(Some(
+            job.source_folder.clone(),
+        ))]
+    };
     let source_file_names = palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
         .all(dbx)
@@ -232,7 +259,7 @@ async fn sync_delete_job(
         palitra.id,
         &palitra.name,
         &access,
-        target_folder.as_deref(),
+        &target_folders,
         &source_file_names,
     )
     .await
@@ -281,7 +308,7 @@ async fn delete_palitra_from_connected_organisms_strict(
     palitra_id: i64,
     palitra_name: &str,
     access: &PalitraAccess,
-    target_folder: Option<&str>,
+    target_folders: &[Option<String>],
     source_file_names: &[Option<String>],
 ) -> anyhow::Result<()> {
     let PalitraAccess::ByOrganisms { organism_ids } = access else {
@@ -291,25 +318,37 @@ async fn delete_palitra_from_connected_organisms_strict(
         super::collect_connected_goi_targets(dbx, organism_ids.as_slice())
             .await
             .c(h!())?;
-    let relative_paths = source_file_names
-        .iter()
-        .flat_map(|source_file_name| {
-            super::palitra_goi_remote_file_names(
-                palitra_id,
-                Some(palitra_name),
-                source_file_name.as_deref(),
-            )
-        })
-        .map(|file_name| compose_relative_path(target_folder, &file_name))
-        .collect::<BTreeSet<_>>();
+    let mut relative_paths = BTreeSet::new();
+    for source_file_name in source_file_names {
+        for file_name in super::palitra_goi_remote_file_names(
+            palitra_id,
+            Some(palitra_name),
+            source_file_name.as_deref(),
+        ) {
+            for target_folder in target_folders {
+                relative_paths.insert(compose_relative_path(
+                    target_folder.as_deref(),
+                    &file_name,
+                ));
+            }
+        }
+    }
     if relative_paths.is_empty() {
         return Ok(());
     }
 
     let mut errors = Vec::new();
     for target in goi_targets {
-        let entries =
-            goi::goi_list_relative_files(target.clone()).await.c(h!())?;
+        let entries = match goi::goi_list_relative_files(target.clone()).await {
+            Ok(entries) => entries,
+            Err(err) => {
+                errors.push(format!(
+                    "{}:{} list relative files: {err:#}",
+                    target.ssh_host, target.ssh_port
+                ));
+                continue;
+            }
+        };
         for entry in entries {
             if !matches_remote_relative_path(&entry, &relative_paths) {
                 continue;
