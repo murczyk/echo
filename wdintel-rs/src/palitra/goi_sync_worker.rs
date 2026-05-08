@@ -1,6 +1,7 @@
 use crate::config::{
     PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
-    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD, PALITRA_GOI_SYNC_WORKER_SLEEP_SEC,
+    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD, PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC,
+    PALITRA_GOI_SYNC_WORKER_SLEEP_SEC,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -12,7 +13,6 @@ use sea_orm::prelude::Expr;
 use sea_orm::Statement;
 use sea_orm::*;
 use std::collections::BTreeSet;
-use std::path::Path;
 use std::time::Duration;
 
 pub async fn palitra_goi_sync_worker_nofail(env: Arc<Env>) {
@@ -82,10 +82,13 @@ async fn take_next_job(
 ) -> anyhow::Result<Option<palitra_goi_sync_job::Model>> {
     let stmt = Statement::from_string(
         DatabaseBackend::Postgres,
-        r#"
+        format!(
+            r#"
         with next_job as (
             select id
             from palitra_goi_sync_job
+            where last_attempt_at is null
+               or last_attempt_at <= now() - interval '{} seconds'
             order by id
             for update skip locked
             limit 1
@@ -97,8 +100,9 @@ async fn take_next_job(
             last_error = null
         where id in (select id from next_job)
         returning *
-        "#
-        .to_string(),
+        "#,
+            PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC
+        ),
     );
     palitra_goi_sync_job::Model::find_by_statement(stmt)
         .one(txn)
@@ -213,6 +217,8 @@ async fn sync_delete_job(
         return Ok(());
     };
     let access = super::read_palitra_access(dbx, palitra.id).await.c(h!())?;
+    let target_folder =
+        super::bl::normalize_palitra_folder_from_db(palitra.folder.clone());
     let source_file_names = palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
         .all(dbx)
@@ -226,6 +232,7 @@ async fn sync_delete_job(
         palitra.id,
         &palitra.name,
         &access,
+        target_folder.as_deref(),
         &source_file_names,
     )
     .await
@@ -274,6 +281,7 @@ async fn delete_palitra_from_connected_organisms_strict(
     palitra_id: i64,
     palitra_name: &str,
     access: &PalitraAccess,
+    target_folder: Option<&str>,
     source_file_names: &[Option<String>],
 ) -> anyhow::Result<()> {
     let PalitraAccess::ByOrganisms { organism_ids } = access else {
@@ -283,7 +291,7 @@ async fn delete_palitra_from_connected_organisms_strict(
         super::collect_connected_goi_targets(dbx, organism_ids.as_slice())
             .await
             .c(h!())?;
-    let file_names = source_file_names
+    let relative_paths = source_file_names
         .iter()
         .flat_map(|source_file_name| {
             super::palitra_goi_remote_file_names(
@@ -292,8 +300,9 @@ async fn delete_palitra_from_connected_organisms_strict(
                 source_file_name.as_deref(),
             )
         })
+        .map(|file_name| compose_relative_path(target_folder, &file_name))
         .collect::<BTreeSet<_>>();
-    if file_names.is_empty() {
+    if relative_paths.is_empty() {
         return Ok(());
     }
 
@@ -302,7 +311,7 @@ async fn delete_palitra_from_connected_organisms_strict(
         let entries =
             goi::goi_list_relative_files(target.clone()).await.c(h!())?;
         for entry in entries {
-            if !matches_remote_file_name(&entry, &file_names) {
+            if !matches_remote_relative_path(&entry, &relative_paths) {
                 continue;
             }
             let remote_file_path =
@@ -324,6 +333,21 @@ async fn delete_palitra_from_connected_organisms_strict(
     anyhow::bail!("palitra GOI delete failed: {}", errors.join("; "));
 }
 
+fn compose_relative_path(
+    target_folder: Option<&str>,
+    file_name: &str,
+) -> String {
+    let file_name = file_name.trim().trim_start_matches('/');
+    match target_folder
+        .map(str::trim)
+        .map(|folder| folder.trim_matches('/'))
+        .filter(|folder| !folder.is_empty())
+    {
+        Some(folder) => format!("{folder}/{file_name}"),
+        None => file_name.to_string(),
+    }
+}
+
 fn compose_remote_path(
     target: &CheckOrganismGoiConnectionReq,
     target_folder: Option<&str>,
@@ -339,15 +363,10 @@ fn compose_remote_path(
     super::compose_goi_palette_remote_path(&target.path, &relative_path)
 }
 
-fn matches_remote_file_name(
+fn matches_remote_relative_path(
     entry: &str,
-    file_names: &BTreeSet<String>,
+    relative_paths: &BTreeSet<String>,
 ) -> bool {
-    let entry = entry.trim().trim_start_matches("./");
-    let Some(file_name) =
-        Path::new(entry).file_name().and_then(|item| item.to_str())
-    else {
-        return false;
-    };
-    file_names.contains(file_name)
+    let entry = entry.trim().trim_start_matches("./").trim_matches('/');
+    relative_paths.contains(entry)
 }

@@ -155,6 +155,7 @@ pub const PALITRA_GOI_SYNC_JOB_KIND_UPLOAD: &str = "upload";
 pub const PALITRA_GOI_SYNC_JOB_KIND_MOVE: &str = "move";
 pub const PALITRA_GOI_SYNC_JOB_KIND_DELETE: &str = "delete";
 pub const PALITRA_GOI_SYNC_WORKER_SLEEP_SEC: u64 = 5;
+pub const PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC: u64 = 60;
 pub const ORGANISM_GOI_SSH_PORT_DEFAULT: i32 = 22;
 pub const ORGANISM_GOI_API_PORT_DEFAULT: i32 = 8088;
 pub const ORGANISM_GOI_PATH_DEFAULT: &str = "/etc/goi/data/palettes";
