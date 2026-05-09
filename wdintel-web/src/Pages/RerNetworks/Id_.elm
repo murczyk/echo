@@ -1136,20 +1136,20 @@ contentBlock user shared route network model =
             ]
         , div [ class "flex gap-[8px]" ]
             [ a
-                [ class "inline-flex items-center gap-3 rounded-full border-0 bg-transparent pl-0 pr-2 py-0 text-sm font-semibold text-[#5f6f8c] transition-colors hover:bg-transparent focus-visible:outline-none dark:text-[#a9ccf2]"
+                [ class "btn d-inline-flex align-items-center justify-content-center text-nowrap"
+                , style "background-color" "var(--bs-tertiary-bg)"
+                , style "color" "var(--bs-body-color)"
+                , style "border" "1px solid var(--bs-border-color)"
+                , style "min-height" "44px"
+                , style "font-size" "14px"
+                , style "line-height" "20px"
                 , Route.href
                     { path = Route.Path.RerNetworks_Id_ { id = route.params.id }
                     , query = Dict.fromList [ ( "view", "neo" ) ]
                     , hash = Nothing
                     }
                 ]
-                [ span
-                    [ class "relative inline-flex h-[20px] w-[34px] shrink-0 rounded-full bg-[#6f7988] p-[2px] align-middle dark:bg-[#5c6675]"
-                    ]
-                    [ span [ class "inline-block h-[16px] w-[16px] rounded-full bg-[#c1cad7] shadow-[0_1px_2px_rgba(0,0,0,0.2)] dark:bg-[#b0bac7]" ] [] ]
-                , span [ class "text-lg font-normal leading-none text-[#9cc9fb] dark:text-[#a9ccf2]" ] [ text "Нова версія" ]
-                , span [ class "rounded-full bg-[#fff7dd] px-3 py-[3px] text-[11px] font-normal tracking-[0.18em] text-[#b85b16] dark:bg-[rgba(242,177,92,0.12)] dark:text-[#f2b15c]" ] [ text "ALPHA" ]
-                ]
+                [ text "Спробувати нову версію" ]
             , Button.new { label = "Звіт \"Еталонний опис\"", onClick = ReportModalOpenedByUser } |> Button.view
             , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }

@@ -52,7 +52,7 @@ export type NetworkFreqCreateWizardForm = {
 
 export type NetworkFreqEditForm = {
   networkFreqId: number;
-  kind: 'DMR' | 'NFM';
+  kind: 'DMR' | 'DMRe' | 'NFM';
   modulationId: number | null;
   activeFrom: string;
   activeTo: string;
@@ -301,7 +301,7 @@ export function canDeleteNetwork(user: User | null): boolean {
 
 export function canEditNetwork(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || (roles.has('Rer') && roles.has('UnitsEditor'));
+  return roles.has('Admin') || roles.has('UnitsEditor');
 }
 
 export function canManageDescriptions(user: User | null): boolean {
@@ -376,9 +376,10 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
   };
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'NFM' {
+export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'DMRe' | 'NFM' {
   const normalized = kind?.trim().toUpperCase() ?? '';
-  if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
+  if (normalized === 'DMR') return 'DMR';
+  if (normalized === 'DMRE') return 'DMRe';
   return 'NFM';
 }
 

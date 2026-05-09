@@ -1822,8 +1822,8 @@ pub async fn update_network_freq(
     let user_id = user.id().c(h!())?.to_string();
 
     info!(
-        "Updating frequency {} for network {}; user={}",
-        req.freq, req.network_id, &user_id
+        "Updating frequency id={} freq={} for network {}; user={}",
+        req.network_freq_id, req.freq, req.network_id, &user_id
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
@@ -1838,13 +1838,12 @@ pub async fn update_network_freq(
         (Some(updated_freq_active_from), updated_freq_active_to);
 
     // Find the frequency for this network
-    let network_freq_model = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
-        .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
-        // .filter(sigint_network_freq::Column::ActiveTo.is_null())
-        .one(&txn)
-        .await
-        .context(h!())?;
+    let network_freq_model =
+        sigint_network_freq::Entity::find_by_id(req.network_freq_id)
+            .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+            .one(&txn)
+            .await
+            .context(h!())?;
 
     if let Some(network_freq_model) = network_freq_model {
         let network_freq_id = network_freq_model.id;
@@ -1884,8 +1883,8 @@ pub async fn update_network_freq(
         .c(h!())?;
     } else {
         debug!(
-            "Frequency {} not found for network {}, no action needed",
-            req.freq, req.network_id
+            "Frequency id={} freq={} not found for network {}, no action needed",
+            req.network_freq_id, req.freq, req.network_id
         );
     }
 

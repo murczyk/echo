@@ -1394,6 +1394,7 @@ update shared msg model =
             ( model
             , E.updateNetworkFreq (NetworkFreqUpdated freq editState)
                 { networkId = editState.id
+                , networkFreqId = 0
                 , freq = freq
                 , kind = NetworksUtils.networkKindToString model.editKindSelect.selected
                 , modulationId = model.editModulationSelect.selected

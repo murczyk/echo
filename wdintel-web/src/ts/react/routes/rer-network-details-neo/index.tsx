@@ -4,17 +4,15 @@ import EditIcon from '@mui/icons-material/Edit';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import {
   Box,
-  Chip,
+  Button,
   IconButton,
   Menu,
   MenuItem,
   Skeleton,
   Stack,
-  Switch,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
 import { useState } from 'react';
 
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
@@ -38,7 +36,6 @@ type Props = {
 
 export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const page = useRerNetworkDetailsNeoPage(networkId);
-  const theme = useTheme();
   const [showAllAors, setShowAllAors] = useState(false);
   const aorVisible = showAllAors ? page.aorItems : page.aorItems.slice(0, 5);
   const aorCollapsedCount = Math.max(page.aorItems.length - aorVisible.length, 0);
@@ -67,7 +64,6 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   ) : (
     <Skeleton width={240} />
   );
-  const isDark = theme.palette.mode === 'dark';
   const copyText = page.network ? `${formatClassicNetworkHeaderName(page.network.name, page.unitNames)}, ${page.network.location}` : '';
   const descriptionDrawerNetwork = page.network;
   const isLoading = page.loading && !page.network;
@@ -85,89 +81,9 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
 
   const actions = (
     <Stack direction="row" spacing={1} alignItems="center">
-      <Box
-        component="button"
-        type="button"
-        onClick={() => navigateWithinSpa(classicHref)}
-        aria-label="Перейти на стару версію"
-        sx={{
-          flexShrink: 0,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 1.5,
-          border: 'none',
-          borderRadius: 0,
-          bgcolor: 'transparent',
-          px: 0,
-          py: 0,
-          cursor: 'pointer',
-          color: 'inherit',
-          '&:hover': {
-            bgcolor: 'transparent',
-          },
-          '&:focus-visible': {
-            outline: 'none',
-          },
-        }}
-      >
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
-          <Switch
-            checked
-            disableRipple
-            sx={{
-              pointerEvents: 'none',
-              width: 42,
-              height: 26,
-              p: 0,
-              '& .MuiSwitch-switchBase': {
-                p: 0.5,
-                transitionDuration: '150ms',
-                '&.Mui-checked': {
-                  transform: 'translateX(16px)',
-                  color: isDark ? '#9cc9fb' : theme.palette.primary.main,
-                },
-              },
-              '& .MuiSwitch-thumb': {
-                width: 18,
-                height: 18,
-                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
-                bgcolor: isDark ? '#9cc9fb' : theme.palette.primary.main,
-              },
-              '& .MuiSwitch-track': {
-                borderRadius: 999,
-                bgcolor: isDark ? '#55647a' : alpha(theme.palette.primary.main, 0.45),
-                opacity: 1,
-              },
-            }}
-          />
-          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ minWidth: 0 }}>
-            <Typography
-              component="span"
-              sx={{
-                fontSize: '1rem',
-                fontWeight: 400,
-                color: isDark ? '#a9ccf2' : theme.palette.primary.dark,
-              }}
-            >
-              Нова версія
-            </Typography>
-            <Chip
-              label="ALPHA"
-              size="small"
-              sx={{
-                height: 24,
-                fontSize: '0.72rem',
-                fontWeight: 400,
-                letterSpacing: '0.18em',
-                color: isDark ? '#f2b15c' : theme.palette.warning.dark,
-                bgcolor: isDark ? alpha(theme.palette.warning.main, 0.12) : alpha(theme.palette.warning.main, 0.16),
-                border: 'none',
-                '& .MuiChip-label': { px: 1.1 },
-              }}
-            />
-          </Stack>
-        </Stack>
-      </Box>
+      <Button onClick={() => navigateWithinSpa(classicHref)}>
+        Повернутись до класичної версії
+      </Button>
       <Tooltip title="Скопіювати назву і район">
         <span>
           <IconButton

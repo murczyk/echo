@@ -70,7 +70,7 @@ type alias Model =
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
-    , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
+    , freqsEditingState : Mode (Dict Int B.UpdateNetworkFreqReq)
     , freqEditSaving : Bool
     , deleteFreqConfirmation : Maybe ( Int, String )
     , deleteFreqLoading : Bool

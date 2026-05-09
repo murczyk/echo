@@ -84,7 +84,7 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
 }
 
 function toBackendNetworkFreqKind(kind: NetworkFreqEditForm['kind']): string {
-  return kind === 'DMR' ? 'DMR' : 'VHF';
+  return kind === 'NFM' ? 'VHF' : kind;
 }
 
 function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: number): NetworkFreqsRes | null {
@@ -327,6 +327,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     try {
       const updatedNetwork = await updateNetworkFreq({
         networkId: network.id,
+        networkFreqId: currentFreq.networkFreqId,
         freq: currentFreq.freq,
         kind: toBackendNetworkFreqKind(form.kind),
         modulationId: form.modulationId,
@@ -375,6 +376,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     try {
       const updatedNetwork = await updateNetworkFreq({
         networkId: network.id,
+        networkFreqId: currentFreq.networkFreqId,
         freq: currentFreq.freq,
         kind: currentFreq.kind ?? 'VHF',
         modulationId: currentFreq.modulationId,
