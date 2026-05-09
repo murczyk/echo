@@ -1831,7 +1831,7 @@ pub async fn update_network_freq(
     // Check if network exists
     let network = find_network(&txn, req.network_id).await.context(h!())?;
     let updated_freq_active_from =
-        dt_from_millis(req.active_from).unwrap_or(Utc::now().naive_utc());
+        update_network_freq_active_from(req.active_from);
     let updated_freq_active_to =
         req.active_to.map(dt_from_millis).transpose()?;
     let mut invalidation_range =
@@ -1928,6 +1928,11 @@ pub async fn update_network_freq(
     .c(h!())?;
 
     Ok(Json(network_detail[0].clone()))
+}
+
+fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
+    dt_from_millis(active_from_millis).unwrap_or(Utc::now().naive_utc())
+        - chrono::Duration::days(1)
 }
 
 #[post("/api/sigint/network/delete-freq")]
@@ -3400,6 +3405,15 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+    }
+
+    #[test]
+    fn update_network_freq_active_from_uses_previous_day() {
+        let active_from_millis = dt(5).and_utc().timestamp_millis();
+
+        let active_from = update_network_freq_active_from(active_from_millis);
+
+        assert_eq!(active_from, dt(4));
     }
 
     #[test]
