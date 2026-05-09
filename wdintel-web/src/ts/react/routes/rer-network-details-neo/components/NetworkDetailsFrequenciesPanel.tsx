@@ -562,7 +562,7 @@ function NetworkDetailsFrequenciesPanelContent({
             <Typography variant="body2" color="error">
               {freqsError}
             </Typography>
-            <Button size="small" onClick={onReloadFrequencies} disabled={freqsLoading}>
+            <Button size="small" onClick={() => onReloadFrequencies()} disabled={freqsLoading}>
               Спробувати ще раз
             </Button>
           </Stack>

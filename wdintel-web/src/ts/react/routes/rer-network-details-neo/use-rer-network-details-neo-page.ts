@@ -21,9 +21,10 @@ function buildOptions<T extends { id: number; name: string }>(items: T[]): Netwo
 
 export function useRerNetworkDetailsNeoPage(networkId: number) {
   const [state, setState] = useState<NetworkDetailsNeoPageState>(EMPTY_STATE);
-  const reloadGeneration = useRef(0);
+  const pageReloadGeneration = useRef(0);
+  const frequencyReloadGeneration = useRef(0);
 
-  const reload = useRerNetworkDetailsNeoPageLoad(networkId, setState, reloadGeneration);
+  const reload = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -57,7 +58,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       .filter((label) => label.trim() !== '');
   }, [state.network?.unitIds, unitsById]);
 
-  const actions = useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration });
+  const actions = useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration: frequencyReloadGeneration });
 
   useEffect(() => {
     if (state.network === null) return;
