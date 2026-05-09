@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildAnalysisHref,
+  buildClassicAnalysisHref,
+  buildClassicAnalysisMapHrefWithSearch,
   PAGE_ID,
   buildAnalysisMapHrefWithSearch,
   buildSenderOptions,
@@ -66,6 +68,28 @@ describe('rer-duty utils', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('builds classic analysis deep links with legacy state payloads', () => {
+    const msg = { freq: '154.845', messageUid: 'uid-1' } as InboxMessage;
+
+    const analysisHref = buildClassicAnalysisHref(msg, false);
+    const analysisUrl = new URL(analysisHref, 'https://example.test');
+    expect(analysisUrl.pathname).toBe('/rer-analysis');
+    expect(analysisUrl.searchParams.get('showMap')).toBeNull();
+    expect(JSON.parse(analysisUrl.searchParams.get('state') ?? '')).toMatchObject({
+      search: 'uid-1',
+      freqs_selected: ['154.845'],
+    });
+
+    const mapHref = buildClassicAnalysisMapHrefWithSearch(['P-1', 'P-1', 'P-2'], msg);
+    const mapUrl = new URL(mapHref, 'https://example.test');
+    expect(mapUrl.pathname).toBe('/rer-analysis');
+    expect(mapUrl.searchParams.get('showMap')).toBe('true');
+    expect(JSON.parse(mapUrl.searchParams.get('state') ?? '')).toMatchObject({
+      search: 'P-1,P-2',
+      freqs_selected: ['154.845'],
+    });
   });
 
   it('distinguishes null and empty arrays when comparing filters', () => {

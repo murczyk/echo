@@ -63,6 +63,7 @@ pub mod palitra_access_aor;
 pub mod palitra_access_login;
 pub mod palitra_access_organism;
 pub mod palitra_geometry;
+pub mod palitra_goi_sync_job;
 pub mod palitra_highlight_worker_job;
 pub mod palitra_point;
 pub mod palitra_point_lexeme;

@@ -1,5 +1,5 @@
 use crate::entities::*;
-use crate::palitra::sync_delete_palitra_from_connected_organisms;
+use crate::palitra::schedule_palitra_goi_delete;
 use crate::palitra::types::*;
 use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
 use crate::types::*;
@@ -730,15 +730,6 @@ pub async fn delete_palitra(
     let mut palitra_geometry_ids = vec![];
     for geometry in palitra_geometries {
         palitra_geometry_ids.push(geometry.id);
-        sync_delete_palitra_from_connected_organisms(
-            &env.dbx, // even if transaction rolls back we must save these changes to db because they perform some changes to filesystem
-            id,
-            palitra_name,
-            &existing_access,
-            &geometry.source_file_name,
-        )
-        .await
-        .c(h!())?;
     }
 
     palitra_geometry::Entity::update_many()
@@ -753,6 +744,8 @@ pub async fn delete_palitra(
             .await
             .c(h!())?;
     }
+    let _ = (palitra_name, existing_access);
+    schedule_palitra_goi_delete(&env.dbx, id).await.c(h!())?;
     Ok(())
 }
 

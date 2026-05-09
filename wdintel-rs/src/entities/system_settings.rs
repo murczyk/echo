@@ -17,10 +17,10 @@ pub struct Model {
     pub updated_by: Option<String>,
     pub deleted: bool,
     pub rer_duty_test_enabled: bool,
-    pub rer_duty_insert_historical_interceptions: bool,
     pub rer_duty_test_since_ms: i64,
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
+    pub rer_duty_insert_historical_interceptions: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
