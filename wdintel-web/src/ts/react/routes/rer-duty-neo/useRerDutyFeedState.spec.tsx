@@ -7,16 +7,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
+import { emptyFilter } from './utils';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 
 const hoisted = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
   fetchInboxCount: vi.fn(),
+  rerDutyShortStateCreate: vi.fn(),
+  rerDutyShortStateGet: vi.fn(),
+  fetchServerInfo: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
   fetchInboxMessages: hoisted.fetchInboxMessages,
   fetchInboxCount: hoisted.fetchInboxCount,
+  rerDutyShortStateCreate: hoisted.rerDutyShortStateCreate,
+  rerDutyShortStateGet: hoisted.rerDutyShortStateGet,
+}));
+
+vi.mock('../../services/api/server-info', () => ({
+  fetchServerInfo: hoisted.fetchServerInfo,
 }));
 
 vi.mock('../../services/api/networks', () => ({
@@ -74,6 +84,16 @@ describe('useRerDutyFeedState — loading', () => {
     window.history.replaceState({}, '', '/');
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+    hoisted.fetchServerInfo.mockResolvedValue({
+      mode: '',
+      publicHost: '',
+      grafanaAddress: '',
+      featureDelta: false,
+      featureAnalysisMap: false,
+      featureRerDutyShortState: false,
+      featureStrictNetworks: false,
+      version: '',
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -360,6 +380,75 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
     expect(startedCount).toBeGreaterThanOrEqual(2);
+  });
+
+  describe('short state persistence', () => {
+    it('stores short state and updates url on create success', async () => {
+      hoisted.fetchServerInfo.mockResolvedValueOnce({
+        mode: '',
+        publicHost: '',
+        grafanaAddress: '',
+        featureDelta: false,
+        featureAnalysisMap: false,
+        featureRerDutyShortState: true,
+        featureStrictNetworks: false,
+        version: '',
+      });
+      hoisted.rerDutyShortStateCreate.mockResolvedValue({ id: 'short-123' });
+
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const params = new URLSearchParams(window.location.search);
+      expect(params.get('state-short')).toBe('short-123');
+      expect(params.get('state')).toBeNull();
+    });
+
+    it('falls back to long state url when short state create fails', async () => {
+      hoisted.fetchServerInfo.mockResolvedValueOnce({
+        mode: '',
+        publicHost: '',
+        grafanaAddress: '',
+        featureDelta: false,
+        featureAnalysisMap: false,
+        featureRerDutyShortState: true,
+        featureStrictNetworks: false,
+        version: '',
+      });
+      hoisted.rerDutyShortStateCreate.mockRejectedValue(new Error('create failed'));
+
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} />);
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const params = new URLSearchParams(window.location.search);
+      expect(params.get('state-short')).toBeNull();
+      expect(params.get('state')).toBeTruthy();
+      expect(apiRef.current?.error).toBe('create failed');
+    });
   });
 
   describe('poll autoscroll (scrollToEndAfterLoad)', () => {

@@ -285,6 +285,7 @@ export type ServerInfo = {
   grafanaAddress: string;
   featureDelta: boolean;
   featureAnalysisMap: boolean;
+  featureRerDutyShortState: boolean;
   featureStrictNetworks: boolean;
   version: string;
 };
@@ -932,6 +933,22 @@ export type RerDutyQueryStateWf = {
   postsSelected: Array<string> | null;
   postsDenied: Array<string> | null;
   lastViewedMessageId: number | null;
+};
+
+export type RerDutyShortStateCreateReq = {
+  state: RerDutyQueryState;
+};
+
+export type RerDutyShortStateCreateRsp = {
+  id: string;
+};
+
+export type RerDutyShortStateGetReq = {
+  id: string;
+};
+
+export type RerDutyShortStateGetRsp = {
+  state: RerDutyQueryState;
 };
 
 export type NewCallsignsRes = {

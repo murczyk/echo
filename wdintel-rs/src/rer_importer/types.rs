@@ -1055,6 +1055,34 @@ pub struct RerDutyQueryStateWf {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct RerDutyShortStateCreateReq {
+    pub state: RerDutyQueryState,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct RerDutyShortStateCreateRsp {
+    pub id: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct RerDutyShortStateGetReq {
+    pub id: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct RerDutyShortStateGetRsp {
+    pub state: RerDutyQueryState,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct NewCallsignsRes {
     pub not_seen_24h: Vec<String>,
     pub not_seen_7days: Vec<String>,

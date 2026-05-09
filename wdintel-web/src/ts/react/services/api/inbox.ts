@@ -15,7 +15,10 @@ import type {
   InboxMessagesReq,
   InboxMessagesRsp,
   PostStatsRsp,
+  RerDutyQueryState,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
+  RerDutyShortStateCreateRsp,
+  RerDutyShortStateGetRsp,
   SavedFilterDuty,
   SavedFilterRenameReq,
   SavedFilterDutyUpsertReq,
@@ -349,6 +352,17 @@ export async function savedFilterDelete(filterId: number): Promise<void> {
 
 export async function savedFilterRename(req: SavedFilterRenameReq): Promise<void> {
   await postVoid('/api/rer/duty/saved-filter-rename', transformCamelToSnake(req));
+}
+
+export async function rerDutyShortStateCreate(state: RerDutyQueryState): Promise<RerDutyShortStateCreateRsp> {
+  const body = { state: transformCamelToSnake(state) };
+  return postJson<RerDutyShortStateCreateRsp>('/api/rer-duty/filters/create', body as any);
+}
+
+export async function rerDutyShortStateGet(id: string): Promise<RerDutyShortStateGetRsp> {
+  const raw = await postJson<{ state?: unknown } | null>('/api/rer-duty/filters/get', { id });
+  const state = (raw?.state ?? null) ? (transformSnakeToCamel(raw?.state ?? {}) as RerDutyQueryState) : null;
+  return { state: state ?? { waterfalls: [] } };
 }
 
 // --- Filter metadata (tags, senders, frequencies, groups) ---

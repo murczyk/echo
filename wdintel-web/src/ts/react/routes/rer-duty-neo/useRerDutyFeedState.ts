@@ -8,15 +8,28 @@ import type {
   SignalGroupEntry,
   SignalProfileEntry,
 } from '../../../../Bindings';
-import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
+import {
+  fetchInboxCount,
+  fetchInboxMessages,
+  rerDutyShortStateCreate,
+  rerDutyShortStateGet,
+} from '../../services/api/inbox';
+import { fetchServerInfo } from '../../services/api/server-info';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
   dedupeMessageItems,
   emptyFilter,
   findAllAdjacentFreqs,
+  getShortStateIdFromUrl,
+  INBOX_COUNT_POLL_INTERVAL_MS,
   parseStateFromUrl,
+  pushShortStateToUrl,
+  pushStateToUrl,
+  stableStringify,
   sortMessageItemsByTime,
+  toRerDutyStateFromShort,
+  toShortQueryState,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
 } from './utils';
 import type { MessageFeedState } from './utils';
@@ -59,6 +72,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     }));
   });
   const [error, setError] = useState<string | null>(null);
+  const [featureShortStateEnabled, setFeatureShortStateEnabled] = useState(false);
+  const [shortStateReady, setShortStateReady] = useState(false);
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
@@ -74,6 +89,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const lastFilterSignatureByFeedIdRef = useRef<Record<string, string>>({});
   /** Virtuoso "at bottom" (pixel threshold); used so poll only auto-scrolls when the scroller is actually at the bottom. */
   const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  const shortStateRef = useRef<{ id: string | null; hash: string | null }>({
+    id: null,
+    hash: null,
+  });
+  const shortStateRequestRef = useRef<{ requestId: number; hash: string | null }>({
+    requestId: 0,
+    hash: null,
+  });
+  const shortStateMountedRef = useRef(true);
+  const shortStateIdRef = useRef(getShortStateIdFromUrl());
+  const initialMessageFeedsHashRef = useRef<string>(stableStringify(toShortQueryState(messageFeeds)));
+  const blockShortStateHydrationRef = useRef(false);
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
@@ -81,6 +108,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   const { inboxCallsignInfoMap, callsignInfoMap, mergeInboxCallsigns, mergeResolvedCallsigns, retainFeedIds } =
     useRerDutyCallsignInfo();
+  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -93,7 +121,72 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
 
   useEffect(() => {
+    if (shortStateReady) return;
+    const currentHash = stableStringify(toShortQueryState(messageFeeds));
+    if (currentHash !== initialMessageFeedsHashRef.current) {
+      blockShortStateHydrationRef.current = true;
+    }
+  }, [messageFeeds, shortStateReady]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadShortState = async () => {
+      try {
+        const serverInfo = await fetchServerInfo();
+        if (cancelled) return;
+        const enabled = serverInfo.featureRerDutyShortState ?? false;
+        setFeatureShortStateEnabled(enabled);
+        const shortId = shortStateIdRef.current;
+        if (enabled && shortId) {
+          try {
+            const rsp = await rerDutyShortStateGet(shortId);
+            if (cancelled) return;
+            if (blockShortStateHydrationRef.current) return;
+            const currentHash = stableStringify(toShortQueryState(messageFeedsRef.current));
+            if (currentHash !== initialMessageFeedsHashRef.current) return;
+            const state = toRerDutyStateFromShort(rsp.state);
+            shortStateRef.current = { id: shortId, hash: stableStringify(rsp.state) };
+            setMessageFeeds(
+              (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) => ({
+                id,
+                filter,
+                items: [],
+                loading: true,
+                loadingOlder: false,
+                hasReachedStart: false,
+                firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+                referenceTimeMs: null,
+                readIds: new Set<number>(),
+                unreadCount: 0,
+                adjacentFreqsRange: 0,
+                highlightSignalsEnabled: false,
+                onlyMyUnitTagsEnabled: false,
+              }))
+            );
+          } catch (e) {
+            if (!cancelled) {
+              setError(e instanceof Error ? e.message : String(e));
+            }
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (!cancelled) setShortStateReady(true);
+      }
+    };
+    loadShortState();
     return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    shortStateMountedRef.current = true;
+    return () => {
+      shortStateMountedRef.current = false;
       Object.values(arrowResultTimeoutsRef.current).forEach(clearTimeout);
     };
   }, []);
@@ -407,6 +500,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   /** Keys are `${feedId}:${JSON.stringify(filter)}` so a filter change on the same feed triggers a new load. */
   const initialLoadStartedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (shortStateIdRef.current && !shortStateReady) return;
     const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
     const needingKeys = new Set(needingLoad.map((w) => `${w.id}:${JSON.stringify(w.filter)}`));
     const started = initialLoadStartedRef.current;
@@ -420,9 +514,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         loadFeedInitialMessagesRef.current(w.id);
       }
     });
-  }, [feedIds, feedsNeedingLoadKey]);
+  }, [feedIds, feedsNeedingLoadKey, shortStateReady]);
 
   useEffect(() => {
+    if (shortStateIdRef.current && !shortStateReady) return;
     const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();
@@ -430,7 +525,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded]);
+  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded, shortStateReady]);
 
   useEffect(() => {
     const feedId = scrollToEndAfterNewerRef.current;
@@ -442,15 +537,55 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [messageFeeds]);
 
-  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
 
-  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, deps.onFeedRemoved);
+  const persistStateToUrl = useCallback(
+    (next: MessageFeedState[]) => {
+      if (shortStateIdRef.current && !shortStateReady) {
+        blockShortStateHydrationRef.current = true;
+      }
+      if (!featureShortStateEnabled) {
+        pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
+        return;
+      }
+      const queryState = toShortQueryState(next);
+      const stateHash = stableStringify(queryState);
+      const cached = shortStateRef.current;
+      if (cached.id && cached.hash === stateHash) {
+        const requestId = shortStateRequestRef.current.requestId + 1;
+        shortStateRequestRef.current = { requestId, hash: stateHash };
+        pushShortStateToUrl(cached.id);
+        return;
+      }
+      pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
+      const requestId = shortStateRequestRef.current.requestId + 1;
+      shortStateRequestRef.current = { requestId, hash: stateHash };
+      rerDutyShortStateCreate(queryState)
+        .then((rsp) => {
+          if (!shortStateMountedRef.current) return;
+          if (shortStateRequestRef.current.requestId !== requestId) return;
+          if (shortStateRequestRef.current.hash !== stateHash) return;
+          shortStateRef.current = { id: rsp.id, hash: stateHash };
+          pushShortStateToUrl(rsp.id);
+        })
+        .catch((e) => {
+          if (!shortStateMountedRef.current) return;
+          if (shortStateRequestRef.current.requestId !== requestId) return;
+          if (shortStateRequestRef.current.hash !== stateHash) return;
+          setError(e instanceof Error ? e.message : String(e));
+          pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
+        });
+    },
+    [featureShortStateEnabled, shortStateReady]
+  );
+
+  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, persistStateToUrl, deps.onFeedRemoved);
 
   return {
     messageFeeds,
     setMessageFeeds,
     error,
     setError,
+    shortStateReady,
     columnRefsRef,
     nearBottomByFeedIdRef,
     atBottomByFeedIdRef,

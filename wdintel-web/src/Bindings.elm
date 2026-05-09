@@ -791,6 +791,7 @@ type alias ServerInfo =
     , grafanaAddress : String
     , featureDelta : Bool
     , featureAnalysisMap : Bool
+    , featureRerDutyShortState : Bool
     , featureStrictNetworks : Bool
     , version : String
     }
@@ -804,6 +805,7 @@ serverInfoEncoder struct =
         , ( "grafana_address", (Json.Encode.string) struct.grafanaAddress )
         , ( "feature_delta", (Json.Encode.bool) struct.featureDelta )
         , ( "feature_analysis_map", (Json.Encode.bool) struct.featureAnalysisMap )
+        , ( "feature_rer_duty_short_state", (Json.Encode.bool) struct.featureRerDutyShortState )
         , ( "feature_strict_networks", (Json.Encode.bool) struct.featureStrictNetworks )
         , ( "version", (Json.Encode.string) struct.version )
         ]
@@ -2428,6 +2430,54 @@ rerDutyQueryStateWfEncoder struct =
         , ( "posts_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsSelected )
         , ( "posts_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsDenied )
         , ( "last_viewed_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastViewedMessageId )
+        ]
+
+
+type alias RerDutyShortStateCreateReq =
+    { state : RerDutyQueryState
+    }
+
+
+rerDutyShortStateCreateReqEncoder : RerDutyShortStateCreateReq -> Json.Encode.Value
+rerDutyShortStateCreateReqEncoder struct =
+    Json.Encode.object
+        [ ( "state", (rerDutyQueryStateEncoder) struct.state )
+        ]
+
+
+type alias RerDutyShortStateCreateRsp =
+    { id : String
+    }
+
+
+rerDutyShortStateCreateRspEncoder : RerDutyShortStateCreateRsp -> Json.Encode.Value
+rerDutyShortStateCreateRspEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias RerDutyShortStateGetReq =
+    { id : String
+    }
+
+
+rerDutyShortStateGetReqEncoder : RerDutyShortStateGetReq -> Json.Encode.Value
+rerDutyShortStateGetReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias RerDutyShortStateGetRsp =
+    { state : RerDutyQueryState
+    }
+
+
+rerDutyShortStateGetRspEncoder : RerDutyShortStateGetRsp -> Json.Encode.Value
+rerDutyShortStateGetRspEncoder struct =
+    Json.Encode.object
+        [ ( "state", (rerDutyQueryStateEncoder) struct.state )
         ]
 
 
@@ -8062,6 +8112,7 @@ serverInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grafana_address" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_delta" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_analysis_map" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_rer_duty_short_state" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_strict_networks" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
 
