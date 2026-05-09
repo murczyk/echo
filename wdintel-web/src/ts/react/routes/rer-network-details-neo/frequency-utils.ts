@@ -274,7 +274,17 @@ export function buildNetworkFreqActivityByFreq(
   activityByDay: Record<string, Record<string, number>>,
   freqs: NetworkFreqsRes[],
 ): NetworkFreqActivityByFreq {
-  const freqByLabel = new Map(freqs.map((freq) => [normalizeFrequencyLabel(freq.freq), freq.networkFreqId]));
+  const freqIdsByLabel = new Map<string, number[]>();
+  for (const freq of freqs) {
+    const label = normalizeFrequencyLabel(freq.freq);
+    const freqIds = freqIdsByLabel.get(label);
+    if (freqIds) {
+      freqIds.push(freq.networkFreqId);
+    } else {
+      freqIdsByLabel.set(label, [freq.networkFreqId]);
+    }
+  }
+
   const result: NetworkFreqActivityByFreq = {};
 
   for (const freq of freqs) {
@@ -283,10 +293,13 @@ export function buildNetworkFreqActivityByFreq(
 
   for (const [day, activityByFreq] of Object.entries(activityByDay)) {
     for (const [freqLabel, messageCount] of Object.entries(activityByFreq)) {
-      const freqId = freqByLabel.get(normalizeFrequencyLabel(freqLabel));
-      if (freqId === undefined) continue;
-      result[freqId] ||= [];
-      result[freqId].push({ day, messageCount });
+      const freqIds = freqIdsByLabel.get(normalizeFrequencyLabel(freqLabel));
+      if (!freqIds) continue;
+
+      for (const freqId of freqIds) {
+        result[freqId] ||= [];
+        result[freqId].push({ day, messageCount });
+      }
     }
   }
 

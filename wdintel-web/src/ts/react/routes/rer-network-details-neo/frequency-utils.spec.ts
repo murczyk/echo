@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { NetworkFreqsRes } from '../../../../Bindings';
-import { buildNetworkFreqRows, encryptionLabelFromKeys, formatNetworkFreqValue } from './frequency-utils';
+import { buildNetworkFreqActivityByFreq, buildNetworkFreqRows, encryptionLabelFromKeys, formatNetworkFreqValue } from './frequency-utils';
 
 function createFreq(overrides: Partial<NetworkFreqsRes>): NetworkFreqsRes {
   return {
@@ -90,6 +90,23 @@ describe('frequency utils', () => {
       kind: 'group',
       isActive: false,
     });
+  });
+
+  it('preserves activity for duplicate frequency labels across rows', () => {
+    const activity = buildNetworkFreqActivityByFreq(
+      {
+        '2026-05-09': {
+          '652.1111': 7,
+        },
+      },
+      [
+        createFreq({ networkFreqId: 10, freq: '652.1111' }),
+        createFreq({ networkFreqId: 11, freq: '652.1111', isActive: false }),
+      ],
+    );
+
+    expect(activity[10]).toEqual([{ day: '2026-05-09', messageCount: 7 }]);
+    expect(activity[11]).toEqual([{ day: '2026-05-09', messageCount: 7 }]);
   });
 
   it('derives encryption label from modulation metadata when keys are absent', () => {
