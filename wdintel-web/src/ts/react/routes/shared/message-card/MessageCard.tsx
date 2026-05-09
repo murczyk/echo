@@ -8,8 +8,8 @@ import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderP
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import { isPresent } from '../../../utils/misc';
 import {
-  buildAnalysisHref,
-  buildAnalysisMapHrefWithSearch,
+  buildClassicAnalysisHref,
+  buildClassicAnalysisMapHrefWithSearch,
   etalonFallbackWhenNoNetworks,
   getPointEtalonsFromMessage,
   messageRenderDistance,
@@ -102,7 +102,9 @@ export function MessageCard({
   const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
   const mapHref =
-    pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons, msg) : buildAnalysisHref(msg, true);
+    pointEtalons.length > 0
+      ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
+      : buildClassicAnalysisHref(msg, true);
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
     isPresent(msg.timestamp) && isPresent(relativeTimeMs) ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
@@ -132,7 +134,7 @@ export function MessageCard({
           target="_blank"
         />
         <CardActionLink
-          href={buildAnalysisHref(msg, false)}
+          href={buildClassicAnalysisHref(msg, false)}
           icon={<BarChartOutlinedIcon aria-hidden />}
           label="Відкрити аналіз"
           target="_blank"

@@ -344,6 +344,31 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).not.toBeNull();
   });
 
+  it('routes duty action buttons to the classic analysis page', async () => {
+    const view = await renderCard({
+      msg: { ...buildMessage(), messageUid: 'uid-1' },
+    });
+    rendered.push(view);
+
+    const analysisButton = view.container.querySelector('button[aria-label="Відкрити аналіз"]');
+    const mapButton = view.container.querySelector('button[aria-label="Відкрити мапу"]');
+    if (!(analysisButton instanceof HTMLButtonElement)) throw new Error('analysis button not found');
+    if (!(mapButton instanceof HTMLButtonElement)) throw new Error('map button not found');
+
+    const analysisUrl = new URL(String(analysisButton.getAttribute('href') ?? ''), 'https://example.test');
+    expect(analysisUrl.pathname).toBe('/rer-analysis');
+    expect(JSON.parse(analysisUrl.searchParams.get('state') ?? '')).toMatchObject({
+      search: 'uid-1',
+    });
+
+    const mapUrl = new URL(String(mapButton.getAttribute('href') ?? ''), 'https://example.test');
+    expect(mapUrl.pathname).toBe('/rer-analysis');
+    expect(mapUrl.searchParams.get('showMap')).toBe('true');
+    expect(JSON.parse(mapUrl.searchParams.get('state') ?? '')).toMatchObject({
+      search: 'uid-1',
+    });
+  });
+
   it('keeps distinct network ids visible even when the rendered labels match', async () => {
     const view = await renderCard({
       msg: { ...buildMessage(), networkIds: [7, 8] },

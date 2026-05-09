@@ -11,6 +11,7 @@ import type {
 import type { Network, Unit } from '../../../../Bindings';
 import type { RerAnalysisQueryState } from '../../../rer-analysis-query-state';
 import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-query-state';
+import { toLegacyRerAnalysisQueryState } from '../../../rer-analysis-query-state-legacy';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 
@@ -354,8 +355,22 @@ function buildRerAnalysisNeoHref(state: RerAnalysisQueryState, showMap: boolean)
   return qs ? `/rer-analysis-neo?${qs}` : `/rer-analysis-neo${showMap ? '?showMap=true' : ''}`;
 }
 
+function buildClassicRerAnalysisHref(state: RerAnalysisQueryState, showMap: boolean): string {
+  const params = new URLSearchParams();
+  params.set('state', JSON.stringify(toLegacyRerAnalysisQueryState(state)));
+  if (showMap) {
+    params.set('showMap', 'true');
+  }
+  const qs = params.toString();
+  return qs ? `/rer-analysis?${qs}` : '/rer-analysis';
+}
+
 export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
   return buildRerAnalysisNeoHref(rerAnalysisNeoQueryStateFromMessage(msg, msg.messageUid ?? ''), showMap);
+}
+
+export function buildClassicAnalysisHref(msg: InboxMessage, showMap: boolean): string {
+  return buildClassicRerAnalysisHref(rerAnalysisNeoQueryStateFromMessage(msg, msg.messageUid ?? ''), showMap);
 }
 
 export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
@@ -386,6 +401,20 @@ export function buildAnalysisMapHrefWithSearch(etalons: string | string[], msg?:
     return buildRerAnalysisNeoHref(rerAnalysisNeoQueryStateFromMessage(msg, searchStr), true);
   }
   return buildRerAnalysisNeoHref({ search: searchStr }, true);
+}
+
+export function buildClassicAnalysisMapHrefWithSearch(etalons: string | string[], msg?: InboxMessage): string {
+  const searchStr = Array.isArray(etalons)
+    ? uniquePointEtalonsForMapSearch(etalons).join(',')
+    : String(etalons).trim();
+  if (!searchStr) {
+    if (isPresent(msg)) return buildClassicAnalysisHref(msg, true);
+    return '/rer-analysis?showMap=true';
+  }
+  if (isPresent(msg)) {
+    return buildClassicRerAnalysisHref(rerAnalysisNeoQueryStateFromMessage(msg, searchStr), true);
+  }
+  return buildClassicRerAnalysisHref({ search: searchStr }, true);
 }
 
 export function messageHasPalitraTag(msg: InboxMessage, tagsMap: Record<number, Tag>): boolean {
