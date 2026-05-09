@@ -78,9 +78,8 @@ function collectUniqueLabels(values: string[]): string | null {
 
 export function typeLabelFromKind(kind: string | null | undefined): string {
   const normalized = normalizeText(kind).toUpperCase();
-  if (normalized === 'DMR' || normalized === 'DMRE') {
-    return 'DMR';
-  }
+  if (normalized === 'DMR') return 'DMR';
+  if (normalized === 'DMRE') return 'DMRe';
 
   return 'NFM';
 }

@@ -66,7 +66,7 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
     networkId,
     freqRec: {
       freq: freqForm.freq.trim(),
-      kind: freqForm.kind === 'DMR' ? 'DMR' : 'VHF',
+      kind: toBackendNetworkFreqKind(freqForm.kind),
       modulationId: freqForm.modulationId,
       encryptionKeyIds: [...freqForm.encryptionKeyIds],
       description:
@@ -83,7 +83,7 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
   };
 }
 
-function toBackendNetworkFreqKind(kind: NetworkFreqEditForm['kind']): string {
+function toBackendNetworkFreqKind(kind: NetworkFreqCreateWizardForm['kind'] | NetworkFreqEditForm['kind']): string {
   return kind === 'NFM' ? 'VHF' : kind;
 }
 

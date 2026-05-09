@@ -281,6 +281,7 @@ function NetworkFreqCreateWizardComponent({
                     onChange={(event) => onChange({ ...form, kind: String(event.target.value) as NetworkFreqCreateWizardForm['kind'] })}
                   >
                     <MenuItem value="DMR">DMR</MenuItem>
+                    <MenuItem value="DMRe">DMRe</MenuItem>
                     <MenuItem value="NFM">NFM</MenuItem>
                   </Select>
                 </FormControl>

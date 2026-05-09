@@ -42,7 +42,7 @@ export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies';
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
-  kind: 'DMR' | 'NFM';
+  kind: 'DMR' | 'DMRe' | 'NFM';
   modulationId: number | null;
   description: string;
   activeFrom: string;

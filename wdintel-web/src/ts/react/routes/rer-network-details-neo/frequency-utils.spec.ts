@@ -60,6 +60,22 @@ describe('frequency utils', () => {
     });
   });
 
+  it('preserves DMRe as a distinct frequency type label', () => {
+    const rows = buildNetworkFreqRows(
+      [
+        createFreq({ networkFreqId: 10, freq: '652.1111', kind: 'DMRe' }),
+        createFreq({ networkFreqId: 11, freq: '652.1500', kind: 'DMR' }),
+      ],
+      new Map(),
+      [],
+    );
+
+    expect(rows).toMatchObject([
+      { kind: 'freq', typeLabel: 'DMRe' },
+      { kind: 'freq', typeLabel: 'DMR' },
+    ]);
+  });
+
   it('marks grouped frequencies inactive when any child frequency is inactive', () => {
     const rows = buildNetworkFreqRows(
       [
