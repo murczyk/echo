@@ -97,8 +97,7 @@ mod tests {
 
     #[test]
     fn parse_metadata_handles_cyrillic_cc_and_emoji_digits() {
-        let metadata =
-            metadata_without_spans(parse_metadata("СС:1️⃣4️⃣\nCG:5️⃣0️⃣"));
+        let metadata = parse_metadata_asserting_spans("СС:1️⃣4️⃣\nCG:5️⃣0️⃣");
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -111,12 +110,12 @@ mod tests {
 
     #[test]
     fn parse_metadata_handles_cyrillic_cc_and_emoji_digits2() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "25.02.2026 12:09:42 F=145.0260 (МГц)
 УКХ р/м вБпЛА 121 мсп 68 мсд 6 А 🆓 (ЛИМАН ПЕРШИЙ) СС:1️⃣ CG:5️⃣0️⃣
 ID➡️:110(ЯРУС)
 ID(CG)⬅️:50📣",
-        ));
+        );
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -131,10 +130,10 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_cyrillic_cc_and_emoji_digits3() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "25.02.2026 12:09:42 F=145.0260 (МГц)
 🔺УКХ р/м НВ підрозділу 151.600 МГц СС: 7 👥: 24538 🔐", // in case we have line like 👥: 24538 🔐 - we treat trimmed value between : and 🔐 as hash id
-        ));
+        );
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -146,10 +145,25 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_cyrillic_cc_and_emoji_digits4() {
+        let metadata = parse_metadata_asserting_spans(
+            "25.02.2026 12:09:42 F=145.0260 (МГц)
+🔺УКХ р/м управління рр 128 омсбр 44 АК (ВОВЧАНСЬК, ВІЛЬЧА, ХАРКІВСЬКА ОБЛАСТЬ) CC: 1👥: 80132🔐", // in case we have line like 👥: 24538 🔐 - we treat trimmed value between : and 🔐 as hash id
+        );
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("1".to_string()),
+                hash_id: Some("80132".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
     fn parse_metadata_handles_plain_id_variants_without_arrows() {
-        let metadata = metadata_without_spans(parse_metadata(
-            "СС:8\nІD:21152\nID(CG):395251",
-        ));
+        let metadata =
+            parse_metadata_asserting_spans("СС:8\nІD:21152\nID(CG):395251");
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -163,7 +177,7 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_textual_id_after_colon_before_semicolon() {
-        let metadata = metadata_without_spans(parse_metadata(" Id:96МГ1_1; "));
+        let metadata = parse_metadata_asserting_spans(" Id:96МГ1_1; ");
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -175,8 +189,7 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_hash_id_with_prefix() {
-        let metadata =
-            metadata_without_spans(parse_metadata(" Хеш ID: 2324d327 "));
+        let metadata = parse_metadata_asserting_spans(" Хеш ID: 2324d327 ");
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -188,9 +201,7 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_line_handles_hash_id_with_prefix() {
-        let metadata = working_metadata_without_spans(parse_metadata_line(
-            &NormalizedLine::new("ХЕШ ID: 2324D327".to_string()),
-        ));
+        let metadata = parse_metadata_line_asserting_spans("ХЕШ ID: 2324D327");
         assert_eq!(
             metadata,
             vec![WorkingMetadata {
@@ -202,7 +213,7 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_source_id_variant() {
-        let metadata = metadata_without_spans(parse_metadata(" source id: 0 "));
+        let metadata = parse_metadata_asserting_spans(" source id: 0 ");
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -214,9 +225,9 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_multiple_source_ids_variant() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "CC:23 SOURCE ID: 1, 33; GROUP ID: 6",
-        ));
+        );
         assert_eq!(
             metadata,
             vec![
@@ -238,9 +249,7 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_line_handles_source_id_variant() {
-        let metadata = working_metadata_without_spans(parse_metadata_line(
-            &NormalizedLine::new("SOURCE ID: 0".to_string()),
-        ));
+        let metadata = parse_metadata_line_asserting_spans("SOURCE ID: 0");
         assert_eq!(
             metadata,
             vec![WorkingMetadata {
@@ -252,11 +261,9 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_line_handles_multiple_source_ids_variant() {
-        let metadata = working_metadata_without_spans(parse_metadata_line(
-            &NormalizedLine::new(
-                "CC:23 SOURCE ID: 1, 33; GROUP ID: 6".to_string(),
-            ),
-        ));
+        let metadata = parse_metadata_line_asserting_spans(
+            "CC:23 SOURCE ID: 1, 33; GROUP ID: 6",
+        );
         assert_eq!(
             metadata,
             vec![
@@ -275,7 +282,7 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_group_id_variant() {
-        let metadata = metadata_without_spans(parse_metadata(" group id: 0 "));
+        let metadata = parse_metadata_asserting_spans(" group id: 0 ");
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -287,14 +294,14 @@ ID(CG)⬅️:50📣",
 
     #[test]
     fn parse_metadata_handles_new_sigint_optional_fields_format() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "148.490
 37U CP 83574 54679
 Код кольору: 3
 id відправника: 7549484
 id отримувача: 3359939
 код групи: 1",
-        ));
+        );
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -308,12 +315,12 @@ id отримувача: 3359939
 
     #[test]
     fn parse_metadata_skips_new_sigint_optional_fields_with_no_value_markers() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "Код кольору: НВ
 ID відправника: -
 ID отримувача: 3359939
 Код групи: -",
-        ));
+        );
         assert_eq!(
             metadata,
             vec![InboxMetadata {
@@ -325,18 +332,16 @@ ID отримувача: 3359939
 
     #[test]
     fn parse_metadata_keeps_regular_id_when_optional_sender_marker_is_blank() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "ID відправника: -; ID:123; код групи: НВ",
-        ));
+        );
         assert_eq!(metadata.len(), 1);
         assert_eq!(metadata[0].id.as_deref(), Some("123"));
     }
 
     #[test]
     fn parse_metadata_line_handles_group_id_variant() {
-        let metadata = working_metadata_without_spans(parse_metadata_line(
-            &NormalizedLine::new("GROUP ID: 0".to_string()),
-        ));
+        let metadata = parse_metadata_line_asserting_spans("GROUP ID: 0");
         assert_eq!(
             metadata,
             vec![
@@ -351,8 +356,7 @@ ID отримувача: 3359939
 
     #[test]
     fn parse_metadata_handles_double_cg_ocr_variant() {
-        let metadata =
-            metadata_without_spans(parse_metadata("CG:10 CG:x:12112027"));
+        let metadata = parse_metadata_asserting_spans("CG:10 CG:x:12112027");
         assert_eq!(
             metadata,
             vec![
@@ -373,7 +377,7 @@ ID отримувача: 3359939
         let message = load_fixture_message(14627919);
 
         assert_eq!(
-            metadata_without_spans(parse_metadata(&message.content)),
+            parse_metadata_asserting_spans(&message.content),
             vec![
                 InboxMetadata {
                     cg: Some("10".to_string()),
@@ -390,7 +394,7 @@ ID отримувача: 3359939
     #[test]
     fn parse_metadata_handles_lowercase_cg_forms() {
         assert_eq!(
-            metadata_without_spans(parse_metadata("cc:1 cg:10")),
+            parse_metadata_asserting_spans("cc:1 cg:10"),
             vec![InboxMetadata {
                 cc: Some("1".to_string()),
                 cg: Some("10".to_string()),
@@ -399,7 +403,7 @@ ID отримувача: 3359939
         );
 
         assert_eq!(
-            metadata_without_spans(parse_metadata("id(cg):50")),
+            parse_metadata_asserting_spans("id(cg):50"),
             vec![InboxMetadata {
                 cg: Some("50".to_string()),
                 ..Default::default()
@@ -409,11 +413,11 @@ ID отримувача: 3359939
 
     #[test]
     fn parse_metadata_splits_on_conflicting_metadata_and_drops_duplicates() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "CC:1 CG:10
 CC:2 CG:20
 CC:1 CG:10",
-        ));
+        );
 
         assert_eq!(metadata.len(), 2);
         assert!(metadata.contains(&InboxMetadata {
@@ -430,10 +434,10 @@ CC:1 CG:10",
 
     #[test]
     fn parse_metadata_prefers_receiver_group_over_receiver() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "ID(CG):50
 CG:12112027",
-        ));
+        );
 
         assert_eq!(
             metadata,
@@ -446,11 +450,11 @@ CG:12112027",
 
     #[test]
     fn parse_metadata_splits_on_conflicting_metadata_and_drops_duplicates2() {
-        let metadata = metadata_without_spans(parse_metadata(
+        let metadata = parse_metadata_asserting_spans(
             "CC:1 CG:10
 CC:1 CG:10
 CC:2 CG:20",
-        ));
+        );
 
         assert_eq!(metadata.len(), 2);
         assert!(metadata.contains(&InboxMetadata {
@@ -468,6 +472,7 @@ CC:2 CG:20",
     #[test]
     fn parse_metadata_tracks_global_inclusive_spans() {
         let metadata = parse_metadata("hello cc 545\nID:99");
+        assert_metadata_spans("hello cc 545\nID:99", &metadata);
 
         assert_eq!(
             metadata,
@@ -486,6 +491,7 @@ CC:2 CG:20",
     #[test]
     fn parse_metadata_tracks_spans_for_split_source_ids() {
         let metadata = parse_metadata("CC:23 SOURCE ID: 1, 33; GROUP ID: 6");
+        assert_metadata_spans("CC:23 SOURCE ID: 1, 33; GROUP ID: 6", &metadata);
 
         assert_eq!(metadata.len(), 2);
         assert!(metadata.contains(&InboxMetadata {
@@ -521,7 +527,7 @@ CC:2 CG:20",
             .into_iter()
             .filter(|message| message.id != 14677154)
             .filter_map(|message| {
-                let metadata = parse_metadata(&message.content);
+                let metadata = parse_metadata_checked(&message.content);
                 (metadata.is_empty()
                     || metadata
                         .iter()
@@ -543,7 +549,7 @@ CC:2 CG:20",
             .find(|message| message.id == 14677154)
             .expect("fixture message 14677154");
 
-        assert!(parse_metadata(&message.content).is_empty());
+        assert!(parse_metadata_checked(&message.content).is_empty());
     }
 
     fn load_fixture_messages() -> Vec<FixtureMessage> {
@@ -600,6 +606,231 @@ CC:2 CG:20",
             value: Some(value.to_string()),
             ..Default::default()
         }
+    }
+
+    fn parse_metadata_checked(message: &str) -> Vec<InboxMetadata> {
+        let metadata = parse_metadata(message);
+        assert_metadata_spans(message, &metadata);
+        metadata
+    }
+
+    fn parse_metadata_asserting_spans(message: &str) -> Vec<InboxMetadata> {
+        metadata_without_spans(parse_metadata_checked(message))
+    }
+
+    fn parse_metadata_line_asserting_spans(line: &str) -> Vec<WorkingMetadata> {
+        let normalized_line = NormalizedLine::new(line.to_string());
+        let metadata = parse_metadata_line(&normalized_line);
+        assert_working_metadata_spans(line, &metadata);
+        working_metadata_without_spans(metadata)
+    }
+
+    fn assert_metadata_spans(message: &str, items: &[InboxMetadata]) {
+        for (item_idx, metadata) in items.iter().enumerate() {
+            assert_optional_span(
+                message,
+                item_idx,
+                "cc",
+                metadata.cc.as_deref(),
+                metadata.cc_start_index,
+                metadata.cc_end_index,
+            );
+            assert_optional_span(
+                message,
+                item_idx,
+                "cg",
+                metadata.cg.as_deref(),
+                metadata.cg_start_index,
+                metadata.cg_end_index,
+            );
+            assert_optional_span(
+                message,
+                item_idx,
+                "cg_name",
+                metadata.cg_name.as_deref(),
+                metadata.cg_name_start_index,
+                metadata.cg_name_end_index,
+            );
+            assert_optional_span(
+                message,
+                item_idx,
+                "id",
+                metadata.id.as_deref(),
+                metadata.id_start_index,
+                metadata.id_end_index,
+            );
+            assert_optional_span(
+                message,
+                item_idx,
+                "id_name",
+                metadata.id_name.as_deref(),
+                metadata.id_name_start_index,
+                metadata.id_name_end_index,
+            );
+            assert_optional_span(
+                message,
+                item_idx,
+                "hash_id",
+                metadata.hash_id.as_deref(),
+                metadata.hash_id_start_index,
+                metadata.hash_id_end_index,
+            );
+        }
+    }
+
+    fn assert_working_metadata_spans(line: &str, items: &[WorkingMetadata]) {
+        for (item_idx, metadata) in items.iter().enumerate() {
+            assert_matched_value_span(line, item_idx, "cc", &metadata.cc);
+            assert_matched_value_span(
+                line,
+                item_idx,
+                "receiver",
+                &metadata.receiver,
+            );
+            assert_matched_value_span(
+                line,
+                item_idx,
+                "receiver_name",
+                &metadata.receiver_name,
+            );
+            assert_matched_value_span(
+                line,
+                item_idx,
+                "receiver_group",
+                &metadata.receiver_group,
+            );
+            assert_matched_value_span(
+                line,
+                item_idx,
+                "receiver_group_name",
+                &metadata.receiver_group_name,
+            );
+            assert_matched_value_span(line, item_idx, "id", &metadata.id);
+            assert_matched_value_span(
+                line,
+                item_idx,
+                "id_name",
+                &metadata.id_name,
+            );
+            assert_matched_value_span(
+                line,
+                item_idx,
+                "hash_id",
+                &metadata.hash_id,
+            );
+        }
+    }
+
+    fn assert_optional_span(
+        source: &str,
+        item_idx: usize,
+        field: &str,
+        value: Option<&str>,
+        start_index: Option<i32>,
+        end_index: Option<i32>,
+    ) {
+        match value {
+            Some(value) => assert_span_matches_value(
+                source,
+                item_idx,
+                field,
+                value,
+                start_index,
+                end_index,
+            ),
+            None => {
+                assert_eq!(start_index, None, "{item_idx}.{field} start");
+                assert_eq!(end_index, None, "{item_idx}.{field} end");
+            }
+        }
+    }
+
+    fn assert_matched_value_span(
+        source: &str,
+        item_idx: usize,
+        field: &str,
+        matched_value: &MatchedValue,
+    ) {
+        match matched_value.value.as_deref() {
+            Some(value) => {
+                assert!(
+                    matched_value.raw_text.is_some(),
+                    "{item_idx}.{field} raw_text"
+                );
+                assert_span_matches_value(
+                    source,
+                    item_idx,
+                    field,
+                    value,
+                    matched_value.start_index,
+                    matched_value.end_index,
+                );
+            }
+            None => {
+                assert_eq!(
+                    matched_value.start_index, None,
+                    "{item_idx}.{field} start"
+                );
+                assert_eq!(
+                    matched_value.end_index, None,
+                    "{item_idx}.{field} end"
+                );
+                assert_eq!(
+                    matched_value.raw_text, None,
+                    "{item_idx}.{field} raw_text"
+                );
+            }
+        }
+    }
+
+    fn assert_span_matches_value(
+        source: &str,
+        item_idx: usize,
+        field: &str,
+        value: &str,
+        start_index: Option<i32>,
+        end_index: Option<i32>,
+    ) {
+        let start_index =
+            start_index.unwrap_or_else(|| panic!("{item_idx}.{field} start"));
+        let end_index =
+            end_index.unwrap_or_else(|| panic!("{item_idx}.{field} end"));
+
+        assert!(start_index >= 0, "{item_idx}.{field} start");
+        assert!(
+            end_index >= start_index,
+            "{item_idx}.{field} end before start"
+        );
+
+        let span_text = slice_chars_inclusive(
+            source,
+            start_index as usize,
+            end_index as usize,
+        );
+        let normalized_span_text = normalize_span_text(&span_text);
+        let normalized_value = normalize_span_text(value);
+        let stripped_x_value = normalized_value.strip_prefix("x:");
+        assert!(
+            normalized_span_text == normalized_value
+                || stripped_x_value == Some(normalized_span_text.as_str()),
+            "{item_idx}.{field} span {start_index}..={end_index} has {span_text:?}, expected {value:?}"
+        );
+    }
+
+    fn slice_chars_inclusive(
+        source: &str,
+        start_index: usize,
+        end_index: usize,
+    ) -> String {
+        source
+            .chars()
+            .skip(start_index)
+            .take(end_index - start_index + 1)
+            .collect()
+    }
+
+    fn normalize_span_text(value: &str) -> String {
+        normalize_metadata_digits(value).trim().to_lowercase()
     }
 
     fn metadata_without_spans(items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
