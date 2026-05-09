@@ -56,6 +56,31 @@ fn test_dt(
         .unwrap()
 }
 
+fn short_state_filter(
+    groups_selected: Option<Vec<String>>,
+) -> RerDutyQueryStateWf {
+    RerDutyQueryStateWf {
+        groups_selected,
+        groups_denied: None,
+        senders_selected: None,
+        denied_senders: None,
+        freqs_selected: None,
+        freqs_denied: None,
+        posts_selected: None,
+        posts_denied: None,
+        last_viewed_message_id: None,
+    }
+}
+
+fn short_state(groups_selected: Option<Vec<String>>) -> RerDutyQueryState {
+    RerDutyQueryState {
+        waterfalls: Some(vec![(
+            "mf-0".to_string(),
+            short_state_filter(groups_selected),
+        )]),
+    }
+}
+
 fn mk_analysis_stats_req(
     since_date_inclusive_ms: i64,
     till_date_noninclusive_ms: i64,
@@ -3452,5 +3477,208 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
             (fixture.network_south.network.id, 1),
             (fixture.network_wide.network.id, 1),
         ])
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_duty_short_state_dedup_reuses_id_and_refreshes_ttl() {
+    let env = cleanup().await.unwrap();
+    let state = short_state(Some(vec!["group-1".to_string()]));
+    let payload = serde_json::to_string(&RerDutyShortStateGetRsp {
+        state: state.clone(),
+    })
+    .unwrap();
+    let hash = sha256::digest(payload.as_bytes());
+    let hash_key = rer_duty_short_state_hash_key(&hash);
+    let mut redis = env.redis.clone();
+    let _: () = redis.del(&hash_key).await.unwrap();
+
+    let (first_id, reused_first) =
+        rer_duty_short_state_create_or_reuse(&mut redis, state.clone())
+            .await
+            .unwrap();
+    let ttl_before: i64 = redis
+        .ttl(rer_duty_short_state_key(&first_id))
+        .await
+        .unwrap();
+
+    let (second_id, reused_second) =
+        rer_duty_short_state_create_or_reuse(&mut redis, state)
+            .await
+            .unwrap();
+    let ttl_after: i64 = redis
+        .ttl(rer_duty_short_state_key(&second_id))
+        .await
+        .unwrap();
+
+    assert!(!reused_first);
+    assert!(reused_second);
+    assert_eq!(first_id, second_id);
+    assert!(ttl_before > 0);
+    assert!(ttl_after > 0);
+
+    let stored_id: Option<String> = redis.get(&hash_key).await.unwrap();
+    assert_eq!(stored_id.as_deref(), Some(first_id.as_str()));
+    let raw: Option<String> = redis
+        .get(rer_duty_short_state_key(&first_id))
+        .await
+        .unwrap();
+    assert_eq!(raw.as_deref(), Some(payload.as_str()));
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_duty_short_state_new_id_for_different_state() {
+    let env = cleanup().await.unwrap();
+    let mut redis = env.redis.clone();
+    let first_state = short_state(Some(vec!["group-a".to_string()]));
+    let first_payload = serde_json::to_string(&RerDutyShortStateGetRsp {
+        state: first_state.clone(),
+    })
+    .unwrap();
+    let first_hash = sha256::digest(first_payload.as_bytes());
+    let first_hash_key = rer_duty_short_state_hash_key(&first_hash);
+
+    let second_state = short_state(Some(vec!["group-b".to_string()]));
+    let second_payload = serde_json::to_string(&RerDutyShortStateGetRsp {
+        state: second_state.clone(),
+    })
+    .unwrap();
+    let second_hash = sha256::digest(second_payload.as_bytes());
+    let second_hash_key = rer_duty_short_state_hash_key(&second_hash);
+
+    let _: () = redis.del(&first_hash_key).await.unwrap();
+    let _: () = redis.del(&second_hash_key).await.unwrap();
+
+    let (first_id, reused_first) =
+        rer_duty_short_state_create_or_reuse(&mut redis, first_state)
+            .await
+            .unwrap();
+    let (second_id, reused_second) =
+        rer_duty_short_state_create_or_reuse(&mut redis, second_state)
+            .await
+            .unwrap();
+
+    assert!(!reused_first);
+    assert!(!reused_second);
+    assert_ne!(first_id, second_id);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_duty_short_state_hash_collision_creates_new_id() {
+    let env = cleanup().await.unwrap();
+    let mut redis = env.redis.clone();
+    let state = short_state(Some(vec!["group-1".to_string()]));
+    let payload = serde_json::to_string(&RerDutyShortStateGetRsp {
+        state: state.clone(),
+    })
+    .unwrap();
+    let hash = sha256::digest(payload.as_bytes());
+    let hash_key = rer_duty_short_state_hash_key(&hash);
+
+    let fake_id = "fake-id".to_string();
+    let _: () = redis
+        .set_ex(
+            rer_duty_short_state_key(&fake_id),
+            "{\"state\":{}}".to_string(),
+            RER_DUTY_SHORT_STATE_TTL_SEC,
+        )
+        .await
+        .unwrap();
+    let _: () = redis
+        .set_ex(&hash_key, fake_id.clone(), RER_DUTY_SHORT_STATE_TTL_SEC)
+        .await
+        .unwrap();
+
+    let (id, reused) = rer_duty_short_state_create_or_reuse(&mut redis, state)
+        .await
+        .unwrap();
+
+    assert!(!reused);
+    assert_ne!(id, fake_id);
+    let stored_id: Option<String> = redis.get(&hash_key).await.unwrap();
+    assert_eq!(stored_id.as_deref(), Some(id.as_str()));
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_duty_short_state_get_refreshes_ttl() {
+    let env = cleanup().await.unwrap();
+    let mut redis = env.redis.clone();
+    let (id, _reused) = rer_duty_short_state_create_or_reuse(
+        &mut redis,
+        short_state(Some(vec!["group-1".to_string()])),
+    )
+    .await
+    .unwrap();
+    let ttl_before: i64 =
+        redis.ttl(rer_duty_short_state_key(&id)).await.unwrap();
+
+    let rsp = rer_duty_short_state_get_and_refresh(&mut redis, &id)
+        .await
+        .unwrap();
+    let ttl_after: i64 =
+        redis.ttl(rer_duty_short_state_key(&id)).await.unwrap();
+
+    assert_eq!(
+        rsp.state.waterfalls.as_ref().unwrap()[0].1.groups_selected,
+        Some(vec!["group-1".to_string()])
+    );
+    assert!(ttl_before > 0);
+    assert!(ttl_after > 0);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_duty_short_state_missing_returns_not_found() {
+    let env = cleanup().await.unwrap();
+    let mut redis = env.redis.clone();
+    let err = rer_duty_short_state_get_and_refresh(&mut redis, "missing")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, AppError::NotFound));
+}
+
+#[test]
+fn rer_duty_short_state_serialization_stable() {
+    let state = short_state(Some(vec!["group-1".to_string()]));
+    let payload_a = serde_json::to_string(&RerDutyShortStateGetRsp {
+        state: state.clone(),
+    })
+    .unwrap();
+    let payload_b =
+        serde_json::to_string(&RerDutyShortStateGetRsp { state }).unwrap();
+    assert_eq!(payload_a, payload_b);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_duty_short_state_get_works_without_hash_key() {
+    let env = cleanup().await.unwrap();
+    let mut redis = env.redis.clone();
+    let (id, _reused) = rer_duty_short_state_create_or_reuse(
+        &mut redis,
+        short_state(Some(vec!["group-1".to_string()])),
+    )
+    .await
+    .unwrap();
+    let hash = sha256::digest(
+        serde_json::to_string(&RerDutyShortStateGetRsp {
+            state: short_state(Some(vec!["group-1".to_string()])),
+        })
+        .unwrap()
+        .as_bytes(),
+    );
+    let hash_key = rer_duty_short_state_hash_key(&hash);
+    let _: () = redis.del(&hash_key).await.unwrap();
+
+    let rsp = rer_duty_short_state_get_and_refresh(&mut redis, &id)
+        .await
+        .unwrap();
+    assert_eq!(
+        rsp.state.waterfalls.as_ref().unwrap()[0].1.groups_selected,
+        Some(vec!["group-1".to_string()])
     );
 }
