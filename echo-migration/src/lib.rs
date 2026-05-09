@@ -238,6 +238,7 @@ mod m20260429_175416_add_signal_message_group_lookup_indexes;
 mod m20260429_181706_add_datasource_group_lookup_index;
 mod m20260429_212239_tune_datasource_autovacuum;
 mod m20260430_120000_add_analysis_map_in_sidebar;
+mod m20260507_151045_add_palitra_goi_sync_job;
 
 pub struct Migrator;
 
@@ -489,6 +490,7 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260429_212239_tune_datasource_autovacuum::Migration),
             Box::new(m20260430_120000_add_analysis_map_in_sidebar::Migration),
+            Box::new(m20260507_151045_add_palitra_goi_sync_job::Migration),
         ]
     }
 }
