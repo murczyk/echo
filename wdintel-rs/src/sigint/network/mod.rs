@@ -1836,6 +1836,7 @@ pub async fn update_network_freq(
         req.active_to.map(dt_from_millis).transpose()?;
     let mut invalidation_range =
         (Some(updated_freq_active_from), updated_freq_active_to);
+    let mut invalidation_freq = req.freq.clone();
 
     // Find the frequency for this network
     let network_freq_model =
@@ -1846,6 +1847,16 @@ pub async fn update_network_freq(
             .context(h!())?;
 
     if let Some(network_freq_model) = network_freq_model {
+        let freq = network_freq_model.freq.clone();
+        if req.freq != freq {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Frequency id {} belongs to frequency {}, not {}",
+                    req.network_freq_id, freq, req.freq
+                ),
+            });
+        }
+
         let network_freq_id = network_freq_model.id;
         invalidation_range = merge_invalidation_range(
             Some(network_freq_model.active_from),
@@ -1853,6 +1864,7 @@ pub async fn update_network_freq(
             Some(updated_freq_active_from),
             updated_freq_active_to,
         );
+        invalidation_freq = freq;
 
         let mut model = network_freq_model.into_active_model();
         model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
@@ -1914,7 +1926,7 @@ pub async fn update_network_freq(
     }
 
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
-        &req.freq,
+        &invalidation_freq,
         invalidation_range.0,
         invalidation_range.1,
         &env.dbx,
