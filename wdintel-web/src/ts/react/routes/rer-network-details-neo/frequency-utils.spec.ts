@@ -60,6 +60,22 @@ describe('frequency utils', () => {
     });
   });
 
+  it('marks grouped frequencies inactive when any child frequency is inactive', () => {
+    const rows = buildNetworkFreqRows(
+      [
+        createFreq({ networkFreqId: 10, freq: '652.1111', isActive: true }),
+        createFreq({ networkFreqId: 11, freq: '652.1200', isActive: false }),
+      ],
+      new Map(),
+      [],
+    );
+
+    expect(rows[0]).toMatchObject({
+      kind: 'group',
+      isActive: false,
+    });
+  });
+
   it('derives encryption label from modulation metadata when keys are absent', () => {
     expect(
       encryptionLabelFromKeys([], new Map([[4, 'DMR (ARC40)']]), 4, null),

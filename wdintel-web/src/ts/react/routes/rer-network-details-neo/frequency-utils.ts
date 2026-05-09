@@ -200,7 +200,7 @@ function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, st
     messageCount: counts.reduce((sum, value) => sum + value, 0),
     callsignLabel: joinCallsigns(freqs.flatMap((freq) => freq.callsigns ?? [])),
     lastDatetime,
-    isActive: freqs.some((freq) => freq.isActive),
+    isActive: freqs.every((freq) => freq.isActive),
   };
 }
 
