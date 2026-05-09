@@ -3532,18 +3532,33 @@ async fn rer_duty_short_state_dedup_reuses_id_and_refreshes_ttl() {
 async fn rer_duty_short_state_new_id_for_different_state() {
     let env = cleanup().await.unwrap();
     let mut redis = env.redis.clone();
-    let (first_id, reused_first) = rer_duty_short_state_create_or_reuse(
-        &mut redis,
-        short_state(Some(vec!["group-a".to_string()])),
-    )
-    .await
+    let first_state = short_state(Some(vec!["group-a".to_string()]));
+    let first_payload = serde_json::to_string(&RerDutyShortStateGetRsp {
+        state: first_state.clone(),
+    })
     .unwrap();
-    let (second_id, reused_second) = rer_duty_short_state_create_or_reuse(
-        &mut redis,
-        short_state(Some(vec!["group-b".to_string()])),
-    )
-    .await
+    let first_hash = sha256::digest(first_payload.as_bytes());
+    let first_hash_key = rer_duty_short_state_hash_key(&first_hash);
+
+    let second_state = short_state(Some(vec!["group-b".to_string()]));
+    let second_payload = serde_json::to_string(&RerDutyShortStateGetRsp {
+        state: second_state.clone(),
+    })
     .unwrap();
+    let second_hash = sha256::digest(second_payload.as_bytes());
+    let second_hash_key = rer_duty_short_state_hash_key(&second_hash);
+
+    let _: () = redis.del(&first_hash_key).await.unwrap();
+    let _: () = redis.del(&second_hash_key).await.unwrap();
+
+    let (first_id, reused_first) =
+        rer_duty_short_state_create_or_reuse(&mut redis, first_state)
+            .await
+            .unwrap();
+    let (second_id, reused_second) =
+        rer_duty_short_state_create_or_reuse(&mut redis, second_state)
+            .await
+            .unwrap();
 
     assert!(!reused_first);
     assert!(!reused_second);

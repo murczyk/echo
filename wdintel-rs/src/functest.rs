@@ -52,10 +52,6 @@ pub mod tests {
             })
             .await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
-        let _: () = redis::cmd("FLUSHALL")
-            .query_async(&mut env.redis.clone())
-            .await
-            .context(h!())?;
         // Delete dependent entities first to avoid foreign key constraint violations
         secret_group_user::Entity::delete_many()
             .exec(&env.dbx)
