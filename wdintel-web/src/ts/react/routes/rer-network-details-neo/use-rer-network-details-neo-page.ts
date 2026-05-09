@@ -60,8 +60,9 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   }, [state.network?.unitIds, unitsById]);
 
   useEffect(() => {
-    currentNetworkIdRef.current = state.network?.id ?? null;
-  }, [state.network?.id]);
+    currentNetworkIdRef.current = networkId;
+    frequencyReloadGeneration.current += 1;
+  }, [frequencyReloadGeneration, networkId]);
 
   const actions = useRerNetworkDetailsNeoPageActions({
     state,
