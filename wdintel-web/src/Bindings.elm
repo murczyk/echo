@@ -2441,7 +2441,7 @@ type alias RerDutyShortStateCreateReq =
 rerDutyShortStateCreateReqEncoder : RerDutyShortStateCreateReq -> Json.Encode.Value
 rerDutyShortStateCreateReqEncoder struct =
     Json.Encode.object
-        [ ( "state", rerDutyQueryStateEncoder struct.state )
+        [ ( "state", (rerDutyQueryStateEncoder) struct.state )
         ]
 
 
@@ -2453,7 +2453,7 @@ type alias RerDutyShortStateCreateRsp =
 rerDutyShortStateCreateRspEncoder : RerDutyShortStateCreateRsp -> Json.Encode.Value
 rerDutyShortStateCreateRspEncoder struct =
     Json.Encode.object
-        [ ( "id", Json.Encode.string struct.id )
+        [ ( "id", (Json.Encode.string) struct.id )
         ]
 
 
@@ -2465,7 +2465,7 @@ type alias RerDutyShortStateGetReq =
 rerDutyShortStateGetReqEncoder : RerDutyShortStateGetReq -> Json.Encode.Value
 rerDutyShortStateGetReqEncoder struct =
     Json.Encode.object
-        [ ( "id", Json.Encode.string struct.id )
+        [ ( "id", (Json.Encode.string) struct.id )
         ]
 
 
@@ -2477,7 +2477,7 @@ type alias RerDutyShortStateGetRsp =
 rerDutyShortStateGetRspEncoder : RerDutyShortStateGetRsp -> Json.Encode.Value
 rerDutyShortStateGetRspEncoder struct =
     Json.Encode.object
-        [ ( "state", rerDutyQueryStateEncoder struct.state )
+        [ ( "state", (rerDutyQueryStateEncoder) struct.state )
         ]
 
 
@@ -7966,7 +7966,7 @@ networkLinkDecoder =
 
 
 nodeDecoder : Json.Decode.Decoder Node
-nodeDecoder =
+nodeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.map NFolder (Json.Decode.field "Folder" (folderDecoder))
         , Json.Decode.map NDocument (Json.Decode.field "Document" (documentDecoder))
@@ -8128,7 +8128,7 @@ uploadPdfResDecoder =
 
 
 bgtaskErrorCodeDecoder : Json.Decode.Decoder BgtaskErrorCode
-bgtaskErrorCodeDecoder =
+bgtaskErrorCodeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -8256,7 +8256,7 @@ inboxMessageTagDecoder =
 
 
 inboxMessagesSortByDecoder : Json.Decode.Decoder InboxMessagesSortBy
-inboxMessagesSortByDecoder =
+inboxMessagesSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -8279,7 +8279,7 @@ inboxMessagesSortByDecoder =
         ]
 
 tagFilterOptionDecoder : Json.Decode.Decoder TagFilterOption
-tagFilterOptionDecoder =
+tagFilterOptionDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9118,7 +9118,7 @@ inboxGroupStatsDecoder =
 
 
 palitraAccessDecoder : Json.Decode.Decoder PalitraAccess
-palitraAccessDecoder =
+palitraAccessDecoder = 
         let
             elmRsConstructByLogins logins =
                         ByLogins { logins = logins }
@@ -9367,7 +9367,7 @@ cnPointDecoder =
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode
-contentNodeDecoder =
+contentNodeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.map CnTextC (Json.Decode.field "CNTextC" (cnTextDecoder))
         , Json.Decode.string
@@ -9461,7 +9461,7 @@ loginDecoder =
 
 
 listLoginsSortByDecoder : Json.Decode.Decoder ListLoginsSortBy
-listLoginsSortByDecoder =
+listLoginsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9532,7 +9532,7 @@ keepAliveReqDecoder =
 
 
 deactivationReasonTypeDecoder : Json.Decode.Decoder DeactivationReasonType
-deactivationReasonTypeDecoder =
+deactivationReasonTypeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9590,7 +9590,7 @@ myScopeDecoder =
 
 
 listOrganismsSortByDecoder : Json.Decode.Decoder ListOrganismsSortBy
-listOrganismsSortByDecoder =
+listOrganismsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9686,7 +9686,7 @@ organismGroupDecoder =
 
 
 listGoiAssociationsSortByDecoder : Json.Decode.Decoder ListGoiAssociationsSortBy
-listGoiAssociationsSortByDecoder =
+listGoiAssociationsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9865,7 +9865,7 @@ listGoiAssociationsRspDecoder =
 
 
 listGoiKnowledgeSortByDecoder : Json.Decode.Decoder ListGoiKnowledgeSortBy
-listGoiKnowledgeSortByDecoder =
+listGoiKnowledgeSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10306,7 +10306,7 @@ networkFrequenciesReportSettingsDecoder =
 
 
 reportAggregationDecoder : Json.Decode.Decoder ReportAggregation
-reportAggregationDecoder =
+reportAggregationDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10342,7 +10342,7 @@ reportPreviewReqDecoder =
 
 
 reportTypeDecoder : Json.Decode.Decoder ReportType
-reportTypeDecoder =
+reportTypeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10421,7 +10421,7 @@ senderReportSettingsDecoder =
 
 
 listUnitsSortByDecoder : Json.Decode.Decoder ListUnitsSortBy
-listUnitsSortByDecoder =
+listUnitsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10514,7 +10514,7 @@ unitSearchReqDecoder =
 
 
 listSignalsSortByDecoder : Json.Decode.Decoder ListSignalsSortBy
-listSignalsSortByDecoder =
+listSignalsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10636,7 +10636,7 @@ callsignActivityRecordDecoder =
 
 
 listCallsignsSortByDecoder : Json.Decode.Decoder ListCallsignsSortBy
-listCallsignsSortByDecoder =
+listCallsignsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10785,7 +10785,7 @@ listCallsignsSortByDecoder =
         ]
 
 developingFilterDecoder : Json.Decode.Decoder DevelopingFilter
-developingFilterDecoder =
+developingFilterDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10846,7 +10846,7 @@ listCallsignsRspDecoder =
 
 
 listNetworkCallsignsSortByDecoder : Json.Decode.Decoder ListNetworkCallsignsSortBy
-listNetworkCallsignsSortByDecoder =
+listNetworkCallsignsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11043,7 +11043,7 @@ etalonkaSettingsDecoder =
 
 
 etalonkaReportTypeDecoder : Json.Decode.Decoder EtalonkaReportType
-etalonkaReportTypeDecoder =
+etalonkaReportTypeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.map AccordingToTheForm (Json.Decode.field "AccordingToTheForm" (etalonkaSettingsDecoder))
         , Json.Decode.map ExtendedReport (Json.Decode.field "ExtendedReport" (etalonkaExtendedSettingsDecoder))
@@ -11154,7 +11154,7 @@ listFreqsRspDecoder =
 
 
 listFreqsSortByDecoder : Json.Decode.Decoder ListFreqsSortBy
-listFreqsSortByDecoder =
+listFreqsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11359,7 +11359,7 @@ networkDecoder =
 
 
 networkStatusDecoder : Json.Decode.Decoder NetworkStatus
-networkStatusDecoder =
+networkStatusDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11520,7 +11520,7 @@ listNetworksReqDecoder =
 
 
 listNetworksSortByDecoder : Json.Decode.Decoder ListNetworksSortBy
-listNetworksSortByDecoder =
+listNetworksSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11704,7 +11704,7 @@ postDecoder =
 
 
 listPostsSortByDecoder : Json.Decode.Decoder ListPostsSortBy
-listPostsSortByDecoder =
+listPostsSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11755,7 +11755,7 @@ deletePostReqDecoder =
 
 
 networkDescrTypeDecoder : Json.Decode.Decoder NetworkDescrType
-networkDescrTypeDecoder =
+networkDescrTypeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12054,7 +12054,7 @@ updateAreaOfResponsibilityReportOrderReqDecoder =
 
 
 reoReportFileTypeDecoder : Json.Decode.Decoder ReoReportFileType
-reoReportFileTypeDecoder =
+reoReportFileTypeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12077,7 +12077,7 @@ reoReportFileTypeDecoder =
         ]
 
 listAreasOfResponsibilitySortByDecoder : Json.Decode.Decoder ListAreasOfResponsibilitySortBy
-listAreasOfResponsibilitySortByDecoder =
+listAreasOfResponsibilitySortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12132,7 +12132,7 @@ zoneDatasourceGroupAddRspDecoder =
 
 
 eventTypeDecoder : Json.Decode.Decoder EventType
-eventTypeDecoder =
+eventTypeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12333,7 +12333,7 @@ type DutyTagsLayout
 
 
 dutyTagsLayoutDecoder : Json.Decode.Decoder DutyTagsLayout
-dutyTagsLayoutDecoder =
+dutyTagsLayoutDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
