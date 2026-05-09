@@ -25,6 +25,7 @@ type Args = {
   setState: SetState;
   unitNames: string[];
   reloadGeneration: MutableRefObject<number>;
+  currentNetworkIdRef: MutableRefObject<number | null>;
 };
 
 function syncNetworkRelations(editForm: NetworkEditForm) {
@@ -39,9 +40,14 @@ function syncNetworkRelations(editForm: NetworkEditForm) {
   );
 }
 
-export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration }: Args) {
+export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration, currentNetworkIdRef }: Args) {
   const descriptionActions = useRerNetworkDetailsNeoPageDescriptionActions({ state, setState });
-  const frequencyActions = useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration });
+  const frequencyActions = useRerNetworkDetailsNeoPageFrequencyActions({
+    state,
+    setState,
+    reloadGeneration,
+    currentNetworkIdRef,
+  });
 
   const openMenu = useCallback((anchorEl: HTMLElement) => {
     setState((current) => ({ ...current, menuAnchorEl: anchorEl }));

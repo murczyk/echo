@@ -23,6 +23,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const [state, setState] = useState<NetworkDetailsNeoPageState>(EMPTY_STATE);
   const pageReloadGeneration = useRef(0);
   const frequencyReloadGeneration = useRef(0);
+  const currentNetworkIdRef = useRef<number | null>(null);
 
   const reload = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
@@ -58,7 +59,17 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       .filter((label) => label.trim() !== '');
   }, [state.network?.unitIds, unitsById]);
 
-  const actions = useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration: frequencyReloadGeneration });
+  useEffect(() => {
+    currentNetworkIdRef.current = state.network?.id ?? null;
+  }, [state.network?.id]);
+
+  const actions = useRerNetworkDetailsNeoPageActions({
+    state,
+    setState,
+    unitNames,
+    reloadGeneration: frequencyReloadGeneration,
+    currentNetworkIdRef,
+  });
 
   useEffect(() => {
     if (state.network === null) return;

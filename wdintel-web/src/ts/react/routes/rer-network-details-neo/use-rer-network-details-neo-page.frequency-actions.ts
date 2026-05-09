@@ -27,6 +27,7 @@ type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
   reloadGeneration: MutableRefObject<number>;
+  currentNetworkIdRef: MutableRefObject<number | null>;
 };
 
 function resetFreqCreateWizardState(current: NetworkDetailsNeoPageState): NetworkDetailsNeoPageState {
@@ -90,17 +91,18 @@ function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: numbe
   return state.freqs.find((freq) => freq.networkFreqId === networkFreqId) ?? null;
 }
 
-export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration }: Args) {
+export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration, currentNetworkIdRef }: Args) {
   const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
     setState((current) => ({ ...current, activeNetworkDetailsTab }));
   }, [setState]);
 
   const loadFrequencies = useCallback(async (networkIdArg?: number) => {
-    const networkId = networkIdArg ?? state.network?.id;
+    const networkId = networkIdArg ?? currentNetworkIdRef.current;
     if (!networkId || state.freqsLoading) return;
 
     reloadGeneration.current += 1;
     const generation = reloadGeneration.current;
+    const targetNetworkId = networkId;
 
     setState((current) => ({
       ...current,
@@ -108,7 +110,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
       freqsError: null,
     }));
 
-    const isCurrent = () => reloadGeneration.current === generation && state.network?.id === networkId;
+    const isCurrent = () => reloadGeneration.current === generation && currentNetworkIdRef.current === targetNetworkId;
 
     try {
       const [freqsResponse, activityResponse] = await Promise.all([
@@ -135,7 +137,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         freqsError: formatErrorMessage(error),
       }));
     }
-  }, [reloadGeneration, setState, state.freqsLoading, state.network?.id]);
+  }, [currentNetworkIdRef, reloadGeneration, setState, state.freqsLoading]);
 
   const openFreqCreateWizard = useCallback(() => {
     setState((current) => ({
