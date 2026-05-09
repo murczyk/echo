@@ -1391,18 +1391,7 @@ update shared msg model =
             )
 
         NetworkPostsUpdated freq editState (Ok _) ->
-            ( model
-            , E.updateNetworkFreq (NetworkFreqUpdated freq editState)
-                { networkId = editState.id
-                , networkFreqId = 0
-                , freq = freq
-                , kind = NetworksUtils.networkKindToString model.editKindSelect.selected
-                , modulationId = model.editModulationSelect.selected
-                , encryptionKeyIds = []
-                , activeFrom = 0
-                , activeTo = Nothing
-                }
-            )
+            ( model, E.updateNetwork (NetworkUpdated freq) editState )
 
         NetworkPostsUpdated _ _ (Err err) ->
             ( model
