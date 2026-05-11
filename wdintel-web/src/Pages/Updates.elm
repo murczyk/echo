@@ -6,7 +6,7 @@ import Bindings as B
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (class)
+import Html.Attributes exposing (class, style)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -112,6 +112,6 @@ viewSection : B.ChangelogSection -> Html Msg
 viewSection changelogSection =
     section [ class "rounded border border-[var(--color-border)] bg-[var(--color-card)] p-4" ]
         [ h2 [ class "text-lg font-semibold mb-2" ] [ text changelogSection.date ]
-        , ul [ class "list-disc ml-5 space-y-1" ]
+        , ul [ class "list-disc ml-5 space-y-1", style "list-style" "disc" ]
             (List.map (\item -> li [ class "leading-snug" ] [ text item ]) changelogSection.items)
         ]
