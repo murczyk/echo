@@ -4,17 +4,15 @@ import EditIcon from '@mui/icons-material/Edit';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import {
   Box,
-  Chip,
+  Button,
   IconButton,
   Menu,
   MenuItem,
   Skeleton,
   Stack,
-  Switch,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
 import { useState } from 'react';
 
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
@@ -22,8 +20,11 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { navigateWithinSpa } from '../../utils/browser';
+import { NetworkFreqCreateWizard } from './components/NetworkFreqCreateWizard';
+import { NetworkFreqEditDrawer } from './components/NetworkFreqEditDrawer';
+import { NetworkFreqTechDataDrawer } from './components/NetworkFreqTechDataDrawer';
 import { NetworkDescriptionDrawer } from './components/NetworkDescriptionDrawer';
-import { NetworkDetailsDescriptionsPanel } from './components/NetworkDetailsJustificationsPanel';
+import { NetworkDetailsTabPanel } from './components/NetworkDetailsTabPanel';
 import { NetworkDetailsLeftPanel } from './components/NetworkDetailsLeftPanel';
 import { NetworkEditDrawer } from './components/NetworkEditDrawer';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
@@ -35,7 +36,6 @@ type Props = {
 
 export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const page = useRerNetworkDetailsNeoPage(networkId);
-  const theme = useTheme();
   const [showAllAors, setShowAllAors] = useState(false);
   const aorVisible = showAllAors ? page.aorItems : page.aorItems.slice(0, 5);
   const aorCollapsedCount = Math.max(page.aorItems.length - aorVisible.length, 0);
@@ -64,7 +64,6 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   ) : (
     <Skeleton width={240} />
   );
-  const isDark = theme.palette.mode === 'dark';
   const copyText = page.network ? `${formatClassicNetworkHeaderName(page.network.name, page.unitNames)}, ${page.network.location}` : '';
   const descriptionDrawerNetwork = page.network;
   const isLoading = page.loading && !page.network;
@@ -73,85 +72,18 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
     page.deleteDescriptionTarget?.descrType === 'Sign'
       ? 'Ви впевнені, що хочете видалити ці розвідувальні ознаки?'
       : 'Ви впевнені, що хочете видалити це обґрунтування?';
+  const editFreq = page.freqEditDrawerForm
+    ? page.freqs.find((freq) => freq.networkFreqId === page.freqEditDrawerForm?.networkFreqId) ?? null
+    : null;
+  const techFreq = page.freqTechDrawerForm
+    ? page.freqs.find((freq) => freq.networkFreqId === page.freqTechDrawerForm?.networkFreqId) ?? null
+    : null;
 
   const actions = (
     <Stack direction="row" spacing={1} alignItems="center">
-      <Box
-        component="button"
-        type="button"
-        onClick={() => navigateWithinSpa(classicHref)}
-        aria-label="Перейти на стару версію"
-        sx={{
-          flexShrink: 0,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 1.5,
-          border: 'none',
-          borderRadius: 0,
-          bgcolor: 'transparent',
-          px: 0,
-          py: 0,
-          cursor: 'pointer',
-          color: 'inherit',
-          '&:hover': {
-            bgcolor: 'transparent',
-          },
-          '&:focus-visible': {
-            outline: 'none',
-          },
-        }}
-      >
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
-          <Switch
-            checked
-            disableRipple
-            sx={{
-              pointerEvents: 'none',
-              width: 42,
-              height: 26,
-              p: 0,
-              '& .MuiSwitch-switchBase': {
-                p: 0.5,
-                transitionDuration: '150ms',
-                '&.Mui-checked': {
-                  transform: 'translateX(16px)',
-                  color: '#9cc9fb',
-                },
-              },
-              '& .MuiSwitch-thumb': {
-                width: 18,
-                height: 18,
-                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
-                bgcolor: '#9cc9fb',
-              },
-              '& .MuiSwitch-track': {
-                borderRadius: 999,
-                bgcolor: isDark ? '#55647a' : '#6d7f98',
-                opacity: 1,
-              },
-            }}
-          />
-          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ minWidth: 0 }}>
-            <Typography component="span" sx={{ fontSize: '1rem', fontWeight: 400, color: isDark ? '#a9ccf2' : '#9cc9fb' }}>
-              Нова версія
-            </Typography>
-            <Chip
-              label="ALPHA"
-              size="small"
-              sx={{
-                height: 24,
-                fontSize: '0.72rem',
-                fontWeight: 400,
-                letterSpacing: '0.18em',
-                color: isDark ? '#f2b15c' : '#b85b16',
-                bgcolor: isDark ? alpha(theme.palette.warning.main, 0.12) : '#fff7dd',
-                border: 'none',
-                '& .MuiChip-label': { px: 1.1 },
-              }}
-            />
-          </Stack>
-        </Stack>
-      </Box>
+      <Button onClick={() => navigateWithinSpa(classicHref)}>
+        Повернутись до класичної версії
+      </Button>
       <Tooltip title="Скопіювати назву і район">
         <span>
           <IconButton
@@ -236,19 +168,36 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           />
         </Box>
 
-        <NetworkDetailsDescriptionsPanel
+        <NetworkDetailsTabPanel
           network={descriptionDrawerNetwork}
           loading={page.loading}
           confirmationDescriptions={page.confirmationDescriptions}
           signDescriptions={page.signDescriptions}
-          canManage={page.canManageDescriptionActions}
-          activeDescriptionTab={page.activeDescriptionTab}
+          canManageDescriptions={page.canManageDescriptionActions}
+          canManageFrequencies={page.canEdit}
+          activeNetworkDetailsTab={page.activeNetworkDetailsTab}
           expandedDescriptionIds={page.expandedDescriptionIds}
-          onSetActiveDescriptionTab={page.setActiveDescriptionTab}
+          onSetActiveNetworkDetailsTab={page.setActiveNetworkDetailsTab}
           onToggleExpanded={page.toggleDescriptionExpanded}
           onEdit={page.openDescriptionDrawerForEdit}
           onDelete={page.openDeleteDescriptionDialog}
           onCreate={page.openDescriptionDrawerForCreate}
+          freqs={page.freqs}
+          freqsLoaded={page.freqsLoaded}
+          freqsLoading={page.freqsLoading}
+          freqsError={page.freqsError}
+          modulations={page.modulations}
+          expandedFrequencyGroupIds={page.expandedFrequencyGroupIds}
+          toggleFrequencyGroupExpanded={page.toggleFrequencyGroupExpanded}
+          onOpenFreqCreateWizard={page.openFreqCreateWizard}
+          onOpenFreqEditDrawer={page.openFreqEditDrawer}
+          onOpenFreqTechDrawer={page.openFreqTechDrawer}
+          onOpenDeleteFreqDialog={page.openDeleteFreqDialog}
+          onOpenFreqRowActions={page.openFreqRowActions}
+          onCloseFreqRowActions={page.closeFreqRowActions}
+          freqRowActionMenuAnchorEl={page.freqRowActionMenuAnchorEl}
+          freqRowActionTargetId={page.freqRowActionTargetId}
+          onReloadFrequencies={page.loadFrequencies}
         />
       </Box>
 
@@ -300,6 +249,60 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
       />
+
+      <NetworkFreqCreateWizard
+        open={page.freqCreateWizardOpen}
+        step={page.freqCreateWizardStep}
+        form={page.freqCreateWizardForm}
+        saving={page.freqCreateWizardSaving}
+        error={page.freqCreateWizardError}
+        networkId={page.network?.id ?? null}
+        canManageKeys={page.canEdit}
+        modulations={page.modulations}
+        onClose={page.closeFreqCreateWizard}
+        onChange={page.setFreqCreateWizardForm}
+        onStepChange={page.setFreqCreateWizardStep}
+        onSave={page.saveFreqCreateWizard}
+      />
+
+      <NetworkFreqEditDrawer
+        open={page.freqEditDrawerOpen}
+        form={page.freqEditDrawerForm}
+        freq={editFreq}
+        saving={page.freqEditDrawerSaving}
+        error={page.freqEditDrawerError}
+        modulations={page.modulations}
+        onClose={page.closeFreqEditDrawer}
+        onChange={page.setFreqEditDrawerForm}
+        onSave={page.saveFreqEditDrawer}
+      />
+
+      <NetworkFreqTechDataDrawer
+        open={page.freqTechDrawerOpen}
+        networkId={page.network?.id ?? null}
+        freq={techFreq}
+        form={page.freqTechDrawerForm}
+        saving={page.freqTechDrawerSaving}
+        error={page.freqTechDrawerError}
+        canManageKeys={page.canEdit}
+        modulations={page.modulations}
+        onClose={page.closeFreqTechDrawer}
+        onChange={page.setFreqTechDrawerForm}
+        onSave={page.saveFreqTechDrawer}
+        onReloadFrequencies={page.loadFrequencies}
+      />
+
+      <ConfirmDangerDialog
+        open={page.freqDeleteDialogOpen}
+        onClose={page.closeDeleteFreqDialog}
+        onConfirm={page.deleteFreq}
+        title="Підтвердження видалення частоти"
+        description={`Видалити частоту «${page.freqDeleteTarget?.freq ?? '—'}»?`}
+        submitting={page.freqDeleteSubmitting}
+        disabled={!page.canEdit || page.freqDeleteTarget === null}
+      >
+        {page.freqDeleteError ? <PowerAlert severity="error">{page.freqDeleteError}</PowerAlert> : null}
+      </ConfirmDangerDialog>
     </Box>
   );
 }

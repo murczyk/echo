@@ -2419,6 +2419,7 @@ export type AddNetworkFrequencyDescription = {
 
 export type UpdateNetworkFreqReq = {
   networkId: number;
+  networkFreqId: number;
   freq: string;
   kind: string;
   modulationId: number | null;

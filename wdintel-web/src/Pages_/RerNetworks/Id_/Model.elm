@@ -57,7 +57,7 @@ type alias Model =
     , networkFreqsActivity : RemoteData ApiError (Dict String (Dict String Int))
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
     , networkKeys : RemoteData ApiError (List B.EncryptionKeyData)
-    , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
+    , freqsEditingState : Mode (Dict Int B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe Int
     , mode : Mode B.UpdateNetworkReq

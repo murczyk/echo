@@ -53,6 +53,7 @@ type Params = {
   mapDateRangeLoadVersionRef: React.MutableRefObject<number>;
   mapMessagesLoadVersionRef: React.MutableRefObject<number>;
   newestFirst: boolean;
+  loadMissingNetworksForMessages: (messageItems: Array<[number, InboxMessage]>) => Promise<void>;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   optionsFreqs: string[];
@@ -94,6 +95,7 @@ export function useAnalysisDataLoaders(params: Params) {
     mapDateRangeLoadVersionRef,
     mapMessagesLoadVersionRef,
     newestFirst,
+    loadMissingNetworksForMessages,
     onError,
     onUnauthorized,
     optionsFreqs,
@@ -222,6 +224,7 @@ export function useAnalysisDataLoaders(params: Params) {
         const nextMessages = await fetchMessagesByIds(cleanMessageIds);
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
         setMapOpenMessages(nextMessages);
+        void loadMissingNetworksForMessages(nextMessages);
         return true;
       } catch (loadError) {
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
@@ -229,7 +232,7 @@ export function useAnalysisDataLoaders(params: Params) {
         return false;
       }
     },
-    [mapMessagesLoadVersionRef, onError, onUnauthorized, setMapOpenMessages],
+    [loadMissingNetworksForMessages, mapMessagesLoadVersionRef, onError, onUnauthorized, setMapOpenMessages],
   );
 
   const loadMapPalitras = useCallback(async () => {

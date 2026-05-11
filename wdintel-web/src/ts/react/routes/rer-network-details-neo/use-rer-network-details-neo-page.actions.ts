@@ -1,13 +1,9 @@
 import { useCallback } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import type { Network } from '../../../../Bindings';
 import {
-  addNetworkDescriptions,
   deleteNetwork,
-  deleteNetworkDescription,
   updateNetwork,
-  updateNetworkDescription,
   updateNetworkPosts,
   updateNetworkUnits,
 } from '../../services/api/networks';
@@ -15,12 +11,12 @@ import { navigateWithinSpa } from '../../utils/browser';
 import {
   formatClassicNetworkHeaderName,
   formatErrorMessage,
-  toNetworkDescriptionForm,
   toNetworkEditForm,
-  type NetworkDescriptionForm,
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
 } from './use-rer-network-details-neo-page.shared';
+import { useRerNetworkDetailsNeoPageDescriptionActions } from './use-rer-network-details-neo-page.description-actions';
+import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -28,37 +24,9 @@ type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
   unitNames: string[];
+  reloadGeneration: MutableRefObject<number>;
+  currentNetworkIdRef: MutableRefObject<number | null>;
 };
-
-function resolveNetworkDescriptionFrequency(network: Network, networkFreqId: number | null) {
-  if (networkFreqId === null) {
-    return null;
-  }
-
-  return network.freqs.find((freq) => freq.id === networkFreqId) ?? null;
-}
-
-function getDescriptionValidationError(descrType: NetworkDetailsNeoPageState['descriptionDrawerDescrType']): string {
-  return descrType === 'Sign'
-    ? 'Розвідувальні ознаки не можуть бути порожніми'
-    : 'Обґрунтування не може бути порожнім';
-}
-
-function resetDescriptionDrawerState(
-  current: NetworkDetailsNeoPageState,
-  extra: Partial<Pick<NetworkDetailsNeoPageState, 'descriptionDrawerDescrType' | 'descriptionDrawerMode'>> = {},
-): NetworkDetailsNeoPageState {
-  return {
-    ...current,
-    descriptionDrawerOpen: false,
-    descriptionDrawerMode: extra.descriptionDrawerMode ?? 'create',
-    descriptionDrawerDescrType: extra.descriptionDrawerDescrType ?? 'Confirmation',
-    descriptionDrawerDescriptionId: null,
-    descriptionDrawerForm: toNetworkDescriptionForm('', null),
-    descriptionDrawerSaving: false,
-    descriptionDrawerError: null,
-  };
-}
 
 function syncNetworkRelations(editForm: NetworkEditForm) {
   return updateNetworkPosts({
@@ -72,7 +40,15 @@ function syncNetworkRelations(editForm: NetworkEditForm) {
   );
 }
 
-export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames }: Args) {
+export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration, currentNetworkIdRef }: Args) {
+  const descriptionActions = useRerNetworkDetailsNeoPageDescriptionActions({ state, setState });
+  const frequencyActions = useRerNetworkDetailsNeoPageFrequencyActions({
+    state,
+    setState,
+    reloadGeneration,
+    currentNetworkIdRef,
+  });
+
   const openMenu = useCallback((anchorEl: HTMLElement) => {
     setState((current) => ({ ...current, menuAnchorEl: anchorEl }));
   }, [setState]);
@@ -115,222 +91,6 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames 
       };
     });
   }, [setState]);
-
-  const toggleDescriptionExpanded = useCallback((descriptionId: number) => {
-    setState((current) => {
-      const isExpanded = current.expandedDescriptionIds.includes(descriptionId);
-      return {
-        ...current,
-        expandedDescriptionIds: isExpanded
-          ? current.expandedDescriptionIds.filter((id) => id !== descriptionId)
-          : [...current.expandedDescriptionIds, descriptionId],
-      };
-    });
-  }, [setState]);
-
-  const openDescriptionDrawerForCreate = useCallback((descrType: NetworkDetailsNeoPageState['descriptionDrawerDescrType']) => {
-    setState((current) => ({
-      ...current,
-      descriptionDrawerOpen: true,
-      descriptionDrawerMode: 'create',
-      descriptionDrawerDescrType: descrType,
-      descriptionDrawerDescriptionId: null,
-      descriptionDrawerForm: toNetworkDescriptionForm('', null),
-      descriptionDrawerSaving: false,
-      descriptionDrawerError: null,
-    }));
-  }, [setState]);
-
-  const openDescriptionDrawerForEdit = useCallback((description: Network['descriptions'][number]) => {
-    setState((current) => ({
-      ...current,
-      descriptionDrawerOpen: true,
-      descriptionDrawerMode: 'edit',
-      descriptionDrawerDescrType: description.descrType,
-      descriptionDrawerDescriptionId: description.id,
-      descriptionDrawerForm: toNetworkDescriptionForm(description.description, description.networkFrequencyId ?? null),
-      descriptionDrawerSaving: false,
-      descriptionDrawerError: null,
-    }));
-  }, [setState]);
-
-  const closeDescriptionDrawer = useCallback(() => {
-    setState((current) => {
-      if (current.descriptionDrawerSaving) return current;
-      return resetDescriptionDrawerState(current);
-    });
-  }, [setState]);
-
-  const setDescriptionDrawerForm = useCallback((descriptionDrawerForm: NetworkDescriptionForm) => {
-    setState((current) => ({ ...current, descriptionDrawerForm }));
-  }, [setState]);
-
-  const setActiveDescriptionTab = useCallback((activeDescriptionTab: NetworkDetailsNeoPageState['activeDescriptionTab']) => {
-    setState((current) => ({ ...current, activeDescriptionTab }));
-  }, [setState]);
-
-  const openDeleteDescriptionDialog = useCallback((description: Network['descriptions'][number]) => {
-    setState((current) => ({
-      ...current,
-      deleteDescriptionDialogOpen: true,
-      deleteDescriptionTarget: description,
-      deleteDescriptionSubmitting: false,
-      deleteDescriptionError: null,
-    }));
-  }, [setState]);
-
-  const closeDeleteDescriptionDialog = useCallback(() => {
-    setState((current) => {
-      if (current.deleteDescriptionSubmitting) return current;
-      return {
-        ...current,
-        deleteDescriptionDialogOpen: false,
-        deleteDescriptionTarget: null,
-        deleteDescriptionSubmitting: false,
-        deleteDescriptionError: null,
-      };
-    });
-  }, [setState]);
-
-  const saveDescription = useCallback(async () => {
-    const network = state.network;
-    const form = state.descriptionDrawerForm;
-    const descriptionId = state.descriptionDrawerDescriptionId;
-    const descrType = state.descriptionDrawerDescrType;
-
-    if (!network || state.descriptionDrawerSaving) return;
-
-    const description = form.description.trim();
-    if (description === '') {
-      setState((current) => ({
-        ...current,
-        descriptionDrawerError: getDescriptionValidationError(descrType),
-      }));
-      return;
-    }
-
-    const selectedFreq = resolveNetworkDescriptionFrequency(network, form.networkFreqId);
-    if (state.descriptionDrawerMode === 'create' && form.networkFreqId !== null && !selectedFreq) {
-      setState((current) => ({
-        ...current,
-        descriptionDrawerError: 'Не вдалося знайти вибрану частоту',
-      }));
-      return;
-    }
-
-    setState((current) => ({
-      ...current,
-      descriptionDrawerSaving: true,
-      descriptionDrawerError: null,
-    }));
-
-    try {
-      let updatedNetwork: Network;
-
-      if (state.descriptionDrawerMode === 'create') {
-        updatedNetwork = await addNetworkDescriptions({
-          networkId: network.id,
-          networkDescriptions:
-            selectedFreq === null
-              ? [
-                  {
-                    descrType,
-                    description,
-                  },
-                ]
-              : [],
-          frequencyDescriptions:
-            selectedFreq === null
-              ? []
-              : [
-                  {
-                    descrType,
-                    description,
-                    freq: selectedFreq.freq,
-                  },
-                ],
-        });
-      } else {
-        if (descriptionId === null) {
-          setState((current) => ({
-            ...current,
-            descriptionDrawerSaving: false,
-            descriptionDrawerError: 'Не вдалося знайти опис для редагування',
-          }));
-          return;
-        }
-
-        updatedNetwork = await updateNetworkDescription({
-          networkId: network.id,
-          descriptionId,
-          descrType,
-          description,
-          networkFreqId: form.networkFreqId,
-        });
-      }
-
-      setState((current) => ({
-        ...current,
-        ...resetDescriptionDrawerState(current),
-        network: updatedNetwork,
-        expandedDescriptionIds: current.expandedDescriptionIds.filter((descriptionId) =>
-          updatedNetwork.descriptions.some((description) => description.id === descriptionId),
-        ),
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        descriptionDrawerSaving: false,
-        descriptionDrawerError: formatErrorMessage(error),
-      }));
-    }
-  }, [
-    state.descriptionDrawerDescrType,
-    state.descriptionDrawerDescriptionId,
-    state.descriptionDrawerForm,
-    state.descriptionDrawerMode,
-    state.descriptionDrawerSaving,
-    state.network,
-    setState,
-  ]);
-
-  const deleteDescription = useCallback(async () => {
-    const network = state.network;
-    const target = state.deleteDescriptionTarget;
-
-    if (!network || !target || state.deleteDescriptionSubmitting) return;
-
-    setState((current) => ({
-      ...current,
-      deleteDescriptionSubmitting: true,
-      deleteDescriptionError: null,
-    }));
-
-    try {
-      const updatedNetwork = await deleteNetworkDescription({
-        networkId: network.id,
-        descriptionId: target.id,
-      });
-
-      setState((current) => ({
-        ...current,
-        network: updatedNetwork,
-        deleteDescriptionDialogOpen: false,
-        deleteDescriptionTarget: null,
-        deleteDescriptionSubmitting: false,
-        deleteDescriptionError: null,
-        expandedDescriptionIds: current.expandedDescriptionIds.filter((descriptionId) =>
-          updatedNetwork.descriptions.some((description) => description.id === descriptionId),
-        ),
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        deleteDescriptionSubmitting: false,
-        deleteDescriptionError: formatErrorMessage(error),
-      }));
-    }
-  }, [state.deleteDescriptionSubmitting, state.deleteDescriptionTarget, state.network, setState]);
 
   const saveNetworkEdit = useCallback(async () => {
     const network = state.network;
@@ -427,25 +187,17 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames 
   }, [setState]);
 
   return {
+    ...descriptionActions,
+    ...frequencyActions,
     openMenu,
     closeMenu,
     openDeleteDialog,
     closeDeleteDialog,
     openEditDrawer,
     closeEditDrawer,
-    toggleDescriptionExpanded,
-    openDescriptionDrawerForCreate,
-    openDescriptionDrawerForEdit,
-    closeDescriptionDrawer,
-    setDescriptionDrawerForm,
-    setActiveDescriptionTab,
-    saveDescription,
-    openDeleteDescriptionDialog,
-    closeDeleteDescriptionDialog,
-    deleteDescription,
-    setEditForm,
     saveNetworkEdit,
     handleDelete,
     handleCopyNetworkInfo,
+    setEditForm,
   };
 }
