@@ -1,14 +1,27 @@
 import type {
+  AddAsKnownNetworkCallsignReq,
   Callsign,
+  CallsignActivityItem,
+  CallsignActivityRecord,
   CallsignUnitStatRow,
   CallsignUnitStatsRsp,
   CreateCallsignReq,
+  CreateNetworkCallsignReq,
   ListCallsignsReq,
   ListCallsignsRsp,
+  ListNetworkCallsignsReq,
+  ListNetworkCallsignsRes,
   ListSourcesRsp,
+  NetworkCallsign,
+  NetworkCallsignRes,
+  NetworkCallsignsActivityReq,
+  NetworkCallsignsActivityRsp,
+  SingleNetworkCallsignsListRsp,
+  SingleNetworkCallsignsReq,
   Source,
   Unit,
   User,
+  UpdateNetworkCallsignReq,
 } from '../../../../Bindings';
 
 import { getUnitsList } from './units';
@@ -16,6 +29,7 @@ import { HttpRequestError, postJson } from './client';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { isNullOrUndefined } from '../../utils/misc';
 import { fetchCurrentUser } from './user';
+import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 type CallsignLike = Partial<Callsign> & {
   unit_id?: number | string;
@@ -46,6 +60,49 @@ type ListSourcesRspLike = {
 
 type CallsignUnitStatsRspLike = {
   units?: CallsignUnitStatRowLike[] | null;
+};
+
+type NetworkCallsignLike = Partial<NetworkCallsign> & {
+  created_at?: number | string;
+  last_datetime?: number | string | null;
+  message_count?: number | string;
+  known_callsign_id?: number | string | null;
+  unit_id?: number | string | null;
+  source_id?: number | string | null;
+  radio_freq?: string | null;
+  unit_developing?: boolean;
+  main_radio_station?: boolean;
+  freqs?: string[] | null;
+};
+
+type NetworkCallsignResLike = Partial<NetworkCallsignRes> & {
+  known_callsigns?: Array<{
+    id?: number | string;
+    callsign?: string;
+    position?: string;
+    comment?: string;
+    unit_id?: number | string;
+    unit_name?: string;
+    source_name?: string;
+    created_at?: number | string;
+  }> | null;
+  message_count?: number | string;
+  last_datetime?: number | string | null;
+  is_old?: boolean;
+  is_in_dictionary?: boolean;
+  network_names?: string[] | null;
+};
+
+type NetworkCallsignsActivityRspLike = {
+  callsigns_activity?: CallsignActivityRecord[] | null;
+};
+
+type ListNetworkCallsignsResLike = {
+  network_callsigns?: NetworkCallsignLike[] | null;
+};
+
+type SingleNetworkCallsignsListRspLike = {
+  callsigns?: NetworkCallsignResLike[] | null;
 };
 
 type ListCallsignsReqBody = {
@@ -102,6 +159,41 @@ export type CallsignsBootstrapData = {
   unitStats: CallsignUnitStatRow[];
   callsigns: ListCallsignsRsp;
 };
+
+export async function listNetworkCallsigns(req: ListNetworkCallsignsReq): Promise<ListNetworkCallsignsRes> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsigns/list', transformCamelToSnake(req));
+  return transformSnakeToCamel<ListNetworkCallsignsRes>(raw);
+}
+
+export async function getNetworkCallsigns(req: SingleNetworkCallsignsReq): Promise<SingleNetworkCallsignsListRsp> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsigns-list', transformCamelToSnake(req));
+  return transformSnakeToCamel<SingleNetworkCallsignsListRsp>(raw);
+}
+
+export async function getNetworkCallsignsActivity(req: NetworkCallsignsActivityReq): Promise<NetworkCallsignsActivityRsp> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsigns/activity', transformCamelToSnake(req));
+  return transformSnakeToCamel<NetworkCallsignsActivityRsp>(raw);
+}
+
+export async function createNetworkCallsign(req: CreateNetworkCallsignReq): Promise<NetworkCallsign> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsign/create', transformCamelToSnake(req));
+  return transformSnakeToCamel<NetworkCallsign>(raw);
+}
+
+export async function updateNetworkCallsign(req: UpdateNetworkCallsignReq): Promise<NetworkCallsign> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsign/update', transformCamelToSnake(req));
+  return transformSnakeToCamel<NetworkCallsign>(raw);
+}
+
+export async function deleteNetworkCallsign(callsignId: number): Promise<NetworkCallsign> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsign/delete', callsignId as any);
+  return transformSnakeToCamel<NetworkCallsign>(raw);
+}
+
+export async function addKnownCallsignsToNetwork(req: AddAsKnownNetworkCallsignReq): Promise<NetworkCallsign[]> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsign/add-as-known', transformCamelToSnake(req));
+  return transformSnakeToCamel<NetworkCallsign[]>(raw);
+}
 
 function toNumber(value: number | string | null | undefined, fallback = 0): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;

@@ -24,6 +24,7 @@ import { NetworkFreqCreateWizard } from './components/NetworkFreqCreateWizard';
 import { NetworkFreqEditDrawer } from './components/NetworkFreqEditDrawer';
 import { NetworkFreqTechDataDrawer } from './components/NetworkFreqTechDataDrawer';
 import { NetworkDescriptionDrawer } from './components/NetworkDescriptionDrawer';
+import { NetworkCallsignDrawer } from './components/NetworkCallsignDrawer';
 import { NetworkDetailsTabPanel } from './components/NetworkDetailsTabPanel';
 import { NetworkDetailsLeftPanel } from './components/NetworkDetailsLeftPanel';
 import { NetworkEditDrawer } from './components/NetworkEditDrawer';
@@ -198,6 +199,32 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           freqRowActionMenuAnchorEl={page.freqRowActionMenuAnchorEl}
           freqRowActionTargetId={page.freqRowActionTargetId}
           onReloadFrequencies={page.loadFrequencies}
+          callsignPanelProps={{
+            sources: page.sources,
+            networkCallsigns: page.networkCallsigns,
+            catalogCallsignGroups: page.catalogCallsignGroups,
+            unknownInterceptedCallsigns: page.unknownInterceptedCallsigns,
+            loading: page.callsignsLoading,
+            loadingError: page.callsignsError,
+            canManage: page.canManageCallsignActions,
+            sectionMode: page.callsignSectionMode,
+            onSectionModeChange: page.setCallsignSectionMode,
+            statusFilter: page.callsignStatusFilter,
+            onStatusFilterChange: page.setCallsignStatusFilter,
+            interceptedExpanded: page.callsignInterceptedExpanded,
+            onToggleInterceptedExpanded: page.toggleCallsignInterceptedExpanded,
+            onOpenCreateDrawer: page.openCallsignDrawerForCreate,
+            onOpenEditDrawer: page.openCallsignDrawerForEdit,
+            onOpenDeleteDialog: page.openCallsignDeleteDialog,
+            onAddKnownCallsign: page.addKnownCallsignsToNetwork,
+            onAddInterceptedToDeveloping: (callsign) => page.addInterceptedCallsignToNetwork(callsign, true),
+            onAddInterceptedToNetwork: (callsign) => page.addInterceptedCallsignToNetwork(callsign, false),
+            onReload: page.loadCallsigns,
+            inFlightCreateCallsigns: page.callsignCreateInFlightCallsigns,
+            inFlightAddIds: page.callsignCatalogAddInFlightIds,
+            inFlightUpdateIds: page.callsignUpdateInFlightIds,
+            inFlightDeleteIds: page.callsignDeleteInFlightIds,
+          }}
         />
       </Box>
 
@@ -221,6 +248,19 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         disabled={!page.canManageDescriptionActions || page.deleteDescriptionTarget === null}
       >
         {page.deleteDescriptionError ? <PowerAlert severity="error">{page.deleteDescriptionError}</PowerAlert> : null}
+      </ConfirmDangerDialog>
+
+      <ConfirmDangerDialog
+        open={page.callsignDeleteDialogOpen}
+        onClose={page.closeCallsignDeleteDialog}
+        onConfirm={page.deleteCallsign}
+        title="Відв'язати позивний"
+        description="Ви впевнені, що хочете відв'язати цей позивний від мережі?"
+        confirmLabel="Відв'язати"
+        submitting={page.callsignDeleteSubmitting}
+        disabled={!page.canManageCallsignActions || page.callsignDeleteTarget === null}
+      >
+        {page.callsignDeleteError ? <PowerAlert severity="error">{page.callsignDeleteError}</PowerAlert> : null}
       </ConfirmDangerDialog>
 
       <NetworkDescriptionDrawer
@@ -248,6 +288,19 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
+      />
+
+      <NetworkCallsignDrawer
+        open={page.callsignDrawerOpen}
+        mode={page.callsignDrawerMode}
+        form={page.callsignDrawerForm}
+        sources={page.sources}
+        units={page.unitOptions}
+        saving={page.callsignDrawerSaving}
+        error={page.callsignDrawerError}
+        onClose={page.closeCallsignDrawer}
+        onChange={page.setCallsignDrawerForm}
+        onSave={page.saveCallsignDrawer}
       />
 
       <NetworkFreqCreateWizard

@@ -6,6 +6,7 @@ import {
   canDeleteNetwork,
   canEditNetwork,
   canManageDescriptions,
+  canManageNetworkCallsignActions,
   formatNetworkFreqRange,
   formatTransferTypeLabel,
   networkStatusDisplay,
@@ -32,7 +33,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     frequencyReloadGeneration.current += 1;
   }
 
-  const reload = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
+  const { reload, loadCallsigns } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -42,6 +43,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canDelete = useMemo(() => canDeleteNetwork(state.currentUser), [state.currentUser]);
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
   const canManageDescriptionActions = useMemo(() => canManageDescriptions(state.currentUser), [state.currentUser]);
+  const canManageCallsignActions = useMemo(() => canManageNetworkCallsignActions(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
 
@@ -72,6 +74,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     unitNames,
     reloadGeneration: frequencyReloadGeneration,
     currentNetworkIdRef,
+    loadCallsigns,
   });
 
   useEffect(() => {
@@ -79,6 +82,12 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (state.freqsLoaded || state.freqsLoading || state.freqsError !== null) return;
     void actions.loadFrequencies(state.network.id);
   }, [actions.loadFrequencies, state.freqsError, state.freqsLoaded, state.freqsLoading, state.network]);
+
+  useEffect(() => {
+    if (state.network === null) return;
+    if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
+    void loadCallsigns(state.network.id);
+  }, [loadCallsigns, state.callsignsError, state.callsignsLoaded, state.callsignsLoading, state.network]);
 
   const aorItems = useMemo(() => {
     const aorIds = state.network?.aorIds ?? [];
@@ -104,6 +113,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     canDelete,
     canEdit,
     canManageDescriptionActions,
+    canManageCallsignActions,
     isAdmin,
     unitNames,
     aorItems,
@@ -118,6 +128,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     activeNetworkDetailsTab: state.activeNetworkDetailsTab,
     setActiveNetworkDetailsTab: actions.setActiveNetworkDetailsTab,
     loadFrequencies: actions.loadFrequencies,
+    loadCallsigns: actions.loadCallsigns,
     expandedDescriptionIds: state.expandedDescriptionIds,
     toggleDescriptionExpanded: actions.toggleDescriptionExpanded,
     freqs: state.freqs,
@@ -164,6 +175,41 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     freqDeleteSubmitting: state.freqDeleteSubmitting,
     freqDeleteError: state.freqDeleteError,
     deleteFreq: actions.deleteFreq,
+    callsignSectionMode: state.callsignSectionMode,
+    setCallsignSectionMode: actions.setCallsignSectionMode,
+    callsignStatusFilter: state.callsignStatusFilter,
+    setCallsignStatusFilter: actions.setCallsignStatusFilter,
+    callsignInterceptedExpanded: state.callsignInterceptedExpanded,
+    toggleCallsignInterceptedExpanded: actions.toggleCallsignInterceptedExpanded,
+    networkCallsigns: state.networkCallsigns,
+    catalogCallsignGroups: state.catalogCallsignGroups,
+    unknownInterceptedCallsigns: state.unknownInterceptedCallsigns,
+    callsignsLoaded: state.callsignsLoaded,
+    callsignsLoading: state.callsignsLoading,
+    callsignsError: state.callsignsError,
+    callsignCreateInFlightCallsigns: state.callsignCreateInFlightCallsigns,
+    callsignCatalogAddInFlightIds: state.callsignCatalogAddInFlightIds,
+    callsignUpdateInFlightIds: state.callsignUpdateInFlightIds,
+    callsignDeleteInFlightIds: state.callsignDeleteInFlightIds,
+    callsignDrawerOpen: state.callsignDrawerOpen,
+    callsignDrawerMode: state.callsignDrawerMode,
+    callsignDrawerForm: state.callsignDrawerForm,
+    callsignDrawerSaving: state.callsignDrawerSaving,
+    callsignDrawerError: state.callsignDrawerError,
+    openCallsignDrawerForCreate: actions.openCallsignDrawerForCreate,
+    openCallsignDrawerForEdit: actions.openCallsignDrawerForEdit,
+    closeCallsignDrawer: actions.closeCallsignDrawer,
+    setCallsignDrawerForm: actions.setCallsignDrawerForm,
+    saveCallsignDrawer: actions.saveCallsignDrawer,
+    callsignDeleteDialogOpen: state.callsignDeleteDialogOpen,
+    callsignDeleteTarget: state.callsignDeleteTarget,
+    callsignDeleteSubmitting: state.callsignDeleteSubmitting,
+    callsignDeleteError: state.callsignDeleteError,
+    openCallsignDeleteDialog: actions.openCallsignDeleteDialog,
+    closeCallsignDeleteDialog: actions.closeCallsignDeleteDialog,
+    deleteCallsign: actions.deleteCallsign,
+    addKnownCallsignsToNetwork: actions.addKnownCallsignsToNetwork,
+    addInterceptedCallsignToNetwork: actions.addInterceptedCallsignToNetwork,
     descriptionDrawerOpen: state.descriptionDrawerOpen,
     descriptionDrawerMode: state.descriptionDrawerMode,
     descriptionDrawerDescrType: state.descriptionDrawerDescrType,

@@ -1,9 +1,13 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
+import type { ComponentProps } from 'react';
 import type { ModulationRec, Network, NetworkDescrType, NetworkFreqsRes } from '../../../../../Bindings';
 import type { NetworkDetailsTab } from '../use-rer-network-details-neo-page.shared';
-import { NetworkDetailsFrequenciesPanel } from './NetworkDetailsFrequenciesPanel';
+import { NetworkDetailsCallsignsPanel } from './NetworkCallsignsTables';
 import { NetworkDetailsDescriptionsPanel } from './NetworkDetailsDescriptionsPanel';
+import { NetworkDetailsFrequenciesPanel } from './NetworkDetailsFrequenciesPanel';
+
+type CallsignPanelProps = ComponentProps<typeof NetworkDetailsCallsignsPanel>;
 
 type Props = {
   network: Network | null;
@@ -35,6 +39,7 @@ type Props = {
   freqRowActionMenuAnchorEl: HTMLElement | null;
   freqRowActionTargetId: number | null;
   onReloadFrequencies: () => void;
+  callsignPanelProps: CallsignPanelProps;
 };
 
 export function NetworkDetailsTabPanel({
@@ -67,6 +72,7 @@ export function NetworkDetailsTabPanel({
   freqRowActionMenuAnchorEl,
   freqRowActionTargetId,
   onReloadFrequencies,
+  callsignPanelProps,
 }: Props) {
   return (
     <Paper
@@ -104,23 +110,13 @@ export function NetworkDetailsTabPanel({
           <Tab value="descriptions" label="Обґрунтування" />
           <Tab value="signs" label="Розвід. ознаки" />
           <Tab value="frequencies" label="Частоти" />
+          <Tab value="callsigns" label="Позивні" />
         </Tabs>
       </Box>
 
-      <Box sx={{ position: 'relative', minHeight: 0, flex: 1, overflow: 'hidden' }}>
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            minHeight: 0,
-            minWidth: 0,
-            display: 'flex',
-            visibility: activeNetworkDetailsTab === 'frequencies' ? 'visible' : 'hidden',
-            pointerEvents: activeNetworkDetailsTab === 'frequencies' ? 'auto' : 'none',
-            zIndex: activeNetworkDetailsTab === 'frequencies' ? 1 : 0,
-          }}
-        >
-          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex' }}>
+      <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
+        {activeNetworkDetailsTab === 'frequencies' ? (
+          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%' }}>
             <NetworkDetailsFrequenciesPanel
               network={network}
               loading={loading}
@@ -143,33 +139,29 @@ export function NetworkDetailsTabPanel({
               onReloadFrequencies={onReloadFrequencies}
             />
           </Box>
-        </Box>
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            minHeight: 0,
-            minWidth: 0,
-            display: 'flex',
-            visibility: activeNetworkDetailsTab === 'frequencies' ? 'hidden' : 'visible',
-            pointerEvents: activeNetworkDetailsTab === 'frequencies' ? 'none' : 'auto',
-            zIndex: activeNetworkDetailsTab === 'frequencies' ? 0 : 1,
-          }}
-        >
-          <NetworkDetailsDescriptionsPanel
-            network={network}
-            loading={loading}
-            confirmationDescriptions={confirmationDescriptions}
-            signDescriptions={signDescriptions}
-            canManageDescriptions={canManageDescriptions}
-            expandedDescriptionIds={expandedDescriptionIds}
-            onToggleExpanded={onToggleExpanded}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onCreate={onCreate}
-            descrType={activeNetworkDetailsTab === 'signs' ? 'Sign' : 'Confirmation'}
-          />
-        </Box>
+        ) : activeNetworkDetailsTab === 'callsigns' ? (
+          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              <NetworkDetailsCallsignsPanel {...callsignPanelProps} />
+            </Box>
+          </Box>
+        ) : (
+          <Box sx={{ minHeight: 0, height: '100%', display: 'flex' }}>
+            <NetworkDetailsDescriptionsPanel
+              network={network}
+              loading={loading}
+              confirmationDescriptions={confirmationDescriptions}
+              signDescriptions={signDescriptions}
+              canManageDescriptions={canManageDescriptions}
+              expandedDescriptionIds={expandedDescriptionIds}
+              onToggleExpanded={onToggleExpanded}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onCreate={onCreate}
+              descrType={activeNetworkDetailsTab === 'signs' ? 'Sign' : 'Confirmation'}
+            />
+          </Box>
+        )}
       </Box>
     </Paper>
   );

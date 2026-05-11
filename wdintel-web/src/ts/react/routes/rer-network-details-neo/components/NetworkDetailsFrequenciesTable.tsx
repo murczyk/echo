@@ -414,7 +414,7 @@ function NetworkDetailsFrequenciesTableContent({
         </Box>
       </Stack>
 
-      <Menu anchorEl={freqRowActionMenuAnchorEl} open={freqRowActionMenuAnchorEl !== null && activeFreq !== null} onClose={onCloseFreqRowActions} slotProps={{ paper: { sx: { minWidth: 260 } } }}>
+      <Menu anchorEl={freqRowActionMenuAnchorEl} open={freqRowActionMenuAnchorEl !== null && activeFreq !== null} onClose={onCloseFreqRowActions} slotProps={{ paper: { sx: { minWidth: 220 } } }}>
         {activeFreq ? (
           [
             <MenuItem key="tech" onClick={() => { onCloseFreqRowActions(); onOpenFreqTechDrawer(activeFreq); }}>
@@ -423,7 +423,7 @@ function NetworkDetailsFrequenciesTableContent({
             </MenuItem>,
             <MenuItem key="delete" onClick={() => { onCloseFreqRowActions(); onOpenDeleteFreqDialog(activeFreq); }} sx={{ color: 'error.main' }}>
               <ListItemIcon sx={{ color: 'error.main' }}><DeleteIcon fontSize="small" /></ListItemIcon>
-              Видалити частоту
+              Видалити
             </MenuItem>,
           ]
         ) : (

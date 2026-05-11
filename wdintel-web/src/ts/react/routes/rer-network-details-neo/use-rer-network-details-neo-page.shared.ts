@@ -6,10 +6,23 @@ import type {
   NetworkStatus,
   NetworkFreqsRes,
   Post,
+  NetworkCallsign,
+  NetworkCallsignRes,
+  Source,
   Unit,
   User,
 } from '../../../../Bindings';
 import type { NetworkFreqActivityByFreq } from './frequency-utils';
+import type {
+  NetworkCallsignCatalogGroupView,
+  NetworkCallsignActivityMap,
+  NetworkCallsignDrawerForm,
+  NetworkCallsignDrawerMode,
+  NetworkCallsignInterceptedView,
+  NetworkCallsignRowView,
+  NetworkCallsignSectionMode,
+  NetworkCallsignStatusFilter,
+} from './network-callsigns';
 
 export type NetworkEditForm = {
   id: number;
@@ -38,7 +51,7 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies';
+export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns';
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
@@ -85,17 +98,42 @@ export function getFrequencyFormatError(freq: string): string | null {
 
 export type NetworkDetailsNeoPageState = {
   network: Network | null;
+  sources: Source[];
   freqs: NetworkFreqsRes[];
   freqsLoaded: boolean;
   freqsLoading: boolean;
   freqsError: string | null;
   freqActivityByFreq: NetworkFreqActivityByFreq;
   callsignCount: number | null;
+  networkCallsigns: NetworkCallsign[];
+  networkCallsignGroups: NetworkCallsignRes[];
+  callsignActivityMap: NetworkCallsignActivityMap;
+  catalogCallsignGroups: NetworkCallsignCatalogGroupView[];
+  unknownInterceptedCallsigns: NetworkCallsignInterceptedView[];
+  callsignsLoaded: boolean;
+  callsignsLoading: boolean;
+  callsignsError: string | null;
+  callsignStatusFilter: NetworkCallsignStatusFilter;
+  callsignSectionMode: NetworkCallsignSectionMode;
+  callsignInterceptedExpanded: boolean;
+  callsignCreateInFlightCallsigns: string[];
+  callsignCatalogAddInFlightIds: number[];
+  callsignUpdateInFlightIds: number[];
+  callsignDeleteInFlightIds: number[];
   currentUser: User | null;
   units: Unit[];
   posts: Post[];
   aors: AreaOfResponsibility[];
   modulations: ModulationRec[];
+  callsignDrawerOpen: boolean;
+  callsignDrawerMode: NetworkCallsignDrawerMode;
+  callsignDrawerForm: NetworkCallsignDrawerForm | null;
+  callsignDrawerSaving: boolean;
+  callsignDrawerError: string | null;
+  callsignDeleteDialogOpen: boolean;
+  callsignDeleteTarget: NetworkCallsignRowView | null;
+  callsignDeleteSubmitting: boolean;
+  callsignDeleteError: string | null;
   loading: boolean;
   referenceLoading: boolean;
   error: string | null;
@@ -151,17 +189,42 @@ export type DisplayNetworkStatus = {
 
 export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   network: null,
+  sources: [],
   freqs: [],
   freqsLoaded: false,
   freqsLoading: false,
   freqsError: null,
   freqActivityByFreq: {},
   callsignCount: null,
+  networkCallsigns: [],
+  networkCallsignGroups: [],
+  callsignActivityMap: new Map(),
+  catalogCallsignGroups: [],
+  unknownInterceptedCallsigns: [],
+  callsignsLoaded: false,
+  callsignsLoading: false,
+  callsignsError: null,
+  callsignStatusFilter: 'All',
+  callsignSectionMode: 'network',
+  callsignInterceptedExpanded: false,
+  callsignCreateInFlightCallsigns: [],
+  callsignCatalogAddInFlightIds: [],
+  callsignUpdateInFlightIds: [],
+  callsignDeleteInFlightIds: [],
   currentUser: null,
   units: [],
   posts: [],
   aors: [],
   modulations: [],
+  callsignDrawerOpen: false,
+  callsignDrawerMode: 'create',
+  callsignDrawerForm: null,
+  callsignDrawerSaving: false,
+  callsignDrawerError: null,
+  callsignDeleteDialogOpen: false,
+  callsignDeleteTarget: null,
+  callsignDeleteSubmitting: false,
+  callsignDeleteError: null,
   loading: true,
   referenceLoading: true,
   error: null,
@@ -305,6 +368,11 @@ export function canEditNetwork(user: User | null): boolean {
 }
 
 export function canManageDescriptions(user: User | null): boolean {
+  const roles = new Set(user?.roles ?? []);
+  return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
+}
+
+export function canManageNetworkCallsignActions(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
   return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
 }
