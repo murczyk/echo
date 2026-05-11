@@ -1966,35 +1966,71 @@ pub async fn delete_network_freq(
 
     let txn = env.dbx.begin().await.context(h!())?;
 
-    let mut freq_records = sigint_network_freq::Entity::find();
-    // You can either delete by setting explicit `id`, or set `network_id` and `freq` pair
-    match req.id {
+    let freq_records = match req.id {
         Some(id) => {
-            freq_records =
-                freq_records.filter(sigint_network_freq::Column::Id.eq(id));
+            let freq_record = sigint_network_freq::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .context(h!())?;
+            match freq_record {
+                Some(freq_record) => {
+                    if let Some(network_id) = req.network_id {
+                        if network_id != freq_record.network_id {
+                            return Err(AppError::BL {
+                                msg: format!(
+                                    "Frequency id {} belongs to network {}, not {}",
+                                    id, freq_record.network_id, network_id
+                                ),
+                            });
+                        }
+                    }
+                    if let Some(freq) = req.freq.as_ref() {
+                        if freq != &freq_record.freq {
+                            return Err(AppError::BL {
+                                msg: format!(
+                                    "Frequency id {} belongs to frequency {}, not {}",
+                                    id, freq_record.freq, freq
+                                ),
+                            });
+                        }
+                    }
+                    vec![freq_record]
+                }
+                None => vec![],
+            }
         }
         None => {
-            freq_records = freq_records
-                .filter(
-                    sigint_network_freq::Column::NetworkId.eq(req.network_id),
-                )
-                .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
-                .filter(sigint_network_freq::Column::Deleted.eq(false));
+            let network_id = req.network_id.ok_or_else(|| AppError::BL {
+                msg: "network_id is required when deleting by frequency"
+                    .to_string(),
+            })?;
+            let freq = req.freq.clone().ok_or_else(|| AppError::BL {
+                msg: "freq is required when deleting by frequency".to_string(),
+            })?;
+            sigint_network_freq::Entity::find()
+                .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+                .filter(sigint_network_freq::Column::Freq.eq(freq))
+                .filter(sigint_network_freq::Column::Deleted.eq(false))
+                .all(&txn)
+                .await
+                .context(h!())?
         }
-    }
-    let freq_records = freq_records.all(&txn).await.context(h!())?;
+    };
     let mut network_detail = None;
     if freq_records.is_empty() {
+        let debug_network_id = req.network_id.unwrap_or_default();
         debug!(
             "Frequency {:?} not found for network {:?}, no action needed",
-            req.freq, req.network_id
+            req.freq, debug_network_id
         );
     } else {
         // Mark all matching frequency connections as deleted
+        let network_id = freq_records[0].network_id;
+        let freq = freq_records[0].freq.clone();
         for freq_record in freq_records.iter() {
             info!(
                 "Removing frequency {:?} (id: {:?}) from network {:?}",
-                req.freq, freq_record.id, req.network_id
+                freq, freq_record.id, network_id
             );
 
             let mut freq_record = freq_record.clone().into_active_model();
@@ -2025,15 +2061,10 @@ pub async fn delete_network_freq(
                     .context(h!())?,
             );
 
-            let freqs = match req.freq.clone() {
-                None => vec![],
-                Some(freq) => vec![freq],
-            };
-
             if let Err(e) =
                 sigint::network::etalon_calc::invalidate_network_inbox(
                     network,
-                    freqs,
+                    vec![freq_records[0].freq.clone()],
                     &env.dbx,
                     format!("deleted network {}", network_id),
                 )

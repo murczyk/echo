@@ -415,8 +415,8 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     try {
       const updatedNetwork = await deleteNetworkFreq({
         id: target.networkFreqId,
-        networkId: null,
-        freq: null,
+        networkId: network.id,
+        freq: target.freq,
       });
 
       setState((current) => ({
