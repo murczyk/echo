@@ -306,7 +306,33 @@ export type ChangelogPreview = {
 
 export type ChangelogSection = {
   date: string;
-  items: Array<string>;
+  items: Array<ChangelogEntry>;
+};
+
+export type ChangelogEntry = {
+  entryId: string;
+  taskRef: string;
+  url: string;
+  title: string;
+  hasDetails: boolean;
+};
+
+export type ChangelogDetailsReq = {
+  taskRef: string;
+  url: string;
+  title: string;
+};
+
+export type ChangelogMedia = {
+  kind: string;
+  url: string;
+  alt: string;
+};
+
+export type ChangelogItemDetails = {
+  description: string;
+  media: Array<ChangelogMedia>;
+  contentHtml: string;
 };
 
 export type BgtaskErrorCode =

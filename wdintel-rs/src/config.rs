@@ -92,6 +92,16 @@ pub const CHANGELOG_ENV_PATH_KEY: &str = "ECHO_CHANGELOG_PATH";
 pub const CHANGELOG_DEFAULT_FILENAME: &str = "CHANGELOG.md";
 pub const CHANGELOG_PACKAGED_PATH: &str = "/usr/share/doc/echo/changelog.md";
 pub const CHANGELOG_PREVIEW_MAX_LINES: usize = 5;
+pub const CHANGELOG_UPDATES_ENV_PATH_KEY: &str = "ECHO_CHANGELOG_UPDATES_PATH";
+pub const CHANGELOG_UPDATES_DEFAULT_FILENAME: &str =
+    "changelog-updates/UPDATES.md";
+pub const CHANGELOG_UPDATES_PACKAGED_PATH: &str =
+    "/usr/share/doc/echo/changelog-updates/UPDATES.md";
+pub const CHANGELOG_UPDATES_MEDIA_ENV_PATH_KEY: &str =
+    "ECHO_CHANGELOG_UPDATES_MEDIA_PATH";
+pub const CHANGELOG_UPDATES_MEDIA_DEFAULT_DIR: &str = "changelog-updates/media";
+pub const CHANGELOG_UPDATES_MEDIA_PACKAGED_DIR: &str =
+    "/usr/share/doc/echo/changelog-updates/media";
 
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;

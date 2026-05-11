@@ -853,7 +853,7 @@ changelogPreviewEncoder struct =
 
 type alias ChangelogSection =
     { date : String
-    , items : List (String)
+    , items : List (ChangelogEntry)
     }
 
 
@@ -861,7 +861,75 @@ changelogSectionEncoder : ChangelogSection -> Json.Encode.Value
 changelogSectionEncoder struct =
     Json.Encode.object
         [ ( "date", (Json.Encode.string) struct.date )
-        , ( "items", (Json.Encode.list (Json.Encode.string)) struct.items )
+        , ( "items", (Json.Encode.list (changelogEntryEncoder)) struct.items )
+        ]
+
+
+type alias ChangelogEntry =
+    { entryId : String
+    , taskRef : String
+    , url : String
+    , title : String
+    , hasDetails : Bool
+    }
+
+
+changelogEntryEncoder : ChangelogEntry -> Json.Encode.Value
+changelogEntryEncoder struct =
+    Json.Encode.object
+        [ ( "entry_id", (Json.Encode.string) struct.entryId )
+        , ( "task_ref", (Json.Encode.string) struct.taskRef )
+        , ( "url", (Json.Encode.string) struct.url )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "has_details", (Json.Encode.bool) struct.hasDetails )
+        ]
+
+
+type alias ChangelogDetailsReq =
+    { taskRef : String
+    , url : String
+    , title : String
+    }
+
+
+changelogDetailsReqEncoder : ChangelogDetailsReq -> Json.Encode.Value
+changelogDetailsReqEncoder struct =
+    Json.Encode.object
+        [ ( "task_ref", (Json.Encode.string) struct.taskRef )
+        , ( "url", (Json.Encode.string) struct.url )
+        , ( "title", (Json.Encode.string) struct.title )
+        ]
+
+
+type alias ChangelogMedia =
+    { kind : String
+    , url : String
+    , alt : String
+    }
+
+
+changelogMediaEncoder : ChangelogMedia -> Json.Encode.Value
+changelogMediaEncoder struct =
+    Json.Encode.object
+        [ ( "kind", (Json.Encode.string) struct.kind )
+        , ( "url", (Json.Encode.string) struct.url )
+        , ( "alt", (Json.Encode.string) struct.alt )
+        ]
+
+
+type alias ChangelogItemDetails =
+    { description : String
+    , media : List (ChangelogMedia)
+    , contentHtml : String
+    }
+
+
+changelogItemDetailsEncoder : ChangelogItemDetails -> Json.Encode.Value
+changelogItemDetailsEncoder struct =
+    Json.Encode.object
+        [ ( "description", (Json.Encode.string) struct.description )
+        , ( "media", (Json.Encode.list (changelogMediaEncoder)) struct.media )
+        , ( "content_html", (Json.Encode.string) struct.contentHtml )
         ]
 
 
@@ -8179,7 +8247,41 @@ changelogSectionDecoder : Json.Decode.Decoder ChangelogSection
 changelogSectionDecoder =
     Json.Decode.succeed ChangelogSection
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (changelogEntryDecoder))))
+
+
+changelogEntryDecoder : Json.Decode.Decoder ChangelogEntry
+changelogEntryDecoder =
+    Json.Decode.succeed ChangelogEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entry_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "task_ref" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_details" (Json.Decode.bool)))
+
+
+changelogDetailsReqDecoder : Json.Decode.Decoder ChangelogDetailsReq
+changelogDetailsReqDecoder =
+    Json.Decode.succeed ChangelogDetailsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "task_ref" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+
+
+changelogMediaDecoder : Json.Decode.Decoder ChangelogMedia
+changelogMediaDecoder =
+    Json.Decode.succeed ChangelogMedia
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "alt" (Json.Decode.string)))
+
+
+changelogItemDetailsDecoder : Json.Decode.Decoder ChangelogItemDetails
+changelogItemDetailsDecoder =
+    Json.Decode.succeed ChangelogItemDetails
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media" (Json.Decode.list (changelogMediaDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_html" (Json.Decode.string)))
 
 
 bgtaskErrorCodeDecoder : Json.Decode.Decoder BgtaskErrorCode
