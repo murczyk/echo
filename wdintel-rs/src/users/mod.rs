@@ -1333,6 +1333,79 @@ where
     Ok(desired.insert(dbx).await.c(h!())?)
 }
 
+pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
+    debug!("Starting inactive_users_worker");
+
+    loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("inactive_users_worker");
+        if let Err(e) = inactive_users_worker_1(dbx).await {
+            error!("error in inactive_users_worker_1: {e:?}");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(
+            INACTIVE_USERS_DEACTIVATE_DURATION_SEC,
+        ))
+        .await;
+    }
+}
+
+async fn inactive_users_worker_1(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let threshold = Utc::now().naive_utc()
+        - Duration::days(INACTIVE_USERS_DEACTIVATE_AFTER_DAYS);
+
+    // Find all active users whose last_active_at is older than threshold
+    let inactive_users = login::Entity::find()
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(
+            login::Column::LastActiveAt
+                .lte(threshold)
+                .or(login::Column::LastActiveAt.is_null()),
+        )
+        // This checks that 'NoAutoLogout' is NOT present in the roles JSONB array
+        .filter(Expr::cust_with_values(
+            "NOT (roles @> $1::jsonb)",
+            vec![r#"["NoAutoLogout"]"#.to_string()],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    for user in inactive_users {
+        let login_name = user.login.clone();
+        let mut model = user.into_active_model();
+        model.deleted = Set(true);
+        model.deactivation_reason =
+            Set(Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive));
+        model.update(dbx).await.c(h!())?;
+
+        info!("> Deactivating user {login_name} due to inactivity");
+    }
+    debug!("inactive_users_worker completed");
+    Ok(())
+}
+
+pub async fn update_last_active_at(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+) -> anyhow::Result<()> {
+    let mut user: login::ActiveModel = login::Entity::find_by_id(user_id)
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?
+        .into_active_model();
+
+    user.last_active_at = Set(Some(Utc::now().naive_utc()));
+    user.update(dbx).await.c(h!())?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1436,77 +1509,4 @@ mod tests {
             .unwrap();
         assert!(login.deleted_permanently);
     }
-}
-
-pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
-    debug!("Starting inactive_users_worker");
-
-    loop {
-        let _loop_guard =
-            crate::utils::worker_watch::loop_guard("inactive_users_worker");
-        if let Err(e) = inactive_users_worker_1(dbx).await {
-            error!("error in inactive_users_worker_1: {e:?}");
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(
-            INACTIVE_USERS_DEACTIVATE_DURATION_SEC,
-        ))
-        .await;
-    }
-}
-
-async fn inactive_users_worker_1(
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
-    let threshold = Utc::now().naive_utc()
-        - Duration::days(INACTIVE_USERS_DEACTIVATE_AFTER_DAYS);
-
-    // Find all active users whose last_active_at is older than threshold
-    let inactive_users = login::Entity::find()
-        .filter(login::Column::Deleted.eq(false))
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .filter(
-            login::Column::LastActiveAt
-                .lte(threshold)
-                .or(login::Column::LastActiveAt.is_null()),
-        )
-        // This checks that 'NoAutoLogout' is NOT present in the roles JSONB array
-        .filter(Expr::cust_with_values(
-            "NOT (roles @> $1::jsonb)",
-            vec![r#"["NoAutoLogout"]"#.to_string()],
-        ))
-        .all(dbx)
-        .await
-        .c(h!())?;
-
-    for user in inactive_users {
-        let login_name = user.login.clone();
-        let mut model = user.into_active_model();
-        model.deleted = Set(true);
-        model.deactivation_reason =
-            Set(Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive));
-        model.update(dbx).await.c(h!())?;
-
-        info!("> Deactivating user {login_name} due to inactivity");
-    }
-    debug!("inactive_users_worker completed");
-    Ok(())
-}
-
-pub async fn update_last_active_at(
-    dbx: &DatabaseConnection,
-    user_id: &str,
-) -> anyhow::Result<()> {
-    let mut user: login::ActiveModel = login::Entity::find_by_id(user_id)
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .one(dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())?
-        .into_active_model();
-
-    user.last_active_at = Set(Some(Utc::now().naive_utc()));
-    user.update(dbx).await.c(h!())?;
-
-    Ok(())
 }
