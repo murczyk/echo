@@ -11,6 +11,7 @@ import {
   listGoiAdminIntegrations,
   setupGoiIntegrationWorker,
   upsertGoiAdminIntegration,
+  type UpsertGoiAdminIntegrationReq,
 } from '../../services/api/goi-admin';
 import { listLogins } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
@@ -20,6 +21,10 @@ import {
   GOI_INTEGRATION_TYPE_SIMPLE,
   type GoiIntegrationType,
 } from '../../services/api/organisms';
+
+const GOI_SSH_PORT_DEFAULT = 22;
+const GOI_API_PORT_DEFAULT = 8088;
+const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
 
 type StatusMessage = {
   kind: 'success' | 'error';
@@ -48,10 +53,10 @@ const emptyForm: GoiForm = {
   integrationType: GOI_INTEGRATION_TYPE_FULL,
   sshHost: '',
   sshUser: '',
-  sshPort: 22,
-  path: '/etc/goi/data/palettes',
+  sshPort: GOI_SSH_PORT_DEFAULT,
+  path: GOI_PATH_DEFAULT,
   apiHost: '',
-  apiPort: 8088,
+  apiPort: GOI_API_PORT_DEFAULT,
   apiLogin: '',
   apiPassword: '',
   accessOrganismIds: [],
@@ -101,6 +106,45 @@ function hasAnyApiSettings(form: GoiForm): boolean {
   return Boolean(form.apiHost.trim() || form.apiLogin.trim() || form.apiPassword.trim());
 }
 
+function toSimpleGoiUrl(form: GoiForm): string {
+  return form.apiHost.trim() || form.sshHost.trim();
+}
+
+function toSaveReq(form: GoiForm): UpsertGoiAdminIntegrationReq {
+  if (form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE) {
+    return {
+      id: form.id,
+      ownerOrganismId: form.ownerOrganismId!,
+      integrationType: GOI_INTEGRATION_TYPE_SIMPLE,
+      sshHost: '',
+      sshUser: '',
+      sshPort: GOI_SSH_PORT_DEFAULT,
+      path: GOI_PATH_DEFAULT,
+      apiHost: toSimpleGoiUrl(form),
+      apiPort: GOI_API_PORT_DEFAULT,
+      apiLogin: '',
+      apiPassword: '',
+      accessOrganismIds: form.accessOrganismIds,
+      accessLogins: form.accessLogins,
+    };
+  }
+  return {
+    id: form.id,
+    ownerOrganismId: form.ownerOrganismId!,
+    integrationType: GOI_INTEGRATION_TYPE_FULL,
+    sshHost: form.sshHost,
+    sshUser: form.sshUser,
+    sshPort: form.sshPort,
+    path: form.path,
+    apiHost: form.apiHost,
+    apiPort: form.apiPort,
+    apiLogin: form.apiLogin,
+    apiPassword: form.apiPassword,
+    accessOrganismIds: form.accessOrganismIds,
+    accessLogins: form.accessLogins,
+  };
+}
+
 function validateForm(form: GoiForm): string | null {
   if (!form.ownerOrganismId) return 'Вкажіть організм-власник';
   if (!Number.isInteger(form.sshPort) || form.sshPort < 1 || form.sshPort > 65535) {
@@ -110,7 +154,7 @@ function validateForm(form: GoiForm): string | null {
     return 'Вкажіть коректний API порт';
   }
   if (form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE) {
-    if (!form.apiHost.trim() && !form.sshHost.trim()) {
+    if (!toSimpleGoiUrl(form)) {
       return 'Для простої інтеграції вкажіть GOI URL або host';
     }
     return null;
@@ -182,6 +226,26 @@ export function AdminGoiIntegrationsNeoPage() {
     setForm(toForm(nextIntegration));
   }
 
+  function handleIntegrationTypeChange(integrationType: GoiIntegrationType) {
+    setForm((prev) => {
+      if (integrationType === GOI_INTEGRATION_TYPE_SIMPLE) {
+        return {
+          ...prev,
+          integrationType,
+          sshHost: '',
+          sshUser: '',
+          sshPort: GOI_SSH_PORT_DEFAULT,
+          path: GOI_PATH_DEFAULT,
+          apiHost: toSimpleGoiUrl(prev),
+          apiPort: GOI_API_PORT_DEFAULT,
+          apiLogin: '',
+          apiPassword: '',
+        };
+      }
+      return { ...prev, integrationType };
+    });
+  }
+
   async function handleSave() {
     const validationError = validateForm(form);
     if (validationError) {
@@ -192,21 +256,7 @@ export function AdminGoiIntegrationsNeoPage() {
     setSaving(true);
     setStatus(null);
     try {
-      const saved = await upsertGoiAdminIntegration({
-        id: form.id,
-        ownerOrganismId: form.ownerOrganismId!,
-        integrationType: form.integrationType,
-        sshHost: form.sshHost,
-        sshUser: form.sshUser,
-        sshPort: form.sshPort,
-        path: form.path,
-        apiHost: form.apiHost,
-        apiPort: form.apiPort,
-        apiLogin: form.apiLogin,
-        apiPassword: form.apiPassword,
-        accessOrganismIds: form.accessOrganismIds,
-        accessLogins: form.accessLogins,
-      });
+      const saved = await upsertGoiAdminIntegration(toSaveReq(form));
       updateSelectedIntegration(saved);
       setStatus({ kind: 'success', message: 'Інтеграцію ГОІ збережено' });
     } catch (error) {
@@ -365,10 +415,7 @@ export function AdminGoiIntegrationsNeoPage() {
               label="Тип інтеграції"
               value={form.integrationType}
               onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  integrationType: event.target.value as GoiIntegrationType,
-                }))
+                handleIntegrationTypeChange(event.target.value as GoiIntegrationType)
               }
               fullWidth
             >
@@ -376,14 +423,20 @@ export function AdminGoiIntegrationsNeoPage() {
               <MenuItem value={GOI_INTEGRATION_TYPE_FULL}>Повна</MenuItem>
             </TextField>
 
-            <TextField label="SSH host" value={form.sshHost} onChange={(event) => setForm((prev) => ({ ...prev, sshHost: event.target.value }))} fullWidth />
-            <TextField label="SSH user" value={form.sshUser} onChange={(event) => setForm((prev) => ({ ...prev, sshUser: event.target.value }))} fullWidth />
-            <TextField label="SSH порт" type="number" value={form.sshPort} onChange={(event) => setForm((prev) => ({ ...prev, sshPort: Number(event.target.value) || 22 }))} fullWidth />
-            <TextField label="Шлях до палітр" value={form.path} onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))} fullWidth />
-            <TextField label="API host / GOI URL" value={form.apiHost} onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))} fullWidth />
-            <TextField label="API порт" type="number" value={form.apiPort} onChange={(event) => setForm((prev) => ({ ...prev, apiPort: Number(event.target.value) || 8088 }))} fullWidth />
-            <TextField label="API логін" value={form.apiLogin} onChange={(event) => setForm((prev) => ({ ...prev, apiLogin: event.target.value }))} fullWidth />
-            <TextField label="API пароль" type="password" value={form.apiPassword} onChange={(event) => setForm((prev) => ({ ...prev, apiPassword: event.target.value }))} fullWidth />
+            {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (
+              <TextField label="GOI URL" value={form.apiHost} onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))} fullWidth />
+            ) : (
+              <>
+                <TextField label="SSH host" value={form.sshHost} onChange={(event) => setForm((prev) => ({ ...prev, sshHost: event.target.value }))} fullWidth />
+                <TextField label="SSH user" value={form.sshUser} onChange={(event) => setForm((prev) => ({ ...prev, sshUser: event.target.value }))} fullWidth />
+                <TextField label="SSH порт" type="number" value={form.sshPort} onChange={(event) => setForm((prev) => ({ ...prev, sshPort: Number(event.target.value) || GOI_SSH_PORT_DEFAULT }))} fullWidth />
+                <TextField label="Шлях до палітр" value={form.path} onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))} fullWidth />
+                <TextField label="API host" value={form.apiHost} onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))} fullWidth />
+                <TextField label="API порт" type="number" value={form.apiPort} onChange={(event) => setForm((prev) => ({ ...prev, apiPort: Number(event.target.value) || GOI_API_PORT_DEFAULT }))} fullWidth />
+                <TextField label="API логін" value={form.apiLogin} onChange={(event) => setForm((prev) => ({ ...prev, apiLogin: event.target.value }))} fullWidth />
+                <TextField label="API пароль" type="password" value={form.apiPassword} onChange={(event) => setForm((prev) => ({ ...prev, apiPassword: event.target.value }))} fullWidth />
+              </>
+            )}
 
             <TextField
               select
@@ -429,10 +482,12 @@ export function AdminGoiIntegrationsNeoPage() {
           <PowerButton variant="contained" onClick={handleSave} disabled={saving || checking || settingUpWorker}>
             {form.id ? 'Зберегти' : 'Створити'}
           </PowerButton>
-          <PowerButton variant="outlined" onClick={handleCheckConnection} disabled={saving || checking || settingUpWorker}>
-            Перевірити з'єднання
-          </PowerButton>
-          {form.id ? (
+          {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+            <PowerButton variant="outlined" onClick={handleCheckConnection} disabled={saving || checking || settingUpWorker}>
+              Перевірити з'єднання
+            </PowerButton>
+          ) : null}
+          {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
             <PowerButton variant="outlined" onClick={handleSetupWorker} disabled={saving || checking || settingUpWorker}>
               Налаштувати воркер
             </PowerButton>

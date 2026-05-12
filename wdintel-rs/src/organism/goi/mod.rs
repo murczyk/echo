@@ -10,7 +10,7 @@ use crate::config::{
 use crate::entities::{goi_association, goi_knowledge, login, organism};
 use crate::error::AppError;
 use crate::organism::goi::shared::{
-    goi_integration_type, goi_integration_type_db_value,
+    goi_integration_type, goi_integration_type_db_value, goi_web_host,
     organism_has_goi_api_config,
 };
 use crate::organism::goi::types::{
@@ -1124,6 +1124,7 @@ async fn goi_store_settings(
     organism: organism::Model,
     settings: GoiSettingsInput,
 ) -> Result<organism::Model, AppError> {
+    let settings = goi_normalize_settings_input(settings);
     let mut organism: organism::ActiveModel = organism.into();
     organism.goi_integration_type =
         Set(goi_integration_type_db_value(&settings.integration_type)
@@ -1137,6 +1138,26 @@ async fn goi_store_settings(
     organism.goi_api_login = Set(settings.api_login);
     organism.goi_api_password = Set(settings.api_password);
     Ok(organism.update(dbx).await.c(h!())?)
+}
+
+fn goi_normalize_settings_input(
+    settings: GoiSettingsInput,
+) -> GoiSettingsInput {
+    if settings.integration_type == GoiIntegrationType::Full {
+        return settings;
+    }
+
+    GoiSettingsInput {
+        integration_type: settings.integration_type,
+        ssh_host: None,
+        ssh_user: None,
+        ssh_port: ORGANISM_GOI_SSH_PORT_DEFAULT,
+        path: ORGANISM_GOI_PATH_DEFAULT.to_string(),
+        api_host: settings.api_host.or(settings.ssh_host),
+        api_port: ORGANISM_GOI_API_PORT_DEFAULT,
+        api_login: None,
+        api_password: None,
+    }
 }
 
 pub(super) fn goi_validate_ssh_port(port: i32) -> Result<(), AppError> {
@@ -1161,39 +1182,71 @@ fn goi_settings_from_organism(
     organism: &organism::Model,
 ) -> OrganismGoiSettings {
     let integration_type = goi_integration_type(organism);
-    let ssh_host = normalize_optional_trimmed(organism.goi_ssh_host.clone());
-    let api_host = normalize_optional_trimmed(organism.goi_api_host.clone())
-        .or_else(|| ssh_host.clone());
+    let is_full_integration = integration_type == GoiIntegrationType::Full;
+    let ssh_host = if is_full_integration {
+        normalize_optional_trimmed(organism.goi_ssh_host.clone())
+    } else {
+        None
+    };
+    let api_host = if is_full_integration {
+        normalize_optional_trimmed(organism.goi_api_host.clone())
+            .or_else(|| ssh_host.clone())
+    } else {
+        goi_web_host(organism)
+    };
     OrganismGoiSettings {
         organism_id: organism.id,
         integration_type,
         ssh_host,
-        ssh_user: normalize_optional_trimmed(organism.goi_ssh_user.clone()),
-        ssh_port: if organism.goi_ssh_port > 0 {
+        ssh_user: if is_full_integration {
+            normalize_optional_trimmed(organism.goi_ssh_user.clone())
+        } else {
+            None
+        },
+        ssh_port: if !is_full_integration {
+            ORGANISM_GOI_SSH_PORT_DEFAULT
+        } else if organism.goi_ssh_port > 0 {
             organism.goi_ssh_port
         } else {
             ORGANISM_GOI_SSH_PORT_DEFAULT
         },
-        path: normalize_trimmed_or_default(
-            organism.goi_path.clone(),
-            ORGANISM_GOI_PATH_DEFAULT,
-        ),
+        path: if is_full_integration {
+            normalize_trimmed_or_default(
+                organism.goi_path.clone(),
+                ORGANISM_GOI_PATH_DEFAULT,
+            )
+        } else {
+            ORGANISM_GOI_PATH_DEFAULT.to_string()
+        },
         api_host,
-        api_port: if organism.goi_api_port > 0 {
+        api_port: if !is_full_integration {
+            ORGANISM_GOI_API_PORT_DEFAULT
+        } else if organism.goi_api_port > 0 {
             organism.goi_api_port
         } else {
             ORGANISM_GOI_API_PORT_DEFAULT
         },
-        api_login: normalize_optional_trimmed(organism.goi_api_login.clone()),
-        api_password: normalize_optional_trimmed(
-            organism.goi_api_password.clone(),
-        ),
+        api_login: if is_full_integration {
+            normalize_optional_trimmed(organism.goi_api_login.clone())
+        } else {
+            None
+        },
+        api_password: if is_full_integration {
+            normalize_optional_trimmed(organism.goi_api_password.clone())
+        } else {
+            None
+        },
     }
 }
 
 fn goi_connection_req_from_organism(
     organism: &organism::Model,
 ) -> Result<CheckOrganismGoiConnectionReq, AppError> {
+    if goi_integration_type(organism) != GoiIntegrationType::Full {
+        return Err(AppError::BL {
+            msg: "Для простої інтеграції ГОІ SSH недоступний".to_string(),
+        });
+    }
     let settings = goi_settings_from_organism(organism);
     let ssh_host = settings.ssh_host.ok_or_else(|| AppError::BL {
         msg: "Для вашого організму не налаштовано GOI SSH host".to_string(),
