@@ -1,4 +1,4 @@
-import { Box, Chip, Stack } from '@mui/material';
+import { Box, Stack } from '@mui/material';
 
 import type {
   NetworkCallsignCatalogRowView,
@@ -20,7 +20,6 @@ export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All'
 
 export const NETWORK_COLUMNS_VISIBILITY = {
   callsign: true,
-  status: true,
   position: true,
   unitName: true,
   lastDatetime: true,
@@ -30,7 +29,7 @@ export const NETWORK_COLUMNS_VISIBILITY = {
 };
 
 export const NETWORK_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'status', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
+  dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
   withRowNumbers: true,
   withRowActions: true,
 });
@@ -82,22 +81,6 @@ export function CountChipLabel({ label, count, selected = false }: { label: stri
       </Box>
     </Stack>
   );
-}
-
-export function renderStatusChip(statusLabel: string) {
-  if (statusLabel === 'Верифіковано') {
-    return <Chip size="small" label={statusLabel} sx={{ height: 24, fontSize: '0.78rem', fontWeight: 700, bgcolor: 'success.main', color: 'success.contrastText', '& .MuiChip-label': { px: 0.9 } }} />;
-  }
-
-  if (statusLabel === 'В дорозвідці') {
-    return <Chip size="small" label={statusLabel} sx={{ height: 24, fontSize: '0.78rem', fontWeight: 700, bgcolor: 'warning.main', color: 'warning.contrastText', '& .MuiChip-label': { px: 0.9 } }} />;
-  }
-
-  if (statusLabel === 'Каталог') {
-    return <Chip size="small" label={statusLabel} sx={{ height: 24, fontSize: '0.78rem', fontWeight: 700, bgcolor: 'info.main', color: 'info.contrastText', '& .MuiChip-label': { px: 0.9 } }} />;
-  }
-
-  return <Chip size="small" variant="outlined" label={statusLabel} sx={{ height: 24, fontSize: '0.78rem', fontWeight: 700, '& .MuiChip-label': { px: 0.9 } }} />;
 }
 
 export function buildNetworkLoadingRows(): NetworkCallsignRowView[] {

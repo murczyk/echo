@@ -3,7 +3,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
-import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Typography } from '@mui/material';
+import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
@@ -29,21 +29,26 @@ import {
   buildNetworkLoadingRows,
   CountChipLabel,
   NETWORK_COLUMNS_VISIBILITY,
-  NETWORK_STATUS_FILTER_LABELS,
-  NETWORK_STATUS_FILTER_ORDER,
-  renderStatusChip,
 } from './NetworkCallsignsTableShared';
+import { NetworkCallsignSourceIcon } from './NetworkCallsignSourceUi';
+import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows, formatNetworkCallsignDatetime } from '../network-callsigns';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkCallsignRowView>();
 const NETWORK_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'status', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
+  dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
   withRowNumbers: true,
   withRowActions: true,
 });
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const COMPACT_LOADED_ROW_LIMIT = 8;
+const COMPACT_LOADED_ROW_LIMIT = 5;
+const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing'];
+const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Catalog' | 'Unknown'>, string> = {
+  All: 'Всі',
+  Verified: 'Верифіковано',
+  Developing: 'В дорозвідці',
+};
 
 type Props = {
   rows: NetworkCallsignRowView[];
@@ -77,22 +82,26 @@ export function NetworkCallsignsNetworkTable({
   const [rowMenuAnchorEl, setRowMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [rowMenuTarget, setRowMenuTarget] = useState<NetworkCallsignRowView | null>(null);
 
+  const visibleRows = useMemo(
+    () => rows.filter((row) => row.status === 'verified' || row.status === 'developing'),
+    [rows],
+  );
+  const normalizedStatusFilter = NETWORK_STATUS_FILTER_ORDER.includes(statusFilter) ? statusFilter : 'All';
   const tableStateRows = useMemo(() => {
-    const filtered = statusFilter === 'All'
-      ? rows
-      : rows.filter((row) => {
-          if (statusFilter === 'Verified') return row.status === 'verified';
-          if (statusFilter === 'Developing') return row.status === 'developing';
-          if (statusFilter === 'Catalog') return row.status === 'catalog';
-          return row.status === 'unknown';
-        });
+    const filtered = normalizedStatusFilter === 'All'
+      ? visibleRows
+      : visibleRows.filter((row) => (normalizedStatusFilter === 'Verified' ? row.status === 'verified' : row.status === 'developing'));
     return filtered.slice().sort((left, right) => Number(right.mainRadioStation) - Number(left.mainRadioStation));
-  }, [rows, statusFilter]);
+  }, [normalizedStatusFilter, visibleRows]);
 
-  const statusCounts = useMemo(() => countNetworkCallsignStatusRows(rows), [rows]);
+  const statusCounts = useMemo(() => countNetworkCallsignStatusRows(visibleRows), [visibleRows]);
   const isInitialLoading = loading && rows.length === 0;
   const isBusy = loading || inFlightUpdateIds.length > 0 || inFlightDeleteIds.length > 0;
-  const isCompactLoadedLayout = !isInitialLoading && !isBusy && tableStateRows.length > 0 && tableStateRows.length <= COMPACT_LOADED_ROW_LIMIT;
+  const isCompactLoadedLayout =
+    !isInitialLoading &&
+    !isBusy &&
+    tableStateRows.length > 0 &&
+    tableStateRows.length <= COMPACT_LOADED_ROW_LIMIT;
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignRowView>[]>(() => [
     {
@@ -101,22 +110,18 @@ export function NetworkCallsignsNetworkTable({
       id: 'callsign',
       size: 170,
       Cell: ({ row }) => (
-        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+          <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} developing={row.original.status === 'developing'} />
           <Typography variant="body2" fontWeight={700} noWrap title={row.original.callsign}>
             {formatMrtCellTextValue(row.original.callsign)}
           </Typography>
           {row.original.mainRadioStation ? (
-            <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} titleAccess="Головна радіостанція" />
+            <Tooltip title="Головна радіостанція" arrow>
+              <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+            </Tooltip>
           ) : null}
         </Stack>
       ),
-    },
-    {
-      header: 'Статус',
-      accessorKey: 'statusLabel',
-      id: 'status',
-      size: 150,
-      Cell: ({ row }) => renderStatusChip(row.original.statusLabel),
     },
     {
       header: 'Посада',
@@ -167,11 +172,7 @@ export function NetworkCallsignsNetworkTable({
       accessorKey: 'sourceName',
       id: 'sourceName',
       size: 170,
-      Cell: ({ row }) => (
-        <Typography variant="body2" noWrap title={row.original.sourceName}>
-          {formatMrtCellTextValue(row.original.sourceName)}
-        </Typography>
-      ),
+      Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
     },
   ], []);
 
@@ -196,12 +197,12 @@ export function NetworkCallsignsNetworkTable({
     positionActionsColumn: 'first',
     renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
       table,
-      externalHasFilters: statusFilter !== 'All',
+      externalHasFilters: normalizedStatusFilter !== 'All',
       noDataMessage: loadingError ? 'Не вдалося завантажити позивні мережі' : 'Позивні мережі відсутні',
       noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
       onNoDataAction: loadingError ? onReload : undefined,
       filteredMessage: 'Немає позивних за обраним статусом',
-      onClearFilters: statusFilter !== 'All' && rows.length > 0 && tableStateRows.length === 0 ? () => onStatusFilterChange('All') : undefined,
+      onClearFilters: normalizedStatusFilter !== 'All' && visibleRows.length > 0 && tableStateRows.length === 0 ? () => onStatusFilterChange('All') : undefined,
       clearFiltersLabel: 'Скинути фільтр',
     }),
     state: {
@@ -287,8 +288,8 @@ export function NetworkCallsignsNetworkTable({
               {NETWORK_STATUS_FILTER_ORDER.map((filter) => (
                 <PowerChip
                   key={filter}
-                  label={<CountChipLabel label={NETWORK_STATUS_FILTER_LABELS[filter]} count={filter === 'All' ? statusCounts.all : filter === 'Verified' ? statusCounts.verified : filter === 'Developing' ? statusCounts.developing : filter === 'Catalog' ? statusCounts.catalog : statusCounts.unknown} />}
-                  selected={statusFilter === filter}
+                  label={<CountChipLabel label={NETWORK_STATUS_FILTER_LABELS[filter]} count={filter === 'All' ? statusCounts.all : filter === 'Verified' ? statusCounts.verified : statusCounts.developing} />}
+                  selected={normalizedStatusFilter === filter}
                   onClick={() => onStatusFilterChange(filter)}
                   interactive
                   fontSize="0.75rem"
@@ -305,7 +306,7 @@ export function NetworkCallsignsNetworkTable({
 
         {loadingError && rows.length > 0 ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
 
-        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%', overflowX: 'auto' }}>
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%', overflowX: 'hidden' }}>
           <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%' }}>
             <MaterialReactTable table={table} />
           </Box>

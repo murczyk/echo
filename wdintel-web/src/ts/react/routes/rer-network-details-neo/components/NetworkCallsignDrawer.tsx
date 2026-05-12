@@ -20,6 +20,7 @@ import type { Source } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { NetworkOption } from '../use-rer-network-details-neo-page.shared';
+import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
   normalizeCallsignDisplay,
   type NetworkCallsignDrawerForm,
@@ -64,8 +65,8 @@ function MainRadioStationControl({
         borderColor: checked ? theme.palette.warning.main : 'divider',
         borderRadius: 2,
         bgcolor: checked ? 'action.selected' : 'transparent',
-        px: 1.5,
-        py: 1,
+        px: 1.25,
+        py: 0.75,
       })}
     >
       <FormControlLabel
@@ -82,14 +83,15 @@ function MainRadioStationControl({
             checked={checked}
             onChange={(event) => onChange(event.target.checked)}
             disabled={disabled}
+            size="small"
           />
         }
         label={
-          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-            {checked ? <StarIcon fontSize="small" sx={{ color: 'warning.main' }} /> : <StarBorderIcon fontSize="small" />}
-            <Typography variant="body1" noWrap sx={{ fontSize: '1rem' }}>
+          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+            <Typography variant="body2" noWrap sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
               Головна радіостанція
             </Typography>
+            {checked ? <StarIcon fontSize="small" sx={{ color: 'warning.main' }} /> : <StarBorderIcon fontSize="small" />}
           </Stack>
         }
       />
@@ -118,7 +120,7 @@ function CallsignStatusControl({
         backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
         gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-        gap: 1,
+        gap: 0.75,
         p: 0.5,
       })}
     >
@@ -126,15 +128,15 @@ function CallsignStatusControl({
         disabled={disabled}
         onClick={() => onChange(false)}
         sx={(theme) => ({
-          minHeight: 44,
+          minHeight: 38,
           borderRadius: 1.5,
-          px: 2,
-          py: 1.2,
+          px: 1.5,
+          py: 0.8,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 1,
-          fontSize: '0.95rem',
+          gap: 0.75,
+          fontSize: '0.9rem',
           fontWeight: 600,
           color: verifiedSelected ? theme.palette.success.contrastText : theme.palette.text.secondary,
           bgcolor: verifiedSelected ? theme.palette.success.main : 'transparent',
@@ -148,7 +150,7 @@ function CallsignStatusControl({
         })}
       >
         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: verifiedSelected ? 'common.white' : 'text.disabled' }} />
-        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit' }}>
+        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
           Верифіковано
         </Typography>
       </ButtonBase>
@@ -156,15 +158,15 @@ function CallsignStatusControl({
         disabled={disabled}
         onClick={() => onChange(true)}
         sx={(theme) => ({
-          minHeight: 44,
+          minHeight: 38,
           borderRadius: 1.5,
-          px: 2,
-          py: 1.2,
+          px: 1.5,
+          py: 0.8,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 1,
-          fontSize: '0.95rem',
+          gap: 0.75,
+          fontSize: '0.9rem',
           fontWeight: 600,
           color: developingSelected ? theme.palette.warning.contrastText : theme.palette.text.secondary,
           bgcolor: developingSelected ? theme.palette.warning.main : 'transparent',
@@ -178,7 +180,7 @@ function CallsignStatusControl({
         })}
       >
         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: developingSelected ? 'common.white' : 'text.disabled' }} />
-        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit' }}>
+        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
           В дорозвідці
         </Typography>
       </ButtonBase>
@@ -253,6 +255,12 @@ export function NetworkCallsignDrawer({
                 placeholder="Введіть позивний"
               />
 
+              <MainRadioStationControl
+                checked={form.mainRadioStation}
+                disabled={saving}
+                onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
+              />
+
               <Stack spacing={1}>
                 <Typography variant="body2" color="text.secondary">
                   Статус
@@ -264,34 +272,22 @@ export function NetworkCallsignDrawer({
                 />
               </Stack>
 
-              <MainRadioStationControl
-                checked={form.mainRadioStation}
-                disabled={saving}
-                onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
-              />
-
-              <FormControl fullWidth size="small" disabled={saving}>
-                <InputLabel id="network-callsign-source-label">Джерело</InputLabel>
-                <Select
-                  labelId="network-callsign-source-label"
-                  label="Джерело"
-                  value={sourceId ?? ''}
-                  onChange={(event) => {
-                    const rawValue = event.target.value;
-                    const nextSourceId = rawValue === '' ? null : Number(rawValue);
-                    updateForm(form, { sourceId: nextSourceId }, onChange);
-                  }}
-                >
-                  <MenuItem value="">
-                    <em>Виберіть джерело (необов'язково)</em>
-                  </MenuItem>
-                  {sources.map((source) => (
-                    <MenuItem key={source.id} value={source.id}>
-                      {source.name}
-                    </MenuItem>
+              <Stack spacing={1}>
+                <Typography variant="body2" color="text.secondary">
+                  Джерело
+                </Typography>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  {sortNetworkCallsignSources(sources).map((source) => (
+                    <NetworkCallsignSourceChip
+                      key={source.id}
+                      source={source}
+                      selected={sourceId === source.id}
+                      disabled={saving}
+                      onClick={() => updateForm(form, { sourceId: sourceId === source.id ? null : source.id }, onChange)}
+                    />
                   ))}
-                </Select>
-              </FormControl>
+                </Stack>
+              </Stack>
 
               <Stack
                 direction={{ xs: 'column', sm: 'row' }}

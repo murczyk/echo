@@ -21,6 +21,7 @@ import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextVal
 import { PowerAlert } from '../../../components/PowerAlert';
 import { formatDateTime24 } from '../../../utils/misc';
 import { buildCatalogLoadingRows, CATALOG_COLUMNS_VISIBILITY } from './NetworkCallsignsTableShared';
+import { NetworkCallsignSourceIcon } from './NetworkCallsignSourceUi';
 
 const catalogMRTOptions = getDefaultMRTOptions<NetworkCallsignCatalogRowView>();
 const CATALOG_COLUMN_ORDER = buildDefaultColumnOrder({
@@ -30,7 +31,7 @@ const CATALOG_COLUMN_ORDER = buildDefaultColumnOrder({
 });
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const COMPACT_LOADED_ROW_LIMIT = 8;
+const COMPACT_LOADED_ROW_LIMIT = 5;
 
 type Props = {
   rows: NetworkCallsignCatalogRowView[];
@@ -120,11 +121,7 @@ export function NetworkCallsignsCatalogTable({
       accessorKey: 'sourceName',
       id: 'sourceName',
       size: 170,
-      Cell: ({ row }) => (
-        <Typography variant="body2" noWrap title={row.original.sourceName}>
-          {formatMrtCellTextValue(row.original.sourceName)}
-        </Typography>
-      ),
+      Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
     },
   ], []);
 
@@ -225,11 +222,11 @@ export function NetworkCallsignsCatalogTable({
 
       {loadingError && rows.length > 0 ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
 
-      <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%', overflowX: 'auto' }}>
-        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%' }}>
-          <MaterialReactTable table={table} />
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%', overflowX: 'hidden' }}>
+          <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%' }}>
+            <MaterialReactTable table={table} />
+          </Box>
         </Box>
-      </Box>
     </Box>
   );
 }
