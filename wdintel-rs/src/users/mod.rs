@@ -1410,11 +1410,13 @@ pub async fn update_last_active_at(
 mod tests {
     use super::*;
     use crate::functest::tests::cleanup;
+    use serial_test::serial;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
 
     #[tokio::test]
+    #[serial]
     async fn register_delta_user_rejects_case_insensitive_duplicate_after_permanent_delete(
     ) {
         let _guard = TEST_LOCK.lock().await;
@@ -1455,6 +1457,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn insert_login_does_not_resurrect_permanently_deleted_login() {
         let _guard = TEST_LOCK.lock().await;
         let env = cleanup().await.unwrap();
