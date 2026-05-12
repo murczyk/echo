@@ -1,6 +1,8 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Typography } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
@@ -52,6 +54,7 @@ type Props = {
   onStatusFilterChange: (next: NetworkCallsignStatusFilter) => void;
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
+  onToggleMainRadioStation: (row: NetworkCallsignRowView) => void;
   onReload: () => void;
   inFlightUpdateIds: number[];
   inFlightDeleteIds: number[];
@@ -66,6 +69,7 @@ export function NetworkCallsignsNetworkTable({
   onStatusFilterChange,
   onOpenEditDrawer,
   onOpenDeleteDialog,
+  onToggleMainRadioStation,
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
@@ -82,13 +86,13 @@ export function NetworkCallsignsNetworkTable({
           if (statusFilter === 'Catalog') return row.status === 'catalog';
           return row.status === 'unknown';
         });
-    return filtered;
+    return filtered.slice().sort((left, right) => Number(right.mainRadioStation) - Number(left.mainRadioStation));
   }, [rows, statusFilter]);
 
   const statusCounts = useMemo(() => countNetworkCallsignStatusRows(rows), [rows]);
   const isInitialLoading = loading && rows.length === 0;
-  const isCompactLoadedLayout = !isInitialLoading && tableStateRows.length > 0 && tableStateRows.length <= COMPACT_LOADED_ROW_LIMIT;
   const isBusy = loading || inFlightUpdateIds.length > 0 || inFlightDeleteIds.length > 0;
+  const isCompactLoadedLayout = !isInitialLoading && !isBusy && tableStateRows.length > 0 && tableStateRows.length <= COMPACT_LOADED_ROW_LIMIT;
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignRowView>[]>(() => [
     {
@@ -96,7 +100,16 @@ export function NetworkCallsignsNetworkTable({
       accessorKey: 'callsign',
       id: 'callsign',
       size: 170,
-      Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{formatMrtCellTextValue(row.original.callsign)}</Typography>,
+      Cell: ({ row }) => (
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+          <Typography variant="body2" fontWeight={700} noWrap title={row.original.callsign}>
+            {formatMrtCellTextValue(row.original.callsign)}
+          </Typography>
+          {row.original.mainRadioStation ? (
+            <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} titleAccess="Головна радіостанція" />
+          ) : null}
+        </Stack>
+      ),
     },
     {
       header: 'Статус',
@@ -226,7 +239,7 @@ export function NetworkCallsignsNetworkTable({
     }),
     muiTableContainerProps: {
       sx: getPageScrollTableContainerSx({
-        loading,
+        loading: isBusy,
         height: isCompactLoadedLayout ? 'auto' : '100%',
         minHeight: 0,
         idleOverflowX: 'auto',
@@ -305,8 +318,23 @@ export function NetworkCallsignsNetworkTable({
           setRowMenuAnchorEl(null);
           setRowMenuTarget(null);
         }}
-        slotProps={{ paper: { sx: { minWidth: 160 } } }}
+        slotProps={{ paper: { sx: { minWidth: 220 } } }}
       >
+        {rowMenuTarget ? (
+          <MenuItem
+            onClick={() => {
+              onToggleMainRadioStation(rowMenuTarget);
+              setRowMenuAnchorEl(null);
+              setRowMenuTarget(null);
+            }}
+            disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
+          >
+            <ListItemIcon sx={{ color: rowMenuTarget.mainRadioStation ? 'warning.main' : 'text.secondary' }}>
+              {rowMenuTarget.mainRadioStation ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+            </ListItemIcon>
+            {rowMenuTarget.mainRadioStation ? 'Зняти позначку' : 'Зробити головною'}
+          </MenuItem>
+        ) : null}
         {rowMenuTarget ? (
           <MenuItem
             onClick={() => {

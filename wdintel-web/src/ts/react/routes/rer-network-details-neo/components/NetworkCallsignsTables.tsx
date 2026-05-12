@@ -38,6 +38,7 @@ export type Props = {
   onOpenCreateDrawer: () => void;
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
+  onToggleMainRadioStation: (row: NetworkCallsignRowView) => void;
   onAddKnownCallsign: (knownCallsignId: number) => void;
   onAddInterceptedToDeveloping: (callsign: string) => void;
   onAddInterceptedToNetwork: (callsign: string) => void;
@@ -65,6 +66,7 @@ export function NetworkDetailsCallsignsPanel({
   onOpenCreateDrawer,
   onOpenEditDrawer,
   onOpenDeleteDialog,
+  onToggleMainRadioStation,
   onAddKnownCallsign,
   onAddInterceptedToDeveloping,
   onAddInterceptedToNetwork,
@@ -139,6 +141,7 @@ export function NetworkDetailsCallsignsPanel({
       onStatusFilterChange={onStatusFilterChange}
       onOpenEditDrawer={onOpenEditDrawer}
       onOpenDeleteDialog={onOpenDeleteDialog}
+      onToggleMainRadioStation={onToggleMainRadioStation}
       onReload={onReload}
       inFlightUpdateIds={inFlightUpdateIds}
       inFlightDeleteIds={inFlightDeleteIds}

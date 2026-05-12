@@ -216,6 +216,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
             onOpenCreateDrawer: page.openCallsignDrawerForCreate,
             onOpenEditDrawer: page.openCallsignDrawerForEdit,
             onOpenDeleteDialog: page.openCallsignDeleteDialog,
+            onToggleMainRadioStation: page.toggleNetworkCallsignMainRadioStation,
             onAddKnownCallsign: page.addKnownCallsignsToNetwork,
             onAddInterceptedToDeveloping: (callsign) => page.addInterceptedCallsignToNetwork(callsign, true),
             onAddInterceptedToNetwork: (callsign) => page.addInterceptedCallsignToNetwork(callsign, false),

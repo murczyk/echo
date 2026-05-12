@@ -52,8 +52,8 @@ export function NetworkCallsignsCatalogTable({
   inFlightAddIds,
 }: Props) {
   const isInitialLoading = loading && rows.length === 0;
-  const isCompactLoadedLayout = !isInitialLoading && rows.length > 0 && rows.length <= COMPACT_LOADED_ROW_LIMIT;
   const isBusy = loading || inFlightAddIds.length > 0;
+  const isCompactLoadedLayout = !isInitialLoading && !isBusy && rows.length > 0 && rows.length <= COMPACT_LOADED_ROW_LIMIT;
   const loadingRows = useMemo(() => buildCatalogLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignCatalogRowView>[]>(() => [
     {
@@ -191,7 +191,7 @@ export function NetworkCallsignsCatalogTable({
     }),
     muiTableContainerProps: {
       sx: getPageScrollTableContainerSx({
-        loading,
+        loading: isBusy,
         height: isCompactLoadedLayout ? 'auto' : '100%',
         minHeight: 0,
         idleOverflowX: 'auto',

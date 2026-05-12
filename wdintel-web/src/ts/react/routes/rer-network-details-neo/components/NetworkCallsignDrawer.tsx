@@ -2,6 +2,7 @@ import {
   Box,
   Button,
   Checkbox,
+  ButtonBase,
   Drawer,
   FormControl,
   FormControlLabel,
@@ -12,6 +13,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
 
 import type { Source } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
@@ -43,6 +46,144 @@ function updateForm(
 ) {
   if (!form) return;
   onChange({ ...form, ...next });
+}
+
+function MainRadioStationControl({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <Box
+      sx={(theme) => ({
+        border: '1px solid',
+        borderColor: checked ? theme.palette.warning.main : 'divider',
+        borderRadius: 2,
+        bgcolor: checked ? 'action.selected' : 'transparent',
+        px: 1.5,
+        py: 1,
+      })}
+    >
+      <FormControlLabel
+        sx={{
+          m: 0,
+          width: '100%',
+          alignItems: 'center',
+          '& .MuiFormControlLabel-label': {
+            width: '100%',
+          },
+        }}
+        control={
+          <Checkbox
+            checked={checked}
+            onChange={(event) => onChange(event.target.checked)}
+            disabled={disabled}
+          />
+        }
+        label={
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+            {checked ? <StarIcon fontSize="small" sx={{ color: 'warning.main' }} /> : <StarBorderIcon fontSize="small" />}
+            <Typography variant="body1" noWrap sx={{ fontSize: '1rem' }}>
+              Головна радіостанція
+            </Typography>
+          </Stack>
+        }
+      />
+    </Box>
+  );
+}
+
+function CallsignStatusControl({
+  developing,
+  disabled,
+  onChange,
+}: {
+  developing: boolean;
+  disabled: boolean;
+  onChange: (nextDeveloping: boolean) => void;
+}) {
+  const verifiedSelected = !developing;
+  const developingSelected = developing;
+
+  return (
+    <Box
+      sx={(theme) => ({
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 2,
+        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gap: 1,
+        p: 0.5,
+      })}
+    >
+      <ButtonBase
+        disabled={disabled}
+        onClick={() => onChange(false)}
+        sx={(theme) => ({
+          minHeight: 44,
+          borderRadius: 1.5,
+          px: 2,
+          py: 1.2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 1,
+          fontSize: '0.95rem',
+          fontWeight: 600,
+          color: verifiedSelected ? theme.palette.success.contrastText : theme.palette.text.secondary,
+          bgcolor: verifiedSelected ? theme.palette.success.main : 'transparent',
+          boxShadow: verifiedSelected ? `inset 0 0 0 1px ${theme.palette.success.dark}` : 'none',
+          transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
+            duration: theme.transitions.duration.shortest,
+          }),
+          '&:hover': {
+            bgcolor: verifiedSelected ? theme.palette.success.main : theme.palette.action.hover,
+          },
+        })}
+      >
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: verifiedSelected ? 'common.white' : 'text.disabled' }} />
+        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit' }}>
+          Верифіковано
+        </Typography>
+      </ButtonBase>
+      <ButtonBase
+        disabled={disabled}
+        onClick={() => onChange(true)}
+        sx={(theme) => ({
+          minHeight: 44,
+          borderRadius: 1.5,
+          px: 2,
+          py: 1.2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 1,
+          fontSize: '0.95rem',
+          fontWeight: 600,
+          color: developingSelected ? theme.palette.warning.contrastText : theme.palette.text.secondary,
+          bgcolor: developingSelected ? theme.palette.warning.main : 'transparent',
+          boxShadow: developingSelected ? `inset 0 0 0 1px ${theme.palette.warning.dark}` : 'none',
+          transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
+            duration: theme.transitions.duration.shortest,
+          }),
+          '&:hover': {
+            bgcolor: developingSelected ? theme.palette.warning.main : theme.palette.action.hover,
+          },
+        })}
+      >
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: developingSelected ? 'common.white' : 'text.disabled' }} />
+        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit' }}>
+          В дорозвідці
+        </Typography>
+      </ButtonBase>
+    </Box>
+  );
 }
 
 export function NetworkCallsignDrawer({
@@ -110,6 +251,23 @@ export function NetworkCallsignDrawer({
                 fullWidth
                 size="small"
                 placeholder="Введіть позивний"
+              />
+
+              <Stack spacing={1}>
+                <Typography variant="body2" color="text.secondary">
+                  Статус
+                </Typography>
+                <CallsignStatusControl
+                  developing={form.developing}
+                  disabled={saving}
+                  onChange={(nextDeveloping) => updateForm(form, { developing: nextDeveloping }, onChange)}
+                />
+              </Stack>
+
+              <MainRadioStationControl
+                checked={form.mainRadioStation}
+                disabled={saving}
+                onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
               />
 
               <FormControl fullWidth size="small" disabled={saving}>
@@ -189,26 +347,6 @@ export function NetworkCallsignDrawer({
                     />
                   }
                   label="Підрозділ в дорозвідці"
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={form.developing}
-                      onChange={(event) => updateForm(form, { developing: event.target.checked }, onChange)}
-                      disabled={saving}
-                    />
-                  }
-                  label="Позначити як позивний в дорозвідці"
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={form.mainRadioStation}
-                      onChange={(event) => updateForm(form, { mainRadioStation: event.target.checked }, onChange)}
-                      disabled={saving}
-                    />
-                  }
-                  label="Головна радіостанція"
                 />
               </Stack>
 
