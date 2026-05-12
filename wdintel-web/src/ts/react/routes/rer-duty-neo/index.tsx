@@ -1,5 +1,6 @@
-import { Box, ButtonBase, Fab, Paper, useMediaQuery, useTheme } from '@mui/material';
+import { Box, ButtonBase, Fab, IconButton, Paper, useMediaQuery, useTheme } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
@@ -194,6 +195,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   const {
     messageFeeds,
     error,
+    clearDutyError,
     columnRefsRef,
     nearBottomByFeedIdRef,
     atBottomByFeedIdRef,
@@ -301,8 +303,29 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
       {error && (
-        <Paper elevation={0} className="p-2 mb-2 shrink-0" sx={{ bgcolor: 'error.light', color: 'error.contrastText' }}>
-          {error}
+        <Paper
+          elevation={0}
+          className="p-2 mb-2 shrink-0"
+          sx={{
+            bgcolor: 'error.light',
+            color: 'error.contrastText',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 1,
+          }}
+        >
+          <Box component="span" sx={{ flex: 1, minWidth: 0, pt: 0.25 }}>
+            {error}
+          </Box>
+          <IconButton
+            type="button"
+            size="small"
+            aria-label="Закрити повідомлення про помилку"
+            onClick={() => clearDutyError()}
+            sx={{ color: 'inherit', flexShrink: 0, mt: -0.25 }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
         </Paper>
       )}
 

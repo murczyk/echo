@@ -225,7 +225,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
           emptyResultRetryAfterMsRef.current.set(callsign, nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS);
         });
         setCallsignRetryVersion((current) => current + 1);
-        setFeedError(error instanceof Error ? error.message : String(error));
+        console.error(error);
       })
       .finally(() => {
         pendingCallsigns.forEach((callsign) => loadingCallsignsRef.current.delete(callsign));
@@ -315,6 +315,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
     error: feedState.error,
+    clearDutyError: () => feedState.setError(null),
     authUserName,
     columnRefsRef: feedState.columnRefsRef,
     nearBottomByFeedIdRef: feedState.nearBottomByFeedIdRef,
