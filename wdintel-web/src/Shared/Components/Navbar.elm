@@ -476,7 +476,8 @@ changelogDropdown props maybeData =
                             , ( "block", isOpen )
                             ]
                         ]
-                        ([ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ] [ text "Останні зміни" ]
+                        ([ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ]
+                            [ text ("Останні зміни: Реліз " ++ String.replace "-" "." data.version) ]
                          , ul [ class "space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1" ]
                             (List.map renderChangelogLine data.preview)
                          , div [ class "mt-3 flex items-center justify-between" ]
@@ -500,51 +501,7 @@ changelogDropdown props maybeData =
 
 renderChangelogLine : String -> Html msg
 renderChangelogLine line =
-    if isDateHeading line then
-        li [ class "pt-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]" ]
-            [ text (String.dropLeft 3 line) ]
-
-    else
-        li [ class "ml-4 list-disc leading-snug break-words" ] [ text line ]
-
-
-isDateHeading : String -> Bool
-isDateHeading line =
-    if String.startsWith "## " line then
-        case String.split " " (String.dropLeft 3 line) of
-            date :: _ ->
-                isDateString date
-
-            [] ->
-                False
-
-    else
-        False
-
-
-isDateString : String -> Bool
-isDateString date =
-    String.length date == 10
-        && isDateChar 0 date
-        && isDateChar 1 date
-        && isDateChar 2 date
-        && isDateChar 3 date
-        && String.slice 4 5 date == "-"
-        && isDateChar 5 date
-        && isDateChar 6 date
-        && String.slice 7 8 date == "-"
-        && isDateChar 8 date
-        && isDateChar 9 date
-
-
-isDateChar : Int -> String -> Bool
-isDateChar index value =
-    case String.slice index (index + 1) value |> String.toList of
-        char :: _ ->
-            Char.isDigit char
-
-        [] ->
-            False
+    li [ class "ml-4 list-disc leading-snug break-words" ] [ text line ]
 
 
 menuItemRoute : { a | onDropdownToggle : Maybe b -> msg } -> String -> { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String } -> String -> String -> Html msg

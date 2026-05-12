@@ -10,6 +10,7 @@ import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Shared.Components.Toast
+import Shared.Msg exposing (ChangelogReleaseMeta, ChangelogReleasePage, ContentBlock, ImageData, VideoData)
 import Url.Builder
 import Utils.Api.RetryableHttp as RetryableHttp
 import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
@@ -618,15 +619,70 @@ server_info toMsg =
         }
 
 
-changelog_preview :
-    (Result ApiError ChangelogPreview -> msg)
+changelog_index :
+    (Result ApiError (List Shared.Msg.ChangelogReleaseMeta) -> msg)
     -> Cmd msg
-changelog_preview toMsg =
-    Http.post
-        { url = "/api-public/changelog-preview"
-        , body = Http.jsonBody (Encode.object [])
-        , expect = leExpectJson toMsg changelogPreviewDecoder
+changelog_index toMsg =
+    Http.get
+        { url = "/releases/index.json"
+        , expect = leExpectJson toMsg changelogIndexDecoder
         }
+
+
+changelogIndexDecoder : Decode.Decoder (List Shared.Msg.ChangelogReleaseMeta)
+changelogIndexDecoder =
+    Decode.list
+        (Decode.map2
+            Shared.Msg.ChangelogReleaseMeta
+            (Decode.field "release_id" Decode.string)
+            (Decode.field "title" Decode.string)
+        )
+
+
+changelog_latest :
+    String
+    -> (Result ApiError Shared.Msg.ChangelogReleasePage -> msg)
+    -> Cmd msg
+changelog_latest releaseId toMsg =
+    Http.get
+        { url = "/releases/" ++ releaseId ++ "/changelog.json"
+        , expect = leExpectJson toMsg changelogReleasePageDecoder
+        }
+
+
+changelogReleasePageDecoder : Decode.Decoder Shared.Msg.ChangelogReleasePage
+changelogReleasePageDecoder =
+    Decode.map2
+        Shared.Msg.ChangelogReleasePage
+        (Decode.field "release_id" Decode.string)
+        (Decode.field "blocks" (Decode.list contentBlockDecoder))
+
+
+contentBlockDecoder : Decode.Decoder ContentBlock
+contentBlockDecoder =
+    Decode.field "type" Decode.string
+        |> Decode.andThen
+            (\blockType ->
+                case blockType of
+                    "heading" ->
+                        Decode.map Shared.Msg.HeadingBlock (Decode.field "text" Decode.string)
+
+                    "paragraph" ->
+                        Decode.map Shared.Msg.ParagraphBlock (Decode.field "text" Decode.string)
+
+                    "image" ->
+                        Decode.map2 ImageData
+                            (Decode.field "src" Decode.string)
+                            (Decode.field "alt" Decode.string)
+                            |> Decode.map Shared.Msg.ImageBlock
+
+                    "video" ->
+                        Decode.map VideoData (Decode.field "src" Decode.string)
+                            |> Decode.map Shared.Msg.VideoBlock
+
+                    _ ->
+                        Decode.fail ("Unknown block type: " ++ blockType)
+            )
 
 
 changelog :

@@ -98,7 +98,7 @@ init flagsResult _ =
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
         , E.sendCmd <| Api.server_info GotServerInfo
-        , E.sendCmd <| Api.changelog_preview GotChangelogPreview
+        , E.sendCmd <| Api.changelog_index GotChangelogIndex
         , E.getUnits MasterUnitsLoadedByApi
             { sortBy = Nothing
             , afterUnitId = Nothing
@@ -233,14 +233,48 @@ update req msg model =
         GotServerInfo (Ok v) ->
             ( { model | serverInfo = Just v }, E.none )
 
-        GotChangelogPreview (Err err) ->
+        GotChangelogIndex (Err err) ->
             let
                 _ =
                     err
             in
             ( model, E.none )
 
-        GotChangelogPreview (Ok preview) ->
+        GotChangelogIndex (Ok releases) ->
+            case List.head releases of
+                Just latestRelease ->
+                    ( model, E.sendCmd <| Api.changelog_latest latestRelease.releaseId GotChangelogLatest )
+
+                Nothing ->
+                    ( model, E.none )
+
+        GotChangelogLatest (Err err) ->
+            let
+                _ =
+                    err
+            in
+            ( model, E.none )
+
+        GotChangelogLatest (Ok releasePage) ->
+            let
+                headings =
+                    releasePage.blocks
+                        |> List.filterMap
+                            (\block ->
+                                case block of
+                                    Shared.Msg.HeadingBlock text ->
+                                        Just text
+
+                                    _ ->
+                                        Nothing
+                            )
+
+                preview =
+                    { version = releasePage.releaseId
+                    , preview = headings
+                    , fullUrl = "/updates"
+                    }
+            in
             ( { model | changelogPreview = Just preview }, E.none )
 
         MasterUnitsLoadedByApi (Err err) ->

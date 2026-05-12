@@ -236,7 +236,7 @@ view model =
     , body =
         [ div [ class "box-border mx-auto max-w-[1820px] px-4 py-6" ]
             [ h1 [ class "text-2xl font-semibold mb-5" ] [ text "Оновлення" ]
-            , div [ class "grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_240px] gap-4" ]
+            , div [ class "grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_240px] gap-4 items-start" ]
                 [ viewReleasesSidebar model
                 , viewReleasePage model
                 , viewOnThisPage model

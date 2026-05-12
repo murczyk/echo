@@ -1,4 +1,4 @@
-module Shared.Msg exposing (Msg(..))
+module Shared.Msg exposing (Msg(..), ChangelogReleaseMeta, ChangelogReleasePage, ContentBlock(..), ImageData, VideoData)
 
 import Bindings as B
 import Core.Types exposing (ApiError, LocationRes)
@@ -7,13 +7,44 @@ import Shared.Components.Toast
 import Shared.Model exposing (ThemeMode)
 
 
+type alias ChangelogReleaseMeta =
+    { releaseId : String
+    , title : String
+    }
+
+
+type alias ChangelogReleasePage =
+    { releaseId : String
+    , blocks : List ContentBlock
+    }
+
+
+type ContentBlock
+    = HeadingBlock String
+    | ParagraphBlock String
+    | ImageBlock ImageData
+    | VideoBlock VideoData
+
+
+type alias ImageData =
+    { src : String
+    , alt : String
+    }
+
+
+type alias VideoData =
+    { src : String
+    }
+
+
 type Msg
     = SignIn B.User
     | SignOut
     | SignOutDone (Result ApiError ())
     | GotUser (Result ApiError B.User)
     | GotServerInfo (Result ApiError B.ServerInfo)
-    | GotChangelogPreview (Result ApiError B.ChangelogPreview)
+    | GotChangelogIndex (Result ApiError (List ChangelogReleaseMeta))
+    | GotChangelogLatest (Result ApiError ChangelogReleasePage)
     | SetThemeMode ThemeMode
     | ThemeModeLoaded String
     | ToggleDarkMode
