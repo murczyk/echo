@@ -56,6 +56,7 @@ struct GoiSettingsInput {
 #[serde(rename_all = "snake_case")]
 pub enum RestartCurrentUserGoiService {
     Swapp,
+    SwappAlt,
     Goi,
 }
 
@@ -1290,6 +1291,9 @@ pub(super) fn goi_restart_service_command(
 ) -> &'static str {
     match service {
         RestartCurrentUserGoiService::Swapp => "sudo systemctl restart swapp",
+        RestartCurrentUserGoiService::SwappAlt => {
+            "sudo systemctl restart swapp-alt"
+        }
         RestartCurrentUserGoiService::Goi => "sudo systemctl restart goi",
     }
 }
@@ -1301,8 +1305,43 @@ pub(super) fn goi_restart_service_error_context(
         RestartCurrentUserGoiService::Swapp => {
             "Не вдалося перезапустити SWAPP на інстансі ГОІ"
         }
+        RestartCurrentUserGoiService::SwappAlt => {
+            "Не вдалося перезапустити SWAPP 4003 на інстансі ГОІ"
+        }
         RestartCurrentUserGoiService::Goi => {
             "Не вдалося перезапустити GOI на інстансі ГОІ"
+        }
+    }
+}
+
+pub(super) fn goi_unlink_whatsapp_command(
+    service: &RestartCurrentUserGoiService,
+) -> Result<&'static str, AppError> {
+    match service {
+        RestartCurrentUserGoiService::Swapp => {
+            Ok("(cd /etc/swapp && npm run whatsapp:delete)")
+        }
+        RestartCurrentUserGoiService::SwappAlt => {
+            Ok("(cd /etc/swapp-alt && npm run whatsapp:delete)")
+        }
+        RestartCurrentUserGoiService::Goi => Err(AppError::BL {
+            msg: "Відв'язування доступне лише для SWAPP".to_string(),
+        }),
+    }
+}
+
+pub(super) fn goi_unlink_whatsapp_error_context(
+    service: &RestartCurrentUserGoiService,
+) -> &'static str {
+    match service {
+        RestartCurrentUserGoiService::Swapp => {
+            "Не вдалося відв'язати SWAPP на інстансі ГОІ"
+        }
+        RestartCurrentUserGoiService::SwappAlt => {
+            "Не вдалося відв'язати SWAPP 4003 на інстансі ГОІ"
+        }
+        RestartCurrentUserGoiService::Goi => {
+            "Не вдалося відв'язати GOI на інстансі ГОІ"
         }
     }
 }

@@ -23,7 +23,7 @@ use crate::organism::goi::types::{
     ListGoiAssociationsRsp, ListGoiAssociationsSortBy, ListGoiKnowledgeReq,
     ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
     RestartGoiIntegrationServiceReq, SetupGoiIntegrationWorkerReq,
-    UpsertGoiAdminIntegrationReq,
+    UnlinkGoiIntegrationWhatsappReq, UpsertGoiAdminIntegrationReq,
 };
 use crate::organism::types::{
     CheckOrganismGoiConnectionReq, CheckOrganismGoiConnectionRsp,
@@ -53,6 +53,7 @@ pub struct ListCurrentUserGoiIntegrationsRsp {
 
 enum GoiService {
     Swapp,
+    SwappAlt,
     Goi,
 }
 
@@ -450,6 +451,40 @@ pub async fn restart_current_user_goi_service(
         ssh_req,
         super::goi_restart_service_command(&service_kind).to_string(),
         super::goi_restart_service_error_context(&service_kind),
+    )
+    .await?;
+
+    Ok(Json(true))
+}
+
+#[post("/api/goi/unlink-whatsapp")]
+pub async fn unlink_current_user_goi_whatsapp(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UnlinkGoiIntegrationWhatsappReq>,
+) -> Result<Json<bool>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let integrations =
+        load_accessible_integrations_for_user(&env.dbx, &user_id)
+            .await
+            .c(h!())?;
+    let integration = integrations
+        .into_iter()
+        .find(|item| item.integration.id == req.integration_id)
+        .ok_or_else(|| AppError::BL {
+            msg: "Інтеграцію ГОІ не знайдено або доступ відсутній".to_string(),
+        })?;
+    let ssh_req =
+        goi_connection_req_from_integration(&integration.integration)?;
+    let service = parse_goi_service(&req.service)?;
+    let service_kind: super::RestartCurrentUserGoiService = (&service).into();
+
+    super::goi_run_command(
+        ssh_req,
+        super::goi_unlink_whatsapp_command(&service_kind)?.to_string(),
+        super::goi_unlink_whatsapp_error_context(&service_kind),
     )
     .await?;
 
@@ -874,6 +909,7 @@ fn goi_connection_req_from_integration(
 fn parse_goi_service(raw: &str) -> Result<GoiService, AppError> {
     match raw.trim() {
         "swapp" => Ok(GoiService::Swapp),
+        "swapp_alt" => Ok(GoiService::SwappAlt),
         "goi" => Ok(GoiService::Goi),
         other => Err(AppError::BL {
             msg: format!("Невідомий сервіс ГОІ: {other}"),
@@ -885,6 +921,9 @@ impl From<&GoiService> for super::RestartCurrentUserGoiService {
     fn from(value: &GoiService) -> Self {
         match value {
             GoiService::Swapp => super::RestartCurrentUserGoiService::Swapp,
+            GoiService::SwappAlt => {
+                super::RestartCurrentUserGoiService::SwappAlt
+            }
             GoiService::Goi => super::RestartCurrentUserGoiService::Goi,
         }
     }

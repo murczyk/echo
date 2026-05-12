@@ -7,9 +7,11 @@ import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import {
   GoiRestartService,
+  GoiWhatsappService,
   GoiUserIntegration,
   fetchCurrentUserGoiIntegrations,
   restartCurrentUserGoiService,
+  unlinkCurrentUserGoiWhatsapp,
 } from '../../services/api/goi-settings';
 
 type ActionStatus = {
@@ -28,7 +30,13 @@ function isAbortError(error: unknown): boolean {
 }
 
 function restartServiceLabel(service: GoiRestartService): string {
-  return service === 'swapp' ? 'SWAPP' : 'GOI';
+  if (service === 'swapp') return 'SWAPP';
+  if (service === 'swapp_alt') return 'SWAPP 4003';
+  return 'GOI';
+}
+
+function whatsappServiceLabel(service: GoiWhatsappService): string {
+  return service === 'swapp_alt' ? 'SWAPP 4003' : 'SWAPP';
 }
 
 type IntegrationCardProps = {
@@ -36,12 +44,17 @@ type IntegrationCardProps = {
   actionStatus: ActionStatus;
   pendingKey: string | null;
   onRestart: (integrationId: number, service: GoiRestartService) => void;
+  onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
 };
 
 function IntegrationCard(props: IntegrationCardProps) {
   const { integration } = props;
-  const goiKey = `${integration.id}:goi`;
-  const swappKey = `${integration.id}:swapp`;
+  const goiKey = `${integration.id}:restart:goi`;
+  const swappKey = `${integration.id}:restart:swapp`;
+  const swappUnlinkKey = `${integration.id}:unlink:swapp`;
+  const swappAltKey = `${integration.id}:restart:swapp_alt`;
+  const swappAltUnlinkKey = `${integration.id}:unlink:swapp_alt`;
+  const disabled = !integration.canRestart || props.pendingKey !== null;
 
   return (
     <Card variant="outlined">
@@ -97,25 +110,98 @@ function IntegrationCard(props: IntegrationCardProps) {
           ) : null}
         </Stack>
       </CardContent>
-      <CardActions sx={{ px: 3, pb: 3, pt: 0, gap: 1, flexWrap: 'wrap' }}>
-        <PowerButton
-          variant="contained"
-          color="error"
-          disabled={!integration.canRestart || props.pendingKey !== null}
-          onClick={() => props.onRestart(integration.id, 'swapp')}
-        >
-          Перезапуск SWAPP
-        </PowerButton>
-        {props.pendingKey === swappKey ? <CircularProgress size={18} /> : null}
-        <PowerButton
-          variant="contained"
-          color="error"
-          disabled={!integration.canRestart || props.pendingKey !== null}
-          onClick={() => props.onRestart(integration.id, 'goi')}
-        >
-          Перезапуск GOI
-        </PowerButton>
-        {props.pendingKey === goiKey ? <CircularProgress size={18} /> : null}
+      <CardActions sx={{ px: 3, pb: 3, pt: 0 }}>
+        <Stack spacing={1.25} sx={{ width: '100%' }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+            alignItems={{ xs: 'stretch', sm: 'center' }}
+          >
+            <Typography
+              variant="body2"
+              sx={{ width: { sm: 100 }, fontWeight: 600 }}
+            >
+              GOI
+            </Typography>
+            <PowerButton
+              variant="contained"
+              color="error"
+              disabled={disabled}
+              onClick={() => props.onRestart(integration.id, 'goi')}
+            >
+              Перезапуск GOI
+            </PowerButton>
+            {props.pendingKey === goiKey ? (
+              <CircularProgress size={18} />
+            ) : null}
+          </Stack>
+
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+            alignItems={{ xs: 'stretch', sm: 'center' }}
+          >
+            <Typography
+              variant="body2"
+              sx={{ width: { sm: 100 }, fontWeight: 600 }}
+            >
+              SWAPP
+            </Typography>
+            <PowerButton
+              variant="contained"
+              color="error"
+              disabled={disabled}
+              onClick={() => props.onRestart(integration.id, 'swapp')}
+            >
+              Перезапуск SWAPP
+            </PowerButton>
+            <PowerButton
+              variant="outlined"
+              color="error"
+              disabled={disabled}
+              onClick={() => props.onUnlink(integration.id, 'swapp')}
+            >
+              ВІДВ'ЯЗАТИ
+            </PowerButton>
+            {props.pendingKey === swappKey ||
+            props.pendingKey === swappUnlinkKey ? (
+              <CircularProgress size={18} />
+            ) : null}
+          </Stack>
+
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+            alignItems={{ xs: 'stretch', sm: 'center' }}
+          >
+            <Typography
+              variant="body2"
+              sx={{ width: { sm: 100 }, fontWeight: 600 }}
+            >
+              SWAPP 4003
+            </Typography>
+            <PowerButton
+              variant="contained"
+              color="error"
+              disabled={disabled}
+              onClick={() => props.onRestart(integration.id, 'swapp_alt')}
+            >
+              Перезапуск SWAPP 4003
+            </PowerButton>
+            <PowerButton
+              variant="outlined"
+              color="error"
+              disabled={disabled}
+              onClick={() => props.onUnlink(integration.id, 'swapp_alt')}
+            >
+              ВІДВ'ЯЗАТИ
+            </PowerButton>
+            {props.pendingKey === swappAltKey ||
+            props.pendingKey === swappAltUnlinkKey ? (
+              <CircularProgress size={18} />
+            ) : null}
+          </Stack>
+        </Stack>
       </CardActions>
     </Card>
   );
@@ -151,7 +237,7 @@ export function GoiSettingsPage() {
   }, []);
 
   async function handleRestart(integrationId: number, service: GoiRestartService) {
-    const nextPendingKey = `${integrationId}:${service}`;
+    const nextPendingKey = `${integrationId}:restart:${service}`;
     if (pendingKey) return;
 
     setPendingKey(nextPendingKey);
@@ -163,6 +249,31 @@ export function GoiSettingsPage() {
         kind: 'success',
         integrationId,
         message: `${restartServiceLabel(service)} успішно перезапущено`,
+      });
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        integrationId,
+        message: formatErrorMessage(error),
+      });
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  async function handleUnlink(integrationId: number, service: GoiWhatsappService) {
+    const nextPendingKey = `${integrationId}:unlink:${service}`;
+    if (pendingKey) return;
+
+    setPendingKey(nextPendingKey);
+    setActionStatus(null);
+
+    try {
+      await unlinkCurrentUserGoiWhatsapp(integrationId, service);
+      setActionStatus({
+        kind: 'success',
+        integrationId,
+        message: `${whatsappServiceLabel(service)} успішно відв'язано`,
       });
     } catch (error) {
       setActionStatus({
@@ -195,6 +306,7 @@ export function GoiSettingsPage() {
           actionStatus={actionStatus}
           pendingKey={pendingKey}
           onRestart={handleRestart}
+          onUnlink={handleUnlink}
         />
       ))}
     </Stack>
