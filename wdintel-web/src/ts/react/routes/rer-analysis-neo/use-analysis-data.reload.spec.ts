@@ -530,7 +530,10 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
 
     const setSummaryCallsignsInfo = vi.fn();
-    const setNetworks = vi.fn();
+    const setNetworkDisplayMap = vi.fn();
+    const setNetworks = vi.fn((update) => {
+      if (typeof update === 'function') update([]);
+    });
     const setUnitsMap = vi.fn();
 
     const reloadPromise = reloadAnalysisData({
@@ -562,7 +565,7 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
+      setNetworkDisplayMap,
       setNetworks,
       setUnitsMap,
       setNewCallsigns: vi.fn(),
@@ -593,6 +596,7 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11, 12]);
     expect(setUnitsMap).toHaveBeenCalledWith({ 1: { id: 1, name: 'Unit One' } });
     expect(setNetworks).toHaveBeenCalled();
+    expect(setNetworkDisplayMap).toHaveBeenCalled();
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();

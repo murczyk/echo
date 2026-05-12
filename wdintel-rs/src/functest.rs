@@ -28,6 +28,7 @@ pub mod tests {
 
     static MIGRATE: tokio::sync::OnceCell<()> =
         tokio::sync::OnceCell::const_new();
+    static CLEANUP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     const TEST_AOR_NAME: &str = "Смуга1";
     const TEST_ORGANISM_NAME: &str = "666ОБ";
@@ -52,6 +53,7 @@ pub mod tests {
             })
             .await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
+        let _guard = CLEANUP.lock().await;
         // Delete dependent entities first to avoid foreign key constraint violations
         secret_group_user::Entity::delete_many()
             .exec(&env.dbx)
@@ -233,6 +235,10 @@ pub mod tests {
             .await
             .context(h!())?;
         login::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        delta_login::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;

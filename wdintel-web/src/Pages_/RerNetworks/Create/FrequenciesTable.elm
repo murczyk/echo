@@ -92,8 +92,9 @@ update _ msg model =
                         editFreqsDict =
                             List.map
                                 (\f ->
-                                    ( f.freq
+                                    ( f.networkFreqId
                                     , { networkId = network.id
+                                      , networkFreqId = f.networkFreqId
                                       , freq = f.freq
                                       , kind = Maybe.withDefault "VHF" f.kind
                                       , modulationId = f.modulationId
@@ -120,8 +121,8 @@ update _ msg model =
             let
                 compareTwoFreqs : B.UpdateNetworkFreqReq -> B.NetworkFreqsRes -> Bool
                 compareTwoFreqs updateReq originalFreq =
-                    updateReq.freq
-                        == originalFreq.freq
+                    updateReq.networkFreqId
+                        == originalFreq.networkFreqId
                         && updateReq.activeFrom
                         == originalFreq.activeFrom
                         && updateReq.encryptionKeyIds
@@ -139,7 +140,7 @@ update _ msg model =
                                             (\updateFreqReq ->
                                                 case model.freqs of
                                                     Success freqs ->
-                                                        ListX.find (\f -> f.freq == updateFreqReq.freq) freqs
+                                                        ListX.find (\f -> f.networkFreqId == updateFreqReq.networkFreqId) freqs
                                                             |> Maybe.andThen
                                                                 (\originalFreq ->
                                                                     if compareTwoFreqs updateFreqReq originalFreq then
@@ -178,9 +179,9 @@ update _ msg model =
         FreqsEditingMsg updFreqState ->
             ( { model
                 | freqsEditingState =
-                    case model.freqsEditingState of
+                case model.freqsEditingState of
                         Editing editingFreqsDict ->
-                            Editing (Dict.insert updFreqState.freq updFreqState editingFreqsDict)
+                            Editing (Dict.insert updFreqState.networkFreqId updFreqState editingFreqsDict)
 
                         Readonly ->
                             Readonly
@@ -1018,11 +1019,12 @@ freqsTableConfig shared model user =
                                                         [ title "Редагувати"
                                                         , class "icon-btn icon-btn-primary"
                                                         , onClick <|
-                                                            OpenFreqEditSidebar freq.freq
-                                                                { networkId = network.id
-                                                                , freq = freq.freq
-                                                                , kind = Maybe.withDefault "VHF" freq.kind
-                                                                , modulationId = freq.modulationId
+                                                        OpenFreqEditSidebar freq.freq
+                                                            { networkId = network.id
+                                                            , networkFreqId = freq.networkFreqId
+                                                            , freq = freq.freq
+                                                            , kind = Maybe.withDefault "VHF" freq.kind
+                                                            , modulationId = freq.modulationId
                                                                 , encryptionKeyIds = freq.encryptionKeyIds
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo

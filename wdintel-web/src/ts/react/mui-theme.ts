@@ -31,6 +31,18 @@ export function useMuiPaletteMode() {
 const neoMuiFontFamily =
   'var(--bs-body-font-family, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji")';
 
+function buildAutofillStyles(theme: { palette: { background: { default: string }; text: { primary: string } } }) {
+  return {
+    '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus, & input:-webkit-autofill:active': {
+      WebkitBoxShadow: '0 0 0 1000px transparent inset',
+      WebkitTextFillColor: theme.palette.text.primary,
+      caretColor: theme.palette.text.primary,
+      transition: 'background-color 9999s ease-out 0s',
+      backgroundColor: 'transparent',
+    },
+  };
+}
+
 export function useNeoMuiTheme() {
   const mode = useMuiPaletteMode();
 
@@ -56,14 +68,18 @@ export function useNeoMuiTheme() {
           },
           MuiInputBase: {
             styleOverrides: {
-              root: {
+              root: ({ theme }) => ({
                 '&.Mui-disabled, &.Mui-disabled:hover': {
                   cursor: 'not-allowed',
                 },
                 '&.Mui-disabled *': {
                   cursor: 'not-allowed',
                 },
-              },
+                ...buildAutofillStyles(theme),
+              }),
+              input: ({ theme }) => ({
+                ...buildAutofillStyles(theme),
+              }),
             },
           },
           MuiFormControl: {
@@ -81,6 +97,9 @@ export function useNeoMuiTheme() {
           MuiFormControlLabel: {
             styleOverrides: {
               root: {
+                alignSelf: 'flex-start',
+                width: 'fit-content',
+                maxWidth: '100%',
                 '&.Mui-disabled, &.Mui-disabled:hover': {
                   cursor: 'not-allowed',
                 },

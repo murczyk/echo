@@ -54,7 +54,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           },
           descriptionDrawerSaving: false,
           descriptionDrawerError: null,
-          activeDescriptionTab: 'justifications',
+          activeNetworkDetailsTab: 'descriptions',
           deleteDescriptionDialogOpen: false,
           deleteDescriptionTarget: null,
           deleteDescriptionSubmitting: false,

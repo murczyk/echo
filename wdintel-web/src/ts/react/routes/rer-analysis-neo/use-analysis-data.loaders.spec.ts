@@ -15,6 +15,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchAnalysisLocations: vi.fn(),
   fetchAnalysisSummaryTable: vi.fn(),
   fetchAnalysisUnits: vi.fn(),
+  fetchMessagesByIds: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', async () => {
@@ -26,6 +27,7 @@ vi.mock('../../services/api/analysis', async () => {
     fetchAnalysisLocations: apiMocks.fetchAnalysisLocations,
     fetchAnalysisSummaryTable: apiMocks.fetchAnalysisSummaryTable,
     fetchAnalysisUnits: apiMocks.fetchAnalysisUnits,
+    fetchMessagesByIds: apiMocks.fetchMessagesByIds,
   };
 });
 
@@ -43,7 +45,7 @@ function buildQueryState() {
   };
 }
 
-function renderLoaderHook() {
+function renderLoaderHook(overrides: Partial<Parameters<typeof useAnalysisDataLoaders>[0]> = {}) {
   if (container == null) {
     throw new Error('container not initialized');
   }
@@ -58,6 +60,7 @@ function renderLoaderHook() {
       mapDateRangeLoadVersionRef: { current: 0 },
       mapMessagesLoadVersionRef: { current: 0 },
       newestFirst: true,
+      loadMissingNetworksForMessages: vi.fn().mockResolvedValue(undefined),
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
       optionsFreqs: [],
@@ -89,6 +92,7 @@ function renderLoaderHook() {
       setTopLocations: vi.fn(),
       setRightSidebarLoading: vi.fn(),
       setTopUnits: vi.fn(),
+      ...overrides,
     });
     return null;
   };
@@ -107,6 +111,7 @@ beforeEach(() => {
   apiMocks.fetchAnalysisLocations.mockReset();
   apiMocks.fetchAnalysisSummaryTable.mockReset();
   apiMocks.fetchAnalysisUnits.mockReset();
+  apiMocks.fetchMessagesByIds.mockReset();
 });
 
 afterEach(() => {
@@ -136,6 +141,25 @@ describe('shouldClearMapOpenMessages', () => {
 });
 
 describe('retryable loader caches', () => {
+  it('loads missing networks for map messages without blocking map load success', async () => {
+    const setMapOpenMessages = vi.fn();
+    const loadMissingNetworksForMessages = vi.fn(() => new Promise<void>(() => undefined));
+    const messages = [[7, { networkIds: [12] }]];
+    apiMocks.fetchMessagesByIds.mockResolvedValueOnce(messages);
+
+    renderLoaderHook({ loadMissingNetworksForMessages, setMapOpenMessages });
+
+    let loaded = false;
+    await act(async () => {
+      loaded = (await latest?.loadMessagesForMap([7])) ?? false;
+    });
+
+    expect(apiMocks.fetchMessagesByIds).toHaveBeenCalledWith([7]);
+    expect(setMapOpenMessages).toHaveBeenCalledWith(messages);
+    expect(loadMissingNetworksForMessages).toHaveBeenCalledWith(messages);
+    expect(loaded).toBe(true);
+  });
+
   it('retries summary loading after a failure for the same query', async () => {
     apiMocks.fetchAnalysisSummaryTable.mockRejectedValueOnce(new Error('summary failed'));
     apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({ rows: [] });
