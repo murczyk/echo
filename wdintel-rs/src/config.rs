@@ -102,6 +102,12 @@ pub const CHANGELOG_UPDATES_MEDIA_ENV_PATH_KEY: &str =
 pub const CHANGELOG_UPDATES_MEDIA_DEFAULT_DIR: &str = "changelog-updates/media";
 pub const CHANGELOG_UPDATES_MEDIA_PACKAGED_DIR: &str =
     "/usr/share/doc/echo/changelog-updates/media";
+pub const CHANGELOG_RELEASES_ROOT_ENV_PATH_KEY: &str =
+    "ECHO_CHANGELOG_RELEASES_ROOT_PATH";
+pub const CHANGELOG_RELEASES_DEFAULT_DIR: &str = "changelog-updates";
+pub const CHANGELOG_RELEASES_PACKAGED_DIR: &str =
+    "/usr/share/doc/echo/changelog-updates";
+pub const CHANGELOG_RELEASE_HTML_FILENAME: &str = "changelog.html";
 
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;

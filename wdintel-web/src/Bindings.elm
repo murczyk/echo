@@ -933,6 +933,58 @@ changelogItemDetailsEncoder struct =
         ]
 
 
+type alias ChangelogReleaseMeta =
+    { releaseId : String
+    , releaseTitle : String
+    }
+
+
+changelogReleaseMetaEncoder : ChangelogReleaseMeta -> Json.Encode.Value
+changelogReleaseMetaEncoder struct =
+    Json.Encode.object
+        [ ( "release_id", (Json.Encode.string) struct.releaseId )
+        , ( "release_title", (Json.Encode.string) struct.releaseTitle )
+        ]
+
+
+type alias ChangelogReleaseSection =
+    { sectionId : String
+    , taskRef : String
+    , title : String
+    , contentHtml : String
+    }
+
+
+changelogReleaseSectionEncoder : ChangelogReleaseSection -> Json.Encode.Value
+changelogReleaseSectionEncoder struct =
+    Json.Encode.object
+        [ ( "section_id", (Json.Encode.string) struct.sectionId )
+        , ( "task_ref", (Json.Encode.string) struct.taskRef )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "content_html", (Json.Encode.string) struct.contentHtml )
+        ]
+
+
+type alias ChangelogReleasePage =
+    { productName : String
+    , releaseId : String
+    , releaseTitle : String
+    , releaseNumber : String
+    , sections : List (ChangelogReleaseSection)
+    }
+
+
+changelogReleasePageEncoder : ChangelogReleasePage -> Json.Encode.Value
+changelogReleasePageEncoder struct =
+    Json.Encode.object
+        [ ( "product_name", (Json.Encode.string) struct.productName )
+        , ( "release_id", (Json.Encode.string) struct.releaseId )
+        , ( "release_title", (Json.Encode.string) struct.releaseTitle )
+        , ( "release_number", (Json.Encode.string) struct.releaseNumber )
+        , ( "sections", (Json.Encode.list (changelogReleaseSectionEncoder)) struct.sections )
+        ]
+
+
 type BgtaskErrorCode
     = NoDefaultAor
 
@@ -8282,6 +8334,32 @@ changelogItemDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media" (Json.Decode.list (changelogMediaDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_html" (Json.Decode.string)))
+
+
+changelogReleaseMetaDecoder : Json.Decode.Decoder ChangelogReleaseMeta
+changelogReleaseMetaDecoder =
+    Json.Decode.succeed ChangelogReleaseMeta
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "release_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "release_title" (Json.Decode.string)))
+
+
+changelogReleaseSectionDecoder : Json.Decode.Decoder ChangelogReleaseSection
+changelogReleaseSectionDecoder =
+    Json.Decode.succeed ChangelogReleaseSection
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "task_ref" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_html" (Json.Decode.string)))
+
+
+changelogReleasePageDecoder : Json.Decode.Decoder ChangelogReleasePage
+changelogReleasePageDecoder =
+    Json.Decode.succeed ChangelogReleasePage
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "product_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "release_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "release_title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "release_number" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sections" (Json.Decode.list (changelogReleaseSectionDecoder))))
 
 
 bgtaskErrorCodeDecoder : Json.Decode.Decoder BgtaskErrorCode

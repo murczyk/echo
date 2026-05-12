@@ -96,6 +96,31 @@ fn updates_self_closing_video_regex() -> &'static Regex {
     })
 }
 
+fn release_div_block_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r#"(?is)<div[^>]*\bid\s*=\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</div>"#,
+        )
+        .expect("valid release div block regex")
+    })
+}
+
+fn release_heading_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r#"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>"#)
+            .expect("valid release heading regex")
+    })
+}
+
+fn html_tag_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r#"(?is)<[^>]+>"#).expect("valid html tag regex")
+    })
+}
+
 async fn read_changelog_updates_content() -> Result<String, AppError> {
     let mut errors = Vec::new();
     for updates_path in changelog_updates_paths() {
@@ -170,6 +195,114 @@ fn changelog_updates_media_paths() -> Vec<PathBuf> {
         PathBuf::from("..")
             .join(crate::config::CHANGELOG_UPDATES_MEDIA_DEFAULT_DIR),
     ]
+}
+
+fn changelog_release_roots() -> Vec<PathBuf> {
+    if let Ok(path) =
+        env::var(crate::config::CHANGELOG_RELEASES_ROOT_ENV_PATH_KEY)
+    {
+        return vec![PathBuf::from(path)];
+    }
+
+    vec![
+        PathBuf::from(".").join(crate::config::CHANGELOG_RELEASES_DEFAULT_DIR),
+        PathBuf::from("..").join(crate::config::CHANGELOG_RELEASES_DEFAULT_DIR),
+    ]
+}
+
+fn changelog_release_html_paths(release_id: &str) -> Vec<PathBuf> {
+    changelog_release_roots()
+        .into_iter()
+        .map(|root| {
+            root.join(release_id)
+                .join(crate::config::CHANGELOG_RELEASE_HTML_FILENAME)
+        })
+        .collect()
+}
+
+fn changelog_release_media_dirs(release_id: &str) -> Vec<PathBuf> {
+    changelog_release_roots()
+        .into_iter()
+        .map(|root| root.join(release_id).join("media"))
+        .collect()
+}
+
+fn is_safe_release_id(release_id: &str) -> bool {
+    if release_id.len() != 10 {
+        return false;
+    }
+
+    let mut chars = release_id.chars();
+    let year = chars.by_ref().take(4).all(|c| c.is_ascii_digit());
+    let dash1 = chars.next() == Some('-');
+    let month = chars.by_ref().take(2).all(|c| c.is_ascii_digit());
+    let dash2 = chars.next() == Some('-');
+    let day = chars.by_ref().take(2).all(|c| c.is_ascii_digit());
+
+    year && dash1 && month && dash2 && day && chars.next().is_none()
+}
+
+async fn read_changelog_release_content(
+    release_id: &str,
+) -> Result<Option<String>, AppError> {
+    let mut errors = Vec::new();
+
+    for html_path in changelog_release_html_paths(release_id) {
+        match tokio::fs::read_to_string(&html_path).await {
+            Ok(content) => return Ok(Some(content)),
+            Err(err) => {
+                errors.push(format!("{}: {}", html_path.display(), err))
+            }
+        }
+    }
+
+    warn!(
+        "failed to read changelog release html for {release_id}: {}",
+        errors.join(" | ")
+    );
+
+    Ok(None)
+}
+
+async fn list_changelog_release_ids() -> Result<Vec<String>, AppError> {
+    let mut release_ids = std::collections::BTreeSet::new();
+
+    for root in changelog_release_roots() {
+        let Ok(mut entries) = tokio::fs::read_dir(&root).await else {
+            continue;
+        };
+
+        while let Some(entry) = entries.next_entry().await.c(h!())? {
+            let Ok(file_type) = entry.file_type().await else {
+                continue;
+            };
+
+            if !file_type.is_dir() {
+                continue;
+            }
+
+            let Some(release_id) =
+                entry.file_name().to_str().map(str::to_string)
+            else {
+                continue;
+            };
+
+            if !is_safe_release_id(&release_id) {
+                continue;
+            }
+
+            let html_path = entry
+                .path()
+                .join(crate::config::CHANGELOG_RELEASE_HTML_FILENAME);
+            if html_path.is_file() {
+                release_ids.insert(release_id);
+            }
+        }
+    }
+
+    let mut sorted: Vec<String> = release_ids.into_iter().collect();
+    sorted.sort_by(|left, right| right.cmp(left));
+    Ok(sorted)
 }
 
 async fn read_changelog_content() -> Result<String, AppError> {
@@ -434,6 +567,35 @@ pub struct ChangelogItemDetails {
     pub content_html: String,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ChangelogReleaseMeta {
+    pub release_id: String,
+    pub release_title: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ChangelogReleaseSection {
+    pub section_id: String,
+    pub task_ref: String,
+    pub title: String,
+    pub content_html: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ChangelogReleasePage {
+    pub product_name: String,
+    pub release_id: String,
+    pub release_title: String,
+    pub release_number: String,
+    pub sections: Vec<ChangelogReleaseSection>,
+}
+
 #[derive(Debug, Clone)]
 struct ParsedUpdatesBlock {
     task_ref: String,
@@ -457,6 +619,46 @@ async fn changelog_raw() -> Result<Json<Vec<ChangelogSection>>, AppError> {
     let sections =
         collect_public_changelog_sections(&changelog_content, &updates_blocks);
     Ok(Json(sections))
+}
+
+#[get("/api-public/changelog-releases")]
+async fn changelog_releases(
+) -> Result<Json<Vec<ChangelogReleaseMeta>>, AppError> {
+    let release_ids = list_changelog_release_ids().await?;
+    let releases = release_ids
+        .into_iter()
+        .map(|release_id| ChangelogReleaseMeta {
+            release_title: format!("Реліз {release_id}"),
+            release_id,
+        })
+        .collect();
+
+    Ok(Json(releases))
+}
+
+#[get("/api-public/changelog-release/{release_id}")]
+async fn changelog_release(
+    req: HttpRequest,
+) -> Result<Json<Option<ChangelogReleasePage>>, AppError> {
+    let release_id = req.match_info().query("release_id").trim();
+    if !is_safe_release_id(release_id) {
+        return Ok(Json(None));
+    }
+
+    let Some(content) = read_changelog_release_content(release_id).await?
+    else {
+        return Ok(Json(None));
+    };
+
+    let sections = parse_release_sections(release_id, &content);
+
+    Ok(Json(Some(ChangelogReleasePage {
+        product_name: "ECHO".to_string(),
+        release_id: release_id.to_string(),
+        release_title: format!("Реліз {release_id}"),
+        release_number: release_id.to_string(),
+        sections,
+    })))
 }
 
 #[post("/api-public/changelog-details")]
@@ -503,6 +705,32 @@ async fn changelog_media(req: HttpRequest) -> Result<impl Responder, AppError> {
 
     for media_root in changelog_updates_media_paths() {
         let local_path = media_root.join(&relative_path);
+        if local_path.is_file() {
+            if let Ok(named_file) = NamedFile::open(local_path) {
+                return Ok(named_file.into_response(&req));
+            }
+        }
+    }
+
+    Ok(HttpResponse::NotFound().body("Media not found"))
+}
+
+#[get("/api-public/changelog-release-media/{release_id}/{path:.*}")]
+async fn changelog_release_media(
+    req: HttpRequest,
+) -> Result<impl Responder, AppError> {
+    let release_id = req.match_info().query("release_id").trim();
+    if !is_safe_release_id(release_id) {
+        return Ok(HttpResponse::NotFound().body("Media not found"));
+    }
+
+    let requested = req.match_info().query("path");
+    let Ok(relative_path) = parse_safe_relative_path(requested) else {
+        return Ok(HttpResponse::NotFound().body("Media not found"));
+    };
+
+    for media_dir in changelog_release_media_dirs(release_id) {
+        let local_path = media_dir.join(&relative_path);
         if local_path.is_file() {
             if let Ok(named_file) = NamedFile::open(local_path) {
                 return Ok(named_file.into_response(&req));
@@ -822,6 +1050,113 @@ fn render_updates_markdown_html(markdown_content: &str) -> String {
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
     html_output
+}
+
+fn parse_release_sections(
+    release_id: &str,
+    content: &str,
+) -> Vec<ChangelogReleaseSection> {
+    let mut sections = Vec::new();
+    let block_regex = release_div_block_regex();
+
+    for captures in block_regex.captures_iter(content) {
+        let raw_section_id = captures
+            .get(1)
+            .map(|group| group.as_str())
+            .unwrap_or_default();
+        let section_id = sanitize_section_id(raw_section_id);
+        if section_id.is_empty() {
+            continue;
+        }
+
+        let body = captures
+            .get(2)
+            .map(|group| group.as_str().trim())
+            .unwrap_or_default();
+        if body.is_empty() {
+            continue;
+        }
+
+        let title = extract_release_section_title(body)
+            .unwrap_or_else(|| format!("Пункт {section_id}"));
+        let wrapped = format!("<div id=\"{section_id}\">\n{body}\n</div>");
+        let normalized_html =
+            normalize_release_section_html(release_id, &wrapped);
+
+        sections.push(ChangelogReleaseSection {
+            task_ref: format!("#{section_id}"),
+            section_id,
+            title,
+            content_html: normalized_html,
+        });
+    }
+
+    sections
+}
+
+fn sanitize_section_id(raw_section_id: &str) -> String {
+    raw_section_id
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
+        .collect()
+}
+
+fn extract_release_section_title(body: &str) -> Option<String> {
+    let heading_regex = release_heading_regex();
+    let html_tags = html_tag_regex();
+    let captures = heading_regex.captures(body)?;
+    let heading_raw = captures.get(1)?.as_str();
+    let plain = html_tags.replace_all(heading_raw, " ");
+    let title = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+    if title.is_empty() {
+        None
+    } else {
+        Some(title)
+    }
+}
+
+fn normalize_release_section_html(
+    release_id: &str,
+    html_content: &str,
+) -> String {
+    let src_regex = updates_html_src_regex();
+    let with_normalized_src = src_regex
+        .replace_all(html_content, |captures: &regex::Captures| {
+            let source = captures
+                .get(1)
+                .map(|group| group.as_str())
+                .unwrap_or_default();
+            format!(
+                "src=\"{}\"",
+                normalize_release_media_url(release_id, source)
+            )
+        })
+        .to_string();
+
+    updates_self_closing_video_regex()
+        .replace_all(&with_normalized_src, "<video$1></video>")
+        .to_string()
+}
+
+fn normalize_release_media_url(release_id: &str, source: &str) -> String {
+    let trimmed = source.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("/")
+        || trimmed.starts_with("data:")
+        || trimmed.starts_with("blob:")
+    {
+        return trimmed.to_string();
+    }
+
+    let without_dot_prefix = trimmed.trim_start_matches("./");
+    let media_relative = without_dot_prefix
+        .strip_prefix("media/")
+        .unwrap_or(without_dot_prefix)
+        .trim_start_matches('/');
+
+    format!("/api-public/changelog-release-media/{release_id}/{media_relative}")
 }
 
 fn find_matching_updates_block<'a>(

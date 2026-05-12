@@ -1,0 +1,23 @@
+{
+  "release_id": "2026-03-22",
+  "title": "Реліз 2026-03-22",
+  "blocks": [
+    {
+      "type": "heading",
+      "text": "Новий dashboard"
+    },
+    {
+      "type": "paragraph",
+      "text": "Додано новий dashboard для аналітики."
+    },
+    {
+      "type": "image",
+      "src": "/releases/2026-03-22/media/screenshot.png",
+      "alt": "Dashboard screenshot"
+    },
+    {
+      "type": "video",
+      "src": "/releases/2026-03-22/media/demo.mp4"
+    }
+  ]
+}

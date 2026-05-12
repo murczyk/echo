@@ -335,6 +335,26 @@ export type ChangelogItemDetails = {
   contentHtml: string;
 };
 
+export type ChangelogReleaseMeta = {
+  releaseId: string;
+  releaseTitle: string;
+};
+
+export type ChangelogReleaseSection = {
+  sectionId: string;
+  taskRef: string;
+  title: string;
+  contentHtml: string;
+};
+
+export type ChangelogReleasePage = {
+  productName: string;
+  releaseId: string;
+  releaseTitle: string;
+  releaseNumber: string;
+  sections: Array<ChangelogReleaseSection>;
+};
+
 export type BgtaskErrorCode =
   | 'no_default_aor'
 ;

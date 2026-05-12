@@ -1,27 +1,28 @@
 module Pages.Updates exposing (Model, Msg, page)
 
-import Api
 import Auth
-import Bindings as B
 import Browser.Dom
+import Browser.Events
 import Core.Types exposing (ApiError)
-import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (alt, class, controls, id, property, src, style)
+import Html.Attributes exposing (alt, attribute, class, controls, id, src)
 import Html.Events exposing (onClick)
-import Json.Encode as Encode
+import Html.Lazy as Lazy
+import Http
+import Json.Decode as Decode
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
-import Set exposing (Set)
 import Shared
 import Shared.Components.Spinner
+import String
 import Task
+import Url.Builder
 import Utils.Api.ErrorHandling
+import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
 import View exposing (View)
-
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user _ _ =
@@ -43,112 +44,214 @@ toLayout user _ =
 
 
 type alias Model =
-    { sections : RemoteData ApiError (List B.ChangelogSection)
-    , expandedDates : Set String
-    , expandedItems : Set String
-    , itemDetails : Dict String (RemoteData ApiError (Maybe B.ChangelogItemDetails))
+    { releases : RemoteData ApiError (List ReleaseMeta)
+    , selectedReleaseId : Maybe String
+    , releasePage : RemoteData ApiError (Maybe LoadedReleasePage)
+    , activeSectionId : Maybe String
+    , scrollProbeMs : Float
+    }
+
+
+type alias ReleaseMeta =
+    { releaseId : String
+    , title : String
+    }
+
+
+type alias ReleasePage =
+    { releaseId : String
+    , title : String
+    , blocks : List ContentBlock
+    }
+
+
+type alias LoadedReleasePage =
+    { page : ReleasePage
+    , sections : List HeadingSection
+    }
+
+
+type alias HeadingSection =
+    { sectionId : String
+    , title : String
+    }
+
+
+type ContentBlock
+    = HeadingBlock String
+    | ParagraphBlock String
+    | ImageBlock ImageData
+    | VideoBlock VideoData
+
+
+type alias ImageData =
+    { src : String
+    , alt : String
+    }
+
+
+type alias VideoData =
+    { src : String
     }
 
 
 init : () -> ( Model, Effect Msg )
 init () =
-    ( { sections = Loading
-      , expandedDates = Set.empty
-      , expandedItems = Set.empty
-      , itemDetails = Dict.empty
+    ( { releases = Loading
+      , selectedReleaseId = Nothing
+      , releasePage = NotAsked
+      , activeSectionId = Nothing
+      , scrollProbeMs = 0
       }
-    , E.sendCmd <| Api.changelog GotChangelog
+    , E.sendCmd <| fetchReleases
     )
 
 
 type Msg
-    = GotChangelog (Result ApiError (List B.ChangelogSection))
-    | ToggleDate String
-    | ToggleEntry B.ChangelogEntry
-    | GotChangelogDetails String (Result ApiError (Maybe B.ChangelogItemDetails))
-    | JumpToEntry String B.ChangelogEntry
-    | ScrolledToEntry (Result Browser.Dom.Error ())
+    = GotReleases (Result ApiError (List ReleaseMeta))
+    | SelectRelease String
+    | GotReleasePage String (Result ApiError ReleasePage)
+    | ScrollTick Float
+    | GotActiveSection (Result Browser.Dom.Error (Maybe String))
+    | JumpToSection String
+    | ScrolledToSection (Result Browser.Dom.Error ())
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        GotChangelog (Ok sections) ->
-            let
-                expandedDates =
-                    case List.head sections of
-                        Just firstSection ->
-                            Set.singleton firstSection.date
+        GotReleases (Ok releases) ->
+            case List.head releases of
+                Just firstRelease ->
+                    ( { model
+                        | releases = Success releases
+                        , selectedReleaseId = Just firstRelease.releaseId
+                        , releasePage = Loading
+                      }
+                    , E.sendCmd <| fetchReleasePage firstRelease.releaseId
+                    )
 
-                        Nothing ->
-                            Set.empty
-            in
-            ( { model | sections = Success sections, expandedDates = expandedDates }, E.none )
+                Nothing ->
+                    ( { model | releases = Success [], releasePage = Success Nothing }
+                    , E.none
+                    )
 
-        GotChangelog (Err err) ->
-            ( { model | sections = Failure err }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження оновлень" err
+        GotReleases (Err err) ->
+            ( { model | releases = Failure err }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження релізів" err
             )
 
-        ToggleDate date ->
-            ( { model | expandedDates = toggleInSet date model.expandedDates }
-            , E.none
+        SelectRelease releaseId ->
+            if model.selectedReleaseId == Just releaseId then
+                ( model, E.none )
+
+            else
+                ( { model
+                    | selectedReleaseId = Just releaseId
+                    , releasePage = Loading
+                    , activeSectionId = Nothing
+                    , scrollProbeMs = 0
+                  }
+                , E.sendCmd <| fetchReleasePage releaseId
+                )
+
+        GotReleasePage releaseId (Ok releasePage) ->
+            if model.selectedReleaseId /= Just releaseId then
+                ( model, E.none )
+
+            else
+                let
+                    loadedReleasePage =
+                        buildLoadedReleasePage releasePage
+
+                    firstSectionId =
+                        loadedReleasePage.sections
+                            |> List.head
+                            |> Maybe.map .sectionId
+                in
+                ( { model
+                    | releasePage = Success (Just loadedReleasePage)
+                    , activeSectionId = firstSectionId
+                    , scrollProbeMs = 0
+                  }
+                , E.none
+                )
+
+        GotReleasePage releaseId (Err err) ->
+            if model.selectedReleaseId /= Just releaseId then
+                ( model, E.none )
+
+            else
+                ( { model | releasePage = Failure err }
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження релізу" err
+                )
+
+        ScrollTick deltaMs ->
+            case model.releasePage of
+                Success (Just loadedReleasePage) ->
+                    if List.isEmpty loadedReleasePage.sections then
+                        ( model, E.none )
+
+                    else if model.scrollProbeMs + deltaMs < 180 then
+                        ( { model | scrollProbeMs = model.scrollProbeMs + deltaMs }
+                        , E.none
+                        )
+
+                    else
+                        ( { model | scrollProbeMs = 0 }
+                        , E.sendCmd <| detectActiveSection loadedReleasePage.sections
+                        )
+
+                _ ->
+                    ( model, E.none )
+
+        GotActiveSection (Ok maybeSectionId) ->
+            case maybeSectionId of
+                Just sectionId ->
+                    ( { model | activeSectionId = Just sectionId }, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        GotActiveSection (Err _) ->
+            ( model, E.none )
+
+        JumpToSection sectionId ->
+            ( { model | activeSectionId = Just sectionId }
+            , E.sendCmd <| scrollToSection sectionId
             )
 
-        ToggleEntry changelogEntry ->
-            toggleEntryWithDetails changelogEntry model
-
-        GotChangelogDetails entryId (Ok details) ->
-            ( { model | itemDetails = Dict.insert entryId (Success details) model.itemDetails }
-            , E.none
-            )
-
-        GotChangelogDetails entryId (Err err) ->
-            ( { model | itemDetails = Dict.insert entryId (Failure err) model.itemDetails }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження деталей оновлення" err
-            )
-
-        JumpToEntry date changelogEntry ->
-            let
-                ( expandedModel, detailsEffect ) =
-                    expandEntryWithDetails changelogEntry { model | expandedDates = Set.insert date model.expandedDates }
-            in
-            ( expandedModel
-            , E.batch
-                [ detailsEffect
-                , E.sendCmd <| scrollToEntry changelogEntry.entryId
-                ]
-            )
-
-        ScrolledToEntry _ ->
+        ScrolledToSection _ ->
             ( model, E.none )
 
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    Browser.Events.onAnimationFrameDelta ScrollTick
 
 
 view : Model -> View Msg
 view model =
     { title = "Оновлення"
     , body =
-        [ div [ class "box-border container mx-auto px-4 py-6" ]
+        [ div [ class "box-border mx-auto max-w-[1820px] px-4 py-6" ]
             [ h1 [ class "text-2xl font-semibold mb-5" ] [ text "Оновлення" ]
-            , div [ class "grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4" ]
-                [ viewSidebar model
-                , viewSections model
+            , div [ class "grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_240px] gap-4" ]
+                [ viewReleasesSidebar model
+                , viewReleasePage model
+                , viewOnThisPage model
                 ]
             ]
         ]
     }
 
 
-viewSidebar : Model -> Html Msg
-viewSidebar model =
-    case model.sections of
+viewReleasesSidebar : Model -> Html Msg
+viewReleasesSidebar model =
+    case model.releases of
         Loading ->
-            text ""
+            aside [ class "lg:sticky lg:top-20 self-start rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
+                [ div [ class "py-3 flex justify-center" ] [ Shared.Components.Spinner.loadingSpinner ] ]
 
         NotAsked ->
             text ""
@@ -156,30 +259,53 @@ viewSidebar model =
         Failure _ ->
             text ""
 
-        Success sections ->
-            if List.isEmpty sections then
+        Success releases ->
+            if List.isEmpty releases then
                 text ""
 
             else
-                aside [ class "hidden lg:block lg:sticky lg:top-4 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3 max-h-[calc(100vh-1rem)] overflow-auto" ]
-                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "Зміст" ]
-                    , div [ class "space-y-3 pl-2" ] (List.map (viewSidebarSection model) sections)
+                aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
+                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "Релізи" ]
+                    , div [ class "space-y-1" ] (List.map (viewReleaseItem model) releases)
                     ]
 
-        NeedsReload sections ->
-            if List.isEmpty sections then
+        NeedsReload releases ->
+            if List.isEmpty releases then
                 text ""
 
             else
-                aside [ class "hidden lg:block lg:sticky lg:top-4 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3 max-h-[calc(100vh-1rem)] overflow-auto" ]
-                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "Зміст" ]
-                    , div [ class "space-y-3 pl-2" ] (List.map (viewSidebarSection model) sections)
+                aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
+                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "Релізи" ]
+                    , div [ class "space-y-1" ] (List.map (viewReleaseItem model) releases)
                     ]
 
 
-viewSections : Model -> Html Msg
-viewSections model =
-    case model.sections of
+viewReleaseItem : Model -> ReleaseMeta -> Html Msg
+viewReleaseItem model releaseMeta =
+    let
+        isSelected =
+            model.selectedReleaseId == Just releaseMeta.releaseId
+
+        baseClasses =
+            "w-full text-left text-sm rounded px-2 py-1.5"
+
+        selectedClasses =
+            if isSelected then
+                " bg-[var(--color-bg)] font-semibold"
+
+            else
+                " hover:bg-[var(--color-bg)]"
+    in
+    button
+        [ class (baseClasses ++ selectedClasses)
+        , onClick (SelectRelease releaseMeta.releaseId)
+        ]
+        [ text releaseMeta.title ]
+
+
+viewReleasePage : Model -> Html Msg
+viewReleasePage model =
+    case model.releasePage of
         Loading ->
             div [ class "py-8 flex justify-center" ] [ Shared.Components.Spinner.loadingSpinner ]
 
@@ -187,246 +313,323 @@ viewSections model =
             text ""
 
         Failure _ ->
-            div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Не вдалося завантажити оновлення" ]
-
-        Success sections ->
-            if List.isEmpty sections then
-                div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Поки що немає оновлень" ]
-
-            else
-                div [ class "space-y-4" ] (List.map (viewSection model) sections)
-
-        NeedsReload sections ->
-            if List.isEmpty sections then
-                div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Поки що немає оновлень" ]
-
-            else
-                div [ class "space-y-4" ] (List.map (viewSection model) sections)
-
-
-viewSidebarSection : Model -> B.ChangelogSection -> Html Msg
-viewSidebarSection model changelogSection =
-    let
-        isExpanded =
-            Set.member changelogSection.date model.expandedDates
-    in
-    div [ class "space-y-1" ]
-        [ button
-            [ class "w-full text-left text-xs font-semibold flex items-center justify-between gap-2"
-            , onClick (ToggleDate changelogSection.date)
-            ]
-            [ text changelogSection.date
-            , span [ class "text-[var(--color-text-muted)]" ]
-                [ text (if isExpanded then "▾" else "▸") ]
-            ]
-        , if isExpanded then
-            ul [ class "space-y-1 pl-6", style "list-style-type" "disc" ]
-                (List.map
-                    (\changelogEntry ->
-                        li [ class "marker:text-[var(--color-text-muted)]" ]
-                            [ button
-                                [ class "block w-full text-left text-xs leading-snug hover:underline"
-                                , onClick (JumpToEntry changelogSection.date changelogEntry)
-                                ]
-                                [ text (displayTitle changelogEntry.title) ]
-                            ]
-                    )
-                    changelogSection.items
-                )
-
-          else
-            text ""
-        ]
-
-
-viewSection : Model -> B.ChangelogSection -> Html Msg
-viewSection model changelogSection =
-    let
-        isExpanded =
-            Set.member changelogSection.date model.expandedDates
-    in
-    section [ class "rounded border border-[var(--color-border)] bg-[var(--color-card)] p-4" ]
-        [ button
-            [ class "w-full text-left flex items-center justify-between gap-2"
-            , onClick (ToggleDate changelogSection.date)
-            ]
-            [ h2 [ class "text-lg font-semibold" ] [ text changelogSection.date ]
-            , span [ class "text-[var(--color-text-muted)]" ]
-                [ text (if isExpanded then "▾" else "▸") ]
-            ]
-        , if isExpanded then
-            ul [ class "space-y-3 mt-3" ]
-                (List.map (viewEntry model) changelogSection.items)
-
-          else
-            text ""
-        ]
-
-
-viewEntry : Model -> B.ChangelogEntry -> Html Msg
-viewEntry model changelogEntry =
-    let
-        isExpanded =
-            Set.member changelogEntry.entryId model.expandedItems
-
-        detailsRd =
-            Dict.get changelogEntry.entryId model.itemDetails
-                |> Maybe.withDefault NotAsked
-    in
-    li [ class "border border-[var(--color-border)] rounded p-3", id changelogEntry.entryId ]
-        [ div [ class "flex items-start justify-between gap-3" ]
-            [ button
-                [ class "w-full text-left text-sm leading-snug flex items-start justify-between gap-3"
-                , onClick (ToggleEntry changelogEntry)
-                ]
-                [ span [] [ text (displayTitle changelogEntry.title) ]
-                , span [ class "text-[var(--color-text-muted)]" ]
-                    [ text (if isExpanded then "▾" else "▸") ]
-                ]
-            ]
-        , if isExpanded then
-            viewEntryDetails detailsRd
-
-          else
-            text ""
-        ]
-
-
-viewEntryDetails : RemoteData ApiError (Maybe B.ChangelogItemDetails) -> Html Msg
-viewEntryDetails detailsRd =
-    case detailsRd of
-        Loading ->
-            div [ class "pt-3 flex justify-center" ] [ Shared.Components.Spinner.loadingSpinner ]
-
-        NotAsked ->
-            text ""
-
-        Failure _ ->
-            text ""
+            div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Не вдалося завантажити реліз" ]
 
         Success Nothing ->
-            text ""
+            div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Оберіть реліз" ]
 
-        Success (Just details) ->
-            if String.trim details.contentHtml /= "" then
-                div [ class "pt-3" ]
-                    [ node "div"
-                        [ class "changelog-details-content"
-                        , property "innerHTML" (Encode.string details.contentHtml)
+        Success (Just loadedReleasePage) ->
+            section [ class "rounded border border-[var(--color-border)] bg-[var(--color-card)] p-5" ]
+                [ h2 [ class "text-2xl font-semibold" ] [ text (releasePageHeader loadedReleasePage.page) ]
+                , div [ class "mt-5 space-y-4" ]
+                    (viewTopAnchorIfNeeded loadedReleasePage
+                        ++ (loadedReleasePage.page.blocks
+                                |> List.indexedMap (viewBlock model.activeSectionId)
+                           )
+                    )
+                ]
+
+        NeedsReload maybeReleasePage ->
+            case maybeReleasePage of
+                Just loadedReleasePage ->
+                    section [ class "rounded border border-[var(--color-border)] bg-[var(--color-card)] p-5" ]
+                        [ h2 [ class "text-2xl font-semibold" ] [ text (releasePageHeader loadedReleasePage.page) ]
+                        , div [ class "mt-5 space-y-4" ]
+                            (viewTopAnchorIfNeeded loadedReleasePage
+                                ++ (loadedReleasePage.page.blocks
+                                        |> List.indexedMap (viewBlock model.activeSectionId)
+                                   )
+                            )
                         ]
-                        []
-                    ]
 
-            else if String.trim details.description == "" && List.isEmpty details.media then
+                Nothing ->
+                    div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Оберіть реліз" ]
+
+
+viewBlock : Maybe String -> Int -> ContentBlock -> Html Msg
+viewBlock activeSectionId blockIndex block =
+    Lazy.lazy3 viewContentBlock activeSectionId blockIndex block
+
+
+viewContentBlock : Maybe String -> Int -> ContentBlock -> Html Msg
+viewContentBlock activeSectionId blockIndex block =
+    case block of
+        HeadingBlock headingText ->
+            let
+                domId =
+                    sectionDomId blockIndex
+
+                isActive =
+                    activeSectionId == Just domId
+
+                activeClass =
+                    if isActive then
+                        " ring-2 ring-[var(--color-primary)]"
+
+                    else
+                        ""
+            in
+            section
+                [ id domId
+                , class ("scroll-mt-28 rounded px-2 py-1 transition " ++ activeClass)
+                ]
+                [ h3 [ class "text-xl font-semibold" ] [ text headingText ] ]
+
+        ParagraphBlock paragraphText ->
+            p [ class "text-sm leading-relaxed text-[var(--color-text)]" ] [ text paragraphText ]
+
+        ImageBlock imageData ->
+            img
+                [ class "w-full max-w-full rounded border border-[var(--color-border)]"
+                , src imageData.src
+                , alt imageData.alt
+                , attribute "loading" "lazy"
+                ]
+                []
+
+        VideoBlock videoData ->
+            video
+                [ class "w-full rounded border border-[var(--color-border)] bg-black"
+                , src videoData.src
+                , controls True
+                , attribute "preload" "metadata"
+                ]
+                []
+
+
+viewOnThisPage : Model -> Html Msg
+viewOnThisPage model =
+    case model.releasePage of
+        Success (Just releasePage) ->
+            if List.isEmpty releasePage.sections then
                 text ""
 
             else
-                div [ class "pt-3 space-y-3" ]
-                    [ if String.trim details.description == "" then
-                        text ""
-
-                      else
-                        pre [ class "whitespace-pre-wrap text-sm leading-snug bg-[var(--color-bg)] rounded p-3" ] [ text details.description ]
-                    , div [ class "space-y-3" ] (List.map viewMedia details.media)
+                aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
+                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "On this page" ]
+                    , div [ class "space-y-1" ] (List.map (viewOnThisPageItem model.activeSectionId) releasePage.sections)
                     ]
 
-        NeedsReload _ ->
+        NeedsReload (Just releasePage) ->
+            if List.isEmpty releasePage.sections then
+                text ""
+
+            else
+                aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
+                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "On this page" ]
+                    , div [ class "space-y-1" ] (List.map (viewOnThisPageItem model.activeSectionId) releasePage.sections)
+                    ]
+
+        _ ->
             text ""
 
 
-viewMedia : B.ChangelogMedia -> Html Msg
-viewMedia media =
-    case media.kind of
-        "video" ->
-            video [ controls True, src media.url, class "w-full rounded border border-[var(--color-border)]" ] []
+viewOnThisPageItem : Maybe String -> HeadingSection -> Html Msg
+viewOnThisPageItem activeSectionId headingSection =
+    let
+        isActive =
+            activeSectionId == Just headingSection.sectionId
+
+        activeClass =
+            if isActive then
+                " bg-[var(--color-bg)] font-semibold"
+
+            else
+                " hover:bg-[var(--color-bg)]"
+    in
+    button
+        [ class ("w-full text-left text-xs leading-snug rounded px-2 py-1.5" ++ activeClass)
+        , onClick (JumpToSection headingSection.sectionId)
+        ]
+        [ text headingSection.title ]
+
+
+viewTopAnchorIfNeeded : LoadedReleasePage -> List (Html Msg)
+viewTopAnchorIfNeeded loadedReleasePage =
+    case loadedReleasePage.sections of
+        [ onlySection ] ->
+            if onlySection.sectionId == fallbackSectionId then
+                [ div [ id fallbackSectionId, class "scroll-mt-28" ] [] ]
+
+            else
+                []
 
         _ ->
-            img [ src media.url, alt media.alt, class "w-full rounded border border-[var(--color-border)]" ] []
+            []
 
 
-toggleInSet : comparable -> Set comparable -> Set comparable
-toggleInSet value setValue =
-    if Set.member value setValue then
-        Set.remove value setValue
-
-    else
-        Set.insert value setValue
+sectionDomId : Int -> String
+sectionDomId blockIndex =
+    "release-section-" ++ String.fromInt blockIndex
 
 
-toggleEntryWithDetails : B.ChangelogEntry -> Model -> ( Model, Effect Msg )
-toggleEntryWithDetails changelogEntry model =
-    let
-        isExpanded =
-            Set.member changelogEntry.entryId model.expandedItems
-
-        expandedItems =
-            toggleInSet changelogEntry.entryId model.expandedItems
-
-        shouldLoadDetails =
-            (not isExpanded)
-                && Dict.get changelogEntry.entryId model.itemDetails == Nothing
-    in
-    if shouldLoadDetails then
-        ( { model
-            | expandedItems = expandedItems
-            , itemDetails = Dict.insert changelogEntry.entryId Loading model.itemDetails
-          }
-        , E.sendCmd <|
-            Api.changelog_details_by_key
-                (GotChangelogDetails changelogEntry.entryId)
-                changelogEntry.entryId
-        )
-
-    else
-        ( { model | expandedItems = expandedItems }, E.none )
+releasePageHeader : ReleasePage -> String
+releasePageHeader releasePage =
+    releasePage.releaseId
+        |> String.replace "-" "."
+        |> (\formattedDate -> releasePage.title ++ " - Реліз " ++ formattedDate)
 
 
-expandEntryWithDetails : B.ChangelogEntry -> Model -> ( Model, Effect Msg )
-expandEntryWithDetails changelogEntry model =
-    if Set.member changelogEntry.entryId model.expandedItems then
-        ( model, E.none )
-
-    else
-        let
-            shouldLoadDetails =
-                Dict.get changelogEntry.entryId model.itemDetails == Nothing
-
-            expandedModel =
-                { model | expandedItems = Set.insert changelogEntry.entryId model.expandedItems }
-        in
-        if shouldLoadDetails then
-            ( { expandedModel | itemDetails = Dict.insert changelogEntry.entryId Loading expandedModel.itemDetails }
-            , E.sendCmd <|
-                Api.changelog_details_by_key
-                    (GotChangelogDetails changelogEntry.entryId)
-                    changelogEntry.entryId
+detectActiveSection : List HeadingSection -> Cmd Msg
+detectActiveSection sections =
+    Browser.Dom.getViewport
+        |> Task.andThen
+            (\viewport ->
+                sections
+                    |> List.map
+                        (\sectionItem ->
+                            Browser.Dom.getElement sectionItem.sectionId
+                                |> Task.map
+                                    (\sectionElement ->
+                                        ( sectionItem.sectionId
+                                        , sectionElement.element.y
+                                        )
+                                    )
+                        )
+                    |> Task.sequence
+                    |> Task.map
+                        (pickActiveSectionId (viewport.viewport.y + 180))
             )
+        |> Task.attempt GotActiveSection
+
+
+pickActiveSectionId : Float -> List ( String, Float ) -> Maybe String
+pickActiveSectionId viewportAnchor sectionOffsets =
+    case sectionOffsets of
+        [] ->
+            Nothing
+
+        ( firstSectionId, _ ) :: _ ->
+            sectionOffsets
+                |> List.foldl
+                    (\( sectionId, topY ) acc ->
+                        if topY <= viewportAnchor then
+                            Just sectionId
+
+                        else
+                            acc
+                    )
+                    Nothing
+                |> Maybe.withDefault firstSectionId
+                |> Just
+
+
+scrollToSection : String -> Cmd Msg
+scrollToSection sectionId =
+    Browser.Dom.getElement sectionId
+        |> Task.andThen
+            (\sectionElement ->
+                Browser.Dom.setViewport 0 (sectionElement.element.y - 120)
+            )
+        |> Task.attempt ScrolledToSection
+
+
+fetchReleases : Cmd Msg
+fetchReleases =
+    Http.get
+        { url = "/releases/index.json"
+        , expect = leExpectJson GotReleases (Decode.list releaseMetaDecoder)
+        }
+
+
+fetchReleasePage : String -> Cmd Msg
+fetchReleasePage releaseId =
+    Http.get
+        { url = Url.Builder.absolute [ "releases", releaseId, "changelog.json" ] []
+        , expect = leExpectJson (GotReleasePage releaseId) releasePageDecoder
+        }
+
+
+buildLoadedReleasePage : ReleasePage -> LoadedReleasePage
+buildLoadedReleasePage releasePage =
+    { page = releasePage
+    , sections =
+        let
+            sections =
+                releasePage.blocks
+                    |> List.indexedMap
+                        (\blockIndex block ->
+                            case block of
+                                HeadingBlock headingText ->
+                                    Just
+                                        { sectionId = sectionDomId blockIndex
+                                        , title =
+                                            let
+                                                trimmedTitle =
+                                                    String.trim headingText
+                                            in
+                                            if String.isEmpty trimmedTitle then
+                                                "Section " ++ String.fromInt (blockIndex + 1)
+
+                                            else
+                                                trimmedTitle
+                                        }
+
+                                _ ->
+                                    Nothing
+                        )
+                    |> List.filterMap identity
+        in
+        if List.isEmpty sections then
+            [ { sectionId = fallbackSectionId, title = "Опис" } ]
 
         else
-            ( expandedModel, E.none )
+            sections
+    }
 
 
-displayTitle : String -> String
-displayTitle rawTitle =
-    let
-        trimmed =
-            String.trim rawTitle
-    in
-    if String.startsWith "✅" trimmed then
-        String.trim (String.dropLeft 1 trimmed)
-
-    else if String.startsWith "🐞" trimmed then
-        String.trim (String.dropLeft 1 trimmed)
-
-    else
-        trimmed
+fallbackSectionId : String
+fallbackSectionId =
+    "release-section-top"
 
 
-scrollToEntry : String -> Cmd Msg
-scrollToEntry entryId =
-    Browser.Dom.getElement entryId
-        |> Task.andThen
-            (\entryElement ->
-                Browser.Dom.setViewport 0 (entryElement.element.y - 120)
-            )
-        |> Task.attempt ScrolledToEntry
+releaseMetaDecoder : Decode.Decoder ReleaseMeta
+releaseMetaDecoder =
+    Decode.map2 ReleaseMeta
+        (Decode.field "release_id" Decode.string)
+        (Decode.field "title" Decode.string)
+
+
+releasePageDecoder : Decode.Decoder ReleasePage
+releasePageDecoder =
+    Decode.map3 ReleasePage
+        (Decode.field "release_id" Decode.string)
+        (Decode.field "title" Decode.string)
+        (Decode.field "blocks" (Decode.list contentBlockDecoder))
+
+
+contentBlockDecoder : Decode.Decoder ContentBlock
+contentBlockDecoder =
+    Decode.field "type" Decode.string
+        |> Decode.andThen decodeBlockByType
+
+
+decodeBlockByType : String -> Decode.Decoder ContentBlock
+decodeBlockByType blockType =
+    case blockType of
+        "heading" ->
+            Decode.map HeadingBlock (Decode.field "text" Decode.string)
+
+        "paragraph" ->
+            Decode.map ParagraphBlock (Decode.field "text" Decode.string)
+
+        "image" ->
+            Decode.map ImageBlock imageDataDecoder
+
+        "video" ->
+            Decode.map VideoBlock videoDataDecoder
+
+        _ ->
+            Decode.fail ("Unsupported content block type: " ++ blockType)
+
+
+imageDataDecoder : Decode.Decoder ImageData
+imageDataDecoder =
+    Decode.map2 ImageData
+        (Decode.field "src" Decode.string)
+        (Decode.field "alt" Decode.string)
+
+
+videoDataDecoder : Decode.Decoder VideoData
+videoDataDecoder =
+    Decode.map VideoData (Decode.field "src" Decode.string)
