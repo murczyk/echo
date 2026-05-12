@@ -221,4 +221,20 @@ describe('renderDefaultMrtEmptyRowsFallback', () => {
 
     expect(element.props.children.props.message).toBe('Нічого не знайдено');
   });
+
+  it('honors an explicit external hasFilters override', () => {
+    const element = renderDefaultMrtEmptyRowsFallback({
+      table: {
+        getState: () => ({ globalFilter: '', columnFilters: [] }),
+        setColumnFilters: () => {},
+        setGlobalFilter: () => {},
+      } as any,
+      hasFilters: true,
+      filteredMessage: 'Filtered empty',
+      clearFiltersLabel: 'Reset',
+    });
+
+    expect(element.props.children.props.message).toBe('Filtered empty');
+    expect(element.props.children.props.actionLabel).toBe('Reset');
+  });
 });

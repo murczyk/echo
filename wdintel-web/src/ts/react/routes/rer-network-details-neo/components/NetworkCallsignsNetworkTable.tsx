@@ -196,6 +196,7 @@ export function NetworkCallsignsNetworkTable({
     positionActionsColumn: 'first',
     renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
       table,
+      externalHasFilters: statusFilter !== 'All',
       noDataMessage: loadingError ? 'Не вдалося завантажити позивні мережі' : 'Позивні мережі відсутні',
       noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
       onNoDataAction: loadingError ? onReload : undefined,

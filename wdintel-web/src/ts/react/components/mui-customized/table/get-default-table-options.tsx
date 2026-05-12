@@ -57,6 +57,8 @@ export function withExplicitSelectAllOption(
 
 type MrtEmptyStateProps<TData extends MRT_RowData> = {
   table: MRT_TableInstance<TData>;
+  externalHasFilters?: boolean;
+  hasFilters?: boolean;
   noDataMessage?: string;
   noDataActionLabel?: string;
   onNoDataAction?: () => void;
@@ -67,6 +69,8 @@ type MrtEmptyStateProps<TData extends MRT_RowData> = {
 
 export function renderDefaultMrtEmptyRowsFallback<TData extends MRT_RowData>({
   table,
+  externalHasFilters,
+  hasFilters,
   noDataMessage = 'Немає даних',
   noDataActionLabel,
   onNoDataAction,
@@ -74,7 +78,8 @@ export function renderDefaultMrtEmptyRowsFallback<TData extends MRT_RowData>({
   clearFiltersLabel = 'Очистити фільтри',
   onClearFilters,
 }: MrtEmptyStateProps<TData>) {
-  const hasFilters = Boolean(table.getState().globalFilter) || Boolean(table.getState().columnFilters?.length);
+  const hasMrtFilters = Boolean(table.getState().globalFilter) || Boolean(table.getState().columnFilters?.length);
+  const resolvedHasFilters = hasFilters ?? (hasMrtFilters || externalHasFilters || false);
   const clearFilters = onClearFilters ?? (() => {
     table.setColumnFilters([]);
     table.setGlobalFilter('');
@@ -83,9 +88,9 @@ export function renderDefaultMrtEmptyRowsFallback<TData extends MRT_RowData>({
   return (
     <Box sx={{ py: 6 }}>
       <TableEmptyState
-        message={hasFilters ? filteredMessage : noDataMessage}
-        actionLabel={hasFilters ? clearFiltersLabel : noDataActionLabel}
-        onAction={hasFilters ? clearFilters : onNoDataAction}
+        message={resolvedHasFilters ? filteredMessage : noDataMessage}
+        actionLabel={resolvedHasFilters ? clearFiltersLabel : noDataActionLabel}
+        onAction={resolvedHasFilters ? clearFilters : onNoDataAction}
       />
     </Box>
   );

@@ -293,27 +293,52 @@ export function NetworkCallsignDrawer({
                 </Select>
               </FormControl>
 
-              <FormControl fullWidth size="small" disabled={saving}>
-                <InputLabel id="network-callsign-unit-label">Підрозділ</InputLabel>
-                <Select
-                  labelId="network-callsign-unit-label"
-                  label="Підрозділ"
-                  value={selectedUnitId ?? ''}
-                  onChange={(event) => {
-                    const rawValue = event.target.value;
-                    onChange({ ...form, unitId: rawValue === '' ? null : Number(rawValue) });
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                alignItems={{ xs: 'stretch', sm: 'center' }}
+              >
+                <FormControl fullWidth size="small" disabled={saving} sx={{ minWidth: 0 }}>
+                  <InputLabel id="network-callsign-unit-label">Підрозділ</InputLabel>
+                  <Select
+                    labelId="network-callsign-unit-label"
+                    label="Підрозділ"
+                    value={selectedUnitId ?? ''}
+                    onChange={(event) => {
+                      const rawValue = event.target.value;
+                      onChange({ ...form, unitId: rawValue === '' ? null : Number(rawValue) });
+                    }}
+                  >
+                    <MenuItem value="">
+                      <em>Оберіть підрозділ</em>
+                    </MenuItem>
+                    {units.map((unit) => (
+                      <MenuItem key={unit.id} value={unit.id}>
+                        {unit.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Box
+                  component="label"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    flexShrink: 0,
+                    cursor: saving ? 'default' : 'pointer',
+                    userSelect: 'none',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <MenuItem value="">
-                    <em>Оберіть підрозділ</em>
-                  </MenuItem>
-                  {units.map((unit) => (
-                    <MenuItem key={unit.id} value={unit.id}>
-                      {unit.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+                  <Checkbox
+                    checked={form.unitDeveloping}
+                    onChange={(event) => updateForm(form, { unitDeveloping: event.target.checked }, onChange)}
+                    disabled={saving}
+                  />
+                  <Typography variant="body1">В дорозвідці</Typography>
+                </Box>
+              </Stack>
 
               <TextField
                 label="Посада"
@@ -336,19 +361,6 @@ export function NetworkCallsignDrawer({
                 size="small"
                 placeholder="Введіть коментар"
               />
-
-              <Stack spacing={1}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={form.unitDeveloping}
-                      onChange={(event) => updateForm(form, { unitDeveloping: event.target.checked }, onChange)}
-                      disabled={saving}
-                    />
-                  }
-                  label="Підрозділ в дорозвідці"
-                />
-              </Stack>
 
               {isRoSource ? (
                 <Stack spacing={0.5}>

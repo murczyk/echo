@@ -444,6 +444,7 @@ function CallsignsTableComponent({
     ),
     renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
       table,
+      hasFilters: hasActiveFilters,
       noDataMessage: 'Позивні відсутні',
       filteredMessage: 'Немає позивних за обраними фільтрами',
       onClearFilters,
