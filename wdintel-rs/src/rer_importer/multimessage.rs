@@ -105,6 +105,7 @@ fn slice_message(lnow: DateTime<Tz>, signal_message: &str) -> Vec<String> {
 }
 
 fn is_header(lnow: DateTime<Tz>, row: &str) -> bool {
+    eprintln!("checking row: {row}");
     let m_ts = super::datetime::extract_datetime(lnow, row).ok().flatten();
     if m_ts.is_some() {
         return true;
