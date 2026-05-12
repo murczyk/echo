@@ -227,31 +227,31 @@ fn merge_metadata(
     row: MetadataMessageRow,
 ) -> bool {
     let mut updated = false;
-    if row.dmr_color_code.is_some() {
-        if &row.dmr_color_code != existing_model.color_code.as_ref() {
-            existing_model.color_code = Set(row.dmr_color_code);
-            existing_model.color_code_start_index = Set(None);
-            existing_model.color_code_end_index = Set(None);
-            updated = true;
-        }
+    if row.dmr_color_code.is_some()
+        && &row.dmr_color_code != existing_model.color_code.as_ref()
+    {
+        existing_model.color_code = Set(row.dmr_color_code);
+        existing_model.color_code_start_index = Set(None);
+        existing_model.color_code_end_index = Set(None);
+        updated = true;
     }
 
-    if row.dmr_sender_id.is_some() {
-        if &row.dmr_sender_id != existing_model.sender_id.as_ref() {
-            existing_model.sender_id = Set(row.dmr_sender_id);
-            existing_model.sender_id_start_index = Set(None);
-            existing_model.sender_id_end_index = Set(None);
-            updated = true;
-        }
+    if row.dmr_sender_id.is_some()
+        && &row.dmr_sender_id != existing_model.sender_id.as_ref()
+    {
+        existing_model.sender_id = Set(row.dmr_sender_id);
+        existing_model.sender_id_start_index = Set(None);
+        existing_model.sender_id_end_index = Set(None);
+        updated = true;
     }
 
-    if row.dmr_call_group_id.is_some() {
-        if &row.dmr_call_group_id != existing_model.call_group_id.as_ref() {
-            existing_model.call_group_id = Set(row.dmr_call_group_id);
-            existing_model.call_group_id_start_index = Set(None);
-            existing_model.call_group_id_end_index = Set(None);
-            updated = true;
-        }
+    if row.dmr_call_group_id.is_some()
+        && &row.dmr_call_group_id != existing_model.call_group_id.as_ref()
+    {
+        existing_model.call_group_id = Set(row.dmr_call_group_id);
+        existing_model.call_group_id_start_index = Set(None);
+        existing_model.call_group_id_end_index = Set(None);
+        updated = true;
     }
 
     updated
