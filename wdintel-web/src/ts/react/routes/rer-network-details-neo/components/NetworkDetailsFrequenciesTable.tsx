@@ -10,7 +10,6 @@ import { useEffect, useMemo } from 'react';
 
 import type { ModulationRec, Network, NetworkFreqsRes } from '../../../../../Bindings';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
-import { TableEmptyState } from '../../../components/TableEmptyState';
 import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
@@ -22,6 +21,7 @@ import {
   buildExplicitSingleSelectColumnFilter,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
+  renderDefaultMrtEmptyRowsFallback,
   withExplicitSelectAllOption,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
@@ -342,15 +342,15 @@ function NetworkDetailsFrequenciesTableContent({
       hover: true,
       sx: { opacity: row.original.kind === 'freq' && row.original.parentGroupId ? 0.96 : 1 },
     }),
-    renderEmptyRowsFallback: () => (
-      <Box sx={{ py: 6 }}>
-        <TableEmptyState
-          message={freqsError ? 'Не вдалося завантажити частоти' : hasActiveFilters ? 'Немає частот за обраними фільтрами' : 'Частоти відсутні'}
-          actionLabel={hasActiveFilters ? 'Скинути фільтри' : undefined}
-          onAction={hasActiveFilters ? () => { tableStateContext.onColumnFiltersChange([]); tableStateContext.onChangeGlobalFilter(''); } : undefined}
-        />
-      </Box>
-    ),
+    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
+      table,
+      noDataMessage: freqsError ? 'Не вдалося завантажити частоти' : 'Частоти відсутні',
+      noDataActionLabel: freqsError ? 'Спробувати ще раз' : undefined,
+      onNoDataAction: freqsError ? onReloadFrequencies : undefined,
+      filteredMessage: 'Немає частот за обраними фільтрами',
+      onClearFilters: hasActiveFilters ? () => { tableStateContext.onColumnFiltersChange([]); tableStateContext.onChangeGlobalFilter(''); } : undefined,
+      clearFiltersLabel: 'Скинути фільтри',
+    }),
     localization: { ...defaultMRTOptions.localization },
     manualFiltering: false,
     initialState: { density: 'comfortable', columnOrder: DEFAULT_COLUMN_ORDER, columnVisibility: DEFAULT_COLUMNS_VISIBILITY },

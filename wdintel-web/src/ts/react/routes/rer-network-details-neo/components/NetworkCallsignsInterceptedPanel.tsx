@@ -1,6 +1,6 @@
 import AddIcon from '@mui/icons-material/Add';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-import { Box, Button, Chip, ListItemIcon, MenuItem, Stack, Typography } from '@mui/material';
+import { Box, Button, Chip, CircularProgress, ListItemIcon, MenuItem, Skeleton, Stack, Typography } from '@mui/material';
 import { useState } from 'react';
 
 import type { NetworkCallsignInterceptedView } from '../network-callsigns';
@@ -12,6 +12,8 @@ type InterceptedPanelProps = {
   rows: NetworkCallsignInterceptedView[];
   canManage: boolean;
   expanded: boolean;
+  loading: boolean;
+  mutationBusy: boolean;
   onToggleExpanded: () => void;
   onAddToDeveloping: (callsign: string) => void;
   onAddToNetwork: (callsign: string) => void;
@@ -105,18 +107,49 @@ function InterceptedCallsignChip({
   );
 }
 
+function InterceptedLoadingSkeleton() {
+  return (
+    <Stack spacing={1.25} sx={{ width: '100%', minHeight: 126, justifyContent: 'center', py: 1 }}>
+      {Array.from({ length: 4 }).map((_, index) => (
+        <Skeleton key={index} variant="rounded" height={34} />
+      ))}
+    </Stack>
+  );
+}
+
 export function NetworkCallsignsInterceptedPanel({
   rows,
   canManage,
   expanded,
+  loading,
+  mutationBusy,
   onToggleExpanded,
   onAddToDeveloping,
   onAddToNetwork,
   inFlightCreateCallsigns,
 }: InterceptedPanelProps) {
-  const visibleRows = expanded ? rows : rows.slice(0, 8);
+  if (loading && rows.length === 0) {
+    return (
+      <Box
+        sx={{
+          px: 2,
+          py: 1.5,
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 2,
+          bgcolor: 'background.paper',
+          minHeight: 126,
+        }}
+      >
+        <InterceptedLoadingSkeleton />
+      </Box>
+    );
+  }
+
+  const visibleRows = expanded ? rows : rows.slice(0, 10);
   const overflowCount = Math.max(rows.length - visibleRows.length, 0);
-  const shouldFillAvailableHeight = expanded && rows.length > 8;
+  const shouldFillAvailableHeight = expanded && rows.length > 10;
+  const showEmptyState = !loading && rows.length === 0;
 
   return (
     <Box
@@ -129,6 +162,7 @@ export function NetworkCallsignsInterceptedPanel({
         bgcolor: 'background.paper',
         flex: shouldFillAvailableHeight ? 1 : '0 0 auto',
         minHeight: 0,
+        position: 'relative',
         overflowY: shouldFillAvailableHeight ? 'auto' : 'visible',
       }}
     >
@@ -161,29 +195,45 @@ export function NetworkCallsignsInterceptedPanel({
             </Button>
           </Box>
         ) : null}
-        {expanded && rows.length > 8 ? (
+        {expanded && rows.length > 10 ? (
           <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
             <Button size="small" onClick={onToggleExpanded}>
               Згорнути
             </Button>
           </Box>
         ) : null}
-        {rows.length === 0 ? (
+        {showEmptyState ? (
           <Box
             sx={{
               display: 'flex',
               alignItems: 'center',
-              px: 2,
-              py: 1.25,
+              px: 0,
+              py: 1,
               width: '100%',
             }}
           >
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.25 }}>
               Немає перехоплених позивних без каталогу
             </Typography>
           </Box>
         ) : null}
       </Stack>
+      {mutationBusy ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: 'rgba(0, 0, 0, 0.12)',
+            borderRadius: 2,
+            pointerEvents: 'none',
+          }}
+        >
+          <CircularProgress size={26} />
+        </Box>
+      ) : null}
     </Box>
   );
 }

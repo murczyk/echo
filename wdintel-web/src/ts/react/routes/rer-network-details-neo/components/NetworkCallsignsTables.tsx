@@ -160,6 +160,8 @@ export function NetworkDetailsCallsignsPanel({
         rows={unknownInterceptedCallsigns}
         canManage={canManage}
         expanded={interceptedExpanded}
+        loading={loading}
+        mutationBusy={inFlightCreateCallsigns.length > 0}
         onToggleExpanded={onToggleInterceptedExpanded}
         onAddToDeveloping={onAddInterceptedToDeveloping}
         onAddToNetwork={onAddInterceptedToNetwork}

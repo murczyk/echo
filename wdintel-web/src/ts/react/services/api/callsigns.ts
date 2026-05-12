@@ -105,6 +105,21 @@ type SingleNetworkCallsignsListRspLike = {
   callsigns?: NetworkCallsignResLike[] | null;
 };
 
+const inFlightNetworkCallsignsListRequests = new Map<string, Promise<ListNetworkCallsignsRes>>();
+const inFlightSingleNetworkCallsignsListRequests = new Map<string, Promise<SingleNetworkCallsignsListRsp>>();
+
+function dedupeInFlightRequest<T>(requests: Map<string, Promise<T>>, key: string, factory: () => Promise<T>): Promise<T> {
+  const existing = requests.get(key);
+  if (existing) return existing;
+
+  const request = factory().finally(() => {
+    requests.delete(key);
+  });
+
+  requests.set(key, request);
+  return request;
+}
+
 type ListCallsignsReqBody = {
   after_id: ListCallsignsReq['afterId'];
   before_id: ListCallsignsReq['beforeId'];
@@ -161,13 +176,21 @@ export type CallsignsBootstrapData = {
 };
 
 export async function listNetworkCallsigns(req: ListNetworkCallsignsReq): Promise<ListNetworkCallsignsRes> {
-  const raw = await postJson<unknown>('/api/sigint/network-callsigns/list', transformCamelToSnake(req));
-  return transformSnakeToCamel<ListNetworkCallsignsRes>(raw);
+  const payload = transformCamelToSnake(req) as Parameters<typeof postJson>[1];
+  const cacheKey = JSON.stringify(payload);
+  return dedupeInFlightRequest(inFlightNetworkCallsignsListRequests, cacheKey, async () => {
+    const raw = await postJson<unknown>('/api/sigint/network-callsigns/list', payload);
+    return transformSnakeToCamel<ListNetworkCallsignsRes>(raw);
+  });
 }
 
 export async function getNetworkCallsigns(req: SingleNetworkCallsignsReq): Promise<SingleNetworkCallsignsListRsp> {
-  const raw = await postJson<unknown>('/api/sigint/network-callsigns-list', transformCamelToSnake(req));
-  return transformSnakeToCamel<SingleNetworkCallsignsListRsp>(raw);
+  const payload = transformCamelToSnake(req) as Parameters<typeof postJson>[1];
+  const cacheKey = JSON.stringify(payload);
+  return dedupeInFlightRequest(inFlightSingleNetworkCallsignsListRequests, cacheKey, async () => {
+    const raw = await postJson<unknown>('/api/sigint/network-callsigns-list', payload);
+    return transformSnakeToCamel<SingleNetworkCallsignsListRsp>(raw);
+  });
 }
 
 export async function getNetworkCallsignsActivity(req: NetworkCallsignsActivityReq): Promise<NetworkCallsignsActivityRsp> {

@@ -465,7 +465,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
     }));
 
     try {
-      await createNetworkCallsign({
+      const createdNetworkCallsign = await createNetworkCallsign({
         networkId: network.id,
         callsign: normalizedCallsign,
         position: null,
@@ -477,7 +477,21 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
         developing,
         mainRadioStation: false,
       });
-      await reloadCallsignsData();
+
+      setState((current) => {
+        const nextNetworkCallsigns = mergeNetworkCallsigns(current.networkCallsigns, [createdNetworkCallsign]);
+        const derived = buildNetworkCallsignTabData(current.networkCallsignGroups, current.callsignActivityMap, nextNetworkCallsigns);
+
+        return {
+          ...current,
+          networkCallsigns: nextNetworkCallsigns,
+          catalogCallsignGroups: derived.catalogCallsignGroups,
+          unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
+          callsignCount: nextNetworkCallsigns.length,
+          callsignCreateInFlightCallsigns: current.callsignCreateInFlightCallsigns.filter((item) => item !== normalizedCallsign),
+          callsignWarning: null,
+        };
+      });
     } catch (error) {
       const errorMessage = formatErrorMessage(error);
       setState((current) => ({
@@ -488,12 +502,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
       return;
     }
 
-    setState((current) => ({
-      ...current,
-      callsignCreateInFlightCallsigns: current.callsignCreateInFlightCallsigns.filter((item) => item !== normalizedCallsign),
-      callsignWarning: null,
-    }));
-  }, [canManageCallsignActions, defaultNetworkUnitId, reloadCallsignsData, setState, state.callsignCreateInFlightCallsigns, state.network]);
+  }, [canManageCallsignActions, defaultNetworkUnitId, setState, state.callsignCreateInFlightCallsigns, state.network]);
 
   return {
     ...descriptionActions,

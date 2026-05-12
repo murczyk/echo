@@ -55,6 +55,42 @@ export function withExplicitSelectAllOption(
   return [EXPLICIT_SELECT_ALL_OPTION, ...options];
 }
 
+type MrtEmptyStateProps<TData extends MRT_RowData> = {
+  table: MRT_TableInstance<TData>;
+  noDataMessage?: string;
+  noDataActionLabel?: string;
+  onNoDataAction?: () => void;
+  filteredMessage?: string;
+  clearFiltersLabel?: string;
+  onClearFilters?: () => void;
+};
+
+export function renderDefaultMrtEmptyRowsFallback<TData extends MRT_RowData>({
+  table,
+  noDataMessage = 'Немає даних',
+  noDataActionLabel,
+  onNoDataAction,
+  filteredMessage = 'Нічого не знайдено',
+  clearFiltersLabel = 'Очистити фільтри',
+  onClearFilters,
+}: MrtEmptyStateProps<TData>) {
+  const hasFilters = Boolean(table.getState().globalFilter) || Boolean(table.getState().columnFilters?.length);
+  const clearFilters = onClearFilters ?? (() => {
+    table.setColumnFilters([]);
+    table.setGlobalFilter('');
+  });
+
+  return (
+    <Box sx={{ py: 6 }}>
+      <TableEmptyState
+        message={hasFilters ? filteredMessage : noDataMessage}
+        actionLabel={hasFilters ? clearFiltersLabel : noDataActionLabel}
+        onAction={hasFilters ? clearFilters : onNoDataAction}
+      />
+    </Box>
+  );
+}
+
 export function getFilterModeHelperText(filterVariant?: string): string | null {
   if (filterVariant === 'multi-select') {
     return 'Режим фільтрації: Включає деякі';
@@ -231,34 +267,7 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
   positionToolbarAlertBanner: 'bottom',
   muiFilterTextFieldProps: ({ column }) => getSharedFilterTextFieldProps(column.columnDef.filterVariant),
   muiSelectAllCheckboxProps: getSharedSelectAllCheckboxProps,
-  renderEmptyRowsFallback: ({ table }) => {
-    const hasFilters =
-      Boolean(table.getState().globalFilter) ||
-      Boolean(table.getState().columnFilters?.length);
-    const clearFilters = () => {
-      table.setColumnFilters([]);
-      table.setGlobalFilter('');
-    };
-
-    return (
-      <Box
-        sx={{
-          width: '100%',
-          minHeight: 260,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          px: 2,
-        }}
-      >
-        <TableEmptyState
-          message={hasFilters ? 'Нічого не знайдено' : 'Немає даних'}
-          actionLabel={hasFilters ? 'Очистити фільтри' : undefined}
-          onAction={hasFilters ? clearFilters : undefined}
-        />
-      </Box>
-    );
-  },
+  renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({ table }),
   ...CUSTOM_STYLES,
 });
 

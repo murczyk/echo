@@ -6,7 +6,6 @@ import { useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
 import type { NetworkCallsignRowView, NetworkCallsignStatusFilter } from '../network-callsigns';
-import { TableEmptyState } from '../../../components/TableEmptyState';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -16,6 +15,7 @@ import {
   buildDefaultColumnOrder,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
+  renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
@@ -87,7 +87,7 @@ export function NetworkCallsignsNetworkTable({
 
   const statusCounts = useMemo(() => countNetworkCallsignStatusRows(rows), [rows]);
   const isInitialLoading = loading && rows.length === 0;
-  const isCompactLoadedLayout = !isInitialLoading && tableStateRows.length <= COMPACT_LOADED_ROW_LIMIT;
+  const isCompactLoadedLayout = !isInitialLoading && tableStateRows.length > 0 && tableStateRows.length <= COMPACT_LOADED_ROW_LIMIT;
   const isBusy = loading || inFlightUpdateIds.length > 0 || inFlightDeleteIds.length > 0;
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignRowView>[]>(() => [
@@ -181,15 +181,15 @@ export function NetworkCallsignsNetworkTable({
     enableHiding: true,
     enableRowActions: true,
     positionActionsColumn: 'first',
-    renderEmptyRowsFallback: () => (
-        <Box sx={{ py: 6 }}>
-          <TableEmptyState
-            message={loadingError ? 'Не вдалося завантажити позивні мережі' : 'Позивні мережі відсутні'}
-          actionLabel={loadingError ? 'Спробувати ще раз' : undefined}
-          onAction={loadingError ? onReload : undefined}
-        />
-      </Box>
-    ),
+    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
+      table,
+      noDataMessage: loadingError ? 'Не вдалося завантажити позивні мережі' : 'Позивні мережі відсутні',
+      noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
+      onNoDataAction: loadingError ? onReload : undefined,
+      filteredMessage: 'Немає позивних за обраним статусом',
+      onClearFilters: statusFilter !== 'All' && rows.length > 0 && tableStateRows.length === 0 ? () => onStatusFilterChange('All') : undefined,
+      clearFiltersLabel: 'Скинути фільтр',
+    }),
     state: {
       density: 'comfortable',
       isLoading: isBusy && !isInitialLoading,

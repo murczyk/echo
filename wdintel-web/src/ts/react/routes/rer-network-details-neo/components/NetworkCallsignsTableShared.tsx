@@ -58,18 +58,24 @@ export function formatCountLabel(value: number) {
 
 export function CountChipLabel({ label, count, selected = false }: { label: string; count: number; selected?: boolean }) {
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
-      <span>{label}</span>
+    <Stack direction="row" spacing={0.4} alignItems="center" sx={{ lineHeight: 1 }}>
+      <Box component="span" sx={{ lineHeight: 1 }}>
+        {label}
+      </Box>
       <Box
         component="span"
         sx={(theme) => ({
-          fontSize: '0.82rem',
+          fontSize: '0.84rem',
           fontWeight: selected ? 700 : 600,
           lineHeight: 1,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           fontVariantNumeric: 'tabular-nums',
           letterSpacing: 0,
           color: 'inherit',
           opacity: selected ? 0.95 : theme.palette.mode === 'dark' ? 0.92 : 0.88,
+          transform: 'translateY(-0.04em)',
         })}
       >
         {formatCountLabel(count)}

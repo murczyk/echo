@@ -5,7 +5,6 @@ import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'm
 
 import type { NetworkCallsignCatalogRowView } from '../network-callsigns';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
-import { TableEmptyState } from '../../../components/TableEmptyState';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -15,6 +14,7 @@ import {
   buildDefaultColumnOrder,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
+  renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
@@ -52,7 +52,7 @@ export function NetworkCallsignsCatalogTable({
   inFlightAddIds,
 }: Props) {
   const isInitialLoading = loading && rows.length === 0;
-  const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;
+  const isCompactLoadedLayout = !isInitialLoading && rows.length > 0 && rows.length <= COMPACT_LOADED_ROW_LIMIT;
   const isBusy = loading || inFlightAddIds.length > 0;
   const loadingRows = useMemo(() => buildCatalogLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignCatalogRowView>[]>(() => [
@@ -147,15 +147,14 @@ export function NetworkCallsignsCatalogTable({
     enableHiding: true,
     enableRowActions: true,
     positionActionsColumn: 'first',
-    renderEmptyRowsFallback: () => (
-      <Box sx={{ py: 6 }}>
-        <TableEmptyState
-          message={loadingError ? 'Не вдалося завантажити каталог' : 'Співпадіння з каталогом відсутні'}
-          actionLabel={loadingError ? 'Спробувати ще раз' : undefined}
-          onAction={loadingError ? onReload : undefined}
-        />
-      </Box>
-    ),
+    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
+      table,
+      noDataMessage: loadingError ? 'Не вдалося завантажити каталог' : 'Співпадіння з каталогом відсутні',
+      noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
+      onNoDataAction: loadingError ? onReload : undefined,
+      filteredMessage: 'Немає співпадінь з каталогом за обраними фільтрами',
+      onClearFilters: undefined,
+    }),
     state: {
       density: 'comfortable',
       isLoading: isBusy && !isInitialLoading,

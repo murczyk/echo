@@ -17,7 +17,6 @@ import type { DevelopingFilter } from '../../../../../Bindings';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
-import { TableEmptyState } from '../../../components/TableEmptyState';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -31,6 +30,7 @@ import {
   getDefaultMRTOptions,
   getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
+  renderDefaultMrtEmptyRowsFallback,
   withExplicitSelectAllOption,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
@@ -442,15 +442,13 @@ function CallsignsTableComponent({
         </MrtRowActions>
       </Box>
     ),
-    renderEmptyRowsFallback: () => (
-      <Box sx={{ py: 6 }}>
-        <TableEmptyState
-          message={hasActiveFilters ? 'Немає позивних за обраними фільтрами' : 'Позивні відсутні'}
-          actionLabel={hasActiveFilters ? 'Очистити фільтри' : undefined}
-          onAction={hasActiveFilters ? onClearFilters : undefined}
-        />
-      </Box>
-    ),
+    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
+      table,
+      noDataMessage: 'Позивні відсутні',
+      filteredMessage: 'Немає позивних за обраними фільтрами',
+      onClearFilters,
+      clearFiltersLabel: 'Очистити фільтри',
+    }),
     defaultColumn: {
       size: 180,
       renderColumnActionsMenuItems,

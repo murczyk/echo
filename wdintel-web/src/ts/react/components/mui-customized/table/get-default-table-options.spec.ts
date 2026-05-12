@@ -10,6 +10,7 @@ import {
   getSharedFilterTextFieldProps,
   getSharedSelectAllCheckboxProps,
   resolveExplicitSelectFilterValue,
+  renderDefaultMrtEmptyRowsFallback,
   withExplicitSelectAllOption,
 } from './get-default-table-options';
 
@@ -193,5 +194,31 @@ describe('getDefaultMRTOptions', () => {
     const options = getDefaultMRTOptions<{ id: string }>();
 
     expect(options.muiSelectAllCheckboxProps).toBe(getSharedSelectAllCheckboxProps);
+  });
+});
+
+describe('renderDefaultMrtEmptyRowsFallback', () => {
+  it('shows the generic no-data message when no filters are active', () => {
+    const element = renderDefaultMrtEmptyRowsFallback({
+      table: {
+        getState: () => ({ globalFilter: '', columnFilters: [] }),
+        setColumnFilters: () => {},
+        setGlobalFilter: () => {},
+      } as any,
+    });
+
+    expect(element.props.children.props.message).toBe('Немає даних');
+  });
+
+  it('shows the filtered-empty message when filters are active', () => {
+    const element = renderDefaultMrtEmptyRowsFallback({
+      table: {
+        getState: () => ({ globalFilter: 'abc', columnFilters: [] }),
+        setColumnFilters: () => {},
+        setGlobalFilter: () => {},
+      } as any,
+    });
+
+    expect(element.props.children.props.message).toBe('Нічого не знайдено');
   });
 });

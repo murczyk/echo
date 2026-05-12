@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 
 import { listAors } from '../../services/api/aor';
-import { getNetworkById, getNetworkCallsignsList } from '../../services/api/networks';
+import { getNetworkById } from '../../services/api/networks';
 import { getModulations } from '../../services/api/modulations';
 import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity, listSources } from '../../services/api/callsigns';
 import { getUnitsList } from '../../services/api/units';
@@ -137,24 +137,6 @@ export function useRerNetworkDetailsNeoPageLoad(
           deleteDescriptionSubmitting: false,
           deleteDescriptionError: null,
         }));
-
-        void getNetworkCallsignsList(networkId, true)
-          .then((callsignsRes) => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              callsignCount: callsignsRes.callsigns.length,
-              callsignWarning: null,
-            }));
-          })
-          .catch((error) => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              callsignCount: null,
-              callsignWarning: formatErrorMessage(error),
-            }));
-          });
 
         void fetchCurrentUser()
           .then((currentUser) => {

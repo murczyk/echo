@@ -12,7 +12,6 @@ import {
 } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
-import { TableEmptyState } from '../../components/TableEmptyState';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -22,6 +21,7 @@ import {
   buildDefaultColumnOrder,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
+  renderDefaultMrtEmptyRowsFallback,
 } from '../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
@@ -230,19 +230,13 @@ export function GoiKnowledgeTable(props: Props) {
     onSortingChange: tableStateContext.onSortingChange,
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    renderEmptyRowsFallback: () => (
-      <Box sx={{ py: 6 }}>
-        <TableEmptyState
-          message={
-            props.hasActiveFilters
-              ? 'Немає записів інформованості за обраними фільтрами'
-              : 'Записи інформованості відсутні'
-          }
-          actionLabel={props.hasActiveFilters ? 'Очистити фільтри' : undefined}
-          onAction={props.hasActiveFilters ? props.onClearFilters : undefined}
-        />
-      </Box>
-    ),
+    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
+      table,
+      noDataMessage: 'Записи інформованості відсутні',
+      filteredMessage: 'Немає записів інформованості за обраними фільтрами',
+      onClearFilters: props.onClearFilters,
+      clearFiltersLabel: 'Очистити фільтри',
+    }),
     defaultColumn: {
       size: 180,
       renderColumnActionsMenuItems,
