@@ -239,6 +239,7 @@ mod m20260429_181706_add_datasource_group_lookup_index;
 mod m20260429_212239_tune_datasource_autovacuum;
 mod m20260430_120000_add_analysis_map_in_sidebar;
 mod m20260507_151045_add_palitra_goi_sync_job;
+mod m20260510_101006_operator_dmr_metadata;
 
 pub struct Migrator;
 
@@ -468,29 +469,24 @@ impl MigratorTrait for Migrator {
             Box::new(m20260317_214944_add_goi_knowledge::Migration),
             Box::new(m20260317_234004_add_goi_knowledge_deleted_at::Migration),
             Box::new(m20260318_110000_add_sigint_network_freq_last_seen_dt::Migration),
-            Box::new(
-                m20260318_131247_add_organism_goi_integration_type::Migration,
-            ),
+            Box::new(m20260318_131247_add_organism_goi_integration_type::Migration),
             Box::new(m20260319_011722_add_system_settings::Migration),
-            Box::new(m20260326_120000_add_full_name_to_sigint_callsign::Migration),
-            Box::new(m20260325_123200_add_rer_duty_test_settings::Migration),
-            Box::new(m20260331_230927_add_palitra_s3_id::Migration),
-            Box::new(m20260406_210334_add_goi_integrations::Migration),
             Box::new(m20260325_120000_add_user_settings::Migration),
+            Box::new(m20260325_123200_add_rer_duty_test_settings::Migration),
+            Box::new(m20260326_120000_add_full_name_to_sigint_callsign::Migration),
             Box::new(m20260329_184900_add_palitra_line_strings::Migration),
+            Box::new(m20260331_230927_add_palitra_s3_id::Migration),
             Box::new(m20260406_194408_palitra_archive_and_folder::Migration),
+            Box::new(m20260406_210334_add_goi_integrations::Migration),
             Box::new(m20260420_114249_add_aor_order_for_report::Migration),
             Box::new(m20260420_193430_add_rer_duty_historical_replay::Migration),
             Box::new(m20260426_191910_add_slowlog_perf_indexes::Migration),
-            Box::new(
-                m20260429_175416_add_signal_message_group_lookup_indexes::Migration,
-            ),
-            Box::new(
-                m20260429_181706_add_datasource_group_lookup_index::Migration,
-            ),
+            Box::new(m20260429_175416_add_signal_message_group_lookup_indexes::Migration),
+            Box::new(m20260429_181706_add_datasource_group_lookup_index::Migration),
             Box::new(m20260429_212239_tune_datasource_autovacuum::Migration),
             Box::new(m20260430_120000_add_analysis_map_in_sidebar::Migration),
             Box::new(m20260507_151045_add_palitra_goi_sync_job::Migration),
+            Box::new(m20260510_101006_operator_dmr_metadata::Migration),
         ]
     }
 }

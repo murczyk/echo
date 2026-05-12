@@ -2,10 +2,12 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Mode, ShortContext};
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use chrono::Utc;
 use echo_migration::JoinType;
 use sea_orm::*;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
@@ -99,5 +101,169 @@ async fn receive_once(
             .c(h!())?;
         txn.commit().await.c(h!())?;
     }
+    import_sigint_inbox_message_metadata(dbx).await.c(h!())?;
     Ok(())
+}
+
+async fn import_sigint_inbox_message_metadata(
+    dbx: &DatabaseConnection,
+) -> Result<(), AppError> {
+    let txn = dbx.begin().await.c(h!())?;
+
+    let metadata_with_messages = signal_message_metadata::Entity::find()
+        .join_rev(
+            JoinType::InnerJoin,
+            signal_message::Entity::belongs_to(signal_message_metadata::Entity)
+                .from(signal_message::Column::MessageUid)
+                .to(signal_message_metadata::Column::MessageUid)
+                .into(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintInboxItemMetadata.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .select_only()
+        .column_as(
+            signal_message_metadata::Column::Id,
+            "signal_message_metadata_id",
+        )
+        .column_as(sigint_inbox_item::Column::Id, "sigint_inbox_item_id")
+        .column_as(
+            sigint_inbox_item_metadata::Column::Id,
+            "sigint_inbox_item_metadata_id",
+        )
+        .column(signal_message_metadata::Column::DmrSenderId)
+        .column(signal_message_metadata::Column::DmrCallGroupId)
+        .column(signal_message_metadata::Column::DmrColorCode)
+        .limit(100)
+        .into_model::<MetadataMessageRow>()
+        .all(&txn)
+        .await
+        .c(h!())?;
+
+    if metadata_with_messages.is_empty() {
+        return Ok(());
+    }
+
+    let mut signal_message_metadata_ids =
+        Vec::with_capacity(metadata_with_messages.len());
+    let mut existing_metadata_ids =
+        Vec::with_capacity(metadata_with_messages.len());
+
+    for row in &metadata_with_messages {
+        signal_message_metadata_ids.push(row.signal_message_metadata_id);
+        if let Some(sigint_inbox_item_metadata_id) =
+            row.sigint_inbox_item_metadata_id
+        {
+            existing_metadata_ids.push(sigint_inbox_item_metadata_id);
+        }
+    }
+
+    let mut existing_metadata: HashMap<
+        i64,
+        sigint_inbox_item_metadata::ActiveModel,
+    > = sigint_inbox_item_metadata::Entity::find()
+        .filter(
+            sigint_inbox_item_metadata::Column::Id
+                .eq_any(existing_metadata_ids),
+        )
+        .all(&txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|item| (item.id, item.into_active_model()))
+        .collect();
+
+    let mut new_metadata = vec![];
+
+    for row in metadata_with_messages {
+        if let Some(mut existing_model) = row
+            .sigint_inbox_item_metadata_id
+            .and_then(|id| existing_metadata.remove(&id))
+        {
+            if merge_metadata(&mut existing_model, row) {
+                existing_model.update(&txn).await.c(h!())?;
+            }
+        } else {
+            let new_model = sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(row.sigint_inbox_item_id),
+                sender_id: Set(row.dmr_sender_id),
+                call_group_id: Set(row.dmr_call_group_id),
+                color_code: Set(row.dmr_color_code),
+                ..Default::default()
+            };
+            new_metadata.push(new_model);
+        }
+    }
+
+    if !new_metadata.is_empty() {
+        sigint_inbox_item_metadata::Entity::insert_many(new_metadata)
+            .exec_without_returning(&txn)
+            .await
+            .c(h!())?;
+    }
+
+    signal_message_metadata::Entity::delete_many()
+        .filter(
+            signal_message_metadata::Column::Id
+                .eq_any(signal_message_metadata_ids),
+        )
+        .exec(&txn)
+        .await
+        .c(h!())?;
+
+    txn.commit().await.c(h!())?;
+
+    Ok(())
+}
+
+fn merge_metadata(
+    existing_model: &mut sigint_inbox_item_metadata::ActiveModel,
+    row: MetadataMessageRow,
+) -> bool {
+    let mut updated = false;
+    if row.dmr_color_code.is_some() {
+        if &row.dmr_color_code != existing_model.color_code.as_ref() {
+            existing_model.color_code = Set(row.dmr_color_code);
+            existing_model.color_code_start_index = Set(None);
+            existing_model.color_code_end_index = Set(None);
+            updated = true;
+        }
+    }
+
+    if row.dmr_sender_id.is_some() {
+        if &row.dmr_sender_id != existing_model.sender_id.as_ref() {
+            existing_model.sender_id = Set(row.dmr_sender_id);
+            existing_model.sender_id_start_index = Set(None);
+            existing_model.sender_id_end_index = Set(None);
+            updated = true;
+        }
+    }
+
+    if row.dmr_call_group_id.is_some() {
+        if &row.dmr_call_group_id != existing_model.call_group_id.as_ref() {
+            existing_model.call_group_id = Set(row.dmr_call_group_id);
+            existing_model.call_group_id_start_index = Set(None);
+            existing_model.call_group_id_end_index = Set(None);
+            updated = true;
+        }
+    }
+
+    updated
+}
+
+#[derive(FromQueryResult)]
+struct MetadataMessageRow {
+    pub signal_message_metadata_id: i64,
+    pub sigint_inbox_item_id: i64,
+    pub sigint_inbox_item_metadata_id: Option<i64>,
+
+    pub dmr_sender_id: Option<String>,
+    pub dmr_call_group_id: Option<String>,
+    pub dmr_color_code: Option<String>,
 }
