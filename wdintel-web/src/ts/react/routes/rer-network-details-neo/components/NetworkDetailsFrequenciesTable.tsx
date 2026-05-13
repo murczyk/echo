@@ -348,7 +348,11 @@ function NetworkDetailsFrequenciesTableContent({
       noDataActionLabel: freqsError ? 'Спробувати ще раз' : undefined,
       onNoDataAction: freqsError ? onReloadFrequencies : undefined,
       filteredMessage: 'Немає частот за обраними фільтрами',
-      onClearFilters: hasActiveFilters ? () => { tableStateContext.onColumnFiltersChange([]); tableStateContext.onChangeGlobalFilter(''); } : undefined,
+      hasFilters: freqsError ? false : hasActiveFilters,
+      onClearFilters: freqsError ? undefined : () => {
+        tableStateContext.onColumnFiltersChange([]);
+        tableStateContext.onChangeGlobalFilter('');
+      },
     }),
     localization: { ...defaultMRTOptions.localization },
     manualFiltering: false,
