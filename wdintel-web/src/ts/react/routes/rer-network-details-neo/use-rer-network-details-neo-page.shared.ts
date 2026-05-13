@@ -40,6 +40,7 @@ export type NetworkEditForm = {
 };
 
 export type NetworkDescriptionForm = {
+  topic: string;
   description: string;
   networkFreqId: number | null;
 };
@@ -237,6 +238,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   descriptionDrawerDescrType: 'Confirmation',
   descriptionDrawerDescriptionId: null,
   descriptionDrawerForm: {
+    topic: '',
     description: '',
     networkFreqId: null,
   },
@@ -381,8 +383,9 @@ export function sortDescriptionsByCreatedAtDesc(descriptions: Network['descripti
   return [...descriptions].sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function toNetworkDescriptionForm(description: string, networkFreqId: number | null): NetworkDescriptionForm {
+export function toNetworkDescriptionForm(topic: string, description: string, networkFreqId: number | null): NetworkDescriptionForm {
   return {
+    topic,
     description,
     networkFreqId,
   };

@@ -24,10 +24,8 @@ function resolveNetworkDescriptionFrequency(network: Network, networkFreqId: num
   return network.freqs.find((freq) => freq.id === networkFreqId) ?? null;
 }
 
-function getDescriptionValidationError(descrType: NetworkDetailsNeoPageState['descriptionDrawerDescrType']): string {
-  return descrType === 'Sign'
-    ? 'Розвідувальні ознаки не можуть бути порожніми'
-    : 'Обґрунтування не може бути порожнім';
+function getDescriptionValidationError(): string {
+  return 'Матеріали радіоперехоплення не можуть бути порожніми';
 }
 
 function resetDescriptionDrawerState(
@@ -40,7 +38,7 @@ function resetDescriptionDrawerState(
     descriptionDrawerMode: extra.descriptionDrawerMode ?? 'create',
     descriptionDrawerDescrType: extra.descriptionDrawerDescrType ?? 'Confirmation',
     descriptionDrawerDescriptionId: null,
-    descriptionDrawerForm: toNetworkDescriptionForm('', null),
+    descriptionDrawerForm: toNetworkDescriptionForm('', '', null),
     descriptionDrawerSaving: false,
     descriptionDrawerError: null,
   };
@@ -66,7 +64,7 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
       descriptionDrawerMode: 'create',
       descriptionDrawerDescrType: descrType,
       descriptionDrawerDescriptionId: null,
-      descriptionDrawerForm: toNetworkDescriptionForm('', null),
+      descriptionDrawerForm: toNetworkDescriptionForm('', '', null),
       descriptionDrawerSaving: false,
       descriptionDrawerError: null,
     }));
@@ -79,7 +77,7 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
       descriptionDrawerMode: 'edit',
       descriptionDrawerDescrType: description.descrType,
       descriptionDrawerDescriptionId: description.id,
-      descriptionDrawerForm: toNetworkDescriptionForm(description.description, description.networkFrequencyId ?? null),
+      descriptionDrawerForm: toNetworkDescriptionForm(description.topic ?? '', description.description, description.networkFrequencyId ?? null),
       descriptionDrawerSaving: false,
       descriptionDrawerError: null,
     }));
@@ -112,11 +110,17 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
       return {
         ...current,
         deleteDescriptionDialogOpen: false,
-        deleteDescriptionTarget: null,
-        deleteDescriptionSubmitting: false,
-        deleteDescriptionError: null,
       };
     });
+  }, [setState]);
+
+  const resetDeleteDescriptionDialog = useCallback(() => {
+    setState((current) => ({
+      ...current,
+      deleteDescriptionTarget: null,
+      deleteDescriptionSubmitting: false,
+      deleteDescriptionError: null,
+    }));
   }, [setState]);
 
   const saveDescription = useCallback(async () => {
@@ -124,14 +128,14 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
     const form = state.descriptionDrawerForm;
     const descriptionId = state.descriptionDrawerDescriptionId;
     const descrType = state.descriptionDrawerDescrType;
-
     if (!network || state.descriptionDrawerSaving) return;
 
+    const topic = form.topic.trim();
     const description = form.description.trim();
     if (description === '') {
       setState((current) => ({
         ...current,
-        descriptionDrawerError: getDescriptionValidationError(descrType),
+        descriptionDrawerError: getDescriptionValidationError(),
       }));
       return;
     }
@@ -162,6 +166,7 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
               ? [
                   {
                     descrType,
+                    topic: topic === '' ? null : topic,
                     description,
                   },
                 ]
@@ -172,6 +177,7 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
               : [
                   {
                     descrType,
+                    topic: topic === '' ? null : topic,
                     description,
                     freq: selectedFreq.freq,
                   },
@@ -191,6 +197,7 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
           networkId: network.id,
           descriptionId,
           descrType,
+          topic: topic === '' ? null : topic,
           description,
           networkFreqId: form.networkFreqId,
         });
@@ -243,9 +250,6 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
         ...current,
         network: updatedNetwork,
         deleteDescriptionDialogOpen: false,
-        deleteDescriptionTarget: null,
-        deleteDescriptionSubmitting: false,
-        deleteDescriptionError: null,
         expandedDescriptionIds: current.expandedDescriptionIds.filter((descriptionId) =>
           updatedNetwork.descriptions.some((description) => description.id === descriptionId),
         ),
@@ -267,6 +271,7 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
     setDescriptionDrawerForm,
     openDeleteDescriptionDialog,
     closeDeleteDescriptionDialog,
+    resetDeleteDescriptionDialog,
     saveDescription,
     deleteDescription,
   };

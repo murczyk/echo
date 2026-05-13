@@ -384,6 +384,7 @@ pub struct NetworkDescription {
     pub network_id: i64,
     pub network_frequency_id: Option<i64>,
     pub descr_type: NetworkDescrType,
+    pub topic: Option<String>,
     pub description: String,
     // pub comment: Option<String>,
     pub login: String,
@@ -395,6 +396,7 @@ pub struct NetworkDescription {
 )]
 pub struct AddNetworkDescription {
     pub descr_type: NetworkDescrType,
+    pub topic: Option<String>,
     pub description: String,
     // pub comment: Option<String>,
 }
@@ -404,6 +406,7 @@ pub struct AddNetworkDescription {
 )]
 pub struct AddNetworkFrequencyDescription {
     pub descr_type: NetworkDescrType,
+    pub topic: Option<String>,
     pub description: String,
     pub freq: String,
     // pub comment: Option<String>,
@@ -426,6 +429,7 @@ pub struct UpdateNetworkDescriptionReq {
     pub network_freq_id: Option<i64>,
     pub description_id: i64,
     pub descr_type: NetworkDescrType,
+    pub topic: Option<String>,
     pub description: String,
     // pub comment: Option<String>,
 }

@@ -605,6 +605,7 @@ pub async fn update_network(
                 let mut model = descr_model.into_active_model();
                 model.r#type =
                     Set(NetworkDescriptionType::from(p.descr_type.clone()));
+                model.topic = Set(p.topic.clone());
                 model.description = Set(p.description.clone());
                 model.sigint_network_freq_id = Set(p.network_freq_id);
                 model.comment = NotSet; // Set(p.comment.clone());
@@ -1419,6 +1420,7 @@ pub async fn update_freq_networks(
                 let mut model = descr_model.into_active_model();
                 model.r#type =
                     Set(NetworkDescriptionType::from(req.descr_type.clone()));
+                model.topic = Set(req.topic.clone());
                 model.description = Set(req.description.clone());
                 model.sigint_network_freq_id = Set(req.network_freq_id);
                 model.comment = NotSet; // Set(req.comment.clone());
@@ -3285,6 +3287,7 @@ fn map_add_network_description(
         network_id: Set(network.id),
         login: Set(user_id.clone()),
         r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
+        topic: Set(descr.topic),
         description: Set(descr.description),
         sigint_network_freq_id: Set(None),
         comment: NotSet, // Set(descr.comment),
@@ -3306,6 +3309,7 @@ fn map_add_network_frequency_description(
         network_id: Set(network.id),
         login: Set(user_id.to_owned()),
         r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
+        topic: Set(descr.topic),
         description: Set(descr.description.clone()),
         sigint_network_freq_id: Set(Some(freq_id)),
         comment: NotSet, // Set(descr.comment),

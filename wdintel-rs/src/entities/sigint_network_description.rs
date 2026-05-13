@@ -15,6 +15,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub login: String,
     pub r#type: NetworkDescriptionType,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub topic: Option<String>,
     #[sea_orm(column_type = "Text")]
     pub description: String,
     #[sea_orm(column_type = "Text", nullable)]

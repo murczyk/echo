@@ -74,6 +74,7 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
           ? null
           : {
               descrType: 'Confirmation',
+              topic: null,
               description: freqForm.description.trim(),
               freq: freqForm.freq.trim(),
             },
