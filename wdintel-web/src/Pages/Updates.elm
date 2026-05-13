@@ -6,7 +6,7 @@ import Browser.Events
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (alt, attribute, class, controls, id, src)
+import Html.Attributes exposing (alt, attribute, class, controls, id, src, style)
 import Html.Events exposing (onClick)
 import Html.Lazy as Lazy
 import Http
@@ -23,6 +23,9 @@ import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
 import View exposing (View)
+
+tableOfContents : String
+tableOfContents = "Зміст"
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user _ _ =
@@ -373,7 +376,7 @@ viewContentBlock activeSectionId blockIndex block =
                 [ id domId
                 , class ("scroll-mt-28 rounded px-2 py-1 transition " ++ activeClass)
                 ]
-                [ h3 [ class "text-xl font-semibold" ] [ text headingText ] ]
+                [ h4 [ class "text-xl font-semibold" ] [ text headingText ] ]
 
         ParagraphBlock paragraphText ->
             p [ class "text-sm leading-relaxed text-[var(--color-text)]" ] [ text paragraphText ]
@@ -381,6 +384,7 @@ viewContentBlock activeSectionId blockIndex block =
         ImageBlock imageData ->
             img
                 [ class "w-full max-w-full rounded border border-[var(--color-border)]"
+                , style "width" "stretch"
                 , src imageData.src
                 , alt imageData.alt
                 , attribute "loading" "lazy"
@@ -390,6 +394,7 @@ viewContentBlock activeSectionId blockIndex block =
         VideoBlock videoData ->
             video
                 [ class "w-full rounded border border-[var(--color-border)] bg-black"
+                , style "width" "stretch"
                 , src videoData.src
                 , controls True
                 , attribute "preload" "metadata"
@@ -397,31 +402,36 @@ viewContentBlock activeSectionId blockIndex block =
                 []
 
 
+getAsideBlock: Model -> LoadedReleasePage -> Html Msg
+getAsideBlock model releasePage =
+    aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
+          [ h2 [ class "text-sm font-semibold mb-2" ] [ text tableOfContents ]
+          , div [ class "space-y-1" ] (List.map (viewOnThisPageItem model.activeSectionId) releasePage.sections)
+          ]
+
+emptyText : Html Msg
+emptyText =
+    text ""
+
 viewOnThisPage : Model -> Html Msg
 viewOnThisPage model =
     case model.releasePage of
         Success (Just releasePage) ->
             if List.isEmpty releasePage.sections then
-                text ""
+                emptyText
 
             else
-                aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
-                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "On this page" ]
-                    , div [ class "space-y-1" ] (List.map (viewOnThisPageItem model.activeSectionId) releasePage.sections)
-                    ]
+                getAsideBlock model releasePage
 
         NeedsReload (Just releasePage) ->
             if List.isEmpty releasePage.sections then
-                text ""
+                emptyText
 
             else
-                aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
-                    [ h2 [ class "text-sm font-semibold mb-2" ] [ text "On this page" ]
-                    , div [ class "space-y-1" ] (List.map (viewOnThisPageItem model.activeSectionId) releasePage.sections)
-                    ]
+                getAsideBlock model releasePage
 
         _ ->
-            text ""
+            emptyText
 
 
 viewOnThisPageItem : Maybe String -> HeadingSection -> Html Msg
@@ -438,7 +448,7 @@ viewOnThisPageItem activeSectionId headingSection =
                 " hover:bg-[var(--color-bg)]"
     in
     button
-        [ class ("w-full text-left text-xs leading-snug rounded px-2 py-1.5" ++ activeClass)
+        [ class ("w-full text-left text-xs leading-snug rounded px-2 py-1.5 hover:underline" ++ activeClass)
         , onClick (JumpToSection headingSection.sectionId)
         ]
         [ text headingSection.title ]
@@ -465,9 +475,7 @@ sectionDomId blockIndex =
 
 releasePageHeader : ReleasePage -> String
 releasePageHeader releasePage =
-    releasePage.releaseId
-        |> String.replace "-" "."
-        |> (\formattedDate -> releasePage.title ++ " - Реліз " ++ formattedDate)
+    releasePage.title
 
 
 detectActiveSection : List HeadingSection -> Cmd Msg
