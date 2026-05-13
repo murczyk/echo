@@ -13,6 +13,10 @@ export type NetworkCallsignStatusFilter = 'All' | 'Verified' | 'Developing' | 'C
 
 export type NetworkCallsignStatus = 'verified' | 'developing' | 'catalog' | 'unknown';
 
+export enum NetworkCallsignSourceId {
+  RO = 2,
+}
+
 export type NetworkCallsignDrawerMode = 'create' | 'edit';
 
 export type NetworkCallsignDrawerForm = {

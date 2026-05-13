@@ -23,6 +23,7 @@ import type { NetworkOption } from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
   normalizeCallsignDisplay,
+  NetworkCallsignSourceId,
   type NetworkCallsignDrawerForm,
   type NetworkCallsignDrawerMode,
 } from '../network-callsigns';
@@ -202,7 +203,7 @@ export function NetworkCallsignDrawer({
 }: Props) {
   const titleId = 'network-callsign-drawer-title';
   const sourceId = form?.sourceId ?? null;
-  const isRoSource = sourceId === 2;
+  const isRoSource = sourceId === NetworkCallsignSourceId.RO;
   const canSave = Boolean(
     form &&
       normalizeCallsignDisplay(form.callsign) !== '' &&

@@ -32,6 +32,7 @@ import {
   type NetworkCallsignSectionMode,
   type NetworkCallsignStatusFilter,
   normalizeCallsignDisplay,
+  NetworkCallsignSourceId,
   buildNetworkCallsignTabData,
 } from './network-callsigns';
 import { useRerNetworkDetailsNeoPageDescriptionActions } from './use-rer-network-details-neo-page.description-actions';
@@ -308,7 +309,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
       return;
     }
 
-    if (form.sourceId === 2 && form.radioFreq.trim() === '') {
+    if (form.sourceId === NetworkCallsignSourceId.RO && form.radioFreq.trim() === '') {
       setState((current) => ({ ...current, callsignDrawerError: 'Для джерела "РО" частота є обовʼязковою' }));
       return;
     }
