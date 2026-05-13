@@ -20,7 +20,11 @@ import { InternalTableActions } from '../../../components/mui-customized/table/c
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { formatDateTime24 } from '../../../utils/misc';
-import { buildCatalogLoadingRows, CATALOG_COLUMNS_VISIBILITY } from './NetworkCallsignsTableShared';
+import {
+  buildCatalogLoadingRows,
+  CATALOG_COLUMNS_VISIBILITY,
+  NETWORK_CALLSIGN_COLUMN_SIZES,
+} from './NetworkCallsignsTableShared';
 import { NetworkCallsignSourceIcon } from './NetworkCallsignSourceUi';
 
 const catalogMRTOptions = getDefaultMRTOptions<NetworkCallsignCatalogRowView>();
@@ -31,7 +35,6 @@ const CATALOG_COLUMN_ORDER = buildDefaultColumnOrder({
 });
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const COMPACT_LOADED_ROW_LIMIT = 5;
 
 type Props = {
   rows: NetworkCallsignCatalogRowView[];
@@ -54,28 +57,27 @@ export function NetworkCallsignsCatalogTable({
 }: Props) {
   const isInitialLoading = loading && rows.length === 0;
   const isBusy = loading || inFlightAddIds.length > 0;
-  const isCompactLoadedLayout = !isInitialLoading && !isBusy && rows.length > 0 && rows.length <= COMPACT_LOADED_ROW_LIMIT;
   const loadingRows = useMemo(() => buildCatalogLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignCatalogRowView>[]>(() => [
     {
       header: 'Позивний',
       accessorKey: 'callsign',
       id: 'callsign',
-      size: 170,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
       Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{formatMrtCellTextValue(row.original.callsign)}</Typography>,
     },
     {
       header: 'Посада',
       accessorKey: 'position',
       id: 'position',
-      size: 150,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
       Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
     },
     {
       header: 'Підрозділ',
       accessorKey: 'unitName',
       id: 'unitName',
-      size: 220,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.unitName,
       Cell: ({ row }) => (
         <Typography variant="body2" noWrap title={row.original.unitName}>
           {formatMrtCellTextValue(row.original.unitName)}
@@ -86,7 +88,7 @@ export function NetworkCallsignsCatalogTable({
       header: 'Останній раз',
       accessorFn: (row) => row.lastDatetime,
       id: 'lastDatetime',
-      size: 150,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.lastDatetime,
       Cell: ({ row }) => formatDateTime24(row.original.lastDatetime),
       enableSorting: false,
     },
@@ -94,14 +96,14 @@ export function NetworkCallsignsCatalogTable({
       header: 'К-сть',
       accessorKey: 'messageCount',
       id: 'messageCount',
-      size: 100,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
       Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{row.original.messageCount}</Typography>,
     },
     {
       header: 'Коментар',
       accessorKey: 'comment',
       id: 'comment',
-      size: 240,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.comment,
       Cell: ({ row }) => (
         <Typography variant="body2" noWrap title={row.original.comment}>
           {formatMrtCellTextValue(row.original.comment)}
@@ -120,7 +122,9 @@ export function NetworkCallsignsCatalogTable({
       header: 'Джерело',
       accessorKey: 'sourceName',
       id: 'sourceName',
-      size: 170,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
+      grow: false,
+      enableResizing: false,
       Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
     },
   ], []);
@@ -172,10 +176,10 @@ export function NetworkCallsignsCatalogTable({
         ...FULL_WIDTH_TABLE_PAPER_SX,
         width: '100%',
         maxWidth: '100%',
-        height: isCompactLoadedLayout ? 'auto' : '100%',
-        minHeight: isCompactLoadedLayout ? 'auto' : 0,
+        height: '100%',
+        minHeight: 0,
         minWidth: 0,
-        overflow: table.getState().isFullScreen ? 'auto' : isCompactLoadedLayout ? 'visible' : 'hidden',
+        overflow: table.getState().isFullScreen ? 'auto' : 'hidden',
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 0,
@@ -189,10 +193,10 @@ export function NetworkCallsignsCatalogTable({
     muiTableContainerProps: {
       sx: getPageScrollTableContainerSx({
         loading: isBusy,
-        height: isCompactLoadedLayout ? 'auto' : '100%',
+        height: '100%',
         minHeight: 0,
         idleOverflowX: 'auto',
-        idleOverflowY: isCompactLoadedLayout ? 'visible' : 'auto',
+        idleOverflowY: 'auto',
       }),
     },
     initialState: { density: 'comfortable', columnOrder: CATALOG_COLUMN_ORDER, columnVisibility: CATALOG_COLUMNS_VISIBILITY },
@@ -215,7 +219,7 @@ export function NetworkCallsignsCatalogTable({
   });
 
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, flex: isCompactLoadedLayout ? '0 0 auto' : 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
+    <Box sx={{ minHeight: 0, minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2, mt: 0, mb: 1.25, width: '100%' }}>
         <InternalTableActions table={table} />
       </Box>

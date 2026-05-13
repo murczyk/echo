@@ -34,6 +34,16 @@ export const NETWORK_COLUMN_ORDER = buildDefaultColumnOrder({
   withRowActions: true,
 });
 
+export const NETWORK_CALLSIGN_COLUMN_SIZES = {
+  callsign: 170,
+  position: 150,
+  unitName: 220,
+  lastDatetime: 150,
+  messageCount: 100,
+  comment: 240,
+  sourceName: 150,
+} as const;
+
 export const CATALOG_COLUMNS_VISIBILITY = {
   callsign: true,
   position: true,
@@ -50,6 +60,8 @@ export const CATALOG_COLUMN_ORDER = buildDefaultColumnOrder({
   withRowNumbers: true,
   withRowActions: true,
 });
+
+export const NETWORK_CALLSIGN_SOURCE_COLUMN_SIZE = 150;
 
 export function formatCountLabel(value: number) {
   return value.toLocaleString('uk-UA');

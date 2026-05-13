@@ -28,6 +28,7 @@ import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components
 import {
   buildNetworkLoadingRows,
   CountChipLabel,
+  NETWORK_CALLSIGN_COLUMN_SIZES,
   NETWORK_COLUMNS_VISIBILITY,
 } from './NetworkCallsignsTableShared';
 import { NetworkCallsignSourceIcon } from './NetworkCallsignSourceUi';
@@ -42,7 +43,6 @@ const NETWORK_COLUMN_ORDER = buildDefaultColumnOrder({
 });
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const COMPACT_LOADED_ROW_LIMIT = 5;
 const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing'];
 const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Catalog' | 'Unknown'>, string> = {
   All: 'Всі',
@@ -97,20 +97,15 @@ export function NetworkCallsignsNetworkTable({
   const statusCounts = useMemo(() => countNetworkCallsignStatusRows(visibleRows), [visibleRows]);
   const isInitialLoading = loading && rows.length === 0;
   const isBusy = loading || inFlightUpdateIds.length > 0 || inFlightDeleteIds.length > 0;
-  const isCompactLoadedLayout =
-    !isInitialLoading &&
-    !isBusy &&
-    tableStateRows.length > 0 &&
-    tableStateRows.length <= COMPACT_LOADED_ROW_LIMIT;
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignRowView>[]>(() => [
     {
       header: 'Позивний',
       accessorKey: 'callsign',
       id: 'callsign',
-      size: 170,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
       Cell: ({ row }) => (
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
           <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} developing={row.original.status === 'developing'} />
           <Typography variant="body2" fontWeight={700} noWrap title={row.original.callsign}>
             {formatMrtCellTextValue(row.original.callsign)}
@@ -127,14 +122,14 @@ export function NetworkCallsignsNetworkTable({
       header: 'Посада',
       accessorKey: 'position',
       id: 'position',
-      size: 150,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
       Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
     },
     {
       header: 'Підрозділ',
       accessorKey: 'unitName',
       id: 'unitName',
-      size: 220,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.unitName,
       Cell: ({ row }) => (
         <Typography variant="body2" noWrap title={row.original.unitName}>
           {formatMrtCellTextValue(row.original.unitName)}
@@ -145,7 +140,7 @@ export function NetworkCallsignsNetworkTable({
       header: 'Остання акт.',
       accessorFn: (row) => row.lastDatetime,
       id: 'lastDatetime',
-      size: 150,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.lastDatetime,
       Cell: ({ row }) => formatNetworkCallsignDatetime(row.original.lastDatetime),
       enableSorting: false,
     },
@@ -153,14 +148,14 @@ export function NetworkCallsignsNetworkTable({
       header: 'К-сть',
       accessorKey: 'messageCount',
       id: 'messageCount',
-      size: 100,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
       Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{row.original.messageCount}</Typography>,
     },
     {
       header: 'Коментар',
       accessorKey: 'comment',
       id: 'comment',
-      size: 240,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.comment,
       Cell: ({ row }) => (
         <Typography variant="body2" noWrap title={row.original.comment}>
           {formatMrtCellTextValue(row.original.comment)}
@@ -171,7 +166,9 @@ export function NetworkCallsignsNetworkTable({
       header: 'Джерело',
       accessorKey: 'sourceName',
       id: 'sourceName',
-      size: 170,
+      size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
+      grow: false,
+      enableResizing: false,
       Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
     },
   ], []);
@@ -202,7 +199,13 @@ export function NetworkCallsignsNetworkTable({
       noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
       onNoDataAction: loadingError ? onReload : undefined,
       filteredMessage: 'Немає позивних за обраним статусом',
-      onClearFilters: normalizedStatusFilter !== 'All' && visibleRows.length > 0 && tableStateRows.length === 0 ? () => onStatusFilterChange('All') : undefined,
+      onClearFilters: normalizedStatusFilter !== 'All' && visibleRows.length > 0 && tableStateRows.length === 0
+        ? () => {
+          table.setColumnFilters([]);
+          table.setGlobalFilter('');
+          onStatusFilterChange('All');
+        }
+        : undefined,
       clearFiltersLabel: 'Скинути фільтр',
     }),
     state: {
@@ -225,10 +228,10 @@ export function NetworkCallsignsNetworkTable({
         ...FULL_WIDTH_TABLE_PAPER_SX,
         width: '100%',
         maxWidth: '100%',
-        height: isCompactLoadedLayout ? 'auto' : '100%',
-        minHeight: isCompactLoadedLayout ? 'auto' : 0,
+        height: '100%',
+        minHeight: 0,
         minWidth: 0,
-        overflow: table.getState().isFullScreen ? 'auto' : isCompactLoadedLayout ? 'visible' : 'hidden',
+        overflow: table.getState().isFullScreen ? 'auto' : 'hidden',
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 0,
@@ -242,10 +245,10 @@ export function NetworkCallsignsNetworkTable({
     muiTableContainerProps: {
       sx: getPageScrollTableContainerSx({
         loading: isBusy,
-        height: isCompactLoadedLayout ? 'auto' : '100%',
+        height: '100%',
         minHeight: 0,
         idleOverflowX: 'auto',
-        idleOverflowY: isCompactLoadedLayout ? 'visible' : 'auto',
+        idleOverflowY: 'auto',
       }),
     },
     initialState: { density: 'comfortable', columnOrder: NETWORK_COLUMN_ORDER, columnVisibility: NETWORK_COLUMNS_VISIBILITY },
@@ -280,8 +283,8 @@ export function NetworkCallsignsNetworkTable({
   });
 
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, flex: isCompactLoadedLayout ? '0 0 auto' : 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
-      <Stack spacing={2} sx={{ minHeight: 0, flex: isCompactLoadedLayout ? '0 0 auto' : 1 }}>
+    <Box sx={{ minHeight: 0, minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
+      <Stack spacing={2} sx={{ minHeight: 0, flex: 1 }}>
         <Stack spacing={1.25} sx={{ mt: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', minWidth: 0 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
