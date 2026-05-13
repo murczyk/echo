@@ -30,6 +30,7 @@
 - When proposing commit messages, use Conventional Commits with a past-simple summary (for example: `fix(navbar): redirected login correctly`).
 - When asked to suggest or draft a commit message, ALWAYS use `.github/skills/conventional-commit-branch-scope/SKILL.md`.
 - Derive commit scope from the current branch name when possible, and do not replace a branch-derived ticket scope with ad hoc module scopes like `palettes` or `navbar`.
+- Do not mention Cursor (or other editor/assistant products) in commit messages; keep summaries about the codebase only.
 
 ## Changelog
 
