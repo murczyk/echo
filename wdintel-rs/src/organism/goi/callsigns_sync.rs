@@ -3,7 +3,7 @@ use crate::config::{
 };
 use crate::entities::{
     goi_integration, sigint_callsign, sigint_network, sigint_network_callsign,
-    sigint_network_freq, sigint_network_unit, sigint_unit, source,
+    sigint_network_freq, source,
 };
 use crate::error::AppError;
 use crate::h;
@@ -16,7 +16,7 @@ use quick_xml::events::Event;
 use quick_xml::name::QName;
 use quick_xml::Reader as XmlReader;
 use regex::Regex;
-use sea_orm::{sea_query::Alias, sea_query::Expr, *};
+use sea_orm::{sea_query::Expr, *};
 use sea_query::JoinType;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
@@ -35,7 +35,7 @@ pub(super) struct GoiCallsignState {
     pub id: i64,
     pub callsign: String,
     pub frequency: String,
-    pub unit_name: String,
+    pub position: String,
     pub comment: String,
     pub row_ref: Option<GoiWorkbookRowRef>,
 }
@@ -54,12 +54,12 @@ struct LiveCallsignRow {
     comment: Option<String>,
     source_id: Option<i64>,
     radio_freq: Option<String>,
+    position: Option<String>,
     sc_deleted: Option<bool>,
+    sc_position: Option<String>,
     sc_comment: Option<String>,
     sc_source_id: Option<i32>,
     sc_radio_freq: Option<String>,
-    unit_name: Option<String>,
-    sc_unit_name: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -264,13 +264,11 @@ async fn load_live_goi_callsigns(
 ) -> Result<Vec<GoiCallsignState>, AppError> {
     let source_names = load_source_names(db).await.c(h!())?;
     let network_freqs = load_live_network_freqs(db).await.c(h!())?;
-    let network_units = load_live_network_units(db).await.c(h!())?;
     let callsigns = load_live_callsign_rows(db).await.c(h!())?;
     log::info!(
-        "[goi-sync] Loaded GOI callsign sync source data: {} source names, {} active network frequency groups, {} active network unit groups, {} candidate callsign rows",
+        "[goi-sync] Loaded GOI callsign sync source data: {} source names, {} active network frequency groups, {} candidate callsign rows",
         source_names.len(),
         network_freqs.len(),
-        network_units.len(),
         callsigns.len()
     );
 
@@ -306,14 +304,14 @@ async fn load_live_goi_callsigns(
                 callsign.network_id
             );
         }
-        let unit_name = merged_live_unit_name(&callsign, &network_units);
+        let position = merged_live_position(&callsign);
         let source_name = merged_live_source_name(&callsign, &source_names);
         let comment = merged_live_comment_text(&callsign);
         let goi_callsign = GoiCallsignState {
             id: callsign.id,
             callsign: callsign_name,
             frequency,
-            unit_name,
+            position,
             comment: render_live_comment(
                 comment.as_deref(),
                 source_name.as_deref(),
@@ -394,64 +392,6 @@ async fn load_live_network_freqs(
         .collect())
 }
 
-async fn load_live_network_units(
-    db: &DatabaseConnection,
-) -> Result<BTreeMap<i64, String>, AppError> {
-    #[derive(Debug, FromQueryResult)]
-    struct NetworkUnitRow {
-        network_id: i64,
-        unit_name: Option<String>,
-    }
-
-    let today_start = goi_live_cutoff_datetime();
-    let rows = sigint_network::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkUnit.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-        )
-        .select_only()
-        .column_as(sigint_network::Column::Id, "network_id")
-        .column_as(sigint_unit::Column::Name, "unit_name")
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(goi_live_network_condition(today_start))
-        .filter(
-            Condition::any()
-                .add(sigint_unit::Column::Deleted.eq(false))
-                .add(sigint_unit::Column::Deleted.is_null()),
-        )
-        .into_model::<NetworkUnitRow>()
-        .all(db)
-        .await
-        .c(h!())?;
-
-    let mut grouped = BTreeMap::<i64, BTreeSet<String>>::new();
-    for row in rows {
-        let Some(unit_name) = row.unit_name else {
-            continue;
-        };
-        let unit_name = unit_name.trim();
-        if !unit_name.is_empty() {
-            grouped
-                .entry(row.network_id)
-                .or_default()
-                .insert(unit_name.to_string());
-        }
-    }
-    Ok(grouped
-        .into_iter()
-        .map(|(network_id, unit_names)| {
-            (
-                network_id,
-                unit_names.into_iter().collect::<Vec<_>>().join(", "),
-            )
-        })
-        .collect())
-}
-
 async fn load_live_callsign_rows(
     db: &DatabaseConnection,
 ) -> Result<Vec<LiveCallsignRow>, AppError> {
@@ -465,16 +405,6 @@ async fn load_live_callsign_rows(
             JoinType::LeftJoin,
             sigint_network_callsign::Relation::SigintCallsign.def(),
         )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network_callsign::Relation::SigintUnit.def(),
-            Alias::new("nc_unit"),
-        )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_callsign::Relation::SigintUnit.def(),
-            Alias::new("sc_unit"),
-        )
         .select_only()
         .column_as(sigint_network_callsign::Column::Id, "id")
         .column_as(
@@ -485,12 +415,20 @@ async fn load_live_callsign_rows(
         .column(sigint_network_callsign::Column::Comment)
         .column(sigint_network_callsign::Column::SourceId)
         .column(sigint_network_callsign::Column::RadioFreq)
+        .column(sigint_network_callsign::Column::Position)
         .column_as(
             Expr::col((
                 sigint_callsign::Entity,
                 sigint_callsign::Column::Deleted,
             )),
             "sc_deleted",
+        )
+        .column_as(
+            Expr::col((
+                sigint_callsign::Entity,
+                sigint_callsign::Column::Position,
+            )),
+            "sc_position",
         )
         .column_as(
             Expr::col((
@@ -512,14 +450,6 @@ async fn load_live_callsign_rows(
                 sigint_callsign::Column::RadioFreq,
             )),
             "sc_radio_freq",
-        )
-        .column_as(
-            Expr::col((Alias::new("nc_unit"), sigint_unit::Column::Name)),
-            "unit_name",
-        )
-        .column_as(
-            Expr::col((Alias::new("sc_unit"), sigint_unit::Column::Name)),
-            "sc_unit_name",
         )
         .filter(sigint_network_callsign::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
@@ -566,24 +496,16 @@ fn goi_live_network_freq_condition(today_start: NaiveDateTime) -> Condition {
         )
 }
 
-fn merged_live_unit_name(
-    callsign: &LiveCallsignRow,
-    network_units: &BTreeMap<i64, String>,
-) -> String {
-    let unit_name = callsign
-        .unit_name
-        .as_deref()
+fn merged_live_position(callsign: &LiveCallsignRow) -> String {
+    normalize_optional_trimmed(callsign.position.clone())
         .or_else(|| {
             linked_sigint_callsign_is_active(callsign)
-                .then_some(callsign.sc_unit_name.as_deref())
+                .then_some(normalize_optional_trimmed(
+                    callsign.sc_position.clone(),
+                ))
                 .flatten()
         })
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .or_else(|| network_units.get(&callsign.network_id).cloned())
-        .unwrap_or_default();
-    normalize_goi_unit_name(&unit_name)
+        .unwrap_or_default()
 }
 
 fn merged_live_source_name(
@@ -626,10 +548,6 @@ fn effective_live_callsign_frequency(
         })
 }
 
-fn normalize_goi_unit_name(unit_name: &str) -> String {
-    unit_name.trim().to_lowercase()
-}
-
 fn goi_sync_timestamp_kyiv() -> String {
     Utc::now()
         .with_timezone(&get_tz())
@@ -657,7 +575,7 @@ fn render_live_comment(
     {
         parts.push(format!("джерело: {source_name}"));
     }
-    parts.join("\n")
+    parts.join("; ")
 }
 
 pub(super) fn diff_goi_callsigns(
@@ -700,7 +618,7 @@ fn goi_callsign_changed(
 ) -> bool {
     previous.callsign != current.callsign
         || previous.frequency != current.frequency
-        || previous.unit_name != current.unit_name
+        || previous.position != current.position
         || previous.comment != current.comment
 }
 
@@ -731,11 +649,11 @@ fn format_goi_callsign_state_for_log(callsign: &GoiCallsignState) -> String {
         .map(|row_ref| format!("{}#{}", row_ref.sheet_name, row_ref.row_num))
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "id={} callsign={:?} frequency={:?} unit={:?} comment={:?} row_ref={}",
+        "id={} callsign={:?} frequency={:?} position={:?} comment={:?} row_ref={}",
         callsign.id,
         callsign.callsign,
         callsign.frequency,
-        callsign.unit_name,
+        callsign.position,
         callsign.comment,
         row_ref
     )
@@ -743,19 +661,19 @@ fn format_goi_callsign_state_for_log(callsign: &GoiCallsignState) -> String {
 
 fn format_live_callsign_row_for_log(callsign: &LiveCallsignRow) -> String {
     format!(
-        "id={} network_id={} sigint_callsign={:?} comment={:?} source_id={:?} radio_freq={:?} sc_deleted={:?} sc_comment={:?} sc_source_id={:?} sc_radio_freq={:?} unit_name={:?} sc_unit_name={:?}",
+        "id={} network_id={} sigint_callsign={:?} position={:?} comment={:?} source_id={:?} radio_freq={:?} sc_deleted={:?} sc_position={:?} sc_comment={:?} sc_source_id={:?} sc_radio_freq={:?}",
         callsign.id,
         callsign.network_id,
         callsign.sigint_callsign,
+        callsign.position,
         callsign.comment,
         callsign.source_id,
         callsign.radio_freq,
         callsign.sc_deleted,
+        callsign.sc_position,
         callsign.sc_comment,
         callsign.sc_source_id,
-        callsign.sc_radio_freq,
-        callsign.unit_name,
-        callsign.sc_unit_name
+        callsign.sc_radio_freq
     )
 }
 
@@ -794,7 +712,7 @@ impl KnowledgeWorkbookData {
                     id,
                     callsign: workbook_cell_text(row.first()),
                     frequency: workbook_cell_text(row.get(1)),
-                    unit_name: workbook_cell_text(row.get(6)),
+                    position: workbook_cell_text(row.get(6)),
                     comment: extract_goi_callsign_comment(row),
                     row_ref: Some(GoiWorkbookRowRef {
                         sheet_name: sheet.name.clone(),
@@ -970,7 +888,7 @@ fn build_worker_row_cells_for_tests(
         WorkbookCellValue::String(KNOWLEDGE_WORKER_AUTHOR.to_string()),
         WorkbookCellValue::String(callsign.comment.clone()),
         WorkbookCellValue::String(sync_timestamp.to_string()),
-        WorkbookCellValue::String(callsign.unit_name.clone()),
+        WorkbookCellValue::String(callsign.position.clone()),
         WorkbookCellValue::String(format!(
             "{KNOWLEDGE_WORKER_ID_PREFIX}{}",
             callsign.id
@@ -1381,7 +1299,7 @@ fn build_worker_row_xml(
     push_inline_string_cell(&mut cells, "D", row_num, KNOWLEDGE_WORKER_AUTHOR);
     push_inline_string_cell(&mut cells, "E", row_num, &callsign.comment);
     push_inline_string_cell(&mut cells, "F", row_num, sync_timestamp);
-    push_inline_string_cell(&mut cells, "G", row_num, &callsign.unit_name);
+    push_inline_string_cell(&mut cells, "G", row_num, &callsign.position);
     push_inline_string_cell(
         &mut cells,
         "H",
@@ -1564,7 +1482,7 @@ mod tests {
             id,
             callsign: callsign.to_string(),
             frequency: "145.500".to_string(),
-            unit_name: "111".to_string(),
+            position: "командир".to_string(),
             comment: "джерело: Пролом".to_string(),
             row_ref: row_num.map(|row_num| GoiWorkbookRowRef {
                 sheet_name: "Knowledge".to_string(),
@@ -1581,12 +1499,12 @@ mod tests {
             comment: None,
             source_id: None,
             radio_freq: None,
+            position: None,
             sc_deleted: Some(false),
+            sc_position: Some("fallback position".to_string()),
             sc_comment: Some("fallback comment".to_string()),
             sc_source_id: Some(7),
             sc_radio_freq: Some("145.600".to_string()),
-            unit_name: None,
-            sc_unit_name: Some("FALLBACK UNIT".to_string()),
         }
     }
 
@@ -1613,24 +1531,32 @@ mod tests {
     }
 
     #[test]
-    fn merged_live_unit_name_ignores_deleted_linked_callsign() {
+    fn merged_live_position_ignores_deleted_linked_callsign() {
         let mut callsign = sample_live_callsign_row();
         callsign.sc_deleted = Some(true);
-        let network_units =
-            BTreeMap::from([(20_i64, "network unit".to_string())]);
 
-        let unit_name = merged_live_unit_name(&callsign, &network_units);
+        let position = merged_live_position(&callsign);
 
-        assert_eq!(unit_name, "network unit");
+        assert_eq!(position, "");
     }
 
     #[test]
-    fn merged_live_unit_name_normalizes_to_lowercase() {
+    fn merged_live_position_prefers_network_callsign_position() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.position = Some("  оператор БПЛА  ".to_string());
+
+        let position = merged_live_position(&callsign);
+
+        assert_eq!(position, "оператор БПЛА");
+    }
+
+    #[test]
+    fn merged_live_position_uses_linked_callsign_position() {
         let callsign = sample_live_callsign_row();
 
-        let unit_name = merged_live_unit_name(&callsign, &BTreeMap::new());
+        let position = merged_live_position(&callsign);
 
-        assert_eq!(unit_name, "fallback unit");
+        assert_eq!(position, "fallback position");
     }
 
     #[test]
@@ -1652,6 +1578,20 @@ mod tests {
         let comment = merged_live_comment_text(&callsign);
 
         assert_eq!(comment, None);
+    }
+
+    #[test]
+    fn render_live_comment_puts_rank_before_source() {
+        let comment = render_live_comment(Some(" сержант "), Some(" ПРОЛОМ "));
+
+        assert_eq!(comment, "сержант; джерело: ПРОЛОМ");
+    }
+
+    #[test]
+    fn render_live_comment_does_not_prepend_empty_rank() {
+        let comment = render_live_comment(Some("  "), Some(" ПРОЛОМ "));
+
+        assert_eq!(comment, "джерело: ПРОЛОМ");
     }
 
     #[test]
@@ -1748,7 +1688,7 @@ mod tests {
                                 "джерело: Пролом".to_string(),
                             ),
                             WorkbookCellValue::Empty,
-                            WorkbookCellValue::String("111".to_string()),
+                            WorkbookCellValue::String("командир".to_string()),
                             WorkbookCellValue::String("EXO ID 2".to_string()),
                         ],
                     ],
@@ -1785,7 +1725,7 @@ mod tests {
         assert_eq!(state[1].id, 2);
         assert_eq!(state[1].callsign, "BETA");
         assert_eq!(state[1].frequency, "145.500");
-        assert_eq!(state[1].unit_name, "111");
+        assert_eq!(state[1].position, "командир");
         assert_eq!(state[1].comment, "джерело: Пролом");
     }
 
@@ -1807,7 +1747,7 @@ mod tests {
                     WorkbookCellValue::String(
                         TEST_GOI_SYNC_TIMESTAMP.to_string(),
                     ),
-                    WorkbookCellValue::String("111".to_string()),
+                    WorkbookCellValue::String("командир".to_string()),
                     WorkbookCellValue::String("джерело: Пролом".to_string()),
                 ]],
             }],
@@ -1842,7 +1782,7 @@ mod tests {
                         WorkbookCellValue::String(
                             TEST_GOI_SYNC_TIMESTAMP.to_string(),
                         ),
-                        WorkbookCellValue::String("111".to_string()),
+                        WorkbookCellValue::String("командир".to_string()),
                         WorkbookCellValue::String("EXO ID 2".to_string()),
                     ],
                     vec![
@@ -1860,7 +1800,7 @@ mod tests {
                         WorkbookCellValue::String(
                             TEST_GOI_SYNC_TIMESTAMP.to_string(),
                         ),
-                        WorkbookCellValue::String("111".to_string()),
+                        WorkbookCellValue::String("командир".to_string()),
                         WorkbookCellValue::String("EXO ID 4".to_string()),
                     ],
                 ],
@@ -1893,6 +1833,10 @@ mod tests {
         assert_eq!(
             workbook_cell_text(Some(&workbook.sheets[0].rows[2][4])),
             "джерело: Пролом"
+        );
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[2][6])),
+            "командир"
         );
         assert_eq!(
             workbook_cell_text(Some(&workbook.sheets[0].rows[2][7])),

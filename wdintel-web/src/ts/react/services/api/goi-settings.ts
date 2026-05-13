@@ -1,6 +1,7 @@
 import { postJson } from './client';
 
-export type GoiRestartService = 'swapp' | 'goi';
+export type GoiRestartService = 'swapp' | 'swapp_alt' | 'goi';
+export type GoiWhatsappService = 'swapp' | 'swapp_alt';
 
 export type GoiUserIntegration = {
   id: number;
@@ -44,6 +45,11 @@ type ListCurrentUserGoiIntegrationsRspLike = {
 type RestartCurrentUserGoiServiceReqBody = {
   integration_id: number;
   service: GoiRestartService;
+};
+
+type UnlinkCurrentUserGoiWhatsappReqBody = {
+  integration_id: number;
+  service: GoiWhatsappService;
 };
 
 function normalizeNumber(value: number | string | null | undefined): number {
@@ -110,4 +116,14 @@ export async function restartCurrentUserGoiService(
     integration_id: integrationId,
     service,
   } satisfies RestartCurrentUserGoiServiceReqBody);
+}
+
+export async function unlinkCurrentUserGoiWhatsapp(
+  integrationId: number,
+  service: GoiWhatsappService,
+): Promise<void> {
+  await postJson<boolean>('/api/goi/unlink-whatsapp', {
+    integration_id: integrationId,
+    service,
+  } satisfies UnlinkCurrentUserGoiWhatsappReqBody);
 }

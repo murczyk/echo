@@ -15,6 +15,7 @@ const hoisted = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
   attachDutyNotificationAudioPrimingListeners: vi.fn(),
   mergeResolvedCallsigns: vi.fn(),
+  setFeedErrorMock: vi.fn(),
   initialCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
   initialInboxCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
 }));
@@ -127,7 +128,7 @@ vi.mock('./useRerDutyFeedState', () => ({
         });
         setInboxCallsignInfoMap((current) => current);
       },
-      setError: vi.fn(),
+      setError: hoisted.setFeedErrorMock,
       setWatchModeByFeedId: vi.fn(),
       setMessageFeeds: vi.fn(),
       nearBottomByFeedIdRef: { current: {} },
@@ -315,6 +316,7 @@ describe('useRerDutyFeeds', () => {
 
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(1, ['борода']);
+    expect(hoisted.setFeedErrorMock).toHaveBeenCalledWith('Не вдалося завантажити довідку позивних');
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);

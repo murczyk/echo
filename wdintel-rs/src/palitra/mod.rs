@@ -1,7 +1,7 @@
 use crate::config::{
-    ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
-    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
-    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+    ORGANISM_GOI_INTEGRATION_TYPE_FULL, ORGANISM_GOI_PATH_DEFAULT,
+    ORGANISM_GOI_SSH_PORT_DEFAULT, PALITRA_GOI_SYNC_JOB_KIND_DELETE,
+    PALITRA_GOI_SYNC_JOB_KIND_MOVE, PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -1867,6 +1867,10 @@ where
         .filter(
             goi_integration::Column::OwnerOrganismId
                 .is_in(organism_ids.to_vec()),
+        )
+        .filter(
+            goi_integration::Column::IntegrationType
+                .eq(ORGANISM_GOI_INTEGRATION_TYPE_FULL),
         )
         .all(dbx)
         .await
