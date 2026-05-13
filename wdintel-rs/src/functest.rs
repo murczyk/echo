@@ -101,6 +101,14 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        callsign_additional_source::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_callsign::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         sigint_network_description::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -117,7 +125,15 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        sigint_signal::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         sigint_unit_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;

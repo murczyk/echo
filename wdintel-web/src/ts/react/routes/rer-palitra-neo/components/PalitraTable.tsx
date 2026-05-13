@@ -5,7 +5,6 @@ import { useEffect, useMemo } from 'react';
 
 import type { Palitra } from '../../../../../Bindings';
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
-import { TableEmptyState } from '../../../components/TableEmptyState';
 import { ActiveFiltersButton } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-button';
 import {
   CUSTOM_STYLES,
@@ -16,6 +15,7 @@ import {
   buildDefaultColumnOrder,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
+  renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import type { PalitraRowView, TableRowView } from '../types';
@@ -182,11 +182,11 @@ export function PalitraTable({
         onRequestArchiveFolder,
         onRequestDeleteFolder,
       }),
-    renderEmptyRowsFallback: () => (
-      <Box sx={{ py: 6 }}>
-        <TableEmptyState message={hasActiveFilters ? 'Немає палітр за обраними фільтрами' : 'Палітри відсутні'} />
-      </Box>
-    ),
+    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
+      table,
+      noDataMessage: 'Палітри відсутні',
+      filteredMessage: 'Немає палітр за обраними фільтрами',
+    }),
     defaultColumn: {
       size: 180,
       renderColumnActionsMenuItems,

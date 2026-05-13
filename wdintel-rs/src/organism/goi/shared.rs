@@ -33,8 +33,12 @@ pub fn goi_api_host(organism: &organism::Model) -> Option<String> {
 }
 
 pub fn goi_web_host(organism: &organism::Model) -> Option<String> {
-    normalize_optional_trimmed(organism.goi_ssh_host.clone())
-        .or_else(|| normalize_optional_trimmed(organism.goi_api_host.clone()))
+    let ssh_host = normalize_optional_trimmed(organism.goi_ssh_host.clone());
+    let api_host = normalize_optional_trimmed(organism.goi_api_host.clone());
+    match goi_integration_type(organism) {
+        GoiIntegrationType::Simple => api_host.or(ssh_host),
+        GoiIntegrationType::Full => ssh_host.or(api_host),
+    }
 }
 
 pub fn goi_api_port(organism: &organism::Model) -> i32 {

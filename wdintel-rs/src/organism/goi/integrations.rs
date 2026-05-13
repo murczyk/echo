@@ -23,7 +23,7 @@ use crate::organism::goi::types::{
     ListGoiAssociationsRsp, ListGoiAssociationsSortBy, ListGoiKnowledgeReq,
     ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
     RestartGoiIntegrationServiceReq, SetupGoiIntegrationWorkerReq,
-    UpsertGoiAdminIntegrationReq,
+    UnlinkGoiIntegrationWhatsappReq, UpsertGoiAdminIntegrationReq,
 };
 use crate::organism::types::{
     CheckOrganismGoiConnectionReq, CheckOrganismGoiConnectionRsp,
@@ -53,6 +53,7 @@ pub struct ListCurrentUserGoiIntegrationsRsp {
 
 enum GoiService {
     Swapp,
+    SwappAlt,
     Goi,
 }
 
@@ -140,6 +141,7 @@ pub async fn upsert_admin_goi_integration(
         }
         integration
     } else {
+        let values = normalized_goi_integration_values(&req);
         let integration = goi_integration::ActiveModel {
             id: NotSet,
             owner_organism_id: Set(req.owner_organism_id),
@@ -150,19 +152,14 @@ pub async fn upsert_admin_goi_integration(
             .to_string()),
             server_key: Set(server_key.clone()),
             server_label: Set(server_label.clone()),
-            ssh_host: Set(normalize_optional_trimmed(req.ssh_host.clone())),
-            ssh_user: Set(normalize_optional_trimmed(req.ssh_user.clone())),
-            ssh_port: Set(req.ssh_port),
-            path: Set(normalize_trimmed_or_default(
-                req.path.clone(),
-                ORGANISM_GOI_PATH_DEFAULT,
-            )),
-            api_host: Set(normalize_optional_trimmed(req.api_host.clone())),
-            api_port: Set(req.api_port),
-            api_login: Set(normalize_optional_trimmed(req.api_login.clone())),
-            api_password: Set(normalize_optional_trimmed(
-                req.api_password.clone(),
-            )),
+            ssh_host: Set(values.ssh_host),
+            ssh_user: Set(values.ssh_user),
+            ssh_port: Set(values.ssh_port),
+            path: Set(values.path),
+            api_host: Set(values.api_host),
+            api_port: Set(values.api_port),
+            api_login: Set(values.api_login),
+            api_password: Set(values.api_password),
         }
         .insert(&tx)
         .await
@@ -460,6 +457,40 @@ pub async fn restart_current_user_goi_service(
     Ok(Json(true))
 }
 
+#[post("/api/goi/unlink-whatsapp")]
+pub async fn unlink_current_user_goi_whatsapp(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UnlinkGoiIntegrationWhatsappReq>,
+) -> Result<Json<bool>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let integrations =
+        load_accessible_integrations_for_user(&env.dbx, &user_id)
+            .await
+            .c(h!())?;
+    let integration = integrations
+        .into_iter()
+        .find(|item| item.integration.id == req.integration_id)
+        .ok_or_else(|| AppError::BL {
+            msg: "Інтеграцію ГОІ не знайдено або доступ відсутній".to_string(),
+        })?;
+    let ssh_req =
+        goi_connection_req_from_integration(&integration.integration)?;
+    let service = parse_goi_service(&req.service)?;
+    let service_kind: super::RestartCurrentUserGoiService = (&service).into();
+
+    super::goi_run_command(
+        ssh_req,
+        super::goi_unlink_whatsapp_command(&service_kind)?.to_string(),
+        super::goi_unlink_whatsapp_error_context(&service_kind),
+    )
+    .await?;
+
+    Ok(Json(true))
+}
+
 async fn load_accessible_integrations_for_user(
     dbx: &DatabaseConnection,
     user_id: &str,
@@ -538,6 +569,7 @@ async fn upsert_goi_integration_internal(
         }
         integration
     } else {
+        let values = normalized_goi_integration_values(&req);
         let integration = goi_integration::ActiveModel {
             id: NotSet,
             owner_organism_id: Set(req.owner_organism_id),
@@ -548,19 +580,14 @@ async fn upsert_goi_integration_internal(
             .to_string()),
             server_key: Set(server_key.clone()),
             server_label: Set(server_label.clone()),
-            ssh_host: Set(normalize_optional_trimmed(req.ssh_host.clone())),
-            ssh_user: Set(normalize_optional_trimmed(req.ssh_user.clone())),
-            ssh_port: Set(req.ssh_port),
-            path: Set(normalize_trimmed_or_default(
-                req.path.clone(),
-                ORGANISM_GOI_PATH_DEFAULT,
-            )),
-            api_host: Set(normalize_optional_trimmed(req.api_host.clone())),
-            api_port: Set(req.api_port),
-            api_login: Set(normalize_optional_trimmed(req.api_login.clone())),
-            api_password: Set(normalize_optional_trimmed(
-                req.api_password.clone(),
-            )),
+            ssh_host: Set(values.ssh_host),
+            ssh_user: Set(values.ssh_user),
+            ssh_port: Set(values.ssh_port),
+            path: Set(values.path),
+            api_host: Set(values.api_host),
+            api_port: Set(values.api_port),
+            api_login: Set(values.api_login),
+            api_password: Set(values.api_password),
         }
         .insert(&tx)
         .await
@@ -597,33 +624,64 @@ async fn load_goi_admin_integration(
     let access_logins = collect_goi_access_logins(dbx, item.integration.id)
         .await
         .c(h!())?;
+    let integration_type = goi_integration_model_type(&item.integration);
+    let is_full_integration = integration_type == GoiIntegrationType::Full;
+    let web_host = goi_integration_web_host(&item.integration);
 
     Ok(GoiAdminIntegration {
         id: item.integration.id,
         owner_organism_id: item.integration.owner_organism_id,
         owner_organism_name: item.owner_organism_name,
         created_at_ms: item.integration.created_at.timestamp_millis(),
-        integration_type: goi_integration_model_type(&item.integration),
+        integration_type,
         server_label: item.integration.server_label,
-        ssh_host: normalize_optional_trimmed(item.integration.ssh_host),
-        ssh_user: normalize_optional_trimmed(item.integration.ssh_user),
-        ssh_port: if item.integration.ssh_port > 0 {
+        ssh_host: if is_full_integration {
+            normalize_optional_trimmed(item.integration.ssh_host)
+        } else {
+            None
+        },
+        ssh_user: if is_full_integration {
+            normalize_optional_trimmed(item.integration.ssh_user)
+        } else {
+            None
+        },
+        ssh_port: if !is_full_integration {
+            ORGANISM_GOI_SSH_PORT_DEFAULT
+        } else if item.integration.ssh_port > 0 {
             item.integration.ssh_port
         } else {
             ORGANISM_GOI_SSH_PORT_DEFAULT
         },
-        path: normalize_trimmed_or_default(
-            item.integration.path,
-            ORGANISM_GOI_PATH_DEFAULT,
-        ),
-        api_host: normalize_optional_trimmed(item.integration.api_host),
-        api_port: if item.integration.api_port > 0 {
+        path: if is_full_integration {
+            normalize_trimmed_or_default(
+                item.integration.path,
+                ORGANISM_GOI_PATH_DEFAULT,
+            )
+        } else {
+            ORGANISM_GOI_PATH_DEFAULT.to_string()
+        },
+        api_host: if is_full_integration {
+            normalize_optional_trimmed(item.integration.api_host)
+        } else {
+            web_host
+        },
+        api_port: if !is_full_integration {
+            ORGANISM_GOI_API_PORT_DEFAULT
+        } else if item.integration.api_port > 0 {
             item.integration.api_port
         } else {
             ORGANISM_GOI_API_PORT_DEFAULT
         },
-        api_login: normalize_optional_trimmed(item.integration.api_login),
-        api_password: normalize_optional_trimmed(item.integration.api_password),
+        api_login: if is_full_integration {
+            normalize_optional_trimmed(item.integration.api_login)
+        } else {
+            None
+        },
+        api_password: if is_full_integration {
+            normalize_optional_trimmed(item.integration.api_password)
+        } else {
+            None
+        },
         access_organism_ids,
         access_logins,
     })
@@ -818,6 +876,11 @@ fn user_goi_integration_from_item(
 fn goi_connection_req_from_integration(
     integration: &goi_integration::Model,
 ) -> Result<CheckOrganismGoiConnectionReq, AppError> {
+    if goi_integration_model_type(integration) != GoiIntegrationType::Full {
+        return Err(AppError::BL {
+            msg: "Для простої інтеграції ГОІ SSH недоступний".to_string(),
+        });
+    }
     let ssh_host = normalize_optional_trimmed(integration.ssh_host.clone())
         .ok_or_else(|| AppError::BL {
             msg: "Для інтеграції ГОІ не налаштовано SSH host".to_string(),
@@ -846,6 +909,7 @@ fn goi_connection_req_from_integration(
 fn parse_goi_service(raw: &str) -> Result<GoiService, AppError> {
     match raw.trim() {
         "swapp" => Ok(GoiService::Swapp),
+        "swapp_alt" => Ok(GoiService::SwappAlt),
         "goi" => Ok(GoiService::Goi),
         other => Err(AppError::BL {
             msg: format!("Невідомий сервіс ГОІ: {other}"),
@@ -857,6 +921,9 @@ impl From<&GoiService> for super::RestartCurrentUserGoiService {
     fn from(value: &GoiService) -> Self {
         match value {
             GoiService::Swapp => super::RestartCurrentUserGoiService::Swapp,
+            GoiService::SwappAlt => {
+                super::RestartCurrentUserGoiService::SwappAlt
+            }
             GoiService::Goi => super::RestartCurrentUserGoiService::Goi,
         }
     }
@@ -1418,23 +1485,62 @@ fn apply_goi_integration_patch(
     server_key: String,
     server_label: String,
 ) {
+    let values = normalized_goi_integration_values(req);
     item.owner_organism_id = Set(req.owner_organism_id);
     item.integration_type =
         Set(goi_integration_type_value(&req.integration_type).to_string());
     item.server_key = Set(server_key);
     item.server_label = Set(server_label);
-    item.ssh_host = Set(normalize_optional_trimmed(req.ssh_host.clone()));
-    item.ssh_user = Set(normalize_optional_trimmed(req.ssh_user.clone()));
-    item.ssh_port = Set(req.ssh_port);
-    item.path = Set(normalize_trimmed_or_default(
-        req.path.clone(),
-        ORGANISM_GOI_PATH_DEFAULT,
-    ));
-    item.api_host = Set(normalize_optional_trimmed(req.api_host.clone()));
-    item.api_port = Set(req.api_port);
-    item.api_login = Set(normalize_optional_trimmed(req.api_login.clone()));
-    item.api_password =
-        Set(normalize_optional_trimmed(req.api_password.clone()));
+    item.ssh_host = Set(values.ssh_host);
+    item.ssh_user = Set(values.ssh_user);
+    item.ssh_port = Set(values.ssh_port);
+    item.path = Set(values.path);
+    item.api_host = Set(values.api_host);
+    item.api_port = Set(values.api_port);
+    item.api_login = Set(values.api_login);
+    item.api_password = Set(values.api_password);
+}
+
+struct GoiIntegrationValues {
+    ssh_host: Option<String>,
+    ssh_user: Option<String>,
+    ssh_port: i32,
+    path: String,
+    api_host: Option<String>,
+    api_port: i32,
+    api_login: Option<String>,
+    api_password: Option<String>,
+}
+
+fn normalized_goi_integration_values(
+    req: &UpsertGoiAdminIntegrationReq,
+) -> GoiIntegrationValues {
+    match req.integration_type {
+        GoiIntegrationType::Simple => GoiIntegrationValues {
+            ssh_host: None,
+            ssh_user: None,
+            ssh_port: ORGANISM_GOI_SSH_PORT_DEFAULT,
+            path: ORGANISM_GOI_PATH_DEFAULT.to_string(),
+            api_host: normalize_optional_trimmed(req.api_host.clone())
+                .or_else(|| normalize_optional_trimmed(req.ssh_host.clone())),
+            api_port: ORGANISM_GOI_API_PORT_DEFAULT,
+            api_login: None,
+            api_password: None,
+        },
+        GoiIntegrationType::Full => GoiIntegrationValues {
+            ssh_host: normalize_optional_trimmed(req.ssh_host.clone()),
+            ssh_user: normalize_optional_trimmed(req.ssh_user.clone()),
+            ssh_port: req.ssh_port,
+            path: normalize_trimmed_or_default(
+                req.path.clone(),
+                ORGANISM_GOI_PATH_DEFAULT,
+            ),
+            api_host: normalize_optional_trimmed(req.api_host.clone()),
+            api_port: req.api_port,
+            api_login: normalize_optional_trimmed(req.api_login.clone()),
+            api_password: normalize_optional_trimmed(req.api_password.clone()),
+        },
+    }
 }
 
 async fn replace_goi_integration_access(

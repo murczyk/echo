@@ -694,6 +694,7 @@ pub async fn main_server(
             .service(crate::organism::goi::integrations::setup_goi_integration_worker)
             .service(crate::organism::goi::integrations::list_current_user_goi_integrations)
             .service(crate::organism::goi::integrations::restart_current_user_goi_service)
+            .service(crate::organism::goi::integrations::unlink_current_user_goi_whatsapp)
             .service(crate::organism::goi::integrations::list_current_user_goi_associations)
             .service(crate::organism::goi::integrations::list_current_user_goi_knowledge)
             .service(crate::organism::my_scope)

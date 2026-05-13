@@ -93,7 +93,11 @@ function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: numbe
 
 export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration, currentNetworkIdRef }: Args) {
   const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
-    setState((current) => ({ ...current, activeNetworkDetailsTab }));
+    setState((current) => ({
+      ...current,
+      activeNetworkDetailsTab,
+      callsignSectionMode: 'network',
+    }));
   }, [setState]);
 
   const loadFrequencies = useCallback(async (networkIdArg?: number) => {

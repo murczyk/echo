@@ -1,15 +1,22 @@
-import { useCallback, useEffect } from 'react';
-import type { MutableRefObject } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 
-import type { Network } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
-import { getNetworkById, getNetworkCallsignsList } from '../../services/api/networks';
+import { getNetworkById } from '../../services/api/networks';
 import { getModulations } from '../../services/api/modulations';
+import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity, listSources } from '../../services/api/callsigns';
 import { getUnitsList } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
 import { fetchCurrentUser } from '../../services/api/user';
-import { EMPTY_STATE, formatErrorMessage, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
+import {
+  EMPTY_STATE,
+  formatErrorMessage,
+  type NetworkDetailsNeoPageState,
+} from './use-rer-network-details-neo-page.shared';
+import {
+  buildNetworkCallsignTabData,
+  createNetworkCallsignActivityMap,
+} from './network-callsigns';
 
 type ReloadGenerationRef = MutableRefObject<number>;
 
@@ -19,7 +26,82 @@ export function useRerNetworkDetailsNeoPageLoad(
   networkId: number,
   setState: SetState,
   reloadGeneration: ReloadGenerationRef,
-): () => void {
+): {
+  reload: () => () => void;
+  loadCallsigns: (networkId: number) => Promise<void>;
+} {
+  const callsignLoadRequestIdRef = useRef(0);
+
+  const loadCallsigns = useCallback(async (targetNetworkId: number) => {
+    const generation = reloadGeneration.current;
+    const requestId = ++callsignLoadRequestIdRef.current;
+    const isCurrent = () => reloadGeneration.current === generation && callsignLoadRequestIdRef.current === requestId;
+
+    if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        callsignsLoading: false,
+        callsignsError: 'Некоректний ID мережі',
+      }));
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      callsignsLoading: true,
+      callsignsError: null,
+    }));
+
+    try {
+      const [networkCallsignsRes, callsignsRes, sources] = await Promise.all([
+        listNetworkCallsigns({ networkId: targetNetworkId, sortBy: ['NetworkCallsignAsc'] }),
+        getNetworkCallsigns({ networkId: targetNetworkId, includeActivityInfo: true }),
+        listSources(),
+      ]);
+
+      if (!isCurrent()) return;
+
+      const callsignsForActivity = [...new Set(callsignsRes.callsigns.map((item) => item.callsign).filter((callsign) => callsign.trim() !== ''))];
+      const activityRes =
+        callsignsForActivity.length === 0
+          ? { callsignsActivity: [] }
+          : await getNetworkCallsignsActivity({ networkId: targetNetworkId, callsigns: callsignsForActivity });
+
+      if (!isCurrent()) return;
+
+      const activityMap = createNetworkCallsignActivityMap(
+        (activityRes.callsignsActivity ?? []).map((item) => ({
+          callsign: item.callsign,
+          activity: item.activity,
+        })),
+      );
+      const derived = buildNetworkCallsignTabData(callsignsRes.callsigns, activityMap, networkCallsignsRes.networkCallsigns);
+
+      setState((current) => ({
+        ...current,
+        networkCallsigns: networkCallsignsRes.networkCallsigns,
+        networkCallsignGroups: callsignsRes.callsigns,
+        callsignActivityMap: activityMap,
+        catalogCallsignGroups: derived.catalogCallsignGroups,
+        unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
+        sources,
+        callsignCount: networkCallsignsRes.networkCallsigns.length,
+        callsignsLoaded: true,
+        callsignsLoading: false,
+        callsignsError: null,
+        callsignWarning: null,
+      }));
+    } catch (error) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        callsignsLoading: false,
+        callsignsError: formatErrorMessage(error),
+      }));
+    }
+  }, [reloadGeneration, setState]);
+
   const reload = useCallback(() => {
     reloadGeneration.current += 1;
     const generation = reloadGeneration.current;
@@ -60,24 +142,6 @@ export function useRerNetworkDetailsNeoPageLoad(
           deleteDescriptionSubmitting: false,
           deleteDescriptionError: null,
         }));
-
-        void getNetworkCallsignsList(networkId, true)
-          .then((callsignsRes) => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              callsignCount: callsignsRes.callsigns.length,
-              callsignWarning: null,
-            }));
-          })
-          .catch((error) => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              callsignCount: null,
-              callsignWarning: formatErrorMessage(error),
-            }));
-          });
 
         void fetchCurrentUser()
           .then((currentUser) => {
@@ -146,5 +210,5 @@ export function useRerNetworkDetailsNeoPageLoad(
     return reload();
   }, [reload]);
 
-  return reload;
+  return { reload, loadCallsigns };
 }

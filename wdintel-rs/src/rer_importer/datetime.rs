@@ -16,66 +16,65 @@ pub fn extract_datetime(
     body: &str,
 ) -> Result<Option<NaiveDateTime>, AppError> {
     lazy_static! {
-        static ref REGEX_PATTERNS: Vec<(&'static str, ProcessorFn)> = vec![
+        static ref REGEX_PATTERNS: Vec<(Regex, ProcessorFn)> = vec![
             // Work with formats like DD.MM.YYYY_HH:MI
             (
-                r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})",
+                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             // Work with formats like DD.MM.YYYY, HH:MI:SS
             (
-                r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}), (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}), (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like YYYY-MM-DD_HH:MI
             (
-                r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})",
+                Regex::new(r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             // Work with formats like YYYY-MM-DDTHH:MI:SS
             (
-                r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})T(?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                Regex::new(r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})T(?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like YYYY_MM_DD HH-MI-SS
             (
-                r"(?P<year>\d{4})_(?P<mon>\d{2})_(?P<day>\d{2}) (?P<hour>\d{2})-(?P<minute>\d{2})-(?P<second>\d{2})",
+                Regex::new(r"(?P<year>\d{4})_(?P<mon>\d{2})_(?P<day>\d{2}) (?P<hour>\d{2})-(?P<minute>\d{2})-(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like 17.11, 00:01:49
             (
-                r"(?P<day>\d{2})\.(?P<mon>\d{2}),? (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2}),? (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, false, true, true, true) },
             ),
             // Work with formats like Час: 20:09:41
             (
-                r"Час: (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                Regex::new(r"Час: (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, false, false, false, true) },
             ),
             // Work with formats like DD.MM.YYYY HH:MI:SS
             (
-                r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like HH:MI DD.MM.YYYY
             (
-                r"(?P<hour>\d{2})\s*:(?P<minute>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})",
+                Regex::new(r"(?P<hour>\d{2})\s*:(?P<minute>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             (
-                r"\s+(?P<hour>\d\d?)\s*:(?P<minute>\d{2})\s+",
+                Regex::new(r"\s+(?P<hour>\d\d?)\s*:(?P<minute>\d{2})\s+").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, false, false, false, false) },
             ),
             // Work with formats like 20-11 16:53:04
             (
-                r"(?P<day>\d{2})-(?P<mon>\d{2}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                Regex::new(r"(?P<day>\d{2})-(?P<mon>\d{2}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, false, true, true, true) },
             ),
         ];
     }
 
-    for (pattern, processor) in REGEX_PATTERNS.iter() {
-        let regex = Regex::new(pattern).unwrap();
+    for (regex, processor) in REGEX_PATTERNS.iter() {
         if let Some(capts) = regex.captures(body) {
             match processor(lnow, &capts) {
                 Ok(datetime) => return Ok(Some(datetime)),
