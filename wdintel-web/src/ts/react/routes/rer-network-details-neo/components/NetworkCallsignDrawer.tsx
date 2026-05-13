@@ -15,11 +15,12 @@ import {
 } from '@mui/material';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
+import { memo, useEffect, useState } from 'react';
 
 import type { Source } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import type { NetworkOption } from '../use-rer-network-details-neo-page.shared';
+import { getFrequencyFormatError, type NetworkOption } from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
   normalizeCallsignDisplay,
@@ -204,13 +205,17 @@ export function NetworkCallsignDrawer({
   const titleId = 'network-callsign-drawer-title';
   const sourceId = form?.sourceId ?? null;
   const isRoSource = sourceId === NetworkCallsignSourceId.RO;
-  const canSave = Boolean(
-    form &&
-      normalizeCallsignDisplay(form.callsign) !== '' &&
-      (!isRoSource || form.radioFreq.trim() !== ''),
-  );
+  const [radioFreqTouched, setRadioFreqTouched] = useState(false);
+  const radioFreqValidationError = isRoSource && form ? getFrequencyFormatError(form.radioFreq) : null;
+  const radioFreqError = radioFreqTouched ? radioFreqValidationError : null;
+  const canSave = Boolean(form && normalizeCallsignDisplay(form.callsign) !== '' && (!isRoSource || radioFreqValidationError === null));
   const title = mode === 'edit' ? 'Редагувати позивний мережі' : 'Створити позивний мережі';
   const selectedUnitId = form?.unitId ?? null;
+
+  useEffect(() => {
+    if (!open) return;
+    setRadioFreqTouched(false);
+  }, [open]);
 
   return (
     <Drawer
@@ -365,10 +370,13 @@ export function NetworkCallsignDrawer({
                     label="Частота *"
                     value={form.radioFreq}
                     onChange={(event) => updateForm(form, { radioFreq: event.target.value }, onChange)}
+                    onBlur={() => setRadioFreqTouched(true)}
                     disabled={saving}
                     fullWidth
                     size="small"
-                    placeholder="Напр. 145.500"
+                    placeholder="Напр. 145.5000"
+                    error={radioFreqError !== null}
+                    helperText={radioFreqError ?? ' '}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ ml: 0 }}>
                     Для джерела "РО" частота є обов’язковою.

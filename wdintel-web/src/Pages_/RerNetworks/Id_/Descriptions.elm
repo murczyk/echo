@@ -38,6 +38,7 @@ update _ msg model =
                                 []
                             , frequencyDescriptions =
                                 [ { descrType = B.Confirmation
+                                  , topic = Nothing
                                   , description = model.addConfirmationInp
                                   , freq = freq
                                   }
@@ -48,6 +49,7 @@ update _ msg model =
                             { networkId = networkId
                             , networkDescriptions =
                                 [ { descrType = B.Confirmation
+                                  , topic = Nothing
                                   , description = model.addConfirmationInp
                                   }
                                 ]
@@ -59,6 +61,7 @@ update _ msg model =
                             { networkId = networkId
                             , networkDescriptions =
                                 [ { descrType = B.Sign
+                                  , topic = Nothing
                                   , description = model.addSignsInp
                                   }
                                 ]
@@ -145,6 +148,7 @@ update _ msg model =
                 { networkId = description.networkId
                 , descriptionId = description.id
                 , descrType = description.descrType
+                , topic = description.topic
                 , description = updatedDescription
                 , networkFreqId = networkFreqId
                 }
@@ -438,7 +442,7 @@ viewDeleteConfirmation model =
                     ]
                 , div [ class "flex justify-between" ]
                     [ Button.new { label = "Скасувати", onClick = DeleteDescriptionCanceled } |> Button.withStyleSecondary |> Button.view
-                    , Button.new { label = "Видалити", onClick = DeleteDescriptionConfirmed (Maybe.withDefault (B.NetworkDescription 0 0 Nothing B.Confirmation "" "" 0) model.deleteDescriptionConfirmation) }
+                    , Button.new { label = "Видалити", onClick = DeleteDescriptionConfirmed (Maybe.withDefault (B.NetworkDescription 0 0 Nothing B.Confirmation Nothing "" "" 0) model.deleteDescriptionConfirmation) }
                         |> Button.withStyleDanger
                         |> Button.view
                     ]

@@ -40,20 +40,20 @@ function getDrawerTitle(mode: Props['mode'], descrType: NetworkDescrType): strin
   return descrType === 'Sign' ? 'Створити розвідувальні ознаки' : "Створити обґрунтування прив'язки";
 }
 
-function getDescriptionLabel(mode: Props['mode'], descrType: NetworkDescrType): string {
-  if (mode === 'edit') {
-    return 'Текст опису *';
-  }
-
-  return descrType === 'Sign' ? 'Розвідувальні ознаки *' : "Обґрунтування прив'язки *";
+function getDescriptionLabel(): string {
+  return 'Матеріали радіоперехоплення *';
 }
 
-function getDescriptionPlaceholder(mode: Props['mode'], descrType: NetworkDescrType): string {
-  if (mode === 'edit') {
-    return 'Введіть текст опису';
-  }
+function getDescriptionPlaceholder(): string {
+  return 'Розгорнутий аналітичний текст...';
+}
 
-  return descrType === 'Sign' ? 'Введіть розвідувальні ознаки' : "Введіть обґрунтування прив'язки";
+function getTopicLabel(): string {
+  return 'Тема нотатки';
+}
+
+function getTopicPlaceholder(): string {
+  return 'Коротко опишіть суть';
 }
 
 function NetworkDescriptionDrawerComponent({
@@ -137,14 +137,25 @@ function NetworkDescriptionDrawerComponent({
           </FormControl>
 
           <TextField
-            label={getDescriptionLabel(mode, descrType)}
-            placeholder={getDescriptionPlaceholder(mode, descrType)}
+            label={getTopicLabel()}
+            placeholder={getTopicPlaceholder()}
+            value={form.topic}
+            onChange={(event) => onChange({ ...form, topic: event.target.value })}
+            disabled={formBlocked}
+            fullWidth
+            size="small"
+          />
+
+          <TextField
+            label={getDescriptionLabel()}
+            placeholder={getDescriptionPlaceholder()}
             value={form.description}
             onChange={(event) => onChange({ ...form, description: event.target.value })}
             disabled={formBlocked}
             fullWidth
+            size="small"
             multiline
-            minRows={12}
+            minRows={10}
             sx={{ flex: 1 }}
           />
         </Stack>

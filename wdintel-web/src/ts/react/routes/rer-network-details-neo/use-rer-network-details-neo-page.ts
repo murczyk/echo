@@ -229,6 +229,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     deleteDescriptionError: state.deleteDescriptionError,
     openDeleteDescriptionDialog: actions.openDeleteDescriptionDialog,
     closeDeleteDescriptionDialog: actions.closeDeleteDescriptionDialog,
+    resetDeleteDescriptionDialog: actions.resetDeleteDescriptionDialog,
     deleteDescription: actions.deleteDescription,
     openMenu: actions.openMenu,
     closeMenu: actions.closeMenu,
