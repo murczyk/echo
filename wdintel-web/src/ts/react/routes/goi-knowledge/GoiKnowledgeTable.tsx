@@ -235,7 +235,6 @@ export function GoiKnowledgeTable(props: Props) {
       noDataMessage: 'Записи інформованості відсутні',
       filteredMessage: 'Немає записів інформованості за обраними фільтрами',
       onClearFilters: props.onClearFilters,
-      clearFiltersLabel: 'Очистити фільтри',
     }),
     defaultColumn: {
       size: 180,

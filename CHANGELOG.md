@@ -11,7 +11,7 @@
 
 - [#2324](https://github.com/echoua/echo/issues/2324) ✅ Мережа (нова): додано підтримку роботи з позивними.
 - [#2323](https://github.com/echoua/echo/issues/2323) ✅ Мережа (нова): додано підтримку роботи з частотами.
-- [#2093](https://github.com/echoua/echo/issues/2093) ✅ Оперативний: короткий URL
+- [#2093](https://github.com/echoua/echo/issues/2093) ✅ Оперативний: короткий URL.
 - [#2358](https://github.com/echoua/echo/issues/2358) ✅ Оперативний (нова): перехід на класичний аналіз з картки повідомлення.
 - [#2322](https://github.com/echoua/echo/issues/2322) ✅ Мережа (нова): додано підтримку роботи з розвід. ознаками.
 - [#2321](https://github.com/echoua/echo/issues/2321) ✅ Мережа (нова): додано підтримку роботи з обґрунтуваннями.

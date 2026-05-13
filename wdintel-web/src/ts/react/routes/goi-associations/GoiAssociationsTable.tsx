@@ -253,7 +253,6 @@ export function GoiAssociationsTable(props: Props) {
       noDataMessage: 'Висновки відсутні',
       filteredMessage: 'Немає висновків за обраними фільтрами',
       onClearFilters: props.onClearFilters,
-      clearFiltersLabel: 'Очистити фільтри',
     }),
     defaultColumn: {
       size: 180,

@@ -448,7 +448,6 @@ function CallsignsTableComponent({
       noDataMessage: 'Позивні відсутні',
       filteredMessage: 'Немає позивних за обраними фільтрами',
       onClearFilters,
-      clearFiltersLabel: 'Очистити фільтри',
     }),
     defaultColumn: {
       size: 180,

@@ -83,7 +83,7 @@ export function NetworkCallsignsNetworkTable({
   const [rowMenuTarget, setRowMenuTarget] = useState<NetworkCallsignRowView | null>(null);
 
   const visibleRows = useMemo(
-    () => rows.filter((row) => row.status === 'verified' || row.status === 'developing'),
+    () => rows.filter((row) => row.status !== 'unknown'),
     [rows],
   );
   const normalizedStatusFilter = NETWORK_STATUS_FILTER_ORDER.includes(statusFilter) ? statusFilter : 'All';
@@ -206,7 +206,6 @@ export function NetworkCallsignsNetworkTable({
           onStatusFilterChange('All');
         }
         : undefined,
-      clearFiltersLabel: 'Скинути фільтр',
     }),
     state: {
       density: 'comfortable',

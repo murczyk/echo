@@ -349,7 +349,6 @@ function NetworkDetailsFrequenciesTableContent({
       onNoDataAction: freqsError ? onReloadFrequencies : undefined,
       filteredMessage: 'Немає частот за обраними фільтрами',
       onClearFilters: hasActiveFilters ? () => { tableStateContext.onColumnFiltersChange([]); tableStateContext.onChangeGlobalFilter(''); } : undefined,
-      clearFiltersLabel: 'Скинути фільтри',
     }),
     localization: { ...defaultMRTOptions.localization },
     manualFiltering: false,
