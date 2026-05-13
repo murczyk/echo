@@ -4,7 +4,7 @@
 import { act } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -88,7 +88,13 @@ async function click(element: HTMLElement): Promise<void> {
 describe('AnalysisHeaderControls', () => {
   const rendered: Rendered[] = [];
 
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-13T14:42:00Z'));
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
@@ -133,5 +139,27 @@ describe('AnalysisHeaderControls', () => {
     expect(view.container.textContent).toContain('Від');
     expect(view.container.textContent).toContain('До');
     expect(view.container.querySelectorAll('input').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('applies datetime quick interval presets on click', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(buildProps({ updateQueryState }));
+    rendered.push(view);
+
+    const field = Array.from(view.container.querySelectorAll('input')).find((item) =>
+      item.value.includes('27.03.2026 21:52 — 28.03.2026 09:52'),
+    );
+    expect(field).toBeTruthy();
+
+    await click(field as HTMLInputElement);
+    const preset = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent === '3 дн');
+    expect(preset).toBeTruthy();
+
+    await click(preset as HTMLButtonElement);
+
+    expect(updateQueryState).toHaveBeenCalledWith({
+      fromDateTimeStr: '2026-05-10T17:42',
+      toDateTimeStr: '2026-05-13T17:42',
+    });
   });
 });

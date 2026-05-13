@@ -10,6 +10,7 @@ import {
   emptyQueryState,
   normalizeQueryState,
   queryStateComparisonKey,
+  queryStateReloadKey,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
   pushQueryStateToUrl,
@@ -216,6 +217,7 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(queryStateMatchesSavedFilter(currentState, savedFilter)).toBe(true);
     expect(queryStateComparisonKey(currentState)).toBe(queryStateComparisonKey(createQueryState()));
+    expect(queryStateReloadKey(currentState)).not.toBe(queryStateReloadKey(createQueryState()));
   });
 
   it('treats non-date filter changes as dirty', () => {

@@ -754,6 +754,31 @@ fn tags_from_user_organism_exists(user_id: &str) -> SimpleExpr {
     Expr::exists(subquery)
 }
 
+fn user_or_organism_logins_subquery(user_id: &str) -> SelectStatement {
+    let user_alias = Alias::new("allowed_user");
+    Query::select()
+        .column((login::Entity, login::Column::Login))
+        .from(login::Entity)
+        .join_as(
+            JoinType::InnerJoin,
+            login::Entity,
+            user_alias.clone(),
+            Expr::col((user_alias.clone(), login::Column::Login))
+                .eq(user_id.to_string()),
+        )
+        .and_where(
+            Expr::col((login::Entity, login::Column::Login))
+                .eq(user_id.to_string())
+                .or(Expr::col((user_alias.clone(), login::Column::OrganismId))
+                    .is_not_null()
+                    .and(
+                        Expr::col((login::Entity, login::Column::OrganismId))
+                            .equals((user_alias, login::Column::OrganismId)),
+                    )),
+        )
+        .to_owned()
+}
+
 pub fn filter_selected_tags<Q>(
     q: Q,
     selected_tags: &Option<Vec<i64>>,
@@ -838,6 +863,7 @@ where
             m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
     }
     if or_with_extended_form == &Some(true) {
+        let allowed_logins = user_or_organism_logins_subquery(user_id);
         let comment_exists = sigint_comment::Entity::find()
             .select_only()
             .expr(Expr::value(1))
@@ -849,6 +875,7 @@ where
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
             .filter(sigint_comment::Column::Comment.eq("").not())
+            .filter(sigint_comment::Column::Login.in_subquery(allowed_logins))
             .into_query();
 
         q = q.filter(Expr::exists(comment_exists));

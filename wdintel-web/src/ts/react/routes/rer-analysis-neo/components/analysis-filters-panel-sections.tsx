@@ -1,4 +1,5 @@
-import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Typography, type SelectChangeEvent } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography, type SelectChangeEvent } from '@mui/material';
 import type { MouseEvent, ReactNode } from 'react';
 
 import type { AnalysisFilterSectionId } from '../types';
@@ -272,14 +273,30 @@ export function AnalysisFiltersPanelSections({
             display: 'grid',
             gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
             columnGap: 1,
-            rowGap: 0.25,
+            rowGap: 0.125,
             alignItems: 'start',
           }}
         >
           <FormControlLabel
             control={<Checkbox checked={queryState.orWithExtendedForm} onChange={(_event, value) => updateQueryState({ orWithExtendedForm: value })} />}
-            label="З коментарем"
-            sx={compactCheckboxLabelSx}
+            label={
+              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.375, whiteSpace: 'nowrap' }}>
+                З коментарем
+                <Tooltip title="Від вас або вашого підрозділу">
+                  <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary', opacity: 0.85 }} />
+                </Tooltip>
+              </Box>
+            }
+            sx={{
+              ...compactCheckboxLabelSx,
+              gridColumn: '1 / -1',
+              alignSelf: 'start',
+              justifySelf: 'start',
+              '& .MuiFormControlLabel-label': {
+                lineHeight: 1.3,
+                whiteSpace: 'nowrap',
+              },
+            }}
           />
           <FormControlLabel
             control={<Checkbox checked={queryState.orBookmarked} onChange={(_event, value) => updateQueryState({ orBookmarked: value })} />}
@@ -289,11 +306,7 @@ export function AnalysisFiltersPanelSections({
           <FormControlLabel
             control={<Checkbox checked={queryState.orImportant} onChange={(_event, value) => updateQueryState({ orImportant: value })} />}
             label="Важливі"
-            sx={{
-              ...compactCheckboxLabelSx,
-              gridColumn: '1 / -1',
-              justifySelf: 'start',
-            }}
+            sx={compactCheckboxLabelSx}
           />
           <Box
             sx={{

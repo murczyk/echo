@@ -423,6 +423,13 @@ export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencie
   return analysisReqComparisonKey(req, allFrequencies);
 }
 
+export function queryStateReloadKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
+  const req = buildAnalysisReq(state, allFrequencies);
+  if (isNullOrUndefined(req)) return null;
+
+  return JSON.stringify(req);
+}
+
 export function queryStateMatchesSavedFilter(state: AnalysisQueryState, savedFilter: SavedFilter, allFrequencies: string[] = []): boolean {
   const stateKey = queryStateComparisonKey(state, allFrequencies);
   const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
