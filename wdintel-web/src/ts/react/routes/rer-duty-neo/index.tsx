@@ -1,9 +1,7 @@
-import { Box, ButtonBase, Fab, IconButton, Paper, useMediaQuery, useTheme } from '@mui/material';
+import { Box, ButtonBase, Fab, useMediaQuery, useTheme } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import CloseIcon from '@mui/icons-material/Close';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
-
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { setDutyNeoDocumentTitleUnreadCount, startDutyNeoDocumentTitleTracking } from './notifications';
@@ -18,6 +16,7 @@ import {
 import { MAX_MESSAGE_FEEDS, useRerDutyFeeds } from './useRerDutyFeeds';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import { dutyTopAddFabSx } from './top-action-styles';
+import { PowerAlert } from '../../components/PowerAlert';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -116,13 +115,18 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       },
       actions: {
         onGroupsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, groupsSelected: v.length ? v : null }),
-        onDeniedGroupsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, groupsDenied: v.length ? v : null }),
-        onSendersChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, sendersSelected: v.length ? v : null }),
-        onDeniedSendersChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, deniedSenders: v.length ? v : null }),
+        onDeniedGroupsChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, groupsDenied: v.length ? v : null }),
+        onSendersChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, sendersSelected: v.length ? v : null }),
+        onDeniedSendersChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, deniedSenders: v.length ? v : null }),
         onFreqsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, freqsSelected: v.length ? v : null }),
-        onFreqsDeniedChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, freqsDenied: v.length ? v : null }),
+        onFreqsDeniedChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, freqsDenied: v.length ? v : null }),
         onPostsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, postsSelected: v.length ? v : null }),
-        onPostsDeniedChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, postsDenied: v.length ? v : null }),
+        onPostsDeniedChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, postsDenied: v.length ? v : null }),
         onAdjacentFreqsRangeChange: (v: number) =>
           setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, adjacentFreqsRange: v } : f))),
         onHighlightSignalsChange: (v: boolean) => {
@@ -136,8 +140,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         onReloadFreqs: reloadLatestFrequencies,
         onSavedFilterSelect: (id) =>
           setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: id === '' ? null : id })),
-        onSaveFilterNameChange: (value) =>
-          setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: value })),
+        onSaveFilterNameChange: (value) => setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: value })),
         onSaveFilter: handleSaveFilter,
         onUpdateSelectedSavedFilter: handleUpdateSelectedSavedFilter,
         onRenameSelectedSavedFilter: handleRenameSelectedSavedFilter,
@@ -172,7 +175,10 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
           setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
         }
         if (feed.items.length > 0) {
-          handleVisibleMessageIds(feed.id)(feed.items.map(([id]) => id), { atBottom: true });
+          handleVisibleMessageIds(feed.id)(
+            feed.items.map(([id]) => id),
+            { atBottom: true },
+          );
         }
       },
       onLeftBottom: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
@@ -254,8 +260,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     copiedFeedbackId,
     setMessageFeeds,
   } = useRerDutyFeeds(authUserName);
-  const activeFeedIdSafe =
-    messageFeeds.some((feed) => feed.id === activeFeedId) ? activeFeedId : messageFeeds[0]?.id ?? null;
+  const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
+    ? activeFeedId
+    : (messageFeeds[0]?.id ?? null);
 
   useEffect(() => {
     if (messageFeeds.length === 0) {
@@ -276,7 +283,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
   const dutyTabUnreadTotal = useMemo(() => feedsUnreadDisplayTotal(messageFeeds), [messageFeeds]);
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
-  const activeFeedIndex = isNullOrUndefined(activeFeedIdSafe) ? -1 : messageFeeds.findIndex((feed) => feed.id === activeFeedIdSafe);
+  const activeFeedIndex = isNullOrUndefined(activeFeedIdSafe)
+    ? -1
+    : messageFeeds.findIndex((feed) => feed.id === activeFeedIdSafe);
 
   useEffect(() => startDutyNeoDocumentTitleTracking(), []);
   useEffect(() => {
@@ -288,9 +297,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       className="flex flex-col w-full min-h-0"
       sx={{
         zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
-        height: narrowScreen
-          ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})`
-          : DUTY_VIEWPORT_HEIGHT,
+        height: narrowScreen ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})` : DUTY_VIEWPORT_HEIGHT,
         '@supports (height: 100dvh)': {
           height: narrowScreen
             ? `calc((${DUTY_VIEWPORT_HEIGHT_DVH}) / ${DUTY_MOBILE_ROOT_ZOOM})`
@@ -302,32 +309,17 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     >
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
-      {error && (
-        <Paper
-          elevation={0}
-          className="p-2 mb-2 shrink-0"
-          sx={{
-            bgcolor: 'error.light',
-            color: 'error.contrastText',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 1,
-          }}
+      {error ? (
+        <PowerAlert
+          severity="error"
+          className="mb-2 shrink-0"
+          onClose={() => clearDutyError()}
+          role="alert"
+          autoHideDuration={10000}
         >
-          <Box component="span" sx={{ flex: 1, minWidth: 0, pt: 0.25 }}>
-            {error}
-          </Box>
-          <IconButton
-            type="button"
-            size="small"
-            aria-label="Закрити повідомлення про помилку"
-            onClick={() => clearDutyError()}
-            sx={{ color: 'inherit', flexShrink: 0, mt: -0.25 }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Paper>
-      )}
+          {error}
+        </PowerAlert>
+      ) : null}
 
       <Box className="flex flex-1 min-h-0 w-full overflow-hidden">
         <Box

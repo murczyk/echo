@@ -32,17 +32,20 @@ export function PowerAlert(props: PowerAlertProps) {
     [onClose],
   );
 
+  const handleCloseRef = React.useRef(handleClose);
+  handleCloseRef.current = handleClose;
+
   React.useEffect(() => {
     if (!open || isNullOrUndefined(resolvedAutoHideDuration) || resolvedAutoHideDuration <= 0) {
       return;
     }
     const timerId = window.setTimeout(() => {
-      handleClose();
+      handleCloseRef.current();
     }, resolvedAutoHideDuration);
     return () => {
       window.clearTimeout(timerId);
     };
-  }, [handleClose, open, resolvedAutoHideDuration]);
+  }, [open, resolvedAutoHideDuration]);
 
   if (!open) {
     return null;

@@ -225,6 +225,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
           emptyResultRetryAfterMsRef.current.set(callsign, nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS);
         });
         setCallsignRetryVersion((current) => current + 1);
+        setFeedError(`Не вдалося завантажити довідку позивних`);
         console.error(error);
       })
       .finally(() => {
