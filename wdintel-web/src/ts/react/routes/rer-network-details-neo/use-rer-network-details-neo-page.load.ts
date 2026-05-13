@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 
 import { listAors } from '../../services/api/aor';
@@ -30,10 +30,15 @@ export function useRerNetworkDetailsNeoPageLoad(
   reload: () => () => void;
   loadCallsigns: (networkId: number) => Promise<void>;
 } {
+  const callsignLoadRequestIdRef = useRef(0);
+
   const loadCallsigns = useCallback(async (targetNetworkId: number) => {
     const generation = reloadGeneration.current;
+    const requestId = ++callsignLoadRequestIdRef.current;
+    const isCurrent = () => reloadGeneration.current === generation && callsignLoadRequestIdRef.current === requestId;
 
     if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
+      if (!isCurrent()) return;
       setState((current) => ({
         ...current,
         callsignsLoading: false,
@@ -55,7 +60,7 @@ export function useRerNetworkDetailsNeoPageLoad(
         listSources(),
       ]);
 
-      if (reloadGeneration.current !== generation) return;
+      if (!isCurrent()) return;
 
       const callsignsForActivity = [...new Set(callsignsRes.callsigns.map((item) => item.callsign).filter((callsign) => callsign.trim() !== ''))];
       const activityRes =
@@ -63,7 +68,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           ? { callsignsActivity: [] }
           : await getNetworkCallsignsActivity({ networkId: targetNetworkId, callsigns: callsignsForActivity });
 
-      if (reloadGeneration.current !== generation) return;
+      if (!isCurrent()) return;
 
       const activityMap = createNetworkCallsignActivityMap(
         (activityRes.callsignsActivity ?? []).map((item) => ({
@@ -88,7 +93,7 @@ export function useRerNetworkDetailsNeoPageLoad(
         callsignWarning: null,
       }));
     } catch (error) {
-      if (reloadGeneration.current !== generation) return;
+      if (!isCurrent()) return;
       setState((current) => ({
         ...current,
         callsignsLoading: false,
