@@ -8,6 +8,8 @@
   },
   "scripts": {
     "build": "elm-land build",
+    "prebuild": "node scripts/sync-releases.mjs",
+    "releases:sync": "node scripts/sync-releases.mjs",
     "postinstall": "node scripts/strip-use-client.mjs",
     "strip-use-client": "node scripts/strip-use-client.mjs",
     "e2e": "playwright test --grep @smoke",
@@ -31,6 +33,8 @@
     "@mui/x-date-pickers": "^7.19.0",
     "@shoelace-style/shoelace": "^2.18.0",
     "@tmcw/togeojson": "^5.8.1",
+    "ajv": "^8.20.0",
+    "ajv-cli": "^5.0.0",
     "bootstrap": "^5.3.3",
     "clsx": "^2.1.1",
     "d3": "^7.9.0",
@@ -43,7 +47,9 @@
     "proj4": "^2.12.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-virtuoso": "^4.18.1"
+    "react-markdown": "^9.0.1",
+    "react-virtuoso": "^4.18.1",
+    "rehype-raw": "^7.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

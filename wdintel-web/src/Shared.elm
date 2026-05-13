@@ -257,21 +257,9 @@ update req msg model =
 
         GotChangelogLatest (Ok releasePage) ->
             let
-                headings =
-                    releasePage.blocks
-                        |> List.filterMap
-                            (\block ->
-                                case block of
-                                    Shared.Msg.HeadingBlock text ->
-                                        Just text
-
-                                    _ ->
-                                        Nothing
-                            )
-
                 preview =
                     { version = releasePage.releaseId
-                    , preview = headings
+                    , preview = releasePage.headings
                     , fullUrl = "/updates"
                     }
             in

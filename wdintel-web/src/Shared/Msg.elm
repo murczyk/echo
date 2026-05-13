@@ -1,4 +1,4 @@
-module Shared.Msg exposing (Msg(..), ChangelogReleaseMeta, ChangelogReleasePage, ContentBlock(..), ImageData, VideoData)
+module Shared.Msg exposing (Msg(..), ChangelogReleaseMeta, ChangelogReleasePage)
 
 import Bindings as B
 import Core.Types exposing (ApiError, LocationRes)
@@ -15,25 +15,7 @@ type alias ChangelogReleaseMeta =
 
 type alias ChangelogReleasePage =
     { releaseId : String
-    , blocks : List ContentBlock
-    }
-
-
-type ContentBlock
-    = HeadingBlock String
-    | ParagraphBlock String
-    | ImageBlock ImageData
-    | VideoBlock VideoData
-
-
-type alias ImageData =
-    { src : String
-    , alt : String
-    }
-
-
-type alias VideoData =
-    { src : String
+    , headings : List String
     }
 
 
