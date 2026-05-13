@@ -1,5 +1,5 @@
 import * as React from 'react';
-import Alert, { AlertProps } from '@mui/material/Alert';
+import Alert, { type AlertProps } from '@mui/material/Alert';
 import { isNullOrUndefined } from '../utils/misc';
 
 
@@ -8,7 +8,16 @@ type PowerAlertProps = AlertProps & {
   dismissible?: boolean;
 };
 
-const DEFAULT_SUCCESS_AUTO_HIDE_MS = 6000;
+const defaultAutoHideDurationMsBySeverity: Partial<Record<NonNullable<AlertProps['severity']>, number>> = {
+  success: 3000,
+  error: 4000,
+  info: 6000,
+};
+
+function defaultAutoHideDurationForSeverity(severity: AlertProps['severity']): number {
+  const key = severity ?? 'success';
+  return defaultAutoHideDurationMsBySeverity[key] ?? 3000;
+}
 
 export function PowerAlert(props: PowerAlertProps) {
   const { autoHideDuration, dismissible, onClose, severity = 'success', children, ...rest } = props;
@@ -20,7 +29,7 @@ export function PowerAlert(props: PowerAlertProps) {
   }, [children, severity]);
 
   const resolvedAutoHideDuration =
-    autoHideDuration === undefined ? (severity === 'success' ? DEFAULT_SUCCESS_AUTO_HIDE_MS : null) : autoHideDuration;
+    autoHideDuration === undefined ? defaultAutoHideDurationForSeverity(severity) : autoHideDuration;
 
   const handleClose = React.useCallback(
     (event?: React.SyntheticEvent) => {
