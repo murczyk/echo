@@ -69,7 +69,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
     currentNetworkIdRef,
   });
   const canManageCallsignActions = canManageNetworkCallsignActions(state.currentUser);
-  const defaultNetworkUnitId = state.network?.unitIds?.[0] ?? state.units[0]?.id ?? null;
+  const defaultNetworkUnitId = state.network?.unitIds?.[0] ?? null;
 
   const openMenu = useCallback((anchorEl: HTMLElement) => {
     setState((current) => ({ ...current, menuAnchorEl: anchorEl }));
