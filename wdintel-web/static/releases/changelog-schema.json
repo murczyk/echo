@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+
+  "title": "Release Changelog",
+
+  "type": "object",
+
+  "required": [
+    "release_id",
+    "title",
+    "blocks"
+  ],
+
+  "properties": {
+    "release_id": {
+      "type": "string",
+      "description": "Release identifier or release date"
+    },
+
+    "title": {
+      "type": "string",
+      "description": "Human readable release title"
+    },
+
+    "blocks": {
+      "type": "array",
+
+      "items": {
+        "$ref": "#/definitions/block"
+      }
+    }
+  },
+
+  "additionalProperties": false,
+
+  "definitions": {
+    "block": {
+      "type": "object",
+
+      "properties": {
+        "header": {
+          "type": "string",
+          "description": "Section title"
+        },
+
+        "paragraph": {
+          "type": "string",
+          "description": "Section text content"
+        },
+
+        "img": {
+          "$ref": "#/definitions/image"
+        },
+
+        "video": {
+          "$ref": "#/definitions/video"
+        },
+
+        "list": {
+          "$ref": "#/definitions/list"
+        }
+      },
+
+      "additionalProperties": false
+    },
+
+    "image": {
+      "type": "object",
+
+      "required": [
+        "src",
+        "alt"
+      ],
+
+      "properties": {
+        "src": {
+          "type": "string",
+          "description": "Path or URL to image"
+        },
+
+        "alt": {
+          "type": "string",
+          "description": "Alternative image text"
+        }
+      },
+
+      "additionalProperties": false
+    },
+
+    "video": {
+      "type": "object",
+
+      "required": [
+        "src"
+      ],
+
+      "properties": {
+        "src": {
+          "type": "string",
+          "description": "Path or URL to video"
+        }
+      },
+
+      "additionalProperties": false
+    },
+
+    "list": {
+      "type": "object",
+
+      "required": [
+        "type",
+        "items"
+      ],
+
+      "properties": {
+        "type": {
+          "type": "string",
+
+          "enum": [
+            "marked",
+            "numbered"
+          ]
+        },
+
+        "items": {
+          "type": "array",
+
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+
+      "additionalProperties": false
+    }
+  }
+}

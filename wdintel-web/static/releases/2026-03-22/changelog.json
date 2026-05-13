@@ -3,21 +3,35 @@
   "title": "Реліз 2026-03-22",
   "blocks": [
     {
-      "type": "heading",
-      "text": "Новий dashboard"
+      "task_number": "#1234",
+      "header": "Новий dashboard",
+      "paragraph": "Додано новий dashboard для аналітики.",
+      "img": {
+        "src": "/releases/2026-03-22/media/screenshot.png",
+        "alt": "Dashboard screenshot"
+      },
+      "video": {
+        "src": "/releases/2026-03-22/media/demo.mp4"
+      }
     },
     {
-      "type": "paragraph",
-      "text": "Додано новий dashboard для аналітики."
-    },
-    {
-      "type": "image",
-      "src": "/releases/2026-03-22/media/screenshot.png",
-      "alt": "Dashboard screenshot"
-    },
-    {
-      "type": "video",
-      "src": "/releases/2026-03-22/media/demo.mp4"
+      "header": "Новий dashboard",
+      "paragraph": "Додано новий dashboard для аналітики.",
+      "img" : {
+        "src": "/releases/2026-03-22/media/screenshot.png",
+        "alt": "Dashboard screenshot"
+      },
+      "video": {
+        "src": "/releases/2026-03-22/media/demo.mp4"
+      },
+      "list" : {
+        "type": "marked",
+        "items": [
+          "Пункт 1",
+          "Пункт 2",
+          "Пункт 3"
+        ]
+      }
     }
   ]
 }

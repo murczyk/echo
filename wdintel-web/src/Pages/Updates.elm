@@ -8,7 +8,6 @@ import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (alt, attribute, class, controls, id, src, style)
 import Html.Events exposing (onClick)
-import Html.Lazy as Lazy
 import Http
 import Json.Decode as Decode
 import Layouts
@@ -322,45 +321,88 @@ viewReleasePage model =
             div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Оберіть реліз" ]
 
         Success (Just loadedReleasePage) ->
-            section [ class "rounded border border-[var(--color-border)] bg-[var(--color-card)] p-5" ]
-                [ h2 [ class "text-2xl font-semibold" ] [ text (releasePageHeader loadedReleasePage.page) ]
-                , div [ class "mt-5 space-y-4" ]
-                    (viewTopAnchorIfNeeded loadedReleasePage
-                        ++ (loadedReleasePage.page.blocks
-                                |> List.indexedMap (viewBlock model.activeSectionId)
-                           )
-                    )
-                ]
+            viewLoadedReleasePage model.activeSectionId loadedReleasePage
 
         NeedsReload maybeReleasePage ->
             case maybeReleasePage of
                 Just loadedReleasePage ->
-                    section [ class "rounded border border-[var(--color-border)] bg-[var(--color-card)] p-5" ]
-                        [ h2 [ class "text-2xl font-semibold" ] [ text (releasePageHeader loadedReleasePage.page) ]
-                        , div [ class "mt-5 space-y-4" ]
-                            (viewTopAnchorIfNeeded loadedReleasePage
-                                ++ (loadedReleasePage.page.blocks
-                                        |> List.indexedMap (viewBlock model.activeSectionId)
-                                   )
-                            )
-                        ]
+                    viewLoadedReleasePage model.activeSectionId loadedReleasePage
 
                 Nothing ->
                     div [ class "text-sm text-[var(--color-text-muted)]" ] [ text "Оберіть реліз" ]
 
 
-viewBlock : Maybe String -> Int -> ContentBlock -> Html Msg
-viewBlock activeSectionId blockIndex block =
-    Lazy.lazy3 viewContentBlock activeSectionId blockIndex block
+viewLoadedReleasePage : Maybe String -> LoadedReleasePage -> Html Msg
+viewLoadedReleasePage activeSectionId loadedReleasePage =
+    section [ class "rounded border border-[var(--color-border)] bg-[var(--color-card)] p-5" ]
+        [ h2 [ class "text-2xl font-semibold" ] [ text (releasePageHeader loadedReleasePage.page) ]
+        , hr [ class "my-4 border-t border-[var(--color-border)]" ] []
+        , ul [ class "space-y-4", style "list-style" "disc" ]
+            (viewTopAnchorIfNeeded loadedReleasePage
+                ++ (loadedReleasePage.page.blocks
+                        |> groupBlocks
+                        |> List.map (viewBlockGroup activeSectionId)
+                   )
+            )
+        ]
 
 
-viewContentBlock : Maybe String -> Int -> ContentBlock -> Html Msg
-viewContentBlock activeSectionId blockIndex block =
-    case block of
-        HeadingBlock headingText ->
+type alias BlockGroup =
+    { heading : Maybe ( Int, String )
+    , body : List ContentBlock
+    }
+
+
+groupBlocks : List ContentBlock -> List BlockGroup
+groupBlocks blocks =
+    let
+        step ( idx, block ) state =
+            case block of
+                HeadingBlock headingText ->
+                    { groups = state.groups ++ [ state.current ]
+                    , current = { heading = Just ( idx, headingText ), body = [] }
+                    }
+
+                _ ->
+                    { state
+                        | current =
+                            { heading = state.current.heading
+                            , body = state.current.body ++ [ block ]
+                            }
+                    }
+
+        final =
+            blocks
+                |> List.indexedMap Tuple.pair
+                |> List.foldl step
+                    { groups = []
+                    , current = { heading = Nothing, body = [] }
+                    }
+    in
+    final.groups
+        ++ [ final.current ]
+        |> List.filter
+            (\group ->
+                case group.heading of
+                    Just _ ->
+                        True
+
+                    Nothing ->
+                        not (List.isEmpty group.body)
+            )
+
+
+viewBlockGroup : Maybe String -> BlockGroup -> Html Msg
+viewBlockGroup activeSectionId group =
+    let
+        bodyHtml =
+            List.map viewBodyBlock group.body
+    in
+    case group.heading of
+        Just ( idx, headingText ) ->
             let
                 domId =
-                    sectionDomId blockIndex
+                    sectionDomId idx
 
                 isActive =
                     activeSectionId == Just domId
@@ -372,11 +414,21 @@ viewContentBlock activeSectionId blockIndex block =
                     else
                         ""
             in
-            section
+            li
                 [ id domId
-                , class ("scroll-mt-28 rounded px-2 py-1 transition " ++ activeClass)
+                , class ("scroll-mt-28 rounded px-2 py-1 transition space-y-3" ++ activeClass)
                 ]
-                [ h4 [ class "text-xl font-semibold" ] [ text headingText ] ]
+                (h4 [ class "text-xl font-semibold" ] [ text headingText ] :: bodyHtml)
+
+        Nothing ->
+            div [ class "px-2 py-1 space-y-3" ] bodyHtml
+
+
+viewBodyBlock : ContentBlock -> Html Msg
+viewBodyBlock block =
+    case block of
+        HeadingBlock _ ->
+            text ""
 
         ParagraphBlock paragraphText ->
             p [ class "text-sm leading-relaxed text-[var(--color-text)]" ] [ text paragraphText ]
@@ -406,7 +458,7 @@ getAsideBlock: Model -> LoadedReleasePage -> Html Msg
 getAsideBlock model releasePage =
     aside [ class "lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3" ]
           [ h2 [ class "text-sm font-semibold mb-2" ] [ text tableOfContents ]
-          , div [ class "space-y-1" ] (List.map (viewOnThisPageItem model.activeSectionId) releasePage.sections)
+          , ul [ class "space-y-1" ] (List.map (viewOnThisPageItem model.activeSectionId) releasePage.sections)
           ]
 
 emptyText : Html Msg
@@ -447,11 +499,13 @@ viewOnThisPageItem activeSectionId headingSection =
             else
                 " hover:bg-[var(--color-bg)]"
     in
+    li [ class "w-full text-left text-xs leading-snug rounded" ] [
     button
         [ class ("w-full text-left text-xs leading-snug rounded px-2 py-1.5 hover:underline" ++ activeClass)
         , onClick (JumpToSection headingSection.sectionId)
         ]
         [ text headingSection.title ]
+        ]
 
 
 viewTopAnchorIfNeeded : LoadedReleasePage -> List (Html Msg)
