@@ -63,7 +63,7 @@ describe('PowerAlert', () => {
     rendered.push(view);
 
     act(() => {
-      vi.advanceTimersByTime(7000);
+      vi.advanceTimersByTime(4000);
     });
 
     expect(view.container.textContent).not.toContain('done');
