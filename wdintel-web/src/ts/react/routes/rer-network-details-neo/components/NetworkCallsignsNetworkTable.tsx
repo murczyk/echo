@@ -199,7 +199,7 @@ export function NetworkCallsignsNetworkTable({
       noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
       onNoDataAction: loadingError ? onReload : undefined,
       filteredMessage: 'Немає позивних за обраним статусом',
-      onClearFilters: normalizedStatusFilter !== 'All' && visibleRows.length > 0 && tableStateRows.length === 0
+      onClearFilters: normalizedStatusFilter !== 'All'
         ? () => {
           table.setColumnFilters([]);
           table.setGlobalFilter('');
