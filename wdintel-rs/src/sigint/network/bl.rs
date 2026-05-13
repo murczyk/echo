@@ -274,7 +274,7 @@ where
             network_id: x.network_id,
             network_frequency_id: x.sigint_network_freq_id,
             descr_type: NetworkDescrType::from(x.r#type.clone()),
-            topic: x.topic.clone(),
+            topic: if x.topic.trim().is_empty() { None } else { Some(x.topic.clone()) },
             description: x.description.clone(),
             // comment: x.comment.clone(),
             login: x.login.clone(),

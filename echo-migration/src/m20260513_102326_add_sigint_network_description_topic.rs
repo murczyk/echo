@@ -8,7 +8,7 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         db.execute_unprepared(
-            "alter table sigint_network_description add column topic text;",
+            "alter table sigint_network_description add column topic text not null default '';",
         )
         .await?;
         Ok(())
