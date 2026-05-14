@@ -523,8 +523,8 @@ fn filter_networks_by_related_units(
     network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
 ) -> HashSet<i64> {
     let mut result = HashSet::new();
-    for network_id in matched_networks {
-        let Some(units) = network_units.get(&network_id) else {
+    for network_id in &matched_networks {
+        let Some(units) = network_units.get(network_id) else {
             continue;
         };
         if message_units.iter().any(|message_unit| {
@@ -532,10 +532,14 @@ fn filter_networks_by_related_units(
                 crate::unit::are_units_related(message_unit, network_unit)
             })
         }) {
-            result.insert(network_id);
+            result.insert(*network_id);
         }
     }
-    result
+    if result.is_empty() {
+        matched_networks
+    } else {
+        result
+    }
 }
 
 fn try_discard_by_unit_name(
@@ -639,5 +643,68 @@ fn log_network_mismatches(
     }
     if mismatches.len() > head {
         error!("...{} more", mismatches.len() - head);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_unit(id: i64, name: &str, regiment: &str) -> sigint_unit::Model {
+        sigint_unit::Model {
+            id,
+            company: String::new(),
+            regiment: regiment.to_string(),
+            division: String::new(),
+            army: String::new(),
+            active: true,
+            deleted: false,
+            created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            created_by: "test".to_string(),
+            name: name.to_string(),
+            comment: String::new(),
+            battalion: String::new(),
+            sigint_origin_id: None,
+            original_id: None,
+        }
+    }
+
+    #[test]
+    fn related_unit_filter_keeps_original_when_no_related_units_match() {
+        let matched_networks = HashSet::from([1, 2]);
+        let message_units = vec![mk_unit(10, "unit-a", "1")];
+        let network_units =
+            HashMap::from([(1, vec![mk_unit(20, "unit-b", "2")])]);
+
+        assert_eq!(
+            filter_networks_by_related_units(
+                matched_networks.clone(),
+                &message_units,
+                &network_units,
+            ),
+            matched_networks
+        );
+    }
+
+    #[test]
+    fn related_unit_filter_narrows_when_related_units_match() {
+        let matched_networks = HashSet::from([1, 2]);
+        let message_units = vec![mk_unit(10, "unit-a", "1")];
+        let network_units = HashMap::from([
+            (1, vec![mk_unit(20, "unit-b", "2")]),
+            (2, vec![mk_unit(30, "unit-c", "1")]),
+        ]);
+
+        assert_eq!(
+            filter_networks_by_related_units(
+                matched_networks,
+                &message_units,
+                &network_units,
+            ),
+            HashSet::from([2])
+        );
     }
 }
