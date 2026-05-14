@@ -683,42 +683,6 @@ parseChangelogMarkdown releaseId rawMarkdown =
             )
 
 
-changelog :
-    (Result ApiError (List ChangelogSection) -> msg)
-    -> Cmd msg
-changelog toMsg =
-    Http.get
-        { url = "/api-public/changelog"
-        , expect = leExpectJson toMsg (Decode.list changelogSectionDecoder)
-        }
-
-
-changelog_details :
-    (Result ApiError (Maybe ChangelogItemDetails) -> msg)
-    -> ChangelogDetailsReq
-    -> Cmd msg
-changelog_details toMsg req =
-    Http.post
-        { url = "/api-public/changelog-details"
-        , body = Http.jsonBody (changelogDetailsReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.nullable changelogItemDetailsDecoder)
-        }
-
-
-changelog_details_by_key :
-    (Result ApiError (Maybe ChangelogItemDetails) -> msg)
-    -> String
-    -> Cmd msg
-changelog_details_by_key toMsg detailKey =
-    Http.get
-        { url =
-            Url.Builder.absolute
-                [ "api-public", "changelog-details", detailKey ]
-                []
-        , expect = leExpectJson toMsg (Decode.nullable changelogItemDetailsDecoder)
-        }
-
-
 datasource_list :
     (Result ApiError (List ( Int, Datasource )) -> msg)
     -> Cmd msg

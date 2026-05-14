@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 
 import { rewriteRelativeMediaUrls } from '../markdown-helpers';
-import { getReleasesSource } from '../releases-source';
+import { resolveReleaseMediaUrl } from '../releases-source';
 
 interface MarkdownBodyProps {
   releaseId: string;
@@ -10,9 +10,8 @@ interface MarkdownBodyProps {
 }
 
 export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
-  const source = getReleasesSource();
   const rewritten = rewriteRelativeMediaUrls(markdown, (href) =>
-    source.resolveMediaUrl(releaseId, href),
+    resolveReleaseMediaUrl(releaseId, href),
   );
 
   return (
@@ -31,7 +30,7 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
             loading="lazy"
             src={
               typeof props.src === 'string'
-                ? source.resolveMediaUrl(releaseId, props.src)
+                ? resolveReleaseMediaUrl(releaseId, props.src)
                 : props.src
             }
             {...props}

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ParsedRelease, parseRelease } from './markdown-helpers';
-import { getReleasesSource, ReleaseMeta, ReleasesSource } from './releases-source';
+import {
+  fetchReleaseMarkdown,
+  fetchReleasesIndex,
+  ReleaseMeta,
+} from './releases-source';
 
 export type LoadStatus<T> =
   | { kind: 'idle' }
@@ -19,9 +23,7 @@ interface UseUpdatesPageState {
 
 const SCROLL_OFFSET = 120;
 
-export function useUpdatesPage(
-  source: ReleasesSource = getReleasesSource(),
-): UseUpdatesPageState {
+export function useUpdatesPage(): UseUpdatesPageState {
   const [releases, setReleases] = useState<LoadStatus<ReleaseMeta[]>>({ kind: 'idle' });
   const [selectedReleaseId, setSelectedReleaseId] = useState<string | null>(null);
   const [release, setRelease] = useState<LoadStatus<ParsedRelease>>({ kind: 'idle' });
@@ -29,8 +31,7 @@ export function useUpdatesPage(
   useEffect(() => {
     let cancelled = false;
     setReleases({ kind: 'loading' });
-    source
-      .listReleases()
+    fetchReleasesIndex()
       .then((list) => {
         if (cancelled) return;
         setReleases({ kind: 'success', data: list });
@@ -44,14 +45,13 @@ export function useUpdatesPage(
     return () => {
       cancelled = true;
     };
-  }, [source]);
+  }, []);
 
   useEffect(() => {
     if (!selectedReleaseId) return;
     let cancelled = false;
     setRelease({ kind: 'loading' });
-    source
-      .fetchReleaseMarkdown(selectedReleaseId)
+    fetchReleaseMarkdown(selectedReleaseId)
       .then((markdown) => {
         if (cancelled) return;
         const parsed = parseRelease(markdown, selectedReleaseId);
@@ -64,7 +64,7 @@ export function useUpdatesPage(
     return () => {
       cancelled = true;
     };
-  }, [selectedReleaseId, source]);
+  }, [selectedReleaseId]);
 
   const selectRelease = useCallback((releaseId: string) => {
     setSelectedReleaseId((prev) => (prev === releaseId ? prev : releaseId));
