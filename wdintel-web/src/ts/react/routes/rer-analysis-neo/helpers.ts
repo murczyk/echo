@@ -2,10 +2,7 @@ import dayjs from 'dayjs';
 
 import type { AnalysisStatsReq, InboxMessagesReq, SavedFilter } from '../../../../Bindings';
 import {
-  hasRerAnalysisQueryStateParams,
-  loadRerAnalysisQueryState,
   parseRerAnalysisQueryStateFromSearchParams,
-  saveRerAnalysisQueryState,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
 import { APP_TIME_ZONE, combineDateTimeInputToMs, formatDateTimeInputValueInTimeZone, isNullOrUndefined } from '../../utils/misc';
@@ -91,16 +88,8 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
   const url = new URL(window.location.href);
   const flatStateFromUrl = parseRerAnalysisQueryStateFromSearchParams(url.searchParams);
 
-  // Startup order is intentional:
-  // 1) URL params win
-  // 2) persisted localStorage fills the gap when URL is empty
-  // 3) hard-coded defaults apply only when neither source has a value
-  const storedState = loadRerAnalysisQueryState();
-  const hasManagedStateInUrl = hasRerAnalysisQueryStateParams(url.searchParams);
-
   return {
     ...emptyQueryState(),
-    ...(hasManagedStateInUrl ? {} : (storedState ?? {})),
     ...(flatStateFromUrl ?? {}),
   };
 }
@@ -134,7 +123,6 @@ export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): 
 
 export function pushQueryStateToUrl(state: AnalysisQueryState) {
   if (typeof window === 'undefined') return;
-  saveRerAnalysisQueryState(state);
   const url = new URL(window.location.href);
   writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);

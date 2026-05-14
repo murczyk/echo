@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SavedFilter } from '../../../../Bindings';
-import { RER_ANALYSIS_QUERY_STATE_KEY } from '../../../rer-analysis-query-state';
 import {
   buildAnalysisReq,
   createInitialQueryState,
@@ -43,21 +42,7 @@ function createSavedFilter(reqState: AnalysisQueryState): SavedFilter {
 }
 
 describe('rer-analysis-neo helpers', () => {
-  it('treats managed url params as authoritative over stored query state', () => {
-    const storage = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        clear: () => storage.clear(),
-        getItem: (key: string) => storage.get(key) ?? null,
-        removeItem: (key: string) => {
-          storage.delete(key);
-        },
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
-      },
-    });
+  it('treats managed url params as authoritative', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -67,39 +52,16 @@ describe('rer-analysis-neo helpers', () => {
       },
     });
 
-    globalThis.localStorage.setItem(
-      RER_ANALYSIS_QUERY_STATE_KEY,
-      JSON.stringify({
-        freqsSelected: ['123.4'],
-        tags: [7],
-      }),
-    );
-
     expect(parseQueryStateFromWindow()).toMatchObject({
       search: 'uid-1',
       freqsSelected: [],
       tags: [],
     });
 
-    delete (globalThis as { localStorage?: Storage }).localStorage;
     delete (globalThis as { window?: Window }).window;
   });
 
-  it('uses stored query state when managed url params are absent', () => {
-    const storage = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        clear: () => storage.clear(),
-        getItem: (key: string) => storage.get(key) ?? null,
-        removeItem: (key: string) => {
-          storage.delete(key);
-        },
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
-      },
-    });
+  it('ignores unsupported legacy state params when managed url params are absent', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -109,39 +71,12 @@ describe('rer-analysis-neo helpers', () => {
       },
     });
 
-    globalThis.localStorage.setItem(
-      RER_ANALYSIS_QUERY_STATE_KEY,
-      JSON.stringify({
-        search: 'stored',
-        freqsSelected: ['432.1'],
-      }),
-    );
+    expect(parseQueryStateFromWindow()).toEqual(emptyQueryState());
 
-    expect(parseQueryStateFromWindow()).toMatchObject({
-      search: 'stored',
-      freqsSelected: ['432.1'],
-    });
-
-    delete (globalThis as { localStorage?: Storage }).localStorage;
     delete (globalThis as { window?: Window }).window;
   });
 
-  it('preserves hidden selections in persistence while request normalization still excludes them', () => {
-    const storage = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        clear: () => storage.clear(),
-        getItem: (key: string) => storage.get(key) ?? null,
-        removeItem: (key: string) => {
-          storage.delete(key);
-        },
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
-      },
-    });
-
+  it('writes hidden selections only to the url while request normalization still excludes them', () => {
     let currentUrl = 'https://example.test/rer-analysis-neo';
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -174,16 +109,13 @@ describe('rer-analysis-neo helpers', () => {
 
     pushQueryStateToUrl(state);
 
-    expect(JSON.parse(storage.get(RER_ANALYSIS_QUERY_STATE_KEY) ?? '{}')).toMatchObject({
-      withoutNetwork: true,
-      networksSelected: ['7'],
-      withoutMetadata: true,
-      metadataCc: ['cc-1'],
-      metadataSender: ['sender-1'],
-      metadataReceiver: ['receiver-1'],
-      metadataHash: ['hash-1'],
-    });
-
+    const nextUrl = new URL(currentUrl);
+    expect(nextUrl.searchParams.getAll('networks')).toEqual(['7']);
+    expect(nextUrl.searchParams.get('withoutNetwork')).toBe('true');
+    expect(nextUrl.searchParams.getAll('metadataCc')).toEqual(['cc-1']);
+    expect(nextUrl.searchParams.getAll('metadataSender')).toEqual(['sender-1']);
+    expect(nextUrl.searchParams.getAll('metadataReceiver')).toEqual(['receiver-1']);
+    expect(nextUrl.searchParams.getAll('metadataHash')).toEqual(['hash-1']);
     expect(parseQueryStateFromWindow()).toMatchObject({
       withoutNetwork: true,
       networksSelected: ['7'],
@@ -203,8 +135,6 @@ describe('rer-analysis-neo helpers', () => {
       metadataReceiver: null,
       metadataHash: null,
     });
-
-    delete (globalThis as { localStorage?: Storage }).localStorage;
     delete (globalThis as { window?: Window }).window;
   });
 

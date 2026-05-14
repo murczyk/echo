@@ -3,11 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   compactRerAnalysisQueryState,
   hasRerAnalysisQueryStateParams,
-  loadRerAnalysisQueryState,
   normalizeRerAnalysisQueryState,
   parseRerAnalysisQueryStateFromSearchParams,
-  RER_ANALYSIS_QUERY_STATE_KEY,
-  saveRerAnalysisQueryState,
   writeRerAnalysisQueryStateToSearchParams,
 } from './rer-analysis-query-state';
 import {
@@ -112,23 +109,6 @@ describe('rer analysis query state', () => {
     });
   });
 
-  it('loads stored canonical state in normalized form', () => {
-    globalThis.localStorage.setItem(
-      RER_ANALYSIS_QUERY_STATE_KEY,
-      JSON.stringify({
-        search: 'abc',
-        metadataSender: ['sigint'],
-        withoutModelTags: true,
-      }),
-    );
-
-    expect(loadRerAnalysisQueryState()).toEqual({
-      search: 'abc',
-      metadataSender: ['sigint'],
-      withoutModelTags: true,
-    });
-  });
-
   it('loads stored legacy state through the legacy storage key', () => {
     globalThis.localStorage.setItem(
       RER_ANALYSIS_LEGACY_QUERY_STATE_KEY,
@@ -145,30 +125,6 @@ describe('rer analysis query state', () => {
       unitsExactMatchOnly: null,
       withoutModelTags: true,
     });
-  });
-
-  it('saves only compact canonical state', () => {
-    saveRerAnalysisQueryState({
-      search: 'uid-1',
-      groupsSelected: [],
-      without_network: false,
-      include_peleng_locations: true,
-      metadata_hash: [],
-      unitsExactMatchOnly: null,
-    });
-
-    expect(globalThis.localStorage.getItem(RER_ANALYSIS_QUERY_STATE_KEY)).toBe(JSON.stringify({ search: 'uid-1' }));
-  });
-
-  it('persists explicit exact-match mode in canonical state', () => {
-    saveRerAnalysisQueryState({
-      search: 'uid-1',
-      unitsExactMatchOnly: true,
-    });
-
-    expect(globalThis.localStorage.getItem(RER_ANALYSIS_QUERY_STATE_KEY)).toBe(
-      JSON.stringify({ search: 'uid-1', unitsExactMatchOnly: true }),
-    );
   });
 
   it('saves legacy state without canonical compaction on the legacy storage key', () => {
