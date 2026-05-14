@@ -30,7 +30,9 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
             loading="lazy"
             src={
               typeof props.src === 'string'
-                ? resolveReleaseMediaUrl(releaseId, props.src)
+                ? props.src.startsWith('/')
+                  ? props.src
+                  : resolveReleaseMediaUrl(releaseId, props.src)
                 : props.src
             }
             {...props}
