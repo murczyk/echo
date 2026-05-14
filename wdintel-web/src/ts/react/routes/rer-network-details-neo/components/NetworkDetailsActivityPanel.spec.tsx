@@ -135,10 +135,11 @@ describe('NetworkDetailsActivityPanel', () => {
   });
 
   it('anchors the 10-day window to today instead of the last datapoint', async () => {
-    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 4, 14, 12, 0, 0));
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 4, 13, 23, 30, 0));
     const view = await renderComponent({
       networkActivity: {
         [String(Date.UTC(2026, 4, 12))]: { Alpha: 2 },
+        [String(Date.UTC(2026, 4, 14))]: { Alpha: 1 },
       },
       networkActivityLoading: false,
       networkActivityLoaded: true,

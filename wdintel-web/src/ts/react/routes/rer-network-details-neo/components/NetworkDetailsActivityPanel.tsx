@@ -33,7 +33,6 @@ export function NetworkDetailsActivityPanel({
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
   const [hoveredBar, setHoveredBar] = useState<HoveredBar | null>(null);
-
   const chartData = useMemo(() => buildActivityChartData(networkActivity, Date.now()), [networkActivity]);
   const isLoading = networkActivityLoading || (!networkActivityLoaded && networkActivityError === null);
 

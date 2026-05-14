@@ -57,22 +57,38 @@ export const GROUP_COLOR_PALETTE = [
 ];
 export const PLACEHOLDER_BAR_HEIGHTS = [30, 50, 20, 40, 18, 24, 12, 48, 34, 22] as const;
 export const LOADING_CHART_HEIGHT = { xs: 340, sm: 370, md: 400 } as const;
+const KYIV_TIME_ZONE = 'Europe/Kyiv';
 
 const DAY_LABEL_FORMATTER = new Intl.DateTimeFormat('uk-UA', {
   day: '2-digit',
   month: '2-digit',
-  timeZone: 'UTC',
+  timeZone: KYIV_TIME_ZONE,
 });
 const TOOLTIP_DATE_FORMATTER = new Intl.DateTimeFormat('uk-UA', {
   day: '2-digit',
   month: 'long',
   year: 'numeric',
-  timeZone: 'UTC',
+  timeZone: KYIV_TIME_ZONE,
 });
 
-export function startOfUtcDayMs(value: number): number {
-  const date = new Date(value);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+function readKyivDateParts(value: number): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: KYIV_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(value));
+
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  const day = Number(parts.find((part) => part.type === 'day')?.value);
+
+  return { year, month, day };
+}
+
+export function startOfKyivDayMs(value: number): number {
+  const { year, month, day } = readKyivDateParts(value);
+  return Date.UTC(year, month - 1, day);
 }
 
 export function formatDayLabel(dayMs: number): string {
@@ -120,7 +136,7 @@ function buildActivityDays(networkActivity: NetworkActivity, anchorDayMs: number
     const dayMsRaw = Number(dayMsText);
     if (!Number.isFinite(dayMsRaw)) continue;
 
-    const dayMs = startOfUtcDayMs(dayMsRaw);
+    const dayMs = startOfKyivDayMs(dayMsRaw);
     const normalizedCounts = normalizeActivityDay(countsByGroup);
     const currentCounts = normalizedByDay.get(dayMs) ?? {};
 
@@ -132,7 +148,7 @@ function buildActivityDays(networkActivity: NetworkActivity, anchorDayMs: number
   }
 
   const dayMsValues = [...normalizedByDay.keys()];
-  const lastDayMs = Number.isFinite(anchorDayMs) ? startOfUtcDayMs(anchorDayMs) : Math.max(...dayMsValues);
+  const lastDayMs = Number.isFinite(anchorDayMs) ? startOfKyivDayMs(anchorDayMs) : Math.max(...dayMsValues);
   return Array.from({ length: 10 }, (_, index) => {
     const dayMs = lastDayMs - (9 - index) * DAY_MS;
     const countsByGroup = normalizedByDay.get(dayMs) ?? {};
