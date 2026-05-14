@@ -10,9 +10,7 @@ export function UpdatesPage() {
     releases,
     selectedReleaseId,
     release,
-    activeSectionId,
     selectRelease,
-    setActiveSectionId,
     jumpToSection,
   } = useUpdatesPage();
 
@@ -78,7 +76,6 @@ export function UpdatesPage() {
         <ReleaseContent
           releaseId={selectedReleaseId}
           release={release.data}
-          onActiveSectionChange={setActiveSectionId}
         />
       );
     }
@@ -92,7 +89,6 @@ export function UpdatesPage() {
     return (
       <TableOfContents
         sections={release.data.sections}
-        activeSectionId={activeSectionId}
         onJump={jumpToSection}
       />
     );

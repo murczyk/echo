@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ParsedRelease, parseRelease } from './markdown-helpers';
 import { getReleasesSource, ReleaseMeta, ReleasesSource } from './releases-source';
@@ -13,9 +13,7 @@ interface UseUpdatesPageState {
   releases: LoadStatus<ReleaseMeta[]>;
   selectedReleaseId: string | null;
   release: LoadStatus<ParsedRelease>;
-  activeSectionId: string | null;
   selectRelease: (releaseId: string) => void;
-  setActiveSectionId: (id: string | null) => void;
   jumpToSection: (id: string) => void;
 }
 
@@ -27,8 +25,6 @@ export function useUpdatesPage(
   const [releases, setReleases] = useState<LoadStatus<ReleaseMeta[]>>({ kind: 'idle' });
   const [selectedReleaseId, setSelectedReleaseId] = useState<string | null>(null);
   const [release, setRelease] = useState<LoadStatus<ParsedRelease>>({ kind: 'idle' });
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-  const activeReleaseRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,19 +49,16 @@ export function useUpdatesPage(
   useEffect(() => {
     if (!selectedReleaseId) return;
     let cancelled = false;
-    activeReleaseRef.current = selectedReleaseId;
     setRelease({ kind: 'loading' });
-    setActiveSectionId(null);
     source
       .fetchReleaseMarkdown(selectedReleaseId)
       .then((markdown) => {
-        if (cancelled || activeReleaseRef.current !== selectedReleaseId) return;
+        if (cancelled) return;
         const parsed = parseRelease(markdown, selectedReleaseId);
         setRelease({ kind: 'success', data: parsed });
-        setActiveSectionId(parsed.sections[0]?.domId ?? null);
       })
       .catch((err: Error) => {
-        if (cancelled || activeReleaseRef.current !== selectedReleaseId) return;
+        if (cancelled) return;
         setRelease({ kind: 'error', error: err.message });
       });
     return () => {
@@ -78,7 +71,6 @@ export function useUpdatesPage(
   }, []);
 
   const jumpToSection = useCallback((id: string) => {
-    setActiveSectionId(id);
     const el = document.getElementById(id);
     if (el) {
       const top = el.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET;
@@ -91,11 +83,9 @@ export function useUpdatesPage(
       releases,
       selectedReleaseId,
       release,
-      activeSectionId,
       selectRelease,
-      setActiveSectionId,
       jumpToSection,
     }),
-    [releases, selectedReleaseId, release, activeSectionId, selectRelease, jumpToSection],
+    [releases, selectedReleaseId, release, selectRelease, jumpToSection],
   );
 }
