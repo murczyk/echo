@@ -28,6 +28,7 @@ import Shared.Msg exposing (Msg(..))
 import Task
 import TimeZone
 import Url
+import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
 
@@ -234,11 +235,9 @@ update req msg model =
             ( { model | serverInfo = Just v }, E.none )
 
         GotChangelogIndex (Err err) ->
-            let
-                _ =
-                    err
-            in
-            ( model, E.none )
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження changelog" err
+            )
 
         GotChangelogIndex (Ok releases) ->
             case List.head releases of
@@ -249,11 +248,9 @@ update req msg model =
                     ( model, E.none )
 
         GotChangelogLatest (Err err) ->
-            let
-                _ =
-                    err
-            in
-            ( model, E.none )
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження останнього релізу" err
+            )
 
         GotChangelogLatest (Ok releasePage) ->
             let
