@@ -1376,6 +1376,7 @@ where
             network_id: Set(sigint_network_id),
             login: Set(SYSTEM_LOGIN_NAME.to_string()),
             r#type: Set(rec.r#type),
+            topic: Set(rec.topic),
             description: Set(rec.description),
             comment: Set(rec.comment),
             deleted: Set(rec.deleted),

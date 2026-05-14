@@ -131,6 +131,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           descriptionDrawerDescrType: 'Confirmation',
           descriptionDrawerDescriptionId: null,
           descriptionDrawerForm: {
+            topic: '',
             description: '',
             networkFreqId: null,
           },

@@ -990,6 +990,7 @@ async fn import_sigint_network_descriptions(
             network_id: Set(*network_id),
             login: Set(SYSTEM_LOGIN_NAME.to_string()),
             r#type: Set(import_desc.r#type),
+            topic: Set(import_desc.topic),
             description: Set(import_desc.description),
             comment: Set(import_desc.comment),
             deleted: Set(import_desc.deleted),

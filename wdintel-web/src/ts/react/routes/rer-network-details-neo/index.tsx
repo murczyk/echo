@@ -68,11 +68,8 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const copyText = page.network ? `${formatClassicNetworkHeaderName(page.network.name, page.unitNames)}, ${page.network.location}` : '';
   const descriptionDrawerNetwork = page.network;
   const isLoading = page.loading && !page.network;
-  const deleteDescriptionTitle = page.deleteDescriptionTarget?.descrType === 'Sign' ? 'Видалити розвідувальні ознаки' : 'Видалити обґрунтування';
-  const deleteDescriptionMessage =
-    page.deleteDescriptionTarget?.descrType === 'Sign'
-      ? 'Ви впевнені, що хочете видалити ці розвідувальні ознаки?'
-      : 'Ви впевнені, що хочете видалити це обґрунтування?';
+  const deleteDescriptionTitle = getDeleteDescriptionTitle(page.deleteDescriptionTarget?.descrType ?? 'Confirmation');
+  const deleteDescriptionMessage = getDeleteDescriptionMessage(page.deleteDescriptionTarget);
   const editFreq = page.freqEditDrawerForm
     ? page.freqs.find((freq) => freq.networkFreqId === page.freqEditDrawerForm?.networkFreqId) ?? null
     : null;
@@ -243,6 +240,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         open={page.deleteDescriptionDialogOpen}
         onClose={page.closeDeleteDescriptionDialog}
         onConfirm={page.deleteDescription}
+        onExited={page.resetDeleteDescriptionDialog}
         title={deleteDescriptionTitle}
         description={deleteDescriptionMessage}
         submitting={page.deleteDescriptionSubmitting}
@@ -359,4 +357,26 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
       </ConfirmDangerDialog>
     </Box>
   );
+}
+
+function getDeleteDescriptionTitle(descrType: 'Confirmation' | 'Sign'): string {
+  return descrType === 'Sign' ? 'Видалити розвідувальні ознаки' : 'Видалити обґрунтування';
+}
+
+function getDeleteDescriptionMessage(
+  description: { descrType: 'Confirmation' | 'Sign'; topic?: string | null } | null,
+): string {
+  if (!description) {
+    return 'Ви впевнені, що хочете видалити цей запис?';
+  }
+
+  const topic = description.topic?.trim();
+  if (topic) {
+    const noun = description.descrType === 'Sign' ? 'розвідувальні ознаки' : 'обґрунтування';
+    return `Ви впевнені, що хочете видалити ${noun} «${topic}»?`;
+  }
+
+  return description.descrType === 'Sign'
+    ? 'Ви впевнені, що хочете видалити ці розвідувальні ознаки?'
+    : 'Ви впевнені, що хочете видалити це обґрунтування?';
 }

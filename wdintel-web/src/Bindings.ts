@@ -2413,6 +2413,7 @@ export type ReactivateNetworkFreqReq = {
 
 export type AddNetworkFrequencyDescription = {
   descrType: NetworkDescrType;
+  topic: string | null;
   description: string;
   freq: string;
 };
@@ -2594,6 +2595,7 @@ export type NetworkDescription = {
   networkId: number;
   networkFrequencyId: number | null;
   descrType: NetworkDescrType;
+  topic: string | null;
   description: string;
   login: string;
   createdAt: number;
@@ -2607,6 +2609,7 @@ export type AddNetworkDescriptionsReq = {
 
 export type AddNetworkDescription = {
   descrType: NetworkDescrType;
+  topic: string | null;
   description: string;
 };
 
@@ -2615,6 +2618,7 @@ export type UpdateNetworkDescriptionReq = {
   networkFreqId: number | null;
   descriptionId: number;
   descrType: NetworkDescrType;
+  topic: string | null;
   description: string;
 };
 

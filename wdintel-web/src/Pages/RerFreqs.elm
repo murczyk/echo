@@ -1208,6 +1208,7 @@ update shared msg model =
                                     |> Maybe.map
                                         (\inp ->
                                             { descrType = B.Confirmation
+                                            , topic = Nothing
                                             , description = inp
                                             , freq = freq
                                             }
