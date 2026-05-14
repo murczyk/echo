@@ -267,6 +267,11 @@ async function routeDutyApi(route: Route, pathname: string, delayMs: number): Pr
     return true;
   }
 
+  if (pathname === '/api/user/network-settings') {
+    await fulfillJson(route, { showTableRowNumbers: true });
+    return true;
+  }
+
   if (pathname === '/api/system-settings/current') {
     await fulfillJson(route, emptySystemSettingsResponse());
     return true;

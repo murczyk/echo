@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
-import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { isNullOrUndefined, sortFrequenciesNumerically } from '../../utils/misc';
@@ -9,6 +8,7 @@ import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
 import { collectUniqueCallsignsFromMessages } from './utils';
+import { useDutySettings } from '../../hooks/use-duty-settings';
 
 const MAX_MESSAGE_FEEDS = 4;
 const CALLSIGN_LOOKUP_RETRY_BACKOFF_MS = 30_000;
@@ -98,7 +98,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
   const [testSinceMs, setTestSinceMs] = useState(0);
   const [testLimit, setTestLimit] = useState(1);
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
-  const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
+  const dutySettings = useDutySettings();
   const [callsignRetryVersion, setCallsignRetryVersion] = useState(0);
   const loadingCallsignsRef = useRef<Set<string>>(new Set());
   const enrichedCallsignsRef = useRef<Set<string>>(new Set());
@@ -113,7 +113,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     testSinceMs,
     testLimit,
     pollIntervalSec,
-    disableAutoScroll: dutyDisableAutoScroll,
+    disableAutoScroll: dutySettings.disableAutoScroll,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
@@ -137,33 +137,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     };
   }, [setFeedError]);
   useEffect(() => {
-    let cancelled = false;
-    fetchUserSettings()
-      .then((prefs) => {
-        if (cancelled) return;
-        setDutyDisableAutoScroll(prefs.disableAutoScroll);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDutyDisableAutoScroll(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  useEffect(() => {
-    const onSettingsUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ disableAutoScroll?: boolean }>).detail;
-      if (isNullOrUndefined(detail?.disableAutoScroll)) return;
-      setDutyDisableAutoScroll(detail.disableAutoScroll);
-    };
-
-    window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
-    return () => {
-      window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
-    };
-  }, []);
-  useEffect(() => {
     isUnmountedRef.current = false;
     return () => {
       isUnmountedRef.current = true;
@@ -174,8 +147,8 @@ export function useRerDutyFeeds(authUserName: string | null) {
   }, []);
 
   useEffect(() => {
-    if (dutyDisableAutoScroll) feedState.setWatchModeByFeedId({});
-  }, [dutyDisableAutoScroll, feedState.setWatchModeByFeedId]);
+    if (dutySettings.disableAutoScroll) feedState.setWatchModeByFeedId({});
+  }, [dutySettings.disableAutoScroll, feedState.setWatchModeByFeedId]);
 
   useEffect(() => {
     const nowMs = Date.now();
@@ -296,7 +269,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     setSelectedSavedIdByFeedId: filterOpts.setSelectedSavedIdByFeedId,
     saveFilterNameByFeedId: filterOpts.saveFilterNameByFeedId,
     setSaveFilterNameByFeedId: filterOpts.setSaveFilterNameByFeedId,
-    dutyDisableAutoScroll,
+    dutyDisableAutoScroll: dutySettings.disableAutoScroll,
   });
 
   const freqs = useMemo(
@@ -321,7 +294,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     columnRefsRef: feedState.columnRefsRef,
     nearBottomByFeedIdRef: feedState.nearBottomByFeedIdRef,
     atBottomByFeedIdRef: feedState.atBottomByFeedIdRef,
-    dutyDisableAutoScroll,
+    dutyDisableAutoScroll: dutySettings.disableAutoScroll,
     createMessageFeed: feedState.createMessageFeed,
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,

@@ -1,28 +1,16 @@
 import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent, SyntheticEvent } from 'react';
-import { isNullOrUndefined, isPresent } from '../../utils/misc';
+import { useEffect, useState } from 'react';
+import type { SyntheticEvent } from 'react';
+import { isNullOrUndefined } from '../../utils/misc';
 
-
-import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
-import { fetchServerInfo } from '../../services/api/server-info';
-import { fetchCurrentUser, saveUserSettings as saveAccountSettings } from '../../services/api/user';
-import {
-  USER_SETTINGS_UPDATED_EVENT,
-  fetchUserSettings,
-  saveUserSettings as saveUserDutySettings,
-} from '../../services/api/user-settings';
-import { listSigintZones } from '../../services/api/zones';
-import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SettingsReportsSection } from './SettingsReportsSection';
-
-type ZonePair = [number, SigintZone];
-type ZoneOption = { id: number; label: string };
+import { useGlobalSetting } from './use-global-settings';
+import { useDutySettings } from '../../hooks/use-duty-settings';
 
 export type SettingsSection = 'general' | 'duty' | 'analysis' | 'reports';
 
@@ -31,16 +19,6 @@ type SettingsNeoPageProps = {
 };
 
 const SETTINGS_SECTION_QUERY_PARAM = 'section';
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) return error.message;
-  if (typeof error === 'string' && error.trim().length > 0) return error;
-  return 'Невідома помилка. Спробуйте ще раз.';
-}
-
-function toSettingsSaveReq(sigintZoneId: number | null): SettingsSaveReq {
-  return { sigintZoneId };
-}
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
   if (section === 'duty' || section === 'analysis' || section === 'reports') return section;
@@ -59,32 +37,12 @@ function buildSettingsSectionUrl(section: SettingsSection): string {
 }
 
 export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
-  const [zones, setZones] = useState<ZonePair[]>([]);
-  const [zoneId, setZoneId] = useState<number | null>(null);
-  const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
-  const [versionText, setVersionText] = useState<string>('невідома версія');
-  const [userRoles, setUserRoles] = useState<string[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadInProgress, setLoadInProgress] = useState(true);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const [saveInProgress, setSaveInProgress] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
     parseSettingsSection(section ?? readSettingsSectionFromUrl()),
   );
 
-  const zoneOptions = useMemo<ZoneOption[]>(() => zones.map(([id, zone]) => ({ id, label: zone.name })), [zones]);
-  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
-  const [initialTagsLayout, setInitialTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
-  const [dutyDisableAutoScroll, setDutyDisableAutoScroll] = useState(false);
-  const [initialDutyDisableAutoScroll, setInitialDutyDisableAutoScroll] = useState(false);
-  const [analysisMapInSidebar, setAnalysisMapInSidebar] = useState(false);
-  const [dutyPrefsLoadError, setDutyPrefsLoadError] = useState<string | null>(null);
-  const [dutySaveError, setDutySaveError] = useState<string | null>(null);
-  const dutySavePendingRef = useRef<{ tagsLayout: TagsLayoutVariant; disableAutoScroll: boolean; analysisMapInSidebar: boolean } | null>(null);
-  const dutySaveRunningRef = useRef(false);
-
-  const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
+  const dutySettings = useDutySettings();
+  const globalSettings = useGlobalSetting();
 
   useEffect(() => {
     if (isNullOrUndefined(section)) return;
@@ -102,126 +60,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       window.removeEventListener('popstate', handlePopState);
     };
   }, []);
-
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    async function loadPageData() {
-      setLoadInProgress(true);
-      setLoadError(null);
-
-      try {
-        const [zonesData, user, prefsRsp] = await Promise.all([
-          listSigintZones(abortController.signal),
-          fetchCurrentUser(abortController.signal),
-          fetchUserSettings(abortController.signal).catch(() => null),
-        ]);
-
-        setZones(zonesData);
-        setZoneId(user.sigintZoneId);
-        setInitialZoneId(user.sigintZoneId);
-        setUserRoles(user.roles ?? []);
-
-        setDutyPrefsLoadError(null);
-        if (isNullOrUndefined(prefsRsp)) {
-          setDutyPrefsLoadError('Не вдалося завантажити налаштування.');
-          setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
-          setInitialTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
-          setDutyDisableAutoScroll(false);
-          setInitialDutyDisableAutoScroll(false);
-          setAnalysisMapInSidebar(false);
-        } else {
-          setTagsLayout(prefsRsp.tagsLayout);
-          setInitialTagsLayout(prefsRsp.tagsLayout);
-          setDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
-          setInitialDutyDisableAutoScroll(prefsRsp.disableAutoScroll);
-          setAnalysisMapInSidebar(prefsRsp.analysisMapInSidebar);
-        }
-        try {
-          const serverInfo = await fetchServerInfo(abortController.signal);
-          if (!abortController.signal.aborted) {
-            setVersionText(serverInfo.version || 'невідома версія');
-          }
-        } catch (_) {
-          if (!abortController.signal.aborted) {
-            setVersionText('невідома версія');
-          }
-        }
-      } catch (error) {
-        if (abortController.signal.aborted) return;
-        setLoadError(`Помилка завантаження налаштувань: ${formatErrorMessage(error)}`);
-      } finally {
-        if (abortController.signal.aborted) return;
-        setLoadInProgress(false);
-      }
-    }
-
-    loadPageData();
-
-    return () => {
-      abortController.abort();
-    };
-  }, []);
-
-  const isDirty = zoneId !== initialZoneId;
-  function scheduleDutySave(nextSettings: {
-    tagsLayout: TagsLayoutVariant;
-    disableAutoScroll: boolean;
-    analysisMapInSidebar: boolean;
-  }) {
-    setDutySaveError(null);
-    dutySavePendingRef.current = nextSettings;
-    void flushDutySaveQueue();
-  }
-
-  async function flushDutySaveQueue() {
-    if (dutySaveRunningRef.current) return;
-    dutySaveRunningRef.current = true;
-    let shouldRetryPendingSave = true;
-
-    try {
-      while (isPresent(dutySavePendingRef.current)) {
-        const nextSettings = dutySavePendingRef.current;
-        dutySavePendingRef.current = null;
-
-        try {
-          await saveUserDutySettings(nextSettings);
-          setInitialTagsLayout(nextSettings.tagsLayout);
-          setInitialDutyDisableAutoScroll(nextSettings.disableAutoScroll);
-          window.dispatchEvent(new CustomEvent(USER_SETTINGS_UPDATED_EVENT, { detail: nextSettings }));
-        } catch (error) {
-          setDutySaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
-          break;
-        }
-      }
-    } finally {
-      dutySaveRunningRef.current = false;
-      // Retry any queued write after a transient failure; a newer payload may have arrived while the failed save was in flight.
-      if (shouldRetryPendingSave && isPresent(dutySavePendingRef.current)) {
-        void flushDutySaveQueue();
-      }
-    }
-  }
-
-  async function handleSave(event?: FormEvent) {
-    event?.preventDefault();
-    if (saveInProgress) return;
-    if (!isDirty) return;
-
-    setSaveError(null);
-    setSaveSuccess(null);
-    setSaveInProgress(true);
-
-    try {
-      await saveAccountSettings(toSettingsSaveReq(zoneId));
-      setInitialZoneId(zoneId);
-      setSaveSuccess('Налаштування збережено');
-    } catch (error) {
-      setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
-    } finally {
-      setSaveInProgress(false);
-    }
-  }
 
   function handleTabChange(_: SyntheticEvent, value: SettingsSection) {
     if (value === settingsSection) return;
@@ -284,30 +122,32 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
 
           {settingsSection === 'general' ? (
             <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
-              <Box component="form" onSubmit={handleSave} noValidate sx={{ p: 3 }}>
+              <Box component="form" onSubmit={(event) => { event.preventDefault(); void globalSettings.save(); }} noValidate sx={{ p: 3 }}>
                 <Stack spacing={3} sx={{ width: '100%' }}>
-                  {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-                  {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-                  {saveSuccess ? (
+                  <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
+                    Загальні
+                  </Typography>
+                  {globalSettings.loadError ? <PowerAlert severity="error">{globalSettings.loadError}</PowerAlert> : null}
+                  {globalSettings.saveError ? <PowerAlert severity="error">{globalSettings.saveError}</PowerAlert> : null}
+                  {globalSettings.saveSuccess ? (
                     <PowerAlert severity="success" role="status">
-                      {saveSuccess}
+                      {globalSettings.saveSuccess}
                     </PowerAlert>
                   ) : null}
 
                   <Box>
                     <Autocomplete
                       size="small"
-                      options={zoneOptions}
-                      value={selectedZone}
+                      options={globalSettings.zoneOptions}
+                      value={globalSettings.selectedZone}
                       onChange={(_, option) => {
-                        setSaveSuccess(null);
-                        setZoneId(option?.id ?? null);
+                        globalSettings.setZoneId(option?.id ?? null);
                       }}
                       isOptionEqualToValue={(option, value) => option.id === value.id}
                       getOptionLabel={(option) => option.label}
                       clearText="Очистити"
                       noOptionsText="Немає варіантів"
-                      loading={loadInProgress}
+                      loading={globalSettings.loadInProgress}
                       loadingText="Завантаження..."
                       renderOption={(props, option) => {
                         const { key: _unusedKey, ...optionProps } = props;
@@ -352,13 +192,13 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     }}
                   >
                     <Typography variant="caption" color="text.secondary">
-                      Версія: {versionText}
+                      Версія: {globalSettings.versionText}
                     </Typography>
                     <PowerButton
                       variant="contained"
                       type="submit"
-                      disabled={saveInProgress || !isDirty}
-                      startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
+                      disabled={globalSettings.saveInProgress || !globalSettings.isDirty}
+                      startIcon={globalSettings.saveInProgress ? <CircularProgress size={18} /> : undefined}
                       sx={{ fontWeight: 500 }}
                     >
                       зберегти
@@ -371,22 +211,26 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
 
           {settingsSection === 'duty' ? (
             <SettingsDutySection
-              loadInProgress={loadInProgress}
-              prefsLoadError={dutyPrefsLoadError}
-              saveError={dutySaveError}
-              tagsLayout={tagsLayout}
+              loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+              prefsLoadError={dutySettings.loadError}
+              saveError={dutySettings.saveError}
+              tagsLayout={dutySettings.tagsLayout}
               onTagsLayoutChange={(layout) => {
-                setTagsLayout(layout);
-                scheduleDutySave({
+                dutySettings.setTagsLayout(layout);
+                dutySettings.scheduleSave({
                   tagsLayout: layout,
-                  disableAutoScroll: dutyDisableAutoScroll,
-                  analysisMapInSidebar,
+                  disableAutoScroll: dutySettings.disableAutoScroll,
+                  analysisMapInSidebar: dutySettings.analysisMapInSidebar,
                 });
               }}
-              disableAutoScroll={dutyDisableAutoScroll}
+              disableAutoScroll={dutySettings.disableAutoScroll}
               onDisableAutoScrollChange={(value) => {
-                setDutyDisableAutoScroll(value);
-                scheduleDutySave({ tagsLayout, disableAutoScroll: value, analysisMapInSidebar });
+                dutySettings.setDisableAutoScroll(value);
+                dutySettings.scheduleSave({
+                  tagsLayout: dutySettings.tagsLayout,
+                  disableAutoScroll: value,
+                  analysisMapInSidebar: dutySettings.analysisMapInSidebar,
+                });
               }}
             />
           ) : null}
@@ -403,16 +247,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     Аналіз
                   </Typography>
                   <SettingsSharedTagsLayoutCard
-                    tagsLayout={tagsLayout}
+                    tagsLayout={dutySettings.tagsLayout}
                     onTagsLayoutChange={(layout) => {
-                      setTagsLayout(layout);
-                      scheduleDutySave({
+                      dutySettings.setTagsLayout(layout);
+                      dutySettings.scheduleSave({
                         tagsLayout: layout,
-                        disableAutoScroll: dutyDisableAutoScroll,
-                        analysisMapInSidebar,
+                        disableAutoScroll: dutySettings.disableAutoScroll,
+                        analysisMapInSidebar: dutySettings.analysisMapInSidebar,
                       });
                     }}
-                    loadInProgress={loadInProgress}
+                    loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
                   />
                   <Box
                     sx={{
@@ -436,16 +280,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                         }}
                         control={
                           <Switch
-                            checked={analysisMapInSidebar}
+                            checked={dutySettings.analysisMapInSidebar}
                             onChange={(_, checked) => {
-                              setAnalysisMapInSidebar(checked);
-                              scheduleDutySave({
-                                tagsLayout,
-                                disableAutoScroll: dutyDisableAutoScroll,
+                              dutySettings.setAnalysisMapInSidebar(checked);
+                              dutySettings.scheduleSave({
+                                tagsLayout: dutySettings.tagsLayout,
+                                disableAutoScroll: dutySettings.disableAutoScroll,
                                 analysisMapInSidebar: checked,
                               });
                             }}
-                            disabled={loadInProgress}
+                            disabled={globalSettings.loadInProgress || dutySettings.loadInProgress}
                           />
                         }
                         label={
@@ -469,8 +313,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           {settingsSection === 'reports' ? (
             <SettingsReportsSection
               active={settingsSection === 'reports'}
-              userRoles={userRoles}
-              rolesLoading={loadInProgress}
+              userRoles={globalSettings.userRoles}
+              rolesLoading={globalSettings.loadInProgress}
             />
           ) : null}
         </Card>

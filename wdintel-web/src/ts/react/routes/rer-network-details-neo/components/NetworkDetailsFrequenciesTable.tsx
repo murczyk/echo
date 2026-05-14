@@ -4,12 +4,12 @@ import EditIcon from '@mui/icons-material/Edit';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-import { Box, Button, Chip, IconButton, ListItemIcon, Menu, MenuItem, Stack, Typography } from '@mui/material';
+import { Box, Button, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { MaterialReactTable, useMaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { ModulationRec, Network, NetworkFreqsRes } from '../../../../../Bindings';
-import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
+import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
@@ -17,22 +17,24 @@ import {
   getPageScrollTableContainerSx,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
-  buildDefaultColumnOrder,
-  buildExplicitSingleSelectColumnFilter,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
-  withExplicitSelectAllOption,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { PowerChip } from '../../../components/PowerChip';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { formatDateTime24 } from '../../../utils/misc';
 import { buildNetworkFreqRows, type NetworkFreqTableRow } from '../frequency-utils';
+import {
+  buildNetworkColumnOrder,
+} from './NetworkCallsignsTableShared';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkFreqTableRow>();
-const STATUS_FILTER_OPTIONS = withExplicitSelectAllOption([{ text: 'Активні', value: 'active' }, { text: 'Неактивні', value: 'inactive' }]);
-type StatusFilterValue = 'Усі' | 'active' | 'inactive';
+const NETWORK_MRT_LOCALIZATION = {
+  ...defaultMRTOptions.localization,
+  rowNumbers: 'Номер рядка',
+};
 const DEFAULT_COLUMNS_VISIBILITY = {
   displayFreq: true,
   typeLabel: true,
@@ -40,34 +42,46 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   messageCount: true,
   callsignLabel: true,
   lastDatetime: true,
-  status: true,
 };
-const DEFAULT_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount', 'callsignLabel', 'lastDatetime', 'status'],
-  withRowNumbers: true,
-  withRowActions: true,
-});
 const COMPACT_LOADED_ROW_LIMIT = 8;
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
-function formatStatusLabel(isActive: boolean): string {
-  return isActive ? 'Активна' : 'Неактивна';
+function getRowIsActive(row: NetworkFreqTableRow): boolean {
+  return row.kind === 'group' ? row.isActive : row.freq.isActive;
 }
 
-function renderStatusChip(isActive: boolean) {
+function renderFrequencyStatusIndicator(isActive: boolean) {
   return (
-    <Chip
+    <Tooltip title={isActive ? 'Активна' : 'Неактивна'} arrow>
+      <Box
+        component="span"
+        aria-label={isActive ? 'Активна' : 'Неактивна'}
+        sx={{
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
+          bgcolor: isActive ? 'success.main' : 'warning.main',
+          flexShrink: 0,
+          cursor: 'default',
+          mt: 0.1,
+        }}
+      />
+    </Tooltip>
+  );
+}
+
+function renderCategoryChip(label: string) {
+  return (
+    <PowerChip
       size="small"
-      label={formatStatusLabel(isActive)}
-      sx={{
-        height: 22,
-        fontSize: '0.75rem',
-        fontWeight: 600,
-        bgcolor: isActive ? 'success.main' : 'warning.main',
-        color: isActive ? 'success.contrastText' : 'warning.contrastText',
-        '& .MuiChip-label': { px: 0.9 },
-      }}
+      color="default"
+      label={label}
+      fontSize="0.75rem"
+      fontWeight={600}
+      labelPaddingX={0.85}
+      labelPaddingY={0.1}
+      sx={{ height: 26, lineHeight: 1 }}
     />
   );
 }
@@ -75,6 +89,7 @@ function renderStatusChip(isActive: boolean) {
 function renderFrequencyCell(row: NetworkFreqTableRow) {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, pl: row.kind === 'freq' && row.parentGroupId ? 4.5 : 0 }}>
+      {renderFrequencyStatusIndicator(getRowIsActive(row))}
       <Typography variant="body2" fontWeight={600} noWrap title={row.displayFreq}>
         {row.displayFreq}
       </Typography>
@@ -96,15 +111,6 @@ function getRowCallsignLabel(row: NetworkFreqTableRow): string {
 
 function getRowLastDatetime(row: NetworkFreqTableRow): number | null {
   return row.kind === 'group' ? row.lastDatetime : row.freq.lastDatetime;
-}
-
-function getRowIsActive(row: NetworkFreqTableRow): boolean {
-  return row.kind === 'group' ? row.isActive : row.freq.isActive;
-}
-
-function resolveStatusFilterValue(value: unknown): StatusFilterValue {
-  if (value === 'active' || value === 'inactive' || value === 'Усі') return value;
-  return 'Усі';
 }
 
 function buildLoadingRows(): NetworkFreqTableRow[] {
@@ -161,8 +167,8 @@ export type NetworkDetailsFrequenciesTableProps = {
 function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
   return [
     { header: 'Частота', accessorKey: 'displayFreq', id: 'displayFreq', size: 280, Cell: ({ row }) => renderFrequencyCell(row.original) },
-    { header: 'Тип', accessorKey: 'typeLabel', id: 'typeLabel', size: 120 },
-    { header: 'Шифрування', accessorKey: 'encryptionLabel', id: 'encryptionLabel', size: 180 },
+    { header: 'Тип', accessorKey: 'typeLabel', id: 'typeLabel', size: 120, Cell: ({ row }) => renderCategoryChip(row.original.typeLabel) },
+    { header: 'Шифрування', accessorKey: 'encryptionLabel', id: 'encryptionLabel', size: 180, Cell: ({ row }) => renderCategoryChip(row.original.encryptionLabel) },
     { header: 'К-сть', accessorKey: 'messageCount', id: 'messageCount', size: 110, Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{getRowMessageCount(row.original)}</Typography> },
     {
       header: 'Позивні',
@@ -190,26 +196,6 @@ function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
       filterVariant: 'date-range',
       filterFn: 'betweenInclusive',
       Cell: ({ row }) => resolveLastDatetimeLabel(getRowLastDatetime(row.original)),
-    },
-    {
-      header: 'Статус',
-      accessorFn: (row) => (getRowIsActive(row) ? 'active' : 'inactive'),
-      id: 'status',
-      size: 130,
-      filterVariant: 'select',
-      filterSelectOptions: STATUS_FILTER_OPTIONS,
-      meta: { activeFilterDefaultValue: 'Усі' },
-      Filter: buildExplicitSingleSelectColumnFilter({
-        options: STATUS_FILTER_OPTIONS,
-        fallbackValue: 'Усі',
-        onChange: (column, nextValue) => column.setFilterValue(nextValue === 'Усі' ? undefined : nextValue),
-      }),
-      filterFn: (row, columnId, filterValue) => {
-        const value = String(filterValue ?? 'Усі');
-        if (value === 'Усі') return true;
-        return String(row.getValue(columnId)) === value;
-      },
-      Cell: ({ row }) => renderStatusChip(getRowIsActive(row.original)),
     },
   ];
 }
@@ -243,14 +229,12 @@ function NetworkDetailsFrequenciesTableContent({
   const activeFreq = activeRow && activeRow.kind === 'freq' ? activeRow.freq : null;
   const isInitialLoading = loading || (freqsLoading && !freqsLoaded);
   const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;
-  const hasActiveFilters = tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
-  const statusFilterValue = useMemo(() => resolveStatusFilterValue(tableStateContext.columnFilters.find((filter) => filter.id === 'status')?.value), [tableStateContext.columnFilters]);
-
-  function setStatusFilterValue(nextValue: StatusFilterValue) {
-    const nextFilters = tableStateContext.columnFilters.filter((filter) => filter.id !== 'status');
-    if (nextValue !== 'Усі') nextFilters.push({ id: 'status', value: nextValue });
-    tableStateContext.onColumnFiltersChange(nextFilters);
-  }
+  const [statusFilterValue, setStatusFilterValue] = useState<'Усі' | 'active' | 'inactive'>('Усі');
+  const visibleRows = useMemo(
+    () => (statusFilterValue === 'Усі' ? rows : rows.filter((row) => (statusFilterValue === 'active' ? getRowIsActive(row) : !getRowIsActive(row)))),
+    [rows, statusFilterValue],
+  );
+  const hasActiveFilters = statusFilterValue !== 'Усі' || tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
 
   const statusFilterChips = (
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -260,16 +244,22 @@ function NetworkDetailsFrequenciesTableContent({
     </Stack>
   );
 
-  const columns = useMemo(() => buildColumns(), []);
+  const columns = useMemo<MRT_ColumnDef<NetworkFreqTableRow>[]>(() => {
+    return [...buildColumns()];
+  }, []);
   const table = useMaterialReactTable({
     columns,
-    data: isInitialLoading && rows.length === 0 ? loadingRows : rows,
+    data: isInitialLoading && rows.length === 0 ? loadingRows : visibleRows,
     ...defaultMRTOptions,
+    localization: NETWORK_MRT_LOCALIZATION,
     layoutMode: 'grid',
     enablePagination: false,
     enableBottomToolbar: false,
     enableTopToolbar: false,
     enableColumnActions: true,
+    enableRowNumbers: true,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
     enableColumnFilters: true,
     enableColumnFilterModes: false,
     enableFacetedValues: true,
@@ -279,15 +269,38 @@ function NetworkDetailsFrequenciesTableContent({
     enableColumnResizing: tableStateContext.enableColumnResizing,
     enableRowVirtualization: false,
     enableRowSelection: false,
-    enableRowNumbers: true,
-    enableRowActions: true,
-    positionActionsColumn: 'first',
     columnFilterDisplayMode: 'popover',
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    renderRowActions: ({ row }) => {
+      if (isInitialLoading) return <Box sx={{ minHeight: 28 }} />;
+      if (row.original.kind === 'group') {
+        const groupRow = row.original;
+        const isExpanded = expandedFrequencyGroupIds.includes(groupRow.groupId);
+        return (
+          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+            <MrtRowActionButton
+              label={isExpanded ? 'Згорнути групу частот' : 'Розгорнути групу частот'}
+              onClick={() => onToggleFrequencyGroupExpanded(groupRow.groupId)}
+              icon={isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+            />
+          </Box>
+        );
+      }
+      if (!canManage) return <Box sx={{ minHeight: 28 }} />;
+      const freqRow = row.original.freq;
+      return (
+        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" useFlexGap>
+          <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} />
+          <IconButton size="small" aria-label="Дії з частотою" onClick={(event) => { event.stopPropagation(); onOpenFreqRowActions(event.currentTarget, freqRow.networkFreqId); }}>
+            <MoreVertOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+      );
+    },
     state: {
       globalFilter: tableStateContext.globalFilter,
       columnVisibility: tableStateContext.columnVisibility,
@@ -302,10 +315,6 @@ function NetworkDetailsFrequenciesTableContent({
       showProgressBars: false,
     },
     defaultColumn: { size: 180, renderColumnActionsMenuItems },
-    displayColumnDefOptions: {
-      ...CUSTOM_STYLES.displayColumnDefOptions,
-      'mrt-row-actions': { ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'], size: mrtRowActionsColumnSize(2) },
-    },
     muiTablePaperProps: ({ table }) => ({
       ...((resolvedPaperProps({ table }) as object) ?? {}),
       sx: {
@@ -352,38 +361,18 @@ function NetworkDetailsFrequenciesTableContent({
       onClearFilters: freqsError ? undefined : () => {
         tableStateContext.onColumnFiltersChange([]);
         tableStateContext.onChangeGlobalFilter('');
+        setStatusFilterValue('Усі');
       },
     }),
-    localization: { ...defaultMRTOptions.localization },
     manualFiltering: false,
-    initialState: { density: 'comfortable', columnOrder: DEFAULT_COLUMN_ORDER, columnVisibility: DEFAULT_COLUMNS_VISIBILITY },
-    getRowId: (row) => row.id,
-    renderRowActions: ({ row }) => {
-      if (isInitialLoading) return <Box sx={{ minHeight: 28 }} />;
-      if (row.original.kind === 'group') {
-        const groupRow = row.original;
-        const isExpanded = expandedFrequencyGroupIds.includes(groupRow.groupId);
-        return (
-          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-            <MrtRowActionButton
-              label={isExpanded ? 'Згорнути групу частот' : 'Розгорнути групу частот'}
-              onClick={() => onToggleFrequencyGroupExpanded(groupRow.groupId)}
-              icon={isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-            />
-          </Box>
-        );
-      }
-      if (!canManage) return <Box sx={{ minHeight: 28 }} />;
-      const freqRow = row.original.freq;
-      return (
-        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" useFlexGap>
-          <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} />
-          <IconButton size="small" aria-label="Дії з частотою" onClick={(event) => { event.stopPropagation(); onOpenFreqRowActions(event.currentTarget, freqRow.networkFreqId); }}>
-            <MoreVertOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Stack>
-      );
+    initialState: {
+      density: 'comfortable',
+      columnOrder: buildNetworkColumnOrder({
+        dataColumnIds: ['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount', 'callsignLabel', 'lastDatetime'],
+      }),
+      columnVisibility: DEFAULT_COLUMNS_VISIBILITY,
     },
+    getRowId: (row) => row.id,
   });
 
   useEffect(() => {
@@ -408,7 +397,7 @@ function NetworkDetailsFrequenciesTableContent({
       <Stack spacing={1.25} sx={{ minHeight: 0, minWidth: 0, flex: isCompactLoadedLayout ? '0 0 auto' : 1, width: '100%' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, width: '100%', minWidth: 0 }}>
           <Box sx={{ minWidth: 0 }}>{statusFilterChips}</Box>
-          <Box sx={{ flexShrink: 0 }}><InternalTableActions table={table} /></Box>
+          <Box sx={{ flexShrink: 0 }}><InternalTableActions table={table} rowNumberAppearanceControl /></Box>
         </Box>
         <Box sx={{ flex: isCompactLoadedLayout ? '0 0 auto' : 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%', overflowX: 'auto' }}>
           <Box sx={{ flex: isCompactLoadedLayout ? '0 0 auto' : 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%' }}>

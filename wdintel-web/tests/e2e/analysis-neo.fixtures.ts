@@ -156,6 +156,11 @@ export async function installAnalysisNeoApiMocks(page: Page, options: AnalysisNe
       return;
     }
 
+    if (pathname === '/api/user/network-settings') {
+      await fulfillJson(route, { showTableRowNumbers: true });
+      return;
+    }
+
     if (pathname === '/api/rer/analysis/saved-filters') {
       await fulfillJson(route, emptySavedFiltersResponse());
       return;

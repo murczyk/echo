@@ -1,22 +1,8 @@
 import { Box, CircularProgress, Stack, TextField, Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
-import { isNullOrUndefined } from '../../utils/misc';
 
-
-import type {
-  AreaOfResponsibility,
-  UpdateAreaOfResponsibilityReportOrderReq,
-} from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
-import { listAors, updateAorReportOrders } from '../../services/api/aor';
-
-type ReportsRow = {
-  id: number;
-  name: string;
-  orderInput: string;
-  initialOrder: number;
-};
+import { useReportsSettings } from './use-reports-settings';
 
 type Props = {
   active: boolean;
@@ -24,132 +10,16 @@ type Props = {
   rolesLoading: boolean;
 };
 
-type LoadStatus = 'idle' | 'loading' | 'ready' | 'error';
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'string' && error.trim()) return error;
-  return 'Невідома помилка. Спробуйте ще раз.';
-}
-
-function toRows(aors: AreaOfResponsibility[]): ReportsRow[] {
-  return [...aors]
-    .filter((aor) => aor.isTopLevel)
-    .sort(
-      (left, right) =>
-        left.orderForReport - right.orderForReport
-        || left.name.localeCompare(right.name, 'uk'),
-    )
-    .map((aor) => ({
-      id: aor.id,
-      name: aor.name,
-      orderInput: String(aor.orderForReport),
-      initialOrder: aor.orderForReport,
-    }));
-}
-
-function parseOrderInput(value: string): number | null {
-  if (value.trim() === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 export function SettingsReportsSection({ active, userRoles, rolesLoading }: Props) {
-  const [rows, setRows] = useState<ReportsRow[]>([]);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>('idle');
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const [saveInProgress, setSaveInProgress] = useState(false);
-
-  const canRead = useMemo(
-    () => userRoles.some((role) => ['Admin', 'Rer', 'UnitsEditor'].includes(role)),
-    [userRoles],
-  );
-  const canEdit = useMemo(
-    () => userRoles.some((role) => ['Admin', 'Rer'].includes(role)),
-    [userRoles],
-  );
-
-  useEffect(() => {
-    if (!active || !canRead) return;
-
-    const abortController = new AbortController();
-
-    async function load() {
-      setLoadStatus('loading');
-      setLoadError(null);
-
-      try {
-        const aors = await listAors(
-          { sortBy: 'AreaOfResponsibilityNameAsc' },
-          abortController.signal,
-        );
-        if (abortController.signal.aborted) return;
-        setRows(toRows(aors));
-        setLoadStatus('ready');
-      } catch (error) {
-        if (abortController.signal.aborted) return;
-        setLoadError(`Помилка завантаження: ${formatErrorMessage(error)}`);
-        setLoadStatus('error');
-      }
-    }
-
-    load();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [active, canRead]);
-
-  const hasInvalidRows = rows.some((row) => isNullOrUndefined(parseOrderInput(row.orderInput)));
-  const isDirty = rows.some((row) => parseOrderInput(row.orderInput) !== row.initialOrder);
-  const rowPairs = useMemo(() => {
-    const pairs: Array<[ReportsRow, ReportsRow | null]> = [];
-    for (let index = 0; index < rows.length; index += 2) {
-      pairs.push([rows[index], rows[index + 1] ?? null]);
-    }
-    return pairs;
-  }, [rows]);
-
-  function setRowOrderInput(rowId: number, value: string) {
-    setSaveSuccess(null);
-    setRows((currentRows) =>
-      currentRows.map((currentRow) =>
-        currentRow.id === rowId
-          ? { ...currentRow, orderInput: value }
-          : currentRow,
-      ),
-    );
-  }
-
-  async function handleSave() {
-    if (!canEdit || hasInvalidRows || !isDirty || saveInProgress) return;
-
-    setSaveError(null);
-    setSaveSuccess(null);
-    setSaveInProgress(true);
-
-    try {
-      const req: UpdateAreaOfResponsibilityReportOrderReq = {
-        items: rows.map((row) => ({
-          id: row.id,
-          orderForReport: parseOrderInput(row.orderInput) ?? row.initialOrder,
-        })),
-      };
-      const updated = await updateAorReportOrders(req);
-      setRows(toRows(updated));
-      setSaveSuccess('Порядок звітів збережено');
-    } catch (error) {
-      setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
-    } finally {
-      setSaveInProgress(false);
-    }
-  }
+  const reportsSettings = useReportsSettings({ active, userRoles });
+  const isInvalidOrderInput = (value: string) => value.trim() === '' || !Number.isFinite(Number(value));
 
   return (
     <Box id="settings-neo-panel-reports" role="tabpanel" aria-labelledby="settings-neo-tab-reports" sx={{ p: 3 }}>
       <Stack spacing={3}>
+        <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
+          Звіти
+        </Typography>
         <Box>
           <Typography variant="body2" color="text.secondary">
             Порядок визначає послідовність аркушів у GOI-звіті. Менші значення йдуть раніше; AOR без даних пропускаються.
@@ -157,27 +27,27 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
           </Typography>
         </Box>
 
-        {!rolesLoading && !canRead ? (
+        {!rolesLoading && !reportsSettings.canRead ? (
           <PowerAlert severity="info">У вас немає доступу до налаштування порядку звітів.</PowerAlert>
         ) : null}
-        {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-        {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-        {saveSuccess ? (
+        {reportsSettings.loadError ? <PowerAlert severity="error">{reportsSettings.loadError}</PowerAlert> : null}
+        {reportsSettings.saveError ? <PowerAlert severity="error">{reportsSettings.saveError}</PowerAlert> : null}
+        {reportsSettings.saveSuccess ? (
           <PowerAlert severity="success" role="status">
-            {saveSuccess}
+            {reportsSettings.saveSuccess}
           </PowerAlert>
         ) : null}
-        {!rolesLoading && canRead && !canEdit ? (
+        {!rolesLoading && reportsSettings.canRead && !reportsSettings.canEdit ? (
           <PowerAlert severity="info">Редагування доступне ролям `Admin` або `Rer`.</PowerAlert>
         ) : null}
 
-        {canRead && (rolesLoading || loadStatus === 'loading') ? (
+        {reportsSettings.canRead && (rolesLoading || reportsSettings.loadStatus === 'loading') ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress size={28} />
           </Box>
         ) : null}
 
-        {canRead && !rolesLoading && loadStatus === 'ready' ? (
+        {reportsSettings.canRead && !rolesLoading && reportsSettings.loadStatus === 'ready' ? (
           <Stack spacing={2.5}>
             <Box
               sx={{
@@ -207,11 +77,9 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
                 </Box>
               </Box>
 
-              {rowPairs.map(([leftRow, rightRow], rowIndex) => {
-                const leftInvalid = isNullOrUndefined(parseOrderInput(leftRow.orderInput));
-                const rightInvalid = isNullOrUndefined(rightRow)
-                  ? false
-                  : isNullOrUndefined(parseOrderInput(rightRow.orderInput));
+              {reportsSettings.rowPairs.map(([leftRow, rightRow], rowIndex) => {
+                const leftInvalid = isInvalidOrderInput(leftRow.orderInput);
+                const rightInvalid = rightRow == null ? false : isInvalidOrderInput(rightRow.orderInput);
                 const topBorderSx = rowIndex > 0 ? { borderTop: 1, borderColor: 'divider' } : undefined;
                 return (
                   <Box
@@ -239,12 +107,12 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
                       <TextField
                         label="Порядок"
                         value={leftRow.orderInput}
-                        onChange={(event) => setRowOrderInput(leftRow.id, event.target.value)}
+                        onChange={(event) => reportsSettings.setRowOrderInput(leftRow.id, event.target.value)}
                         type="number"
                         size="small"
                         error={leftInvalid}
                         helperText={leftInvalid ? 'Вкажіть число' : undefined}
-                        disabled={!canEdit || saveInProgress}
+                        disabled={!reportsSettings.canEdit || reportsSettings.saveInProgress}
                         slotProps={{ htmlInput: { step: 0.1 } }}
                         sx={{ width: 220, flexShrink: 0 }}
                       />
@@ -268,12 +136,12 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
                         <TextField
                           label="Порядок"
                           value={rightRow.orderInput}
-                          onChange={(event) => setRowOrderInput(rightRow.id, event.target.value)}
+                          onChange={(event) => reportsSettings.setRowOrderInput(rightRow.id, event.target.value)}
                           type="number"
                           size="small"
                           error={rightInvalid}
                           helperText={rightInvalid ? 'Вкажіть число' : undefined}
-                          disabled={!canEdit || saveInProgress}
+                          disabled={!reportsSettings.canEdit || reportsSettings.saveInProgress}
                           slotProps={{ htmlInput: { step: 0.1 } }}
                           sx={{ width: 220, flexShrink: 0 }}
                         />
@@ -295,8 +163,8 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
                 <Typography variant="body2" color="text.secondary">
                   Смуга
                 </Typography>
-                {rows.map((row) => {
-                  const invalid = isNullOrUndefined(parseOrderInput(row.orderInput));
+                {reportsSettings.rows.map((row) => {
+                  const invalid = isInvalidOrderInput(row.orderInput);
                   return (
                     <Box
                       key={row.id}
@@ -313,12 +181,12 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
                       <TextField
                         label="Порядок"
                         value={row.orderInput}
-                        onChange={(event) => setRowOrderInput(row.id, event.target.value)}
+                        onChange={(event) => reportsSettings.setRowOrderInput(row.id, event.target.value)}
                         type="number"
                         size="small"
                         error={invalid}
                         helperText={invalid ? 'Вкажіть число' : 'Менше значення вище в звіті'}
-                        disabled={!canEdit || saveInProgress}
+                        disabled={!reportsSettings.canEdit || reportsSettings.saveInProgress}
                         slotProps={{ htmlInput: { step: 0.1 } }}
                       />
                     </Box>
@@ -331,9 +199,9 @@ export function SettingsReportsSection({ active, userRoles, rolesLoading }: Prop
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
               <PowerButton
                 variant="contained"
-                onClick={handleSave}
-                disabled={!canEdit || hasInvalidRows || !isDirty || saveInProgress}
-                startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
+                onClick={reportsSettings.save}
+                disabled={!reportsSettings.canEdit || reportsSettings.hasInvalidRows || !reportsSettings.isDirty || reportsSettings.saveInProgress}
+                startIcon={reportsSettings.saveInProgress ? <CircularProgress size={18} /> : undefined}
               >
                 зберегти
               </PowerButton>

@@ -166,6 +166,11 @@ export async function installRerDutyShortStateMocks(
       return;
     }
 
+    if (pathname === '/api/user/network-settings') {
+      await fulfillJson(route, { showTableRowNumbers: true });
+      return;
+    }
+
     if (pathname === '/api/system-settings/current') {
       await fulfillJson(route, emptySystemSettingsResponse());
       return;

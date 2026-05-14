@@ -37,6 +37,7 @@ vi.mock('../../services/api/user', () => ({
 vi.mock('../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: userSettingsMock.fetchUserSettings,
+  saveUserSettings: vi.fn(),
 }));
 
 vi.mock('./use-analysis-data', () => ({
@@ -305,13 +306,13 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('user-settings-updated', {
-          detail: {
-            tagsLayout: 'compact',
-            disableAutoScroll: false,
-            analysisMapInSidebar: true,
-          },
-        }),
-      );
+        detail: {
+          tagsLayout: 'compact',
+          disableAutoScroll: false,
+          analysisMapInSidebar: true,
+        },
+      }),
+    );
     });
     await flushEffects();
 
@@ -358,13 +359,13 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('user-settings-updated', {
-          detail: {
-            tagsLayout: 'compact',
-            disableAutoScroll: false,
-            analysisMapInSidebar: false,
-          },
-        }),
-      );
+        detail: {
+          tagsLayout: 'compact',
+          disableAutoScroll: false,
+          analysisMapInSidebar: false,
+        },
+      }),
+    );
     });
     await flushEffects();
 
