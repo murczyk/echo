@@ -392,7 +392,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
-    const signatureByFeedId: Record<string, string> = {};
     messageFeeds.forEach((feed) => {
       const signature = JSON.stringify({
         filter: {
@@ -410,7 +409,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         highlightSignalsEnabled: feed.highlightSignalsEnabled ?? false,
         onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled ?? false,
       });
-      signatureByFeedId[feed.id] = signature;
       if (lastFilterSignatureByFeedIdRef.current[feed.id] !== signature) {
         lastFilterSignatureByFeedIdRef.current[feed.id] = signature;
         delete lastServerCountByFeedIdRef.current[feed.id];
@@ -449,7 +447,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         return { ...f, unreadCount: Math.max(f.unreadCount, quantity) };
       }),
     );
-    const newCountBySignature: Record<string, number> = {};
     for (const entry of counts) {
       if (entry.skipped || isNullOrUndefined(entry.quantity)) continue;
       const { feedId } = entry;
@@ -464,9 +461,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const nextCount = entry.quantity;
       if (isPresent(prevServerCount)) {
         const newCount = Math.max(0, nextCount - prevServerCount);
-        const signatureKey = signatureByFeedId[feedId] ?? feedId;
-        const prevCount = newCountBySignature[signatureKey] ?? 0;
-        newCountBySignature[signatureKey] = Math.max(prevCount, newCount);
+        if (newCount > 0) {
+          notifyDutyNewMessages(feedId, newCount);
+        }
       }
       lastServerCountByFeedIdRef.current[feedId] = nextCount;
       if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
@@ -479,10 +476,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           scrollToEndAfterLoad: shouldFollowScroll,
         });
       }
-    }
-    const totalNewCount = Object.values(newCountBySignature).reduce((sum, count) => sum + count, 0);
-    if (totalNewCount > 0) {
-      notifyDutyNewMessages(totalNewCount);
     }
   }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, freqs,deps.disableAutoScroll]);
 

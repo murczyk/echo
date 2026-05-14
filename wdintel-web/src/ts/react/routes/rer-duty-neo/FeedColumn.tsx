@@ -1,11 +1,13 @@
-import { Box, Button, CircularProgress, Fab, Paper, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Fab, IconButton, Paper, Typography } from '@mui/material';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
+import NotificationsOffOutlinedIcon from '@mui/icons-material/NotificationsOffOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import type { ComponentProps } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import type { ComponentProps, MouseEvent } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
@@ -22,6 +24,13 @@ import type { TagsLayoutVariant } from './utils';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
 import { FeedFilterPanel, type FeedFilterPanelModel } from './FeedFilterPanel';
+import { FeedNotificationPanel } from './FeedNotificationPanel';
+import {
+  getStoredDutyNotificationSettingsForFeed,
+  requestBrowserNotificationPermission,
+  resumeDutyNotificationAudioFromUserGesture,
+  setStoredDutyNotificationSettingsForFeed,
+} from './notifications';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
 import { dutyTopActionButtonSx, dutyTopScrollButtonSx } from './top-action-styles';
@@ -174,6 +183,35 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     onVisibleMessageIds,
   } = actions;
   const [showFilters, setShowFilters] = useState(false);
+  const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+  const [notificationStorageSyncKey, setNotificationStorageSyncKey] = useState(0);
+  const bumpNotificationStorageSync = useCallback(() => {
+    setNotificationStorageSyncKey((k) => k + 1);
+  }, []);
+  const dutyNotificationSummary = useMemo(
+    () => getStoredDutyNotificationSettingsForFeed(feed.id),
+    [feed.id, notificationStorageSyncKey],
+  );
+  const dutyNotificationsOn = dutyNotificationSummary.soundEnabled || dutyNotificationSummary.browserEnabled;
+
+  const handleBellToggleDutyNotifications = useCallback(
+    async (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cur = getStoredDutyNotificationSettingsForFeed(feed.id);
+      if (cur.soundEnabled || cur.browserEnabled) {
+        setStoredDutyNotificationSettingsForFeed(feed.id, { soundEnabled: false, browserEnabled: false });
+        bumpNotificationStorageSync();
+        return;
+      }
+      resumeDutyNotificationAudioFromUserGesture();
+      const permission = await requestBrowserNotificationPermission();
+      const browserEnabled = permission === 'granted';
+      setStoredDutyNotificationSettingsForFeed(feed.id, { soundEnabled: true, browserEnabled });
+      bumpNotificationStorageSync();
+    },
+    [feed.id, bumpNotificationStorageSync],
+  );
   const [isAtBottom, setIsAtBottom] = useState(true);
   const loadOlderTriggeredRef = useRef(false);
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
@@ -287,14 +325,17 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             },
           }}
         >
-          <div>
+          <Box className="flex min-w-0 items-stretch">
             <Button
               size="small"
               variant="text"
               className="self-stretch px-4"
               startIcon={<SettingsOutlinedIcon />}
               endIcon={showFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-              onClick={() => setShowFilters((s) => !s)}
+              onClick={() => {
+                setShowFilters((s) => !s);
+                setShowNotificationPanel(false);
+              }}
               aria-expanded={showFilters}
               sx={{
                 borderRadius: 0,
@@ -307,7 +348,71 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             >
               Фільтри
             </Button>
-          </div>
+            <Box
+              className="flex items-stretch self-stretch border-l border-solid"
+              sx={{ borderColor: 'rgba(148, 163, 184, 0.28)' }}
+            >
+              <IconButton
+                type="button"
+                size="small"
+                aria-label={
+                  dutyNotificationsOn
+                    ? 'Вимкнути звукові та браузерні нотифікації для стрічки'
+                    : 'Увімкнути звукові та браузерні нотифікації для стрічки'
+                }
+                aria-pressed={dutyNotificationsOn}
+                onClick={handleBellToggleDutyNotifications}
+                sx={{
+                  borderRadius: 0,
+                  height: 32,
+                  width: 40,
+                  maxHeight: 32,
+                  color: dutyNotificationsOn ? 'primary.main' : 'text.secondary',
+                  '&:hover': { backgroundColor: 'action.hover' },
+                }}
+              >
+                {dutyNotificationsOn ? (
+                  <NotificationsActiveOutlinedIcon sx={{ fontSize: 20 }} />
+                ) : (
+                  <Box
+                    component="span"
+                    sx={{
+                      position: 'relative',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 22,
+                      height: 22,
+                    }}
+                  >
+                    <NotificationsOffOutlinedIcon sx={{ fontSize: 20 }} />
+                
+                  </Box>
+                )}
+              </IconButton>
+              <Button
+                size="small"
+                variant="text"
+                className="self-stretch px-2 min-w-0"
+                endIcon={showNotificationPanel ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                onClick={() => {
+                  setShowNotificationPanel((s) => !s);
+                  setShowFilters(false);
+                }}
+                aria-expanded={showNotificationPanel}
+                sx={{
+                  borderRadius: 0,
+                  color: showNotificationPanel ? 'primary.light' : 'text.primary',
+                  backgroundColor: 'transparent',
+                  '&:hover': {
+                    backgroundColor: 'action.hover',
+                  },
+                }}
+              >
+                Нотифікації
+              </Button>
+            </Box>
+          </Box>
           {canRemove && (
             <Button
               size="small"
@@ -323,6 +428,15 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         {showFilters && (
           <Box>
             <FeedFilterPanel panel={filterPanel} />
+          </Box>
+        )}
+        {showNotificationPanel && (
+          <Box>
+            <FeedNotificationPanel
+              feedId={feed.id}
+              storageSyncKey={notificationStorageSyncKey}
+              onPersisted={bumpNotificationStorageSync}
+            />
           </Box>
         )}
       </Box>

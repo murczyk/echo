@@ -5,31 +5,42 @@ export type DutyNotificationSettings = {
   browserEnabled: boolean;
 };
 
-const DUTY_NOTIFICATION_SETTINGS_KEY = 'rer-duty-neo-notifications';
+const DUTY_NOTIFICATION_SETTINGS_BY_FEED_KEY = 'rer-duty-neo-notifications-by-feed';
 
-export function getStoredDutyNotificationSettings(): DutyNotificationSettings {
-  if (typeof window === 'undefined') {
-    return { soundEnabled: false, browserEnabled: false };
-  }
+function readDutyNotificationSettingsByFeed(): Record<string, DutyNotificationSettings> {
+  if (typeof window === 'undefined') return {};
   try {
-    const raw = window.localStorage.getItem(DUTY_NOTIFICATION_SETTINGS_KEY);
-    if (!raw) return { soundEnabled: false, browserEnabled: false };
-    const parsed = JSON.parse(raw) as Partial<DutyNotificationSettings> | null;
-    return {
-      soundEnabled: Boolean(parsed?.soundEnabled),
-      browserEnabled: Boolean(parsed?.browserEnabled),
-    };
+    const raw = window.localStorage.getItem(DUTY_NOTIFICATION_SETTINGS_BY_FEED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, Partial<DutyNotificationSettings>> | null;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, DutyNotificationSettings> = {};
+    for (const [feedId, v] of Object.entries(parsed)) {
+      out[feedId] = {
+        soundEnabled: Boolean(v?.soundEnabled),
+        browserEnabled: Boolean(v?.browserEnabled),
+      };
+    }
+    return out;
   } catch {
-    return { soundEnabled: false, browserEnabled: false };
+    return {};
   }
 }
 
-export function setStoredDutyNotificationSettings(value: DutyNotificationSettings): void {
+export function getStoredDutyNotificationSettingsForFeed(feedId: string): DutyNotificationSettings {
+  const byFeed = readDutyNotificationSettingsByFeed();
+  const forFeed = byFeed[feedId];
+  if (forFeed) return forFeed;
+  return { soundEnabled: false, browserEnabled: false };
+}
+
+export function setStoredDutyNotificationSettingsForFeed(feedId: string, value: DutyNotificationSettings): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_KEY, JSON.stringify(value));
+    const next = { ...readDutyNotificationSettingsByFeed(), [feedId]: value };
+    window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_BY_FEED_KEY, JSON.stringify(next));
   } catch (error) {
-    console.warn('Failed to save notification settings', error);
+    console.warn('Failed to save per-feed notification settings', error);
   }
 }
 
@@ -221,9 +232,9 @@ export function setDutyNeoDocumentTitleUnreadCount(totalUnread: number): void {
   applyDutyNeoDocumentTitle();
 }
 
-export function notifyDutyNewMessages(totalNew: number): void {
+export function notifyDutyNewMessages(feedId: string, totalNew: number): void {
   if (totalNew <= 0) return;
-  const settings = getStoredDutyNotificationSettings();
+  const settings = getStoredDutyNotificationSettingsForFeed(feedId);
   if (settings.soundEnabled) {
     playNotificationSound();
   }
