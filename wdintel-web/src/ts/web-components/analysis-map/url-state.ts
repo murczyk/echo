@@ -1,9 +1,7 @@
 import {
   clearRerAnalysisQueryStateSearchParams,
-  loadRerAnalysisQueryState,
   parseRerAnalysisQueryStateFromSearchParams,
   RER_ANALYSIS_LEGACY_STATE_PARAM,
-  saveRerAnalysisQueryState,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../rer-analysis-query-state';
 import {
@@ -47,10 +45,8 @@ export function updateStateUrl(currentUrl: string, messageUid: string): string {
       clearRerAnalysisQueryStateSearchParams(url.searchParams);
       url.searchParams.set(RER_ANALYSIS_LEGACY_STATE_PARAM, JSON.stringify(legacyState));
     } else {
-      const storedState = loadRerAnalysisQueryState();
-      const baseState = parseRerAnalysisQueryStateFromSearchParams(url.searchParams) ?? storedState ?? {};
+      const baseState = parseRerAnalysisQueryStateFromSearchParams(url.searchParams) ?? {};
       const stateObject = { ...baseState, search: messageUid };
-      saveRerAnalysisQueryState(stateObject);
       writeRerAnalysisQueryStateToSearchParams(url.searchParams, stateObject);
     }
     return url.href;

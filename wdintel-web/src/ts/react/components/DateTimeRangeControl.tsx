@@ -60,6 +60,7 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
         fromDateTimeStr: from.format('YYYY-MM-DDTHH:mm'),
         toDateTimeStr: to.format('YYYY-MM-DDTHH:mm'),
       });
+      setAnchorEl(null);
     },
     [onChange],
   );

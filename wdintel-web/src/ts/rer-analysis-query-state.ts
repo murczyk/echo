@@ -3,7 +3,6 @@ export type RerAnalysisQueryState = {
   [key: string]: unknown;
 };
 
-export const RER_ANALYSIS_QUERY_STATE_KEY = 'rer-analysis-neo-query-state';
 export const RER_ANALYSIS_LEGACY_STATE_PARAM = 'state';
 
 type QueryStateFieldType = 'string' | 'string[]' | 'boolean' | 'boolean?' | 'number' | 'number[]';
@@ -251,32 +250,4 @@ export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams
       }
     }
   }
-
-}
-
-export function saveRerAnalysisQueryState(state: unknown): void {
-  try {
-    const serialized = JSON.stringify(compactRerAnalysisQueryState(state));
-    localStorage.setItem(RER_ANALYSIS_QUERY_STATE_KEY, serialized);
-  } catch (error) {
-    console.error('Failed to save rer analysis query state', error);
-  }
-}
-
-export function loadRerAnalysisQueryState(): RerAnalysisQueryState | null {
-  try {
-    const stored = localStorage.getItem(RER_ANALYSIS_QUERY_STATE_KEY);
-
-    if (!stored) {
-      return null;
-    }
-
-    const parsed = JSON.parse(stored);
-
-    return normalizeRerAnalysisQueryState(parsed);
-  } catch (error) {
-    console.error('Failed to load rer analysis query state', error);
-  }
-
-  return null;
 }

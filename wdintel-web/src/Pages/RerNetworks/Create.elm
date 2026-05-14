@@ -532,11 +532,13 @@ update shared route msg model =
                     case descType of
                         B.Confirmation ->
                             { descrType = B.Confirmation
+                            , topic = Nothing
                             , description = model.addConfirmationInp
                             }
 
                         B.Sign ->
                             { descrType = B.Sign
+                            , topic = Nothing
                             , description = model.addSignsInp
                             }
 

@@ -12,6 +12,24 @@ function formatCollapsedDescriptionText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function getFirstNonEmptyLine(value: string): string {
+  const lines = value.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = formatCollapsedDescriptionText(line);
+    if (trimmed !== '') return trimmed;
+  }
+
+  return '';
+}
+
+function getCollapsedDescriptionTopic(description: NetworkDescription): string {
+  const topic = description.topic?.trim();
+  if (topic) return formatCollapsedDescriptionText(topic);
+
+  const descriptionText = getFirstNonEmptyLine(description.description);
+  return descriptionText === '' ? 'Без теми' : descriptionText;
+}
+
 function getDescriptionTypeLabel(descrType: NetworkDescrType): string {
   return descrType === 'Sign' ? 'розвідувальні ознаки' : 'обґрунтування';
 }
@@ -100,7 +118,7 @@ function DescriptionItem({
                 textOverflow: 'ellipsis',
               }}
             >
-              {formatCollapsedDescriptionText(description.description)}
+              {getCollapsedDescriptionTopic(description)}
             </Typography>
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 0.75, alignItems: 'center', minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>

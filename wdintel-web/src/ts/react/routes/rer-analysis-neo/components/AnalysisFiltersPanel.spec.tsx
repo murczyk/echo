@@ -92,6 +92,7 @@ vi.mock('@mui/material', () => ({
       <input type={props.type ?? 'text'} value={props.value ?? ''} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })} />
     </label>
   ),
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   useMediaQuery: () => false,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));

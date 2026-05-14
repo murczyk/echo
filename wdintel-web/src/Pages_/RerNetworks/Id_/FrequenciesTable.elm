@@ -796,6 +796,7 @@ update _ msg model =
                             else
                                 Just
                                     { descrType = B.Confirmation
+                                    , topic = Nothing
                                     , description = model.freqCreateDescriptionInp
                                     , freq = model.freqCreateState.freq
                                     }
