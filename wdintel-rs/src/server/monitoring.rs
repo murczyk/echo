@@ -11,6 +11,7 @@ use std::path::Path;
 async fn ping() -> impl Responder {
     HttpResponse::Ok().body("pong")
 }
+
 #[get("/api-public/ping")]
 async fn public_ping() -> impl Responder {
     HttpResponse::Ok().body("pong in public")

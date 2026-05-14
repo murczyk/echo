@@ -88,23 +88,6 @@ pub const NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE: u64 = 1000;
 pub const NETWORK_INVALIDATION_TASKS_FILTER_CHUNK: usize = 200;
 pub const NETWORK_INVALIDATION_QUERY_MAX_PARAMS: usize = 60_000; // keep under PG 65_535 parameter cap
 pub const NETWORK_INVALIDATION_DELETE_MAX_IDS: usize = 60_000; // keep under PG 65_535 parameter cap
-pub const CHANGELOG_ENV_PATH_KEY: &str = "ECHO_CHANGELOG_PATH";
-pub const CHANGELOG_DEFAULT_FILENAME: &str = "CHANGELOG.md";
-pub const CHANGELOG_PACKAGED_PATH: &str = "/usr/share/doc/echo/changelog.md";
-pub const CHANGELOG_PREVIEW_MAX_LINES: usize = 5;
-pub const CHANGELOG_UPDATES_ENV_PATH_KEY: &str = "ECHO_CHANGELOG_UPDATES_PATH";
-pub const CHANGELOG_UPDATES_DEFAULT_FILENAME: &str =
-    "changelog-updates/UPDATES.md";
-pub const CHANGELOG_UPDATES_PACKAGED_PATH: &str =
-    "/usr/share/doc/echo/changelog-updates/UPDATES.md";
-pub const CHANGELOG_UPDATES_MEDIA_ENV_PATH_KEY: &str =
-    "ECHO_CHANGELOG_UPDATES_MEDIA_PATH";
-pub const CHANGELOG_UPDATES_MEDIA_DEFAULT_DIR: &str = "changelog-updates/media";
-pub const CHANGELOG_RELEASES_ROOT_ENV_PATH_KEY: &str =
-    "ECHO_CHANGELOG_RELEASES_ROOT_PATH";
-pub const CHANGELOG_RELEASES_DEFAULT_DIR: &str = "changelog-updates";
-pub const CHANGELOG_RELEASE_HTML_FILENAME: &str = "changelog.html";
-
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
 pub const ONEOFF_ETALONKA_REPORT_OUTPUT_DIR: &str = "/var/tmp";
