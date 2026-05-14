@@ -421,10 +421,8 @@ navBar user shared activeName props =
                         ]
                     ]
                 ]
-
             ]
         ]
-
 
 
 changelogDropdown : Props msg -> Maybe { preview : List String, version : String, fullUrl : String, unseen : Bool } -> Html msg
@@ -463,11 +461,19 @@ changelogDropdown props maybeData =
                     , onClick toggleMsg
                     , onDropdownTriggerKey toggleMsg
                     , attribute "aria-haspopup" "true"
-                    , attribute "aria-expanded" (if isOpen then "true" else "false")
+                    , attribute "aria-expanded"
+                        (if isOpen then
+                            "true"
+
+                         else
+                            "false"
+                        )
                     , attribute "aria-label" "Останні зміни"
                     , type_ "button"
                     ]
-                    [ text "New" ]
+                    [ text "New"
+                    , badge
+                    ]
                 , div [ class "absolute right-0 pt-2 z-[3001]" ]
                     [ ul
                         [ class "w-72 p-3 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
@@ -476,11 +482,11 @@ changelogDropdown props maybeData =
                             , ( "block", isOpen )
                             ]
                         ]
-                        ([ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ]
+                        [ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ]
                             [ text ("Останні зміни: Реліз " ++ String.replace "-" "." data.version) ]
-                         , ul [ class "space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1" ]
+                        , ul [ class "space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1" ]
                             (List.map renderChangelogLine data.preview)
-                         , div [ class "mt-3 flex items-center justify-between" ]
+                        , div [ class "mt-3 flex items-center justify-between" ]
                             [ a
                                 [ href data.fullUrl
                                 , target "_blank"
@@ -490,10 +496,10 @@ changelogDropdown props maybeData =
                                 ]
                                 [ text "Читати повністю" ]
                             ]
-                         ]
-                        )
+                        ]
                     ]
                 ]
+
 
 
 -- Main navbar links: always white text
@@ -684,7 +690,6 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         ]
 
 
-
 onDropdownTriggerKey : msg -> Attribute msg
 onDropdownTriggerKey msg =
     on "keydown"
@@ -698,4 +703,3 @@ onDropdownTriggerKey msg =
             )
             (Json.Decode.field "key" Json.Decode.string)
         )
-
