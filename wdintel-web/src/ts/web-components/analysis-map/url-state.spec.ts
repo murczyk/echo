@@ -63,11 +63,18 @@ describe('analysis map url state', () => {
     expect(nextUrl.searchParams.get('search')).toBe('uid-1');
   });
 
-  it('persists classic rebuilt urls into legacy storage and keeps neo urls query-param only', () => {
+  it('keeps neo rebuilt urls query-param only', () => {
+    const currentUrl = 'https://example.test/rer-analysis-neo?search=neo-old';
+
+    const nextUrl = new URL(updateStateUrl(currentUrl, 'neo-uid'));
+
+    expect(nextUrl.searchParams.get('search')).toBe('neo-uid');
+    expect(nextUrl.searchParams.get('state')).toBeNull();
+  });
+
+  it('persists classic rebuilt urls into legacy storage', () => {
     updateStateUrl('https://example.test/rer-analysis?state=%7B%22search%22%3A%22old%22%7D', 'classic-uid');
-    updateStateUrl('https://example.test/rer-analysis-neo?search=neo-old', 'neo-uid');
 
     expect(globalThis.localStorage.getItem(RER_ANALYSIS_LEGACY_QUERY_STATE_KEY)).toContain('classic-uid');
-    expect(globalThis.localStorage.getItem('rer-analysis-neo-query-state')).toBeNull();
   });
 });

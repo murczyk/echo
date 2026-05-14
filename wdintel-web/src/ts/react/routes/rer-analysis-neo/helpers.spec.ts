@@ -42,21 +42,7 @@ function createSavedFilter(reqState: AnalysisQueryState): SavedFilter {
 }
 
 describe('rer-analysis-neo helpers', () => {
-  it('treats managed url params as authoritative over browser storage', () => {
-    const storage = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        clear: () => storage.clear(),
-        getItem: (key: string) => storage.get(key) ?? null,
-        removeItem: (key: string) => {
-          storage.delete(key);
-        },
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
-      },
-    });
+  it('treats managed url params as authoritative', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -66,39 +52,16 @@ describe('rer-analysis-neo helpers', () => {
       },
     });
 
-    globalThis.localStorage.setItem(
-      'rer-analysis-neo-query-state',
-      JSON.stringify({
-        freqsSelected: ['123.4'],
-        tags: [7],
-      }),
-    );
-
     expect(parseQueryStateFromWindow()).toMatchObject({
       search: 'uid-1',
       freqsSelected: [],
       tags: [],
     });
 
-    delete (globalThis as { localStorage?: Storage }).localStorage;
     delete (globalThis as { window?: Window }).window;
   });
 
-  it('falls back to default query state when managed url params are absent', () => {
-    const storage = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        clear: () => storage.clear(),
-        getItem: (key: string) => storage.get(key) ?? null,
-        removeItem: (key: string) => {
-          storage.delete(key);
-        },
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
-      },
-    });
+  it('ignores unsupported legacy state params when managed url params are absent', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -108,17 +71,8 @@ describe('rer-analysis-neo helpers', () => {
       },
     });
 
-    globalThis.localStorage.setItem(
-      'rer-analysis-neo-query-state',
-      JSON.stringify({
-        search: 'stored',
-        freqsSelected: ['432.1'],
-      }),
-    );
-
     expect(parseQueryStateFromWindow()).toEqual(emptyQueryState());
 
-    delete (globalThis as { localStorage?: Storage }).localStorage;
     delete (globalThis as { window?: Window }).window;
   });
 
