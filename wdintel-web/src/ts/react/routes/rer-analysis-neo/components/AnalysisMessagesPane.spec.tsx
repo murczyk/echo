@@ -289,17 +289,20 @@ describe('AnalysisMessagesPane', () => {
         messages: [[7, buildMessage()]],
         messageComments: {
           7: [
-            { id: 19, messageId: 7, comment: 'same-organism comment', login: 'peer-login' },
+            { id: 19, messageId: 7, comment: 'other-organism comment', login: 'external-login' },
+            { id: 21, messageId: 7, comment: 'same-organism comment', login: 'peer-login' },
             { id: 20, messageId: 7, comment: 'hidden self comment', login: 'tester' },
           ],
         },
         users: {
           'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'external-login': { name: 'external-login', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
         },
       }),
     );
     rendered.push(view);
 
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('other-organism comment');
     expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain('peer-login:same-organism comment');
     expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('hidden self comment');
   });

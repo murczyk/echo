@@ -23,7 +23,7 @@ function normalizeLogin(login: string): string {
   return login.trim();
 }
 
-export function isKnownOtherOrganismComment(
+export function isOurOrganismComment(
   authUserName: string | null,
   currentUser: User | null,
   users: Record<string, User | null>,
@@ -31,21 +31,26 @@ export function isKnownOtherOrganismComment(
 ): boolean {
   const commentLogin = normalizeLogin(login);
   if (commentLogin === '') return false;
-  if (normalizeLogin(authUserName ?? '') === commentLogin) return false;
-  if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
+  if (normalizeLogin(authUserName ?? '') === commentLogin) return true;
+  if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return true;
 
   const commentUser = users[commentLogin] ?? null;
   if (currentUser?.organismId == null || commentUser?.organismId == null) return false;
   return currentUser.organismId === commentUser.organismId;
 }
 
-export function filterOtherMessageComments(
+export function filterOtherOwnOrganismMessageComments(
   authUserName: string | null,
   currentUser: User | null,
   users: Record<string, User | null>,
   comments: MessageComment[],
 ): MessageComment[] {
-  return comments.filter((comment) => isKnownOtherOrganismComment(authUserName, currentUser, users, comment.login));
+  return comments.filter((comment) => {
+    const commentLogin = normalizeLogin(comment.login);
+    if (normalizeLogin(authUserName ?? '') === commentLogin) return false;
+    if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
+    return isOurOrganismComment(authUserName, currentUser, users, comment.login);
+  });
 }
 
 export async function loadMissingMessageCommentsForMessages(

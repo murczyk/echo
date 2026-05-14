@@ -21,7 +21,6 @@ import type {
 } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from '../../rer-duty-neo/utils';
-import { filterOtherMessageComments } from '../../rer-analysis-neo/use-analysis-data.comments';
 import { renderMarkedText } from './MarkedText';
 
 const PREVIEW_IMAGE_HEIGHT_PX = 100;

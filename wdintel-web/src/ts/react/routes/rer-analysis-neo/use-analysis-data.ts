@@ -22,7 +22,7 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchInboxMessages } from '../../services/api/analysis';
-import { buildInboxReq, queryStateComparisonKey } from './helpers';
+import { buildInboxReq, queryStateReloadKey } from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { buildNetworkDisplayMap } from './message-utils';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
@@ -118,10 +118,6 @@ export function useAnalysisData({
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const optionsFreqsRef = useRef<string[]>([]);
-  const reloadTriggerKey = useMemo(
-    () => `${queryStateComparisonKey(queryState) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}`,
-    [newestFirst, queryState],
-  );
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
   const lastReloadTriggerKeyRef = useRef<string | null>(null);
@@ -132,6 +128,10 @@ export function useAnalysisData({
   const newCallsignsPendingKeyRef = useRef<string | null>(null);
   const unitsMapRef = useRef(unitsMap);
   const optionsFreqValues = useMemo(() => options.freqs.map((option) => option.value), [options.freqs]);
+  const reloadTriggerKey = useMemo(
+    () => `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}`,
+    [newestFirst, optionsFreqValues, queryState],
+  );
 
   useEffect(() => {
     optionsFreqsRef.current = optionsFreqValues;
