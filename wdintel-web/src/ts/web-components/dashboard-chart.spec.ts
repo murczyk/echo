@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { transformData as transformZoomableData, Data } from './bar-chart-zoomable.ts';
-import { createYAxisConfig, transformData } from './bar-chart-2.ts';
+import { createYAxisConfig, transformData } from './dashboard-chart.ts';
 
 describe('transformData', () => {
     it('should read camelCase nested counts from react payloads', () => {

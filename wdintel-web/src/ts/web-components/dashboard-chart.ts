@@ -296,8 +296,8 @@ const BARS_EXTRA_COLORS = [
 const BARS_COLOR_PALETTE = [...BARS_COLORSCHEME, ...BARS_ADDITIONAL_COLORS, ...BARS_EXTRA_COLORS]
 
 
-@customElement('bar-chart-2')
-export class BarChart2 extends LitElement {
+@customElement('dashboard-chart')
+export class DashboardChart extends LitElement {
 	@property()
 	data: Data | Data2;
 	transformedData: TransformedData = [];

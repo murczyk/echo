@@ -1,4 +1,4 @@
-import { Data as ChartData, transformData as transformChartData } from './bar-chart-2.ts';
+import { Data as ChartData, transformData as transformChartData } from './dashboard-chart.ts';
 
 type CountByGroupName = {
   [key: string]: number;
