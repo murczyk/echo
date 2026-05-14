@@ -123,15 +123,15 @@ describe('NetworkDetailsActivityPanel', () => {
       bar?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
     });
 
-    expect(view.container.textContent).toContain('Alpha');
-    expect(view.container.textContent).toContain('Bravo');
-    expect(view.container.textContent).toContain('Разом');
+    expect(document.body.textContent).toContain('Alpha');
+    expect(document.body.textContent).toContain('Bravo');
+    expect(document.body.textContent).toContain('Разом');
 
     await act(async () => {
       view.container.querySelector('svg[data-chart="network-activity"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
     });
 
-    expect(view.container.textContent).not.toContain('Разом');
+    expect(document.body.textContent).not.toContain('Разом');
   });
 
   it('anchors the 10-day window to today instead of the last datapoint', async () => {
