@@ -29,7 +29,11 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
           <img
             className="w-full max-w-full rounded border border-[var(--color-border)]"
             loading="lazy"
-            style={{ width: 'stretch' as unknown as string }}
+            src={
+              typeof props.src === 'string'
+                ? source.resolveMediaUrl(releaseId, props.src)
+                : props.src
+            }
             {...props}
           />
         ),
@@ -38,7 +42,6 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
             className="w-full rounded border border-[var(--color-border)] bg-black"
             controls
             preload="metadata"
-            style={{ width: 'stretch' as unknown as string }}
             {...props}
           />
         ),

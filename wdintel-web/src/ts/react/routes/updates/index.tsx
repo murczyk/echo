@@ -78,7 +78,6 @@ export function UpdatesPage() {
         <ReleaseContent
           releaseId={selectedReleaseId}
           release={release.data}
-          activeSectionId={activeSectionId}
           onActiveSectionChange={setActiveSectionId}
         />
       );

@@ -6,7 +6,6 @@ import { MarkdownBody } from './MarkdownBody';
 interface ReleaseContentProps {
   releaseId: string;
   release: ParsedRelease;
-  activeSectionId: string | null;
   onActiveSectionChange: (id: string | null) => void;
 }
 
@@ -15,7 +14,6 @@ const SCROLL_PROBE_OFFSET = 180;
 export function ReleaseContent({
   releaseId,
   release,
-  activeSectionId,
   onActiveSectionChange,
 }: ReleaseContentProps) {
   const containerRef = useRef<HTMLElement | null>(null);
@@ -56,18 +54,14 @@ export function ReleaseContent({
       <hr className="my-4 border-t border-[var(--color-border)]" />
       <ul className="space-y-4 pl-6" style={{ listStyle: 'disc' }}>
         {release.sections.map((section) => {
-          const isActive = activeSectionId === section.domId;
           const baseClass = section.heading
-            ? 'scroll-mt-28 rounded px-2 py-1 transition space-y-3'
+            ? 'scroll-mt-28 px-2 py-1 space-y-3'
             : 'px-2 py-1 space-y-3 list-none';
-          const activeClass = section.heading && isActive
-            ? ' ring-2 ring-[var(--color-primary)]'
-            : '';
           return (
             <li
               key={section.domId}
               id={section.domId}
-              className={`${baseClass}${activeClass}`}
+              className={`${baseClass}`}
             >
               {section.heading && (
                 <h4 className="text-xl font-semibold">{section.heading}</h4>

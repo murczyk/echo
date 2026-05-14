@@ -83,10 +83,10 @@ const MEDIA_PATTERNS: Array<{
   rebuild: (match: string, resolved: string) => string;
 }> = [
   {
-    regex: /!\[([^\]]*)\]\(([^)\s]+)(\s+"[^"]*")?\)/g,
+    regex: /!\[([^\]]*)\]\(([^)]+?)(\s+"[^"]*")?\)/g,
     group: 2,
     rebuild: (match, resolved) =>
-      match.replace(/\(([^)\s]+)(\s+"[^"]*")?\)/, `(${resolved}$2)`),
+      match.replace(/\(([^)]+?)(\s+"[^"]*")?\)/, `(${resolved}$2)`),
   },
   {
     regex: /(\b(?:src|href|poster)\s*=\s*")([^"]+)(")/g,
@@ -95,13 +95,13 @@ const MEDIA_PATTERNS: Array<{
   },
   // Zola shortcodes used in release.md files
   {
-    regex: /\{\{video\(id="([^"]+)"\)\}\}/g,
+    regex: /\{\{\s*video\(\s*id="([^"]+)"[^)]*\)\s*\}\}/g,
     group: 1,
     rebuild: (_match, resolved) =>
       `<video src="${resolved}" controls preload="metadata"></video>`,
   },
   {
-    regex: /\{\{image\(id="([^"]+)"\)\}\}/g,
+    regex: /\{\{\s*(?:img|image)\(\s*id="([^"]+)"[^)]*\)\s*\}\}/g,
     group: 1,
     rebuild: (_match, resolved) => `<img src="${resolved}" />`,
   },
