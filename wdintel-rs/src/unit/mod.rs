@@ -24,6 +24,42 @@ pub struct UnitInfo {
     pub idx: usize,
 }
 
+pub fn are_units_related(
+    unit1: &sigint_unit::Model,
+    unit2: &sigint_unit::Model,
+) -> bool {
+    if unit1.id == unit2.id {
+        return true;
+    }
+    if !unit1.name.is_empty() && unit1.name == unit2.name {
+        return true;
+    }
+    deepest_shared_hierarchy_level(unit1, unit2).is_some()
+}
+
+fn deepest_shared_hierarchy_level(
+    unit1: &sigint_unit::Model,
+    unit2: &sigint_unit::Model,
+) -> Option<usize> {
+    unit_hierarchy(unit1)
+        .into_iter()
+        .zip(unit_hierarchy(unit2))
+        .enumerate()
+        .filter(|(_, (level1, level2))| !level1.is_empty() && level1 == level2)
+        .map(|(idx, _)| idx)
+        .next_back()
+}
+
+fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 5] {
+    [
+        unit.army.trim(),
+        unit.division.trim(),
+        unit.regiment.trim(),
+        unit.battalion.trim(),
+        unit.company.trim(),
+    ]
+}
+
 pub async fn parse_unit<'a, 'async_trait, C>(
     text: &String,
     dbx: &'a C,
@@ -547,6 +583,156 @@ fn preprocess_unit_text(input: &String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mk_unit(
+        id: i64,
+        name: &str,
+        army: &str,
+        division: &str,
+        regiment: &str,
+        battalion: &str,
+        company: &str,
+    ) -> sigint_unit::Model {
+        sigint_unit::Model {
+            id,
+            company: company.to_string(),
+            regiment: regiment.to_string(),
+            division: division.to_string(),
+            army: army.to_string(),
+            active: true,
+            deleted: false,
+            created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            created_by: "test".to_string(),
+            name: name.to_string(),
+            comment: String::new(),
+            battalion: battalion.to_string(),
+            sigint_origin_id: None,
+            original_id: None,
+        }
+    }
+
+    fn assert_units_related(
+        unit1: sigint_unit::Model,
+        unit2: sigint_unit::Model,
+    ) {
+        assert!(are_units_related(&unit1, &unit2));
+        assert!(are_units_related(&unit2, &unit1));
+    }
+
+    fn assert_units_unrelated(
+        unit1: sigint_unit::Model,
+        unit2: sigint_unit::Model,
+    ) {
+        assert!(!are_units_related(&unit1, &unit2));
+        assert!(!are_units_related(&unit2, &unit1));
+    }
+
+    #[test]
+    fn unit_relation_matches_same_id() {
+        assert_units_related(
+            mk_unit(1, "unit-a", "", "", "", "", ""),
+            mk_unit(1, "unit-b", "", "", "", "", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_same_name_without_hierarchy() {
+        assert_units_related(
+            mk_unit(1, "unit-a", "", "", "", "", ""),
+            mk_unit(2, "unit-a", "", "", "", "", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_rejects_empty_unmatched_units() {
+        assert_units_unrelated(
+            mk_unit(1, "unit-a", "", "", "", "", ""),
+            mk_unit(2, "unit-b", "", "", "", "", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_army_parent_to_division_child() {
+        assert_units_related(
+            mk_unit(1, "army", "1 army", "", "", "", ""),
+            mk_unit(2, "division", "1 army", "2 div", "", "", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_regiment_parent_to_battalion_child() {
+        assert_units_related(
+            mk_unit(1, "regiment", "1 army", "2 div", "3 reg", "", ""),
+            mk_unit(2, "battalion", "1 army", "2 div", "3 reg", "4 bat", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_battalion_parent_to_company_child() {
+        assert_units_related(
+            mk_unit(1, "battalion", "1 army", "2 div", "3 reg", "4 bat", ""),
+            mk_unit(2, "company", "1 army", "2 div", "3 reg", "4 bat", "5 coy"),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_battalion_siblings_by_common_regiment() {
+        assert_units_related(
+            mk_unit(1, "bat-1", "1 army", "2 div", "3 reg", "1 bat", ""),
+            mk_unit(2, "bat-2", "1 army", "2 div", "3 reg", "2 bat", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_company_siblings_by_common_battalion() {
+        assert_units_related(
+            mk_unit(1, "coy-1", "1 army", "2 div", "3 reg", "4 bat", "1 coy"),
+            mk_unit(2, "coy-2", "1 army", "2 div", "3 reg", "4 bat", "2 coy"),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_regiment_siblings_by_common_division() {
+        assert_units_related(
+            mk_unit(1, "reg-1", "1 army", "2 div", "1 reg", "", ""),
+            mk_unit(2, "reg-2", "1 army", "2 div", "2 reg", "", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_division_siblings_by_common_army() {
+        assert_units_related(
+            mk_unit(1, "div-1", "1 army", "1 div", "", "", ""),
+            mk_unit(2, "div-2", "1 army", "2 div", "", "", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_matches_when_only_lower_level_is_known() {
+        assert_units_related(
+            mk_unit(1, "reg-1", "", "", "3 reg", "", ""),
+            mk_unit(2, "bat-1", "", "", "3 reg", "4 bat", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_trims_hierarchy_values() {
+        assert_units_related(
+            mk_unit(1, "reg-1", " 1 army ", "", " 3 reg ", "", ""),
+            mk_unit(2, "bat-1", "1 army", "", "3 reg", "4 bat", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_rejects_units_without_common_hierarchy() {
+        assert_units_unrelated(
+            mk_unit(1, "reg-1", "1 army", "1 div", "1 reg", "", ""),
+            mk_unit(2, "reg-2", "2 army", "2 div", "2 reg", "", ""),
+        );
+    }
 
     #[test]
     pub fn test_simple() {
