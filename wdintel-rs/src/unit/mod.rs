@@ -41,13 +41,35 @@ fn deepest_shared_hierarchy_level(
     unit1: &sigint_unit::Model,
     unit2: &sigint_unit::Model,
 ) -> Option<usize> {
-    unit_hierarchy(unit1)
+    let hierarchy1 = unit_hierarchy(unit1);
+    let hierarchy2 = unit_hierarchy(unit2);
+    let shared_level = hierarchy1
         .into_iter()
-        .zip(unit_hierarchy(unit2))
+        .zip(hierarchy2)
         .enumerate()
         .filter(|(_, (level1, level2))| !level1.is_empty() && level1 == level2)
         .map(|(idx, _)| idx)
-        .next_back()
+        .next_back()?;
+
+    if has_known_parent_conflict(&hierarchy1, &hierarchy2, shared_level) {
+        return None;
+    }
+
+    Some(shared_level)
+}
+
+fn has_known_parent_conflict(
+    hierarchy1: &[&str; 5],
+    hierarchy2: &[&str; 5],
+    shared_level: usize,
+) -> bool {
+    hierarchy1
+        .iter()
+        .zip(hierarchy2.iter())
+        .take(shared_level)
+        .any(|(level1, level2)| {
+            !level1.is_empty() && !level2.is_empty() && level1 != level2
+        })
 }
 
 fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 5] {
@@ -715,6 +737,14 @@ mod tests {
         assert_units_related(
             mk_unit(1, "reg-1", "", "", "3 reg", "", ""),
             mk_unit(2, "bat-1", "", "", "3 reg", "4 bat", ""),
+        );
+    }
+
+    #[test]
+    fn unit_relation_rejects_shared_lower_level_with_different_parent() {
+        assert_units_unrelated(
+            mk_unit(1, "parsed", "", "3 div", "11 reg", "", ""),
+            mk_unit(2, "network", "", "5 div", "11 reg", "", ""),
         );
     }
 
