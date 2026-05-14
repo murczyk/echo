@@ -5,15 +5,7 @@ import {
   Switch,
   Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
 
-import {
-  getBrowserNotificationPermission,
-  getStoredDutyNotificationSettings,
-  requestBrowserNotificationPermission,
-  resumeDutyNotificationAudioFromUserGesture,
-  setStoredDutyNotificationSettings,
-} from '../rer-duty-neo/notifications';
 import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
@@ -46,15 +38,6 @@ export function SettingsDutySection({
   disableAutoScroll,
   onDisableAutoScrollChange,
 }: SettingsDutySectionProps) {
-  const [dutyNotificationSettings, setDutyNotificationSettings] = useState(() => getStoredDutyNotificationSettings());
-  const [browserPermission, setBrowserPermission] = useState<NotificationPermission | 'unsupported'>(() =>
-    getBrowserNotificationPermission(),
-  );
-
-  useEffect(() => {
-    setStoredDutyNotificationSettings(dutyNotificationSettings);
-  }, [dutyNotificationSettings]);
-
   return (
     <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
       <Stack spacing={3} sx={{ maxWidth: 960 }}>
@@ -67,122 +50,47 @@ export function SettingsDutySection({
         </Typography>
         {prefsLoadError ? <PowerAlert severity="warning">{prefsLoadError}</PowerAlert> : null}
         {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-        <Stack spacing={3}>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 320px' },
-              gap: 3,
-              alignItems: 'start',
-            }}
-          >
-            <Stack spacing={3} sx={{ minWidth: 0 }}>
-              <SettingsSharedTagsLayoutCard
-                tagsLayout={tagsLayout}
-                onTagsLayoutChange={onTagsLayoutChange}
-                loadInProgress={loadInProgress}
-              />
+        <Stack spacing={3} sx={{ minWidth: 0 }}>
+          <SettingsSharedTagsLayoutCard
+            tagsLayout={tagsLayout}
+            onTagsLayoutChange={onTagsLayoutChange}
+            loadInProgress={loadInProgress}
+          />
 
-              <Box
+          <Box sx={cardSx}>
+            <Stack spacing={1.5}>
+              <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+                Стрічки
+              </Typography>
+              <FormControlLabel
                 sx={{
-                  border: 1,
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  bgcolor: 'background.paper',
-                  p: { xs: 2, sm: 2.5 },
+                  alignItems: 'flex-start',
+                  m: 0,
+                  gap: 1.5,
+                  '& .MuiFormControlLabel-label': { width: '100%' },
                 }}
-              >
-                <Stack spacing={1.5}>
-                  <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
-                    Стрічки
-                  </Typography>
-                  <FormControlLabel
-                    sx={{
-                      alignItems: 'flex-start',
-                      m: 0,
-                      gap: 1.5,
-                      '& .MuiFormControlLabel-label': { width: '100%' },
-                    }}
-                    control={
-                      <Switch
-                        // inverted switch to avoid a label that starts with "Disable"
-                        checked={!disableAutoScroll}
-                        onChange={(_, checked) => onDisableAutoScrollChange(!checked)}
-                        disabled={loadInProgress}
-                      />
-                    }
-                    label={
-                      <Stack spacing={0.75} sx={{ pt: 0.25 }}>
-                        <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                          Автоматична прокрутка стрічок Оперативного
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
-                          Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим зазором.
-                          Якщо прокрутити вгору, вона зупиняється і відновлюється після повернення вниз.
-                        </Typography>
-                      </Stack>
-                    }
+                control={
+                  <Switch
+                    // inverted switch to avoid a label that starts with "Disable"
+                    checked={!disableAutoScroll}
+                    onChange={(_, checked) => onDisableAutoScrollChange(!checked)}
+                    disabled={loadInProgress}
                   />
-                </Stack>
-              </Box>
+                }
+                label={
+                  <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+                    <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                      Автоматична прокрутка стрічок Оперативного
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                      Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим зазором.
+                      Якщо прокрутити вгору, вона зупиняється і відновлюється після повернення вниз.
+                    </Typography>
+                  </Stack>
+                }
+              />
             </Stack>
-
-            <Box sx={cardSx}>
-              <Stack spacing={1.5}>
-                <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
-                  Нотифікації
-                </Typography>
-                <Stack spacing={1.5}>
-                  <FormControlLabel
-                    sx={{ alignItems: 'center', m: 0, gap: 1.5 }}
-                    control={
-                      <Switch
-                        checked={dutyNotificationSettings.soundEnabled}
-                        onChange={(_, checked) => {
-                          if (checked) {
-                            resumeDutyNotificationAudioFromUserGesture();
-                          }
-                          setDutyNotificationSettings((prev) => ({ ...prev, soundEnabled: checked }));
-                        }}
-                      />
-                    }
-                    label={<Typography variant="body1">Звукова нотифікація</Typography>}
-                  />
-                  <FormControlLabel
-                    sx={{ alignItems: 'center', m: 0, gap: 1.5 }}
-                    control={
-                      <Switch
-                        checked={dutyNotificationSettings.browserEnabled}
-                        onChange={async (_, checked) => {
-                          if (checked) {
-                            const permission = await requestBrowserNotificationPermission();
-                            setBrowserPermission(permission);
-                            if (permission !== 'granted') {
-                              setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: false }));
-                              return;
-                            }
-                          }
-                          setDutyNotificationSettings((prev) => ({ ...prev, browserEnabled: checked }));
-                        }}
-                      />
-                    }
-                    label={<Typography variant="body1">Браузерна нотифікація</Typography>}
-                  />
-                  {browserPermission === 'denied' ? (
-                    <Typography variant="caption" color="error">
-                      Браузерні нотифікації вимкнені у налаштуваннях браузера.
-                    </Typography>
-                  ) : null}
-                  {browserPermission === 'unsupported' ? (
-                    <Typography variant="caption" color="text.secondary">
-                      Ваш браузер не підтримує browser-нотифікації.
-                    </Typography>
-                  ) : null}
-                </Stack>
-              </Stack>
-            </Box>
           </Box>
-
         </Stack>
       </Stack>
     </Box>
