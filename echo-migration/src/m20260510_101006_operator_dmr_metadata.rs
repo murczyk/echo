@@ -9,7 +9,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             r#"
-            alter table datasource add constraint datasource_api_login_uniq unique (api_login);
+            alter table if exists datasource add constraint datasource_api_login_uniq unique (api_login);
             create index if not exists signal_message_message_uid_idx on signal_message(message_uid);
             create table if not exists signal_message_metadata (
                 id bigserial not null primary key,
@@ -30,8 +30,8 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             r#"
-            alter table datasource drop constraint datasource_api_login_uniq;
-            drop index signal_message_message_uid_idx;
+            alter table if exists datasource drop constraint datasource_api_login_uniq;
+            drop index if exists signal_message_message_uid_idx;
             drop table if exists signal_message_metadata;
             "#,
         )
