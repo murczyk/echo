@@ -357,8 +357,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 size="small"
                 aria-label={
                   dutyNotificationsOn
-                    ? 'Вимкнути звукові та браузерні нотифікації для стрічки'
-                    : 'Увімкнути звукові та браузерні нотифікації для стрічки'
+                    ? 'Вимкнути звукові та браузерні сповіщення для стрічки'
+                    : 'Увімкнути звукові та браузерні сповіщення для стрічки'
                 }
                 aria-pressed={dutyNotificationsOn}
                 onClick={handleBellToggleDutyNotifications}
@@ -409,7 +409,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   },
                 }}
               >
-                Нотифікації
+                Сповіщення
               </Button>
             </Box>
           </Box>

@@ -62,7 +62,7 @@ export function FeedNotificationPanel({ feedId, storageSyncKey = 0, onPersisted 
                 }}
               />
             }
-            label={<Typography variant="body1">Звукова нотифікація</Typography>}
+            label={<Typography variant="body1">Звукове сповіщення</Typography>}
           />
           <FormControlLabel
             sx={{ alignItems: 'center', m: 0, gap: 1.5 }}
@@ -82,16 +82,16 @@ export function FeedNotificationPanel({ feedId, storageSyncKey = 0, onPersisted 
                 }}
               />
             }
-            label={<Typography variant="body1">Браузерна нотифікація</Typography>}
+            label={<Typography variant="body1">Браузерне сповіщення</Typography>}
           />
           {browserPermission === 'denied' ? (
             <Typography variant="caption" color="error">
-              Браузерні нотифікації вимкнені у налаштуваннях браузера.
+              Браузерні сповіщення вимкнені у налаштуваннях браузера.
             </Typography>
           ) : null}
           {browserPermission === 'unsupported' ? (
             <Typography variant="caption" color="text.secondary">
-              Ваш браузер не підтримує browser-нотифікації.
+              Ваш браузер не підтримує браузерні сповіщення.
             </Typography>
           ) : null}
         </Stack>
