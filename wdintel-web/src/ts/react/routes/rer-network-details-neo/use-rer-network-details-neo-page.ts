@@ -33,7 +33,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     frequencyReloadGeneration.current += 1;
   }
 
-  const { reload, loadCallsigns } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
+  const { reload, loadCallsigns, loadNetworkActivity } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -89,6 +89,20 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     void loadCallsigns(state.network.id);
   }, [loadCallsigns, state.callsignsError, state.callsignsLoaded, state.callsignsLoading, state.network]);
 
+  useEffect(() => {
+    if (state.network === null) return;
+    if (state.activeNetworkDetailsTab !== 'activity') return;
+    if (state.networkActivityLoaded || state.networkActivityLoading || state.networkActivityError !== null) return;
+    void loadNetworkActivity(state.network.id);
+  }, [
+    loadNetworkActivity,
+    state.activeNetworkDetailsTab,
+    state.network,
+    state.networkActivityError,
+    state.networkActivityLoaded,
+    state.networkActivityLoading,
+  ]);
+
   const aorItems = useMemo(() => {
     const aorIds = state.network?.aorIds ?? [];
     return aorIds.map((aorId) => ({ id: aorId, label: aorsById.get(aorId) ?? `#${aorId}` }));
@@ -136,6 +150,10 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     freqsLoading: state.freqsLoading,
     freqsError: state.freqsError,
     freqActivityByFreq: state.freqActivityByFreq,
+    networkActivity: state.networkActivity,
+    networkActivityLoaded: state.networkActivityLoaded,
+    networkActivityLoading: state.networkActivityLoading,
+    networkActivityError: state.networkActivityError,
     expandedFrequencyGroupIds: state.expandedFrequencyGroupIds,
     toggleFrequencyGroupExpanded: actions.toggleFrequencyGroupExpanded,
     openFreqCreateWizard: actions.openFreqCreateWizard,
@@ -241,6 +259,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     saveNetworkEdit: actions.saveNetworkEdit,
     handleCopyNetworkInfo: actions.handleCopyNetworkInfo,
     handleDelete: actions.handleDelete,
+    loadNetworkActivity,
     reload,
   };
 }

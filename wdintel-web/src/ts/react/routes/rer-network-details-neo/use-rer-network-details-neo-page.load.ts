@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 
 import { listAors } from '../../services/api/aor';
-import { getNetworkById } from '../../services/api/networks';
+import { getNetworkById, getNetworkGroupsActivityOne } from '../../services/api/networks';
 import { getModulations } from '../../services/api/modulations';
 import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity, listSources } from '../../services/api/callsigns';
 import { getUnitsList } from '../../services/api/units';
@@ -29,8 +29,10 @@ export function useRerNetworkDetailsNeoPageLoad(
 ): {
   reload: () => () => void;
   loadCallsigns: (networkId: number) => Promise<void>;
+  loadNetworkActivity: (networkId: number) => Promise<void>;
 } {
   const callsignLoadRequestIdRef = useRef(0);
+  const networkActivityLoadRequestIdRef = useRef(0);
 
   const loadCallsigns = useCallback(async (targetNetworkId: number) => {
     const generation = reloadGeneration.current;
@@ -98,6 +100,50 @@ export function useRerNetworkDetailsNeoPageLoad(
         ...current,
         callsignsLoading: false,
         callsignsError: formatErrorMessage(error),
+      }));
+    }
+  }, [reloadGeneration, setState]);
+
+  const loadNetworkActivity = useCallback(async (targetNetworkId: number) => {
+    const generation = reloadGeneration.current;
+    const requestId = ++networkActivityLoadRequestIdRef.current;
+    const isCurrent = () => reloadGeneration.current === generation && networkActivityLoadRequestIdRef.current === requestId;
+
+    if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        networkActivityLoading: false,
+        networkActivityLoaded: false,
+        networkActivityError: 'Некоректний ID мережі',
+      }));
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      networkActivityLoading: true,
+      networkActivityError: null,
+    }));
+
+    try {
+      const networkActivity = await getNetworkGroupsActivityOne(targetNetworkId);
+      if (!isCurrent()) return;
+
+      setState((current) => ({
+        ...current,
+        networkActivity,
+        networkActivityLoaded: true,
+        networkActivityLoading: false,
+        networkActivityError: null,
+      }));
+    } catch (error) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        networkActivityLoading: false,
+        networkActivityLoaded: false,
+        networkActivityError: formatErrorMessage(error),
       }));
     }
   }, [reloadGeneration, setState]);
@@ -211,5 +257,5 @@ export function useRerNetworkDetailsNeoPageLoad(
     return reload();
   }, [reload]);
 
-  return { reload, loadCallsigns };
+  return { reload, loadCallsigns, loadNetworkActivity };
 }

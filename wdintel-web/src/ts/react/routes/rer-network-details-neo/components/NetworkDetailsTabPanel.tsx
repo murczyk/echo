@@ -4,6 +4,7 @@ import type { ComponentProps } from 'react';
 import type { ModulationRec, Network, NetworkDescrType, NetworkFreqsRes } from '../../../../../Bindings';
 import type { NetworkDetailsTab } from '../use-rer-network-details-neo-page.shared';
 import { NetworkDetailsCallsignsPanel } from './NetworkCallsignsTables';
+import { NetworkDetailsActivityPanel } from './NetworkDetailsActivityPanel';
 import { NetworkDetailsDescriptionsPanel } from './NetworkDetailsDescriptionsPanel';
 import { NetworkDetailsFrequenciesPanel } from './NetworkDetailsFrequenciesPanel';
 
@@ -27,6 +28,11 @@ type Props = {
   freqsLoaded: boolean;
   freqsLoading: boolean;
   freqsError: string | null;
+  networkActivity: Record<string, Record<string, number>>;
+  networkActivityLoaded: boolean;
+  networkActivityLoading: boolean;
+  networkActivityError: string | null;
+  onReloadNetworkActivity: () => void;
   modulations: ModulationRec[];
   expandedFrequencyGroupIds: string[];
   toggleFrequencyGroupExpanded: (groupId: string) => void;
@@ -60,6 +66,11 @@ export function NetworkDetailsTabPanel({
   freqsLoaded,
   freqsLoading,
   freqsError,
+  networkActivity,
+  networkActivityLoaded,
+  networkActivityLoading,
+  networkActivityError,
+  onReloadNetworkActivity,
   modulations,
   expandedFrequencyGroupIds,
   toggleFrequencyGroupExpanded,
@@ -111,6 +122,7 @@ export function NetworkDetailsTabPanel({
           <Tab value="signs" label="Розвід. ознаки" />
           <Tab value="frequencies" label="Частоти" />
           <Tab value="callsigns" label="Позивні" />
+          <Tab value="activity" label="Активність" />
         </Tabs>
       </Box>
 
@@ -143,6 +155,18 @@ export function NetworkDetailsTabPanel({
           <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsCallsignsPanel {...callsignPanelProps} />
+            </Box>
+          </Box>
+        ) : activeNetworkDetailsTab === 'activity' ? (
+          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              <NetworkDetailsActivityPanel
+                networkActivity={networkActivity}
+                networkActivityLoaded={networkActivityLoaded}
+                networkActivityLoading={networkActivityLoading}
+                networkActivityError={networkActivityError}
+                onReloadNetworkActivity={onReloadNetworkActivity}
+              />
             </Box>
           </Box>
         ) : (
