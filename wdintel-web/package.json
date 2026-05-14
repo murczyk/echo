@@ -7,8 +7,7 @@
     "test": "tests"
   },
   "scripts": {
-    "build": "npm run releases:sync && elm-land build",
-    "releases:sync": "node scripts/sync-releases.mjs",
+    "build": "elm-land build",
     "postinstall": "node scripts/strip-use-client.mjs",
     "strip-use-client": "node scripts/strip-use-client.mjs",
     "e2e": "playwright test --grep @smoke",
