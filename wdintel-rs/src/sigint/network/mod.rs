@@ -3138,6 +3138,7 @@ pub async fn update_network_description(
         let mut model = descr_model.into_active_model();
         model.r#type =
             Set(NetworkDescriptionType::from(req.descr_type.clone()));
+        model.topic = Set(req.topic.clone().unwrap_or_default());
         model.description = Set(req.description.clone());
         model.sigint_network_freq_id = Set(req.network_freq_id);
         model.comment = NotSet; // Set(req.comment.clone());
