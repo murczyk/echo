@@ -164,7 +164,7 @@ view _ user model =
                             ]
                         ]
                     , HtmlX.viewIf (Core.Auth.hasRole "Rer" user) <|
-                        div [ class "flex-1 min-w-0 overflow-hidden bg-card border border-border rounded-sm relative flex flex-col h-[50vh]" ]
+                        div [ class "w-full min-w-0 overflow-hidden bg-card border border-border rounded-sm relative flex flex-col h-[50vh] lg:flex-1" ]
                             [ h4
                                 [ class "m-0 font-semibold"
                                 , Attr.style "padding-top" "24px"
@@ -173,7 +173,7 @@ view _ user model =
                                 [ text "Активність груп" ]
                             , div [ class "flex-1 min-h-0 min-w-0 overflow-hidden", Attr.style "margin-top" "20px" ]
                                 [ if hasInboxGroupsActivityData model then
-                                    Html.node "bar-chart-2"
+                                    Html.node "dashboard-chart"
                                         [ class "min-w-0"
                                         , Attr.property "data" <|
                                             B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)

@@ -129,7 +129,7 @@ viewGraph model =
             Events.on "sl-change" (Decode.map GroupsActivityPeriodChanged groupsActivityPeriodDecoder)
     in
     div [ class "w-[500px] h-[250px]" ]
-        [ Html.node "bar-chart-2"
+        [ Html.node "dashboard-chart"
             [ Attr.property "data" <| groupsMessageCountByDayJson
             , Attr.property "period" <| Encode.string groupsActivityPeriodEncoded
             , Attr.property "isAnalysis" <| Encode.bool True
