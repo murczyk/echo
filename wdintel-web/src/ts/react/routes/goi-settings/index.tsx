@@ -1,5 +1,17 @@
 import LaunchIcon from '@mui/icons-material/Launch';
-import { Card, CardActions, CardContent, CircularProgress, Stack, Typography } from '@mui/material';
+import {
+  Card,
+  CardContent,
+  CircularProgress,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material';
 import React from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
@@ -30,13 +42,25 @@ function isAbortError(error: unknown): boolean {
 }
 
 function restartServiceLabel(service: GoiRestartService): string {
-  if (service === 'swapp') return 'SWAPP';
-  if (service === 'swapp_alt') return 'SWAPP 4003';
+  if (service === 'swapp') return 'Swapp';
+  if (service === 'swapp_alt') return 'Swapp Додатковий';
   return 'GOI';
 }
 
 function whatsappServiceLabel(service: GoiWhatsappService): string {
-  return service === 'swapp_alt' ? 'SWAPP 4003' : 'SWAPP';
+  return service === 'swapp_alt' ? 'Swapp Додатковий' : 'Swapp';
+}
+
+function swappAltUrl(swappUrl: string | null): string | null {
+  if (!swappUrl) return null;
+
+  try {
+    const url = new URL(swappUrl);
+    url.port = '4003';
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 type IntegrationCardProps = {
@@ -47,8 +71,83 @@ type IntegrationCardProps = {
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
 };
 
+type ServiceTableRowProps = {
+  integrationId: number;
+  label: string;
+  openLabel: string;
+  url: string | null;
+  unavailableLabel: string;
+  restartService: GoiRestartService;
+  unlinkService?: GoiWhatsappService;
+  pendingKey: string | null;
+  restartPendingKey: string;
+  unlinkPendingKey?: string;
+  disabled: boolean;
+  onRestart: (integrationId: number, service: GoiRestartService) => void;
+  onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
+};
+
+function ServiceTableRow(props: ServiceTableRowProps) {
+  const url = props.url;
+  const unlinkService = props.unlinkService;
+  const pending =
+    props.pendingKey === props.restartPendingKey ||
+    props.pendingKey === props.unlinkPendingKey;
+
+  return (
+    <TableRow>
+      <TableCell sx={{ width: 170, fontWeight: 600, whiteSpace: 'nowrap' }}>
+        {props.label}
+      </TableCell>
+      <TableCell>
+        {url ? (
+          <Stack direction="row" spacing={1} alignItems="center">
+            <PowerButton
+              variant="outlined"
+              endIcon={<LaunchIcon />}
+              onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+            >
+              {props.openLabel}
+            </PowerButton>
+            <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+              {url}
+            </Typography>
+          </Stack>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            {props.unavailableLabel}
+          </Typography>
+        )}
+      </TableCell>
+      <TableCell sx={{ width: 260 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <PowerButton
+            variant="contained"
+            disabled={props.disabled}
+            onClick={() => props.onRestart(props.integrationId, props.restartService)}
+          >
+            ПЕРЕЗАПУСК
+          </PowerButton>
+          {unlinkService ? (
+            <PowerButton
+              variant="outlined"
+              color="error"
+              disabled={props.disabled}
+              onClick={() => props.onUnlink(props.integrationId, unlinkService)}
+            >
+              ВІДВ'ЯЗАТИ
+            </PowerButton>
+          ) : null}
+          {pending ? <CircularProgress size={18} /> : null}
+        </Stack>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function IntegrationCard(props: IntegrationCardProps) {
   const { integration } = props;
+  const integrationSwappAltUrl = swappAltUrl(integration.swappUrl);
   const goiKey = `${integration.id}:restart:goi`;
   const swappKey = `${integration.id}:restart:swapp`;
   const swappUnlinkKey = `${integration.id}:unlink:swapp`;
@@ -69,37 +168,62 @@ function IntegrationCard(props: IntegrationCardProps) {
             </Typography>
           </div>
 
-          {integration.goiUrl ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <PowerButton
-                variant="outlined"
-                endIcon={<LaunchIcon />}
-                onClick={() => window.open(integration.goiUrl!, '_blank', 'noopener,noreferrer')}
-              >
-                Відкрити ГОІ
-              </PowerButton>
-              <Typography variant="body2" color="text.secondary">
-                {integration.goiUrl}
-              </Typography>
-            </div>
-          ) : (
-            <PowerAlert severity="warning">Для цієї інтеграції не вказано URL / host ГОІ.</PowerAlert>
-          )}
-
-          {integration.swappUrl ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <PowerButton
-                variant="outlined"
-                endIcon={<LaunchIcon />}
-                onClick={() => window.open(integration.swappUrl!, '_blank', 'noopener,noreferrer')}
-              >
-                Відкрити SWAPP
-              </PowerButton>
-              <Typography variant="body2" color="text.secondary">
-                {integration.swappUrl}
-              </Typography>
-            </div>
-          ) : null}
+          <TableContainer>
+            <Table size="small" sx={{ minWidth: 860 }} aria-label="GOI services">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Сервіс</TableCell>
+                  <TableCell>Посилання</TableCell>
+                  <TableCell>Керування</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                <ServiceTableRow
+                  integrationId={integration.id}
+                  label="GOI"
+                  openLabel="Відкрити ГОІ"
+                  url={integration.goiUrl}
+                  unavailableLabel="URL / host ГОІ не вказано"
+                  restartService="goi"
+                  pendingKey={props.pendingKey}
+                  restartPendingKey={goiKey}
+                  disabled={disabled}
+                  onRestart={props.onRestart}
+                  onUnlink={props.onUnlink}
+                />
+                <ServiceTableRow
+                  integrationId={integration.id}
+                  label="Swapp"
+                  openLabel="Відкрити Swapp"
+                  url={integration.swappUrl}
+                  unavailableLabel="URL Swapp не вказано"
+                  restartService="swapp"
+                  unlinkService="swapp"
+                  pendingKey={props.pendingKey}
+                  restartPendingKey={swappKey}
+                  unlinkPendingKey={swappUnlinkKey}
+                  disabled={disabled}
+                  onRestart={props.onRestart}
+                  onUnlink={props.onUnlink}
+                />
+                <ServiceTableRow
+                  integrationId={integration.id}
+                  label="Swapp Додатковий"
+                  openLabel="Відкрити Swapp Додатковий"
+                  url={integrationSwappAltUrl}
+                  unavailableLabel="URL Swapp Додатковий не вказано"
+                  restartService="swapp_alt"
+                  unlinkService="swapp_alt"
+                  pendingKey={props.pendingKey}
+                  restartPendingKey={swappAltKey}
+                  unlinkPendingKey={swappAltUnlinkKey}
+                  disabled={disabled}
+                  onRestart={props.onRestart}
+                  onUnlink={props.onUnlink}
+                />
+              </TableBody>
+            </Table>
+          </TableContainer>
 
           {!integration.canRestart && integration.restartUnavailableReason ? (
             <PowerAlert severity="info">{integration.restartUnavailableReason}</PowerAlert>
@@ -110,99 +234,6 @@ function IntegrationCard(props: IntegrationCardProps) {
           ) : null}
         </Stack>
       </CardContent>
-      <CardActions sx={{ px: 3, pb: 3, pt: 0 }}>
-        <Stack spacing={1.25} sx={{ width: '100%' }}>
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={1}
-            alignItems={{ xs: 'stretch', sm: 'center' }}
-          >
-            <Typography
-              variant="body2"
-              sx={{ width: { sm: 100 }, fontWeight: 600 }}
-            >
-              GOI
-            </Typography>
-            <PowerButton
-              variant="contained"
-              color="error"
-              disabled={disabled}
-              onClick={() => props.onRestart(integration.id, 'goi')}
-            >
-              Перезапуск GOI
-            </PowerButton>
-            {props.pendingKey === goiKey ? (
-              <CircularProgress size={18} />
-            ) : null}
-          </Stack>
-
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={1}
-            alignItems={{ xs: 'stretch', sm: 'center' }}
-          >
-            <Typography
-              variant="body2"
-              sx={{ width: { sm: 100 }, fontWeight: 600 }}
-            >
-              SWAPP
-            </Typography>
-            <PowerButton
-              variant="contained"
-              color="error"
-              disabled={disabled}
-              onClick={() => props.onRestart(integration.id, 'swapp')}
-            >
-              Перезапуск SWAPP
-            </PowerButton>
-            <PowerButton
-              variant="outlined"
-              color="error"
-              disabled={disabled}
-              onClick={() => props.onUnlink(integration.id, 'swapp')}
-            >
-              ВІДВ'ЯЗАТИ
-            </PowerButton>
-            {props.pendingKey === swappKey ||
-            props.pendingKey === swappUnlinkKey ? (
-              <CircularProgress size={18} />
-            ) : null}
-          </Stack>
-
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={1}
-            alignItems={{ xs: 'stretch', sm: 'center' }}
-          >
-            <Typography
-              variant="body2"
-              sx={{ width: { sm: 100 }, fontWeight: 600 }}
-            >
-              SWAPP 4003
-            </Typography>
-            <PowerButton
-              variant="contained"
-              color="error"
-              disabled={disabled}
-              onClick={() => props.onRestart(integration.id, 'swapp_alt')}
-            >
-              Перезапуск SWAPP 4003
-            </PowerButton>
-            <PowerButton
-              variant="outlined"
-              color="error"
-              disabled={disabled}
-              onClick={() => props.onUnlink(integration.id, 'swapp_alt')}
-            >
-              ВІДВ'ЯЗАТИ
-            </PowerButton>
-            {props.pendingKey === swappAltKey ||
-            props.pendingKey === swappAltUnlinkKey ? (
-              <CircularProgress size={18} />
-            ) : null}
-          </Stack>
-        </Stack>
-      </CardActions>
     </Card>
   );
 }
