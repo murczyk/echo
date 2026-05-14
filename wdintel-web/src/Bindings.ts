@@ -298,63 +298,6 @@ export type UploadPdfRes = {
   rows: Array<RowInfo>;
 };
 
-export type ChangelogPreview = {
-  version: string;
-  preview: Array<string>;
-  fullUrl: string;
-};
-
-export type ChangelogSection = {
-  date: string;
-  items: Array<ChangelogEntry>;
-};
-
-export type ChangelogEntry = {
-  entryId: string;
-  taskRef: string;
-  url: string;
-  title: string;
-  hasDetails: boolean;
-};
-
-export type ChangelogDetailsReq = {
-  taskRef: string;
-  url: string;
-  title: string;
-};
-
-export type ChangelogMedia = {
-  kind: string;
-  url: string;
-  alt: string;
-};
-
-export type ChangelogItemDetails = {
-  description: string;
-  media: Array<ChangelogMedia>;
-  contentHtml: string;
-};
-
-export type ChangelogReleaseMeta = {
-  releaseId: string;
-  releaseTitle: string;
-};
-
-export type ChangelogReleaseSection = {
-  sectionId: string;
-  taskRef: string;
-  title: string;
-  contentHtml: string;
-};
-
-export type ChangelogReleasePage = {
-  productName: string;
-  releaseId: string;
-  releaseTitle: string;
-  releaseNumber: string;
-  sections: Array<ChangelogReleaseSection>;
-};
-
 export type BgtaskErrorCode =
   | 'no_default_aor'
 ;

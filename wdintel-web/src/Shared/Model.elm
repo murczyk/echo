@@ -76,7 +76,7 @@ type alias Model =
     , themeMode : ThemeMode
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
-    , changelogPreview : Maybe B.ChangelogPreview
+    , changelogPreview : Maybe ChangelogPreview
     , changelogLastSeen : Maybe String
     , masterUnits : RemoteData ApiError (Dict Int B.Unit)
     , networks : RemoteData ApiError (Dict Int B.Network)
@@ -88,4 +88,11 @@ type alias Model =
     , eventService : Core.EventTypes.EventState
     , pendingEvents : List B.EventMsg
     , eventSubscriptions : Core.EventTypes.EventSubscriptions
+    }
+
+
+type alias ChangelogPreview =
+    { version : String
+    , preview : List String
+    , fullUrl : String
     }
