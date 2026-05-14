@@ -3,7 +3,6 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { RER_ANALYSIS_QUERY_STATE_KEY } from '../../rer-analysis-query-state';
 import { RER_ANALYSIS_LEGACY_QUERY_STATE_KEY } from '../../rer-analysis-query-state-legacy';
 import { parseStateFromUrl, updateStateUrl } from './url-state';
 
@@ -64,11 +63,11 @@ describe('analysis map url state', () => {
     expect(nextUrl.searchParams.get('search')).toBe('uid-1');
   });
 
-  it('persists classic and neo rebuilt urls into separate storage keys', () => {
+  it('persists classic rebuilt urls into legacy storage and keeps neo urls query-param only', () => {
     updateStateUrl('https://example.test/rer-analysis?state=%7B%22search%22%3A%22old%22%7D', 'classic-uid');
     updateStateUrl('https://example.test/rer-analysis-neo?search=neo-old', 'neo-uid');
 
     expect(globalThis.localStorage.getItem(RER_ANALYSIS_LEGACY_QUERY_STATE_KEY)).toContain('classic-uid');
-    expect(globalThis.localStorage.getItem(RER_ANALYSIS_QUERY_STATE_KEY)).toBe(JSON.stringify({ search: 'neo-uid' }));
+    expect(globalThis.localStorage.getItem('rer-analysis-neo-query-state')).toBeNull();
   });
 });
