@@ -34,6 +34,7 @@ pub mod kml;
 pub mod kv;
 mod location;
 pub mod log_api;
+pub mod logging;
 pub mod message_queue;
 pub mod messenger;
 pub mod migration;
