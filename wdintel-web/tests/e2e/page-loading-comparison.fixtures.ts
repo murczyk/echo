@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { networkSettingsResponse } from './fixture-responses';
 
 export type RouteLoadSuite = 'callsigns' | 'palitra' | 'messenger' | 'duty';
 
@@ -268,7 +269,7 @@ async function routeDutyApi(route: Route, pathname: string, delayMs: number): Pr
   }
 
   if (pathname === '/api/user/network-settings') {
-    await fulfillJson(route, { showTableRowNumbers: true });
+    await fulfillJson(route, networkSettingsResponse());
     return true;
   }
 

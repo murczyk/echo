@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { networkSettingsResponse } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
   summaryDelayMs?: number;
@@ -157,7 +158,7 @@ export async function installAnalysisNeoApiMocks(page: Page, options: AnalysisNe
     }
 
     if (pathname === '/api/user/network-settings') {
-      await fulfillJson(route, { showTableRowNumbers: true });
+      await fulfillJson(route, networkSettingsResponse());
       return;
     }
 

@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { networkSettingsResponse } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
   shortStateId?: string;
@@ -167,7 +168,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/user/network-settings') {
-      await fulfillJson(route, { showTableRowNumbers: true });
+      await fulfillJson(route, networkSettingsResponse());
       return;
     }
 
