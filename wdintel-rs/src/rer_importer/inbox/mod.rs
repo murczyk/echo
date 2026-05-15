@@ -1571,6 +1571,7 @@ async fn comment_save(
                         login: Set(login.clone()),
                         comment: Set(comment.to_string()),
                         created_at: NotSet,
+                        sigint_post_id: NotSet,
                     }
                     .insert(&txn)
                     .await
@@ -1583,6 +1584,7 @@ async fn comment_save(
                         login: Set(login.clone()),
                         comment: Set(comment.to_string()),
                         created_at: NotSet,
+                        sigint_post_id: NotSet,
                     }
                     .update(&txn)
                     .await

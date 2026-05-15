@@ -253,6 +253,10 @@ where
     .await
     .c(h!())?;
 
+    upsert_auto_comments(txn, message.id, post_id, &body)
+        .await
+        .c(h!())?;
+
     let ts = datetime
         .unwrap_or_else(|| result.datetime.unwrap_or(message.created_at));
     crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
@@ -444,6 +448,52 @@ pub async fn fanout_inbox_changes(
         })
         .collect();
     fanout_mult(redis, events).await.c(h!())?;
+    Ok(())
+}
+
+/// Логин-владелец автоматически извлечённых комментариев перехватов
+/// (создаётся миграцией add_system_login). Отделяет авто-комментарии от
+/// пользовательских.
+const SIGINT_AUTO_COMMENT_LOGIN: &str = "system";
+
+/// Извлекает комментарии из тела перехвата (Вариант А — сверху, Вариант Б —
+/// снизу) и сохраняет их под системным логином с привязкой к посту добычи.
+///
+/// Идемпотентно: ранее сохранённые авто-комментарии этого сообщения сначала
+/// удаляются, затем создаются заново, поэтому повторная обработка сообщения
+/// не плодит дубликаты. Верхний и нижний комментарии сохраняются отдельными
+/// записями.
+async fn upsert_auto_comments<'a, 'async_trait, C>(
+    txn: &'a C,
+    signal_message_id: i64,
+    sigint_post_id: Option<i64>,
+    body: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let parsed = crate::sigint::parser::parse_comments(body);
+
+    sigint_comment::Entity::delete_many()
+        .filter(sigint_comment::Column::SignalMessageId.eq(signal_message_id))
+        .filter(sigint_comment::Column::Login.eq(SIGINT_AUTO_COMMENT_LOGIN))
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    for text in [parsed.top, parsed.bottom].into_iter().flatten() {
+        sigint_comment::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(signal_message_id),
+            login: Set(SIGINT_AUTO_COMMENT_LOGIN.to_string()),
+            comment: Set(text),
+            created_at: NotSet,
+            sigint_post_id: Set(sigint_post_id),
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
     Ok(())
 }
 
