@@ -111,6 +111,8 @@ lazy_static! {
     static ref RE5: Regex = Regex::new(r#"^[0-9]{2}\.[0-9]{5,7}\s*,\s*[0-9]{2}\.[0-9]{5,7}$"#).unwrap();
     // Remove line with ---------------------
     static ref RE6: Regex = Regex::new(r#"^-+$"#).unwrap();
+    // Buran-style date/time label line: `Дата: ...` / `Час: ...`
+    static ref RE_DT_LABEL: Regex = Regex::new(r#"^(Дата|Час)\s*[: ]"#).unwrap();
 }
 
 pub fn is_header_line(line: &str) -> bool {
@@ -151,6 +153,7 @@ pub fn is_datetime_header_line(line: &str) -> bool {
         || RE29.is_match(line)
         || RE30.is_match(line)
         || RE31.is_match(line)
+        || RE_DT_LABEL.is_match(line)
 }
 
 pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {

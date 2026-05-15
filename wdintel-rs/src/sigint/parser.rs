@@ -247,12 +247,25 @@ mod tests {
         assert_eq!(res.bottom.as_deref(), Some("перший рядок\nдругий рядок"));
     }
 
-
     #[test]
     fn yyyy_mm_dd_comma_time_is_anchor() {
         let body = "2025-03-08, 10:20\n422.500\nЛозуватське, УКХ р/м\nЛУЧНИК\nПИРОЖЕК\n\n— ПИРОЖЕК я ЛУЧНИК: ФПВ к нам идет\n\nКоментар: БПЛА СОУ";
         let res = parse_comments(body);
         assert_eq!(res.bottom.as_deref(), Some("БПЛА СОУ"));
+    }
+
+    #[test]
+    fn buran_explicit_comment_marker() {
+        let body = "Дата: 2024-02-21;\nЧастота: 408.500;\nЛокація: Авдіївка;\nПідрозділ: УКХ р/м;\nЧас: 17:28;\nХто: Змей;\nКому: Чёрный;\nТекст:\n- Чёрный я Змей ответь по керосину\n- 3 мсб? правильно?;\n.\nКоментар: ( запит на зв'язок );";
+        let res = parse_comments(body);
+        assert_eq!(res.bottom.as_deref(), Some("запит на зв'язок"));
+    }
+
+    #[test]
+    fn buran_date_label_is_anchor() {
+        let body = "Дата: 23.02.2024\nЧас: 16:47\nЧастота: 412.300\nРайон: Піски;\nПідрозділ: УКХ р/м;\n\n- выйди на мотор\n\nзапит на звязок";
+        let res = parse_comments(body);
+        assert_eq!(res.bottom.as_deref(), Some("запит на звязок"));
     }
 
     // ── Variant 3: top and bottom comments ──────────────────────────────────────
