@@ -588,6 +588,7 @@ enum Cmd {
     OneoffSigintImportMouse(OneoffSigintImportMousePs),
     OneoffTestKml,
     OneoffTestXmlLib,
+    OneoffTestLoggingError,
     OneoffPrintDescriptionIconTitle,
     OneoffTerminalPdfExtract,
     OneoffTestOpencv,
@@ -893,6 +894,9 @@ async fn async_main(
         }
         Cmd::OneoffTestKml => kml::main_test_kml(mode),
         Cmd::OneoffTestXmlLib => atak::main_test_xml_lib(mode),
+        Cmd::OneoffTestLoggingError => {
+            oneoff::oneoff_test_logging_error_macro(mode)
+        }
         Cmd::GenElm => elm::main_gen_elm(),
         Cmd::GenTs => ts::main_gen_ts(),
         Cmd::OneoffPrintDescriptionIconTitle => {
