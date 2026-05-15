@@ -10,30 +10,37 @@ use sea_orm::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+const RECEIVE_INTERVAL_SECONDS: u32 = 3;
+
 pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
     let (config, settlements, rq, mut redis, dbx) =
         crate::utils::setup_worker(mode).await.unwrap();
     let mut all_datasources = vec![];
-    let mut datasource_list_next_sync_at = Utc::now().naive_utc();
+
+    let mut last_datasource_sync_at = tokio::time::Instant::now();
+    let mut receive_interval = tokio::time::interval_at(
+        last_datasource_sync_at,
+        tokio::time::Duration::from_secs(RECEIVE_INTERVAL_SECONDS as u64),
+    );
+    let sync_duration = tokio::time::Duration::from_secs(5);
+
     loop {
         let _loop_guard = worker_watch::loop_guard("operator_inbox_worker");
-        let now = Utc::now().naive_utc();
-        if datasource_list_next_sync_at <= now {
-            datasource_list_next_sync_at =
-                (Utc::now() + tokio::time::Duration::from_secs(5)).naive_utc();
+
+        let now = receive_interval.tick().await;
+        if now.duration_since(last_datasource_sync_at) > sync_duration {
             all_datasources = datasource::Entity::find()
                 .filter(datasource::Column::Kind.eq("echo_operator"))
+                .filter(datasource::Column::Deleted.eq(false))
                 .order_by_asc(datasource::Column::Id)
                 .all(&dbx)
                 .await
                 .c(h!())
                 .unwrap_or(vec![]);
+            last_datasource_sync_at = now;
         }
-        if all_datasources.is_empty() {
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-            continue;
-        }
-        for datasource in all_datasources.iter() {
+
+        for datasource in &all_datasources {
             if let Err(e) = receive_once(
                 settlements.clone(),
                 &config,
@@ -73,10 +80,9 @@ async fn receive_once(
         )
         .filter(sigint_inbox_item::Column::Id.is_null())
         .filter(datasource_group::Column::DatasourceId.eq(datasource.id))
-        .filter(
-            signal_message::Column::CreatedAt
-                .lte(now - chrono::Duration::seconds(3)),
-        )
+        .filter(signal_message::Column::CreatedAt.lte(
+            now - chrono::Duration::seconds(RECEIVE_INTERVAL_SECONDS as i64),
+        ))
         .order_by_asc(signal_message::Column::CreatedAt)
         .limit(50)
         .into_tuple::<i64>()
