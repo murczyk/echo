@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CALLSIGN_FORM_HINT,
   EMPTY_CALLSIGN_ROW_ERROR,
+  buildDuplicateHintGroups,
   LEGACY_CALLSIGN_CLEAR_ERROR,
   buildListCallsignsReq,
   createDefaultFilters,
@@ -21,6 +22,7 @@ import {
   validateEditForm,
 } from './helpers';
 import type { CallsignsSortState } from './types';
+import type { Callsign, Unit } from '../../../../Bindings';
 
 describe('rer-callsigns helpers', () => {
   it('creates default filters with OnlyNonDeveloping selected', () => {
@@ -58,6 +60,70 @@ describe('rer-callsigns helpers', () => {
     expect(req.sortBy).toEqual(['CallsignCreatedAtDesc']);
     expect(req.sinceDateInclusiveMs).toBe(parseDateTimeLocalToMs('2026-03-10T10:00'));
     expect(req.tillDateInclusiveMs).toBe(parseDateTimeLocalToMs('2026-03-18T12:00'));
+  });
+
+  it('groups duplicate hints by draft row and keeps row indices', () => {
+    const unitsById = new Map<number, Unit>([
+      [1, { id: 1, name: '11 АК' } as Unit],
+      [2, { id: 2, name: '12 АК' } as Unit],
+    ]);
+    const callsigns = [
+      {
+        id: 10,
+        callsign: 'ЛЕСНОЙ',
+        position: 'Командир',
+        fullName: 'Іваненко Іван',
+        comment: '',
+        unitId: 1,
+      } as Callsign,
+      {
+        id: 11,
+        callsign: 'БАРС-4',
+        position: 'Старший',
+        fullName: 'Петров Петро',
+        comment: '',
+        unitId: 2,
+      } as Callsign,
+    ];
+
+    const groups = buildDuplicateHintGroups(
+      [
+        { rowIndex: 0, callsignInput: 'лес', fullNameInput: '', positionInput: '' },
+        { rowIndex: 1, callsignInput: '', fullNameInput: 'петров', positionInput: '' },
+      ],
+      callsigns,
+      null,
+      unitsById,
+    );
+
+    expect(groups).toEqual([
+      {
+        rowIndex: 0,
+        matches: [
+          {
+            id: 10,
+            callsign: 'ЛЕСНОЙ',
+            position: 'Командир',
+            fullName: 'Іваненко Іван',
+            comment: '',
+            unitName: '11 АК',
+          },
+        ],
+      },
+      {
+        rowIndex: 1,
+        matches: [
+          {
+            id: 11,
+            callsign: 'БАРС-4',
+            position: 'Старший',
+            fullName: 'Петров Петро',
+            comment: '',
+            unitName: '12 АК',
+          },
+        ],
+      },
+    ]);
   });
 
   it('keeps sidebar hierarchy filters in the request, including empty hierarchy nodes', () => {
