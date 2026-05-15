@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { isNullOrUndefined, isPresent } from '../../utils/misc';
-
+import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
-import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import {
   buildAnalysisReq,
   createInitialQueryState,
@@ -22,7 +20,7 @@ import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
 import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
-import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../rer-duty-neo/utils';
+import { useDutySettings } from '../../hooks/use-duty-settings';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
 
 function initState(): AnalysisQueryState {
@@ -48,10 +46,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [newestFirst, setNewestFirst] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(null);
-  const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
-  const [analysisMapInSidebar, setAnalysisMapInSidebar] = useState(false);
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
+  const dutySettings = useDutySettings();
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
     return false;
@@ -114,33 +111,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     if (typeof window === 'undefined') return;
     if (!shouldOpenAnalysisMapFromSearchParams(new URLSearchParams(window.location.search))) return;
     showMapDeepLinkAppliedRef.current = true;
-    if (analysisMapInSidebar) {
+    if (dutySettings.analysisMapInSidebar) {
       setRightPanelOpen(true);
       setRightSidebarTab('map');
       return;
     }
     setCenterTab('map');
-  }, [analysisMapInSidebar, setCenterTab]);
-
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    void fetchUserSettings(abortController.signal)
-      .then((prefs) => {
-        if (abortController.signal.aborted) return;
-        setTagsLayout(prefs.tagsLayout);
-        setAnalysisMapInSidebar(prefs.analysisMapInSidebar);
-      })
-      .catch(() => {
-        if (abortController.signal.aborted) return;
-        setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
-        setAnalysisMapInSidebar(false);
-      });
-
-    return () => {
-      abortController.abort();
-    };
-  }, []);
+  }, [dutySettings.analysisMapInSidebar, setCenterTab]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -161,23 +138,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   useEffect(() => {
-    const onSettingsUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ tagsLayout?: TagsLayoutVariant; analysisMapInSidebar?: boolean }>).detail;
-      if (!detail?.tagsLayout) return;
-      setTagsLayout(detail.tagsLayout);
-      if (isPresent(detail.analysisMapInSidebar)) {
-        setAnalysisMapInSidebar(detail.analysisMapInSidebar);
-      }
-    };
-
-    window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
-    return () => {
-      window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (analysisMapInSidebar) {
+    if (dutySettings.analysisMapInSidebar) {
       if (centerTab === 'map') {
         setCenterTab('messages');
         setRightPanelOpen(true);
@@ -192,7 +153,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     if (rightSidebarTab === 'map') {
       setRightSidebarTab('stats');
     }
-  }, [analysisMapInSidebar, centerTab, isMobileLayout, rightPanelOpen, rightSidebarTab, setCenterTab]);
+  }, [centerTab, dutySettings.analysisMapInSidebar, isMobileLayout, rightPanelOpen, rightSidebarTab, setCenterTab]);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
     data.invalidateFilterSectionLoads();
@@ -266,7 +227,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
       data.invalidateFilterSectionLoads();
-      if (analysisMapInSidebar) {
+      if (dutySettings.analysisMapInSidebar) {
         setRightPanelOpen(true);
         setRightSidebarTab('map');
       } else {
@@ -274,7 +235,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       }
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
-  }, [analysisMapInSidebar, data.invalidateFilterSectionLoads]);
+  }, [data.invalidateFilterSectionLoads, dutySettings.analysisMapInSidebar]);
 
   const toggleLeftPanel = useCallback(() => {
     setLeftPanelOpen((current) => !current);
@@ -283,12 +244,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const toggleRightPanel = useCallback(() => {
     setRightPanelOpen((current) => {
       const next = !current;
-      if (next && isNullOrUndefined(rightSidebarTab)) {
-        setRightSidebarTab(getAnalysisSidebarTabs(analysisMapInSidebar)[0]);
-      }
+        if (next && isNullOrUndefined(rightSidebarTab)) {
+        setRightSidebarTab(getAnalysisSidebarTabs(dutySettings.analysisMapInSidebar)[0]);
+        }
       return next;
     });
-  }, [analysisMapInSidebar, rightSidebarTab]);
+  }, [dutySettings.analysisMapInSidebar, rightSidebarTab]);
 
   useEffect(() => {
     if (!(rightPanelOpen || isMobileLayout) || rightSidebarTab !== 'newCallsigns') return;
@@ -307,7 +268,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     authUserName,
     aorEntries: data.aorEntries,
     canResetFilters,
-    analysisMapInSidebar,
+    analysisMapInSidebar: dutySettings.analysisMapInSidebar,
     currentUser,
     callsignGraph: data.callsignGraph,
     callsignGraphLoading: data.callsignGraphLoading,
@@ -360,7 +321,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     profiles: data.profiles,
     queryState,
     users: data.users,
-    tagsLayout,
+    tagsLayout: dutySettings.tagsLayout,
     rightPanelOpen,
     rightSidebarTab,
     report: report.report,

@@ -1,4 +1,6 @@
-import { Box, Stack } from '@mui/material';
+import { Box, Stack, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
+import type { MRT_ColumnOrderState } from 'material-react-table';
 
 import type {
   NetworkCallsignCatalogRowView,
@@ -28,12 +30,6 @@ export const NETWORK_COLUMNS_VISIBILITY = {
   sourceName: true,
 };
 
-export const NETWORK_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
-  withRowNumbers: true,
-  withRowActions: true,
-});
-
 export const NETWORK_CALLSIGN_COLUMN_SIZES = {
   callsign: 170,
   position: 150,
@@ -55,16 +51,22 @@ export const CATALOG_COLUMNS_VISIBILITY = {
   sourceName: true,
 };
 
-export const CATALOG_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'dateBoundAt', 'sourceName'],
-  withRowNumbers: true,
-  withRowActions: true,
-});
-
 export const NETWORK_CALLSIGN_SOURCE_COLUMN_SIZE = 150;
 
 export function formatCountLabel(value: number) {
   return value.toLocaleString('uk-UA');
+}
+
+export function buildNetworkColumnOrder({
+  dataColumnIds,
+}: {
+  dataColumnIds: string[];
+}): MRT_ColumnOrderState {
+  return buildDefaultColumnOrder({
+    dataColumnIds,
+    withRowNumbers: true,
+    withRowActions: true,
+  });
 }
 
 export function CountChipLabel({ label, count, selected = false }: { label: string; count: number; selected?: boolean }) {

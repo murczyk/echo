@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SigintZone } from '../../../../Bindings';
 
 const saveUserDutySettings = vi.hoisted(() => vi.fn());
+const fetchServerInfoMock = vi.hoisted(() => vi.fn().mockResolvedValue({ version: '1.0.0' }));
+const fetchCurrentUserMock = vi.hoisted(() => vi.fn().mockResolvedValue({ sigintZoneId: 1, roles: [] }));
 
 vi.mock('@mui/material', () => ({
   Autocomplete: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -55,15 +57,16 @@ vi.mock('../../services/api/client', () => ({
 }));
 
 vi.mock('../../services/api/server-info', () => ({
-  fetchServerInfo: vi.fn().mockResolvedValue({ version: '1.0.0' }),
+  fetchServerInfo: fetchServerInfoMock,
 }));
 
 vi.mock('../../services/api/user', () => ({
-  fetchCurrentUser: vi.fn().mockResolvedValue({ sigintZoneId: 1, roles: [] }),
+  fetchCurrentUser: fetchCurrentUserMock,
   saveUserSettings: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../services/api/user-settings', () => ({
+  USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact', disableAutoScroll: false, analysisMapInSidebar: false }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -93,7 +96,12 @@ vi.mock('./SettingsSharedTagsLayoutCard', () => ({
 }));
 
 vi.mock('./SettingsReportsSection', () => ({
-  SettingsReportsSection: () => <div />,
+  SettingsReportsSection: ({ userRoles, rolesLoading }: { userRoles: string[]; rolesLoading: boolean }) => (
+    <div>
+      <span>rolesLoading:{String(rolesLoading)}</span>
+      <span>{userRoles.join(',')}</span>
+    </div>
+  ),
 }));
 
 import { SettingsNeoPage } from './index';
@@ -115,16 +123,21 @@ describe('SettingsNeoPage', () => {
   beforeEach(() => {
     saveUserDutySettings.mockReset();
     saveUserDutySettings.mockResolvedValue(undefined);
+    fetchServerInfoMock.mockReset();
+    fetchServerInfoMock.mockResolvedValue({ version: '1.0.0' });
+    fetchCurrentUserMock.mockReset();
+    fetchCurrentUserMock.mockResolvedValue({ sigintZoneId: 1, roles: [] });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
   });
 
-  afterEach(() => {
-    act(() => {
+  afterEach(async () => {
+    await act(async () => {
       root.unmount();
-      container.remove();
+      await Promise.resolve();
     });
+    container.remove();
   });
 
   it('drains queued duty saves after a transient failure', async () => {
@@ -201,5 +214,34 @@ describe('SettingsNeoPage', () => {
       disableAutoScroll: false,
       analysisMapInSidebar: true,
     });
+  });
+
+  it('renders general settings', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="general" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).toContain('Версія: 1.0.0');
+  });
+
+  it('keeps required settings loaded when server info fails', async () => {
+    fetchServerInfoMock.mockRejectedValueOnce(new Error('server down'));
+    fetchCurrentUserMock.mockResolvedValueOnce({ sigintZoneId: 1, roles: ['Admin'] });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="reports" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('rolesLoading:false');
+    expect(container.textContent).toContain('Admin');
   });
 });

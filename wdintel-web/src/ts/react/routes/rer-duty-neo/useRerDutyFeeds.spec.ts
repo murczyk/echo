@@ -27,6 +27,7 @@ vi.mock('../../services/api/analysis', () => ({
 vi.mock('../../services/api/user-settings', () => ({
   fetchUserSettings: hoisted.fetchUserSettings,
   USER_SETTINGS_UPDATED_EVENT: hoisted.USER_SETTINGS_UPDATED_EVENT,
+  saveUserSettings: vi.fn(),
 }));
 
 vi.mock('../../services/api/system-settings', () => ({

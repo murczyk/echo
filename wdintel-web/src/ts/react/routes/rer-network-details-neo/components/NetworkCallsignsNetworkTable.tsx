@@ -4,7 +4,7 @@ import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
 import type { NetworkCallsignRowView, NetworkCallsignStatusFilter } from '../network-callsigns';
@@ -14,7 +14,6 @@ import {
   getPageScrollTableContainerSx,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
-  buildDefaultColumnOrder,
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
@@ -24,8 +23,10 @@ import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextVal
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerMenu } from '../../../components/PowerMenu';
-import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
+import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
+import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import {
+  buildNetworkColumnOrder,
   buildNetworkLoadingRows,
   CountChipLabel,
   NETWORK_CALLSIGN_COLUMN_SIZES,
@@ -36,11 +37,10 @@ import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows, formatNetworkCallsignDatetime } from '../network-callsigns';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkCallsignRowView>();
-const NETWORK_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
-  withRowNumbers: true,
-  withRowActions: true,
-});
+const NETWORK_MRT_LOCALIZATION = {
+  ...defaultMRTOptions.localization,
+  rowNumbers: 'Номер рядка',
+};
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing'];
@@ -79,6 +79,47 @@ export function NetworkCallsignsNetworkTable({
   inFlightUpdateIds,
   inFlightDeleteIds,
 }: Props) {
+  return (
+    <TableStateProvider
+      tableId="network-details-callsigns"
+      defaultColumnVisibility={{ ...NETWORK_COLUMNS_VISIBILITY, 'mrt-row-numbers': true }}
+      defaultColumnOrder={buildNetworkColumnOrder({
+        dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
+      })}
+    >
+      <NetworkCallsignsNetworkTableContent
+        rows={rows}
+        loading={loading}
+        loadingError={loadingError}
+        canManage={canManage}
+        statusFilter={statusFilter}
+        onStatusFilterChange={onStatusFilterChange}
+        onOpenEditDrawer={onOpenEditDrawer}
+        onOpenDeleteDialog={onOpenDeleteDialog}
+        onToggleMainRadioStation={onToggleMainRadioStation}
+        onReload={onReload}
+        inFlightUpdateIds={inFlightUpdateIds}
+        inFlightDeleteIds={inFlightDeleteIds}
+      />
+    </TableStateProvider>
+  );
+}
+
+function NetworkCallsignsNetworkTableContent({
+  rows,
+  loading,
+  loadingError,
+  canManage,
+  statusFilter,
+  onStatusFilterChange,
+  onOpenEditDrawer,
+  onOpenDeleteDialog,
+  onToggleMainRadioStation,
+  onReload,
+  inFlightUpdateIds,
+  inFlightDeleteIds,
+}: Props) {
+  const tableStateContext = useTableStateContext();
   const [rowMenuAnchorEl, setRowMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [rowMenuTarget, setRowMenuTarget] = useState<NetworkCallsignRowView | null>(null);
 
@@ -99,87 +140,90 @@ export function NetworkCallsignsNetworkTable({
   const isBusy = loading || inFlightUpdateIds.length > 0 || inFlightDeleteIds.length > 0;
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignRowView>[]>(() => [
-    {
-      header: 'Позивний',
-      accessorKey: 'callsign',
-      id: 'callsign',
-      size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
-      Cell: ({ row }) => (
-        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-          <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} developing={row.original.status === 'developing'} />
-          <Typography variant="body2" fontWeight={700} noWrap title={row.original.callsign}>
-            {formatMrtCellTextValue(row.original.callsign)}
+      {
+        header: 'Позивний',
+        accessorKey: 'callsign',
+        id: 'callsign',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
+        Cell: ({ row }) => (
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+            <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} developing={row.original.status === 'developing'} />
+            <Typography variant="body2" fontWeight={700} noWrap title={row.original.callsign}>
+              {formatMrtCellTextValue(row.original.callsign)}
+            </Typography>
+            {row.original.mainRadioStation ? (
+              <Tooltip title="Головна радіостанція" arrow>
+                <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+              </Tooltip>
+            ) : null}
+          </Stack>
+        ),
+      },
+      {
+        header: 'Посада',
+        accessorKey: 'position',
+        id: 'position',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
+        Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
+      },
+      {
+        header: 'Підрозділ',
+        accessorKey: 'unitName',
+        id: 'unitName',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.unitName,
+        Cell: ({ row }) => (
+          <Typography variant="body2" noWrap title={row.original.unitName}>
+            {formatMrtCellTextValue(row.original.unitName)}
           </Typography>
-          {row.original.mainRadioStation ? (
-            <Tooltip title="Головна радіостанція" arrow>
-              <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
-            </Tooltip>
-          ) : null}
-        </Stack>
-      ),
-    },
-    {
-      header: 'Посада',
-      accessorKey: 'position',
-      id: 'position',
-      size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
-      Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
-    },
-    {
-      header: 'Підрозділ',
-      accessorKey: 'unitName',
-      id: 'unitName',
-      size: NETWORK_CALLSIGN_COLUMN_SIZES.unitName,
-      Cell: ({ row }) => (
-        <Typography variant="body2" noWrap title={row.original.unitName}>
-          {formatMrtCellTextValue(row.original.unitName)}
-        </Typography>
-      ),
-    },
-    {
-      header: 'Остання акт.',
-      accessorFn: (row) => row.lastDatetime,
-      id: 'lastDatetime',
-      size: NETWORK_CALLSIGN_COLUMN_SIZES.lastDatetime,
-      Cell: ({ row }) => formatNetworkCallsignDatetime(row.original.lastDatetime),
-      enableSorting: false,
-    },
-    {
-      header: 'К-сть',
-      accessorKey: 'messageCount',
-      id: 'messageCount',
-      size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
-      Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{row.original.messageCount}</Typography>,
-    },
-    {
-      header: 'Коментар',
-      accessorKey: 'comment',
-      id: 'comment',
-      size: NETWORK_CALLSIGN_COLUMN_SIZES.comment,
-      Cell: ({ row }) => (
-        <Typography variant="body2" noWrap title={row.original.comment}>
-          {formatMrtCellTextValue(row.original.comment)}
-        </Typography>
-      ),
-    },
-    {
-      header: 'Джерело',
-      accessorKey: 'sourceName',
-      id: 'sourceName',
-      size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
-      grow: false,
-      enableResizing: false,
-      Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
-    },
-  ], []);
+        ),
+      },
+      {
+        header: 'Остання акт.',
+        accessorFn: (row) => row.lastDatetime,
+        id: 'lastDatetime',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.lastDatetime,
+        Cell: ({ row }) => formatNetworkCallsignDatetime(row.original.lastDatetime),
+        enableSorting: false,
+      },
+      {
+        header: 'К-сть',
+        accessorKey: 'messageCount',
+        id: 'messageCount',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
+        Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{row.original.messageCount}</Typography>,
+      },
+      {
+        header: 'Коментар',
+        accessorKey: 'comment',
+        id: 'comment',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.comment,
+        Cell: ({ row }) => (
+          <Typography variant="body2" noWrap title={row.original.comment}>
+            {formatMrtCellTextValue(row.original.comment)}
+          </Typography>
+        ),
+      },
+      {
+        header: 'Джерело',
+        accessorKey: 'sourceName',
+        id: 'sourceName',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
+        grow: false,
+        enableResizing: false,
+        Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
+      },
+    ], []);
 
   const table = useMaterialReactTable({
     columns,
     data: isInitialLoading ? loadingRows : tableStateRows,
     ...defaultMRTOptions,
+    localization: NETWORK_MRT_LOCALIZATION,
     enableColumnActions: true,
-    enableRowNumbers: true,
     enableRowSelection: false,
+    enableRowNumbers: true,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
     enableColumnFilters: true,
     columnFilterDisplayMode: 'popover',
     enableGlobalFilter: false,
@@ -187,11 +231,39 @@ export function NetworkCallsignsNetworkTable({
     enablePagination: false,
     enableBottomToolbar: false,
     enableTopToolbar: false,
-    enableColumnOrdering: true,
-    enableColumnResizing: true,
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
     enableHiding: true,
-    enableRowActions: true,
-    positionActionsColumn: 'first',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    renderRowActions: ({ row }) => {
+      if (isInitialLoading) return <Box sx={{ minHeight: 28 }} />;
+      const networkCallsign = row.original;
+      const editDisabled = !canManage || inFlightUpdateIds.includes(networkCallsign.id);
+      if (!canManage) return <Box sx={{ minHeight: 28 }} />;
+      return (
+        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" useFlexGap>
+          <MrtRowActionButton
+            onClick={() => onOpenEditDrawer(networkCallsign)}
+            disabled={editDisabled}
+            icon={<EditIcon fontSize="small" />}
+            label="Редагувати позивний"
+          />
+          <IconButton
+            size="small"
+            aria-label="Дії з позивним"
+            onClick={(event) => {
+              event.stopPropagation();
+              setRowMenuTarget(networkCallsign);
+              setRowMenuAnchorEl(event.currentTarget);
+            }}
+          >
+            <MoreVertOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+      );
+    },
     renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
       table,
       externalHasFilters: normalizedStatusFilter !== 'All',
@@ -208,18 +280,15 @@ export function NetworkCallsignsNetworkTable({
         : undefined,
     }),
     state: {
-      density: 'comfortable',
       isLoading: isBusy && !isInitialLoading,
       showLoadingOverlay: isBusy && !isInitialLoading,
       showSkeletons: isInitialLoading,
-      columnOrder: NETWORK_COLUMN_ORDER,
-      columnVisibility: NETWORK_COLUMNS_VISIBILITY,
+      columnOrder: tableStateContext.columnOrder,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnSizing: tableStateContext.columnSizing,
+      density: tableStateContext.density,
     },
     defaultColumn: { size: 180, renderColumnActionsMenuItems },
-    displayColumnDefOptions: {
-      ...CUSTOM_STYLES.displayColumnDefOptions,
-      'mrt-row-actions': { ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'], size: mrtRowActionsColumnSize(2) + 8 },
-    },
     muiTablePaperProps: ({ table }) => ({
       ...((resolvedPaperProps({ table }) as object) ?? {}),
       sx: {
@@ -250,36 +319,19 @@ export function NetworkCallsignsNetworkTable({
         idleOverflowY: 'auto',
       }),
     },
-    initialState: { density: 'comfortable', columnOrder: NETWORK_COLUMN_ORDER, columnVisibility: NETWORK_COLUMNS_VISIBILITY },
-    getRowId: (row) => String(row.id),
-    renderRowActions: ({ row }) => {
-      if (isInitialLoading) return <Box sx={{ minHeight: 28 }} />;
-      const networkCallsign = row.original;
-      const editDisabled = !canManage || inFlightUpdateIds.includes(networkCallsign.id);
-      if (!canManage) return <Box sx={{ minHeight: 28 }} />;
-      return (
-        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" useFlexGap>
-          <MrtRowActionButton
-            onClick={() => onOpenEditDrawer(networkCallsign)}
-            disabled={editDisabled}
-            icon={<EditIcon fontSize="small" />}
-            label="Редагувати позивний"
-          />
-          <IconButton
-            size="small"
-            aria-label="Дії з позивним"
-            onClick={(event) => {
-              event.stopPropagation();
-              setRowMenuTarget(networkCallsign);
-              setRowMenuAnchorEl(event.currentTarget);
-            }}
-          >
-            <MoreVertOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Stack>
-      );
+    initialState: {
+      density: 'comfortable',
+      columnOrder: buildNetworkColumnOrder({
+        dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'sourceName'],
+      }),
+      columnVisibility: NETWORK_COLUMNS_VISIBILITY,
     },
+    getRowId: (row) => String(row.id),
   });
+
+  useEffect(() => {
+    tableStateContext.onTableInitialized(table);
+  }, [table, tableStateContext]);
 
   return (
     <Box sx={{ minHeight: 0, minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
@@ -302,7 +354,7 @@ export function NetworkCallsignsNetworkTable({
                 />
               ))}
             </Stack>
-            <InternalTableActions table={table} />
+            <InternalTableActions table={table} rowNumberAppearanceControl />
           </Box>
         </Stack>
 

@@ -16,6 +16,43 @@ import {
 
 type Updater<T> = T | ((prev: T) => T);
 
+const INTERNAL_COLUMN_IDS = ['mrt-row-actions', 'mrt-row-drag', 'mrt-row-numbers', 'mrt-row-select', 'mrt-row-expand'];
+
+function isInternalColumnId(columnId: string) {
+  return INTERNAL_COLUMN_IDS.includes(columnId);
+}
+
+function haveSameMembers(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value) => right.includes(value)) && right.every((value) => left.includes(value));
+}
+
+export function normalizeColumnOrder(
+  columnOrder: MRT_ColumnOrderState,
+  defaultColumnOrder: MRT_ColumnOrderState,
+): MRT_ColumnOrderState {
+  if (columnOrder.length !== defaultColumnOrder.length) {
+    return defaultColumnOrder;
+  }
+
+  if (!haveSameMembers(columnOrder, defaultColumnOrder)) {
+    return defaultColumnOrder;
+  }
+
+  const defaultInternalColumnOrder = defaultColumnOrder.filter(isInternalColumnId);
+  const columnDataOrder = columnOrder.filter((columnId) => !isInternalColumnId(columnId));
+  const defaultDataOrder = defaultColumnOrder.filter((columnId) => !isInternalColumnId(columnId));
+
+  if (!haveSameMembers(columnDataOrder, defaultDataOrder)) {
+    return defaultColumnOrder;
+  }
+
+  return [...defaultInternalColumnOrder, ...columnDataOrder];
+}
+
 type SearchParams = {
   [k: string]: string;
 };
@@ -261,16 +298,12 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       try {
         const currentColumnOrder: string[] = JSON.parse(columnOrderFromStorage);
 
-        if (
-          currentColumnOrder.length !== props.defaultColumnOrder.length ||
-          currentColumnOrder.some((c) => !props.defaultColumnOrder.find((dc) => dc === c)) ||
-          props.defaultColumnOrder.some((c) => !currentColumnOrder.find((dc) => dc === c))
-        ) {
-          localStorage.setItem(`columnOrder-${props.tableId}`, JSON.stringify(props.defaultColumnOrder));
-          return props.defaultColumnOrder;
-        } else {
-          return JSON.parse(columnOrderFromStorage);
+        const normalizedColumnOrder = normalizeColumnOrder(currentColumnOrder, props.defaultColumnOrder);
+        if (!strArraysEqual(currentColumnOrder, normalizedColumnOrder)) {
+          localStorage.setItem(`columnOrder-${props.tableId}`, JSON.stringify(normalizedColumnOrder));
         }
+
+        return normalizedColumnOrder;
       } catch (error) {}
     }
     return props.defaultColumnOrder;
