@@ -4,11 +4,19 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
 log_file="$(mktemp)"
+log_pipe="$(mktemp -u)"
+
+mkfifo "${log_pipe}"
+tee "${log_file}" < "${log_pipe}" &
+tee_pid=$!
 
 cleanup() {
     rm -f "${log_file}"
+    rm -f "${log_pipe}"
     kill "${server_pid}" 2>/dev/null || true
+    kill "${tee_pid}" 2>/dev/null || true
     wait "${server_pid}" 2>/dev/null || true
+    wait "${tee_pid}" 2>/dev/null || true
 }
 
 extract_port_from_log() {
@@ -17,7 +25,7 @@ extract_port_from_log() {
 
 cd "${repo_root}/wdintel-web"
 
-npx elm-land server >"${log_file}" 2>&1 &
+npx elm-land server >"${log_pipe}" 2>&1 &
 server_pid=$!
 
 trap cleanup EXIT INT TERM
