@@ -35,7 +35,8 @@ pub async fn process_message_to_inbox_nofail<'a, 'async_trait, C>(
         {
             Err(e) => {
                 error!(
-                    "> error while running inbox_item_oneoff_nofail: {e:#?}"
+                    "> error while running inbox_item_oneoff_nofail: {:#?}",
+                    e
                 );
             }
             Ok(new_recs) => {

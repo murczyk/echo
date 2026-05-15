@@ -5,13 +5,13 @@ use crate::entities::{
     area_of_responsibility, sigint_inbox_item, sigint_inbox_item_tag,
 };
 use crate::error::AppError;
+use crate::types::{info, warn};
 use crate::types::{Mode, ShortContext};
 use crate::utils::parse_local_datetime;
 use crate::{h, OneoffSuggestInboxMessageTagsPs};
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use csv::Writer;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::{info, warn};
 use sea_orm::prelude::*;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};

@@ -21,7 +21,6 @@ use crate::utils::*;
 use actix_web::web::Json;
 use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::*;
-use log::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
 use sea_orm::{
@@ -2077,7 +2076,7 @@ pub async fn delete_network_freq(
                 )
                 .await
             {
-                error!("invalidate_network_inbox failed: {e:#?}");
+                error!("invalidate_network_inbox failed: {:#?}", e);
             }
         }
     }
@@ -2095,7 +2094,7 @@ pub async fn cleanup_networks_worker(dbx: &DatabaseConnection) {
     loop {
         let _loop_guard = worker_watch::loop_guard("cleanup_networks_worker");
         if let Err(e) = cleanup_networks_worker_1(dbx).await {
-            error!("error in cleanup_networks_worker_1: {e:?}");
+            error!("error in cleanup_networks_worker_1: {:?}", e);
         }
         tokio::time::sleep(std::time::Duration::from_secs(
             CLEANUP_NETWORKS_WORKER_SLEEP_DURATION,
@@ -2239,7 +2238,7 @@ async fn cleanup_networks_worker_1(
                     )
                     .await
                 {
-                    error!("invalidate_network_inbox failed: {e:#?}");
+                    error!("invalidate_network_inbox failed: {:#?}", e);
                 }
             }
         }
@@ -2276,7 +2275,7 @@ async fn cleanup_networks_worker_1(
                 )
                 .await
             {
-                error!("invalidate_network_inbox failed: {e:#?}");
+                error!("invalidate_network_inbox failed: {:#?}", e);
             }
         }
     }
@@ -3335,7 +3334,10 @@ pub async fn fix_network_areas_of_responsibility(
     let networks = networks.all(db).await.context(h!())?;
     for n in networks {
         if let Err(e) = insert_network_aor(db, &n, None).await {
-            error!("failed to insert network's area of responsibility: {e:?}");
+            error!(
+                "failed to insert network's area of responsibility: {:?}",
+                e
+            );
         } else {
             info!("added default aor to network {}", n.id);
 

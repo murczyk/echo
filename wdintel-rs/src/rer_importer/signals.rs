@@ -1,9 +1,9 @@
 use crate::entities::*;
 use crate::h;
 use crate::types::ShortContext;
+use crate::types::*;
 use crate::AppError;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
-use log::*;
 use sea_orm::*;
 use sea_query::Expr;
 use serde::{Deserialize, Serialize};
@@ -110,7 +110,7 @@ fn extract_highlighted_tokens(
         }
     }
 
-    trace!(">extracted signals: {res:?}");
+    trace!(">extracted signals: {:?}", res);
 
     Ok(res)
 }

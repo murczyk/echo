@@ -9,7 +9,6 @@ use sea_orm::sea_query::*;
 use sea_orm::*;
 use std::collections::HashSet;
 
-use log::*;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
 
 pub async fn merge_two_networks(
@@ -111,7 +110,10 @@ pub async fn merge_two_networks(
         get_network_activity_range(txn, network_id_to)
             .await
             .context(h!())?;
-    info!("Network {network_id_to} \"active from\" date updated to: {network_active_from:?}");
+    info!(
+        "Network {network_id_to} \"active from\" date updated to: {:?}",
+        network_active_from
+    );
 
     let mut network_to_model: sigint_network::ActiveModel = network_to.into();
     network_to_model.location = Set(new_location.unwrap_or_default());

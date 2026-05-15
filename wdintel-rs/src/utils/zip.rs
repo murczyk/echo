@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::here;
+use crate::types::*;
 use anyhow::Context;
-use log::*;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
@@ -36,7 +36,7 @@ where
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
         if path.is_file() {
-            debug!("adding {path:?} as {name:?} ...");
+            debug!("adding {:?} as {:?} ...", path, name);
 
             #[allow(deprecated)]
             zip.start_file_from_path(name, options.clone())
@@ -49,7 +49,7 @@ where
         } else if !name.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
-            debug!("adding dir {path:?} as {name:?} ...");
+            debug!("adding dir {:?} as {:?} ...", path, name);
             #[allow(deprecated)]
             zip.add_directory_from_path(name, options.clone())
                 .context(here!())?;

@@ -96,7 +96,7 @@ fn root_free_space_mb() -> i64 {
             (mb.min(i64::MAX as u64)) as i64
         }
         Err(err) => {
-            log::warn!(
+            warn!(
                 "Failed to read free space for root partition {}: {err}",
                 root_path.display()
             );

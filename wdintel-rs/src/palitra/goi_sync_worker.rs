@@ -20,7 +20,7 @@ pub async fn palitra_goi_sync_worker_nofail(env: Arc<Env>) {
         let no_jobs = match palitra_goi_sync_worker_step(env.as_ref()).await {
             Ok(no_jobs) => no_jobs,
             Err(err) => {
-                log::warn!("palitra_goi_sync_worker failed: {err:#}");
+                warn!("palitra_goi_sync_worker failed: {err:#}");
                 true
             }
         };

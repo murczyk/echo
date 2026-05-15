@@ -8,6 +8,7 @@ use crate::h;
 use crate::rer_importer::reports::types::{
     AreaOfResponsibility, ReportPreviewReq,
 };
+use crate::types::info;
 use crate::types::Env;
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
 use anyhow::Context;
@@ -16,7 +17,6 @@ use docx_rs::{
     AlignmentType, Docx, PageMargin, PageOrientationType, Paragraph, Run,
     Table, TableCell, TableRow, VAlignType, WidthType,
 };
-use log::info;
 use sea_orm::{FromQueryResult, *};
 use std::path::Path;
 use std::time::Instant;

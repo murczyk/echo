@@ -89,7 +89,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
                     replicas.push(ReplicaPool { conn: pool, label });
                 }
                 Err(err) => {
-                    warn!("failed to connect replica {host}:{port}: {err:?}");
+                    warn!("failed to connect replica {host}:{port}: {:?}", err);
                 }
             }
         }
@@ -107,7 +107,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         match e_greptimedb {
             Ok(greptimedb) => Some(greptimedb),
             Err(e) => {
-                warn!("failed to establish GreptimeDB connection: {e:?}");
+                warn!("failed to establish GreptimeDB connection: {:?}", e);
                 None
             }
         }
@@ -149,7 +149,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let version = match tokio::fs::read_to_string(version_file).await {
         Ok(v) => v,
         Err(e) => {
-            warn!("failed to read version file: {e:?}");
+            warn!("failed to read version file: {:?}", e);
             "unknown".to_string()
         }
     };
@@ -202,7 +202,7 @@ async fn init_runtime_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         )
         .await
     {
-        warn!("Failed to ensure import group exists: {err:?}");
+        warn!("Failed to ensure import group exists: {:?}", err);
     };
     Ok(env)
 }
@@ -423,7 +423,7 @@ fn spawn_background_workers(
         .await
         {
             if mode == Live {
-                error!("failed to configure signal cli: {err:?}");
+                error!("failed to configure signal cli: {:?}", err);
             }
         }
         info!("Done starting enable_signal_cli_verbose_logging");

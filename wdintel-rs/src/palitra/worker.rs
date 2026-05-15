@@ -84,10 +84,10 @@ pub async fn palitra_highlight_worker_nofail(
                     suppresed_count += 1;
                 } else {
                     if suppresed_count > 0 {
-                        log::error!("palitra_highlight_worker error (suppressed {suppresed_count} additional errors): {e:#}");
+                        error!("palitra_highlight_worker error (suppressed {suppresed_count} additional errors): {e:#}");
                         suppresed_count = 0;
                     } else {
-                        log::error!("palitra_highlight_worker error: {e:#}");
+                        error!("palitra_highlight_worker error: {e:#}");
                     }
                     last_error = Some(now);
                 }

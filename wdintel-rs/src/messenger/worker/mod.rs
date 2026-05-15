@@ -5,11 +5,11 @@ use crate::error::*;
 use crate::messenger::bl::{deactivate_account, list_echo_accounts};
 use crate::messenger::types::*;
 use crate::new_pg_pool_from_mode;
+use crate::types::info;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use ::serde::{Deserialize, Serialize};
 use chrono::*;
-use log::info;
 use redis::AsyncCommands;
 use sea_orm::*;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,7 +46,7 @@ pub async fn receive_thread_nofail(
         if let Err(e) =
             receive_thread_inner(mode, &cancel_token, &shutdown_handle).await
         {
-            error!("receive_thread_nofail encountered an error: {e:?}");
+            error!("receive_thread_nofail encountered an error: {:?}", e);
             sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
         }
         sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
@@ -66,7 +66,7 @@ pub async fn receive_thread_inner(
     if let Err(e) =
         echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
     {
-        error!("failed to enable verbose logging: {e:?}");
+        error!("failed to enable verbose logging: {:?}", e);
     };
 
     let mut workers: JoinSet<WorkerStatus> = JoinSet::new();
@@ -159,7 +159,7 @@ pub async fn bl_spawn_worker_if_not_running(
     if !running_ids.contains(&datasource.id) {
         running_ids.insert(datasource.id);
         let Some(client_name) = datasource.system_service_name.clone() else {
-            trace!("client name is missing, skipping: {datasource:?}");
+            trace!("client name is missing, skipping: {:?}", datasource);
             return Ok(());
         };
         let ts_now = now.format("%Y%m%d_%H:%M:%S").to_string();
@@ -214,7 +214,7 @@ async fn spawn_new_worker(
     {
         Ok(_) => false,
         Err(e) => {
-            error!("failed to run worker {worker_name_val}, stopping. Root cause: {e:?}");
+            error!("failed to run worker {worker_name_val}, stopping. Root cause: {:?}", e);
             true
         }
     };
@@ -282,8 +282,8 @@ async fn sync_client_once(
             notify_unlinked_datasource(redis, config, dbx, &cli).await
         {
             error!(
-                "failed to process unlinked datasource notification for {}: {e:?}",
-                cli.id
+                "failed to process unlinked datasource notification for {}: {:?}",
+                cli.id, e
             );
         }
         return SyncResult {
@@ -294,12 +294,12 @@ async fn sync_client_once(
     if let Err(e) = clear_unlinked_datasource_notification(redis, cli.id).await
     {
         error!(
-            "failed to clear unlinked datasource notification state for {}: {e:?}",
-            cli.id
+            "failed to clear unlinked datasource notification state for {}: {:?}",
+            cli.id, e
         );
     }
     let Some(client_name) = cli.system_service_name else {
-        trace!("client name is missing, skipping: {cli:?}");
+        trace!("client name is missing, skipping: {:?}", cli);
         return SyncResult {
             is_healthy: false,
             num_synced_inbox_messages: 0,
@@ -311,7 +311,7 @@ async fn sync_client_once(
         receive_thread(&client_name, &mut client_groups_sync_ts_map, dbx)
             .await
             .unwrap_or_else(|e| {
-                error!("> {client_name}::receive_thread_nofail error: {e:?}");
+                error!("> {client_name}::receive_thread_nofail error: {:?}", e);
                 0
             });
     let is_healthy = !is_datasource_offline(dbx, cli.id).await;
@@ -371,8 +371,8 @@ async fn notify_unlinked_datasource(
     .c(h!())?;
     if let Err(e) = send_result {
         error!(
-            "failed to send discord alert for unlinked datasource {}: {e:?}",
-            datasource.id
+            "failed to send discord alert for unlinked datasource {}: {:?}",
+            datasource.id, e
         );
     }
     Ok(())
@@ -654,11 +654,13 @@ async fn sync_inbox(
     let inbox_message_count = inbox_internal_ids.len();
     if inbox_message_count == 0 && message_attachment_info.is_empty() {
         trace!(
-            "[{client_name}] inbox sync: messages={inbox_message_count} attachment_counts={message_attachment_info:?}"
+            "[{client_name}] inbox sync: messages={inbox_message_count} attachment_counts={:?}",
+            message_attachment_info
         );
     } else {
         info!(
-            "[{client_name}] inbox sync: messages={inbox_message_count} attachment_counts={message_attachment_info:?}"
+            "[{client_name}] inbox sync: messages={inbox_message_count} attachment_counts={:?}",
+            message_attachment_info
         );
     }
     let senders = inbox_messages

@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
+use crate::types::*;
 use crate::types::{Env, Mode, ShortContext};
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::parse_local_datetime;
@@ -11,7 +12,6 @@ use anyhow::Context;
 use chrono::*;
 use echo_migration::{Expr, IntoCondition};
 use itertools::Itertools;
-use log::*;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::sleep;
@@ -62,7 +62,7 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
                 .join(",");
             batches.insert(batch_key);
         }
-        info!("[{ts:?}]batches found so far: {}", batches.len());
+        info!("[{:?}]batches found so far: {}", ts, batches.len());
     }
     info!("\n\n\n> batches found: {}", batches.len());
     for batch_key in batches {

@@ -1031,7 +1031,7 @@ pub async fn update_callsign(
         .await
         .c(h!())?;
 
-    info!("update_callsign; login: {user_id}; req: {req:?}");
+    info!("update_callsign; login: {user_id}; req: {:?}", req);
     let req = req.into_inner();
 
     let txn = env.dbx.begin().await.c(h!())?;
@@ -1202,7 +1202,7 @@ pub async fn load_whitelist_from_file(
     let callsigns = crate::utils::read_lines_from_file(path)
         .await
         .unwrap_or_else(|e| {
-            error!("failed to load callsigns: {e:?}\nfallback to empty set");
+            error!("failed to load callsigns: {:?}\nfallback to empty set", e);
             vec![]
         })
         .into_iter()

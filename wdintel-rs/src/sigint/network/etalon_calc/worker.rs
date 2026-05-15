@@ -2,12 +2,12 @@ use crate::config::*;
 use crate::entities::network_invalidation_task;
 use crate::entities::sea_orm_active_enums::NetworkInvalidationWorkerStatus;
 use crate::entities::*;
+use crate::types::{debug, error, info, warn};
 use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
 use crate::{h, new_pg_pool_from_mode};
 use chrono::{NaiveDateTime, Timelike, Utc};
 use echo_migration::Expr;
-use log::{debug, error, info, warn};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::thread;
@@ -22,7 +22,7 @@ pub async fn run_recent_inbox_network_worker_nofail(mode: Mode) {
         let _loop_guard =
             worker_watch::loop_guard("run_recent_inbox_network_worker_nofail");
         if let Err(e) = run_recent_inbox_network_worker_inner(mode).await {
-            error!("run_recent_inbox_network_worker_nofail failed: {e:#?}");
+            error!("run_recent_inbox_network_worker_nofail failed: {:#?}", e);
         }
         tokio::time::sleep(Duration::from_secs(
             NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
@@ -45,7 +45,7 @@ async fn run_recent_inbox_network_worker_inner(
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     info!("run_inbox_network_worker_once started");
     if let Err(e) = run_inbox_network_worker_once(&db, false, &config).await {
-        error!("run_inbox_network_worker_once failed: {e:#?}");
+        error!("run_inbox_network_worker_once failed: {:#?}", e);
     } else {
         info!("run_inbox_network_worker_once completed");
     }
@@ -102,7 +102,7 @@ pub async fn run_old_inbox_network_worker_nofail(mode: Mode) {
         let _loop_guard =
             worker_watch::loop_guard("run_old_inbox_network_worker_nofail");
         if let Err(e) = run_old_inbox_network_worker_inner(mode).await {
-            error!("run_old_inbox_network_worker_nofail failed: {e:#?}");
+            error!("run_old_inbox_network_worker_nofail failed: {:#?}", e);
         }
         tokio::time::sleep(Duration::from_secs(
             NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
@@ -129,7 +129,7 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     try_cleanup(&db).await.c(h!())?;
     info!("run_old_inbox_network_worker_once started");
     if let Err(e) = run_inbox_network_worker_once(&db, true, &config).await {
-        error!("run_old_inbox_network_worker_once failed: {e:#?}");
+        error!("run_old_inbox_network_worker_once failed: {:#?}", e);
     } else {
         info!("run_old_inbox_network_worker_once completed");
     }
@@ -174,7 +174,7 @@ pub async fn run_inbox_network_daily_consistency_worker_nofail(mode: Mode) {
         if let Err(e) =
             run_inbox_network_daily_consistency_worker_inner(mode).await
         {
-            error!("run_inbox_network_daily_consistency_worker_inner failed: {e:#?}");
+            error!("run_inbox_network_daily_consistency_worker_inner failed: {:#?}", e);
         }
         tokio::time::sleep(Duration::from_secs(
             SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS,
@@ -205,7 +205,8 @@ async fn run_inbox_network_daily_consistency_worker_inner(
             .await
     {
         error!(
-            "run_inbox_network_daily_consistency_worker_once failed: {e:#?}"
+            "run_inbox_network_daily_consistency_worker_once failed: {:#?}",
+            e
         );
     } else {
         info!("run_inbox_network_daily_consistency_worker_once completed");
@@ -277,7 +278,7 @@ async fn run_inbox_network_worker_once(
         max_till_ts = min_till_ts;
         fuel -= 1;
         if fuel < 0 {
-            error!("run_inbox_network_worker_once loop error -- unexpected task list: {task_list:?}");
+            error!("run_inbox_network_worker_once loop error -- unexpected task list: {:?}", task_list);
             for task in task_list {
                 // process all remaining tasks at once
                 next_tasks.push(task);

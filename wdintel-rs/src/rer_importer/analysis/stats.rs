@@ -1,10 +1,10 @@
 use crate::rer_importer::types::SenderFrequencyBreakdown;
 use crate::types::ShortContext;
+use crate::types::{debug, warn};
 use actix_identity::Identity;
 use actix_web::web::Json;
 use chrono::Duration;
 use echo_migration::{Expr, JoinType};
-use log::{debug, warn};
 use sea_orm::FromQueryResult;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -2697,7 +2697,8 @@ pub async fn fetch_counts_for_login(
             if replica_label.is_some() && is_replica_conflict_error(&err) =>
         {
             warn!(
-                "Replica {replica_label:?} hit recovery conflict for login {login_str}, retrying on primary"
+                "Replica {:?} hit recovery conflict for login {login_str}, retrying on primary",
+                replica_label
             );
             fetch_counts_for_login_with_conn(
                 req,

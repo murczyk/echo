@@ -60,7 +60,7 @@ pub async fn upsert_signal_profiles(
                 let mut rec = new_profile.into_active_model();
                 rec.created_at = NotSet;
                 if let Err(e) = rec.insert(db).await.context(h!()) {
-                    error!("failed to insert new profile: {e:?}")
+                    error!("failed to insert new profile: {:?}", e)
                 }
             }
             Some(existing_profile) => {
@@ -73,7 +73,8 @@ pub async fn upsert_signal_profiles(
                 }
                 if let Err(e) = rec.update(db).await.context(h!()) {
                     error!(
-                        "failed to update profile {source_profile_id} : {e:?}"
+                        "failed to update profile {source_profile_id} : {:?}",
+                        e
                     )
                 }
             }
@@ -122,12 +123,12 @@ pub async fn upsert_signal_groups(
                         .insert(db)
                         .await
                         .map_err(|e| {
-                            error!("failed to create datasource_group mapping: {e:?}");
+                            error!("failed to create datasource_group mapping: {:?}", e);
                             e
                         });
                     }
                     Err(e) => {
-                        error!("failed to insert new group: {e:?}")
+                        error!("failed to insert new group: {:?}", e)
                     }
                 }
             }
@@ -140,7 +141,10 @@ pub async fn upsert_signal_groups(
                 rec.ignore_operativny = Set(new_group.ignore_operativny);
                 rec.is_secret = Set(new_group.is_secret);
                 if let Err(e) = rec.update(db).await.context(h!()) {
-                    error!("failed to update group {source_master_key} : {e:?}")
+                    error!(
+                        "failed to update group {source_master_key} : {:?}",
+                        e
+                    )
                 }
                 // ensure mapping exists after update
                 let mapping_exists = datasource_group::Entity::find()
@@ -171,7 +175,8 @@ pub async fn upsert_signal_groups(
                     .await
                     .map_err(|e| {
                         error!(
-                            "failed to create datasource_group mapping: {e:?}"
+                            "failed to create datasource_group mapping: {:?}",
+                            e
                         );
                         e
                     });

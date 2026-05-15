@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
     loop {
         if let Err(e) = process_queue_inner(mode, &cancel_token).await {
-            error!("process_queue_inner encountered an error: {e:?}");
+            error!("process_queue_inner encountered an error: {:?}", e);
             sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
         }
         sleep(Duration::from_millis(MESSENGER_WORKER_IDLE_SLEEP_MS)).await;

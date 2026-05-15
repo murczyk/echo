@@ -23,7 +23,7 @@ pub fn extract_unit_with_aor(
     callsigns: Vec<String>,
     m_aor_id: Option<i64>,
 ) -> Result<UnitAndLoc, AppError> {
-    // log::trace!("> extract_unit: inp={inp}");
+    // trace!("> extract_unit: inp={inp}");
     if let Some(value) = try_extract_standard_unit_and_location(
         settlements.clone(),
         inp,
@@ -186,7 +186,7 @@ fn capture_unit_and_locality(
 ) -> Result<(String, Option<String>), AppError> {
     let mut line = line;
     let mut locality = locality;
-    // log::trace!("> line: {line}");
+    // trace!("> line: {line}");
     '_if: {
         // cutoff 54191: 09:11    F= 455.4875
         let ms: Vec<_> = line.match_indices("УКХ").collect();
@@ -195,7 +195,7 @@ fn capture_unit_and_locality(
             line = byte_substr(&line, match_index, line.len())?;
         }
     }
-    // log::trace!("> line before '_capts: {line}");
+    // trace!("> line before '_capts: {line}");
     '_capt: {
         '_if: {
             // extract "[Мережа: УКХ р/м управління 1 мсб 4 ВБ ВАСИЛІВКА]"
@@ -233,7 +233,7 @@ fn capture_unit_and_locality(
             };
             locality = m_cap_s(&capts, "locality");
             line = unit;
-            // log::trace!("> if2");
+            // trace!("> if2");
             break '_capt;
         }
         '_if: {
@@ -304,7 +304,7 @@ fn capture_unit_and_locality(
             };
             locality = m_cap_s(&capts, "locality");
             line = unit;
-            // log::trace!("> if2");
+            // trace!("> if2");
             break '_capt;
         }
         '_if: {
@@ -322,7 +322,7 @@ fn capture_unit_and_locality(
             };
             locality = m_cap_s(&capts, "locality");
             line = unit;
-            // log::trace!("> if5");
+            // trace!("> if5");
             break '_capt;
         }
         '_if: {
@@ -340,7 +340,7 @@ fn capture_unit_and_locality(
             };
             locality = m_cap_s(&capts, "locality");
             line = unit;
-            // log::trace!("> if5");
+            // trace!("> if5");
             break '_capt;
         }
         '_if: {
@@ -359,11 +359,11 @@ fn capture_unit_and_locality(
             };
             locality = m_cap_s(&capts, "locality");
             line = unit;
-            // log::trace!("> if4");
+            // trace!("> if4");
             break '_capt;
         }
         '_if: {
-            // log::trace!("> line6: {line}");
+            // trace!("> line6: {line}");
             lazy_static! {
                 static ref RE: Regex =
                     Regex::new(r#"(?P<unit>УКХ .* [0-9]+\s*АК?\s*)"#).unwrap();
@@ -375,7 +375,7 @@ fn capture_unit_and_locality(
                 break '_if;
             };
             line = unit;
-            // log::trace!("> if6");
+            // trace!("> if6");
             break '_capt;
         }
         '_if: {
@@ -478,7 +478,7 @@ fn capture_unit_and_locality(
             line = unit;
             break '_capt;
         }
-        // log::trace!("> line2: {line}");
+        // trace!("> line2: {line}");
         '_if: {
             // cut off suffix "УКХ радіомережа н\в підрозділу НОВОДОНЕЦЬКЕ-НОВОМАЙОРСЬКЕ	01:47			415.2500	"- Перо-1, Перо-2 по нулям"
             lazy_static! {

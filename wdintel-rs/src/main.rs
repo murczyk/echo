@@ -34,6 +34,7 @@ pub mod kml;
 pub mod kv;
 mod location;
 pub mod log_api;
+pub mod logging;
 pub mod message_queue;
 pub mod messenger;
 pub mod migration;
@@ -616,6 +617,7 @@ enum Cmd {
     OneoffRerCsvImport(OneoffRerCsvImportPs),
     OneoffFillCompFreq(OneoffFillCompFreqPs),
     OneoffBatchUskToWgs(OneoffBatchUskToWgsPs),
+    OneoffTestLoggingError,
     OneoffMergeAllNetworks,
     OneoffEnsureTagsOrdering,
     OneoffMergeTwoNetworks(OneoffMergeNetworksPs),
@@ -847,9 +849,9 @@ fn main() -> Result<(), AppError> {
     info!(
         "logger initialized; RUST_LOG={}; trace_enabled={} debug_enabled={} info_enabled={}",
         rust_log,
-        log::log_enabled!(log::Level::Trace),
-        log::log_enabled!(log::Level::Debug),
-        log::log_enabled!(log::Level::Info)
+        log_enabled!(Level::Trace),
+        log_enabled!(Level::Debug),
+        log_enabled!(Level::Info)
     );
     trace!("logger trace probe: hello from wdintel-rs startup");
     debug!("logger debug probe: hello from wdintel-rs startup");
@@ -981,6 +983,9 @@ async fn async_main(
         Cmd::OneoffBatchUskToWgs(ps) => {
             oneoff::oneoff_batch_usk_to_wgs(mode, &ps).unwrap();
             Ok(())
+        }
+        Cmd::OneoffTestLoggingError => {
+            oneoff::oneoff_test_logging_error_macro(mode)
         }
         Cmd::ExportUnit(ps) => rer_importer::unit::export_unit(mode, &ps).await,
         Cmd::ImportUnit(ps) => rer_importer::unit::import_unit(mode, &ps).await,

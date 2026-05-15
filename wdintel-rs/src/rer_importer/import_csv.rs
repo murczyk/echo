@@ -683,7 +683,7 @@ pub async fn ensure_import_group_exists(
     let datasource_id = match datasource {
         Some(datasource) => datasource.id,
         None => {
-            log::warn!("No datasource found -- creating a default one!");
+            warn!("No datasource found -- creating a default one!");
             datasource::ActiveModel {
                 id: Set(1),
                 kind: Set("signal".to_string()),
@@ -710,7 +710,7 @@ pub async fn ensure_import_group_exists(
     let master_key = match group {
         Some(group) => group.master_key,
         None => {
-            log::warn!("No signal_group found -- creating a default one!");
+            warn!("No signal_group found -- creating a default one!");
             let group = signal_group::ActiveModel {
                 master_key: Set(Uuid::new_v4().to_string()),
                 name: Set(Some(group_name.clone())),
@@ -747,7 +747,7 @@ pub async fn ensure_import_group_exists(
     let _signal_profile = match signal_profile {
         Some(signal_profile) => signal_profile,
         None => {
-            log::warn!("No signal_profile found -- creating a default one!");
+            warn!("No signal_profile found -- creating a default one!");
             signal_profile::ActiveModel {
                 uuid: Set(uuid::Uuid::new_v4().to_string()),
                 given_name: Set(Some(sender_name)),
@@ -767,9 +767,7 @@ pub async fn ensure_import_group_exists(
     let _sigint_zone_datasource = match sigint_zone_datasource {
         Some(sigint_zone_datasource) => sigint_zone_datasource,
         None => {
-            log::warn!(
-                "No sigint_zone_datasource found -- creating a default one!"
-            );
+            warn!("No sigint_zone_datasource found -- creating a default one!");
             sigint_zone_datasource::ActiveModel {
                 sigint_zone_id: Set(1),
                 datasource_id: Set(datasource_id),
@@ -789,7 +787,7 @@ pub async fn ensure_import_group_exists(
     let _master_key = match group {
         Some(group) => group.master_key,
         None => {
-            log::warn!("No signal_group found for direction finding imports -- creating a default one!");
+            warn!("No signal_group found for direction finding imports -- creating a default one!");
             let group = signal_group::ActiveModel {
                 master_key: Set(IMPORT_DIRECTION_FINDING_UUID.to_string()),
                 name: Set(Some("Імпорт Пеленгів".to_string())),

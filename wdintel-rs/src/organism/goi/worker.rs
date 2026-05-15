@@ -60,7 +60,7 @@ async fn goi_worker_nofail(env: Arc<Env>, with_api_jobs: bool) {
         if let Err(err) =
             goi_association_worker_step(&env, &mut state, with_api_jobs).await
         {
-            log::warn!("GOI association worker step failed: {err:#?}");
+            warn!("GOI association worker step failed: {:#?}", err);
             tokio::time::sleep(goi_worker_sleep_duration()).await;
         }
     }
@@ -82,7 +82,7 @@ async fn goi_association_worker_step(
         run_goi_folder_sync_jobs(env.as_ref(), state, integrations).await;
     }
 
-    log::debug!("[goi_association_worker] synced integrations successfully");
+    debug!("[goi_association_worker] synced integrations successfully");
     tokio::time::sleep(goi_worker_sleep_duration()).await;
     Ok(())
 }
@@ -106,7 +106,7 @@ async fn run_goi_api_jobs(
     }
     while let Some(job_result) = job_set.join_next().await {
         if let Err(err) = job_result {
-            log::warn!("GOI API job join failed: {err:#?}");
+            warn!("GOI API job join failed: {:#?}", err);
         }
     }
 }
@@ -121,8 +121,9 @@ async fn run_goi_folder_sync_jobs(
             sync_goi_palitra_folders_if_due(env, &integration, state).await
         {
             let label = integration.server_label.clone();
-            log::warn!(
-                "[goi-sync] Skipping GOI palitra folder sync for {label}: {err:#?}"
+            warn!(
+                "[goi-sync] Skipping GOI palitra folder sync for {label}: {:#?}",
+                err
             );
         }
         tokio::time::sleep(goi_worker_sleep_duration()).await;
@@ -159,8 +160,9 @@ async fn run_goi_api_job(env: Arc<Env>, job: GoiApiJob) {
         sync_goi_associations(env.as_ref(), &job.integration).await
     {
         let label = job.integration.server_label.clone();
-        log::warn!(
-            "[goi_association_worker] Skipping GOI association sync for {label}: {err:#?}"
+        warn!(
+            "[goi_association_worker] Skipping GOI association sync for {label}: {:#?}",
+            err
         );
     }
     if job.sync_knowledge {
@@ -168,13 +170,13 @@ async fn run_goi_api_job(env: Arc<Env>, job: GoiApiJob) {
             sync_goi_knowledge(env.as_ref(), &job.integration).await
         {
             let label = job.integration.server_label.clone();
-            log::warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {err:#?}");
+            warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {:#?}", err);
         }
     }
     if job.push_report {
         match push_goi_report(env.as_ref(), &job.integration).await {
             Ok(response) => {
-                log::info!(
+                info!(
                     "Pushed GOI signed frequencies report for {} to {} ({} bytes)",
                     job.integration.server_label,
                     response.path,
@@ -183,7 +185,7 @@ async fn run_goi_api_job(env: Arc<Env>, job: GoiApiJob) {
             }
             Err(err) => {
                 let label = job.integration.server_label.clone();
-                log::warn!("Skipping GOI report push for {label}: {err:#?}");
+                warn!("Skipping GOI report push for {label}: {:#?}", err);
             }
         }
     }

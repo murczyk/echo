@@ -1,7 +1,6 @@
 use crate::config::Config;
 use crate::error::AppError;
 use crate::types::*;
-use log::*;
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};

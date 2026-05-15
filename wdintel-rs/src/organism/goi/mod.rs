@@ -353,7 +353,7 @@ pub async fn goi_upload_file_loose(
     let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
     let remote_file_path_for_log = remote_file_path.clone();
     if let Err(err) = goi_upload_file(req, remote_file_path, file_data).await {
-        log::warn!(
+        warn!(
             "Skipping GOI file upload for {ssh_target} {remote_file_path_for_log}: {err:#}"
         );
     }
@@ -392,7 +392,7 @@ pub async fn goi_delete_file_loose(
     let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
     let remote_file_path_for_log = remote_file_path.clone();
     if let Err(err) = goi_delete_file(req, remote_file_path).await {
-        log::warn!(
+        warn!(
             "Skipping GOI file delete for {ssh_target} {remote_file_path_for_log}: {err:#}"
         );
     }

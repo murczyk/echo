@@ -25,7 +25,7 @@ pub async fn oneoff_fix_network_callsigns(mode: Mode) -> Result<(), AppError> {
         let c_id = c.id;
         let callsign = c.sigint_callsign.clone();
         if let Err(e) = fix_callsign(&dbx, c, unit_id).await {
-            error!("failed to fix callsign #{c_id} ({callsign}): {e:#?}");
+            error!("failed to fix callsign #{c_id} ({callsign}): {:#?}", e);
         } else {
             counter += 1;
         }

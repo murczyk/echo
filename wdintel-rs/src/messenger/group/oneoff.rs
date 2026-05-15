@@ -8,7 +8,6 @@ use chrono::*;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use echo_migration::Expr;
-use log::*;
 use sea_orm::*;
 use std::collections::*;
 
@@ -250,7 +249,7 @@ async fn fix_retro_signal_group_mappings(
     if all_keys.is_empty() {
         return Ok(());
     }
-    info!("all group keys: {all_keys:?}");
+    info!("all group keys: {:?}", all_keys);
     let datasource_groups = datasource_group::Entity::find()
         .filter(
             datasource_group::Column::GroupMasterKey.eq_any(all_keys.clone()),
@@ -268,8 +267,8 @@ async fn fix_retro_signal_group_mappings(
             .filter(|g| g.group_master_key.eq(&group_id))
             .collect::<Vec<_>>();
         info!("{internal_id} => {group_id}: ");
-        info!("from: {from_groups:?}");
-        info!("to: {to_groups:?}");
+        info!("from: {:?}", from_groups);
+        info!("to: {:?}", to_groups);
         for source_group in from_groups {
             let target_group_id = to_groups
                 .iter()
@@ -296,7 +295,10 @@ async fn fix_retro_signal_group_mappings(
                 let mut model = source_group.clone().into_active_model();
                 model.group_master_key = Set(group_id.clone());
                 if let Err(e) = model.update(db).await {
-                    info!("failed to update {name}(id={id}), skipping: {e:?}");
+                    info!(
+                        "failed to update {name}(id={id}), skipping: {:?}",
+                        e
+                    );
                     continue;
                 }
             }
@@ -381,7 +383,8 @@ async fn fix_retro_signal_group_mappings(
                 model.signal_group_master_key = Set(group_id.clone());
                 if let Err(e) = model.update(db).await {
                     error!(
-                        "[unexpected] failed to update group {from:?}: {e:?}"
+                        "[unexpected] failed to update group {:?}: {:?}",
+                        from, e
                     );
                 }
             }
@@ -409,7 +412,7 @@ async fn fix_retro_signal_group_mappings(
                 let mut model = from.into_active_model();
                 model.group_master_key = Set(group_id.clone());
                 if let Err(e) = model.update(db).await {
-                    error!("unexpected {}: {e:?}", h!());
+                    error!("unexpected {}: {:?}", h!(), e);
                 }
             }
             _ => {}

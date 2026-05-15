@@ -34,7 +34,7 @@ pub async fn fetch_redirect_url(
             HttpResponse::Ok().json(Json(DeltaLoginUrl { url: Some(url) }))
         }
         Err(e) => {
-            warn!("failed to build auth url: {e:?}");
+            warn!("failed to build auth url: {:?}", e);
             HttpResponse::BadRequest().body("Missing Delta API config")
         }
     }
@@ -65,7 +65,7 @@ pub async fn handle_redirect(
                     }
                 }
                 Err(e) => {
-                    error!("Failed to login, probably EXO account is missing: user_name: {user_name}; error: {e:?}");
+                    error!("Failed to login, probably EXO account is missing: user_name: {user_name}; error: {:?}", e);
                     HttpResponse::Found()
                         .insert_header((
                             "Location",
@@ -76,7 +76,7 @@ pub async fn handle_redirect(
             }
         }
         Err(e) => {
-            error!("Delta API error occurred: {e:?}");
+            error!("Delta API error occurred: {:?}", e);
             HttpResponse::Found()
                 .insert_header((
                     "Location",

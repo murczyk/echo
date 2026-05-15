@@ -138,9 +138,10 @@ pub async fn fix_datasource_default_aor(
         let mut datasource = datasource.into_active_model();
         datasource.default_aor_id = Set(Some(default_aor.id));
         match datasource.update(db).await.c(h!()) {
-            Ok(_) => log::info!("set default_aor_id for datasource {id}"),
-            Err(e) => log::error!(
-                "failed to set default_aor_id for datasource {id}: {e:?}"
+            Ok(_) => info!("set default_aor_id for datasource {id}"),
+            Err(e) => error!(
+                "failed to set default_aor_id for datasource {id}: {:?}",
+                e
             ),
         }
     }

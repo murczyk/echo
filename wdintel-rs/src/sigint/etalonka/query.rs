@@ -12,7 +12,6 @@ use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::prelude::*;
 use futures::stream::TryStreamExt;
-use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, Value, *};
 use sea_query::*;
 use serde::Serialize;
@@ -182,7 +181,7 @@ async fn load_freqs_impl(
     freq_counts: Option<HashMap<i64, i64>>,
     include_callsigns: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
-    trace!("> load freqs for network: {network_id:?}");
+    trace!("> load freqs for network: {:?}", network_id);
 
     if freq_counts.is_some() && !include_callsigns {
         return load_freqs_with_cached_activity(
@@ -1036,7 +1035,7 @@ pub async fn load_callsigns(
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
-    trace!("> load_callsigns for network: {network_id:?}");
+    trace!("> load_callsigns for network: {:?}", network_id);
 
     let (base_with, callsigns_select) =
         build_callsigns_queries(groups, network_id, None, filter)
@@ -1097,7 +1096,8 @@ pub async fn load_callsigns(
     if !include_activity_info {
         let duration = start.elapsed();
         trace!(
-            "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?}, without activity info)"
+            "[load_callsigns] Execution time: {:.2?} (network: {:?}, without activity info)",
+            duration, network_id
         );
         return Ok(res);
     }
@@ -1118,7 +1118,9 @@ pub async fn load_callsigns(
 
     let duration = start.elapsed();
     trace!(
-        "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?})"
+        "[load_callsigns] Execution time: {:.2?} (network: {:?})",
+        duration,
+        network_id
     );
 
     Ok(res)
@@ -2002,14 +2004,14 @@ async fn get_map_image(
         .arg(temp_file_name)
         .spawn()
         .map_err(|e| {
-            error!("Failed to start geo-screenshot: {e:#?}");
+            error!("Failed to start geo-screenshot: {:#?}", e);
             e
         })
         .context(h!())?
         .wait_with_output()
         .await
         .map_err(|e| {
-            error!("geo-screenshot process failed: {e:#?}");
+            error!("geo-screenshot process failed: {:#?}", e);
             e
         })
         .context(h!())?;
@@ -2019,7 +2021,7 @@ async fn get_map_image(
         let file = tokio::fs::File::open(temp_file_name)
             .await
             .map_err(|e| {
-                error!("Failed to open temp file {temp_file_name}: {e:#?}");
+                error!("Failed to open temp file {temp_file_name}: {:#?}", e);
                 e
             })
             .context(temp_file_name.to_string())

@@ -1767,7 +1767,7 @@ where
         {
             Ok(geometry) => geometry,
             Err(err) => {
-                log::warn!(
+                warn!(
                     "Skipping GOI file move for palitra {}: missing geometry: {err:#}",
                     palitra.id
                 );
@@ -1817,7 +1817,7 @@ where
                 None => task_list.push(task),
                 Some(existing) if existing == &task => {}
                 Some(existing) => {
-                    log::warn!(
+                    warn!(
                         "Skipping GOI file move task with duplicate target path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
                         task.target_file_name,
                         existing.target_folder,
@@ -1918,7 +1918,7 @@ where
         match goi_validate_connection_req(&req) {
             Ok(()) => goi_targets.push(req),
             Err(err) => {
-                log::warn!(
+                warn!(
                     "Skipping GOI sync target for integration {} ({}): {err:#}",
                     integration_id,
                     goi_integration_web_host(&integration).unwrap_or_default()

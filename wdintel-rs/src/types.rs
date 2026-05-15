@@ -1,5 +1,7 @@
 pub use crate::error::AppError;
 pub use crate::h;
+pub use crate::logging::LevelFilter;
+pub(crate) use crate::logging::*;
 use crate::palitra::worker::PalitraWorkerContext;
 pub use anyhow::{anyhow, bail, Context};
 pub use chrono::prelude::Utc;
@@ -7,7 +9,6 @@ pub use chrono::NaiveDateTime;
 pub use chrono_tz::Europe::Kyiv;
 use clap::ValueEnum;
 pub use itertools::Itertools;
-pub use log::*;
 use milgeo_rs::MilGeo;
 use rand::prelude::IndexedRandom;
 pub use serde::{Deserialize, Serialize};

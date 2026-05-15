@@ -25,7 +25,6 @@ use actix_web::web::Data;
 use chrono::Utc;
 use geoconvert::{LatLon, Mgrs};
 use itertools::Itertools;
-use log::*;
 use sea_orm::*;
 use sea_query::Expr;
 use sqlx::Row;
@@ -736,7 +735,8 @@ pub async fn submit_upsert_inbox_item(
         message.text_marked = None;
         message.keyword_tokens = None;
         info!(
-            "upsert request id = {id}; login = {login}; new value: {message:?}; old value: {existing:?}"
+            "upsert request id = {id}; login = {login}; new value: {:?}; old value: {:?}",
+            message, existing
         );
     }
 

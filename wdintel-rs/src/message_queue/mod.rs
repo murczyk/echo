@@ -27,7 +27,7 @@ pub async fn process_signal_message_queue_item(
     skip_process_inbox_item: bool,
 ) -> Result<String, AppError> {
     // Normalize body
-    info!("received message: {m:?}");
+    info!("received message: {:?}", m);
     let body = m.body.replace("\r\n", "\n");
     let attachment_paths: Vec<_> =
         attachments.iter().map(|a| a.path.clone()).collect();

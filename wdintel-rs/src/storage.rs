@@ -3,11 +3,11 @@ use crate::config::S3_MEDIA_ROOT_PREFIX;
 use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
+use crate::types::error;
+use crate::types::{info, warn};
 use crate::types::{Env, ShortContext};
 use actix_files::NamedFile;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
-use log::error;
-use log::{info, warn};
 use opendal::Operator;
 use rand::Rng;
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ pub async fn serve_assets(
     let path: PathBuf = match filename.parse() {
         Ok(path) => path,
         Err(e) => {
-            error!("bad filename {filename}: {e:#?}");
+            error!("bad filename {filename}: {:#?}", e);
             return Ok(HttpResponse::NotFound().body("Asset not found"));
         }
     };
@@ -69,7 +69,7 @@ pub async fn serve_assets(
             .content_type("application/octet-stream")
             .body(body)),
         Err(e) => {
-            error!("failed to load asset from s3: {e:#?}");
+            error!("failed to load asset from s3: {:#?}", e);
             Ok(HttpResponse::NotFound().body("Asset not found"))
         }
     }

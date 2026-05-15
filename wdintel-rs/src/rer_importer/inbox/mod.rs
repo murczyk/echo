@@ -17,7 +17,6 @@ use actix_web::{get, post};
 use chrono::*;
 use echo_migration::{Expr, PostgresQueryBuilder};
 use itertools::Itertools;
-use log::*;
 use sea_orm::*;
 use std::collections::BTreeSet;
 
@@ -540,7 +539,7 @@ async fn inbox_submit(
         // FIXME logging doesn't work for this function, please fix
         Ok(_) => Ok(Json(())),
         Err(e) => {
-            error!("failed to submit inbox: {e:?}");
+            error!("failed to submit inbox: {:?}", e);
             Err(e)
         }
     }
@@ -593,7 +592,11 @@ async fn ensure_comment_save_access(
 
     warn!(
         target: "not_found_details",
-        "comment-save not found login={login} message_id={message_id} message_exists={message_exists} message_deleted={message_deleted:?} datasource_group_id={datasource_group_id:?} message_groups={message_groups:?} user_groups={sigint_groups:?}",
+        "comment-save not found login={login} message_id={message_id} message_exists={message_exists} message_deleted={:?} datasource_group_id={:?} message_groups={:?} user_groups={:?}",
+        message_deleted,
+        datasource_group_id,
+        message_groups,
+        sigint_groups,
     );
 
     Err(AppError::NotFound)
@@ -673,7 +676,7 @@ async fn comment_save(
         .map(EventMsg::new)
         .collect();
     if let Err(e) = fanout_mult(&mut env.redis.clone(), events).await {
-        warn!("failed to send to redis: {e:#?}");
+        warn!("failed to send to redis: {:#?}", e);
     }
     Ok(Json(()))
 }

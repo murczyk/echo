@@ -21,7 +21,8 @@ pub mod types;
 fn log_login_form_error(login: &str, errors: &BTreeMap<String, String>) {
     error!(
         target: "form_error_details",
-        "Login attempt for \"{login}\" failed: {errors:?}"
+        "Login attempt for \"{login}\" failed: {:?}",
+        errors
     );
 }
 
@@ -1096,7 +1097,7 @@ pub async fn validate_login(
     let login_data = match login_result {
         Ok(data) => data,
         Err(e) => {
-            error!("failed to load login {login}: {e:?}");
+            error!("failed to load login {login}: {:?}", e);
             return Ok(UserValidationResult {
                 login_model: None,
                 is_valid: false,
@@ -1340,7 +1341,7 @@ pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
         let _loop_guard =
             crate::utils::worker_watch::loop_guard("inactive_users_worker");
         if let Err(e) = inactive_users_worker_1(dbx).await {
-            error!("error in inactive_users_worker_1: {e:?}");
+            error!("error in inactive_users_worker_1: {:?}", e);
         }
         tokio::time::sleep(std::time::Duration::from_secs(
             INACTIVE_USERS_DEACTIVATE_DURATION_SEC,

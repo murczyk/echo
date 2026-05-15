@@ -33,7 +33,7 @@ pub async fn list_network_callsigns(
         .await
         .c(h!())?;
 
-    trace!("network_callsigns; login: {user_id}; req: {req:?}");
+    trace!("network_callsigns; login: {user_id}; req: {:?}", req);
     let req = req.into_inner();
 
     let res = bl_get_network_callsigns_list(&req, &user_id, &env.dbx)
@@ -262,7 +262,7 @@ pub async fn delete_network_callsign(
         .await
         .c(h!())?;
 
-    info!("Delete network callsign; login: {user_id}; req: {req:?}");
+    info!("Delete network callsign; login: {user_id}; req: {:?}", req);
     let txn = env.dbx.begin().await.context(h!())?;
     let req = req.into_inner();
 
@@ -312,7 +312,10 @@ pub async fn network_callsigns_activity(
         .await
         .c(h!())?;
 
-    trace!("network callsigns activity; login: {user_id}; req: {req:?}");
+    trace!(
+        "network callsigns activity; login: {user_id}; req: {:?}",
+        req
+    );
     let req = req.into_inner();
 
     let res = bl_get_network_callsigns_activity(&req, &user_id, &env.dbx)

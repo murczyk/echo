@@ -7,6 +7,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::reports::types::*;
+use crate::types::info;
 use crate::types::Env;
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
 use anyhow::Context;
@@ -16,7 +17,6 @@ use docx_rs::{
     SpecialIndentType,
 };
 use echo_migration::{IntoCondition, JoinType};
-use log::info;
 use sea_orm::prelude::Expr;
 use sea_orm::*;
 use std::path::Path;
