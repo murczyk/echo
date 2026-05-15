@@ -14,7 +14,7 @@ use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
 use sea_orm::*;
 use sea_query::Expr;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub mod types;
 
@@ -134,84 +134,24 @@ pub async fn update_login(
         .await
         .c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
+
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(req.login.clone()))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
 
-    let delta_id = match login_obj.delta_login_id {
-        None => {
-            if let Some(d_login) = &req.delta_login {
-                ensure_delta_login_available(
-                    &env.dbx,
-                    d_login,
-                    Some(&req.login),
-                )
-                .await
-                .c(h!())?;
-                let result = delta_login::ActiveModel {
-                    id: NotSet,
-                    login: Set(d_login.clone()),
-                    created_at: NotSet,
-                }
-                .insert(&env.dbx)
-                .await
-                .c(h!())?;
-                Some(result.id)
-            } else {
-                None
-            }
-        }
-        Some(id) => {
-            let login = delta_login::Entity::find()
-                .join(JoinType::LeftJoin, delta_login::Relation::Login.def())
-                .filter(login::Column::DeletedPermanently.eq(false))
-                .filter(delta_login::Column::Id.eq(id))
-                .one(&env.dbx)
-                .await
-                .context(format!("delta_id: {id}"))
-                .c(h!())?
-                .c(h!())?;
-            match &req.delta_login {
-                None => {
-                    let logins = login::Entity::find()
-                        .filter(login::Column::DeltaLoginId.eq(id))
-                        .filter(login::Column::DeletedPermanently.eq(false))
-                        .all(&env.dbx)
-                        .await
-                        .c(h!())?;
-                    for l in logins {
-                        let mut l = l.into_active_model();
-                        l.delta_login_id = Set(None);
-                        l.update(&env.dbx).await.c(h!())?;
-                    }
-                    login.delete(&env.dbx).await.c(h!())?;
-                    None
-                }
-                Some(d_login) => {
-                    if !d_login.eq(&login.login) {
-                        ensure_delta_login_available(
-                            &env.dbx,
-                            d_login,
-                            Some(&req.login),
-                        )
-                        .await
-                        .c(h!())?;
-                        let id = login.id;
-                        let mut delta_login = login.into_active_model();
-                        delta_login.login = Set(d_login.clone());
-                        delta_login.update(&env.dbx).await.c(h!())?;
-                        Some(id)
-                    } else {
-                        Some(id)
-                    }
-                }
-            }
-        }
-    };
+    let delta_id = assign_delta_login(
+        &txn,
+        &req.login,
+        req.delta_login.as_deref(),
+        login_obj.delta_login_id,
+    )
+    .await
+    .c(h!())?;
 
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.delta_login_id = Set(delta_id);
@@ -249,7 +189,13 @@ pub async fn update_login(
             .clone()
             .map(DeactivationReasonEnum::from));
     }
-    let res = login_obj.update(&env.dbx).await.c(h!())?;
+    let res = login_obj.update(&txn).await.c(h!())?;
+    if let Some(delta_id) = delta_id {
+        unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
+            .await
+            .c(h!())?;
+    }
+    txn.commit().await.c(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(res.organism_id))
@@ -1171,19 +1117,6 @@ async fn register_delta_user(
 ) -> Result<Login, AppError> {
     let txn = dbx.begin().await.c(h!())?;
 
-    ensure_delta_login_available(&txn, &login, None)
-        .await
-        .c(h!())?;
-
-    let delta_login = delta_login::ActiveModel {
-        id: NotSet,
-        login: Set(login.clone()),
-        created_at: NotSet,
-    }
-    .insert(&txn)
-    .await
-    .c(h!())?;
-
     let login_obj = insert_login(
         &txn,
         login::ActiveModel {
@@ -1194,7 +1127,7 @@ async fn register_delta_user(
             sigint_zone_id: Set(sigint_zone),
             organism_id: Set(organism_id),
             deleted: Set(false),
-            delta_login_id: Set(Some(delta_login.id)),
+            delta_login_id: Set(None),
             last_active_at: Set(Some(Utc::now().naive_utc())),
             deactivation_reason: NotSet,
             deleted_permanently: NotSet,
@@ -1203,8 +1136,21 @@ async fn register_delta_user(
     .await
     .c(h!())?;
 
+    let delta_login_id = assign_delta_login(
+        &txn,
+        &login_obj.login,
+        Some(&login_obj.login),
+        None,
+    )
+    .await
+    .c(h!())?;
+    let mut login_obj = login_obj.into_active_model();
+    login_obj.delta_login_id = Set(delta_login_id);
+    let login_obj = login_obj.update(&txn).await.c(h!())?;
+    let delta_login = login_obj.login.clone();
+
     let res = login::Entity::find()
-        .filter(login::Column::Login.eq(login_obj.login))
+        .filter(login::Column::Login.eq(login_obj.login.clone()))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&txn)
         .await
@@ -1223,7 +1169,7 @@ async fn register_delta_user(
     };
 
     let result = Login {
-        delta_login: Some(delta_login.login.clone()),
+        delta_login: Some(delta_login),
         organism_name,
         organism_enabled,
         login: res.login,
@@ -1249,58 +1195,189 @@ async fn register_delta_user(
     Ok(result)
 }
 
-async fn ensure_delta_login_available<C>(
+async fn assign_delta_login<C>(
+    dbx: &C,
+    login_name: &str,
+    delta_login: Option<&str>,
+    current_delta_login_id: Option<i32>,
+) -> Result<Option<i32>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(delta_login_id) = current_delta_login_id {
+        unlink_deleted_logins_from_shared_delta_login(dbx, delta_login_id)
+            .await
+            .c(h!())?;
+    }
+
+    let Some(delta_login) = delta_login else {
+        return Ok(None);
+    };
+
+    if let Some(existing_delta_login) =
+        find_delta_login_by_login(dbx, delta_login).await.c(h!())?
+    {
+        unlink_logins_from_delta_login(
+            dbx,
+            existing_delta_login.id,
+            Some(login_name),
+        )
+        .await
+        .c(h!())?;
+        let delta_login_id = existing_delta_login.id;
+        update_delta_login_value(dbx, existing_delta_login, delta_login)
+            .await
+            .c(h!())?;
+        return Ok(Some(delta_login_id));
+    }
+
+    if let Some(delta_login_id) = current_delta_login_id {
+        if delta_login_has_other_logins(dbx, delta_login_id, login_name)
+            .await
+            .c(h!())?
+        {
+            return Ok(Some(
+                create_delta_login_row(dbx, delta_login).await.c(h!())?,
+            ));
+        }
+
+        let existing_delta_login =
+            delta_login::Entity::find_by_id(delta_login_id)
+                .one(dbx)
+                .await
+                .context(format!("delta_id: {delta_login_id}"))
+                .c(h!())?
+                .c(h!())?;
+        update_delta_login_value(dbx, existing_delta_login, delta_login)
+            .await
+            .c(h!())?;
+        return Ok(Some(delta_login_id));
+    }
+
+    Ok(Some(
+        create_delta_login_row(dbx, delta_login).await.c(h!())?,
+    ))
+}
+
+async fn find_delta_login_by_login<C>(
     dbx: &C,
     delta_login: &str,
-    allowed_login: Option<&str>,
+) -> Result<Option<delta_login::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(delta_login::Entity::find()
+        .filter(Expr::cust_with_values(
+            "lower(delta_login.login) = $1",
+            vec![delta_login.to_lowercase()],
+        ))
+        .one(dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn create_delta_login_row<C>(
+    dbx: &C,
+    delta_login: &str,
+) -> Result<i32, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(delta_login::ActiveModel {
+        id: NotSet,
+        login: Set(delta_login.to_string()),
+        created_at: NotSet,
+    }
+    .insert(dbx)
+    .await
+    .c(h!())?
+    .id)
+}
+
+async fn update_delta_login_value<C>(
+    dbx: &C,
+    delta_login: delta_login::Model,
+    new_login: &str,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
-    let mut existing_delta_logins =
-        active_logins_for_delta_login(dbx, delta_login)
-            .await
-            .c(h!())?;
-    if let Some(allowed_login) = allowed_login {
-        existing_delta_logins.remove(allowed_login);
+    if delta_login.login == new_login {
+        return Ok(());
     }
 
-    if !existing_delta_logins.is_empty() {
-        let existing_logins = existing_delta_logins
-            .into_iter()
-            .collect::<Vec<_>>()
-            .join(", ");
-        let msg = format!(
-            "delta login {delta_login} is already in use by user(s) {existing_logins}"
-        );
-        return Err(AppError::BL { msg });
+    let mut delta_login = delta_login.into_active_model();
+    delta_login.login = Set(new_login.to_string());
+    delta_login.update(dbx).await.c(h!())?;
+    Ok(())
+}
+
+async fn delta_login_has_other_logins<C>(
+    dbx: &C,
+    delta_login_id: i32,
+    login_name: &str,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::DeltaLoginId.eq(delta_login_id))
+        .filter(login::Column::Login.ne(login_name))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
+async fn unlink_logins_from_delta_login<C>(
+    dbx: &C,
+    delta_login_id: i32,
+    keep_login: Option<&str>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut query = login::Entity::find()
+        .filter(login::Column::DeltaLoginId.eq(delta_login_id));
+    if let Some(keep_login) = keep_login {
+        query = query.filter(login::Column::Login.ne(keep_login));
+    }
+
+    let logins = query.all(dbx).await.c(h!())?;
+    for login in logins {
+        let mut login = login.into_active_model();
+        login.delta_login_id = Set(None);
+        login.update(dbx).await.c(h!())?;
     }
 
     Ok(())
 }
 
-async fn active_logins_for_delta_login<C>(
+async fn unlink_deleted_logins_from_shared_delta_login<C>(
     dbx: &C,
-    delta_login: &str,
-) -> Result<BTreeSet<String>, AppError>
+    delta_login_id: i32,
+) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
-    let existing_delta_logins = delta_login::Entity::find()
-        .find_with_related(login::Entity)
-        .filter(Expr::cust_with_values(
-            "lower(delta_login.login) = $1",
-            vec![delta_login.to_lowercase()],
-        ))
+    let logins = login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::DeltaLoginId.eq(delta_login_id))
         .all(dbx)
         .await
-        .c(h!())?
-        .into_iter()
-        .flat_map(|(_, logins)| logins.into_iter())
-        .map(|x| x.login)
-        .collect::<BTreeSet<_>>();
+        .c(h!())?;
+    if logins.len() <= 1 || !logins.iter().any(|login| !login.deleted) {
+        return Ok(());
+    }
 
-    Ok(existing_delta_logins)
+    for login in logins.into_iter().filter(|login| login.deleted) {
+        let mut login = login.into_active_model();
+        login.delta_login_id = Set(None);
+        login.update(dbx).await.c(h!())?;
+    }
+
+    Ok(())
 }
 
 async fn insert_login<C>(
@@ -1418,31 +1495,39 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn register_delta_user_rejects_case_insensitive_duplicate_after_permanent_delete(
-    ) {
+    async fn register_delta_user_reassigns_case_insensitive_delta_login() {
         let _guard = TEST_LOCK.lock().await;
         let env = cleanup().await.unwrap();
 
-        register_delta_user(
+        let delta_login = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("Kolya".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        insert_login(
             &env.dbx,
-            "Kolya".to_string(),
-            vec!["Rer".to_string()],
-            None,
-            None,
+            login::ActiveModel {
+                login: Set("Regular".to_string()),
+                password: Set(None),
+                roles: Set(serde_json::to_value(vec!["Rer"]).unwrap()),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(None),
+                deleted: Set(false),
+                delta_login_id: Set(Some(delta_login.id)),
+                last_active_at: Set(Some(Utc::now().naive_utc())),
+                deactivation_reason: Set(None),
+                deleted_permanently: Set(false),
+            },
         )
         .await
         .unwrap();
 
-        let mut login = login::Entity::find_by_id("Kolya".to_string())
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap()
-            .into_active_model();
-        login.deleted_permanently = Set(true);
-        login.update(&env.dbx).await.unwrap();
-
-        let err = register_delta_user(
+        register_delta_user(
             &env.dbx,
             "kolya".to_string(),
             vec!["Rer".to_string()],
@@ -1450,11 +1535,175 @@ mod tests {
             None,
         )
         .await
-        .unwrap_err();
+        .unwrap();
 
-        let msg = format!("{err:?}");
-        assert!(msg.contains("delta login kolya is already in use"));
-        assert!(msg.contains("Kolya"));
+        let regular = login::Entity::find_by_id("Regular".to_string())
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(regular.delta_login_id, None);
+
+        let kolya = login::Entity::find_by_id("kolya".to_string())
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(kolya.delta_login_id, Some(delta_login.id));
+
+        let delta_login = delta_login::Entity::find_by_id(delta_login.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(delta_login.login, "kolya");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn assign_delta_login_creates_new_row_when_current_row_is_shared() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+
+        let delta_login = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("Alpha".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        for login_name in ["OldOwner", "Edited"] {
+            insert_login(
+                &env.dbx,
+                login::ActiveModel {
+                    login: Set(login_name.to_string()),
+                    password: Set(None),
+                    roles: Set(serde_json::to_value(vec!["Rer"]).unwrap()),
+                    created_at: NotSet,
+                    sigint_zone_id: Set(None),
+                    organism_id: Set(None),
+                    deleted: Set(false),
+                    delta_login_id: Set(Some(delta_login.id)),
+                    last_active_at: Set(Some(Utc::now().naive_utc())),
+                    deactivation_reason: Set(None),
+                    deleted_permanently: Set(false),
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let new_delta_login_id = assign_delta_login(
+            &env.dbx,
+            "Edited",
+            Some("Beta"),
+            Some(delta_login.id),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_ne!(new_delta_login_id, delta_login.id);
+
+        let old_owner = login::Entity::find_by_id("OldOwner".to_string())
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(old_owner.delta_login_id, Some(delta_login.id));
+
+        let new_delta_login =
+            delta_login::Entity::find_by_id(new_delta_login_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(new_delta_login.login, "Beta");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn assign_delta_login_unassigns_logins_from_existing_case_insensitive_row(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+
+        let delta_login = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("Alpha".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        for (login_name, deleted) in
+            [("OldOwner", false), ("DeletedOwner", true)]
+        {
+            insert_login(
+                &env.dbx,
+                login::ActiveModel {
+                    login: Set(login_name.to_string()),
+                    password: Set(None),
+                    roles: Set(serde_json::to_value(vec!["Rer"]).unwrap()),
+                    created_at: NotSet,
+                    sigint_zone_id: Set(None),
+                    organism_id: Set(None),
+                    deleted: Set(deleted),
+                    delta_login_id: Set(Some(delta_login.id)),
+                    last_active_at: Set(Some(Utc::now().naive_utc())),
+                    deactivation_reason: Set(None),
+                    deleted_permanently: Set(false),
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        insert_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("NewOwner".to_string()),
+                password: Set(None),
+                roles: Set(serde_json::to_value(vec!["Rer"]).unwrap()),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(None),
+                deleted: Set(false),
+                delta_login_id: Set(None),
+                last_active_at: Set(Some(Utc::now().naive_utc())),
+                deactivation_reason: Set(None),
+                deleted_permanently: Set(false),
+            },
+        )
+        .await
+        .unwrap();
+
+        let delta_login_id =
+            assign_delta_login(&env.dbx, "NewOwner", Some("ALPHA"), None)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(delta_login_id, delta_login.id);
+
+        for login_name in ["OldOwner", "DeletedOwner"] {
+            let login = login::Entity::find_by_id(login_name.to_string())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(login.delta_login_id, None);
+        }
+
+        let delta_login = delta_login::Entity::find_by_id(delta_login.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(delta_login.login, "ALPHA");
     }
 
     #[tokio::test]
