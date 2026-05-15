@@ -774,7 +774,6 @@ function AdminMessengerNeoPageBody() {
   }, [linkStep, qrData?.accountId]);
 
   function resetLinkFlow() {
-    setLinkMode('phone');
     setLinkStep('form');
     setLinkSidebarOpen(false);
     setPhoneForm(defaultPhoneForm);
