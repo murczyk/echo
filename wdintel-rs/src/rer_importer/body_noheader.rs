@@ -24,119 +24,142 @@ pub struct NoHeadersBody {
     pub end: usize,
 }
 
-pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
-    lazy_static! {
-        // Remove data from Buran
-        static ref RE: Regex = Regex::new(
-            r#"^(Район|Частота|Час|Дата|Локація|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип сигналу|Приналежність|Мітки перехоплення):"#
-        )
-        .unwrap();
-        // Remove data with line starting as below
-        static ref RE0: Regex = Regex::new(
-            r#"^Отримано з поста"#
-        )
-        .unwrap();
-        // Remove data time line from Mouse #1
-        static ref RE1: Regex = Regex::new(
-            r#"^(⚠️)?\s*[0-9]{2}\.[0-9]{2}\.[0-9]{4}_[0-9]{2}:[0-9]{2}"#
-        )
-        .unwrap();
-        // Remove data time line from Mouse #2
-        static ref RE2: Regex = Regex::new(
-            r#"^(⚠️)?\s*[0-9]{2}.[0-9]{2}\s*,\s*[0-9]{2}:[0-9]{2}:[0-9]{2}"#
-        )
-        .unwrap();
-        // Remove data time line hh:mm dd.mm.yyyy
-        static ref RE21: Regex = Regex::new(
-            r#"^[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
-        )
-        .unwrap();
-        // Remove data time line Дата dd.mm.yyyy
-        static ref RE22: Regex = Regex::new(
-            r#"^Дата [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
-        )
-        .unwrap();
-        // Remove data time line Час hh:mm:ss
-        static ref RE23: Regex = Regex::new(
-            r#"^Час [0-9]{2}:[0-9]{2}:[0-9]{2}$"#
-        )
-        .unwrap();
-        // Remove data time line hh:mm
-        static ref RE24: Regex = Regex::new(
-            r#"^[0-9]{2}:[0-9]{2}$"#
-        )
-        .unwrap();
-        // Remove data time line dd.mm.yyyy hh:mm:ss
-        static ref RE25: Regex = Regex::new(
-            r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}$"#
-        )
-        .unwrap();
-        // Remove data time line dd.mm.yyyy hh:mm
-        static ref RE25A: Regex = Regex::new(
-            r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}[,\s]+[0-9]{1,2}:[0-9]{2}\s*$"#
-        )
-        .unwrap();
-        // Remove data time line yyyy-mm-dd, hh:mm
-        static ref RE26: Regex = Regex::new(
-            r#"^[0-9]{4}\-[0-9]{2}\-[0-9]{2}, [0-9]{2}:[0-9]{2}$"#
-        )
-        .unwrap();
-        // Remove data time line dd.mm, hh:mm
-        static ref RE27: Regex = Regex::new(
-            r#"^[0-9]{2}\.[0-9]{2}, [0-9]{2}:[0-9]{2}$"#
-        )
-        .unwrap();
-        // Remove data time line dd.mm.yyyy, hh:mm:ss
-        static ref RE28: Regex = Regex::new(
-            r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}, [0-9]{2}:[0-9]{2}:[0-9]{2}\s*$"#
-        )
-        .unwrap();
-        static ref RE29: Regex = Regex::new(
-            r#"^[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
-        ).unwrap();
-        // Remove non-RER machine header line
-        static ref RE30: Regex = Regex::new(
-            r#"^.+\|\s*[0-9]{4}\-[0-9]{2}\-[0-9]{2}(_[0-9]{2}-[0-9]{2}-[0-9]{2})?\s*$"#
-        ).unwrap();
-        // Remove non-RER machine time line
-        static ref RE31: Regex = Regex::new(
-            r#"^[0-9]{2}-[0-9]{2}(-[0-9]{2})?$"#
-        ).unwrap();
-        // Remove unit line from Mouse
-        static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
-        // Remove freq line from Mouse
-        static ref RE4: Regex = Regex::new(r#"^[0-9]{3}(\.|,)[0-9]{3,5}\s*(ЦФП [0-9]{2,3})?\s*$"#).unwrap();
-        // Remove coordinates line from Mouse
-        static ref RE5: Regex = Regex::new(r#"^[0-9]{2}\.[0-9]{5,7}\s*,\s*[0-9]{2}\.[0-9]{5,7}$"#).unwrap();
-        // Remove line with ---------------------
-        static ref RE6: Regex = Regex::new(r#"^-+$"#).unwrap();
-    }
+lazy_static! {
+    // Remove data from Buran
+    static ref RE: Regex = Regex::new(
+        r#"^(Район|Частота|Час|Дата|Локація|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип сигналу|Приналежність|Мітки перехоплення):"#
+    )
+    .unwrap();
+    // Remove data with line starting as below
+    static ref RE0: Regex = Regex::new(
+        r#"^Отримано з поста"#
+    )
+    .unwrap();
+    // Remove data time line from Mouse #1
+    static ref RE1: Regex = Regex::new(
+        r#"^(⚠️)?\s*[0-9]{2}\.[0-9]{2}\.[0-9]{4}_[0-9]{2}:[0-9]{2}"#
+    )
+    .unwrap();
+    // Remove data time line from Mouse #2
+    static ref RE2: Regex = Regex::new(
+        r#"^(⚠️)?\s*[0-9]{2}.[0-9]{2}\s*,\s*[0-9]{2}:[0-9]{2}:[0-9]{2}"#
+    )
+    .unwrap();
+    // Remove data time line hh:mm dd.mm.yyyy
+    static ref RE21: Regex = Regex::new(
+        r#"^[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
+    )
+    .unwrap();
+    // Remove data time line Дата dd.mm.yyyy
+    static ref RE22: Regex = Regex::new(
+        r#"^Дата [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
+    )
+    .unwrap();
+    // Remove data time line Час hh:mm:ss
+    static ref RE23: Regex = Regex::new(
+        r#"^Час [0-9]{2}:[0-9]{2}:[0-9]{2}$"#
+    )
+    .unwrap();
+    // Remove data time line hh:mm
+    static ref RE24: Regex = Regex::new(
+        r#"^[0-9]{2}:[0-9]{2}$"#
+    )
+    .unwrap();
+    // Remove data time line dd.mm.yyyy hh:mm:ss
+    static ref RE25: Regex = Regex::new(
+        r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}$"#
+    )
+    .unwrap();
+    // Remove data time line dd.mm.yyyy hh:mm
+    static ref RE25A: Regex = Regex::new(
+        r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}[,\s]+[0-9]{1,2}:[0-9]{2}\s*$"#
+    )
+    .unwrap();
+    // Remove data time line yyyy-mm-dd, hh:mm
+    static ref RE26: Regex = Regex::new(
+        r#"^[0-9]{4}\-[0-9]{2}\-[0-9]{2}, [0-9]{2}:[0-9]{2}$"#
+    )
+    .unwrap();
+    // Remove data time line dd.mm, hh:mm
+    static ref RE27: Regex = Regex::new(
+        r#"^[0-9]{2}\.[0-9]{2}, [0-9]{2}:[0-9]{2}$"#
+    )
+    .unwrap();
+    // Remove data time line dd.mm.yyyy, hh:mm:ss
+    static ref RE28: Regex = Regex::new(
+        r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}, [0-9]{2}:[0-9]{2}:[0-9]{2}\s*$"#
+    )
+    .unwrap();
+    // Remove data time line hh:mm:ss dd.mm.yyyy
+    static ref RE29: Regex = Regex::new(
+        r#"^[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
+    )
+    .unwrap();
+    // Remove non-RER machine header line
+    static ref RE30: Regex = Regex::new(
+        r#"^.+\|\s*[0-9]{4}\-[0-9]{2}\-[0-9]{2}(_[0-9]{2}-[0-9]{2}-[0-9]{2})?\s*$"#
+    )
+    .unwrap();
+    // Remove non-RER machine time line
+    static ref RE31: Regex =
+        Regex::new(r#"^[0-9]{2}-[0-9]{2}(-[0-9]{2})?$"#).unwrap();
+    // Remove unit line from Mouse
+    static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
+    // Remove freq line from Mouse
+    static ref RE4: Regex = Regex::new(r#"^[0-9]{3}(\.|,)[0-9]{3,5}\s*(ЦФП [0-9]{2,3})?\s*$"#).unwrap();
+    // Remove coordinates line from Mouse
+    static ref RE5: Regex = Regex::new(r#"^[0-9]{2}\.[0-9]{5,7}\s*,\s*[0-9]{2}\.[0-9]{5,7}$"#).unwrap();
+    // Remove line with ---------------------
+    static ref RE6: Regex = Regex::new(r#"^-+$"#).unwrap();
+}
 
+pub fn is_header_line(line: &str) -> bool {
+    RE.is_match(line)
+        || RE0.is_match(line)
+        || RE1.is_match(line)
+        || RE2.is_match(line)
+        || RE21.is_match(line)
+        || RE22.is_match(line)
+        || RE23.is_match(line)
+        || RE24.is_match(line)
+        || RE25.is_match(line)
+        || RE25A.is_match(line)
+        || RE26.is_match(line)
+        || RE27.is_match(line)
+        || RE28.is_match(line)
+        || RE29.is_match(line)
+        || RE30.is_match(line)
+        || RE31.is_match(line)
+        || RE3.is_match(line)
+        || RE4.is_match(line)
+        || RE5.is_match(line)
+        || RE6.is_match(line)
+}
+
+pub fn is_datetime_header_line(line: &str) -> bool {
+    RE1.is_match(line)
+        || RE2.is_match(line)
+        || RE21.is_match(line)
+        || RE22.is_match(line)
+        || RE23.is_match(line)
+        || RE24.is_match(line)
+        || RE25.is_match(line)
+        || RE25A.is_match(line)
+        || RE26.is_match(line)
+        || RE27.is_match(line)
+        || RE28.is_match(line)
+        || RE29.is_match(line)
+        || RE30.is_match(line)
+        || RE31.is_match(line)
+}
+
+pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
     // 1. Keep empty lines to avoid breaking `inp.find(&res)`
     let mut lines: Vec<String> = input.lines().map(|x| x.to_string()).collect();
     lines = lines
         .iter()
         // .filter(|l| l.trim() != "")
-        .filter(|l| !RE.is_match(l))
-        .filter(|l| !RE0.is_match(l))
-        .filter(|l| !RE1.is_match(l))
-        .filter(|l| !RE2.is_match(l))
-        .filter(|l| !RE21.is_match(l))
-        .filter(|l| !RE22.is_match(l))
-        .filter(|l| !RE23.is_match(l))
-        .filter(|l| !RE24.is_match(l))
-        .filter(|l| !RE25.is_match(l))
-        .filter(|l| !RE25A.is_match(l))
-        .filter(|l| !RE26.is_match(l))
-        .filter(|l| !RE27.is_match(l))
-        .filter(|l| !RE28.is_match(l))
-        .filter(|l| !RE29.is_match(l))
-        .filter(|l| !RE30.is_match(l))
-        .filter(|l| !RE31.is_match(l))
-        .filter(|l| !RE3.is_match(l))
-        .filter(|l| !RE4.is_match(l))
-        .filter(|l| !RE5.is_match(l))
-        .filter(|l| !RE6.is_match(l))
+        .filter(|l| !is_header_line(l))
         .cloned()
         .collect();
     // lines.truncate(5);

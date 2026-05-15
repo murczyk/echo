@@ -1,3 +1,6 @@
+use crate::rer_importer::body_noheader::{
+    is_datetime_header_line, is_header_line,
+};
 use lazy_static::lazy_static;
 use regex::Regex;
 
@@ -14,28 +17,6 @@ impl ParsedComments {
 }
 
 lazy_static! {
-    static ref DATE_HEADER: Regex = Regex::new(
-        r"(?x)
-        ^(
-            \d{2}\.\d{2}\.\d{4}_\d{2}\s*:\d{2}
-          | \d{2}\.\d{2}\.\d{4},?\s*\d{2}\s*:\d{2}\s*:\d{2}
-          | \d{2}\.\d{2}\.\d{4},?\s*\d{2}\s*:\d{2}
-          | \d{2}\.\d{2},?\s*\d{2}\s*:\d{2}\s*:\d{2}
-          | \d{2}\.\d{2},?\s*\d{2}\s*:\d{2}
-          | \d{4}-\d{2}-\d{2}[ _T]\d{2}\s*:\d{2}
-          | \d{4}_\d{2}_\d{2}\s+\d{2}-\d{2}-\d{2}
-          | \d{2}-\d{2}\s+\d{2}\s*:\d{2}\s*:\d{2}
-          | \d{2}\s*:\d{2}\s+\d{2}\.\d{2}\.\d{4}
-          | \d{4}\.\d{2}\.\d{2}\s*$
-        )"
-    )
-    .unwrap();
-
-    static ref HEADER_NOISE: Regex = Regex::new(
-        r"^(Отримано з поста|-{3,}$|=+\s*$|(Район|Частота|Час|Дата|Локація|Локация|Підрозділ|Подразделение|Хто|Кому|Абоненти|Позивні|Позывные|Пост|Координати|Координаты|Тип сигналу|Приналежність|Мітки перехоплення|Канал|Напрямок|Направление|Відправник|Отправитель|Отримувач|Получатель|Текст)\b)"
-    )
-    .unwrap();
-
     static ref COMMENT_MARKER: Regex = Regex::new(
         r"^(?:Коментар|Коментарій|Комментарий|Комментар|Comment)\s*[:\-—]\s*(?P<rest>.*)$"
     )
@@ -52,20 +33,6 @@ lazy_static! {
     .unwrap();
 }
 
-fn strip_lead(line: &str) -> &str {
-    line.trim_start_matches(|c: char| {
-        !c.is_alphanumeric() && c != '-' && c != ':'
-    })
-}
-
-fn is_date_header(line: &str) -> bool {
-    DATE_HEADER.is_match(strip_lead(line.trim()))
-}
-
-fn is_header_noise(line: &str) -> bool {
-    HEADER_NOISE.is_match(line.trim())
-}
-
 fn is_dialog_line(line: &str) -> bool {
     DIALOG_LINE.is_match(line.trim())
 }
@@ -73,15 +40,21 @@ fn is_dialog_line(line: &str) -> bool {
 fn clean(text: &str) -> String {
     let mut t = text.trim().to_string();
     loop {
-        let bytes_before = t.len();
+        let before = t.len();
+        while t.ends_with(';') || t.ends_with('.') {
+            t = t[..t.len() - 1].trim_end().to_string();
+        }
         for (open, close) in [('"', '"'), ('«', '»'), ('(', ')')] {
-            if t.starts_with(open) && t.ends_with(close) && t.len() > 1 {
+            if t.starts_with(open)
+                && t.ends_with(close)
+                && t.chars().count() > 1
+            {
                 t = t[open.len_utf8()..t.len() - close.len_utf8()]
                     .trim()
                     .to_string();
             }
         }
-        if t.len() == bytes_before {
+        if t.len() == before {
             break;
         }
     }
@@ -119,33 +92,26 @@ fn join_block(lines: &[&str]) -> Option<String> {
 pub fn parse_comments(body: &str) -> ParsedComments {
     let lines: Vec<&str> = body.split('\n').collect();
 
-    let Some(anchor) = lines.iter().position(|l| is_date_header(l)) else {
-        return ParsedComments::default();
-    };
+    let marker_bottom = scan_marker_comment(&lines);
 
-    let top = parse_top(&lines[..anchor]);
-    let bottom = parse_bottom(&lines[anchor..]);
+    let anchor = lines.iter().position(|l| is_datetime_header_line(l));
+
+    let top = anchor.and_then(|a| parse_top(&lines[..a]));
+    let bottom = marker_bottom
+        .or_else(|| anchor.and_then(|a| parse_tail_comment(&lines[a..])));
+
     ParsedComments { top, bottom }
 }
 
-fn parse_top(pre: &[&str]) -> Option<String> {
-    let kept: Vec<&str> = pre
-        .iter()
-        .filter(|l| !is_header_noise(l))
-        .copied()
-        .collect();
-    join_block(&kept)
-}
-
-fn parse_bottom(post: &[&str]) -> Option<String> {
-    for (i, line) in post.iter().enumerate() {
+fn scan_marker_comment(lines: &[&str]) -> Option<String> {
+    for (i, line) in lines.iter().enumerate() {
         if let Some(caps) = COMMENT_MARKER.captures(line.trim()) {
             let mut block: Vec<&str> = Vec::new();
             let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
             if !rest.trim().is_empty() {
                 block.push(rest);
             }
-            for l in &post[i + 1..] {
+            for l in &lines[i + 1..] {
                 if l.trim().is_empty() {
                     break;
                 }
@@ -156,7 +122,16 @@ fn parse_bottom(post: &[&str]) -> Option<String> {
             }
         }
     }
+    None
+}
 
+fn parse_top(pre: &[&str]) -> Option<String> {
+    let kept: Vec<&str> =
+        pre.iter().filter(|l| !is_header_line(l)).copied().collect();
+    join_block(&kept)
+}
+
+fn parse_tail_comment(post: &[&str]) -> Option<String> {
     let mut idx = 0;
     while idx < post.len() && !post[idx].trim().is_empty() {
         idx += 1;
@@ -189,8 +164,8 @@ fn parse_bottom(post: &[&str]) -> Option<String> {
     let candidate: Vec<&str> = tail.concat();
     let is_comment = !candidate.iter().any(|l| {
         is_dialog_line(l)
-            || is_header_noise(l)
-            || is_date_header(l)
+            || is_header_line(l)
+            || is_datetime_header_line(l)
             || COORDS_ONLY.is_match(l.trim())
     });
     if !is_comment {
@@ -253,14 +228,14 @@ mod tests {
 
     #[test]
     fn bottom_explicit_marker() {
-        let body = "20-11 16:53:04\n446.000\nУКХ ймовірно, 344 мсп\nНВ\nНВ\n\n– Да, давай синьки.\n\nКоментар: T2";
+        let body = "20.11.2025, 16:53:04\n446.000\nУКХ ймовірно, 344 мсп\nНВ\nНВ\n\n– Да, давай синьки.\n\nКоментар: T2";
         let res = parse_comments(body);
         assert_eq!(res.bottom.as_deref(), Some("T2"));
     }
 
     #[test]
     fn bottom_parenthesized() {
-        let body = "2024.02.23\n19:15:00\n455.2750\nУКХ радіомережа\n\n- Я говорю коробочку запустили?\n- Надо\n- Плюс\n\n(запит чи треба відвозити о/с)";
+        let body = "13.11, 19:15:00\n455.2750\nУКХ радіомережа\n\n- Я говорю коробочку запустили?\n- Надо\n- Плюс\n\n(запит чи треба відвозити о/с)";
         let res = parse_comments(body);
         assert_eq!(res.bottom.as_deref(), Some("запит чи треба відвозити о/с"));
     }
@@ -270,6 +245,14 @@ mod tests {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: перший рядок\nдругий рядок";
         let res = parse_comments(body);
         assert_eq!(res.bottom.as_deref(), Some("перший рядок\nдругий рядок"));
+    }
+
+
+    #[test]
+    fn yyyy_mm_dd_comma_time_is_anchor() {
+        let body = "2025-03-08, 10:20\n422.500\nЛозуватське, УКХ р/м\nЛУЧНИК\nПИРОЖЕК\n\n— ПИРОЖЕК я ЛУЧНИК: ФПВ к нам идет\n\nКоментар: БПЛА СОУ";
+        let res = parse_comments(body);
+        assert_eq!(res.bottom.as_deref(), Some("БПЛА СОУ"));
     }
 
     // ── Variant 3: top and bottom comments ──────────────────────────────────────
@@ -292,10 +275,17 @@ mod tests {
     }
 
     #[test]
-    fn no_date_header_returns_empty() {
+    fn no_anchor_no_marker_returns_empty() {
         let body = "просто якийсь текст\nбез дати і часу";
         let res = parse_comments(body);
         assert!(res.is_empty());
+    }
+
+    #[test]
+    fn marker_without_anchor_still_extracted() {
+        let body = "якийсь нестандартний заголовок\n\n- репліка\n\nКоментар: важлива примітка";
+        let res = parse_comments(body);
+        assert_eq!(res.bottom.as_deref(), Some("важлива примітка"));
     }
 
     #[test]
@@ -307,7 +297,7 @@ mod tests {
 
     #[test]
     fn plus_marker_is_not_a_comment() {
-        let body = "2024.02.23\n18:32:00\n432.0150\nУКХ радіомережа\n\n- Лопата прием я Филин\n- 5-ть минут да?\n- Плюс";
+        let body = "18.02.2024, 18:32:00\n432.0150\nУКХ радіомережа\n\n- Лопата прием я Филин\n- 5-ть минут да?\n- Плюс";
         let res = parse_comments(body);
         assert_eq!(res.bottom, None);
     }
