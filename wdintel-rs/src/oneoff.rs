@@ -28,7 +28,9 @@ pub async fn oneoff_restart_echo(
 
 pub fn oneoff_test_logging_error_macro(_mode: Mode) -> Result<(), AppError> {
     let err = nested_logging_error_level_1().unwrap_err();
+    log::error!("nested logging macro test error: {:#?}", err);
     crate::logging::error!("nested logging macro test error: {:?}", err);
+    crate::logging::error!("nested logging macro test error: {:#?}", err);
     Ok(())
 }
 
