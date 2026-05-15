@@ -200,7 +200,9 @@ navBar user shared activeName props =
         importSubs =
             List.concat
                 [ ifOrEmpty (hasRole "Basic" user)
-                    [ internalMenu Route.Path.Importer "importer" "Імпортер" ]
+                    [ internalMenu Route.Path.Importer "importer" "Імпортер"
+                    , internalMenu Route.Path.ImporterBeta "importer-beta" "Імпортер"
+                    ]
                 , ifOrEmpty (hasRole "Rer" user)
                     [ internalMenu Route.Path.RerCsvImport "rer-csv-import" "Імпорт CSV"
                     , internalMenu Route.Path.RerDeltaImport "rer-delta-import" "Імпорт Delta"
@@ -522,10 +524,17 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         menuItemLabel item =
             span [ class "inline-flex items-center gap-2" ]
                 (text item.label
-                    :: (if item.activeName == "rer-duty-neo" || item.activeName == "rer-analysis-neo" then
+                    :: (if item.activeName == "rer-duty-neo" || item.activeName == "rer-analysis-neo" || item.activeName == "importer-beta" then
                             [ span
                                 [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700" ]
-                                [ text "Alpha" ]
+                                [ text
+                                    (if item.activeName == "importer-beta" then
+                                        "Beta"
+
+                                     else
+                                        "Alpha"
+                                    )
+                                ]
                             ]
 
                         else
