@@ -18,6 +18,7 @@ import {
 import {
   buildListCallsignsReq,
   buildRowViews,
+  buildDuplicateHintGroups,
   callsignToEditForm,
   createDefaultFilters,
   createEmptyDraftRow,
@@ -319,12 +320,6 @@ function hasAnyDuplicateHintInput(rows: CallsignDraftRow[]): boolean {
   });
 }
 
-type DuplicateHintInput = {
-  callsignInput: string;
-  fullNameInput: string;
-  positionInput: string;
-};
-
 function getReloadPageSize(callsignsCount: number) {
   return Math.max(getDefaultPageSize(), callsignsCount);
 }
@@ -357,10 +352,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [addValidationError, setAddValidationError] = useState<string | null>(null);
   const [addDrawerOpen, setAddDrawerOpen] = useState(false);
   const [addDuplicateHintsEnabled, setAddDuplicateHintsEnabled] = useState(false);
-  const duplicateHintInputs = useMemo<DuplicateHintInput[]>(
+  const duplicateHintInputs = useMemo(
     () =>
       addRows
-        .map((row) => ({
+        .map((row, rowIndex) => ({
+          rowIndex,
           callsignInput: normalizeDuplicateLookupValue(row.callsign),
           fullNameInput: normalizeDuplicateLookupValue(row.fullName),
           positionInput: normalizeDuplicateLookupValue(row.position),
@@ -409,37 +405,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     [sortedCallsigns, unitsById, sourcesById],
   );
   const unitStatsView = useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
-  const addPotentialDuplicates = useMemo(() => {
+  const addPotentialDuplicateGroups = useMemo(() => {
     if (!addDuplicateHintsEnabled || addSubmitting) return [];
     if (deferredDuplicateHintInputs.length === 0) return [];
 
-    return callsigns
-      .filter((callsign) => {
-        const callsignValue = normalizeDuplicateLookupValue(callsign.callsign);
-        const fullNameValue = normalizeDuplicateLookupValue(callsign.fullName);
-        const positionValue = normalizeDuplicateLookupValue(callsign.position);
-        const rowMatches = deferredDuplicateHintInputs.some((draftInput) => {
-          const callsignMatches =
-            draftInput.callsignInput.length >= 2 && callsignValue.includes(draftInput.callsignInput);
-          const fullNameMatches =
-            draftInput.fullNameInput.length >= 2 && fullNameValue.includes(draftInput.fullNameInput);
-          const positionMatches =
-            draftInput.positionInput === '' || positionValue.includes(draftInput.positionInput);
-          return (callsignMatches || fullNameMatches) && positionMatches;
-        });
-        const unitMatches = isNullOrUndefined(addUnitId) || callsign.unitId === addUnitId;
-
-        return rowMatches && unitMatches;
-      })
-      .slice(0, 10)
-      .map((callsign) => ({
-        id: callsign.id,
-        callsign: callsign.callsign,
-        position: callsign.position,
-        fullName: callsign.fullName,
-        comment: callsign.comment,
-        unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
-      }));
+    return buildDuplicateHintGroups(deferredDuplicateHintInputs, callsigns, addUnitId, unitsById);
   }, [addDuplicateHintsEnabled, addSubmitting, addUnitId, callsigns, deferredDuplicateHintInputs, unitsById]);
 
   function clearListRequest() {
@@ -1098,7 +1068,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     onOpenAddDrawer,
     onCloseAddDrawer,
     addRows,
-    addPotentialDuplicates,
+    addPotentialDuplicateGroups,
     addSubmitting,
     addValidationError,
     onRowChange,

@@ -21,7 +21,7 @@ import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildSenderLabel, copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
-import { filterOtherMessageComments } from '../use-analysis-data.comments';
+import { filterOtherOwnOrganismMessageComments } from '../use-analysis-data.comments';
 
 type Props = {
   authUserName: string | null;
@@ -128,7 +128,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
       senderName={buildSenderLabel(message.sender ? profiles[message.sender] : null, message.sender)}
       copiedFeedbackId={copiedFeedbackId}
-      messageComments={filterOtherMessageComments(authUserName, currentUser, users, messageComments)}
+      messageComments={filterOtherOwnOrganismMessageComments(authUserName, currentUser, users, messageComments)}
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
       tagsLoading={tagsLoading}

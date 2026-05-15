@@ -7,6 +7,7 @@ import type {
   ListNetworksReq,
   ListKeysReq,
   Network,
+  NetworkGroupsActivityOneReq,
   NetworkFreqCallsignsReq,
   NetworkFreqsActivityReq,
   ReactivateNetworkFreqReq,
@@ -83,6 +84,14 @@ export async function getNetworkFreqsActivity(networkId: number): Promise<Record
     networkId,
   } satisfies NetworkFreqsActivityReq));
   return transformSnakeToCamel<Record<string, Record<string, number>>>(data);
+}
+
+export async function getNetworkGroupsActivityOne(networkId: number): Promise<Record<string, Record<string, number>>> {
+  const data = await postJson<Record<string, Record<string, number>>>('/api/sigint/network-group-activity-one', transformCamelToSnake({
+    networkId,
+    tillDateNoninclusiveMs: null,
+  } satisfies NetworkGroupsActivityOneReq));
+  return data;
 }
 
 export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<string[]> {

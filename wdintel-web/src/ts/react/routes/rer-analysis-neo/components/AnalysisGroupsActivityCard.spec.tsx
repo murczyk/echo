@@ -144,7 +144,7 @@ describe('AnalysisGroupsActivityCard', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Для частоти 100.100 за цей інтервал активності не знайдено.');
-    expect(view.container.querySelector('bar-chart-2')).toBeNull();
+    expect(view.container.querySelector('dashboard-chart')).toBeNull();
   });
 
   it('keeps the chart visible while the same frequency and period refresh in background', async () => {
@@ -163,7 +163,7 @@ describe('AnalysisGroupsActivityCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('bar-chart-2')).not.toBeNull();
+    expect(view.container.querySelector('dashboard-chart')).not.toBeNull();
     expect(view.container.textContent).not.toContain('Завантажую активність по датах…');
   });
 

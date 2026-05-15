@@ -184,6 +184,11 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           freqsLoaded={page.freqsLoaded}
           freqsLoading={page.freqsLoading}
           freqsError={page.freqsError}
+          networkActivity={page.networkActivity}
+          networkActivityLoaded={page.networkActivityLoaded}
+          networkActivityLoading={page.networkActivityLoading}
+          networkActivityError={page.networkActivityError}
+          onReloadNetworkActivity={() => page.loadNetworkActivity(networkId)}
           modulations={page.modulations}
           expandedFrequencyGroupIds={page.expandedFrequencyGroupIds}
           toggleFrequencyGroupExpanded={page.toggleFrequencyGroupExpanded}

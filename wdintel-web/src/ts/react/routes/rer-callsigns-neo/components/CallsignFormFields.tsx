@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import {
   Checkbox,
   FormControl,
@@ -33,7 +33,8 @@ type Props<T extends CommonFormValue> = {
   disabled?: boolean;
   compact?: boolean;
   controlsFirst?: boolean;
-  hintContent?: React.ReactNode;
+  hintContent?: ReactNode;
+  callsignHintContent?: ReactNode;
 };
 
 export function CallsignFormFields<T extends CommonFormValue>({
@@ -50,6 +51,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
   compact = false,
   controlsFirst = false,
   hintContent,
+  callsignHintContent,
 }: Props<T>) {
   const spacing = compact ? 1.5 : 2;
   const reactId = useId();
@@ -148,6 +150,8 @@ export function CallsignFormFields<T extends CommonFormValue>({
           disabled={disabled}
           fullWidth
           size={compact ? 'small' : 'medium'}
+          helperText={callsignHintContent}
+          FormHelperTextProps={{ sx: { ml: 0 } }}
         />
         <TextField
           label="Посада"

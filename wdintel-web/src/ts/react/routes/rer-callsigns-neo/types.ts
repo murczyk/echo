@@ -60,6 +60,20 @@ export type CallsignDraftRow = {
   radioFreq: string;
 };
 
+export type CallsignDuplicateHintMatch = {
+  id: number;
+  callsign: string;
+  position: string;
+  fullName: string;
+  comment: string;
+  unitName: string;
+};
+
+export type CallsignDuplicateHintGroup = {
+  rowIndex: number;
+  matches: CallsignDuplicateHintMatch[];
+};
+
 export type CallsignEditForm = {
   id: number;
   callsign: string;

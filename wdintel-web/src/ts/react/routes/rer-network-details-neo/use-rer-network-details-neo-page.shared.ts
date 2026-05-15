@@ -52,7 +52,7 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns';
+export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'activity';
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
@@ -105,6 +105,10 @@ export type NetworkDetailsNeoPageState = {
   freqsLoading: boolean;
   freqsError: string | null;
   freqActivityByFreq: NetworkFreqActivityByFreq;
+  networkActivity: Record<string, Record<string, number>>;
+  networkActivityLoaded: boolean;
+  networkActivityLoading: boolean;
+  networkActivityError: string | null;
   callsignCount: number | null;
   networkCallsigns: NetworkCallsign[];
   networkCallsignGroups: NetworkCallsignRes[];
@@ -196,6 +200,10 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqsLoading: false,
   freqsError: null,
   freqActivityByFreq: {},
+  networkActivity: {},
+  networkActivityLoaded: false,
+  networkActivityLoading: false,
+  networkActivityError: null,
   callsignCount: null,
   networkCallsigns: [],
   networkCallsignGroups: [],

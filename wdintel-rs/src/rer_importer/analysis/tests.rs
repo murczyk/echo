@@ -1888,6 +1888,37 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     )
     .await
     .unwrap();
+    let organism = find_test_organism(db).await.unwrap();
+    let other_organism = mk_organism(
+        db,
+        organism::ActiveModel {
+            name: Set("Other Comment Organism".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let same_org_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("SameOrgCommenter".to_string()),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_org_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("OtherOrgCommenter".to_string()),
+            organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
 
     let msg_bookmark = mk_analysis_message(
         db,
@@ -2004,6 +2035,90 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     )
     .await
     .unwrap();
+    let msg_same_org_comment = mk_analysis_message(
+        db,
+        "msg-same-org-comment-filter",
+        "930.4",
+        test_dt(2026, 3, 1, 10, 9),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(
+        db,
+        msg_same_org_comment.id,
+        serde_json::json!(["CS-COM-SAME-ORG"]),
+    )
+    .await
+    .unwrap();
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            login: Set(same_org_login.login.clone()),
+            signal_message_id: Set(msg_same_org_comment.id),
+            comment: Set("same org".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 10, 9)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(msg_same_org_comment.id),
+            tag_id: Set(tag_comment.id),
+            login: Set(Some("Tester".to_string())),
+            model: Set(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let msg_other_org_comment = mk_analysis_message(
+        db,
+        "msg-other-org-comment-filter",
+        "930.5",
+        test_dt(2026, 3, 1, 10, 10),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(
+        db,
+        msg_other_org_comment.id,
+        serde_json::json!(["CS-COM-OTHER-ORG"]),
+    )
+    .await
+    .unwrap();
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            login: Set(other_org_login.login.clone()),
+            signal_message_id: Set(msg_other_org_comment.id),
+            comment: Set("other org".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 10, 10)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(msg_other_org_comment.id),
+            tag_id: Set(tag_comment.id),
+            login: Set(Some("Tester".to_string())),
+            model: Set(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
 
     let mut req = analysis_stats_req0(&fixture);
     req.or_bookmarked = Some(true);
@@ -2049,17 +2164,20 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         fetch_selected_count_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        1
+        2
     );
     assert_eq!(
         fetch_callsign_counts_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        BTreeMap::from([("CS-COM".to_string(), 1)])
+        BTreeMap::from([
+            ("CS-COM".to_string(), 1),
+            ("CS-COM-SAME-ORG".to_string(), 1),
+        ])
     );
     assert_eq!(
         fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
-        BTreeMap::from([(tag_comment.id, 1)])
+        BTreeMap::from([(tag_comment.id, 2)])
     );
 }
 

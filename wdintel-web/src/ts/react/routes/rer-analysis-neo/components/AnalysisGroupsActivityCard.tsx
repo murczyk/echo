@@ -111,7 +111,7 @@ export function AnalysisGroupsActivityCard({
         {selectedFreq ? `Частота для графіка: ${selectedFreq}` : 'Для графіка потрібно обрати одну частоту.'}
       </CompactText>
       {chartStatus === 'ready' ? (
-        createElement('bar-chart-2', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })
+        createElement('dashboard-chart', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })
       ) : chartStatus === 'needs-freq' ? (
         <CompactText color="text.secondary">
           Оберіть частоту вище, щоб завантажити графік активності по датах.

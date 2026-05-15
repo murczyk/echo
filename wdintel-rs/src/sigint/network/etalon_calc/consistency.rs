@@ -14,11 +14,13 @@ pub struct InboxItem {
     pub timestamp: Option<NaiveDateTime>,
     pub freq: Option<String>,
     pub unit: Option<String>,
+    pub parsed_unit_v2: bool,
 }
 
 #[derive(Debug, FromQueryResult)]
 struct NetworkFreqResult {
     pub network_id: i64,
+    pub unit_id: Option<i64>,
     pub unit: Option<String>,
     pub freq: String,
     pub freq_active_from: Option<NaiveDateTime>,
@@ -109,6 +111,7 @@ where
         .column_as(signal_message::Column::Timestamp, "timestamp")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+        .column_as(sigint_inbox_item::Column::ParsedUnitV2, "parsed_unit_v2")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(day_start))
         .filter(sigint_inbox_item::Column::Datetime.lt(day_end))
@@ -208,6 +211,7 @@ where
         .select_only()
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
+        .column_as(sigint_unit::Column::Id, "unit_id")
         .column_as(sigint_unit::Column::Name, "unit")
         .column_as(sigint_network_freq::Column::ActiveFrom, "freq_active_from")
         .column_as(sigint_network_freq::Column::ActiveTo, "freq_active_to")
@@ -223,6 +227,12 @@ where
         .all(db)
         .await
         .context(h!())?;
+
+    let network_units = load_network_units_by_network_id(db, &networks_freqs)
+        .await
+        .c(h!())?;
+    let message_units =
+        load_message_units_by_name(db, messages).await.c(h!())?;
 
     let mut network_ids = HashSet::new();
     for nf in &networks_freqs {
@@ -258,10 +268,96 @@ where
         &group_bounds_map,
         &network_bounds_map,
         networks_freqs,
+        &network_units,
+        &message_units,
     )
     .context(h!())?;
 
     Ok(res)
+}
+
+async fn load_network_units_by_network_id<'a, 'async_trait, C>(
+    db: &'a C,
+    networks_freqs: &[NetworkFreqResult],
+) -> anyhow::Result<HashMap<i64, Vec<sigint_unit::Model>>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let unit_ids = networks_freqs
+        .iter()
+        .filter_map(|nf| nf.unit_id)
+        .collect::<HashSet<_>>();
+    if unit_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let units_by_id = sigint_unit::Entity::find()
+        .filter(
+            sigint_unit::Column::Id.is_in(unit_ids.into_iter().collect_vec()),
+        )
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit))
+        .collect::<HashMap<_, _>>();
+    let mut result = HashMap::new();
+    for nf in networks_freqs {
+        let Some(unit_id) = nf.unit_id else {
+            continue;
+        };
+        let Some(unit) = units_by_id.get(&unit_id) else {
+            continue;
+        };
+        result
+            .entry(nf.network_id)
+            .or_insert_with(Vec::new)
+            .push(unit.clone());
+    }
+    Ok(result)
+}
+
+async fn load_message_units_by_name<'a, 'async_trait, C>(
+    db: &'a C,
+    messages: &[InboxItem],
+) -> anyhow::Result<HashMap<String, Vec<sigint_unit::Model>>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let unit_names = messages
+        .iter()
+        .filter(|msg| msg.parsed_unit_v2)
+        .filter_map(|msg| msg.unit.as_ref())
+        .flat_map(|unit| split_unit_names(unit))
+        .collect::<HashSet<_>>();
+    if unit_names.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut result: HashMap<String, Vec<sigint_unit::Model>> = HashMap::new();
+    let units = sigint_unit::Entity::find()
+        .filter(
+            sigint_unit::Column::Name
+                .is_in(unit_names.into_iter().collect_vec()),
+        )
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?;
+    for unit in units {
+        result.entry(unit.name.clone()).or_default().push(unit);
+    }
+    Ok(result)
+}
+
+fn split_unit_names(unit_names: &str) -> Vec<String> {
+    unit_names
+        .split(',')
+        .map(str::trim)
+        .filter(|unit_name| !unit_name.is_empty())
+        .map(ToString::to_string)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn match_network_ids_for_messages(
@@ -270,13 +366,15 @@ fn match_network_ids_for_messages(
     group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
     network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
     networks_freqs: Vec<NetworkFreqResult>,
+    network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
+    message_units: &HashMap<String, Vec<sigint_unit::Model>>,
 ) -> anyhow::Result<HashMap<i64, Vec<i64>>> {
     let mut freq_networks_map: HashMap<String, Vec<NetworkFreqResult>> =
         HashMap::new();
-    let mut network_units: HashMap<i64, HashSet<String>> = HashMap::new();
+    let mut network_unit_names: HashMap<i64, HashSet<String>> = HashMap::new();
     for nf in networks_freqs {
         if let Some(unit) = &nf.unit {
-            network_units
+            network_unit_names
                 .entry(nf.network_id)
                 .or_default()
                 .insert(unit.clone());
@@ -365,7 +463,13 @@ fn match_network_ids_for_messages(
                 }
             }
         }
-        matched = try_discard_by_unit(&msg.unit, matched, &network_units);
+        matched = try_discard_by_unit(
+            msg,
+            matched,
+            network_units,
+            message_units,
+            &network_unit_names,
+        );
 
         result.insert(msg.id, matched.into_iter().collect::<Vec<_>>());
     }
@@ -374,6 +478,71 @@ fn match_network_ids_for_messages(
 }
 
 fn try_discard_by_unit(
+    message: &InboxItem,
+    matched_networks: HashSet<i64>,
+    network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
+    message_units: &HashMap<String, Vec<sigint_unit::Model>>,
+    network_unit_names: &HashMap<i64, HashSet<String>>,
+) -> HashSet<i64> {
+    if message.parsed_unit_v2 {
+        let resolved_message_units =
+            resolve_message_units(&message.unit, message_units);
+        if !resolved_message_units.is_empty() {
+            return filter_networks_by_related_units(
+                matched_networks,
+                &resolved_message_units,
+                network_units,
+            );
+        }
+    }
+    try_discard_by_unit_name(
+        &message.unit,
+        matched_networks,
+        network_unit_names,
+    )
+}
+
+fn resolve_message_units(
+    message_unit_name: &Option<String>,
+    message_units: &HashMap<String, Vec<sigint_unit::Model>>,
+) -> Vec<sigint_unit::Model> {
+    let Some(message_unit_name) = message_unit_name else {
+        return vec![];
+    };
+    split_unit_names(message_unit_name)
+        .into_iter()
+        .flat_map(|unit_name| {
+            message_units.get(&unit_name).cloned().unwrap_or_default()
+        })
+        .collect()
+}
+
+fn filter_networks_by_related_units(
+    matched_networks: HashSet<i64>,
+    message_units: &[sigint_unit::Model],
+    network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
+) -> HashSet<i64> {
+    let mut result = HashSet::new();
+    for network_id in &matched_networks {
+        let Some(units) = network_units.get(network_id) else {
+            continue;
+        };
+        if message_units.iter().any(|message_unit| {
+            units.iter().any(|network_unit| {
+                crate::unit::are_units_related(message_unit, network_unit)
+            })
+        }) {
+            result.insert(*network_id);
+        }
+    }
+    if result.is_empty() {
+        matched_networks
+    } else {
+        result
+    }
+}
+
+fn try_discard_by_unit_name(
     message_unit_name: &Option<String>,
     matched_networks: HashSet<i64>,
     network_units: &HashMap<i64, HashSet<String>>,
@@ -474,5 +643,68 @@ fn log_network_mismatches(
     }
     if mismatches.len() > head {
         error!("...{} more", mismatches.len() - head);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_unit(id: i64, name: &str, regiment: &str) -> sigint_unit::Model {
+        sigint_unit::Model {
+            id,
+            company: String::new(),
+            regiment: regiment.to_string(),
+            division: String::new(),
+            army: String::new(),
+            active: true,
+            deleted: false,
+            created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            created_by: "test".to_string(),
+            name: name.to_string(),
+            comment: String::new(),
+            battalion: String::new(),
+            sigint_origin_id: None,
+            original_id: None,
+        }
+    }
+
+    #[test]
+    fn related_unit_filter_keeps_original_when_no_related_units_match() {
+        let matched_networks = HashSet::from([1, 2]);
+        let message_units = vec![mk_unit(10, "unit-a", "1")];
+        let network_units =
+            HashMap::from([(1, vec![mk_unit(20, "unit-b", "2")])]);
+
+        assert_eq!(
+            filter_networks_by_related_units(
+                matched_networks.clone(),
+                &message_units,
+                &network_units,
+            ),
+            matched_networks
+        );
+    }
+
+    #[test]
+    fn related_unit_filter_narrows_when_related_units_match() {
+        let matched_networks = HashSet::from([1, 2]);
+        let message_units = vec![mk_unit(10, "unit-a", "1")];
+        let network_units = HashMap::from([
+            (1, vec![mk_unit(20, "unit-b", "2")]),
+            (2, vec![mk_unit(30, "unit-c", "1")]),
+        ]);
+
+        assert_eq!(
+            filter_networks_by_related_units(
+                matched_networks,
+                &message_units,
+                &network_units,
+            ),
+            HashSet::from([2])
+        );
     }
 }

@@ -5,31 +5,60 @@ export type DutyNotificationSettings = {
   browserEnabled: boolean;
 };
 
-const DUTY_NOTIFICATION_SETTINGS_KEY = 'rer-duty-neo-notifications';
+const DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY = 'rer-duty-neo-notifications';
 
-export function getStoredDutyNotificationSettings(): DutyNotificationSettings {
-  if (typeof window === 'undefined') {
-    return { soundEnabled: false, browserEnabled: false };
-  }
-  try {
-    const raw = window.localStorage.getItem(DUTY_NOTIFICATION_SETTINGS_KEY);
-    if (!raw) return { soundEnabled: false, browserEnabled: false };
-    const parsed = JSON.parse(raw) as Partial<DutyNotificationSettings> | null;
-    return {
-      soundEnabled: Boolean(parsed?.soundEnabled),
-      browserEnabled: Boolean(parsed?.browserEnabled),
+function isLegacyGlobalNotificationShape(parsed: unknown): boolean {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  const keys = Object.keys(parsed as object);
+  if (keys.length === 0) return false;
+  return keys.every((k) => k === 'soundEnabled' || k === 'browserEnabled');
+}
+
+function normalizeFeedSettingsRecord(parsed: unknown): Record<string, DutyNotificationSettings> {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  const out: Record<string, DutyNotificationSettings> = {};
+  for (const [feedId, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (feedId === 'soundEnabled' || feedId === 'browserEnabled') continue;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    const row = v as Record<string, unknown>;
+    out[feedId] = {
+      soundEnabled: Boolean(row.soundEnabled),
+      browserEnabled: Boolean(row.browserEnabled),
     };
+  }
+  return out;
+}
+
+function readDutyNotificationSettingsByFeed(): Record<string, DutyNotificationSettings> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const mainRaw = window.localStorage.getItem(DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY);
+    if (!mainRaw) return {};
+    const parsed = JSON.parse(mainRaw) as unknown;
+    if (isLegacyGlobalNotificationShape(parsed)) {
+      window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY, JSON.stringify({}));
+      return {};
+    }
+    return normalizeFeedSettingsRecord(parsed);
   } catch {
-    return { soundEnabled: false, browserEnabled: false };
+    return {};
   }
 }
 
-export function setStoredDutyNotificationSettings(value: DutyNotificationSettings): void {
+export function getStoredDutyNotificationSettingsForFeed(feedId: string): DutyNotificationSettings {
+  const byFeed = readDutyNotificationSettingsByFeed();
+  const forFeed = byFeed[feedId];
+  if (forFeed) return forFeed;
+  return { soundEnabled: false, browserEnabled: false };
+}
+
+export function setStoredDutyNotificationSettingsForFeed(feedId: string, value: DutyNotificationSettings): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_KEY, JSON.stringify(value));
+    const next = { ...readDutyNotificationSettingsByFeed(), [feedId]: value };
+    window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY, JSON.stringify(next));
   } catch (error) {
-    console.warn('Failed to save notification settings', error);
+    console.warn('Failed to save per-feed notification settings', error);
   }
 }
 
@@ -221,9 +250,9 @@ export function setDutyNeoDocumentTitleUnreadCount(totalUnread: number): void {
   applyDutyNeoDocumentTitle();
 }
 
-export function notifyDutyNewMessages(totalNew: number): void {
+export function notifyDutyNewMessages(feedId: string, totalNew: number): void {
   if (totalNew <= 0) return;
-  const settings = getStoredDutyNotificationSettings();
+  const settings = getStoredDutyNotificationSettingsForFeed(feedId);
   if (settings.soundEnabled) {
     playNotificationSound();
   }

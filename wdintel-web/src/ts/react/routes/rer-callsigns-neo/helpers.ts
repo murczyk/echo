@@ -16,6 +16,7 @@ import type {
   BuildRowsResult,
   CallsignDraftRow,
   CallsignDraftValidation,
+  CallsignDuplicateHintGroup,
   CallsignEditForm,
   CallsignsFilterState,
   CallsignsSortState,
@@ -44,6 +45,13 @@ export function toUpperCaseCallsign(value: string): string {
 export function normalizeDuplicateLookupValue(value: string): string {
   return value.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
 }
+
+type DuplicateHintInput = {
+  rowIndex: number;
+  callsignInput: string;
+  fullNameInput: string;
+  positionInput: string;
+};
 
 export const QUICK_PASTE_TSV_FORMAT_ERROR =
   'Швидка вставка підтримує лише TSV-формат: позивний, посада, коментар або позивний, посада, ПІП, коментар';
@@ -129,6 +137,60 @@ export function buildInitialListReq(): ListCallsignsReq {
     sort: DEFAULT_SORT,
     query: { afterId: null, limit: DEFAULT_LIMIT },
   });
+}
+
+export function buildDuplicateHintGroups(
+  duplicateHintInputs: DuplicateHintInput[],
+  callsigns: Callsign[],
+  unitId: number | null,
+  unitsById: Map<number, Unit>,
+): CallsignDuplicateHintGroup[] {
+  if (duplicateHintInputs.length === 0 || callsigns.length === 0) return [];
+
+  const groupsByRowIndex = new Map<number, CallsignDuplicateHintGroup>();
+
+  for (const callsign of callsigns) {
+    const callsignValue = normalizeDuplicateLookupValue(callsign.callsign);
+    const fullNameValue = normalizeDuplicateLookupValue(callsign.fullName);
+    const positionValue = normalizeDuplicateLookupValue(callsign.position);
+    const unitMatches = isNullOrUndefined(unitId) || callsign.unitId === unitId;
+
+    if (!unitMatches) continue;
+
+    for (const draftInput of duplicateHintInputs) {
+      const callsignMatches =
+        draftInput.callsignInput.length >= 2 && callsignValue.includes(draftInput.callsignInput);
+      const fullNameMatches =
+        draftInput.fullNameInput.length >= 2 && fullNameValue.includes(draftInput.fullNameInput);
+      const positionMatches =
+        draftInput.positionInput === '' || positionValue.includes(draftInput.positionInput);
+
+      if (!(callsignMatches || fullNameMatches) || !positionMatches) continue;
+
+      const group = groupsByRowIndex.get(draftInput.rowIndex) ?? {
+        rowIndex: draftInput.rowIndex,
+        matches: [],
+      };
+
+      if (group.matches.some((match) => match.id === callsign.id)) {
+        continue;
+      }
+
+      group.matches.push({
+        id: callsign.id,
+        callsign: callsign.callsign,
+        position: callsign.position,
+        fullName: callsign.fullName,
+        comment: callsign.comment,
+        unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
+      });
+      groupsByRowIndex.set(draftInput.rowIndex, group);
+    }
+  }
+
+  return duplicateHintInputs
+    .map((input) => groupsByRowIndex.get(input.rowIndex))
+    .filter((group): group is CallsignDuplicateHintGroup => !isNullOrUndefined(group) && group.matches.length > 0);
 }
 
 export function getDefaultPageSize() {
