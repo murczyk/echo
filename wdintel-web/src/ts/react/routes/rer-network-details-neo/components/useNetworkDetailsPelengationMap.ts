@@ -134,7 +134,7 @@ export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[]) {
   useEffect(() => {
     const map = mapRef.current;
     const satelliteLayer = satelliteLayerRef.current;
-    if (!map || !satelliteLayer || !heatLayerRef.current) return;
+    if (!mapReady || !map || !satelliteLayer || !heatLayerRef.current) return;
 
     if (satelliteEnabled) {
       if (!map.hasLayer(satelliteLayer)) {
@@ -146,12 +146,12 @@ export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[]) {
     if (map.hasLayer(satelliteLayer)) {
       map.removeLayer(satelliteLayer);
     }
-  }, [satelliteEnabled]);
+  }, [mapReady, satelliteEnabled]);
 
   useEffect(() => {
     const map = mapRef.current;
     const heatLayer = heatLayerRef.current;
-    if (!map || !heatLayer) return;
+    if (!mapReady || !map || !heatLayer) return;
 
     if (heatmapEnabled) {
       if (!map.hasLayer(heatLayer)) {
@@ -163,7 +163,7 @@ export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[]) {
     if (map.hasLayer(heatLayer)) {
       map.removeLayer(heatLayer);
     }
-  }, [heatmapEnabled]);
+  }, [mapReady, heatmapEnabled]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -40,6 +40,8 @@ if [[ -z "${elm_land_port}" ]]; then
     exit 1
 fi
 
-bash "${repo_root}/deploy/sync-dev-front-nginx.sh" "${elm_land_port}"
+if ! bash "${repo_root}/deploy/sync-dev-front-nginx.sh" "${elm_land_port}"; then
+    echo "Skipping nginx sync; Elm Land is still running on port ${elm_land_port}." >&2
+fi
 
 wait "${server_pid}"
