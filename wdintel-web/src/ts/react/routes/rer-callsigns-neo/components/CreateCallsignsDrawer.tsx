@@ -1,11 +1,10 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { isNullOrUndefined } from '../../../utils/misc';
 import {
-  Alert,
   Autocomplete,
   Box,
   Button,
@@ -26,7 +25,7 @@ import type { Source, Unit } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { CALLSIGN_FORM_HINT, RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, hasAnyDraftValue } from '../helpers';
 import { CallsignFormFields } from './CallsignFormFields';
-import type { CallsignDraftRow } from '../types';
+import type { CallsignDraftRow, CallsignDuplicateHintGroup } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
@@ -41,14 +40,7 @@ type Props = {
   submitting: boolean;
   disabled: boolean;
   validationError: string | null;
-  duplicateHints: Array<{
-    id: number;
-    callsign: string;
-    position: string;
-    fullName: string;
-    comment: string;
-    unitName: string;
-  }>;
+  duplicateHintGroups: CallsignDuplicateHintGroup[];
   onAddUnitIdChange: (unitId: number | null) => void;
   onAddSourceIdChange: (sourceId: number | null) => void;
   onAddCallsignAdditionalSourceIdsChange: (sourceIds: number[]) => void;
@@ -65,6 +57,7 @@ type CreateCallsignRowSectionProps = {
   index: number;
   rowsLength: number;
   formDisabled: boolean;
+  duplicateHintGroup: CallsignDuplicateHintGroup | null;
   onRowChange: (index: number, row: CallsignDraftRow) => void;
   onRemoveRow: (index: number) => void;
 };
@@ -74,6 +67,7 @@ const CreateCallsignRowSection = memo(function CreateCallsignRowSection({
   index,
   rowsLength,
   formDisabled,
+  duplicateHintGroup,
   onRowChange,
   onRemoveRow,
 }: CreateCallsignRowSectionProps) {
@@ -84,6 +78,33 @@ const CreateCallsignRowSection = memo(function CreateCallsignRowSection({
   const handleRemoveRow = useCallback(() => {
     onRemoveRow(index);
   }, [index, onRemoveRow]);
+
+  const callsignHintContent = duplicateHintGroup ? (
+    <>
+      <Typography component="span" variant="caption" color="warning.main" fontWeight={600}>
+        {duplicateHintGroup.matches.length === 1
+          ? 'Схожий існуючий позивний:'
+          : `Схожі існуючі позивні: ${duplicateHintGroup.matches.length}`}
+      </Typography>
+      <br />
+      {duplicateHintGroup.matches.slice(0, 2).map((match, matchIndex) => (
+        <span key={match.id}>
+          <Typography component="span" variant="caption" color="text.secondary">
+            {match.callsign} | {match.unitName}
+          </Typography>
+          {matchIndex < Math.min(duplicateHintGroup.matches.length, 2) - 1 ? <br /> : null}
+        </span>
+      ))}
+      {duplicateHintGroup.matches.length > 2 ? (
+        <>
+          <br />
+          <Typography component="span" variant="caption" color="text.secondary">
+            {`+ ${duplicateHintGroup.matches.length - 2} more`}
+          </Typography>
+        </>
+      ) : null}
+    </>
+  ) : null;
 
   return (
     <Stack spacing={1.5}>
@@ -104,7 +125,13 @@ const CreateCallsignRowSection = memo(function CreateCallsignRowSection({
           </Tooltip>
         ) : null}
       </Stack>
-      <CallsignFormFields value={row} onChange={handleRowChange} disabled={formDisabled} compact />
+      <CallsignFormFields
+        value={row}
+        onChange={handleRowChange}
+        disabled={formDisabled}
+        compact
+        callsignHintContent={callsignHintContent}
+      />
     </Stack>
   );
 }, (prev, next) => (
@@ -112,7 +139,54 @@ const CreateCallsignRowSection = memo(function CreateCallsignRowSection({
   && prev.index === next.index
   && prev.rowsLength === next.rowsLength
   && prev.formDisabled === next.formDisabled
+  && prev.duplicateHintGroup === next.duplicateHintGroup
 ));
+
+type DuplicateHintsSummaryProps = {
+  duplicateHintGroups: CallsignDuplicateHintGroup[];
+};
+
+const DuplicateHintsSummary = memo(function DuplicateHintsSummary({
+  duplicateHintGroups,
+}: DuplicateHintsSummaryProps) {
+  const totalMatches = duplicateHintGroups.reduce((sum, group) => sum + group.matches.length, 0);
+  const previewMatches = duplicateHintGroups
+    .flatMap((group) => group.matches.map((match) => ({ rowIndex: group.rowIndex, match })))
+    .slice(0, 3);
+  const hiddenMatches = totalMatches - previewMatches.length;
+
+  return (
+    <Box sx={{ position: 'sticky', top: 0, zIndex: (theme) => theme.zIndex.appBar + 1, bgcolor: 'background.paper', pb: 0.5 }}>
+      <PowerAlert
+        severity="warning"
+        autoHideDuration={null}
+        dismissible={false}
+        sx={{
+          bgcolor: 'background.paper',
+          backgroundImage: 'none',
+          opacity: 1,
+          boxShadow: 1,
+        }}
+      >
+        <Stack spacing={0.5}>
+          <Typography variant="body2" fontWeight={600}>
+            {`Схожі позивні знайдено: ${totalMatches} у ${duplicateHintGroups.length} рядках`}
+          </Typography>
+          {previewMatches.map(({ rowIndex, match }) => (
+            <Typography key={`${rowIndex}-${match.id}`} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {`Рядок ${rowIndex + 1}: ${match.callsign} | ${match.unitName}`}
+            </Typography>
+          ))}
+          {hiddenMatches > 0 ? (
+            <Typography variant="caption" color="text.secondary">
+              {`+ ${hiddenMatches} more`}
+            </Typography>
+          ) : null}
+        </Stack>
+      </PowerAlert>
+    </Box>
+  );
+});
 
 export function CreateCallsignsDrawer({
   open,
@@ -126,7 +200,7 @@ export function CreateCallsignsDrawer({
   submitting,
   disabled,
   validationError,
-  duplicateHints,
+  duplicateHintGroups,
   onAddUnitIdChange,
   onAddSourceIdChange,
   onAddCallsignAdditionalSourceIdsChange,
@@ -143,6 +217,10 @@ export function CreateCallsignsDrawer({
   const sourceSelectLabelId = 'callsigns-create-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
   const confirmationSources = sources.filter((source) => source.id !== addSourceId);
+  const duplicateHintGroupByRowIndex = useMemo(
+    () => new Map(duplicateHintGroups.map((group) => [group.rowIndex, group] as const)),
+    [duplicateHintGroups],
+  );
   const [unitSearchInput, setUnitSearchInput] = useState('');
   const [pastedInput, setPastedInput] = useState('');
   const handleClearRows = useCallback(() => {
@@ -205,19 +283,8 @@ export function CreateCallsignsDrawer({
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
           {validationError ? <PowerAlert severity="error">{validationError}</PowerAlert> : null}
-          {duplicateHints.length > 0 ? (
-            <PowerAlert severity="warning">
-              <Stack spacing={0.5}>
-                <Typography variant="body2" fontWeight={600}>
-                  Можливо, такий позивний вже існує:
-                </Typography>
-                {duplicateHints.map((item) => (
-                  <Typography key={item.id} variant="caption" sx={{ display: 'block' }}>
-                    {item.callsign || '—'} | {item.position || '—'} | {item.fullName || '—'} | {item.unitName} | {item.comment || '—'}
-                  </Typography>
-                ))}
-              </Stack>
-            </PowerAlert>
+          {duplicateHintGroups.length > 0 ? (
+            <DuplicateHintsSummary duplicateHintGroups={duplicateHintGroups} />
           ) : null}
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -348,6 +415,7 @@ export function CreateCallsignsDrawer({
                 index={index}
                 rowsLength={rows.length}
                 formDisabled={formDisabled}
+                duplicateHintGroup={duplicateHintGroupByRowIndex.get(index) ?? null}
                 onRowChange={onRowChange}
                 onRemoveRow={onRemoveRow}
               />
