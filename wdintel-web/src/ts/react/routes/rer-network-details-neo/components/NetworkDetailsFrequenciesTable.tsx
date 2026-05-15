@@ -5,8 +5,13 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import { Box, Button, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
-import { MaterialReactTable, useMaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  MaterialReactTable,
+  useMaterialReactTable,
+  type MRT_ColumnDef,
+  type MRT_ColumnFiltersState,
+} from 'material-react-table';
+import { useEffect, useMemo } from 'react';
 
 import type { ModulationRec, Network, NetworkFreqsRes } from '../../../../../Bindings';
 import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
@@ -44,11 +49,18 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   lastDatetime: true,
 };
 const COMPACT_LOADED_ROW_LIMIT = 8;
+const STATUS_FILTER_COLUMN_ID = 'status';
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+type StatusFilterValue = 'Усі' | 'active' | 'inactive';
 
 function getRowIsActive(row: NetworkFreqTableRow): boolean {
   return row.kind === 'group' ? row.isActive : row.freq.isActive;
+}
+
+function resolveStatusFilterValue(columnFilters: MRT_ColumnFiltersState): StatusFilterValue {
+  const statusFilter = columnFilters.find((filter) => filter.id === STATUS_FILTER_COLUMN_ID);
+  return statusFilter?.value === 'active' || statusFilter?.value === 'inactive' ? statusFilter.value : 'Усі';
 }
 
 function renderFrequencyStatusIndicator(isActive: boolean) {
@@ -229,18 +241,28 @@ function NetworkDetailsFrequenciesTableContent({
   const activeFreq = activeRow && activeRow.kind === 'freq' ? activeRow.freq : null;
   const isInitialLoading = loading || (freqsLoading && !freqsLoaded);
   const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;
-  const [statusFilterValue, setStatusFilterValue] = useState<'Усі' | 'active' | 'inactive'>('Усі');
+  const statusFilterValue = resolveStatusFilterValue(tableStateContext.columnFilters);
   const visibleRows = useMemo(
     () => (statusFilterValue === 'Усі' ? rows : rows.filter((row) => (statusFilterValue === 'active' ? getRowIsActive(row) : !getRowIsActive(row)))),
     [rows, statusFilterValue],
   );
-  const hasActiveFilters = statusFilterValue !== 'Усі' || tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
+  const hasActiveFilters = tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
+
+  function onStatusFilterChange(nextStatusFilterValue: StatusFilterValue) {
+    const nextFilters = tableStateContext.columnFilters.filter((filter) => filter.id !== STATUS_FILTER_COLUMN_ID);
+
+    if (nextStatusFilterValue !== 'Усі') {
+      nextFilters.push({ id: STATUS_FILTER_COLUMN_ID, value: nextStatusFilterValue });
+    }
+
+    tableStateContext.onColumnFiltersChange(nextFilters);
+  }
 
   const statusFilterChips = (
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-      <PowerChip label="Усі" selected={statusFilterValue === 'Усі'} onClick={() => setStatusFilterValue('Усі')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
-      <PowerChip label="Активні" selected={statusFilterValue === 'active'} onClick={() => setStatusFilterValue('active')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
-      <PowerChip label="Неактивні" selected={statusFilterValue === 'inactive'} onClick={() => setStatusFilterValue('inactive')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
+      <PowerChip label="Усі" selected={statusFilterValue === 'Усі'} onClick={() => onStatusFilterChange('Усі')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
+      <PowerChip label="Активні" selected={statusFilterValue === 'active'} onClick={() => onStatusFilterChange('active')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
+      <PowerChip label="Неактивні" selected={statusFilterValue === 'inactive'} onClick={() => onStatusFilterChange('inactive')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
     </Stack>
   );
 
@@ -351,19 +373,21 @@ function NetworkDetailsFrequenciesTableContent({
       hover: true,
       sx: { opacity: row.original.kind === 'freq' && row.original.parentGroupId ? 0.96 : 1 },
     }),
-    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
-      table,
-      noDataMessage: freqsError ? 'Не вдалося завантажити частоти' : 'Частоти відсутні',
-      noDataActionLabel: freqsError ? 'Спробувати ще раз' : undefined,
-      onNoDataAction: freqsError ? onReloadFrequencies : undefined,
-      filteredMessage: 'Немає частот за обраними фільтрами',
-      hasFilters: freqsError ? false : hasActiveFilters,
-      onClearFilters: freqsError ? undefined : () => {
-        tableStateContext.onColumnFiltersChange([]);
-        tableStateContext.onChangeGlobalFilter('');
-        setStatusFilterValue('Усі');
-      },
-    }),
+    renderEmptyRowsFallback: ({ table }) =>
+      renderDefaultMrtEmptyRowsFallback({
+        table,
+        noDataMessage: freqsError ? 'Не вдалося завантажити частоти' : 'Частоти відсутні',
+        noDataActionLabel: freqsError ? 'Спробувати ще раз' : undefined,
+        onNoDataAction: freqsError ? onReloadFrequencies : undefined,
+        filteredMessage: 'Немає частот за обраними фільтрами',
+        hasFilters: freqsError ? false : hasActiveFilters,
+        onClearFilters: freqsError
+          ? undefined
+          : () => {
+              tableStateContext.onColumnFiltersChange([]);
+              tableStateContext.onChangeGlobalFilter('');
+            },
+      }),
     manualFiltering: false,
     initialState: {
       density: 'comfortable',
