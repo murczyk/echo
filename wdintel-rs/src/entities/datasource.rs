@@ -30,7 +30,7 @@ pub struct Model {
     pub echo_client_lock_id: Option<i64>,
     pub created_at: DateTime,
     pub default_aor_id: Option<i64>,
-    #[sea_orm(column_type = "Text", nullable)]
+    #[sea_orm(column_type = "Text", nullable, unique)]
     pub api_login: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub updated_by: Option<String>,

@@ -5,10 +5,21 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct OperatorInboxMessage {
+    pub instance_id: String,
     pub message: String,
     pub timestamp: i64,
     pub group: Group,
     pub profile: Profile,
+    pub metadata: Metadata,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct Metadata {
+    pub dmr_sender_id: Option<String>,
+    pub dmr_call_group_id: Option<String>,
+    pub dmr_color_code: Option<String>,
 }
 
 #[derive(
