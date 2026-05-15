@@ -40,6 +40,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Prefer `ReactNode` over `React.ReactNode` and avoid `React.*` namespace access when a direct import is available.
 - If you touch a React file and see mixed import styles, normalize that file to the direct-import style as part of the change.
 - Keep functions focused; split large handlers/helpers.
+- Keep files small: prefer 200-300 lines, and treat 500 lines as a hard cap that should trigger a split before merging.
 - Run frontend verification:
 - `just build-front`
 - Run targeted TS tests if touched:

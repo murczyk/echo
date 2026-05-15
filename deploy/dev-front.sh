@@ -3,30 +3,43 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
-cd "${repo_root}/wdintel-web"
-
-npx elm-land server &
-server_pid=$!
+log_file="$(mktemp)"
 
 cleanup() {
+    rm -f "${log_file}"
     kill "${server_pid}" 2>/dev/null || true
     wait "${server_pid}" 2>/dev/null || true
 }
 
+extract_port_from_log() {
+    sed -n 's/.*http:\/\/localhost:\([0-9][0-9]*\).*/\1/p' "${log_file}" | tail -n 1
+}
+
+cd "${repo_root}/wdintel-web"
+
+npx elm-land server >"${log_file}" 2>&1 &
+server_pid=$!
+
 trap cleanup EXIT INT TERM
 
-synced=0
+elm_land_port=""
 for _ in $(seq 1 60); do
-    if bash "${repo_root}/deploy/sync-dev-front-nginx.sh" "${server_pid}"; then
-        synced=1
+    elm_land_port="$(extract_port_from_log)"
+    if [[ -n "${elm_land_port}" ]]; then
+        break
+    fi
+    if ! kill -0 "${server_pid}" 2>/dev/null; then
         break
     fi
     sleep 1
 done
 
-if [[ "${synced}" -ne 1 ]]; then
-    echo "Failed to sync nginx to the running Elm Land server." >&2
+if [[ -z "${elm_land_port}" ]]; then
+    cat "${log_file}" >&2
+    echo "Failed to detect Elm Land port." >&2
     exit 1
 fi
+
+bash "${repo_root}/deploy/sync-dev-front-nginx.sh" "${elm_land_port}"
 
 wait "${server_pid}"

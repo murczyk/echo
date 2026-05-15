@@ -114,6 +114,8 @@ export type NetworkDetailsNeoPageState = {
   pelengPointsLoaded: boolean;
   pelengPointsLoading: boolean;
   pelengPointsError: string | null;
+  pelengPointsRequestedFrom: number | null;
+  pelengPointsRequestedTo: number | null;
   callsignCount: number | null;
   networkCallsigns: NetworkCallsign[];
   networkCallsignGroups: NetworkCallsignRes[];
@@ -213,6 +215,8 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   pelengPointsLoaded: false,
   pelengPointsLoading: false,
   pelengPointsError: null,
+  pelengPointsRequestedFrom: null,
+  pelengPointsRequestedTo: null,
   callsignCount: null,
   networkCallsigns: [],
   networkCallsignGroups: [],

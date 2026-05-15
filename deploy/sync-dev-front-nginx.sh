@@ -30,12 +30,10 @@ find_listen_port_for_pid() {
         '
 }
 
-elm_land_pid=""
 elm_land_port=""
 
 if [[ "${1:-}" != "" ]]; then
-    elm_land_pid="$1"
-    elm_land_port="$(find_listen_port_for_pid "${elm_land_pid}")"
+    elm_land_port="$1"
 else
     elm_land_pids="$(find_elm_land_pids_desc)"
     if [[ -z "${elm_land_pids}" ]]; then
@@ -46,16 +44,14 @@ else
     while IFS= read -r candidate_pid; do
         [[ -z "${candidate_pid}" ]] && continue
         candidate_pid="${candidate_pid%% *}"
-        candidate_port="$(find_listen_port_for_pid "${candidate_pid}")"
-        if [[ -n "${candidate_port}" ]]; then
-            elm_land_pid="${candidate_pid}"
-            elm_land_port="${candidate_port}"
+        elm_land_port="$(find_listen_port_for_pid "${candidate_pid}")"
+        if [[ -n "${elm_land_port}" ]]; then
             break
         fi
     done <<< "${elm_land_pids}"
 fi
 
-if [[ -z "${elm_land_pid}" || -z "${elm_land_port}" ]]; then
+if [[ -z "${elm_land_port}" ]]; then
     echo "Found Elm Land process(es), but failed to detect any listening port." >&2
     exit 1
 fi

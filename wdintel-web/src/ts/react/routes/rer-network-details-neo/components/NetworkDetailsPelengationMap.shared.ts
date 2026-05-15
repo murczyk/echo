@@ -1,0 +1,132 @@
+import type { NetworkPoint } from '../../../../../Bindings';
+
+export const SATELLITE_TILE_URL = 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}&hl=uk';
+export const SATELLITE_TILE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3'];
+export const BASE_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const PELENG_TOOLTIP_ARROW_COLOR = '#000000';
+
+export function createPelengationPopupContent(point: NetworkPoint, label: string) {
+  const content = document.createElement('div');
+  content.style.minWidth = '180px';
+  content.style.maxWidth = '260px';
+  content.style.display = 'flex';
+  content.style.flexDirection = 'column';
+  content.style.gap = '6px';
+
+  const title = document.createElement('div');
+  title.textContent = label;
+  title.style.fontWeight = '700';
+  title.style.fontSize = '14px';
+  title.style.lineHeight = '1.2';
+
+  const body = document.createElement('div');
+  body.textContent = point.body?.trim() === '' ? 'Без тексту' : point.body;
+  body.style.whiteSpace = 'pre-wrap';
+  body.style.fontSize = '13px';
+  body.style.lineHeight = '1.45';
+
+  const coords = document.createElement('div');
+  coords.textContent = `Координати: ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
+  coords.style.fontSize = '12px';
+  coords.style.opacity = '0.8';
+
+  content.append(title, body, coords);
+  return content;
+}
+
+export function applyPelengationMapStyles() {
+  const styleId = 'peleng-point-label-tooltip-styles';
+  const existingStyle = document.getElementById(styleId);
+  const style = existingStyle ?? document.createElement('style');
+  const createdStyle = existingStyle === null;
+
+  style.id = styleId;
+  style.textContent = `
+    .leaflet-popup.peleng-point-popup .leaflet-popup-content-wrapper {
+      background: rgba(18, 20, 18, 0.95) !important;
+      color: #ffffff !important;
+    }
+    .leaflet-popup.peleng-point-popup .leaflet-popup-tip {
+      background: ${PELENG_TOOLTIP_ARROW_COLOR} !important;
+      box-shadow: none !important;
+    }
+    .peleng-heat-point {
+      width: 156px;
+      height: 156px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, rgba(233, 151, 70, 0.36) 0 14%, rgba(208, 111, 58, 0.24) 24%, rgba(207, 146, 68, 0.16) 48%, rgba(207, 146, 68, 0.08) 62%, rgba(207, 146, 68, 0) 78%);
+      filter: blur(8px);
+      mix-blend-mode: screen;
+      opacity: 0.95;
+      pointer-events: none;
+    }
+    .leaflet-tooltip.peleng-point-label {
+      background: #11110f !important;
+      border: 1px solid #000000 !important;
+      box-shadow: none !important;
+      color: #fff7ea !important;
+      font-weight: 800 !important;
+      font-size: 12px !important;
+      letter-spacing: 0.04em !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+      padding: 3px 8px !important;
+      border-radius: 999px !important;
+    }
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-top:before,
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-bottom:before,
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-left:before,
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-right:before {
+      display: none !important;
+    }
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-top:after,
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-bottom:after,
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-left:after,
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-right:after {
+      position: absolute;
+      width: 0;
+      height: 0;
+      border: 6px solid transparent;
+      pointer-events: none;
+      content: "";
+    }
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-top:after {
+      left: 50% !important;
+      bottom: 0 !important;
+      margin-bottom: -12px !important;
+      transform: translateX(-50%);
+      border-top-color: ${PELENG_TOOLTIP_ARROW_COLOR} !important;
+    }
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-bottom:after {
+      left: 50% !important;
+      top: 0 !important;
+      margin-top: -12px !important;
+      transform: translateX(-50%);
+      border-bottom-color: ${PELENG_TOOLTIP_ARROW_COLOR} !important;
+    }
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-left:after {
+      top: 50% !important;
+      right: 0 !important;
+      margin-top: -6px !important;
+      margin-right: -12px !important;
+      border-left-color: ${PELENG_TOOLTIP_ARROW_COLOR} !important;
+    }
+    .leaflet-tooltip.peleng-point-label.leaflet-tooltip-right:after {
+      top: 50% !important;
+      left: 0 !important;
+      margin-top: -6px !important;
+      margin-left: -12px !important;
+      border-right-color: ${PELENG_TOOLTIP_ARROW_COLOR} !important;
+    }
+  `;
+
+  if (createdStyle) {
+    document.head.appendChild(style);
+  }
+
+  return () => {
+    if (createdStyle) {
+      style.remove();
+    }
+  };
+}

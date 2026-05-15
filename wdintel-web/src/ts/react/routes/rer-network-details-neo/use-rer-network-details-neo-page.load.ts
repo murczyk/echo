@@ -162,6 +162,9 @@ export function useRerNetworkDetailsNeoPageLoad(
         pelengPointsLoading: false,
         pelengPointsLoaded: false,
         pelengPointsError: 'Некоректний ID мережі',
+        pelengPointsRequestedFrom: null,
+        pelengPointsRequestedTo: null,
+        pelengPoints: [],
       }));
       return;
     }
@@ -170,6 +173,10 @@ export function useRerNetworkDetailsNeoPageLoad(
       ...current,
       pelengPointsLoading: true,
       pelengPointsError: null,
+      pelengPointsLoaded: false,
+      pelengPoints: [],
+      pelengPointsRequestedFrom: activeFrom,
+      pelengPointsRequestedTo: activeTo,
     }));
 
     try {
@@ -187,6 +194,8 @@ export function useRerNetworkDetailsNeoPageLoad(
         pelengPointsLoaded: true,
         pelengPointsLoading: false,
         pelengPointsError: null,
+        pelengPointsRequestedFrom: activeFrom,
+        pelengPointsRequestedTo: activeTo,
       }));
     } catch (error) {
       if (!isCurrent()) return;
@@ -195,6 +204,8 @@ export function useRerNetworkDetailsNeoPageLoad(
         pelengPointsLoading: false,
         pelengPointsLoaded: false,
         pelengPointsError: formatErrorMessage(error),
+        pelengPointsRequestedFrom: activeFrom,
+        pelengPointsRequestedTo: activeTo,
       }));
     }
   }, [reloadGeneration, setState]);

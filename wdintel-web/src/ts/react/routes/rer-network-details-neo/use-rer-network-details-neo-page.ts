@@ -46,6 +46,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canManageCallsignActions = useMemo(() => canManageNetworkCallsignActions(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
+  const pelengActiveFrom = state.network?.activeFrom ?? null;
+  const pelengActiveTo = state.network?.activeTo ?? null;
 
   const aorOptions = useMemo(() => buildOptions(state.aors), [state.aors]);
   const unitOptions = useMemo(() => buildOptions(state.units), [state.units]);
@@ -106,15 +108,24 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   useEffect(() => {
     if (state.network === null) return;
     if (state.activeNetworkDetailsTab !== 'pelengation') return;
-    if (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null) return;
-    void loadPelengPoints(state.network.id, state.network.activeFrom ?? null, state.network.activeTo ?? null);
+
+    const pelengWindowMatched =
+      state.pelengPointsRequestedFrom === pelengActiveFrom &&
+      state.pelengPointsRequestedTo === pelengActiveTo;
+
+    if (pelengWindowMatched && (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null)) return;
+    void loadPelengPoints(state.network.id, pelengActiveFrom, pelengActiveTo);
   }, [
     loadPelengPoints,
+    pelengActiveFrom,
+    pelengActiveTo,
     state.activeNetworkDetailsTab,
     state.network,
     state.pelengPointsError,
     state.pelengPointsLoaded,
     state.pelengPointsLoading,
+    state.pelengPointsRequestedFrom,
+    state.pelengPointsRequestedTo,
   ]);
 
   const aorItems = useMemo(() => {
