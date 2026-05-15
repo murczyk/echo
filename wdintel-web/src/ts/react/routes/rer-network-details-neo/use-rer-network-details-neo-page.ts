@@ -33,7 +33,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     frequencyReloadGeneration.current += 1;
   }
 
-  const { reload, loadCallsigns, loadNetworkActivity } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
+  const { reload, loadCallsigns, loadNetworkActivity, loadPelengPoints } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -103,6 +103,20 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     state.networkActivityLoading,
   ]);
 
+  useEffect(() => {
+    if (state.network === null) return;
+    if (state.activeNetworkDetailsTab !== 'pelengation') return;
+    if (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null) return;
+    void loadPelengPoints(state.network.id, state.network.activeFrom ?? null, state.network.activeTo ?? null);
+  }, [
+    loadPelengPoints,
+    state.activeNetworkDetailsTab,
+    state.network,
+    state.pelengPointsError,
+    state.pelengPointsLoaded,
+    state.pelengPointsLoading,
+  ]);
+
   const aorItems = useMemo(() => {
     const aorIds = state.network?.aorIds ?? [];
     return aorIds.map((aorId) => ({ id: aorId, label: aorsById.get(aorId) ?? `#${aorId}` }));
@@ -154,6 +168,10 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     networkActivityLoaded: state.networkActivityLoaded,
     networkActivityLoading: state.networkActivityLoading,
     networkActivityError: state.networkActivityError,
+    pelengPoints: state.pelengPoints,
+    pelengPointsLoaded: state.pelengPointsLoaded,
+    pelengPointsLoading: state.pelengPointsLoading,
+    pelengPointsError: state.pelengPointsError,
     expandedFrequencyGroupIds: state.expandedFrequencyGroupIds,
     toggleFrequencyGroupExpanded: actions.toggleFrequencyGroupExpanded,
     openFreqCreateWizard: actions.openFreqCreateWizard,
@@ -229,6 +247,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     addKnownCallsignsToNetwork: actions.addKnownCallsignsToNetwork,
     addInterceptedCallsignToNetwork: actions.addInterceptedCallsignToNetwork,
     toggleNetworkCallsignMainRadioStation: actions.toggleNetworkCallsignMainRadioStation,
+    loadPelengPoints,
     descriptionDrawerOpen: state.descriptionDrawerOpen,
     descriptionDrawerMode: state.descriptionDrawerMode,
     descriptionDrawerDescrType: state.descriptionDrawerDescrType,

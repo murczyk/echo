@@ -8,6 +8,8 @@ import type {
   ListKeysReq,
   Network,
   NetworkGroupsActivityOneReq,
+  ListNetworkPointsReq,
+  ListNetworkPointsRsp,
   NetworkFreqCallsignsReq,
   NetworkFreqsActivityReq,
   ReactivateNetworkFreqReq,
@@ -92,6 +94,11 @@ export async function getNetworkGroupsActivityOne(networkId: number): Promise<Re
     tillDateNoninclusiveMs: null,
   } satisfies NetworkGroupsActivityOneReq));
   return data;
+}
+
+export async function listNetworkPoints(req: ListNetworkPointsReq): Promise<ListNetworkPointsRsp> {
+  const data = await postJson<ListNetworkPointsRsp>('/api/sigint/network-points', transformCamelToSnake(req));
+  return transformSnakeToCamel<ListNetworkPointsRsp>(data);
 }
 
 export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<string[]> {

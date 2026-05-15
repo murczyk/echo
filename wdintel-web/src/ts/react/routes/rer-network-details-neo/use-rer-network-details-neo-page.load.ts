@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 
 import { listAors } from '../../services/api/aor';
-import { getNetworkById, getNetworkGroupsActivityOne } from '../../services/api/networks';
+import { getNetworkById, getNetworkGroupsActivityOne, listNetworkPoints } from '../../services/api/networks';
 import { getModulations } from '../../services/api/modulations';
 import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity, listSources } from '../../services/api/callsigns';
 import { getUnitsList } from '../../services/api/units';
@@ -30,9 +30,11 @@ export function useRerNetworkDetailsNeoPageLoad(
   reload: () => () => void;
   loadCallsigns: (networkId: number) => Promise<void>;
   loadNetworkActivity: (networkId: number) => Promise<void>;
+  loadPelengPoints: (networkId: number, activeFrom: number | null, activeTo: number | null) => Promise<void>;
 } {
   const callsignLoadRequestIdRef = useRef(0);
   const networkActivityLoadRequestIdRef = useRef(0);
+  const pelengPointsLoadRequestIdRef = useRef(0);
 
   const loadCallsigns = useCallback(async (targetNetworkId: number) => {
     const generation = reloadGeneration.current;
@@ -148,6 +150,55 @@ export function useRerNetworkDetailsNeoPageLoad(
     }
   }, [reloadGeneration, setState]);
 
+  const loadPelengPoints = useCallback(async (targetNetworkId: number, activeFrom: number | null, activeTo: number | null) => {
+    const generation = reloadGeneration.current;
+    const requestId = ++pelengPointsLoadRequestIdRef.current;
+    const isCurrent = () => reloadGeneration.current === generation && pelengPointsLoadRequestIdRef.current === requestId;
+
+    if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        pelengPointsLoading: false,
+        pelengPointsLoaded: false,
+        pelengPointsError: 'Некоректний ID мережі',
+      }));
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      pelengPointsLoading: true,
+      pelengPointsError: null,
+    }));
+
+    try {
+      const response = await listNetworkPoints({
+        networkId: targetNetworkId,
+        sinceDateInclusiveMs: activeFrom ?? 0,
+        tillDateNoninclusiveMs: activeTo,
+      });
+
+      if (!isCurrent()) return;
+
+      setState((current) => ({
+        ...current,
+        pelengPoints: response.points ?? [],
+        pelengPointsLoaded: true,
+        pelengPointsLoading: false,
+        pelengPointsError: null,
+      }));
+    } catch (error) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        pelengPointsLoading: false,
+        pelengPointsLoaded: false,
+        pelengPointsError: formatErrorMessage(error),
+      }));
+    }
+  }, [reloadGeneration, setState]);
+
   const reload = useCallback(() => {
     reloadGeneration.current += 1;
     const generation = reloadGeneration.current;
@@ -257,5 +308,5 @@ export function useRerNetworkDetailsNeoPageLoad(
     return reload();
   }, [reload]);
 
-  return { reload, loadCallsigns, loadNetworkActivity };
+  return { reload, loadCallsigns, loadNetworkActivity, loadPelengPoints };
 }
