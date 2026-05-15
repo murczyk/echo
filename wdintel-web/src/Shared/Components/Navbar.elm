@@ -1,7 +1,6 @@
 module Shared.Components.Navbar exposing (navBar)
 
 import Auth
-import Char
 import Core.Auth exposing (hasRole, serverModeIs)
 import Dict
 import Html exposing (..)
@@ -469,9 +468,15 @@ changelogDropdown props maybeData =
                             "false"
                         )
                     , attribute "aria-label" "Останні зміни"
+                    , title "Останні зміни"
                     , type_ "button"
                     ]
-                    [ text "New"
+                    [ img
+                        [ src "/img/changelog.png"
+                        , alt "Останні зміни"
+                        , class "h-6 w-6"
+                        ]
+                        []
                     , badge
                     ]
                 , div [ class "absolute right-0 pt-2 z-[3001]" ]
