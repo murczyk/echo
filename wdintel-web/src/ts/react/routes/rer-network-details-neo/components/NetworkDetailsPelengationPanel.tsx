@@ -1,5 +1,3 @@
-import FullscreenExitOutlinedIcon from '@mui/icons-material/FullscreenExitOutlined';
-import FullscreenOutlinedIcon from '@mui/icons-material/FullscreenOutlined';
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
 import WhatshotOutlinedIcon from '@mui/icons-material/WhatshotOutlined';
 import { Box, Button, IconButton, Skeleton, Stack, Typography } from '@mui/material';
@@ -7,6 +5,7 @@ import { alpha, type Theme } from '@mui/material/styles';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { NetworkPoint } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -85,6 +84,7 @@ export function NetworkDetailsPelengationPanel({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const pelengPointsRef = useRef(pelengPoints);
+  const viewTransitionRef = useRef<{ center: L.LatLng; zoom: number } | null>(null);
 
   const pointCountLabel = useMemo(() => {
     const count = pelengPoints.length;
@@ -216,12 +216,13 @@ export function NetworkDetailsPelengationPanel({
         style.remove();
       }
     };
-  }, []);
+  }, [isFullscreen]);
 
   useLayoutEffect(() => {
     const mapContainer = mapContainerRef.current;
     if (!mapContainer || mapRef.current) return;
 
+    setMapReady(false);
     let cancelled = false;
     let rafId = 0;
     let cleanupMap: (() => void) | null = null;
@@ -234,13 +235,14 @@ export function NetworkDetailsPelengationPanel({
         return;
       }
 
+      const restoredView = viewTransitionRef.current;
       const map = L.map(mapContainer, {
         zoomControl: false,
         attributionControl: false,
         preferCanvas: true,
         worldCopyJump: false,
         minZoom: 2,
-      }).setView([49, 32], 5);
+      }).setView(restoredView?.center ?? [49, 32], restoredView?.zoom ?? 5);
 
       const baseLayer = L.tileLayer(BASE_TILE_URL, {
         maxZoom: 19,
@@ -297,7 +299,7 @@ export function NetworkDetailsPelengationPanel({
       cleanupMap?.();
       cleanupMap = null;
     };
-  }, []);
+  }, [isFullscreen]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -387,7 +389,11 @@ export function NetworkDetailsPelengationPanel({
       );
     });
 
-    if (bounds.isValid()) {
+    if (viewTransitionRef.current) {
+      const restoredView = viewTransitionRef.current;
+      map.setView(restoredView.center, restoredView.zoom, { animate: false });
+      viewTransitionRef.current = null;
+    } else if (bounds.isValid()) {
       if (pelengPoints.length === 1) {
         const point = pelengPoints[0];
         map.setView([point.lat, point.lng], 16, {
@@ -400,7 +406,15 @@ export function NetworkDetailsPelengationPanel({
         });
       }
     }
-  }, [mapReady, pelengPoints]);
+  }, [isFullscreen, mapReady, pelengPoints]);
+
+  const toggleFullscreen = () => {
+    const map = mapRef.current;
+    if (map) {
+      viewTransitionRef.current = { center: map.getCenter(), zoom: map.getZoom() };
+    }
+    setIsFullscreen((current) => !current);
+  };
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -426,8 +440,9 @@ export function NetworkDetailsPelengationPanel({
     position: isFullscreen ? 'fixed' : 'relative',
     ...(isFullscreen ? { inset: 0, top: 0, right: 0, bottom: 0, left: 0 } : {}),
     width: isFullscreen ? '100vw' : '100%',
-    height: isFullscreen ? '100dvh' : 'auto',
-    zIndex: isFullscreen ? 4000 : 'auto',
+    height: isFullscreen ? '100svh' : 'auto',
+    ...(isFullscreen ? { maxWidth: '100vw', maxHeight: '100svh', m: 0, p: 0 } : {}),
+    zIndex: isFullscreen ? 10000 : 'auto',
     minHeight: { xs: 320, sm: 360, md: 420 },
     flex: 1,
     overflow: 'hidden',
@@ -473,32 +488,54 @@ export function NetworkDetailsPelengationPanel({
 
       <IconButton
         aria-label={isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
-        onClick={() => setIsFullscreen((current) => !current)}
-        sx={(theme) => ({
-          position: 'absolute',
-          top: 12,
-          right: 12,
-          zIndex: 1200,
-          width: 44,
-          height: 44,
-          borderRadius: 2.5,
-          bgcolor: 'rgba(17, 17, 15, 0.74)',
-          color: 'rgba(255, 255, 255, 0.88)',
-          border: '1px solid',
-          borderColor: 'rgba(255, 255, 255, 0.12)',
-          backdropFilter: 'blur(8px)',
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
-          '&:hover': {
-            bgcolor: 'rgba(24, 24, 20, 0.82)',
-            borderColor: 'rgba(255, 255, 255, 0.2)',
-          },
-          '&.Mui-focusVisible': {
-            outline: 'none',
-            boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.4)}`,
-          },
-        })}
+        title={isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
+        onClick={toggleFullscreen}
+        sx={(theme) => {
+          const analysisMapControl = theme.palette.mode === 'dark'
+            ? {
+                bg: '#212529',
+                border: '#495057',
+                color: '#dee2e6',
+                hoverBg: '#343a40',
+              }
+            : {
+                bg: '#ffffff',
+                border: '#dee2e6',
+                color: '#212529',
+                hoverBg: '#f8f9fa',
+              };
+
+          return {
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            zIndex: 1200,
+            width: 44,
+            height: 44,
+            p: 0,
+            borderRadius: '8px',
+            bgcolor: analysisMapControl.bg,
+            color: analysisMapControl.color,
+            border: '1px solid',
+            borderColor: analysisMapControl.border,
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+            transition: 'background-color 0.2s, color 0.2s',
+            '&:hover': {
+              bgcolor: analysisMapControl.hoverBg,
+              color: analysisMapControl.color,
+            },
+            '&.Mui-focusVisible': {
+              outline: 'none',
+              boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.4)}`,
+            },
+            '& i': {
+              fontSize: 18,
+              lineHeight: 1,
+            },
+          };
+        }}
       >
-        {isFullscreen ? <FullscreenExitOutlinedIcon fontSize="small" /> : <FullscreenOutlinedIcon fontSize="small" />}
+        <Box component="i" className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'} aria-hidden="true" />
       </IconButton>
 
       <Box
@@ -550,6 +587,7 @@ export function NetworkDetailsPelengationPanel({
 
     </Box>
   );
+  const fullscreenMapPanel = isFullscreen && typeof document !== 'undefined' ? createPortal(mapPanel, document.body) : null;
 
   if (pelengPointsError) {
     return (
@@ -597,72 +635,75 @@ export function NetworkDetailsPelengationPanel({
   }
 
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Stack spacing={1.5} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
-        <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" sx={{ flexWrap: 'wrap', gap: 1 }}>
-          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flexWrap: 'wrap' }}>
-            <Typography id={headingId} component="h2" variant="h6">
-              Пеленгація
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-              {pointCountLabel}
-            </Typography>
-            {showSkeleton ? <Skeleton variant="rounded" width={84} height={18} sx={{ borderRadius: 1 }} /> : null}
+    <>
+      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Stack spacing={1.5} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
+          <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" sx={{ flexWrap: 'wrap', gap: 1 }}>
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flexWrap: 'wrap' }}>
+              <Typography id={headingId} component="h2" variant="h6">
+                Пеленгація
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                {pointCountLabel}
+              </Typography>
+              {showSkeleton ? <Skeleton variant="rounded" width={84} height={18} sx={{ borderRadius: 1 }} /> : null}
+            </Stack>
+
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+              <Button
+                type="button"
+                variant={satelliteEnabled ? 'contained' : 'outlined'}
+                onClick={() => setSatelliteEnabled((current) => !current)}
+                startIcon={<LayersOutlinedIcon />}
+                sx={(theme) => ({
+                  borderRadius: 2,
+                  px: 1.6,
+                  py: 0.8,
+                  minWidth: 0,
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  bgcolor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.18) : undefined,
+                  color: satelliteEnabled ? theme.palette.warning.main : theme.palette.text.secondary,
+                  borderColor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.35) : undefined,
+                  '&:hover': {
+                    bgcolor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.24) : alpha(theme.palette.text.primary, 0.04),
+                    borderColor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.5) : undefined,
+                  },
+                })}
+              >
+                Супутник
+              </Button>
+
+              <Button
+                type="button"
+                variant={heatmapEnabled ? 'contained' : 'outlined'}
+                onClick={() => setHeatmapEnabled((current) => !current)}
+                startIcon={<WhatshotOutlinedIcon />}
+                sx={(theme) => ({
+                  borderRadius: 2,
+                  px: 1.6,
+                  py: 0.8,
+                  minWidth: 0,
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  bgcolor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.18) : undefined,
+                  color: heatmapEnabled ? theme.palette.warning.main : theme.palette.text.secondary,
+                  borderColor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.35) : undefined,
+                  '&:hover': {
+                    bgcolor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.24) : alpha(theme.palette.text.primary, 0.04),
+                    borderColor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.5) : undefined,
+                  },
+                })}
+              >
+                Heatmap
+              </Button>
+            </Stack>
+
           </Stack>
-
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-            <Button
-              type="button"
-              variant={satelliteEnabled ? 'contained' : 'outlined'}
-              onClick={() => setSatelliteEnabled((current) => !current)}
-              startIcon={<LayersOutlinedIcon />}
-              sx={(theme) => ({
-                borderRadius: 2,
-                px: 1.6,
-                py: 0.8,
-                minWidth: 0,
-                textTransform: 'none',
-                fontWeight: 700,
-                bgcolor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.18) : undefined,
-                color: satelliteEnabled ? theme.palette.warning.main : theme.palette.text.secondary,
-                borderColor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.35) : undefined,
-                '&:hover': {
-                  bgcolor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.24) : alpha(theme.palette.text.primary, 0.04),
-                  borderColor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.5) : undefined,
-                },
-              })}
-            >
-              Супутник
-            </Button>
-
-            <Button
-              type="button"
-              variant={heatmapEnabled ? 'contained' : 'outlined'}
-              onClick={() => setHeatmapEnabled((current) => !current)}
-              startIcon={<WhatshotOutlinedIcon />}
-              sx={(theme) => ({
-                borderRadius: 2,
-                px: 1.6,
-                py: 0.8,
-                minWidth: 0,
-                textTransform: 'none',
-                fontWeight: 700,
-                bgcolor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.18) : undefined,
-                color: heatmapEnabled ? theme.palette.warning.main : theme.palette.text.secondary,
-                borderColor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.35) : undefined,
-                '&:hover': {
-                  bgcolor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.24) : alpha(theme.palette.text.primary, 0.04),
-                  borderColor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.5) : undefined,
-                },
-              })}
-            >
-              Heatmap
-            </Button>
-          </Stack>
-
+          {isFullscreen ? null : mapPanel}
         </Stack>
-        {mapPanel}
-      </Stack>
-    </Box>
+      </Box>
+      {fullscreenMapPanel}
+    </>
   );
 }
