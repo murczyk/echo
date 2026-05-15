@@ -115,6 +115,7 @@ pub use super::signal_group_batch::Entity as SignalGroupBatch;
 pub use super::signal_message::Entity as SignalMessage;
 pub use super::signal_message_group::Entity as SignalMessageGroup;
 pub use super::signal_message_media::Entity as SignalMessageMedia;
+pub use super::signal_message_metadata::Entity as SignalMessageMetadata;
 pub use super::signal_message_queue::Entity as SignalMessageQueue;
 pub use super::signal_message_queue_attachment::Entity as SignalMessageQueueAttachment;
 pub use super::signal_profile::Entity as SignalProfile;

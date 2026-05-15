@@ -118,6 +118,7 @@ pub mod signal_group_batch;
 pub mod signal_message;
 pub mod signal_message_group;
 pub mod signal_message_media;
+pub mod signal_message_metadata;
 pub mod signal_message_queue;
 pub mod signal_message_queue_attachment;
 pub mod signal_profile;

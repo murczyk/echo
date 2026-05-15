@@ -55,7 +55,6 @@ import {
   listAccounts,
   unlinkAccount,
 } from '../../services/api/messenger';
-import { listLogins } from '../../services/api/logins';
 import { PowerAlert } from '../../components/PowerAlert';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -63,14 +62,6 @@ type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 type PhoneForm = {
   messengerType: string;
   phoneNumber: string;
-  name: string;
-  description: string;
-  aorId: number | null;
-};
-
-type ApiForm = {
-  apiEndpoint: string;
-  apiLogin: string | null;
   name: string;
   description: string;
   aorId: number | null;
@@ -84,7 +75,6 @@ type EditForm = {
 };
 
 type LinkStep = 'form' | 'qr' | 'success';
-type LinkMode = 'phone' | 'api';
 
 type QrData = {
   accountId: number;
@@ -147,14 +137,6 @@ const DEFAULT_COLUMN_ORDER = [
 const defaultPhoneForm: PhoneForm = {
   messengerType: 'signal',
   phoneNumber: '',
-  name: '',
-  description: '',
-  aorId: null,
-};
-
-const defaultApiForm: ApiForm = {
-  apiEndpoint: '',
-  apiLogin: null,
   name: '',
   description: '',
   aorId: null,
@@ -262,21 +244,6 @@ function validateDisplayName(name: string): string | null {
 
 function validateAorId(aorId: number | null): string | null {
   if (aorId === null) return 'Потрібно вибрати смугу відповідальності';
-  return null;
-}
-
-function validateApiEndpoint(endpoint: string): string | null {
-  if (!endpoint.trim()) return 'API посилання не може бути порожнім';
-  if (!endpoint.startsWith('https'))
-    return 'API посиланян має бути валідним URL (починається з https://)';
-  if (endpoint.trim().length < 10) return 'API посилання занадто короткe';
-  return null;
-}
-
-function validateApiUser(apiLogin: string | null): string | null {
-  if (!apiLogin) return 'Потрібно вибрати API користувача';
-  if (apiLogin.length < 3)
-    return 'API користувач занадто короткий (мінімум 3 символи)';
   return null;
 }
 
@@ -699,14 +666,9 @@ function AdminMessengerNeoPageBody() {
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [aorsStatus, setAorsStatus] = useState<LoadingStatus>('idle');
-  const [apiUsers, setApiUsers] = useState<Login[]>([]);
-  const [apiUsersStatus, setApiUsersStatus] =
-    useState<LoadingStatus>('idle');
-  const [linkMode, setLinkMode] = useState<LinkMode>('phone');
   const [linkStep, setLinkStep] = useState<LinkStep>('form');
   const [linkSidebarOpen, setLinkSidebarOpen] = useState(false);
   const [phoneForm, setPhoneForm] = useState<PhoneForm>(defaultPhoneForm);
-  const [apiForm, setApiForm] = useState<ApiForm>(defaultApiForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>(
     {}
   );
@@ -782,24 +744,6 @@ function AdminMessengerNeoPageBody() {
     }
   }
 
-  async function loadApiUsers() {
-    if (apiUsersStatus === 'loading' || apiUsersStatus === 'success') return;
-    setApiUsersStatus('loading');
-    try {
-      const rsp = await listLogins({ sortBy: null, filterByRoles: ['Api'] });
-      setApiUsers(rsp.users);
-      setApiUsersStatus('success');
-    } catch (error) {
-      setApiUsersStatus('error');
-      setActionStatus({
-        kind: 'error',
-        message: `Помилка завантаження API користувачів: ${formatErrorMessage(
-          error
-        )}`,
-      });
-    }
-  }
-
   useEffect(() => {
     loadAccounts();
     loadAors();
@@ -830,11 +774,9 @@ function AdminMessengerNeoPageBody() {
   }, [linkStep, qrData?.accountId]);
 
   function resetLinkFlow() {
-    setLinkMode('phone');
     setLinkStep('form');
     setLinkSidebarOpen(false);
     setPhoneForm(defaultPhoneForm);
-    setApiForm(defaultApiForm);
     setFormErrors({});
     setQrData(null);
     setLinkSuccessAccount(null);
@@ -851,21 +793,6 @@ function AdminMessengerNeoPageBody() {
 
   function closeLinkSidebar() {
     resetLinkFlow();
-  }
-
-  function switchLinkMode(nextMode: LinkMode) {
-    setLinkMode(nextMode);
-    setLinkStep('form');
-    setFormErrors({});
-    setLinkStatus(null);
-    if (nextMode === 'phone') {
-      setPhoneForm(defaultPhoneForm);
-    } else {
-      setApiForm(defaultApiForm);
-    }
-    if (nextMode === 'api') {
-      loadApiUsers();
-    }
   }
 
   async function fetchQrCode(accountId: number) {
@@ -912,102 +839,50 @@ function AdminMessengerNeoPageBody() {
   async function submitLinkForm() {
     const errors: Record<string, string> = {};
 
-    if (linkMode === 'phone') {
-      const nameError = validateDisplayName(phoneForm.name);
-      if (nameError) errors.displayName = nameError;
-
-      const aorError = validateAorId(phoneForm.aorId);
-      if (aorError) errors.aorId = aorError;
-
-      if (Object.keys(errors).length > 0) {
-        setFormErrors(errors);
-        return;
-      }
-
-      if (phoneForm.aorId === null) {
-        setFormErrors({ aorId: 'Потрібно вибрати смугу відповідальності' });
-        return;
-      }
-
-      const request: LinkAccountReq = {
-        messenger: phoneForm.messengerType,
-        phone: phoneForm.phoneNumber,
-        displayName: phoneForm.name.trim(),
-        systemServiceName: normalizeToSystemName(phoneForm.name),
-        description: normalizeDescription(phoneForm.description),
-        aorId: phoneForm.aorId,
-      };
-
-      setIsMutating(true);
-      setLinkStatus(null);
-
-      try {
-        const rsp = await linkAccount(request);
-        setAccounts((prev) => [rsp.account, ...prev]);
-        setQrData({
-          accountId: rsp.account.id,
-          qrCode: '',
-          account: rsp.account,
-        });
-        setLinkStep('qr');
-        await fetchQrCode(rsp.account.id);
-      } catch (error) {
-        setLinkStatus({
-          kind: 'error',
-          message: `Помилка прив'язування акаунту: ${formatErrorMessage(
-            error
-          )}`,
-        });
-      } finally {
-        setIsMutating(false);
-      }
-      return;
-    }
-
-    const nameError = validateDisplayName(apiForm.name);
+    const nameError = validateDisplayName(phoneForm.name);
     if (nameError) errors.displayName = nameError;
 
-    const aorError = validateAorId(apiForm.aorId);
+    const aorError = validateAorId(phoneForm.aorId);
     if (aorError) errors.aorId = aorError;
-
-    const apiEndpointError = validateApiEndpoint(apiForm.apiEndpoint);
-    if (apiEndpointError) errors.apiEndpoint = apiEndpointError;
-
-    const apiUserError = validateApiUser(apiForm.apiLogin);
-    if (apiUserError) errors.apiUser = apiUserError;
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
 
-    if (!apiForm.apiLogin || apiForm.aorId === null) {
-      setFormErrors({
-        apiUser: 'Потрібно вибрати API користувача',
-        aorId: 'Потрібно вибрати смугу відповідальності',
-      });
+    if (phoneForm.aorId === null) {
+      setFormErrors({ aorId: 'Потрібно вибрати смугу відповідальності' });
       return;
     }
 
-    const request: LinkEchoOperatorReq = {
-      apiLogin: apiForm.apiLogin,
-      apiEndpoint: apiForm.apiEndpoint.trim(),
-      displayName: apiForm.name.trim(),
-      description: normalizeDescription(apiForm.description),
-      aorId: apiForm.aorId,
+    const request: LinkAccountReq = {
+      messenger: phoneForm.messengerType,
+      phone: phoneForm.phoneNumber,
+      displayName: phoneForm.name.trim(),
+      systemServiceName: normalizeToSystemName(phoneForm.name),
+      description: normalizeDescription(phoneForm.description),
+      aorId: phoneForm.aorId,
     };
 
     setIsMutating(true);
     setLinkStatus(null);
 
     try {
-      const rsp = await linkOperator(request);
+      const rsp = await linkAccount(request);
       setAccounts((prev) => [rsp.account, ...prev]);
-      resetLinkFlow();
+      setQrData({
+        accountId: rsp.account.id,
+        qrCode: '',
+        account: rsp.account,
+      });
+      setLinkStep('qr');
+      await fetchQrCode(rsp.account.id);
     } catch (error) {
       setLinkStatus({
         kind: 'error',
-        message: `Помилка прив'язування акаунту: ${formatErrorMessage(error)}`,
+        message: `Помилка прив'язування акаунту: ${formatErrorMessage(
+          error
+        )}`,
       });
     } finally {
       setIsMutating(false);
@@ -1149,7 +1024,6 @@ function AdminMessengerNeoPageBody() {
     const account = accounts.find((item) => item.id === accountId);
     if (!account) return;
     setLinkSidebarOpen(true);
-    setLinkMode('phone');
     setLinkStep('qr');
     setQrData({ accountId, qrCode: '', account });
     setLinkStatus(null);
@@ -1160,12 +1034,6 @@ function AdminMessengerNeoPageBody() {
   const aorOptions = aors.map((aor) => (
     <MenuItem key={aor.id} value={aor.id}>
       {aor.name}
-    </MenuItem>
-  ));
-
-  const apiUserOptions = apiUsers.map((user) => (
-    <MenuItem key={user.login} value={user.login}>
-      {user.login}
     </MenuItem>
   ));
 
@@ -1237,112 +1105,45 @@ function AdminMessengerNeoPageBody() {
         {linkStep === 'form' ? (
           <Box className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="space-y-6">
-              <Box className="flex gap-3">
-                <PowerButton
-                  variant={linkMode === 'phone' ? 'contained' : 'outlined'}
-                  onClick={() => switchLinkMode('phone')}
-                >
-                  Телефон
-                </PowerButton>
-                <PowerButton
-                  variant={linkMode === 'api' ? 'contained' : 'outlined'}
-                  onClick={() => switchLinkMode('api')}
-                >
-                  API
-                </PowerButton>
-              </Box>
-
               <div>
-                {linkMode === 'phone' ? (
-                  <>
-                    <TextField
-                      select
-                      label="Тип месенджера"
-                      value={phoneForm.messengerType}
-                      onChange={(event) =>
-                        setPhoneForm((prev) => ({
-                          ...prev,
-                          messengerType: event.target.value,
-                        }))
-                      }
-                      fullWidth
-                    >
-                      <MenuItem value="signal">Signal</MenuItem>
-                      <MenuItem value="whatsapp">WhatsApp</MenuItem>
-                      <MenuItem value="echo_operator">ЕХО Оператор</MenuItem>
-                    </TextField>
-                    <div className="pt-6">
-                      <TextField
-                        label="Номер телефону"
-                        value={phoneForm.phoneNumber}
-                        onChange={(event) =>
-                          setPhoneForm((prev) => ({
-                            ...prev,
-                            phoneNumber: event.target.value,
-                          }))
-                        }
-                        placeholder="+380XXXXXXXXX"
-                        fullWidth
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <TextField
-                      label="API посилання"
-                      value={apiForm.apiEndpoint}
-                      onChange={(event) => {
-                        setApiForm((prev) => ({
-                          ...prev,
-                          apiEndpoint: event.target.value,
-                        }));
-                        setFormErrors((prev) => ({ ...prev, apiEndpoint: '' }));
-                      }}
-                      placeholder="https://api.example.com/webhook"
-                      error={Boolean(formErrors.apiEndpoint)}
-                      helperText={formErrors.apiEndpoint}
-                      fullWidth
-                    />
-                    <div className="pt-6">
-                      <TextField
-                        select
-                        label="API Користувач"
-                        value={apiForm.apiLogin || ''}
-                        onChange={(event) => {
-                          setApiForm((prev) => ({
-                            ...prev,
-                            apiLogin: event.target.value || null,
-                          }));
-                          setFormErrors((prev) => ({ ...prev, apiUser: '' }));
-                        }}
-                        fullWidth
-                        disabled={apiUsersStatus === 'loading'}
-                        error={Boolean(formErrors.apiUser)}
-                        helperText={formErrors.apiUser}
-                      >
-                        {apiUsersStatus === 'loading' ? (
-                          <MenuItem value="">Завантаження...</MenuItem>
-                        ) : (
-                          apiUserOptions
-                        )}
-                      </TextField>
-                    </div>
-                  </>
-                )}
-
+                <TextField
+                  select
+                  label="Тип месенджера"
+                  value={phoneForm.messengerType}
+                  onChange={(event) =>
+                    setPhoneForm((prev) => ({
+                      ...prev,
+                      messengerType: event.target.value,
+                    }))
+                  }
+                  fullWidth
+                >
+                  <MenuItem value="signal">Signal</MenuItem>
+                  <MenuItem value="whatsapp">WhatsApp</MenuItem>
+                </TextField>
+                <div className="pt-6">
+                  <TextField
+                    label="Номер телефону"
+                    value={phoneForm.phoneNumber}
+                    onChange={(event) =>
+                      setPhoneForm((prev) => ({
+                        ...prev,
+                        phoneNumber: event.target.value,
+                      }))
+                    }
+                    placeholder="+380XXXXXXXXX"
+                    fullWidth
+                  />
+                </div>
                 <div className="pt-6">
                   <TextField
                     label="Назва акаунту"
-                    value={linkMode === 'phone' ? phoneForm.name : apiForm.name}
+                    value={phoneForm.name}
                     onChange={(event) => {
-                      if (linkMode === 'phone') {
-                        setPhoneForm((prev) => ({
-                          ...prev,
-                          name: event.target.value,
-                        }));
-                      } else {
-                        setApiForm((prev) => ({ ...prev, name: event.target.value }));
-                      }
+                      setPhoneForm((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }));
                       setFormErrors((prev) => ({ ...prev, displayName: '' }));
                     }}
                     error={Boolean(formErrors.displayName)}
@@ -1355,20 +1156,12 @@ function AdminMessengerNeoPageBody() {
               <TextField
                 select
                 label="Смуга відповідальності"
-                value={
-                  linkMode === 'phone'
-                    ? phoneForm.aorId ?? ''
-                    : apiForm.aorId ?? ''
-                }
+                value={phoneForm.aorId ?? ''}
                 onChange={(event) => {
                   const value = event.target.value
                     ? Number(event.target.value)
                     : null;
-                  if (linkMode === 'phone') {
-                    setPhoneForm((prev) => ({ ...prev, aorId: value }));
-                  } else {
-                    setApiForm((prev) => ({ ...prev, aorId: value }));
-                  }
+                  setPhoneForm((prev) => ({ ...prev, aorId: value }));
                   setFormErrors((prev) => ({ ...prev, aorId: '' }));
                 }}
                 fullWidth
@@ -1385,23 +1178,12 @@ function AdminMessengerNeoPageBody() {
 
               <TextField
                 label="Опис (необов'язково)"
-                value={
-                  linkMode === 'phone'
-                    ? phoneForm.description
-                    : apiForm.description
-                }
+                value={phoneForm.description}
                 onChange={(event) => {
-                  if (linkMode === 'phone') {
-                    setPhoneForm((prev) => ({
-                      ...prev,
-                      description: event.target.value,
-                    }));
-                  } else {
-                    setApiForm((prev) => ({
-                      ...prev,
-                      description: event.target.value,
-                    }));
-                  }
+                  setPhoneForm((prev) => ({
+                    ...prev,
+                    description: event.target.value,
+                  }));
                 }}
                 multiline
                 rows={3}

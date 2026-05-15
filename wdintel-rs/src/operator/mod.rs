@@ -1,5 +1,6 @@
 use crate::entities::{
-    datasource, datasource_group, signal_group, signal_profile,
+    datasource, datasource_group, signal_group, signal_message_metadata,
+    signal_profile,
 };
 use crate::error::AppError;
 use crate::h;
@@ -7,7 +8,7 @@ use crate::messenger::types::Message;
 use crate::types::Env;
 use crate::types::ShortContext;
 use actix_web::post;
-use actix_web::web::{Data, Json};
+use actix_web::web::Json;
 use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
@@ -25,55 +26,130 @@ async fn message_submit(
     crate::users::has_role(&env.dbx, &login, "Api")
         .await
         .c(h!())?;
-    let datasource_id = load_api_datasource(&env, &login).await.c(h!())?;
+
     let txn = env.dbx.begin().await.c(h!())?;
-    let sender_id = ensure_profile(&txn, req.profile.clone()).await.c(h!())?;
-    let group_master_key = ensure_group(datasource_id, &txn, req.group.clone())
+    let datasource = ensure_api_datasource(&login, &txn).await.c(h!())?;
+    let message_uid = if datasource.enabled.unwrap_or(false) {
+        let sender_id =
+            ensure_profile(&txn, req.profile.clone()).await.c(h!())?;
+        let group_master_key =
+            ensure_group(datasource.id, &txn, req.group.clone())
+                .await
+                .c(h!())?;
+        let timestamp = chrono::DateTime::from_timestamp_millis(req.timestamp)
+            .c(h!())?
+            .naive_utc();
+
+        let message = Message {
+            body: req.message.to_owned(),
+            group_id: group_master_key,
+            sender: Some(sender_id),
+            timestamp,
+            datasource_id: datasource.id,
+            inbox_message_id: None,
+        };
+        let signal_message_uid =
+            crate::message_queue::process_signal_message_queue_item(
+                message,
+                Vec::<MessageAttachmentF1>::new(),
+                &mut env.redis.clone(),
+                env.settlements.clone(),
+                &env.rq,
+                &env.config,
+                &env.s3,
+                &txn,
+                true,
+            )
+            .await
+            .c(h!())?;
+
+        let types::OperatorInboxMessage {
+            instance_id,
+            metadata,
+            ..
+        } = req.0;
+
+        enqueue_message_dmr_metadata(
+            &signal_message_uid,
+            instance_id,
+            metadata,
+            &txn,
+        )
         .await
         .c(h!())?;
-    let timestamp = chrono::DateTime::from_timestamp_millis(req.timestamp)
-        .c(h!())?
-        .naive_utc();
 
-    let message = Message {
-        body: req.message.to_owned(),
-        group_id: group_master_key,
-        sender: Some(sender_id),
-        timestamp,
-        datasource_id,
-        inbox_message_id: None,
+        signal_message_uid
+    } else {
+        Default::default()
     };
-    let message_uid = crate::message_queue::process_signal_message_queue_item(
-        message,
-        Vec::<MessageAttachmentF1>::new(),
-        &mut env.redis.clone(),
-        env.settlements.clone(),
-        &env.rq,
-        &env.config,
-        &env.s3,
-        &txn,
-        true,
-    )
-    .await
-    .c(h!())?;
+
     txn.commit().await.c(h!())?;
     Ok(Json(types::SubmitMessageRsp { message_uid }))
 }
 
-async fn load_api_datasource(
-    env: &Data<Env>,
-    login: &String,
-) -> anyhow::Result<i64> {
-    let id = datasource::Entity::find()
+async fn enqueue_message_dmr_metadata(
+    message_uid: &str,
+    instance_id: String,
+    metadata: types::Metadata,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    if metadata.dmr_sender_id.is_some()
+        || metadata.dmr_call_group_id.is_some()
+        || metadata.dmr_color_code.is_some()
+    {
+        let model = signal_message_metadata::ActiveModel {
+            instance_id: Set(instance_id),
+            message_uid: Set(message_uid.to_string()),
+            dmr_sender_id: Set(metadata.dmr_sender_id),
+            dmr_call_group_id: Set(metadata.dmr_call_group_id),
+            dmr_color_code: Set(metadata.dmr_color_code),
+            ..Default::default()
+        };
+
+        model.insert(txn).await.c(h!())?;
+    }
+
+    Ok(())
+}
+
+async fn ensure_api_datasource(
+    login: &str,
+    txn: &DatabaseTransaction,
+) -> Result<datasource::Model, AppError> {
+    let now = chrono::Utc::now().naive_utc();
+    let maybe_datasource = datasource::Entity::find()
         .filter(datasource::Column::ApiLogin.eq(login))
         .filter(datasource::Column::Kind.eq("echo_operator"))
-        .select_only()
-        .column(datasource::Column::Id)
-        .into_tuple::<i64>()
-        .one(&env.dbx)
+        .one(txn)
         .await
         .c(h!())?;
-    id.c(h!())
+    if let Some(mut datasource) = maybe_datasource {
+        let is_deleted = datasource.deleted;
+        let mut updated_datasource = datasource.into_active_model();
+        if is_deleted {
+            // ressurect but not re-enable datasource
+            updated_datasource.deleted = Set(false);
+            updated_datasource.updated_by = Set(Some(login.to_string()));
+            updated_datasource.enabled = Set(Some(false));
+        } else {
+            updated_datasource.last_sync_at = Set(Some(now));
+        }
+        datasource = updated_datasource.update(txn).await.c(h!())?;
+        Ok(datasource)
+    } else {
+        let new_datasource = datasource::ActiveModel {
+            kind: Set("echo_operator".to_string()),
+            display_name: Set(format!("EХО Оператор {login}")),
+            enabled: Set(Some(true)),
+            api_login: Set(Some(login.to_string())),
+            updated_by: Set(Some(login.to_string())),
+            last_sync_at: Set(Some(now)),
+            deleted: Set(false),
+            ..Default::default()
+        };
+        let datasource = new_datasource.insert(txn).await.c(h!())?;
+        Ok(datasource)
+    }
 }
 
 async fn ensure_profile(
