@@ -1,8 +1,8 @@
 use crate::config::*;
 use crate::error::AppError;
+use crate::types::info;
 use crate::types::*;
 use anyhow::bail;
-use log::info;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -66,7 +66,7 @@ async fn fetch_config(secret_config: &VaultConfig) -> anyhow::Result<()> {
                 if attempt_count > 3 {
                     bail!(e)
                 }
-                debug!("attempt to fetch secret cnfig failed: {e:?}");
+                debug!("attempt to fetch secret cnfig failed: {:?}", e);
                 attempt_count += 1;
                 // minimum between sleep_duration * 5 and MAX_SLEEP_SECONDS
                 let sleep_duration = std::cmp::min(

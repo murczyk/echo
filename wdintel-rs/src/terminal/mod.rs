@@ -297,7 +297,7 @@ pub fn oneoff_test_opencv() -> Result<(), AppError> {
 // Stub implementations when OpenCV feature is disabled
 #[cfg(not(feature = "opencv"))]
 pub fn cut_out_photo(_in_path: &str, _out_path: &str) -> Result<(), AppError> {
-    log::warn!(
+    warn!(
         "opencv feature disabled; cut_out_photo({_in_path}, {_out_path}) is a no-op"
     );
     Ok(())
@@ -305,7 +305,7 @@ pub fn cut_out_photo(_in_path: &str, _out_path: &str) -> Result<(), AppError> {
 
 #[cfg(not(feature = "opencv"))]
 pub fn oneoff_test_opencv() -> Result<(), AppError> {
-    log::warn!("opencv feature disabled; oneoff_test_opencv is a no-op");
+    warn!("opencv feature disabled; oneoff_test_opencv is a no-op");
     Ok(())
 }
 

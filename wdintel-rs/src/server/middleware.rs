@@ -538,7 +538,7 @@ pub async fn activity_details_worker(
 
             let mut success = true;
             if let Err(e) = client.simple_query(&sql).await {
-                warn!("Failed to bulk insert activity_details: {e:?}");
+                warn!("Failed to bulk insert activity_details: {:?}", e);
                 success = false;
             }
 

@@ -9,7 +9,7 @@ pub async fn aor_assignments_check_worker(dbx: &DatabaseConnection) {
         let _loop_guard =
             crate::utils::worker_watch::loop_guard("aor_assignments_worker");
         if let Err(e) = aor_assignments_check_once(dbx).await {
-            error!("aor_assignments_check_worker error: {e:?}");
+            error!("aor_assignments_check_worker error: {:?}", e);
         }
         tokio::time::sleep(std::time::Duration::from_secs(CHECK_INTERVAL_SECS))
             .await;

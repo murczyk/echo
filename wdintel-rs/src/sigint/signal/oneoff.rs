@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use crate::entities::{sigint_callsign, sigint_signal, sigint_unit};
 use crate::error::AppError;
+use crate::types::{info, warn};
 use crate::types::{Mode, ShortContext};
 use crate::{h, OneoffImportSignalsCallsignsCsvPs};
-use log::{info, warn};
 use sea_orm::prelude::*;
 use sea_orm::*;
 use serde::Deserialize;

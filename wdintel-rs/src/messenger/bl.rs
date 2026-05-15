@@ -31,7 +31,10 @@ pub async fn is_account_linked(
         return AccountSyncResult::default();
     };
     let Some(client_name) = datasource.system_service_name else {
-        info!("client name is missing for account {id}, account details: {datasource:?}");
+        info!(
+            "client name is missing for account {id}, account details: {:?}",
+            datasource
+        );
         return AccountSyncResult::default();
     };
     let source = if datasource.messenger.eq("signal") {
@@ -48,7 +51,7 @@ pub async fn is_account_linked(
     let is_linked = echo_im::is_client_logged_in(&client_name, source, txn)
         .await
         .unwrap_or_else(|e| {
-            error!("failed to check is_client_logged_in: {e:#?}");
+            error!("failed to check is_client_logged_in: {:#?}", e);
             false
         });
     AccountSyncResult {
@@ -181,7 +184,7 @@ pub async fn link_account(
 
     if let Some(acc) = existing_account {
         let msg = format!("Номером телефону {phone_number} вже прив'язано");
-        error!("{msg}: {acc:?}");
+        error!("{msg}: {:?}", acc);
         return Err(AppError::BL { msg });
     }
 
@@ -754,11 +757,11 @@ pub async fn sync_signal_once(client_name: String, config: Config) {
     let db = match new_pg_pool_from_config(&config).await.c(h!()) {
         Ok(db) => db,
         Err(e) => {
-            error!("failed to connect to db for initial signal sync, client '{client_name}': {e:#?}");
+            error!("failed to connect to db for initial signal sync, client '{client_name}': {:#?}", e);
             return;
         }
     };
     if let Err(e) = signal_worker_tick_once(&client_name, &db).await {
-        error!("failed to perform initial signal sync, client '{client_name}': {e:#?}");
+        error!("failed to perform initial signal sync, client '{client_name}': {:#?}", e);
     }
 }

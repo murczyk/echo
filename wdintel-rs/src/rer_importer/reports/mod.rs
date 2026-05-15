@@ -86,19 +86,20 @@ pub(crate) async fn cleanup_old_reports_nofail(
                         std::fs::remove_file(storage_path.join(&filepath))
                     {
                         warn!(
-                            "Unable to delete file {filepath:?}: error {e:?}"
+                            "Unable to delete file {:?}: error {:?}",
+                            filepath, e
                         );
                     }
                     let mut log_active_model = one_log.into_active_model();
                     log_active_model.deprecated_at =
                         Set(Some(Utc::now().naive_utc()));
                     if let Err(e) = log_active_model.update(dbx).await {
-                        warn!("Unable to update DB row, error {e:?}");
+                        warn!("Unable to update DB row, error {:?}", e);
                     }
                 }
             }
             Err(e) => {
-                warn!("DB error in job that cleans up old reports: {e:?}")
+                warn!("DB error in job that cleans up old reports: {:?}", e)
             }
         }
     } else {

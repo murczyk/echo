@@ -3,9 +3,9 @@ use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
 use crate::storage;
+use crate::types::{error, warn};
 use crate::types::{Env, ShortContext};
 use echo_im::types::MessageAttachmentF1;
-use log::{error, warn};
 use opendal::Operator;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, NotSet, Set};
 use std::path::Path;
@@ -135,7 +135,7 @@ pub async fn store_media_attachments(
     if delete_uploaded {
         for file in files_to_delete {
             if let Err(e) = tokio::fs::remove_file(&file).await {
-                error!("failed to delete attachment file {file}: {e:?}");
+                error!("failed to delete attachment file {file}: {:?}", e);
             }
         }
     }

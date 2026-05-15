@@ -2,9 +2,9 @@ use crate::entities::signal_message;
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
+use crate::types::{error, warn};
 use chrono::{DateTime, Local};
 use chrono_tz::Tz;
-use log::{error, warn};
 use sea_orm::*;
 
 const SPLITTABLE_MESSAGE_SIZE: usize = 5000;

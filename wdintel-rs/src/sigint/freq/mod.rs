@@ -10,7 +10,6 @@ use actix_web::post;
 use actix_web::web::{Data, Json};
 use chrono::prelude::*;
 use lazy_static::lazy_static;
-use log::*;
 use regex::Regex;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_orm::{

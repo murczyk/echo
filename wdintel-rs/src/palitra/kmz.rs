@@ -4,9 +4,9 @@ use crate::config::{
 use crate::h;
 use crate::kml::types::*;
 use crate::palitra::types::*;
+use crate::types::{error, info};
 use crate::types::{Env, ShortContext};
 use chrono::Utc;
-use log::{error, info};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self};
@@ -123,7 +123,7 @@ pub async fn load_coordinates_from_kmz(
                 let coordinates = match load_coordinates_from_kml(path).await {
                     Ok(c) => c,
                     Err(e) => {
-                        error!("failed to read all coordinates from kmz {kmz_path:?}, bad file at {path:?}: {e:?}");
+                        error!("failed to read all coordinates from kmz {:?}, bad file at {:?}: {:?}", kmz_path, path, e);
                         continue;
                     }
                 };
@@ -208,7 +208,7 @@ pub async fn load_coordinates_from_kml(
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to parse line coordinates {coords}: {e:?}")
+                                error!("Failed to parse line coordinates {coords}: {:?}", e)
                             }
                         }
                     }
@@ -251,7 +251,7 @@ fn m_add_coordinates(
                     values.push(point);
                 }
             }
-            Err(e) => error!("Failed to parse coordinates {c}: {e:?}"),
+            Err(e) => error!("Failed to parse coordinates {c}: {:?}", e),
         }
     }
 }
@@ -304,7 +304,10 @@ pub async fn extract_top_colors_from_kmz(
                         );
                     }
                     Err(e) => {
-                        error!("Failed to extract colors from {path:?}: {e:?}");
+                        error!(
+                            "Failed to extract colors from {:?}: {:?}",
+                            path, e
+                        );
                         continue;
                     }
                 }

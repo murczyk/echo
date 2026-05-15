@@ -8,7 +8,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::organism::types::CheckOrganismGoiConnectionReq;
-use crate::types::{Env, ShortContext};
+use crate::types::{info, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
 use calamine::{Data, Reader, Xlsx};
 use chrono::{NaiveDateTime, TimeZone, Utc};
@@ -115,24 +115,24 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     let remote_paths = goi_remote_data_paths(integration);
     let integration_label = goi_integration_log_label(integration);
     let sync_timestamp = goi_sync_timestamp_kyiv();
-    log::info!(
+    info!(
         "[goi-sync] Starting GOI callsigns knowledge sync for {integration_label}; remote workbook={}",
         remote_paths.knowledge_xlsx
     );
 
     let current_callsigns = load_live_goi_callsigns(&env.dbx).await.c(h!())?;
-    log::info!(
+    info!(
         "[goi-sync] Prepared {} live GOI callsigns for {integration_label}",
         current_callsigns.len()
     );
     for callsign in &current_callsigns {
-        log::info!(
+        info!(
             "[goi-sync] Expected GOI knowledge row for {integration_label}: {}",
             format_goi_callsign_state_for_log(callsign)
         );
     }
 
-    log::info!(
+    info!(
         "[goi-sync] Downloading GOI knowledge workbook for {integration_label} from {}",
         remote_paths.knowledge_xlsx
     );
@@ -142,31 +142,31 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     )
     .await
     .c(h!())?;
-    log::info!(
+    info!(
         "[goi-sync] Downloaded GOI knowledge workbook for {integration_label}: {} bytes from {}",
         knowledge_xlsx.len(),
         remote_paths.knowledge_xlsx
     );
     let workbook =
         KnowledgeWorkbookData::from_xlsx_bytes(&knowledge_xlsx).c(h!())?;
-    log::info!(
+    info!(
         "[goi-sync] Parsed GOI knowledge workbook for {integration_label}: {} sheets",
         workbook.sheets.len()
     );
     let previous_callsigns = workbook.extract_goi_callsigns_state();
-    log::info!(
+    info!(
         "[goi-sync] Found {} existing worker-managed GOI callsigns in workbook for {integration_label}",
         previous_callsigns.len()
     );
     for callsign in &previous_callsigns {
-        log::info!(
+        info!(
             "[goi-sync] Existing workbook GOI callsign for {integration_label}: {}",
             format_goi_callsign_state_for_log(callsign)
         );
     }
     let diff = diff_goi_callsigns(&previous_callsigns, &current_callsigns);
 
-    log::info!(
+    info!(
         "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}",
         remote_paths.knowledge_xlsx,
         format_goi_callsign_ids(&diff.new_ids),
@@ -174,7 +174,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         format_goi_callsign_ids(&diff.deleted_ids),
     );
 
-    log::info!(
+    info!(
         "[goi-sync] Rebuilding GOI knowledge workbook for {integration_label}"
     );
     let knowledge_xlsx = apply_goi_callsigns_to_xlsx(
@@ -185,11 +185,11 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         &sync_timestamp,
     )
     .c(h!())?;
-    log::info!(
+    info!(
         "[goi-sync] Rebuilt GOI knowledge workbook for {integration_label}: {} bytes",
         knowledge_xlsx.len()
     );
-    log::info!(
+    info!(
         "[goi-sync] Uploading GOI knowledge workbook for {integration_label} to {}",
         remote_paths.knowledge_xlsx
     );
@@ -200,7 +200,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     )
     .await
     .c(h!())?;
-    log::info!(
+    info!(
         "[goi-sync] Finished GOI callsigns knowledge sync for {integration_label}"
     );
     Ok(())
@@ -265,7 +265,7 @@ async fn load_live_goi_callsigns(
     let source_names = load_source_names(db).await.c(h!())?;
     let network_freqs = load_live_network_freqs(db).await.c(h!())?;
     let callsigns = load_live_callsign_rows(db).await.c(h!())?;
-    log::info!(
+    info!(
         "[goi-sync] Loaded GOI callsign sync source data: {} source names, {} active network frequency groups, {} candidate callsign rows",
         source_names.len(),
         network_freqs.len(),
@@ -274,14 +274,14 @@ async fn load_live_goi_callsigns(
 
     let mut out = Vec::new();
     for callsign in callsigns {
-        log::info!(
+        info!(
             "[goi-sync] Evaluating candidate GOI callsign row: {}",
             format_live_callsign_row_for_log(&callsign)
         );
         let Some(frequency) =
             effective_live_callsign_frequency(&callsign, &network_freqs)
         else {
-            log::info!(
+            info!(
                 "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because neither the callsign nor the network has a frequency eligible for GOI sync",
                 callsign.id,
                 callsign.network_id
@@ -290,7 +290,7 @@ async fn load_live_goi_callsigns(
         };
         let callsign_name = callsign.sigint_callsign.trim().to_string();
         if callsign_name.is_empty() {
-            log::info!(
+            info!(
                 "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because callsign is empty after trim",
                 callsign.id,
                 callsign.network_id
@@ -298,7 +298,7 @@ async fn load_live_goi_callsigns(
             continue;
         }
         if callsign.sc_deleted == Some(true) {
-            log::info!(
+            info!(
                 "[goi-sync] Candidate GOI callsign row id={} network_id={} references a deleted sigint_callsign; exporting with network-local fields only",
                 callsign.id,
                 callsign.network_id
@@ -318,14 +318,14 @@ async fn load_live_goi_callsigns(
             ),
             row_ref: None,
         };
-        log::info!(
+        info!(
             "[goi-sync] Selected GOI callsign row: {}",
             format_goi_callsign_state_for_log(&goi_callsign)
         );
         out.push(goi_callsign);
     }
     out.sort_by(|left, right| left.id.cmp(&right.id));
-    log::info!(
+    info!(
         "[goi-sync] Finished preparing GOI callsigns: {} rows selected",
         out.len()
     );
@@ -917,8 +917,10 @@ fn apply_goi_callsigns_to_xlsx(
     affected_sheet_names.insert(target_sheet_name.clone());
     let affected_sheet_names =
         affected_sheet_names.into_iter().collect::<Vec<_>>();
-    log::info!(
-        "[goi-sync] Rewriting GOI workbook sheets: target_sheet={target_sheet_name:?}, affected_sheets={affected_sheet_names:?}, previous_callsigns={}, current_callsigns={}",
+    info!(
+        "[goi-sync] Rewriting GOI workbook sheets: target_sheet={:?}, affected_sheets={:?}, previous_callsigns={}, current_callsigns={}",
+        target_sheet_name,
+        affected_sheet_names,
         previous_callsigns.len(),
         current_callsigns.len()
     );
@@ -947,7 +949,7 @@ fn apply_goi_callsigns_to_xlsx(
         } else {
             &[]
         };
-        log::info!(
+        info!(
             "[goi-sync] Rewriting GOI knowledge sheet {sheet_name}: previous_worker_rows={}, next_worker_rows={}, sheet_path={sheet_path}",
             previous_sheet_callsigns.len(),
             current_sheet_callsigns.len()
@@ -1199,11 +1201,14 @@ fn rewrite_sheet_xml(
         .copied()
         .filter(|row_num| !worker_row_nums.contains(row_num))
         .collect::<Vec<_>>();
-    log::info!(
-        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_nums={worker_row_nums:?}, target_worker_row_nums={target_worker_row_nums:?}, appended_worker_row_nums={appended_worker_row_nums:?}",
+    info!(
+        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_nums={:?}, target_worker_row_nums={:?}, appended_worker_row_nums={:?}",
         rows.len(),
         previous_callsigns.len(),
-        current_callsigns.len()
+        current_callsigns.len(),
+        worker_row_nums,
+        target_worker_row_nums,
+        appended_worker_row_nums
     );
 
     let mut out_rows = Vec::new();
@@ -1242,7 +1247,7 @@ fn rewrite_sheet_xml(
         out.push_str(row);
     }
     out.push_str(&suffix);
-    log::info!(
+    info!(
         "[goi-sync] rewrite_sheet_xml finished: output_rows={}",
         out_rows.len()
     );

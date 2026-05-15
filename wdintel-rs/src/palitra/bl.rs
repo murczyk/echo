@@ -1889,7 +1889,7 @@ where
             {
                 Ok(c) => Some(c),
                 Err(e) => {
-                    error!("failed to calculate convex hull center: {e:#?}");
+                    error!("failed to calculate convex hull center: {:#?}", e);
                     None
                 }
             };
@@ -2023,9 +2023,9 @@ where
             Ok(convex_hull) => Some(convex_hull),
             Err(e) => {
                 error!(
-                        "failed to calculate convex hull for palitra geometry {}: {e:#?}",
-                        palitra_geometry_id
-                    );
+                    "failed to calculate convex hull for palitra geometry {}: {:#?}",
+                    palitra_geometry_id, e
+                );
                 None
             }
         };
@@ -2192,7 +2192,10 @@ async fn update_palitra_from_req<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    info!("updating palitra:\n old value {palitra_val:?}\n changes requested: {req:?}");
+    info!(
+        "updating palitra:\n old value {:?}\n changes requested: {:?}",
+        palitra_val, req
+    );
     let request = req.clone();
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
@@ -2266,7 +2269,10 @@ async fn update_palitra_from_v2_req<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    info!("updating palitra via v2:\n old value {palitra_val:?}\n changes requested: {req:?}");
+    info!(
+        "updating palitra via v2:\n old value {:?}\n changes requested: {:?}",
+        palitra_val, req
+    );
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
     let palitra = palitra.update(txn).await.c(h!())?;

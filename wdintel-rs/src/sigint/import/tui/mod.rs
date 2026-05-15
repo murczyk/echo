@@ -80,7 +80,7 @@ pub async fn run_merge_unit_tui(mode: Mode) -> Result<(), AppError> {
     if let Err(e) =
         merge_all(&db, records_to_merge, models, DataKind::Units).await
     {
-        error!("{e:#?}");
+        error!("{:#?}", e);
     }
     Ok(())
 }
@@ -146,7 +146,7 @@ pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
     if let Err(e) =
         merge_all(&db, records_to_merge, models, DataKind::Networks).await
     {
-        error!("{e:#?}");
+        error!("{:#?}", e);
     }
     Ok(())
 }
@@ -163,7 +163,7 @@ pub async fn run_merge_network_freq_tui(mode: Mode) -> Result<(), AppError> {
     if let Err(e) =
         merge_all(&db, records_to_merge, details, DataKind::NetworkFeqs).await
     {
-        error!("{e:#?}");
+        error!("{:#?}", e);
     }
     Ok(())
 }

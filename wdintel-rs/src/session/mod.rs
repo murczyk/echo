@@ -112,7 +112,7 @@ pub async fn run_activity_worker_nofail(
     cancel_token: CancellationToken,
 ) {
     if let Err(err) = run_activity_worker(env, cancel_token).await {
-        error!("session activity worker failed: {err:?}");
+        error!("session activity worker failed: {:?}", err);
     }
 }
 
@@ -157,7 +157,7 @@ async fn run_activity_worker(
                     query_timeout,
                 )
                 .await {
-                    warn!("Failed to insert activity_page_visit: {err:?}");
+                    warn!("Failed to insert activity_page_visit: {:?}", err);
                 }
             }
         }
@@ -224,12 +224,12 @@ pub async fn get_all_sessions(
         let sessions: Vec<Option<RedisSession>> =
             redis.mget(session_keys).await.c(h!())?;
 
-        trace!("sessions: {sessions:?}");
+        trace!("sessions: {:?}", sessions);
         let existing_sessions = sessions
             .into_iter()
             .flatten()
             .collect::<Vec<RedisSession>>();
-        trace!("Existing sessions: {existing_sessions:?}");
+        trace!("Existing sessions: {:?}", existing_sessions);
         // remove ids that exist in SET but have no appropriate key due to expiration by TTL
         let existing_ids_s = existing_sessions
             .iter()
@@ -245,7 +245,7 @@ pub async fn get_all_sessions(
         }
         let orphant_ids: HashSet<_> =
             session_ids.difference(&existing_ids).collect();
-        trace!("sessions, orphant_ids: {orphant_ids:?}");
+        trace!("sessions, orphant_ids: {:?}", orphant_ids);
         if !orphant_ids.is_empty() {
             let orphan_ids_str: Vec<String> =
                 orphant_ids.iter().map(|s| s.to_string()).collect();

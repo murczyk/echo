@@ -1,4 +1,4 @@
-use log::{info, warn};
+use crate::types::{info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;

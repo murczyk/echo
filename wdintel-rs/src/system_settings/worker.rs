@@ -6,12 +6,12 @@ use crate::event_stream::types::{EventMsg, EventType};
 use crate::h;
 use crate::messenger::id::update_message_with_uid;
 use crate::system_settings::get_active_system_settings;
+use crate::types::{error, info, warn};
 use crate::types::{Mode, ShortContext};
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use lazy_static::lazy_static;
-use log::{error, info, warn};
 use rand::Rng;
 use redis::aio::ConnectionManager;
 use regex::Regex;
@@ -55,7 +55,8 @@ pub async fn run_rer_duty_historical_interceptions_worker_nofail(mode: Mode) {
             }
             Err(e) => {
                 error!(
-                    "rer_duty_historical_interceptions_worker failed: {e:#?}"
+                    "rer_duty_historical_interceptions_worker failed: {:#?}",
+                    e
                 );
                 tokio::time::sleep(tokio::time::Duration::from_secs(
                     WORKER_ERROR_SLEEP_SEC,

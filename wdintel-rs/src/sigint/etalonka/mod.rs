@@ -11,7 +11,6 @@ use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
 use docx_rs::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::*;
 
 use crate::config::Config;
 use crate::rer_importer::reports::{

@@ -4,7 +4,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::here;
 use crate::types::*;
-use log::{error, warn};
+use crate::types::{error, warn};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
 
@@ -233,7 +233,8 @@ async fn load_full_message(
             if let Some(text) = &msg.message {
                 if text.len() > 1000 {
                     warn!(
-                        "missing full text attachment on {text}, found: {attachments:?}"
+                        "missing full text attachment on {text}, found: {:?}",
+                        attachments
                     );
                 }
             }
@@ -264,7 +265,8 @@ pub async fn receive_groups(
 ) -> Result<Vec<Group>, AppError> {
     if config.signal_api_phone.is_empty() {
         debug!(
-            "signal_api_phone is empty, returning empty groups list. config: {config:?}"
+            "signal_api_phone is empty, returning empty groups list. config: {:?}",
+            config
         );
         return Ok(vec![]);
     }

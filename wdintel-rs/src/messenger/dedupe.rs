@@ -1,4 +1,4 @@
-use log::warn;
+use crate::types::warn;
 use sha256;
 use std::path::Path;
 
@@ -25,14 +25,14 @@ where
         let size_bytes = match tokio::fs::metadata(path).await {
             Ok(meta) => Some(meta.len()),
             Err(e) => {
-                warn!("failed to read attachment metadata for {path}: {e:?}");
+                warn!("failed to read attachment metadata for {path}: {:?}", e);
                 None
             }
         };
         let hash = match sha256::try_async_digest(Path::new(path)).await {
             Ok(hash) => Some(hash),
             Err(e) => {
-                warn!("failed to hash attachment {path}: {e:?}");
+                warn!("failed to hash attachment {path}: {:?}", e);
                 None
             }
         };

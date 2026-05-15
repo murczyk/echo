@@ -9,7 +9,6 @@ use chrono::*;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 
-use log::*;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
 
 const MERGE_NETWORKS_API_LOGIN: &str = "merge_networks_api";
@@ -131,7 +130,7 @@ pub async fn oneoff_merge_two_networks(
         }
         Err(e) => {
             txn.rollback().await.context(h!())?;
-            error!("❌ Merge failed: {e:?}");
+            error!("❌ Merge failed: {:?}", e);
         }
     }
 

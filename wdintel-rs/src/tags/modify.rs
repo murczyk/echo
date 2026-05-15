@@ -3,9 +3,9 @@ use crate::entities::sigint_inbox_item_tag;
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::types::{InboxMessage, InboxMessageTag};
+use crate::types::info;
 use crate::types::ShortContext;
 use itertools::{EitherOrBoth, Itertools};
-use log::info;
 use sea_orm::*;
 use std::collections::BTreeSet;
 

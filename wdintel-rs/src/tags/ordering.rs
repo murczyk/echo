@@ -1,10 +1,10 @@
 use crate::entities::{login, tag, tag_keyword, tags_ordering};
 use crate::error::AppError;
 use crate::h;
+use crate::types::*;
 use crate::types::{Mode, ShortContext};
 use chrono::Utc;
 use itertools::Itertools;
-use log::*;
 use rand::Rng;
 use sea_orm::*;
 use std::collections::BTreeMap;

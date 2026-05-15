@@ -1,8 +1,8 @@
 use crate::error::AppError;
+use crate::types::{error, info};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use anyhow::{bail, Context};
-use log::info;
 use milgeo_rs::coordinates::usk2000::usk2000_to_wgs84;
 use milgeo_rs::coordinates::Usk2000;
 use xshell::{cmd, Shell};
@@ -26,14 +26,6 @@ pub async fn oneoff_restart_echo(
     Ok(())
 }
 
-pub fn oneoff_test_logging_error_macro(_mode: Mode) -> Result<(), AppError> {
-    let err = nested_logging_error_level_1().unwrap_err();
-    log::error!("nested logging macro test error: {:#?}", err);
-    crate::logging::error!("nested logging macro test error: {:?}", err);
-    crate::logging::error!("nested logging macro test error: {:#?}", err);
-    Ok(())
-}
-
 fn nested_logging_error_level_1() -> anyhow::Result<()> {
     nested_logging_error_level_2()
         .context("level 1 context: processing logging macro test")
@@ -51,6 +43,14 @@ fn nested_logging_error_level_3() -> anyhow::Result<()> {
 
 fn nested_logging_error_level_4() -> anyhow::Result<()> {
     bail!("level 4 root cause: synthetic nested logging failure")
+}
+
+pub fn oneoff_test_logging_error_macro(_mode: Mode) -> Result<(), AppError> {
+    if let Err(err) = nested_logging_error_level_1() {
+        error!("nested logging macro test error: {:?}", err);
+    }
+
+    Ok(())
 }
 
 pub fn restart_process(process_name: &str) -> anyhow::Result<()> {

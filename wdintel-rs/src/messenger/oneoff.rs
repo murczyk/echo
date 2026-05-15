@@ -3,9 +3,9 @@ use crate::entities::signal_message;
 use crate::error::AppError;
 use crate::h;
 use crate::messenger::worker;
+use crate::types::info;
 use crate::types::{Mode, ShortContext};
 use chrono::Utc;
-use log::info;
 use sea_orm::*;
 
 pub async fn oneoff_fix_whatsapp_senders(mode: Mode) -> Result<(), AppError> {

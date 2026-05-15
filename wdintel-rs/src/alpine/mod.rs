@@ -2,6 +2,7 @@ use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{bgtask, bgtask_res};
 use crate::error::AppError;
 use crate::h;
+use crate::types::info;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use actix_multipart::Multipart;
 use actix_web::http::header;
@@ -11,7 +12,6 @@ use actix_web::HttpResponse;
 use bytes::Bytes;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use futures_util::StreamExt;
-use log::info;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
 use sea_orm::ActiveModelTrait;
@@ -75,7 +75,7 @@ async fn convert_alpinequest_file(
     let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
     let upload = read_payload(&mut payload).await.c(h!())?;
 
-    info!("convert_alpinequest_file uploading data: {upload:?}");
+    info!("convert_alpinequest_file uploading data: {:?}", upload);
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
@@ -413,7 +413,8 @@ async fn download_file(
         .map(|v| v.to_string());
     let file_bytes = response.bytes().await.c(h!())?;
     info!(
-        "result of converting #{receipt}: filename={filename} file_bytes={file_bytes:?}"
+        "result of converting #{receipt}: filename={filename} file_bytes={:?}",
+        file_bytes
     );
 
     Ok(ConversionResult {

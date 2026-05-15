@@ -68,7 +68,7 @@ pub async fn process_queue(
                     Ok(res) => res,
                     Err(e) => {
                         // The join pool is poisoned, finish already-processed items and halt
-                        error!("unexpected error occurred while processing inbox messages: {e:#?}");
+                        error!("unexpected error occurred while processing inbox messages: {:#?}", e);
                         // this will get us closer to "break" the loop by emptying the queue
                         item_queue.clear();
                         continue;
@@ -77,7 +77,8 @@ pub async fn process_queue(
                 if result.failed {
                     if result.attempt_num > 3 {
                         error!(
-                            "failed to process item, dropping after 3 attempts: {item:?}"
+                            "failed to process item, dropping after 3 attempts: {:?}",
+                            item
                         );
                     } else {
                         item_queue
@@ -165,7 +166,7 @@ async fn wait_for_remaining_tasks(
         let result = match res {
             Ok(res) => res,
             Err(e) => {
-                error!("unexpected error occurred while processing inbox messages: {e:#?}");
+                error!("unexpected error occurred while processing inbox messages: {:#?}", e);
                 continue;
             }
         };
@@ -213,7 +214,8 @@ async fn delete_message_and_attachments_nofail(
 ) {
     if let Err(e) = delete_message_and_attachments(dbx, message_id).await {
         error!(
-            "failed to delete processed message queue item {message_id}: {e:#?}"
+            "failed to delete processed message queue item {message_id}: {:#?}",
+            e
         );
     }
 }
@@ -271,7 +273,7 @@ async fn process_item_nofail(
     ctx: Arc<WorkerContext>,
 ) -> ItemProcessingResult {
     if let Err(e) = process_item_once(ctx, item.clone()).await {
-        error!("Process item failed: {e:?}");
+        error!("Process item failed: {:?}", e);
     };
     ItemProcessingResult {
         item,
@@ -319,7 +321,7 @@ async fn process_item_once(
         )
         .await
         {
-            warn!("[{client_name}] bot failed to process a message: {e:?}");
+            warn!("[{client_name}] bot failed to process a message: {:?}", e);
         }
     } else {
         warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);

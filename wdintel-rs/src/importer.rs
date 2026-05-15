@@ -9,7 +9,6 @@ use actix_web::HttpRequest;
 use anyhow::Context;
 use chrono::prelude::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
-use log::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;

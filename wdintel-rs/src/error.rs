@@ -1,7 +1,7 @@
 use anyhow::Context;
 // use aws_sdk_s3::error::SdkError;
-use log::error;
-use log::warn;
+use crate::types::error;
+use crate::types::warn;
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use thiserror::Error;
@@ -85,7 +85,7 @@ impl actix_web::error::ResponseError for AppError {
         // "A Tokio 1.x context was found, but it is being shutdown.".
         // Return 503 to clients and avoid noisy stack traces.
         if self.is_runtime_shutting_down() {
-            warn!("Service unavailable during shutdown: {self:?}");
+            warn!("Service unavailable during shutdown: {:?}", self);
             return actix_web::HttpResponseBuilder::new(
                 actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
             )
@@ -114,7 +114,7 @@ impl actix_web::error::ResponseError for AppError {
                 .body("Forbidden")
             }
             AppError::Form(es) => {
-                error!(target: "form_error_details", "Form errors: {es:?}");
+                error!(target: "form_error_details", "Form errors: {:?}", es);
                 actix_web::HttpResponseBuilder::new(
                     actix_web::http::StatusCode::BAD_REQUEST,
                 )
@@ -130,7 +130,7 @@ impl actix_web::error::ResponseError for AppError {
                 .body(msg.clone())
             }
             _ => {
-                error!("Internal server error: {self:?}");
+                error!("Internal server error: {:?}", self);
                 println!("Internal server error: {self:?}");
                 println!("Internal server error: {self:?}");
                 match self {
@@ -142,7 +142,7 @@ impl actix_web::error::ResponseError for AppError {
                     | AppError::ActixParseErr { .. }
                     | AppError::PayloadError { .. }
                     | AppError::MilgeoError { .. } => {
-                        error!("{self:#?}");
+                        error!("{:#?}", self);
                     }
                     AppError::BL { .. }
                     | AppError::Form(_)

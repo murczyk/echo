@@ -161,7 +161,7 @@ where
         .c(h!())?;
 
     if let Err(e) = insert_group_aor(dbx, &new_group).await {
-        error!("failed to insert group's area of responsibility: {e:?}")
+        error!("failed to insert group's area of responsibility: {:?}", e)
     }
     Ok(new_group)
 }
@@ -181,7 +181,7 @@ pub async fn fix_group_areas_of_responsibility(
         .c(h!())?;
     for g in groups {
         if let Err(e) = insert_group_aor(db, &g).await {
-            error!("failed to insert group's area of responsibility: {e:?}");
+            error!("failed to insert group's area of responsibility: {:?}", e);
         } else {
             info!("added {}", g.master_key);
             if let Err(e) =
@@ -189,7 +189,7 @@ pub async fn fix_group_areas_of_responsibility(
                     db, &g, format!("fixed aor for group {}", g.master_key))
                     .await
             {
-                error!("invalidate_network_inbox_for_group failed: {e:#?}")
+                error!("invalidate_network_inbox_for_group failed: {:#?}", e)
             }
         }
     }
@@ -260,7 +260,7 @@ where
         )
             .await
         {
-            error!("invalidate_network_inbox_for_group failed: {e:#?}")
+            error!("invalidate_network_inbox_for_group failed: {:#?}", e)
         }
     Ok(Some(aor))
 }
