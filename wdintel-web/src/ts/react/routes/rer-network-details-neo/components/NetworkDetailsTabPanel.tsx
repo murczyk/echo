@@ -1,12 +1,13 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
 import type { ComponentProps } from 'react';
-import type { ModulationRec, Network, NetworkDescrType, NetworkFreqsRes } from '../../../../../Bindings';
+import type { ModulationRec, Network, NetworkDescrType, NetworkFreqsRes, NetworkPoint } from '../../../../../Bindings';
 import type { NetworkDetailsTab } from '../use-rer-network-details-neo-page.shared';
 import { NetworkDetailsCallsignsPanel } from './NetworkCallsignsTables';
 import { NetworkDetailsActivityPanel } from './NetworkDetailsActivityPanel';
 import { NetworkDetailsDescriptionsPanel } from './NetworkDetailsDescriptionsPanel';
 import { NetworkDetailsFrequenciesPanel } from './NetworkDetailsFrequenciesPanel';
+import { NetworkDetailsPelengationPanel } from './NetworkDetailsPelengationPanel';
 
 type CallsignPanelProps = ComponentProps<typeof NetworkDetailsCallsignsPanel>;
 
@@ -32,7 +33,12 @@ type Props = {
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
   networkActivityError: string | null;
+  pelengPoints: NetworkPoint[];
+  pelengPointsLoaded: boolean;
+  pelengPointsLoading: boolean;
+  pelengPointsError: string | null;
   onReloadNetworkActivity: () => void;
+  onReloadPelengPoints: () => void;
   modulations: ModulationRec[];
   expandedFrequencyGroupIds: string[];
   toggleFrequencyGroupExpanded: (groupId: string) => void;
@@ -70,7 +76,12 @@ export function NetworkDetailsTabPanel({
   networkActivityLoaded,
   networkActivityLoading,
   networkActivityError,
+  pelengPoints,
+  pelengPointsLoaded,
+  pelengPointsLoading,
+  pelengPointsError,
   onReloadNetworkActivity,
+  onReloadPelengPoints,
   modulations,
   expandedFrequencyGroupIds,
   toggleFrequencyGroupExpanded,
@@ -123,6 +134,7 @@ export function NetworkDetailsTabPanel({
           <Tab value="frequencies" label="Частоти" />
           <Tab value="callsigns" label="Позивні" />
           <Tab value="activity" label="Активність" />
+          <Tab value="pelengation" label="Пеленгація" />
         </Tabs>
       </Box>
 
@@ -166,6 +178,18 @@ export function NetworkDetailsTabPanel({
                 networkActivityLoading={networkActivityLoading}
                 networkActivityError={networkActivityError}
                 onReloadNetworkActivity={onReloadNetworkActivity}
+              />
+            </Box>
+          </Box>
+        ) : activeNetworkDetailsTab === 'pelengation' ? (
+          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              <NetworkDetailsPelengationPanel
+                pelengPoints={pelengPoints}
+                pelengPointsLoaded={pelengPointsLoaded}
+                pelengPointsLoading={pelengPointsLoading}
+                pelengPointsError={pelengPointsError}
+                onReloadPelengPoints={onReloadPelengPoints}
               />
             </Box>
           </Box>

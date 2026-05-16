@@ -55,10 +55,7 @@ evaluate:
     @just --evaluate
 
 dev-front:
-    (cd wdintel-web && npx elm-land server)
-
-sync-dev-front-nginx:
-    bash deploy/sync-dev-front-nginx.sh
+    bash deploy/dev-front.sh
 
 # now with build!
 dev-front2:

@@ -3,6 +3,7 @@ import type {
   ModulationRec,
   Network,
   NetworkDescrType,
+  NetworkPoint,
   NetworkStatus,
   NetworkFreqsRes,
   Post,
@@ -52,7 +53,7 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'activity';
+export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'activity' | 'pelengation';
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
@@ -109,6 +110,12 @@ export type NetworkDetailsNeoPageState = {
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
   networkActivityError: string | null;
+  pelengPoints: NetworkPoint[];
+  pelengPointsLoaded: boolean;
+  pelengPointsLoading: boolean;
+  pelengPointsError: string | null;
+  pelengPointsRequestedFrom: number | null;
+  pelengPointsRequestedTo: number | null;
   callsignCount: number | null;
   networkCallsigns: NetworkCallsign[];
   networkCallsignGroups: NetworkCallsignRes[];
@@ -204,6 +211,12 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   networkActivityLoaded: false,
   networkActivityLoading: false,
   networkActivityError: null,
+  pelengPoints: [],
+  pelengPointsLoaded: false,
+  pelengPointsLoading: false,
+  pelengPointsError: null,
+  pelengPointsRequestedFrom: null,
+  pelengPointsRequestedTo: null,
   callsignCount: null,
   networkCallsigns: [],
   networkCallsignGroups: [],

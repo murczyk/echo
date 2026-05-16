@@ -13,9 +13,9 @@ run_as_root() {
 }
 
 find_elm_land_pids_desc() {
-    ps -eo pid=,cmd= \
-        | awk '/node .*elm-land server/ { print $1 }' \
-        | sort -nr
+    ps -eo pid=,etimes=,cmd= \
+        | awk '/node .*elm-land server/ { print $1, $2 }' \
+        | sort -nk2,2
 }
 
 find_listen_port_for_pid() {
@@ -30,26 +30,28 @@ find_listen_port_for_pid() {
         '
 }
 
-elm_land_pids="$(find_elm_land_pids_desc)"
-if [[ -z "${elm_land_pids}" ]]; then
-    echo "No running Elm Land server process found. Start it first with: just dev-front" >&2
-    exit 1
-fi
-
-elm_land_pid=""
 elm_land_port=""
 
-while IFS= read -r candidate_pid; do
-    [[ -z "${candidate_pid}" ]] && continue
-    candidate_port="$(find_listen_port_for_pid "${candidate_pid}")"
-    if [[ -n "${candidate_port}" ]]; then
-        elm_land_pid="${candidate_pid}"
-        elm_land_port="${candidate_port}"
-        break
+if [[ "${1:-}" != "" ]]; then
+    elm_land_port="$1"
+else
+    elm_land_pids="$(find_elm_land_pids_desc)"
+    if [[ -z "${elm_land_pids}" ]]; then
+        echo "No running Elm Land server process found. Start it first with: just dev-front" >&2
+        exit 1
     fi
-done <<< "${elm_land_pids}"
 
-if [[ -z "${elm_land_pid}" || -z "${elm_land_port}" ]]; then
+    while IFS= read -r candidate_pid; do
+        [[ -z "${candidate_pid}" ]] && continue
+        candidate_pid="${candidate_pid%% *}"
+        elm_land_port="$(find_listen_port_for_pid "${candidate_pid}")"
+        if [[ -n "${elm_land_port}" ]]; then
+            break
+        fi
+    done <<< "${elm_land_pids}"
+fi
+
+if [[ -z "${elm_land_port}" ]]; then
     echo "Found Elm Land process(es), but failed to detect any listening port." >&2
     exit 1
 fi

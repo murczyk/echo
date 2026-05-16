@@ -27,14 +27,6 @@ Front-end:
 just dev-front
 ```
 
-If you use the HTTPS nginx facade (`https://<host>:8300`) and frontend module requests fail after restarting dev servers, re-sync nginx to the active Elm Land port:
-
-```bash
-just sync-dev-front-nginx
-```
-
-This command auto-detects the newest running Elm Land server, updates `/etc/nginx/echo-dev-front-proxy.inc`, validates nginx config, and restarts nginx.
-
 Back-end:
 
 ```
