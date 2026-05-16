@@ -424,6 +424,9 @@ pub async fn upload_palitra_points(
     mut payload: Multipart,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
+    ensure_palitra_management_permission(&env, &login)
+        .await
+        .c(h!())?;
     let palitra_id = path.into_inner();
     let palitra = palitra::Entity::find_by_id(palitra_id)
         .one(&env.dbx)
@@ -713,9 +716,9 @@ pub async fn archive_palitra(
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Palitra>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_palitra_management_permission(&env, &login)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
     let palitra = bl::update_accessible_palitra_archive_flag(
@@ -739,9 +742,9 @@ pub async fn unarchive_palitra(
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Palitra>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_palitra_management_permission(&env, &login)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
     let palitra = bl::update_accessible_palitra_archive_flag(
@@ -765,9 +768,9 @@ pub async fn assign_palitra_folder(
     req: Json<PalitraFolderAssignReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_palitra_management_permission(&env, &login)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
     let sync_items = bl::assign_folder_to_accessible_palitras(
@@ -795,9 +798,9 @@ pub async fn rename_palitra_folder(
     req: Json<PalitraFolderRenameReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_palitra_management_permission(&env, &login)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
     let sync_items = bl::rename_accessible_palitra_folder(
@@ -825,9 +828,9 @@ pub async fn archive_palitra_folder(
     req: Json<PalitraFolderReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_palitra_management_permission(&env, &login)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_ids = bl::archive_accessible_palitra_folder(
         login,
@@ -849,9 +852,9 @@ pub async fn delete_palitra_folder(
     req: Json<PalitraFolderReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_palitra_management_permission(&env, &login)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
         login.clone(),
         req.into_inner().folder,
@@ -1119,6 +1122,9 @@ pub async fn delete_palitra(
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
+    ensure_palitra_management_permission(&env, &login)
+        .await
+        .c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -1399,78 +1405,42 @@ async fn ensure_palitra_permissions(
         bail!("Palitra access list may not be empty");
     }
 
-    let is_admin = crate::users::has_role(&env.dbx, login, "Admin")
+    ensure_palitra_management_permission(env, login)
         .await
-        .is_ok();
-    let is_editor = crate::users::has_any_role(
-        &env.dbx,
-        login,
-        vec!["UnitsEditor", "CallsignsEditor"],
-    )
-    .await
-    .is_ok();
-
-    let is_rer = crate::users::has_role(&env.dbx, login, "Rer").await.is_ok();
+        .c(h!())?;
+    let is_admin = is_palitra_admin(env, login).await.c(h!())?;
 
     match access {
         PalitraAccess::ByLogins { logins } => {
             if is_admin {
                 return Ok(());
             }
-            if is_editor {
-                let permitted_logins =
-                    crate::users::get_organism_logins_by_login(&env.dbx, login)
-                        .await
-                        .c(h!())?;
-                let all_known =
-                    logins.iter().all(|value| permitted_logins.contains(value));
-                if !all_known {
-                    bail!(
-                        "Editor may only manage palitra scoped to own organism logins"
-                    );
-                }
-                return Ok(());
-            }
-            if !is_rer {
-                bail!("Only Rer may manage login-scoped palitra");
-            }
-            let all_self = logins.iter().all(|l| l == login);
-            if !all_self {
-                bail!("Rer may only manage palitra scoped to own login");
+            let permitted_logins =
+                crate::users::get_organism_logins_by_login(&env.dbx, login)
+                    .await
+                    .c(h!())?;
+            let all_known =
+                logins.iter().all(|value| permitted_logins.contains(value));
+            if !all_known {
+                bail!(
+                    "Editor may only manage palitra scoped to own organism logins"
+                );
             }
         }
         PalitraAccess::ByOrganisms { organism_ids } => {
             if is_admin {
                 return Ok(());
             }
-            if is_editor {
-                // Editor can only manage palitra scoped to own organisms
-                let permitted: Vec<_> = scope.organism_ids.to_vec();
-                let all_known =
-                    organism_ids.iter().all(|id| permitted.contains(id));
-                if !all_known {
-                    bail!(
-                        "Editor may only manage palitra scoped to own organism"
-                    );
-                }
-                return Ok(());
-            }
-            if !is_rer {
-                bail!("Only Rer may manage organism-scoped palitra");
-            }
             let permitted: Vec<_> = scope.organism_ids.to_vec();
             let all_known =
                 organism_ids.iter().all(|id| permitted.contains(id));
             if !all_known {
-                bail!("Rer may only manage palitra scoped to own organism");
+                bail!("Editor may only manage palitra scoped to own organism");
             }
         }
         PalitraAccess::ByAor { aor_ids } => {
             if is_admin {
                 return Ok(());
-            }
-            if !is_editor {
-                bail!("Only Editor/Admin may manage AOR-scoped palitra");
             }
             let permitted: Vec<_> = scope.aor_ids.to_vec();
             let all_known = aor_ids.iter().all(|id| permitted.contains(id));
@@ -1480,6 +1450,62 @@ async fn ensure_palitra_permissions(
         }
     };
     Ok(())
+}
+
+async fn ensure_palitra_management_permission(
+    env: &Data<Env>,
+    login: &str,
+) -> Result<(), AppError> {
+    if is_palitra_admin(env, login).await.c(h!())? {
+        return Ok(());
+    }
+
+    let is_rer = has_role_or_false(env, login, "Rer").await.c(h!())?;
+    let is_editor = has_any_role_or_false(
+        env,
+        login,
+        vec!["UnitsEditor", "CallsignsEditor"],
+    )
+    .await
+    .c(h!())?;
+    if is_rer && is_editor {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden(
+        "Only Admin or Rer Editor may manage palitra".into(),
+    ))
+}
+
+async fn is_palitra_admin(
+    env: &Data<Env>,
+    login: &str,
+) -> Result<bool, AppError> {
+    has_role_or_false(env, login, "Admin").await
+}
+
+async fn has_role_or_false(
+    env: &Data<Env>,
+    login: &str,
+    role: &str,
+) -> Result<bool, AppError> {
+    match crate::users::has_role(&env.dbx, login, role).await {
+        Ok(()) => Ok(true),
+        Err(AppError::Forbidden(_)) => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
+async fn has_any_role_or_false(
+    env: &Data<Env>,
+    login: &str,
+    roles: Vec<&str>,
+) -> Result<bool, AppError> {
+    match crate::users::has_any_role(&env.dbx, login, roles).await {
+        Ok(()) => Ok(true),
+        Err(AppError::Forbidden(_)) => Ok(false),
+        Err(err) => Err(err),
+    }
 }
 
 async fn read_latest_palitra_geometry_with_warning<'a, 'async_trait, C>(

@@ -382,12 +382,12 @@ export function buildLookupMap<T extends { id: number; name: string }>(items: T[
 
 export function canDeleteNetwork(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || roles.has('UnitsEditor');
+  return canManageNetworkActions(roles);
 }
 
 export function canEditNetwork(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || roles.has('UnitsEditor');
+  return canManageNetworkActions(roles);
 }
 
 export function canManageDescriptions(user: User | null): boolean {
@@ -397,6 +397,10 @@ export function canManageDescriptions(user: User | null): boolean {
 
 export function canManageNetworkCallsignActions(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
+  return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
+}
+
+function canManageNetworkActions(roles: Set<string>): boolean {
   return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
 }
 

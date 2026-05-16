@@ -33,7 +33,7 @@ export const CALLSIGN_FORM_HINT =
 export const UNIT_SELECTION_REQUIRED_ERROR = 'Оберіть підрозділ зі списку.';
 
 function hasCallsignEditorAccess(roles: Set<string>): boolean {
-  return roles.has('Admin') || (roles.has('Rer') && roles.has('CallsignsEditor'));
+  return roles.has('Admin') || ((roles.has('Rer') || roles.has('Full')) && roles.has('CallsignsEditor'));
 }
 
 export function toUpperCaseCallsign(value: string): string {

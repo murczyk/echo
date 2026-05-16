@@ -170,6 +170,7 @@ describe('rer-callsigns helpers', () => {
     expect(getExportPermission({ roles: ['UnitsEditor'] } as User).canEdit).toBe(false);
     expect(getExportPermission({ roles: ['Admin'] } as User).canEdit).toBe(true);
     expect(getExportPermission({ roles: ['Rer', 'CallsignsEditor'] } as User).canEdit).toBe(true);
+    expect(getExportPermission({ roles: ['Full', 'CallsignsEditor'] } as User).canEdit).toBe(true);
     expect(getExportPermission({ roles: ['Admin'] } as User).canExport).toBe(true);
     expect(getExportPermissionFromRoles(['UnitsEditor'])).toEqual({
       canEdit: false,
@@ -181,6 +182,10 @@ describe('rer-callsigns helpers', () => {
     });
     expect(getExportPermissionFromRoles(['Full'])).toEqual({
       canEdit: false,
+      canExport: true,
+    });
+    expect(getExportPermissionFromRoles(['Full', 'CallsignsEditor'])).toEqual({
+      canEdit: true,
       canExport: true,
     });
   });
