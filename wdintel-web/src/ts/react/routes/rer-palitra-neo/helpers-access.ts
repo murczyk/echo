@@ -29,7 +29,7 @@ export function isEditor(user: User | null): boolean {
 }
 
 export function canEditScopedLogins(user: User | null): boolean {
-  return isEditor(user);
+  return isAdmin(user) || isEditor(user);
 }
 
 export function canModifyPalitra(user: User | null, palitra: Palitra): boolean {

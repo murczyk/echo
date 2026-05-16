@@ -23,10 +23,16 @@ import {
 
 import type { Source, Unit } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
-import { CALLSIGN_FORM_HINT, RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, hasAnyDraftValue } from '../helpers';
+import {
+  CALLSIGN_FORM_HINT,
+  RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR,
+  getUnitSelectionError,
+  hasAnyDraftValue,
+} from '../helpers';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignDraftRow, CallsignDuplicateHintGroup } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { filterUnitsBySearch, findExactUnitSearchMatch, getUnitDisplayLabel } from '../../../utils/unit-search';
 
 type Props = {
   open: boolean;
@@ -215,14 +221,15 @@ export function CreateCallsignsDrawer({
   const hasDraftContent = rows.some((row) => hasAnyDraftValue(row));
   const drawerTitleId = 'callsigns-create-drawer-title';
   const sourceSelectLabelId = 'callsigns-create-source-label';
+  const [unitSearchInput, setUnitSearchInput] = useState('');
+  const [pastedInput, setPastedInput] = useState('');
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
+  const unitSelectionError = getUnitSelectionError(unitSearchInput, selectedUnit);
   const confirmationSources = sources.filter((source) => source.id !== addSourceId);
   const duplicateHintGroupByRowIndex = useMemo(
     () => new Map(duplicateHintGroups.map((group) => [group.rowIndex, group] as const)),
     [duplicateHintGroups],
   );
-  const [unitSearchInput, setUnitSearchInput] = useState('');
-  const [pastedInput, setPastedInput] = useState('');
   const handleClearRows = useCallback(() => {
     setPastedInput('');
     onClearRows();
@@ -232,18 +239,24 @@ export function CreateCallsignsDrawer({
     setPastedInput('');
     onClose();
   }, [onClose]);
+  const handleUnitInputChange = useCallback((_: unknown, value: string, reason: string) => {
+    setUnitSearchInput(value);
 
-  const filterUnits = useCallback((options: Unit[], inputValue: string) => {
-    const normalizedInput = inputValue.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
-    if (normalizedInput === '') return options;
+    if (reason !== 'input' && reason !== 'clear') return;
 
-    const searchTokens = normalizedInput.split(' ');
-    return options.filter((unit) => {
-      const unitName = unit.name.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
-      const unitId = String(unit.id);
-      return searchTokens.every((token) => unitName.includes(token) || unitId.includes(token));
-    });
-  }, []);
+    const exactMatch = reason === 'clear' ? null : findExactUnitSearchMatch(units, value);
+    onAddUnitIdChange(exactMatch?.id ?? null);
+  }, [onAddUnitIdChange, units]);
+
+  const handleUnitBlur = useCallback(() => {
+    if (!isNullOrUndefined(addUnitId)) return;
+
+    const exactMatch = findExactUnitSearchMatch(units, unitSearchInput);
+    if (!exactMatch) return;
+
+    onAddUnitIdChange(exactMatch.id);
+    setUnitSearchInput(getUnitDisplayLabel(exactMatch));
+  }, [addUnitId, onAddUnitIdChange, unitSearchInput, units]);
 
   useEffect(() => {
     if (!open) {
@@ -294,24 +307,32 @@ export function CreateCallsignsDrawer({
               options={units}
               value={selectedUnit}
               inputValue={unitSearchInput}
-              onInputChange={(_, value) => setUnitSearchInput(value)}
+              onInputChange={handleUnitInputChange}
               onChange={(_, value) => onAddUnitIdChange(value?.id ?? null)}
               disabled={formDisabled}
               isOptionEqualToValue={(option, value) => option.id === value.id}
-              getOptionLabel={(unit) => unit.name.trim() || `#${unit.id}`}
-              filterOptions={(options, state) => filterUnits(options, state.inputValue)}
+              getOptionLabel={getUnitDisplayLabel}
+              filterOptions={(options, state) => filterUnitsBySearch(options, state.inputValue)}
               renderOption={(props, unit) => {
                 const { key: _ignoredKey, ...optionProps } = props;
                 return (
                   <li {...optionProps} key={unit.id}>
-                    {unit.name.trim() || ("#" + unit.id)}
+                    {getUnitDisplayLabel(unit)}
                   </li>
                 );
               }}
               clearOnBlur={false}
               noOptionsText="Нічого не знайдено"
               renderInput={(params) => (
-                <TextField {...params} label="Підрозділ" placeholder="Пошук підрозділу" required />
+                <TextField
+                  {...params}
+                  label="Підрозділ"
+                  placeholder="Пошук підрозділу"
+                  required
+                  error={unitSelectionError !== null}
+                  helperText={unitSelectionError ?? 'Почніть вводити назву або оберіть підрозділ зі списку'}
+                  onBlur={handleUnitBlur}
+                />
               )}
             />
 

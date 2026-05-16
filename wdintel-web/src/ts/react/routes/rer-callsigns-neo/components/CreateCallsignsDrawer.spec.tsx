@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, type ReactNode } from 'react';
+import { act, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,11 +9,32 @@ vi.mock('@mui/material', () => ({
   Alert: ({ children, severity }: { children?: ReactNode; severity?: string }) => (
     <div data-severity={severity}>{children}</div>
   ),
-  Autocomplete: ({ renderInput }: { renderInput?: (params: unknown) => ReactNode }) => (
-    <div>{renderInput ? renderInput({} as never) : null}</div>
+  Autocomplete: ({
+    disabled,
+    inputValue,
+    onInputChange,
+    renderInput,
+  }: {
+    disabled?: boolean;
+    inputValue?: string;
+    onInputChange?: (_event: unknown, value: string, reason: string) => void;
+    renderInput?: (params: unknown) => ReactNode;
+  }) => (
+    <div>
+      {((latestAutocompleteInputChange = onInputChange ?? null), null)}
+      <input
+        aria-label="unit-search"
+        disabled={disabled}
+        value={inputValue ?? ''}
+        onChange={(event) => onInputChange?.(event, (event.target as HTMLInputElement).value, 'input')}
+      />
+      {renderInput ? renderInput({} as never) : null}
+    </div>
   ),
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Button: ({ children }: { children?: ReactNode }) => <button type="button">{children}</button>,
+  Button: ({ children, disabled }: { children?: ReactNode; disabled?: boolean }) => (
+    <button type="button" disabled={disabled}>{children}</button>
+  ),
   Checkbox: ({ checked }: { checked?: boolean }) => <input type="checkbox" checked={checked} readOnly />,
   Divider: () => <hr />,
   Drawer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -48,6 +69,11 @@ vi.mock('@mui/material', () => ({
 import { CreateCallsignsDrawer } from './CreateCallsignsDrawer';
 import type { CallsignDraftRow, CallsignDuplicateHintGroup } from '../types';
 import type { Source, Unit } from '../../../../../Bindings';
+import { UNIT_SELECTION_REQUIRED_ERROR } from '../helpers';
+
+let latestAutocompleteInputChange:
+  | ((_event: unknown, value: string, reason: string) => void)
+  | null = null;
 
 type Rendered = {
   container: HTMLDivElement;
@@ -65,7 +91,10 @@ afterEach(() => {
   }
 });
 
-function renderComponent(duplicateHintGroups: CallsignDuplicateHintGroup[]): Rendered {
+function renderComponent(
+  duplicateHintGroups: CallsignDuplicateHintGroup[],
+  initialAddUnitId: number | null = 1,
+): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -75,14 +104,16 @@ function renderComponent(duplicateHintGroups: CallsignDuplicateHintGroup[]): Ren
     { callsign: 'ВОЛК', position: '', fullName: '', comment: '', developing: false, radioFreq: '' },
   ];
 
-  act(() => {
-    root.render(
+  function Harness() {
+    const [addUnitId, setAddUnitId] = useState<number | null>(initialAddUnitId);
+
+    return (
       <CreateCallsignsDrawer
         open
         onClose={() => {}}
         units={[{ id: 1, name: '11 АК' } as Unit]}
         sources={[{ id: 1, name: 'РО' } as Source]}
-        addUnitId={1}
+        addUnitId={addUnitId}
         addSourceId={1}
         addCallsignAdditionalSourceIds={[]}
         rows={rows}
@@ -90,7 +121,7 @@ function renderComponent(duplicateHintGroups: CallsignDuplicateHintGroup[]): Ren
         disabled={false}
         validationError={null}
         duplicateHintGroups={duplicateHintGroups}
-        onAddUnitIdChange={() => {}}
+        onAddUnitIdChange={setAddUnitId}
         onAddSourceIdChange={() => {}}
         onAddCallsignAdditionalSourceIdsChange={() => {}}
         onRowChange={() => {}}
@@ -101,6 +132,10 @@ function renderComponent(duplicateHintGroups: CallsignDuplicateHintGroup[]): Ren
         onSubmit={() => {}}
       />,
     );
+  }
+
+  act(() => {
+    root.render(<Harness />);
   });
 
   return { container, root };
@@ -136,5 +171,25 @@ describe('CreateCallsignsDrawer', () => {
     expect(view.container.textContent).toContain('Схожі існуючі позивні: 2');
     expect(view.container.textContent).toContain('+ 1 more');
     expect(view.container.textContent).toContain('Рядок 2: БАРС-4 | 11 АК');
+  });
+
+  it('shows a unit selection error when the input text is not a selected unit', () => {
+    const view = renderComponent([], null);
+    rendered.push(view);
+
+    const input = view.container.querySelector('input[aria-label="unit-search"]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+
+    act(() => {
+      latestAutocompleteInputChange?.({} as never, '78 мсп 42 мсд', 'input');
+    });
+
+    expect(view.container.textContent).toContain(UNIT_SELECTION_REQUIRED_ERROR);
+
+    const addButton = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Додати',
+    ) as HTMLButtonElement | undefined;
+
+    expect(addButton?.disabled).toBe(true);
   });
 });

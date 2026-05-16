@@ -14,6 +14,7 @@ import {
   getAccessSummary,
   getAvailableAccessTypes,
   getInitialCreateForm,
+  canEditScopedLogins,
   normalizeFolderPathForUi,
   validateFolderPath,
   normalizeLogins,
@@ -107,6 +108,12 @@ describe('rer-palitra helpers', () => {
     ]);
 
     expect(getAvailableAccessTypes(makeUser({ roles: [] }), null)).toEqual(['logins']);
+  });
+
+  it('allows admins to edit scoped logins', () => {
+    expect(canEditScopedLogins(makeUser({ roles: ['Admin'] }))).toBe(true);
+    expect(canEditScopedLogins(makeUser({ roles: ['UnitsEditor'] }))).toBe(true);
+    expect(canEditScopedLogins(makeUser({ roles: [] }))).toBe(false);
   });
 
   it('normalizes login access by trimming, deduplicating, and preserving order', () => {
