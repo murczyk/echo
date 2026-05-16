@@ -29,6 +29,7 @@ pub const SIGNAL_MAX_MESSAGES: usize = 40;
 pub const RQ_TIMEOUT_SIGNAL_API: u64 = 600;
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
 pub const RQ_TIMEOUT_LAUNCH_SUBPROCESS: u64 = 60;
+pub const SERVER_JSON_PAYLOAD_MAX_BYTES: usize = 20 * 1024 * 1024;
 /// Grace period before the first Signal login check after wdintel-rs start (ms)
 pub const SIGNAL_LOGIN_INITIAL_SLEEP_MS: u64 = 2_000;
 pub const COORDS_PER_FREQ_LIMIT: usize = 100;

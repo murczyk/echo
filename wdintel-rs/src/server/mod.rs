@@ -552,11 +552,18 @@ pub async fn main_server(
             .service(crate::kml::operatyvka_download)
             .service(crate::kml::api_fix_kmz)
             .service(crate::atak::operatyvka_download)
-            .service(crate::importer::download_kmz)
+            .service(
+                web::scope("")
+                    .app_data(
+                        web::JsonConfig::default()
+                            .limit(SERVER_JSON_PAYLOAD_MAX_BYTES),
+                    )
+                    .service(crate::importer::download_kmz)
+                    .service(crate::delta::download_geojson),
+            )
             .service(crate::terminal::parse_terminal_pdf)
             .service(crate::terminal::upload_screenshot)
             .service(crate::terminal::upload_pdf)
-            .service(crate::delta::download_geojson)
             .service(crate::delta::bgtask_get_status_and_logs)
             .service(crate::delta::kmz_to_geojson)
             .service(crate::delta::csv::api_delta_csv_to_kmz)

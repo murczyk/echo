@@ -19,6 +19,10 @@ export type LatLng = {
   lng: number;
 };
 
+function isFiniteLatLng(latLng: LatLng | null | undefined): latLng is LatLng {
+  return Number.isFinite(latLng?.lat) && Number.isFinite(latLng?.lng);
+}
+
 const monkeyPrefix = '\u{1F648}';
 
 function normalizeMgrsChar(char: string): string {
@@ -244,20 +248,25 @@ export function extractCoordinates(input: string): ImporterCoordinate[] {
 }
 
 export function coordinateToLatLng(coord: ImporterCoordinate, converted?: LatLng): LatLng | null {
-  if (coord.kind === 'wgs84') return { lat: coord.lat, lng: coord.lng };
-  if (coord.kind === 'dms') return { lat: dmsToLatLng(coord.lat), lng: dmsToLatLng(coord.lng) };
-  return converted ?? null;
+  const latLng =
+    coord.kind === 'wgs84'
+      ? { lat: coord.lat, lng: coord.lng }
+      : coord.kind === 'dms'
+        ? { lat: dmsToLatLng(coord.lat), lng: dmsToLatLng(coord.lng) }
+        : converted ?? null;
+
+  return isFiniteLatLng(latLng) ? latLng : null;
 }
 
 export function convertCoordinateToWgs84(coord: ImporterCoordinate): LatLng | null {
   try {
     if (coord.kind === 'usk2000') {
       const result = td_usk2000_to_wgs84({ x: coord.x, y: coord.y });
-      return { lat: result.x, lng: result.y };
+      return coordinateToLatLng({ kind: 'wgs84', lat: result.x, lng: result.y });
     }
     if (coord.kind === 'mgrs') {
       const result = inverse(coord.value);
-      return { lat: result[1], lng: result[0] };
+      return coordinateToLatLng({ kind: 'wgs84', lat: result[1], lng: result[0] });
     }
   } catch (_) {
     return null;
