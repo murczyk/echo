@@ -52,7 +52,7 @@ export function getUnitSelectionError(unitSearchInput: string, selectedUnit: { i
 
 export function createDefaultFilters(now = new Date()): CallsignsFilterState {
   const to = now;
-  const from = new Date(now.getTime() - DAY_MS);
+  const from = new Date(now.getTime() - 7 * DAY_MS);
 
   return {
     filterText: '',
