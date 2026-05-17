@@ -518,6 +518,9 @@ pub async fn main_server(
         App::new()
             .wrap(actix_web::middleware::Compress::default())
             .app_data(actix_web::web::Data::from(env))
+            .app_data(
+                web::JsonConfig::default().limit(SERVER_JSON_PAYLOAD_MAX_BYTES),
+            )
             // .wrap(
             //     actix_web::middleware::Logger::default()
             // )
@@ -552,15 +555,8 @@ pub async fn main_server(
             .service(crate::kml::operatyvka_download)
             .service(crate::kml::api_fix_kmz)
             .service(crate::atak::operatyvka_download)
-            .service(
-                web::scope("")
-                    .app_data(
-                        web::JsonConfig::default()
-                            .limit(SERVER_JSON_PAYLOAD_MAX_BYTES),
-                    )
-                    .service(crate::importer::download_kmz)
-                    .service(crate::delta::download_geojson),
-            )
+            .service(crate::importer::download_kmz)
+            .service(crate::delta::download_geojson)
             .service(crate::terminal::parse_terminal_pdf)
             .service(crate::terminal::upload_screenshot)
             .service(crate::terminal::upload_pdf)
