@@ -71,133 +71,40 @@ pub fn kmz_to_geojson_1(
     for placemark in all_placemarks.iter() {
         if let Some(point) = &placemark.point {
             if let Some(coordinates) = &point.coordinates {
-                let (lat, lng) =
-                    milgeo_rs::coordinates::parse_point_coordinates(
-                        coordinates,
-                    )?;
-                let lat_f: f64 = lat.parse().c(h!())?;
-                let lng_f: f64 = lng.parse().c(h!())?;
-                let mut comments: Vec<String> = vec![];
-                if let Some(name) = &placemark.name {
-                    comments.push(name.to_string());
-                }
-                comments.extend(extract_comments(
-                    &placemark.description.clone().unwrap_or("".to_string()),
-                )?);
-                let mut feature = Feature {
-                    type_: "Feature".to_string(),
-                    properties: Some(Properties {
-                        name: placemark.name.clone(),
-                        sidc: "10061000001211020000".to_string(),
-                        comments,
-                        observation_datetime: None,
-                    }),
-                    geometry: Geometry {
-                        type_: "Point".to_string(),
-                        coordinates: serde_json::to_value((lng_f, lat_f))
-                            .unwrap(),
-                    },
-                };
-
-                '_if: {
-                    let Some(style) = &placemark.style else {
-                        break '_if;
-                    };
-                    let Some(icon_style) = &style.icon_style else {
-                        break '_if;
-                    };
-                    let Some(icon) = &icon_style.icon else {
-                        break '_if;
-                    };
-                    let Some(href) = &icon.href else {
-                        break '_if;
-                    };
-                    let Some(ref body) = href.body else {
-                        break '_if;
-                    };
-                    let icon_stripped: String = match body.rfind('/') {
-                        Some(pos) => String::from_utf8(
-                            body.as_bytes()
-                                .iter()
-                                .skip(pos + 1)
-                                .cloned()
-                                .collect(),
-                        )
-                        .c(h!())?,
-                        None => body.clone(),
-                    };
-                    let sidc =
-                        crate::icons::filename_to_app6d_code(&icon_stripped);
-                    if let Some(ref mut props) = feature.properties {
-                        props.sidc = sidc;
-                    }
-                    match per_icon_counter.get_mut(&icon_stripped) {
-                        None => {
-                            per_icon_counter.insert(icon_stripped, 1);
-                        }
-                        Some(val) => {
-                            *val += 1;
-                        }
-                    }
-                }
-                '_if: {
-                    let Some(style_url) = &placemark.style_url else {
-                        break '_if;
-                    };
-                    let style_url_stripped: String =
-                        style_url.body.chars().skip(1).collect();
-                    let Some(icon) =
-                        style_map.get(&style_url_stripped).or_else(|| {
-                            style_map_highlight.get(&style_url_stripped)
-                        })
-                    else {
-                        break '_if;
-                    };
-                    let icon_stripped: String = match icon.rfind('/') {
-                        Some(pos) => String::from_utf8(
-                            icon.as_bytes()
-                                .iter()
-                                .skip(pos + 1)
-                                .cloned()
-                                .collect(),
-                        )
-                        .c(h!())?,
-                        None => icon.clone(),
-                    };
-                    let sidc =
-                        crate::icons::filename_to_app6d_code(&icon_stripped);
-                    if let Some(ref mut props) = feature.properties {
-                        props.sidc = sidc;
-                    }
-                    match per_icon_counter.get_mut(&icon_stripped) {
-                        None => {
-                            per_icon_counter.insert(icon_stripped, 1);
-                        }
-                        Some(val) => {
-                            *val += 1;
-                        }
-                    }
-                }
-
-                features.push(feature);
-            }
-        } else if let Some(line_string) = &placemark.line_string {
-            if let Some(coordinates) = &line_string.coordinates {
-                if let Some(coord_s) = &coordinates.body {
-                    let feature = feature_from_line_string(coord_s)?;
+                if let Some(feature) = feature_from_point(
+                    placemark,
+                    coordinates,
+                    &style_map,
+                    &style_map_highlight,
+                    &mut per_icon_counter,
+                )? {
                     features.push(feature);
                 }
             }
-        } else if let Some(multi_geometry) = &placemark.multi_geometry {
-            for line_string in multi_geometry.line_strings.iter() {
-                if let Some(coordinates) = line_string.coordinates.clone() {
-                    if let Some(coord_s) = &coordinates.body {
-                        let feature = feature_from_line_string(coord_s)?;
+        }
+        if let Some(line_string) = &placemark.line_string {
+            if let Some(coordinates) = &line_string.coordinates {
+                if let Some(coord_s) = &coordinates.body {
+                    if let Some(feature) = feature_from_line_string(coord_s)? {
                         features.push(feature);
                     }
                 }
             }
-        } else if let Some(polygon) = &placemark.polygon {
+        }
+        if let Some(multi_geometry) = &placemark.multi_geometry {
+            for line_string in multi_geometry.line_strings.iter() {
+                if let Some(coordinates) = line_string.coordinates.clone() {
+                    if let Some(coord_s) = &coordinates.body {
+                        if let Some(feature) =
+                            feature_from_line_string(coord_s)?
+                        {
+                            features.push(feature);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(polygon) = &placemark.polygon {
             if let Some(coordinates) = polygon
                 .outer_boundary_is
                 .as_ref()
@@ -205,8 +112,9 @@ pub fn kmz_to_geojson_1(
                 .and_then(|ring| ring.coordinates.as_ref())
                 .and_then(|coords| coords.body.as_ref())
             {
-                let feature = feature_from_polygon(coordinates)?;
-                features.push(feature);
+                if let Some(feature) = feature_from_polygon(coordinates)? {
+                    features.push(feature);
+                }
             }
         }
     }
@@ -234,8 +142,106 @@ pub fn kmz_to_geojson_1(
     Ok(())
 }
 
-fn feature_from_line_string(coord_s: &str) -> Result<Feature, AppError> {
-    let coords = milgeo_rs::coordinates::parse_linestring_coordinates(coord_s)?;
+fn feature_from_point(
+    placemark: &Placemark,
+    coordinates: &str,
+    style_map: &BTreeMap<String, String>,
+    style_map_highlight: &BTreeMap<String, String>,
+    per_icon_counter: &mut BTreeMap<String, i64>,
+) -> Result<Option<Feature>, AppError> {
+    let Some(coordinates) = normalize_kml_coordinates(coordinates) else {
+        return Ok(None);
+    };
+    let (lat, lng) =
+        milgeo_rs::coordinates::parse_point_coordinates(&coordinates)?;
+    let lat_f: f64 = lat.parse().c(h!())?;
+    let lng_f: f64 = lng.parse().c(h!())?;
+    let mut comments: Vec<String> = vec![];
+    if let Some(name) = &placemark.name {
+        comments.push(name.to_string());
+    }
+    comments.extend(extract_comments(
+        &placemark.description.clone().unwrap_or("".to_string()),
+    )?);
+    let mut feature = Feature {
+        type_: "Feature".to_string(),
+        properties: Some(Properties {
+            name: placemark.name.clone(),
+            sidc: "10061000001211020000".to_string(),
+            comments,
+            observation_datetime: None,
+        }),
+        geometry: Geometry {
+            type_: "Point".to_string(),
+            coordinates: serde_json::to_value((lng_f, lat_f)).unwrap(),
+        },
+    };
+
+    if let Some(style) = &placemark.style {
+        if let Some(icon_style) = &style.icon_style {
+            if let Some(icon) = &icon_style.icon {
+                if let Some(href) = &icon.href {
+                    if let Some(body) = &href.body {
+                        apply_icon_to_feature(
+                            &mut feature,
+                            body,
+                            per_icon_counter,
+                        )?;
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(style_url) = &placemark.style_url {
+        let style_url_stripped: String =
+            style_url.body.chars().skip(1).collect();
+        if let Some(icon) = style_map
+            .get(&style_url_stripped)
+            .or_else(|| style_map_highlight.get(&style_url_stripped))
+        {
+            apply_icon_to_feature(&mut feature, icon, per_icon_counter)?;
+        }
+    }
+
+    Ok(Some(feature))
+}
+
+fn apply_icon_to_feature(
+    feature: &mut Feature,
+    icon: &str,
+    per_icon_counter: &mut BTreeMap<String, i64>,
+) -> Result<(), AppError> {
+    let icon_stripped: String = match icon.rfind('/') {
+        Some(pos) => String::from_utf8(
+            icon.as_bytes().iter().skip(pos + 1).cloned().collect(),
+        )
+        .c(h!())?,
+        None => icon.to_string(),
+    };
+    let sidc = crate::icons::filename_to_app6d_code(&icon_stripped);
+    if let Some(ref mut props) = feature.properties {
+        props.sidc = sidc;
+    }
+    match per_icon_counter.get_mut(&icon_stripped) {
+        None => {
+            per_icon_counter.insert(icon_stripped, 1);
+        }
+        Some(val) => {
+            *val += 1;
+        }
+    }
+    Ok(())
+}
+
+fn feature_from_line_string(
+    coord_s: &str,
+) -> Result<Option<Feature>, AppError> {
+    let Some(coord_s) = normalize_kml_coordinates(coord_s) else {
+        return Ok(None);
+    };
+    let coords =
+        milgeo_rs::coordinates::parse_linestring_coordinates(&coord_s)?;
     let coords_val: serde_json::Value = serde_json::Value::Array(
         coords
             .iter()
@@ -250,11 +256,15 @@ fn feature_from_line_string(coord_s: &str) -> Result<Feature, AppError> {
             coordinates: coords_val,
         },
     };
-    Ok(feature)
+    Ok(Some(feature))
 }
 
-fn feature_from_polygon(coord_s: &str) -> Result<Feature, AppError> {
-    let coords = milgeo_rs::coordinates::parse_linestring_coordinates(coord_s)?;
+fn feature_from_polygon(coord_s: &str) -> Result<Option<Feature>, AppError> {
+    let Some(coord_s) = normalize_kml_coordinates(coord_s) else {
+        return Ok(None);
+    };
+    let coords =
+        milgeo_rs::coordinates::parse_linestring_coordinates(&coord_s)?;
     let coords_val: serde_json::Value =
         serde_json::Value::Array(vec![serde_json::Value::Array(
             coords
@@ -270,7 +280,16 @@ fn feature_from_polygon(coord_s: &str) -> Result<Feature, AppError> {
             coordinates: coords_val,
         },
     };
-    Ok(feature)
+    Ok(Some(feature))
+}
+
+fn normalize_kml_coordinates(coord_s: &str) -> Option<String> {
+    let coordinates: Vec<&str> = coord_s.split_whitespace().collect();
+    if coordinates.is_empty() {
+        None
+    } else {
+        Some(coordinates.join(" "))
+    }
 }
 
 fn extract_comments(s: &str) -> Result<Vec<String>, AppError> {
@@ -1818,5 +1837,52 @@ mod tests {
         let input = std::fs::read_to_string("data/kml_example_01.kml").unwrap();
         let kml: Kml = quick_xml::de::from_str(&input).unwrap();
         println!("> kml: {kml:?}");
+    }
+
+    #[test]
+    fn kmz_to_geojson_accepts_multiline_polygon_coordinates() {
+        let tmp_dir = TempDir::new().unwrap();
+        let input_path = tmp_dir.path().join("doc.kml");
+        let output_path = tmp_dir.path().join("doc.geojson");
+        let input = r#"<kml xmlns="http://www.opengis.net/kml/2.2">
+    <Document>
+        <Placemark>
+            <name>Point</name>
+            <Point>
+                <coordinates>37.86460368707252,48.329701684847,0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark>
+            <name>Polygon</name>
+            <Polygon>
+                <outerBoundaryIs>
+                    <LinearRing>
+                        <coordinates>
+                            37.91241024514596,48.50267606861983,0 37.94620695556386,48.46179821328918,0 38.18200603636632,48.42108412564638,0 37.91241024514596,48.50267606861983,0 {trailing_space}
+                        </coordinates>
+                    </LinearRing>
+                </outerBoundaryIs>
+            </Polygon>
+        </Placemark>
+    </Document>
+</kml>"#
+            .replace("{trailing_space}", " ");
+        std::fs::write(&input_path, input).unwrap();
+
+        kmz_to_geojson_1(&input_path, &output_path).unwrap();
+
+        let output = std::fs::read_to_string(output_path).unwrap();
+        let geo_json: GeoJson = serde_json::from_str(&output).unwrap();
+        let geometry_types: Vec<&str> = geo_json
+            .features
+            .iter()
+            .map(|feature| feature.geometry.type_.as_str())
+            .collect();
+        assert_eq!(geometry_types, vec!["Point", "Polygon"]);
+    }
+
+    #[test]
+    fn empty_line_string_coordinates_are_ignored() {
+        assert!(feature_from_line_string("\n\t\t").unwrap().is_none());
     }
 }
