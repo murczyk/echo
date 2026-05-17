@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 
 import { rewriteRelativeMediaUrls } from '../markdown-helpers';
-import { resolveReleaseMediaUrl } from '../releases-source';
+import { resolveReleaseMediaUrl } from '../releases.service';
 
 interface MarkdownBodyProps {
   releaseId: string;

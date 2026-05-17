@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { ReleaseMeta } from '../releases-source';
+import { ReleaseMeta } from '../releases.service';
 
 interface ReleasesSidebarProps {
   releases: ReleaseMeta[];

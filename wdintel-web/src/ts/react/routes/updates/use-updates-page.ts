@@ -1,22 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ParsedRelease, parseRelease } from './markdown-helpers';
 import {
   fetchReleaseMarkdown,
   fetchReleasesIndex,
   ReleaseMeta,
-} from './releases-source';
+} from './releases.service';
 
-export type LoadStatus<T> =
-  | { kind: 'idle' }
-  | { kind: 'loading' }
-  | { kind: 'success'; data: T }
-  | { kind: 'error'; error: string };
-
-interface UseUpdatesPageState {
-  releases: LoadStatus<ReleaseMeta[]>;
+export interface UseUpdatesPageState {
+  releases: ReleaseMeta[];
+  releasesLoadInProgress: boolean;
+  releasesLoadError: string | null;
   selectedReleaseId: string | null;
-  release: LoadStatus<ParsedRelease>;
+  release: ParsedRelease | null;
+  releaseLoadInProgress: boolean;
+  releaseLoadError: string | null;
   selectRelease: (releaseId: string) => void;
   jumpToSection: (id: string) => void;
 }
@@ -24,23 +22,30 @@ interface UseUpdatesPageState {
 const SCROLL_OFFSET = 120;
 
 export function useUpdatesPage(): UseUpdatesPageState {
-  const [releases, setReleases] = useState<LoadStatus<ReleaseMeta[]>>({ kind: 'idle' });
+  const [releases, setReleases] = useState<ReleaseMeta[]>([]);
+  const [releasesLoadInProgress, setReleasesLoadInProgress] = useState(true);
+  const [releasesLoadError, setReleasesLoadError] = useState<string | null>(null);
   const [selectedReleaseId, setSelectedReleaseId] = useState<string | null>(null);
-  const [release, setRelease] = useState<LoadStatus<ParsedRelease>>({ kind: 'idle' });
+  const [release, setRelease] = useState<ParsedRelease | null>(null);
+  const [releaseLoadInProgress, setReleaseLoadInProgress] = useState(false);
+  const [releaseLoadError, setReleaseLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setReleases({ kind: 'loading' });
+    setReleasesLoadInProgress(true);
+    setReleasesLoadError(null);
     fetchReleasesIndex()
       .then((list) => {
         if (cancelled) return;
-        setReleases({ kind: 'success', data: list });
+        setReleases(list);
+        setReleasesLoadInProgress(false);
         const first = list[0];
         if (first) setSelectedReleaseId(first.releaseId);
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setReleases({ kind: 'error', error: err.message });
+        setReleasesLoadError(err.message);
+        setReleasesLoadInProgress(false);
       });
     return () => {
       cancelled = true;
@@ -48,18 +53,27 @@ export function useUpdatesPage(): UseUpdatesPageState {
   }, []);
 
   useEffect(() => {
-    if (!selectedReleaseId) return;
+    if (!selectedReleaseId) {
+      setRelease(null);
+      setReleaseLoadInProgress(false);
+      setReleaseLoadError(null);
+      return;
+    }
     let cancelled = false;
-    setRelease({ kind: 'loading' });
+    setReleaseLoadInProgress(true);
+    setReleaseLoadError(null);
+    setRelease(null);
     fetchReleaseMarkdown(selectedReleaseId)
       .then((markdown) => {
         if (cancelled) return;
-        const parsed = parseRelease(markdown, selectedReleaseId);
-        setRelease({ kind: 'success', data: parsed });
+        setRelease(parseRelease(markdown, selectedReleaseId));
+        setReleaseLoadInProgress(false);
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setRelease({ kind: 'error', error: err.message });
+        setReleaseLoadError(err.message);
+        setReleaseLoadInProgress(false);
+        setRelease(null);
       });
     return () => {
       cancelled = true;
@@ -78,14 +92,15 @@ export function useUpdatesPage(): UseUpdatesPageState {
     }
   }, []);
 
-  return useMemo(
-    () => ({
-      releases,
-      selectedReleaseId,
-      release,
-      selectRelease,
-      jumpToSection,
-    }),
-    [releases, selectedReleaseId, release, selectRelease, jumpToSection],
-  );
+  return {
+    releases,
+    releasesLoadInProgress,
+    releasesLoadError,
+    selectedReleaseId,
+    release,
+    releaseLoadInProgress,
+    releaseLoadError,
+    selectRelease,
+    jumpToSection,
+  };
 }
