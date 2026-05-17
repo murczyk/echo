@@ -3,7 +3,6 @@ module CoordinatesTests exposing (..)
 import Core.Coordinates as C
 import Expect
 import List.Extra
-import Pages.Importer
 import Parser as P exposing ((|.), (|=))
 import Shared.Components.Console
 import Test exposing (..)
@@ -14,6 +13,57 @@ import Utils.Time
 suite : Test
 suite =
     describe "Coordinates" (testsCoordinates ++ testProgressRegex ++ testParseDateStr)
+
+
+exampleContent : String
+exampleContent =
+    "19.00 Качкарівка\n*В район (47.1305050, 33.7418280) сьогодні зайшла ОВТ ров. Склад та кількість не встановлено.\n*в районі (52-20714 65-51696) знаходиться машина з антенами. Тип не встановлено."
+
+
+operatyvkaExamples : List String
+operatyvkaExamples =
+    [ exampleContent
+    , """№ 68839
+село Милове, Бериславський район, Херсонська область, Україна
+ОВТ (ОіВТ): 50
+Особовий склад: 200
+WGS84: 47.07227275466425, 33.61823252372279
+SK42: 52-15579, 65-47075
+MGRS: 36TWT4693813381
+https://api.griselda.kyiv.ua/s/WTkUSqv8
+Джерело: Світло
+2022-10-11 17:15:00
+-------
+Станом на 11.10.2022 17:15 Милове, Херсонська область ОС (200 осіб) + ВТ (50 од. легка броня, колісна та ін.)
+-------"""
+    , """№ 69093
+село Милове, Бериславський район, Херсонська область, Україна
+РСЗВ БМ-21 Град: 4
+Танк: 9
+ОВТ (ОіВТ): 7
+Особовий склад: 300
+WGS84: 47.068996067976, 33.63917305156
+SK42: 52-15227, 65-48669
+MGRS: 36TWT4853113030
+https://api.griselda.kyiv.ua/s/xHIDCEri
+Джерело: Світло
+2022-10-12 21:59:00
+-------
+скупч.ОіВТ нп Милове, Херсонська обл.
+300 од. ОС, скупч. ОіВТ
+танки 9 од., БМ-21 "Град" - 4 од.
+БМП/БТР - 7 од.
+
+WGS-84: Ш=47.06899606851839, Д=33.63917305061088
+MGRS: 36TWT 48531 13030
+СК-42: X=5215227.19, Y=6548668.84
+ширина 211 м., глибина 129 м.
+отримано через Борода_інфо
+-------"""
+    , """21.25 Шляхове
+*наметове містечко – (46.8785549, 33.4183013) - більше 100 осіб о/с ров.
+*ОВТ ров, більше 20од, склад не встановлено – (46.8780489, 33.4189665)."""
+    ]
 
 
 testsCoordinates : List Test
@@ -56,7 +106,7 @@ testsCoordinates =
     , test "exampleContent (example00)" <|
         \_ ->
             Expect.equal
-                (C.extractCoordinates Pages.Importer.exampleContent)
+                (C.extractCoordinates exampleContent)
                 [ C.Wgs84LatLng { lat = 47.130505, lng = 33.741828 }
                 , C.Usk2000 { x = 5220714, y = 6551696 }
                 ]
@@ -64,7 +114,7 @@ testsCoordinates =
         \_ ->
             let
                 content =
-                    List.Extra.getAt 1 Pages.Importer.operatyvkaExamples
+                    List.Extra.getAt 1 operatyvkaExamples
                         |> Maybe.withDefault "<error content not found>"
             in
             Expect.equal
@@ -77,7 +127,7 @@ testsCoordinates =
         \_ ->
             let
                 content =
-                    List.Extra.getAt 2 Pages.Importer.operatyvkaExamples
+                    List.Extra.getAt 2 operatyvkaExamples
                         |> Maybe.withDefault "<error content not found>"
             in
             Expect.equal
@@ -92,7 +142,7 @@ testsCoordinates =
         \_ ->
             let
                 content =
-                    List.Extra.getAt 3 Pages.Importer.operatyvkaExamples
+                    List.Extra.getAt 3 operatyvkaExamples
                         |> Maybe.withDefault "<error content not found>"
             in
             Expect.equal
