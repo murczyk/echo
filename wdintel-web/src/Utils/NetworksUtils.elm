@@ -6,6 +6,7 @@ import Core.Unit as Unit
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class)
+import String
 
 
 renderNetworkNameWithoutType : B.Network -> Dict Int B.Unit -> Html msg
@@ -114,6 +115,77 @@ networkKindToLabel networkKind =
 
         VHF ->
             "УКХ"
+
+
+signalTypeFromNetworkKind : NetworkKind -> String
+signalTypeFromNetworkKind networkKind =
+    case networkKind of
+        VHF ->
+            "analog"
+
+        DMR ->
+            "digital"
+
+        DMRe ->
+            "digital"
+
+
+signalTypeFromModulationName : String -> Maybe String
+signalTypeFromModulationName modulationName =
+    case String.toUpper (String.trim modulationName) of
+        "DMR" ->
+            Just "digital"
+
+        "NFM" ->
+            Just "analog"
+
+        "AM" ->
+            Just "analog"
+
+        _ ->
+            Nothing
+
+
+modulationMatchesSignalType : String -> String -> Bool
+modulationMatchesSignalType modulationName signalType =
+    case signalTypeFromModulationName modulationName of
+        Nothing ->
+            True
+
+        Just modulationSignalType ->
+            modulationSignalType == String.toLower (String.trim signalType)
+
+
+clearIncompatibleModulationId : List B.ModulationRec -> Maybe Int -> String -> Maybe Int
+clearIncompatibleModulationId modulations modulationId signalType =
+    case modulationId of
+        Nothing ->
+            Nothing
+
+        Just id ->
+            case List.filter (\mod -> mod.id == id) modulations |> List.head of
+                Just modulation ->
+                    if modulationMatchesSignalType modulation.name signalType then
+                        Just id
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+
+
+signalTypeToLabel : String -> String
+signalTypeToLabel signalType =
+    case String.toLower (String.trim signalType) of
+        "analog" ->
+            "аналоговий"
+
+        "digital" ->
+            "цифровий"
+
+        _ ->
+            "—"
 
 
 networkStringToLabel : String -> String

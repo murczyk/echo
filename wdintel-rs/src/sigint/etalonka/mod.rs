@@ -1972,6 +1972,7 @@ mod tests {
             freq: Set(freq.clone()),
             created_at: Set(now),
             kind: Set(sea_orm_active_enums::SigintNetworkKind::Vhf),
+            signal_type: Set("analog".to_string()),
             modulation_id: Set(None),
             active_from: Set(now - chrono::Duration::days(1)),
             active_to: Set(None),

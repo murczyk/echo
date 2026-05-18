@@ -3,6 +3,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import { Box, Button, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import {
@@ -99,8 +100,16 @@ function renderCategoryChip(label: string) {
 }
 
 function renderFrequencyCell(row: NetworkFreqTableRow) {
+  const isCommandControl = row.kind === 'group' ? row.isCommandControl : Boolean(row.freq.commandControl);
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, pl: row.kind === 'freq' && row.parentGroupId ? 4.5 : 0 }}>
+      {isCommandControl ? (
+        <Tooltip title="Ланка управління" arrow>
+          <Box component="span" sx={{ display: 'inline-flex', color: 'info.main', flexShrink: 0 }}>
+            <MilitaryTechOutlinedIcon fontSize="small" />
+          </Box>
+        </Tooltip>
+      ) : null}
       {renderFrequencyStatusIndicator(getRowIsActive(row))}
       <Typography variant="body2" fontWeight={600} noWrap title={row.displayFreq}>
         {row.displayFreq}
@@ -130,19 +139,22 @@ function buildLoadingRows(): NetworkFreqTableRow[] {
     id: `loading-freq-${index}`,
     kind: 'freq',
     parentGroupId: null,
-    freq: {
-      networkFreqId: -(index + 1),
-      freq: '',
-      modulationId: null,
-      modulation: null,
-      encryptionKeyIds: [],
+      freq: {
+        networkFreqId: -(index + 1),
+        freq: '',
+        signalType: 'analog',
+        modulationId: null,
+        modulation: null,
+        encryptionKeyIds: [],
       encryptionKeys: [],
+      encryptionType: null,
       messageCount: 0,
       callsigns: [],
       lastDatetime: null,
       lastDatetimeInAor: null,
       createdAt: 0,
       isActive: true,
+      commandControl: false,
       activeFrom: 0,
       activeTo: null,
       kind: null,
@@ -168,6 +180,7 @@ export type NetworkDetailsFrequenciesTableProps = {
   onOpenFreqEditDrawer: (freq: NetworkFreqsRes) => void;
   onOpenFreqTechDrawer: (freq: NetworkFreqsRes) => void;
   onOpenDeleteFreqDialog: (freq: NetworkFreqsRes) => void;
+  onToggleCommandControl: (freq: NetworkFreqsRes) => void;
   onOpenFreqRowActions: (anchorEl: HTMLElement, freqId: number) => void;
   onCloseFreqRowActions: () => void;
   freqRowActionMenuAnchorEl: HTMLElement | null;
@@ -226,6 +239,7 @@ function NetworkDetailsFrequenciesTableContent({
   onOpenFreqEditDrawer,
   onOpenFreqTechDrawer,
   onOpenDeleteFreqDialog,
+  onToggleCommandControl,
   onOpenFreqRowActions,
   onCloseFreqRowActions,
   freqRowActionMenuAnchorEl,
@@ -436,6 +450,18 @@ function NetworkDetailsFrequenciesTableContent({
             <MenuItem key="tech" onClick={() => { onCloseFreqRowActions(); onOpenFreqTechDrawer(activeFreq); }}>
               <ListItemIcon><BuildIcon fontSize="small" /></ListItemIcon>
               Редагувати тех. дані
+            </MenuItem>,
+            <MenuItem
+              key="command-control"
+              onClick={() => {
+                onCloseFreqRowActions();
+                onToggleCommandControl(activeFreq);
+              }}
+            >
+              <ListItemIcon>
+                <MilitaryTechOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              {activeFreq.commandControl ? 'Зняти позначку' : 'Зробити ланкою управління'}
             </MenuItem>,
             <MenuItem key="delete" onClick={() => { onCloseFreqRowActions(); onOpenDeleteFreqDialog(activeFreq); }} sx={{ color: 'error.main' }}>
               <ListItemIcon sx={{ color: 'error.main' }}><DeleteIcon fontSize="small" /></ListItemIcon>

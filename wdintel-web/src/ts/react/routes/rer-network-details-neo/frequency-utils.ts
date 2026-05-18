@@ -30,6 +30,7 @@ export type NetworkFreqGroupRow = {
   callsignLabel: string;
   lastDatetime: number | null;
   isActive: boolean;
+  isCommandControl: boolean;
 };
 
 export type NetworkFreqTableRow = NetworkFreqRow | NetworkFreqGroupRow;
@@ -76,12 +77,39 @@ function collectUniqueLabels(values: string[]): string | null {
   return uniqueValues.join(', ');
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): string {
-  const normalized = normalizeText(kind).toUpperCase();
-  if (normalized === 'DMR') return 'DMR';
-  if (normalized === 'DMRE') return 'DMRe';
+export function typeLabelFromSignalType(signalType: string | null | undefined): string {
+  const normalized = normalizeText(signalType).toLowerCase();
+  if (normalized === 'digital') return 'цифровий';
+  if (normalized === 'analog') return 'аналоговий';
 
-  return 'NFM';
+  return '—';
+}
+
+const ENCRYPTION_TYPE_LABELS: Record<string, string> = {
+  none: 'Відсутнє',
+  ARC40: 'ARC40',
+  AES256: 'AES256',
+  TUT16: 'TУТ 16 bit',
+  TUT128VEDA: 'TУТ 128 bit (VEDA)',
+  HYTERA_AES256_BASIC: 'HYTERA AES256 basic',
+};
+
+export function formatEncryptionTypeLabel(value: string | null | undefined): string {
+  const normalized = normalizeText(value);
+  if (normalized === '') return '—';
+
+  const exactLabel = ENCRYPTION_TYPE_LABELS[normalized];
+  if (exactLabel) return exactLabel;
+
+  const normalizedUpper = normalized.toUpperCase();
+  if (normalizedUpper === 'NONE') return 'Відсутнє';
+  if (normalizedUpper === 'ARC40') return 'ARC40';
+  if (normalizedUpper === 'AES256' || normalizedUpper === 'AES-256' || normalizedUpper === 'AES 256') return 'AES256';
+  if (normalizedUpper === 'TUT16' || normalizedUpper === 'ТУТ16') return 'TУТ 16 bit';
+  if (normalizedUpper === 'TUT128VEDA' || normalizedUpper === 'ТУТ128VEDA') return 'TУТ 128 bit (VEDA)';
+  if (normalizedUpper === 'HYTERA_AES256_BASIC' || normalizedUpper === 'HYTERA AES256 BASIC') return 'HYTERA AES256 basic';
+
+  return normalized;
 }
 
 function encryptionLabelFromCandidate(candidate: string): string | null {
@@ -92,6 +120,11 @@ function encryptionLabelFromCandidate(candidate: string): string | null {
   if (normalized.includes('VEDA')) return 'VEDA';
 
   return null;
+}
+
+function resolveEncryptionTypeLabel(value: string | null | undefined): string | null {
+  const label = formatEncryptionTypeLabel(value);
+  return label === '—' ? null : label;
 }
 
 export function encryptionLabelFromKey(
@@ -119,7 +152,13 @@ export function encryptionLabelFromKeys(
   modulationsById: Map<number, string>,
   modulationId: number | null | undefined,
   modulation: string | null | undefined,
+  encryptionType: string | null | undefined,
 ): string {
+  const explicitEncryptionLabel = resolveEncryptionTypeLabel(encryptionType);
+  if (explicitEncryptionLabel) {
+    return explicitEncryptionLabel;
+  }
+
   const labels = keys
     .map((key) =>
       typeof key === 'string' ? encryptionLabelFromCandidate(key) : encryptionLabelFromKey(key, modulationsById),
@@ -155,13 +194,19 @@ export function encryptionLabelFromKeys(
 function joinCallsigns(callsigns: Array<string> | null | undefined): string {
   const normalized = (callsigns ?? [])
     .map((callsign) => normalizeText(callsign))
-    .filter((callsign) => callsign !== '');
+    .filter((callsign) => callsign !== '' && callsign !== 'НВ');
   const uniqueValues = [...new Set(normalized)];
   if (uniqueValues.length === 0) return '—';
   return uniqueValues.join(', ');
 }
 
 function compareFreqsByUnits(left: NetworkFreqsRes, right: NetworkFreqsRes): number {
+  const leftPriority = Number(Boolean(left.commandControl));
+  const rightPriority = Number(Boolean(right.commandControl));
+  if (leftPriority !== rightPriority) {
+    return rightPriority - leftPriority;
+  }
+
   const leftUnits = parseNetworkFreqUnits(left.freq) ?? 0;
   const rightUnits = parseNetworkFreqUnits(right.freq) ?? 0;
 
@@ -177,9 +222,9 @@ function buildGroupId(freqs: NetworkFreqsRes[]): string {
 }
 
 function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, string>): NetworkFreqGroupRow {
-  const typeLabels = freqs.map((freq) => typeLabelFromKind(freq.kind));
+  const typeLabels = freqs.map((freq) => typeLabelFromSignalType(freq.signalType));
   const encryptionLabels = freqs.map((freq) =>
-    encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation),
+    encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation, freq.encryptionType),
   );
   const counts = freqs.map((freq) => freq.messageCount);
   const lastDatetime = freqs.reduce<number | null>((current, freq) => {
@@ -200,6 +245,7 @@ function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, st
     callsignLabel: joinCallsigns(freqs.flatMap((freq) => freq.callsigns ?? [])),
     lastDatetime,
     isActive: freqs.every((freq) => freq.isActive),
+    isCommandControl: freqs.every((freq) => Boolean(freq.commandControl)),
   };
 }
 
@@ -214,8 +260,8 @@ function buildFreqRow(
     parentGroupId,
     freq,
     displayFreq: normalizeFrequencyLabel(freq.freq),
-    typeLabel: typeLabelFromKind(freq.kind),
-    encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation),
+    typeLabel: typeLabelFromSignalType(freq.signalType),
+    encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation, freq.encryptionType),
     callsignLabel: joinCallsigns(freq.callsigns),
   };
 }
@@ -232,6 +278,7 @@ export function buildNetworkFreqRows(
   for (let index = 0; index < sortedFreqs.length; index += 1) {
     const startFreq = sortedFreqs[index];
     const startUnits = parseNetworkFreqUnits(startFreq.freq);
+    const startCommandControl = Boolean(startFreq.commandControl);
 
     if (startUnits === null) {
       rows.push(buildFreqRow(startFreq, modulationsById));
@@ -243,7 +290,7 @@ export function buildNetworkFreqRows(
     while (cursor < sortedFreqs.length) {
       const nextFreq = sortedFreqs[cursor];
       const nextUnits = parseNetworkFreqUnits(nextFreq.freq);
-      if (nextUnits === null || nextUnits - startUnits > GROUP_SPREAD_UNITS) {
+      if (nextUnits === null || nextUnits - startUnits > GROUP_SPREAD_UNITS || Boolean(nextFreq.commandControl) !== startCommandControl) {
         break;
       }
       cluster.push(nextFreq);

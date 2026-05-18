@@ -190,6 +190,37 @@ function resolveActivity(
   return activityMap.get(normalizeCallsignDisplay(callsign)) ?? toActivityFallback(fallback);
 }
 
+function compareCallsignViewsByActivityDesc(
+  left: Pick<NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView, 'messageCount' | 'lastDatetime' | 'callsign'>,
+  right: Pick<NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView, 'messageCount' | 'lastDatetime' | 'callsign'>,
+): number {
+  if (left.messageCount !== right.messageCount) {
+    return right.messageCount - left.messageCount;
+  }
+
+  const leftLastDatetime = left.lastDatetime ?? 0;
+  const rightLastDatetime = right.lastDatetime ?? 0;
+  if (leftLastDatetime !== rightLastDatetime) {
+    return rightLastDatetime - leftLastDatetime;
+  }
+
+  return left.callsign.localeCompare(right.callsign, 'uk');
+}
+
+function compareCatalogCallsignGroupsByActivityDesc(
+  left: NetworkCallsignCatalogGroupView,
+  right: NetworkCallsignCatalogGroupView,
+): number {
+  return compareCallsignViewsByActivityDesc(left, right);
+}
+
+function compareInterceptedCallsignsByActivityDesc(
+  left: NetworkCallsignInterceptedView,
+  right: NetworkCallsignInterceptedView,
+): number {
+  return compareCallsignViewsByActivityDesc(left, right);
+}
+
 export function getNetworkCallsignStatus(networkCallsign: Pick<NetworkCallsign, 'active' | 'developing' | 'knownCallsignId'>): NetworkCallsignStatus {
   if (networkCallsign.developing) return 'developing';
   if (networkCallsign.knownCallsignId !== null) return 'catalog';
@@ -260,6 +291,7 @@ export function buildNetworkCallsignTabData(
 
   groups.forEach((group) => {
     const callsign = normalizeCallsignDisplay(group.callsign);
+    if (callsign === 'НВ') return;
     const activity = resolveActivity(activityMap, callsign, group);
     const knownCallsigns = (group.knownCallsigns ?? []).map(buildCatalogCallsign);
 
@@ -289,6 +321,9 @@ export function buildNetworkCallsignTabData(
       activity,
     });
   });
+
+  catalogCallsignGroups.sort(compareCatalogCallsignGroupsByActivityDesc);
+  unknownInterceptedCallsigns.sort(compareInterceptedCallsignsByActivityDesc);
 
   return {
     catalogCallsignGroups,
@@ -328,22 +363,26 @@ export function mergeNetworkCallsigns(existingNetworkCallsigns: NetworkCallsign[
 }
 
 export function flattenCatalogCallsignRows(groups: NetworkCallsignCatalogGroupView[]): NetworkCallsignCatalogRowView[] {
-  return groups.flatMap((group) =>
-    group.knownCallsigns.map((knownCallsign) => ({
-      id: knownCallsign.id,
-      knownCallsignId: knownCallsign.id,
-      callsign: knownCallsign.callsign,
-      position: knownCallsign.position,
-      unitName: knownCallsign.unitName,
-      lastDatetime: group.lastDatetime,
-      messageCount: group.messageCount,
-      comment: knownCallsign.comment,
-      dateBoundAt: knownCallsign.createdAt,
-      sourceName: knownCallsign.sourceName,
-      networkCallsign: group.callsign,
-      freqs: group.freqs,
-    })),
-  );
+  return [...groups]
+    .sort(compareCatalogCallsignGroupsByActivityDesc)
+    .flatMap((group) =>
+      [...group.knownCallsigns]
+        .sort((left, right) => right.createdAt - left.createdAt)
+        .map((knownCallsign) => ({
+          id: knownCallsign.id,
+          knownCallsignId: knownCallsign.id,
+          callsign: knownCallsign.callsign,
+          position: knownCallsign.position,
+          unitName: knownCallsign.unitName,
+          lastDatetime: group.lastDatetime,
+          messageCount: group.messageCount,
+          comment: knownCallsign.comment,
+          dateBoundAt: knownCallsign.createdAt,
+          sourceName: knownCallsign.sourceName,
+          networkCallsign: group.callsign,
+          freqs: group.freqs,
+        })),
+    );
 }
 
 export function countNetworkCallsignStatusRows(rows: NetworkCallsignRowView[]): NetworkCallsignStatusCounts {

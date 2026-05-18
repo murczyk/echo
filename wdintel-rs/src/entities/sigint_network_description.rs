@@ -16,8 +16,6 @@ pub struct Model {
     pub login: String,
     pub r#type: NetworkDescriptionType,
     #[sea_orm(column_type = "Text")]
-    pub topic: String,
-    #[sea_orm(column_type = "Text")]
     pub description: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub comment: Option<String>,
@@ -26,6 +24,8 @@ pub struct Model {
     pub sigint_network_freq_id: Option<i64>,
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
+    #[sea_orm(column_type = "Text")]
+    pub topic: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

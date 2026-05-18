@@ -46,6 +46,7 @@ type Props = {
   onOpenFreqEditDrawer: (freq: NetworkFreqsRes) => void;
   onOpenFreqTechDrawer: (freq: NetworkFreqsRes) => void;
   onOpenDeleteFreqDialog: (freq: NetworkFreqsRes) => void;
+  onToggleFreqCommandControl: (freq: NetworkFreqsRes) => void;
   onOpenFreqRowActions: (anchorEl: HTMLElement, freqId: number) => void;
   onCloseFreqRowActions: () => void;
   freqRowActionMenuAnchorEl: HTMLElement | null;
@@ -89,6 +90,7 @@ export function NetworkDetailsTabPanel({
   onOpenFreqEditDrawer,
   onOpenFreqTechDrawer,
   onOpenDeleteFreqDialog,
+  onToggleFreqCommandControl,
   onOpenFreqRowActions,
   onCloseFreqRowActions,
   freqRowActionMenuAnchorEl,
@@ -155,6 +157,7 @@ export function NetworkDetailsTabPanel({
               onOpenFreqEditDrawer={onOpenFreqEditDrawer}
               onOpenFreqTechDrawer={onOpenFreqTechDrawer}
               onOpenDeleteFreqDialog={onOpenDeleteFreqDialog}
+              onToggleCommandControl={onToggleFreqCommandControl}
               onOpenFreqRowActions={onOpenFreqRowActions}
               onCloseFreqRowActions={onCloseFreqRowActions}
               freqRowActionMenuAnchorEl={freqRowActionMenuAnchorEl}

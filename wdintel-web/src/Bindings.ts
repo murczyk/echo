@@ -2125,16 +2125,19 @@ export type EtalonkaReportType =
 export type NetworkFreqsRes = {
   networkFreqId: number;
   freq: string;
+  signalType: string;
   modulationId: number | null;
   modulation: string | null;
   encryptionKeyIds: Array<number>;
   encryptionKeys: Array<string>;
+  encryptionType: string | null;
   messageCount: number;
   callsigns: Array<string> | null;
   lastDatetime: number | null;
   lastDatetimeInAor: number | null;
   createdAt: number;
   isActive: boolean;
+  commandControl: boolean;
   activeFrom: number;
   activeTo: number | null;
   kind: string | null;
@@ -2423,10 +2426,13 @@ export type UpdateNetworkFreqReq = {
   networkFreqId: number;
   freq: string;
   kind: string;
+  signalType: string | null;
   modulationId: number | null;
+  encryptionType: string | null;
   encryptionKeyIds: Array<number>;
   activeFrom: number;
   activeTo: number | null;
+  commandControl: boolean;
 };
 
 export type DeleteNetworkFreqReq = {
@@ -2632,18 +2638,23 @@ export type NetworkFreq = {
   networkId: number;
   freq: string;
   deleted: boolean;
+  commandControl: boolean;
+  signalType: string;
   activeFrom: number;
   activeTo: number | null;
   createdAt: number;
   kind: string;
   modulationId: number | null;
+  encryptionType: string | null;
   encryptionKeys: Array<EncryptionKeyData>;
 };
 
 export type AddNetworkFreq = {
   freq: string;
   kind: string;
+  signalType: string | null;
   modulationId: number | null;
+  encryptionType: string | null;
   encryptionKeyIds: Array<number>;
   description: AddNetworkFrequencyDescription | null;
   activeFrom: number | null;

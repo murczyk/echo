@@ -28,6 +28,7 @@ import {
   type NetworkCallsignDrawerForm,
   type NetworkCallsignDrawerMode,
 } from '../network-callsigns';
+import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
 
 type Props = {
   open: boolean;
@@ -310,6 +311,7 @@ export function NetworkCallsignDrawer({
                       const rawValue = event.target.value;
                       onChange({ ...form, unitId: rawValue === '' ? null : Number(rawValue) });
                     }}
+                    MenuProps={NEO_SELECT_MENU_PROPS}
                   >
                     <MenuItem value="">
                       <em>Оберіть підрозділ</em>

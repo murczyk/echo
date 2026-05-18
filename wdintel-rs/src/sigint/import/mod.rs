@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::sigint::aor::load_default_aor;
 use crate::sigint::import::types::*;
+use crate::sigint::network::derive_signal_type_from_kind;
 use crate::types::Mode;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -1459,7 +1460,12 @@ where
             freq: Set(rec.freq),
             created_at: Set(rec.created_at),
             last_seen_dt: Set(rec.last_seen_dt),
-            kind: Set(rec.kind),
+            kind: Set(rec.kind.clone()),
+            signal_type: Set(derive_signal_type_from_kind(
+                rec.kind.to_value().as_ref(),
+            )),
+            encryption_type: Set(None),
+            command_control: Set(false),
             active_from: Set(rec.active_from),
             active_to: Set(rec.active_to),
             deleted: Set(rec.deleted),

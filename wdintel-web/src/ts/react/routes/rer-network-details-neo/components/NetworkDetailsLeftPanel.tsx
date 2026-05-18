@@ -76,9 +76,11 @@ function formatUnitLabel(unitCount: number): string {
 function formatDateOnly(value: number | null | undefined): string {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? '—'
-    : date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  if (Number.isNaN(date.getTime())) return '—';
+  const year = String(date.getUTCFullYear()).slice(-2);
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${day}.${month}.${year}`;
 }
 
 function LeftPanelSkeleton() {

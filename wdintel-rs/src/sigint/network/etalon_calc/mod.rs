@@ -10,6 +10,14 @@ pub mod oneoff;
 pub mod tui;
 pub mod worker;
 
+fn should_backfill_freq(
+    freq: &sigint_network_freq::Model,
+    frequencies: &[String],
+) -> bool {
+    !freq.deleted
+        && (frequencies.is_empty() || frequencies.contains(&freq.freq))
+}
+
 pub async fn invalidate_network_inbox_for_group_with_key<'a, 'async_trait, C>(
     db: &'a C,
     master_key: &str,
@@ -139,13 +147,17 @@ pub async fn invalidate_network_inbox(
     backfill_task.clone().insert(db).await.c(h!())?;
     let mut sigint_freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .all(db)
         .await
         .c(h!())?;
     if !frequencies.is_empty() {
         sigint_freqs.retain(|f| frequencies.contains(&f.freq))
     }
-    for freq in sigint_freqs {
+    for freq in sigint_freqs
+        .into_iter()
+        .filter(|freq| should_backfill_freq(freq, &frequencies))
+    {
         let mut backfill_task = backfill_task.clone();
         backfill_task.since_ts = Set(freq.active_from);
         backfill_task.till_ts =
@@ -155,6 +167,50 @@ pub async fn invalidate_network_inbox(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sigint::sea_orm_active_enums::SigintNetworkKind;
+    use chrono::NaiveDate;
+
+    fn dt(day: u32) -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 1, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn should_backfill_freq_ignores_deleted_records() {
+        let active = sigint_network_freq::Model {
+            id: 1,
+            network_id: 10,
+            freq: "145.1000".to_string(),
+            created_at: dt(1),
+            kind: SigintNetworkKind::Vhf,
+            signal_type: "analog".to_string(),
+            modulation_id: None,
+            encryption_type: None,
+            active_from: dt(1),
+            active_to: None,
+            sigint_origin_id: None,
+            deleted: false,
+            command_control: false,
+            original_id: None,
+            last_seen_dt: None,
+        };
+        let deleted = sigint_network_freq::Model {
+            deleted: true,
+            freq: "145.1000".to_string(),
+            ..active.clone()
+        };
+        let frequencies = vec!["145.1000".to_string()];
+
+        assert!(should_backfill_freq(&active, &frequencies));
+        assert!(!should_backfill_freq(&deleted, &frequencies));
+    }
 }
 pub async fn calculate_sigint_inbox_item_networks<'a, 'async_trait, C>(
     sigint_inbox_items: Vec<sigint_inbox_item::Model>,

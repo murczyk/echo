@@ -132,7 +132,18 @@ function NetworkCallsignsNetworkTableContent({
     const filtered = normalizedStatusFilter === 'All'
       ? visibleRows
       : visibleRows.filter((row) => (normalizedStatusFilter === 'Verified' ? row.status === 'verified' : row.status === 'developing'));
-    return filtered.slice().sort((left, right) => Number(right.mainRadioStation) - Number(left.mainRadioStation));
+    return filtered.slice().sort((left, right) => {
+      if (right.messageCount !== left.messageCount) {
+        return right.messageCount - left.messageCount;
+      }
+      if (right.mainRadioStation !== left.mainRadioStation) {
+        return Number(right.mainRadioStation) - Number(left.mainRadioStation);
+      }
+      if ((right.lastDatetime ?? 0) !== (left.lastDatetime ?? 0)) {
+        return (right.lastDatetime ?? 0) - (left.lastDatetime ?? 0);
+      }
+      return left.callsign.localeCompare(right.callsign, 'uk');
+    });
   }, [normalizedStatusFilter, visibleRows]);
 
   const statusCounts = useMemo(() => countNetworkCallsignStatusRows(visibleRows), [visibleRows]);

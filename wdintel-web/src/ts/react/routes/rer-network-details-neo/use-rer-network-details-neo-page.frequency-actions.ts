@@ -19,7 +19,11 @@ import {
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
 import { buildNetworkFreqActivityByFreq } from './frequency-utils';
-import type { NetworkFreqCreateWizardForm, NetworkFreqEditForm, NetworkFreqTechDataForm } from './use-rer-network-details-neo-page.shared';
+import type {
+  NetworkFreqCreateWizardForm,
+  NetworkFreqEditForm,
+  NetworkFreqTechDataForm,
+} from './use-rer-network-details-neo-page.shared';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -64,11 +68,13 @@ function resetFreqTechDrawerState(current: NetworkDetailsNeoPageState): NetworkD
 function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId: number): AddNetworkFreqReq {
   return {
     networkId,
-    freqRec: {
-      freq: freqForm.freq.trim(),
-      kind: toBackendNetworkFreqKind(freqForm.kind),
-      modulationId: freqForm.modulationId,
-      encryptionKeyIds: [...freqForm.encryptionKeyIds],
+      freqRec: {
+        freq: freqForm.freq.trim(),
+        kind: toBackendNetworkFreqKind(freqForm.kind),
+        signalType: freqForm.signalType,
+        modulationId: freqForm.modulationId,
+        encryptionType: toBackendEncryptionType(freqForm.encryptionType),
+        encryptionKeyIds: [...freqForm.encryptionKeyIds],
       description:
         freqForm.description.trim() === ''
           ? null
@@ -86,6 +92,11 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
 
 function toBackendNetworkFreqKind(kind: NetworkFreqCreateWizardForm['kind'] | NetworkFreqEditForm['kind']): string {
   return kind === 'NFM' ? 'VHF' : kind;
+}
+
+function toBackendEncryptionType(encryptionType: string): string | null {
+  const trimmed = encryptionType.trim();
+  return trimmed === '' || trimmed === 'none' ? null : trimmed;
 }
 
 function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: number): NetworkFreqsRes | null {
@@ -335,10 +346,13 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         networkFreqId: currentFreq.networkFreqId,
         freq: currentFreq.freq,
         kind: toBackendNetworkFreqKind(form.kind),
+        signalType: form.signalType,
         modulationId: form.modulationId,
+        encryptionType: toBackendEncryptionType(form.encryptionType),
         encryptionKeyIds: [...currentFreq.encryptionKeyIds],
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom) ?? currentFreq.activeFrom,
         activeTo: parseNetworkDetailsDateInput(form.activeTo),
+        commandControl: currentFreq.commandControl,
       });
 
       setState((current) => ({
@@ -384,10 +398,13 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         networkFreqId: currentFreq.networkFreqId,
         freq: currentFreq.freq,
         kind: currentFreq.kind ?? 'VHF',
+        signalType: currentFreq.signalType,
         modulationId: currentFreq.modulationId,
+        encryptionType: toBackendEncryptionType(form.encryptionType),
         encryptionKeyIds: [...form.encryptionKeyIds],
         activeFrom: currentFreq.activeFrom,
         activeTo: currentFreq.activeTo,
+        commandControl: currentFreq.commandControl,
       });
 
       setState((current) => ({
@@ -442,6 +459,49 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     }
   }, [loadFrequencies, state.freqDeleteSubmitting, state.freqDeleteTarget, state.network, setState]);
 
+  const toggleFreqCommandControl = useCallback(async (freq: NetworkFreqsRes) => {
+    const network = state.network;
+    if (!network || state.freqsLoading) return;
+
+    const currentFreq = findNetworkFreq(state, freq.networkFreqId);
+    if (!currentFreq) return;
+
+    setState((current) => ({
+      ...current,
+      freqsLoading: true,
+      freqsError: null,
+    }));
+
+    try {
+      const updatedNetwork = await updateNetworkFreq({
+        networkId: network.id,
+        networkFreqId: currentFreq.networkFreqId,
+        freq: currentFreq.freq,
+        kind: currentFreq.kind ?? 'VHF',
+        signalType: currentFreq.signalType,
+        modulationId: currentFreq.modulationId,
+        encryptionType: currentFreq.encryptionType,
+        encryptionKeyIds: [...currentFreq.encryptionKeyIds],
+        activeFrom: currentFreq.activeFrom,
+        activeTo: currentFreq.activeTo,
+        commandControl: !currentFreq.commandControl,
+      });
+
+      setState((current) => ({
+        ...current,
+        network: updatedNetwork,
+        freqsLoading: false,
+      }));
+      await loadFrequencies(network.id);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        freqsLoading: false,
+        freqsError: formatErrorMessage(error),
+      }));
+    }
+  }, [loadFrequencies, state.freqsLoading, state.network, state.freqs, setState]);
+
   return {
     setActiveNetworkDetailsTab,
     loadFrequencies,
@@ -464,5 +524,6 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     saveFreqEditDrawer,
     saveFreqTechDrawer,
     deleteFreq,
+    toggleFreqCommandControl,
   };
 }

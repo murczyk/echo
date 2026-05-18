@@ -31,7 +31,7 @@ createNetwork : Int -> List String -> List Int -> B.Network
 createNetwork id freqs unitIds =
     { id = id
     , name = "Test Network " ++ String.fromInt id
-    , freqs = List.map (\freq -> { id = 0, networkId = id, freq = freq, deleted = False, activeFrom = 0, activeTo = Nothing, createdAt = 0, kind = "test", modulationId = Nothing, encryptionKeys = [] }) freqs
+    , freqs = List.map (\freq -> { id = 0, networkId = id, freq = freq, deleted = False, activeFrom = 0, activeTo = Nothing, createdAt = 0, kind = "test", signalType = "analog", modulationId = Nothing, encryptionType = Nothing, commandControl = False, encryptionKeys = [] }) freqs
     , unitIds = Just unitIds
     , aorIds = []
     , location = ""

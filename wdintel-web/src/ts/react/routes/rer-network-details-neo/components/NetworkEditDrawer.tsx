@@ -18,11 +18,9 @@ import type { NetworkStatus } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { NetworkEditForm } from '../use-rer-network-details-neo-page.shared';
-
-type LookupOption = {
-  id: number;
-  label: string;
-};
+import { NEO_AUTOCOMPLETE_SLOT_PROPS, NEO_SELECT_MENU_PROPS } from './dropdownProps';
+import type { NetworkEditLookupOption as LookupOption } from './network-edit-autocomplete';
+import { networkEditLookupFilterOptions } from './network-edit-autocomplete';
 
 type Props = {
   open: boolean;
@@ -124,6 +122,8 @@ function NetworkEditDrawerComponent({
                 getOptionLabel={(option) => option.label}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 onChange={handleAutocompleteChange('aorIds')}
+                filterOptions={networkEditLookupFilterOptions}
+                slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
                 renderInput={(params) => <TextField {...params} label="Смуги" size="small" />}
               />
 
@@ -151,6 +151,8 @@ function NetworkEditDrawerComponent({
                 getOptionLabel={(option) => option.label}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 onChange={handleAutocompleteChange('unitIds')}
+                filterOptions={networkEditLookupFilterOptions}
+                slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
                 renderInput={(params) => <TextField {...params} label="Підрозділи" size="small" />}
               />
 
@@ -214,6 +216,8 @@ function NetworkEditDrawerComponent({
                 getOptionLabel={(option) => option.label}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 onChange={handleAutocompleteChange('postIds')}
+                filterOptions={networkEditLookupFilterOptions}
+                slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
                 renderInput={(params) => <TextField {...params} label="Пости" size="small" />}
               />
 
@@ -233,6 +237,7 @@ function NetworkEditDrawerComponent({
                   label="Статус"
                   value={form.status}
                   onChange={(event) => handleStatusChange(String(event.target.value))}
+                  MenuProps={NEO_SELECT_MENU_PROPS}
                 >
                   <MenuItem value="NetworkActive">Активна</MenuItem>
                   <MenuItem value="NetworkInactive">Неактивна</MenuItem>

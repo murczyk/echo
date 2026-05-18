@@ -22,6 +22,7 @@ function createFreq(overrides: Partial<NetworkFreqsRes>): NetworkFreqsRes {
     isActive: true,
     activeFrom: 0,
     activeTo: null,
+    signalType: 'analog',
     kind: 'VHF',
     ...overrides,
   };
@@ -39,7 +40,7 @@ describe('frequency utils', () => {
       [
         createFreq({ networkFreqId: 10, freq: '652.1111', messageCount: 2, callsigns: ['Alpha'], kind: 'VHF' }),
         createFreq({ networkFreqId: 11, freq: '652.1200', messageCount: 3, callsigns: ['Bravo'], kind: 'VHF' }),
-        createFreq({ networkFreqId: 12, freq: '652.1500', messageCount: 4, callsigns: ['Charlie'], kind: 'DMR' }),
+        createFreq({ networkFreqId: 12, freq: '652.1500', messageCount: 4, callsigns: ['Charlie'], kind: 'DMR', signalType: 'digital' }),
       ],
       new Map(),
       [],
@@ -51,28 +52,28 @@ describe('frequency utils', () => {
       displayFreq: '652.1111, 652.1200',
       messageCount: 5,
       callsignLabel: 'Alpha, Bravo',
-      typeLabel: 'NFM',
+      typeLabel: 'аналоговий',
     });
     expect(rows[1]).toMatchObject({
       kind: 'freq',
       displayFreq: '652.1500',
-      typeLabel: 'DMR',
+      typeLabel: 'цифровий',
     });
   });
 
-  it('preserves DMRe as a distinct frequency type label', () => {
+  it('preserves signal type labels for digital frequencies', () => {
     const rows = buildNetworkFreqRows(
       [
-        createFreq({ networkFreqId: 10, freq: '652.1111', kind: 'DMRe' }),
-        createFreq({ networkFreqId: 11, freq: '652.1500', kind: 'DMR' }),
+        createFreq({ networkFreqId: 10, freq: '652.1111', signalType: 'digital', kind: 'DMRe' }),
+        createFreq({ networkFreqId: 11, freq: '652.1500', signalType: 'digital', kind: 'DMR' }),
       ],
       new Map(),
       [],
     );
 
     expect(rows).toMatchObject([
-      { kind: 'freq', typeLabel: 'DMRe' },
-      { kind: 'freq', typeLabel: 'DMR' },
+      { kind: 'freq', typeLabel: 'цифровий' },
+      { kind: 'freq', typeLabel: 'цифровий' },
     ]);
   });
 

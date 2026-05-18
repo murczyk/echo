@@ -13,6 +13,16 @@ use sea_orm::sea_query::*;
 use sea_orm::*;
 use sea_query::Expr as SeaExpr;
 
+fn sort_network_freqs(freqs: &mut [NetworkFreq]) {
+    freqs.sort_by(|left, right| {
+        right
+            .command_control
+            .cmp(&left.command_control)
+            .then_with(|| left.freq.cmp(&right.freq))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+}
+
 pub async fn render_networks<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
     txn: &'a C,
@@ -129,6 +139,8 @@ where
                 network_id: freq.network_id,
                 freq: freq.freq.clone(),
                 deleted: freq.deleted,
+                command_control: freq.command_control,
+                signal_type: freq.signal_type.clone(),
                 active_to: freq
                     .active_to
                     .map(|d| d.and_utc().timestamp_millis()),
@@ -136,8 +148,13 @@ where
                 created_at: freq.created_at.and_utc().timestamp_millis(),
                 kind: freq.kind.to_value(),
                 modulation_id: freq.modulation_id,
+                encryption_type: freq.encryption_type.clone(),
                 encryption_keys: keys,
             });
+    }
+
+    for freqs in freq_map.values_mut() {
+        sort_network_freqs(freqs);
     }
 
     Ok(freq_map)

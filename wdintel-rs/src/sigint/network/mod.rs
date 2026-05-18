@@ -38,6 +38,19 @@ pub mod merge;
 pub mod oneoff;
 pub mod types;
 
+fn dedupe_networks_by_id(
+    networks: Vec<sigint_network::Model>,
+) -> Vec<sigint_network::Model> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::with_capacity(networks.len());
+    for network in networks {
+        if seen.insert(network.id) {
+            deduped.push(network);
+        }
+    }
+    deduped
+}
+
 /// Отримання списку мереж
 ///
 /// # API URL
@@ -69,6 +82,7 @@ pub async fn network_list(
     .await?;
 
     let mut networks = sigint_network::Entity::find()
+        .distinct()
         .join_as(
             JoinType::LeftJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
@@ -187,7 +201,8 @@ pub async fn network_list(
     //     networks.clone().build(DbBackend::Postgres).to_string()
     // );
 
-    let networks = networks.all(&env.dbx).await.context(h!())?;
+    let networks =
+        dedupe_networks_by_id(networks.all(&env.dbx).await.context(h!())?);
 
     let res = render_networks(networks, &env.dbx, &user_id)
         .await
@@ -423,6 +438,17 @@ pub async fn create_network(
                 .unwrap_or(Utc::now().naive_utc());
             let active_to =
                 frequency.active_to.map(dt_from_millis).transpose()?;
+            let modulation_name =
+                get_modulation_name_by_id(frequency.modulation_id, &txn)
+                    .await?;
+            let signal_type = normalize_signal_type(
+                frequency.signal_type.as_deref(),
+                &frequency.kind,
+            )?;
+            validate_signal_type_modulation(
+                &signal_type,
+                modulation_name.as_deref(),
+            )?;
 
             let freq_id = sigint_network_freq::ActiveModel {
                 id: NotSet,
@@ -432,8 +458,15 @@ pub async fn create_network(
                 last_seen_dt: NotSet,
                 active_from: Set(active_from),
                 active_to: Set(active_to),
-                kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
+                kind: Set(legacy_kind_from_signal_type_and_modulation(
+                    &signal_type,
+                    modulation_name.as_deref(),
+                    Some(&frequency.kind),
+                )),
+                signal_type: Set(signal_type),
                 modulation_id: Set(frequency.modulation_id),
+                encryption_type: Set(None),
+                command_control: Set(false),
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
                 original_id: NotSet,
@@ -743,6 +776,173 @@ pub async fn get_modulation_name_by_id(
             Ok(modulation.map(|m| m.name))
         }
         None => Ok(None),
+    }
+}
+
+const SIGNAL_TYPE_ANALOG: &str = "analog";
+const SIGNAL_TYPE_DIGITAL: &str = "digital";
+
+pub(crate) fn derive_signal_type_from_kind(kind: &str) -> String {
+    match kind.trim().to_uppercase().as_str() {
+        "DMR" | "DMRE" => SIGNAL_TYPE_DIGITAL.to_string(),
+        _ => SIGNAL_TYPE_ANALOG.to_string(),
+    }
+}
+
+fn normalize_signal_type(
+    signal_type: Option<&str>,
+    kind: &str,
+) -> Result<String, AppError> {
+    match signal_type.map(|value| value.trim().to_lowercase()) {
+        Some(value) if value == SIGNAL_TYPE_ANALOG => {
+            Ok(SIGNAL_TYPE_ANALOG.to_string())
+        }
+        Some(value) if value == SIGNAL_TYPE_DIGITAL => {
+            Ok(SIGNAL_TYPE_DIGITAL.to_string())
+        }
+        Some(value) if value.is_empty() => {
+            Ok(derive_signal_type_from_kind(kind))
+        }
+        Some(value) => Err(AppError::BL {
+            msg: format!("Unsupported signal type: {value}"),
+        }),
+        None => Ok(derive_signal_type_from_kind(kind)),
+    }
+}
+
+fn modulation_signal_type(
+    modulation_name: Option<&str>,
+) -> Option<&'static str> {
+    let modulation_name = modulation_name?.trim().to_uppercase();
+    match modulation_name.as_str() {
+        "NFM" | "AM" => Some(SIGNAL_TYPE_ANALOG),
+        "DMR" => Some(SIGNAL_TYPE_DIGITAL),
+        _ => None,
+    }
+}
+
+fn validate_signal_type_modulation(
+    signal_type: &str,
+    modulation_name: Option<&str>,
+) -> Result<(), AppError> {
+    if let Some(modulation_signal_type) =
+        modulation_signal_type(modulation_name)
+    {
+        if modulation_signal_type != signal_type {
+            let modulation_name =
+                modulation_name.unwrap_or("—").trim().to_string();
+            return Err(AppError::BL {
+                msg: format!(
+                    "Signal type {signal_type} is incompatible with modulation {modulation_name}"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn legacy_kind_from_signal_type_and_modulation(
+    signal_type: &str,
+    modulation_name: Option<&str>,
+    old_kind: Option<&str>,
+) -> SigintNetworkKind {
+    if let Some(old_kind) = old_kind {
+        let old_kind = match old_kind.trim().to_uppercase().as_str() {
+            "VHF" => SigintNetworkKind::Vhf,
+            "DMR" => SigintNetworkKind::Dmr,
+            "DMRE" => SigintNetworkKind::DmRe,
+            _ => {
+                return match signal_type {
+                    SIGNAL_TYPE_DIGITAL => SigintNetworkKind::Dmr,
+                    _ => SigintNetworkKind::Vhf,
+                }
+            }
+        };
+
+        let old_kind_signal_type = match old_kind {
+            SigintNetworkKind::Vhf => SIGNAL_TYPE_ANALOG,
+            SigintNetworkKind::Dmr | SigintNetworkKind::DmRe => {
+                SIGNAL_TYPE_DIGITAL
+            }
+        };
+
+        if old_kind_signal_type == signal_type {
+            return old_kind;
+        }
+    }
+
+    match signal_type {
+        SIGNAL_TYPE_DIGITAL => match modulation_signal_type(modulation_name) {
+            Some(SIGNAL_TYPE_ANALOG) => SigintNetworkKind::Vhf,
+            _ => SigintNetworkKind::Dmr,
+        },
+        _ => SigintNetworkKind::Vhf,
+    }
+}
+
+#[cfg(test)]
+mod signal_type_tests {
+    use super::*;
+
+    #[test]
+    fn derives_signal_type_from_legacy_kind() {
+        assert_eq!(derive_signal_type_from_kind("VHF"), "analog");
+        assert_eq!(derive_signal_type_from_kind("DMR"), "digital");
+        assert_eq!(derive_signal_type_from_kind("DMRe"), "digital");
+    }
+
+    #[test]
+    fn missing_signal_type_uses_kind() {
+        assert_eq!(normalize_signal_type(None, "VHF").unwrap(), "analog");
+        assert_eq!(normalize_signal_type(None, "DMR").unwrap(), "digital");
+    }
+
+    #[test]
+    fn analog_modulations_are_accepted() {
+        assert!(validate_signal_type_modulation("analog", Some("NFM")).is_ok());
+        assert!(validate_signal_type_modulation("analog", Some("AM")).is_ok());
+    }
+
+    #[test]
+    fn digital_modulation_is_accepted() {
+        assert!(validate_signal_type_modulation("digital", Some("DMR")).is_ok());
+    }
+
+    #[test]
+    fn incompatible_signal_types_are_rejected() {
+        assert!(validate_signal_type_modulation("analog", Some("DMR")).is_err());
+        assert!(
+            validate_signal_type_modulation("digital", Some("NFM")).is_err()
+        );
+        assert!(validate_signal_type_modulation("digital", Some("AM")).is_err());
+    }
+
+    #[test]
+    fn legacy_kind_is_preserved_only_when_compatible() {
+        assert_eq!(
+            legacy_kind_from_signal_type_and_modulation(
+                "digital",
+                Some("DMR"),
+                Some("VHF"),
+            ),
+            SigintNetworkKind::Dmr
+        );
+        assert_eq!(
+            legacy_kind_from_signal_type_and_modulation(
+                "analog",
+                Some("NFM"),
+                Some("DMR"),
+            ),
+            SigintNetworkKind::Vhf
+        );
+        assert_eq!(
+            legacy_kind_from_signal_type_and_modulation(
+                "digital",
+                Some("DMR"),
+                Some("DMRe"),
+            ),
+            SigintNetworkKind::DmRe
+        );
     }
 }
 
@@ -1555,6 +1755,16 @@ pub async fn add_network_freq(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        let modulation_name =
+            get_modulation_name_by_id(req.freq_rec.modulation_id, &txn).await?;
+        let signal_type = normalize_signal_type(
+            req.freq_rec.signal_type.as_deref(),
+            &req.freq_rec.kind,
+        )?;
+        validate_signal_type_modulation(
+            &signal_type,
+            modulation_name.as_deref(),
+        )?;
 
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
@@ -1562,11 +1772,18 @@ pub async fn add_network_freq(
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             last_seen_dt: NotSet,
-            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
+            kind: Set(legacy_kind_from_signal_type_and_modulation(
+                &signal_type,
+                modulation_name.as_deref(),
+                Some(&req.freq_rec.kind),
+            )),
+            signal_type: Set(signal_type),
             modulation_id: Set(req.freq_rec.modulation_id),
+            encryption_type: Set(req.freq_rec.encryption_type.clone()),
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
+            command_control: Set(false),
             sigint_origin_id: NotSet,
             original_id: NotSet,
         };
@@ -1859,6 +2076,14 @@ pub async fn update_network_freq(
         }
 
         let network_freq_id = network_freq_model.id;
+        let modulation_name =
+            get_modulation_name_by_id(req.modulation_id, &txn).await?;
+        let signal_type =
+            normalize_signal_type(req.signal_type.as_deref(), &req.kind)?;
+        validate_signal_type_modulation(
+            &signal_type,
+            modulation_name.as_deref(),
+        )?;
         invalidation_range = merge_invalidation_range(
             Some(network_freq_model.active_from),
             network_freq_model.active_to,
@@ -1868,8 +2093,15 @@ pub async fn update_network_freq(
         invalidation_freq = freq;
 
         let mut model = network_freq_model.into_active_model();
-        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
+        model.kind = Set(legacy_kind_from_signal_type_and_modulation(
+            &signal_type,
+            modulation_name.as_deref(),
+            Some(&req.kind),
+        ));
+        model.signal_type = Set(signal_type);
         model.modulation_id = Set(req.modulation_id);
+        model.encryption_type = Set(req.encryption_type.clone());
+        model.command_control = Set(req.command_control);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
         model.update(&txn).await.context(h!())?;
@@ -1944,7 +2176,6 @@ pub async fn update_network_freq(
 
 fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
     dt_from_millis(active_from_millis).unwrap_or(Utc::now().naive_utc())
-        - chrono::Duration::days(1)
 }
 
 #[post("/api/sigint/network/delete-freq")]
@@ -3457,12 +3688,63 @@ mod tests {
     }
 
     #[test]
-    fn update_network_freq_active_from_uses_previous_day() {
+    fn update_network_freq_active_from_preserves_input_day() {
         let active_from_millis = dt(5).and_utc().timestamp_millis();
 
         let active_from = update_network_freq_active_from(active_from_millis);
 
-        assert_eq!(active_from, dt(4));
+        assert_eq!(active_from, dt(5));
+    }
+
+    #[test]
+    fn network_list_dedupes_duplicate_rows_by_id() {
+        let network_a = sigint_network::Model {
+            id: 10,
+            name: "Network A".to_string(),
+            location: "Location A".to_string(),
+            deleted: false,
+            created_at: dt(1),
+            updated_by: Some("Tester".to_string()),
+            updated_at: dt(1),
+            radio_station: None,
+            purpose: None,
+            operation_mode: None,
+            operation_type: None,
+            operation_period: None,
+            merged_to: None,
+            active_from: Some(dt(1)),
+            active_to: None,
+            sigint_origin_id: None,
+            original_id: None,
+        };
+        let network_b = sigint_network::Model {
+            id: 11,
+            name: "Network B".to_string(),
+            location: "Location B".to_string(),
+            deleted: false,
+            created_at: dt(2),
+            updated_by: Some("Tester".to_string()),
+            updated_at: dt(2),
+            radio_station: None,
+            purpose: None,
+            operation_mode: None,
+            operation_type: None,
+            operation_period: None,
+            merged_to: None,
+            active_from: Some(dt(2)),
+            active_to: None,
+            sigint_origin_id: None,
+            original_id: None,
+        };
+
+        let deduped = dedupe_networks_by_id(vec![
+            network_a.clone(),
+            network_a.clone(),
+            network_b.clone(),
+            network_b.clone(),
+        ]);
+
+        assert_eq!(deduped, vec![network_a, network_b]);
     }
 
     #[test]
