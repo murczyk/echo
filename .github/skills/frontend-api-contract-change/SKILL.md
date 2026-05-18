@@ -29,10 +29,12 @@ Use when endpoint path/method/body/response/status handling must change (not jus
 - status behavior
 - Update code in lockstep:
 - API client method
-- response normalization/parsing
+- request serialization and response normalization/parsing
 - all call sites
 - generated/shared types (`just gen-front` if needed)
 - tests/mocks/fixtures
+- For generated enum/string shape drift, normalize wire variants in `services/api/*` and keep app-facing types stable.
+- If multiple screens share a preference/setting endpoint, expose a typed service plus hook instead of calling the endpoint directly from components.
 - Update user-facing error behavior:
 - Elm: use `formatErrorForShowErrorWithDetails`.
 - React: surface error in UI and keep 401 redirect behavior.
@@ -44,6 +46,7 @@ Use when endpoint path/method/body/response/status handling must change (not jus
 - Every contract delta is reflected across client, types, and call sites.
 - No stale old endpoint/path or payload key remains.
 - Errors remain visible to users and 401 flow is preserved.
+- Normalizers/serializers handle old/new wire values when compatibility is needed.
 - Related tests or fixtures updated.
 - Build passes.
 
@@ -57,6 +60,7 @@ Changed response key `data` -> `items`
 - Grep for old endpoint/path/key to ensure no stale usage.
 - Verify breakpoints and UI states on at least one affected screen.
 - Verify no implicit status-code assumptions were broken.
+- Verify shared service consumers still receive stable app-facing values after normalization.
 - Review diff for accidental unrelated API edits.
 
 ## Assumptions

@@ -10,19 +10,24 @@ import {
   LEGACY_CALLSIGN_CLEAR_ERROR,
   buildListCallsignsReq,
   createDefaultFilters,
+  getExportPermission,
+  getExportPermissionFromRoles,
   getSortDescriptor,
+  getUnitSelectionError,
   normalizeDuplicateLookupValue,
   nextSortState,
   parseTabDelimitedInput,
   parseDateTimeLocalToMs,
   QUICK_PASTE_TSV_FORMAT_ERROR,
   RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR,
+  UNIT_SELECTION_REQUIRED_ERROR,
   toBackendSort,
   validateDraftRows,
   validateEditForm,
 } from './helpers';
 import type { CallsignsSortState } from './types';
-import type { Callsign, Unit } from '../../../../Bindings';
+import type { Callsign, Unit, User } from '../../../../Bindings';
+import { filterUnitsBySearch, findExactUnitSearchMatch } from '../../utils/unit-search';
 
 describe('rer-callsigns helpers', () => {
   it('creates default filters with OnlyNonDeveloping selected', () => {
@@ -143,6 +148,46 @@ describe('rer-callsigns helpers', () => {
     expect(req.filterUnitDivision).toBe('');
     expect(req.filterUnitRegiment).toBeNull();
     expect(req.filterUnitBattalion).toBeNull();
+  });
+
+  it('matches unit search by name and exact id only', () => {
+    const units = [
+      { id: 4, name: '4 омсбр' } as Unit,
+      { id: 14, name: '14 омсбр' } as Unit,
+      { id: 42, name: '78 мсп 42 мсд' } as Unit,
+    ];
+
+    expect(filterUnitsBySearch(units, '4 омсбр').map((unit) => unit.id)).toEqual([4]);
+    expect(filterUnitsBySearch(units, '14').map((unit) => unit.id)).toEqual([14]);
+    expect(findExactUnitSearchMatch(units, '78 мсп 42 мсд')?.id).toBe(42);
+    expect(findExactUnitSearchMatch(units, '#42')?.id).toBe(42);
+    expect(findExactUnitSearchMatch(units, '4 омсбр')?.id).toBe(4);
+    expect(getUnitSelectionError('78 мсп 42 мсд', null)).toBe(UNIT_SELECTION_REQUIRED_ERROR);
+    expect(getUnitSelectionError('', null)).toBeNull();
+  });
+
+  it('keeps callsign edit access aligned with backend roles', () => {
+    expect(getExportPermission({ roles: ['UnitsEditor'] } as User).canEdit).toBe(false);
+    expect(getExportPermission({ roles: ['Admin'] } as User).canEdit).toBe(true);
+    expect(getExportPermission({ roles: ['Rer', 'CallsignsEditor'] } as User).canEdit).toBe(true);
+    expect(getExportPermission({ roles: ['Full', 'CallsignsEditor'] } as User).canEdit).toBe(true);
+    expect(getExportPermission({ roles: ['Admin'] } as User).canExport).toBe(true);
+    expect(getExportPermissionFromRoles(['UnitsEditor'])).toEqual({
+      canEdit: false,
+      canExport: false,
+    });
+    expect(getExportPermissionFromRoles(['Rer', 'CallsignsEditor'])).toEqual({
+      canEdit: true,
+      canExport: true,
+    });
+    expect(getExportPermissionFromRoles(['Full'])).toEqual({
+      canEdit: false,
+      canExport: true,
+    });
+    expect(getExportPermissionFromRoles(['Full', 'CallsignsEditor'])).toEqual({
+      canEdit: true,
+      canExport: true,
+    });
   });
 
   it('maps sort state to backend sort enums', () => {

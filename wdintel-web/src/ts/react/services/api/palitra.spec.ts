@@ -44,4 +44,43 @@ describe('palitra reference loading', () => {
       aors: null,
     });
   });
+
+  it('loads own-organism logins for Rer palitra editors', async () => {
+    const requestedUrls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+
+      if (url === '/api/organism/list-logins') {
+        return new Response(JSON.stringify(['operator', 'scout']), { status: 200 });
+      }
+
+      return new Response('{}', { status: 200 });
+    }));
+
+    await expect(fetchPalitraReferenceData({ roles: ['Rer', 'UnitsEditor'] } as never)).resolves.toMatchObject({
+      organismLogins: ['operator', 'scout'],
+      logins: null,
+      organisms: null,
+      aors: null,
+    });
+
+    expect(requestedUrls).toContain('/api/organism/list-logins');
+    expect(requestedUrls).not.toContain('/api/logins');
+  });
+
+  it('does not load editor-only palitra references without Rer and editor roles', async () => {
+    const requestedUrls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrls.push(String(input));
+      return new Response('{}', { status: 200 });
+    }));
+
+    await fetchPalitraReferenceData({ roles: ['Basic'] } as never);
+    await fetchPalitraReferenceData({ roles: ['UnitsEditor'] } as never);
+    await fetchPalitraReferenceData({ roles: ['Rer'] } as never);
+
+    expect(requestedUrls).not.toContain('/api/organism/list-logins');
+    expect(requestedUrls).not.toContain('/api/logins');
+  });
 });

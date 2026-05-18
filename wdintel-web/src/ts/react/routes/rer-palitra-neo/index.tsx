@@ -102,7 +102,11 @@ function RerPalitraNeoPageBody() {
               >
                 Видалити палітри
               </Button>
-              <Button variant='contained' onClick={page.openCreate} disabled={page.createInFlight || page.folderActionsBlocked}>
+              <Button
+                variant='contained'
+                onClick={page.openCreate}
+                disabled={page.createInFlight || page.folderActionsBlocked || page.availableAccessTypes.length === 0}
+              >
                 Додати палітру
               </Button>
             </Stack>

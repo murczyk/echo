@@ -28,24 +28,39 @@ export function isEditor(user: User | null): boolean {
   return user.roles.includes('UnitsEditor') || user.roles.includes('CallsignsEditor');
 }
 
+export function isRer(user: User | null): boolean {
+  return Boolean(user?.roles.some((role) => role === 'Admin' || role === 'Full' || role === 'Rer'));
+}
+
 export function canEditScopedLogins(user: User | null): boolean {
-  return isEditor(user);
+  return canManagePalitraAccess(user);
+}
+
+function canUseLoginAccess(user: User | null): boolean {
+  return canManagePalitraAccess(user);
+}
+
+function canUseOrganismAccess(user: User | null, myScope: MyScope | null): boolean {
+  return canManagePalitraAccess(user) && (isAdmin(user) || Boolean(myScope?.organism));
+}
+
+function canUseAorAccess(user: User | null, myScope: MyScope | null): boolean {
+  return canManagePalitraAccess(user) && (isAdmin(user) || (myScope?.aorIds ?? []).length > 0);
+}
+
+function canManagePalitraAccess(user: User | null): boolean {
+  return isAdmin(user) || (isRer(user) && isEditor(user));
 }
 
 export function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
-  return isAdmin(user) || palitra.author === user?.name;
+  return isAdmin(user) || (canManagePalitraAccess(user) && palitra.author === user?.name);
 }
 
 export function getAvailableAccessTypes(user: User | null, myScope: MyScope | null): AccessType[] {
-  const admin = isAdmin(user);
-  const editor = isEditor(user);
-  const hasOrganism = Boolean(myScope?.organism);
-  const hasAorIds = (myScope?.aorIds ?? []).length > 0;
-
   return [
-    'logins',
-    ...(admin || hasOrganism ? (['organisms'] as AccessType[]) : []),
-    ...(admin || (editor && hasAorIds) ? (['aor'] as AccessType[]) : []),
+    ...(canUseLoginAccess(user) ? (['logins'] as AccessType[]) : []),
+    ...(canUseOrganismAccess(user, myScope) ? (['organisms'] as AccessType[]) : []),
+    ...(canUseAorAccess(user, myScope) ? (['aor'] as AccessType[]) : []),
   ];
 }
 
@@ -111,9 +126,9 @@ export function getInitialCreateForm(user: User | null, myScope: MyScope | null)
     name: '',
     colorHex: DEFAULT_COLOR_HEX,
     accessType: defaultAccessType,
-    logins: user?.name ? [user.name] : [],
-    organismIds: defaultOrganismIds,
-    aorIds: myScope?.aorIds ?? [],
+    logins: available.includes('logins') && user?.name ? [user.name] : [],
+    organismIds: available.includes('organisms') ? defaultOrganismIds : [],
+    aorIds: available.includes('aor') ? myScope?.aorIds ?? [] : [],
   };
 }
 
@@ -243,6 +258,13 @@ export function applyRestrictedAccess(
   if (!isAccessRestricted(user)) return form;
 
   if (form.accessType === 'logins') {
+    if (!canUseLoginAccess(user)) {
+      return {
+        ...form,
+        logins: [],
+      };
+    }
+
     if (canEditScopedLogins(user)) {
       const fallbackLogin = user?.name?.trim() ?? '';
       const allowedSet = new Set(normalizeLogins([fallbackLogin, ...allowedLogins]));
@@ -261,9 +283,23 @@ export function applyRestrictedAccess(
   }
 
   if (form.accessType === 'organisms') {
+    if (!canUseOrganismAccess(user, myScope)) {
+      return {
+        ...form,
+        organismIds: [],
+      };
+    }
+
     return {
       ...form,
       organismIds: myScope?.organism ? [myScope.organism.id] : [],
+    };
+  }
+
+  if (!canUseAorAccess(user, myScope)) {
+    return {
+      ...form,
+      aorIds: [],
     };
   }
 
