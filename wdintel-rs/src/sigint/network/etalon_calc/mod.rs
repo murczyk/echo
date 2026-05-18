@@ -169,49 +169,6 @@ pub async fn invalidate_network_inbox(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sigint::sea_orm_active_enums::SigintNetworkKind;
-    use chrono::NaiveDate;
-
-    fn dt(day: u32) -> NaiveDateTime {
-        NaiveDate::from_ymd_opt(2026, 1, day)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-    }
-
-    #[test]
-    fn should_backfill_freq_ignores_deleted_records() {
-        let active = sigint_network_freq::Model {
-            id: 1,
-            network_id: 10,
-            freq: "145.1000".to_string(),
-            created_at: dt(1),
-            kind: SigintNetworkKind::Vhf,
-            signal_type: "analog".to_string(),
-            modulation_id: None,
-            encryption_type: None,
-            active_from: dt(1),
-            active_to: None,
-            sigint_origin_id: None,
-            deleted: false,
-            command_control: false,
-            original_id: None,
-            last_seen_dt: None,
-        };
-        let deleted = sigint_network_freq::Model {
-            deleted: true,
-            freq: "145.1000".to_string(),
-            ..active.clone()
-        };
-        let frequencies = vec!["145.1000".to_string()];
-
-        assert!(should_backfill_freq(&active, &frequencies));
-        assert!(!should_backfill_freq(&deleted, &frequencies));
-    }
-}
 pub async fn calculate_sigint_inbox_item_networks<'a, 'async_trait, C>(
     sigint_inbox_items: Vec<sigint_inbox_item::Model>,
     dbx: &'a C,
@@ -264,4 +221,48 @@ where
             .c(h!())?;
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sigint::sea_orm_active_enums::SigintNetworkKind;
+    use chrono::NaiveDate;
+
+    fn dt(day: u32) -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 1, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn should_backfill_freq_ignores_deleted_records() {
+        let active = sigint_network_freq::Model {
+            id: 1,
+            network_id: 10,
+            freq: "145.1000".to_string(),
+            created_at: dt(1),
+            kind: SigintNetworkKind::Vhf,
+            signal_type: "analog".to_string(),
+            modulation_id: None,
+            encryption_type: None,
+            active_from: dt(1),
+            active_to: None,
+            sigint_origin_id: None,
+            deleted: false,
+            command_control: false,
+            original_id: None,
+            last_seen_dt: None,
+        };
+        let deleted = sigint_network_freq::Model {
+            deleted: true,
+            freq: "145.1000".to_string(),
+            ..active.clone()
+        };
+        let frequencies = vec!["145.1000".to_string()];
+
+        assert!(should_backfill_freq(&active, &frequencies));
+        assert!(!should_backfill_freq(&deleted, &frequencies));
+    }
 }
