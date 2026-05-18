@@ -106,7 +106,7 @@ dev-north:
 
     pids="$(lsof -tiTCP:6432 -sTCP:LISTEN || true)"
     if [ -n "$pids" ]; then
-        kill $pids
+        kill $pids 2>/dev/null || true
     fi
 
     ssh -nNT -L 6432:localhost:5432 echo-pivnich-dev >/tmp/dev-north-6432.log 2>&1 &
