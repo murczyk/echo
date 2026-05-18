@@ -17,6 +17,7 @@ import Shared
 import Shared.Components.Button as Button
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
 import Shared.Model exposing (isDarkMode)
 import Time
 import Utils.Api.ErrorHandling
@@ -414,6 +415,18 @@ sectionList listClass emptyClass emptyText descriptions network user shared =
 
 signalsSection signals =
     case signals of
+        Loading ->
+            Shared.Components.Spinner.loadingSpinnerSm
+
+        NotAsked ->
+            Shared.Components.Spinner.loadingSpinnerSm
+
+        NeedsReload _ ->
+            Shared.Components.Spinner.loadingSpinnerSm
+
+        Failure _ ->
+            emptyState "Помилка завантаження сигналів"
+
         Success signalsForUnits ->
             let
                 visibleUnits =
@@ -442,10 +455,6 @@ signalsSection signals =
                         )
                         visibleUnits
                     )
-
-        _ ->
-            emptyState "Відсутні прив'язані до підрозділів сигнали"
-
 
 emptyState : String -> Html msg
 emptyState message =
