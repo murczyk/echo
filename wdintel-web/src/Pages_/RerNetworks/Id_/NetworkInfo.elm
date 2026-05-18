@@ -35,7 +35,7 @@ view network model user shared =
         )
     , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ] <|
         activityBlock shared model
-    , div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col h-[250px]" ]
+    , div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
         [ h4 [] [ text "Пеленги" ]
         , let
             mapPoints =
@@ -49,13 +49,13 @@ view network model user shared =
           if List.length mapPoints > 0 then
             Html.node "small-map"
                 [ property "points" (Encode.list B.networkPointEncoder mapPoints)
-                , class "flex-1"
+                , class "flex-1 min-h-[180px]"
                 , property "withExitButton" (Encode.bool False)
                 ]
                 []
 
           else
-            div [ class "flex-1 flex justify-center items-center" ] [ text "Пеленги відсутні" ]
+            div [ class "py-8 flex justify-center items-center text-[var(--color-text-muted)]" ] [ text "Пеленги відсутні" ]
         ]
     ]
 
@@ -133,132 +133,104 @@ createActivityStr mActiveFrom mActiveTo timeZone =
 
 viewNetworkInfoReadonly : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
 viewNetworkInfoReadonly user network shared model =
-    [ if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
-        div [ class "mb-[8px] flex justify-end items-center" ]
-            [ i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
+    [ div [ class "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 items-start" ]
+        [ div [ class "min-w-0 space-y-1.5" ]
+            [ if Core.Auth.hasRole "UnitsEditor" user then
+                infoRow shared "Смуги" (aorNames network model.aorList)
+
+              else
+                infoRow shared "Назва" (text network.name)
+            , if Core.Auth.hasRole "UnitsEditor" user then
+                infoRow shared "Назва" (text network.name)
+
+              else
+                text ""
+            , infoRow shared "Підрозділи" (unitNames shared network.unitIds)
+            , infoRow shared "Район функціонування/розгортання" (text network.location)
+            , infoRow shared "Призначення" (text <| Maybe.withDefault "" network.purpose)
+            , infoRow shared "Склад кореспондентів" (text <| String.fromInt (List.length (RD.withDefault [] model.callsigns)))
+            , infoRow shared "Вид передачі" (text <| freqKinds network.freqs)
+            , infoRow shared "Режим роботи радіомережі" (text <| Maybe.withDefault "" network.operationMode)
+            , infoRow shared "Характер роботи" (text <| Maybe.withDefault "" network.operationType)
+            , infoRow shared "Період функціонування" (text <| Maybe.withDefault "" network.operationPeriod)
+            , infoRow shared "Активність" (text <| createActivityStr network.activeFrom network.activeTo shared.timeZone)
+            , infoRow shared "Пости" (postNames shared network.postIds)
+            , infoRow shared "Радіостанція" (text <| Maybe.withDefault "" network.radioStation)
+            , infoRow shared "Статус" (text (networkStatusLabel network.status))
             ]
-
-      else
-        text ""
-    , div [ class "space-y-3" ]
-        [ if Core.Auth.hasRole "UnitsEditor" user then
-            div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-                [ span [ class "text-[13px] font-medium" ] [ text "Смуги:" ]
-                , div [ class "col-span-2 h-[40px] flex items-center" ]
-                    [ case model.aorList of
-                        Success aors ->
-                            let
-                                aorNames =
-                                    network.aorIds
-                                        |> List.filterMap (\aid -> aors |> List.filter (\a -> a.id == aid) |> List.head |> Maybe.map .name)
-                                        |> String.join ", "
-                            in
-                            text aorNames
-
-                        _ ->
-                            text ""
-                    ]
+        , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
+            button
+                [ class "shrink-0 p-1 rounded-md transition-colors duration-200 text-action hover:bg-[var(--color-bg-muted)]"
+                , onClick NetworkEditStartedByUser
+                , title "Редагувати"
                 ]
+                [ i [ class "bi bi-pencil-square text-[20px]" ] [] ]
 
           else
             text ""
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Назва:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text network.name ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ case network.unitIds of
-                    Just unitIds ->
-                        List.map
-                            (\unitId ->
-                                Dict.get unitId (RD.withDefault Dict.empty shared.masterUnits)
-                                    |> Maybe.map .name
-                                    |> Maybe.withDefault (String.fromInt unitId)
-                            )
-                            unitIds
-                            |> String.join ", "
-                            |> text
-
-                    Nothing ->
-                        text ""
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text network.location ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Призначення:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.purpose ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Склад кореспондентів:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ List.map (\freqObj -> freqObj.kind) network.freqs
-                    |> List.map NetworksUtils.networkStringToLabel
-                    |> Set.fromList
-                    |> Set.toList
-                    |> String.join ", "
-                    |> text
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Режим роботи радіомережі:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.operationMode ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Характер роботи:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.operationType ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.operationPeriod ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Активність:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| createActivityStr network.activeFrom network.activeTo shared.timeZone
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ case shared.posts of
-                    Success posts ->
-                        List.filterMap (\postId -> Dict.get postId posts) network.postIds
-                            |> List.map .name
-                            |> String.join ", "
-                            |> text
-
-                    _ ->
-                        text ""
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text (Maybe.withDefault "" network.radioStation) ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Статус:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text (networkStatusLabel network.status) ]
-            ]
         ]
     ]
+
+
+infoRow : Shared.Model -> String -> Html Msg -> Html Msg
+infoRow _ label value =
+    div [ class "grid grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-0 items-start py-0.5" ]
+        [ span [ class "text-[13px] font-medium leading-5 py-0.5" ] [ text (label ++ ":") ]
+        , div [ class "min-h-[20px] flex items-start leading-5 py-0.5" ] [ value ]
+        ]
+
+
+aorNames : B.Network -> RD.RemoteData err (List { a | id : Int, name : String }) -> Html Msg
+aorNames network aorList =
+    case aorList of
+        Success aors ->
+            network.aorIds
+                |> List.filterMap (\aid -> aors |> List.filter (\a -> a.id == aid) |> List.head |> Maybe.map .name)
+                |> String.join ", "
+                |> text
+
+        _ ->
+            text ""
+
+
+unitNames : Shared.Model -> Maybe (List Int) -> Html Msg
+unitNames shared maybeUnitIds =
+    case maybeUnitIds of
+        Just unitIds ->
+            List.map
+                (\unitId ->
+                    Dict.get unitId (RD.withDefault Dict.empty shared.masterUnits)
+                        |> Maybe.map .name
+                        |> Maybe.withDefault (String.fromInt unitId)
+                )
+                unitIds
+                |> String.join ", "
+                |> text
+
+        Nothing ->
+            text ""
+
+
+freqKinds : List B.NetworkFreq -> String
+freqKinds freqs =
+    List.map .kind freqs
+        |> List.map NetworksUtils.networkStringToLabel
+        |> Set.fromList
+        |> Set.toList
+        |> String.join ", "
+
+
+postNames : Shared.Model -> List Int -> Html Msg
+postNames shared postIds =
+    case shared.posts of
+        Success posts ->
+            List.filterMap (\postId -> Dict.get postId posts) postIds
+                |> List.map .name
+                |> String.join ", "
+                |> text
+
+        _ ->
+            text ""
 
 
 viewNetworkInfoForm : B.UpdateNetworkReq -> B.Network -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
