@@ -79,7 +79,7 @@ dev-back verbose="true":
     #!/bin/bash
     set -euo pipefail
 
-    pids="$(lsof -ti :8081 || true)"
+    pids="$(lsof -tiTCP:8081 -sTCP:LISTEN || true)"
     if [ -n "$pids" ]; then
         kill $pids 2>/dev/null || true
     fi
@@ -104,7 +104,7 @@ dev-north:
     #!/bin/bash
     set -euo pipefail
 
-    pids="$(lsof -ti :6432 || true)"
+    pids="$(lsof -tiTCP:6432 -sTCP:LISTEN || true)"
     if [ -n "$pids" ]; then
         kill $pids
     fi
@@ -174,7 +174,7 @@ dev-py:
     FLASK="$PWD/wdintel-rs/wdintel-py/.venv/bin/flask"
     STORAGE="{{ storage_dir }}"
 
-    pids="$(lsof -ti :5000 || true)"
+    pids="$(lsof -tiTCP:5000 -sTCP:LISTEN || true)"
     if [ -n "$pids" ]; then
         kill $pids 2>/dev/null || true
     fi
