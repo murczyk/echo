@@ -300,7 +300,7 @@ view network model user shared =
     in
     div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col flex-1" ]
         [ div [ class "mb-[16px]" ]
-            [ div [ class "flex justify-between items-center mb-[8px]" ]
+                [ div [ class "flex justify-between items-center mb-[8px]" ]
                 [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
                 , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user || Core.Auth.hasRole "CallsignsEditor" user then
                     Button.new { label = "Створити", onClick = OpenConfirmationCreateSidebar }
@@ -310,24 +310,7 @@ view network model user shared =
                   else
                     text ""
                 ]
-            , Html.Keyed.node "div"
-                [ class "h-[350px] overflow-y-auto" ]
-                (List.sortWith
-                    (\a b ->
-                        if a.createdAt > b.createdAt then
-                            LT
-
-                        else
-                            GT
-                    )
-                    confirmations
-                    |> List.map
-                        (\description ->
-                            ( String.fromInt description.id
-                            , descriptionItem description network user shared
-                            )
-                        )
-                )
+            , sectionList "h-[350px] overflow-y-auto" "py-4" "Немає обґрунтувань прив'язки" confirmations network user shared
             ]
         , div []
             [ div [ class "flex justify-between items-center mb-[8px]" ]
@@ -340,42 +323,10 @@ view network model user shared =
                   else
                     text ""
                 ]
-            , Html.Keyed.node "div"
-                [ class "h-[350px] overflow-y-auto" ]
-                (List.sortWith
-                    (\a b ->
-                        if a.createdAt > b.createdAt then
-                            LT
-
-                        else
-                            GT
-                    )
-                    signs
-                    |> List.map
-                        (\description ->
-                            ( String.fromInt description.id
-                            , descriptionItem description network user shared
-                            )
-                        )
-                )
+            , sectionList "h-[350px] overflow-y-auto" "py-4" "Немає розвідувальних ознак" signs network user shared
             , section [ class "mt-[8px]" ]
                 [ h5 [] [ text "Сигнали" ]
-                , div [ class "h-[100px] overflow-y-auto" ]
-                    (List.map
-                        (\signalsForUnit ->
-                            if List.length signalsForUnit.signals > 0 then
-                                div []
-                                    [ div []
-                                        [ span [ class "font-medium" ] [ text signalsForUnit.unitName ]
-                                        , div [ class "grid grid-cols-2 gap-[8px]" ] (List.map (\s -> div [ class "" ] [ span [ class "w-[50px] mr-[8px]" ] [ text s.text ], span [] [ text <| Maybe.withDefault "" s.meaning ] ]) signalsForUnit.signals)
-                                        ]
-                                    ]
-
-                            else
-                                text "Відсутні прив'язані до підрозділів сигнали"
-                        )
-                        (RD.withDefault [] model.signals)
-                    )
+                , signalsSection model.signals
                 ]
             ]
         ]
@@ -429,6 +380,76 @@ descriptionItem description network user shared =
             [ div [ class "leading-relaxed", style "color" "var(--color-text)", style "white-space" "pre-line" ] [ text description.description ]
             ]
         ]
+
+
+sectionList : String -> String -> String -> List B.NetworkDescription -> B.Network -> Auth.User -> Shared.Model -> Html DescriptionsMsg
+sectionList listClass emptyClass emptyText descriptions network user shared =
+    let
+        sortedDescriptions =
+            List.sortWith
+                (\a b ->
+                    if a.createdAt > b.createdAt then
+                        LT
+
+                    else
+                        GT
+                )
+                descriptions
+    in
+    if List.isEmpty sortedDescriptions then
+        div [ class emptyClass ] [ emptyState emptyText ]
+
+    else
+        Html.Keyed.node "div"
+            [ class listClass ]
+            (List.map
+                (\description ->
+                    ( String.fromInt description.id
+                    , descriptionItem description network user shared
+                    )
+                )
+                sortedDescriptions
+            )
+
+
+signalsSection signals =
+    case signals of
+        Success signalsForUnits ->
+            let
+                visibleUnits =
+                    List.filter (\signalsForUnit -> not (List.isEmpty signalsForUnit.signals)) signalsForUnits
+            in
+            if List.isEmpty visibleUnits then
+                emptyState "Відсутні прив'язані до підрозділів сигнали"
+
+            else
+                div [ class "space-y-2" ]
+                    (List.map
+                        (\signalsForUnit ->
+                            div [ class "space-y-2" ]
+                                [ span [ class "font-medium" ] [ text signalsForUnit.unitName ]
+                                , div [ class "grid grid-cols-2 gap-[8px]" ]
+                                    (List.map
+                                        (\signal ->
+                                            div [ class "" ]
+                                                [ span [ class "w-[50px] mr-[8px]" ] [ text signal.text ]
+                                                , span [] [ text <| Maybe.withDefault "" signal.meaning ]
+                                                ]
+                                        )
+                                        signalsForUnit.signals
+                                    )
+                                ]
+                        )
+                        visibleUnits
+                    )
+
+        _ ->
+            emptyState "Відсутні прив'язані до підрозділів сигнали"
+
+
+emptyState : String -> Html msg
+emptyState message =
+    div [ class "py-4 text-sm text-[var(--color-text-muted)]" ] [ text message ]
 
 
 viewDeleteConfirmation : Model -> Html DescriptionsMsg
