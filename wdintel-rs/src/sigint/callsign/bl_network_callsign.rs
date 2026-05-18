@@ -570,18 +570,14 @@ pub async fn bl_get_network_callsigns_list(
         .await
         .context(h!())?;
 
+    let activity_callsigns =
+        network_callsigns_activity_targets(&network_callsigns);
+
     let activity_info = get_callsigns_activity_info(
         dbx,
         user_id,
         req.network_id,
-        &network_callsigns
-            .iter()
-            .filter(|nc| {
-                (nc.sigint_callsign_id.is_none() && !nc.developing)
-                    || (!nc.sc_developing.unwrap_or(false))
-            })
-            .map(|nc| nc.sigint_callsign.clone())
-            .collect::<Vec<_>>(),
+        &activity_callsigns,
     )
     .await
     .context(h!())?;
@@ -735,6 +731,16 @@ where
         )
 }
 
+fn network_callsigns_activity_targets(
+    network_callsigns: &[NetworkCallsignResult],
+) -> Vec<String> {
+    network_callsigns
+        .iter()
+        .map(|network_callsign| network_callsign.sigint_callsign.clone())
+        .filter(|callsign| !callsign.trim().is_empty())
+        .collect()
+}
+
 pub async fn bl_get_network_callsigns_info_batch<'a, 'async_trait, C>(
     txn: &'a C,
     user_id: &str,
@@ -749,18 +755,14 @@ where
             .await
             .context(h!())?;
 
+    let activity_callsigns =
+        network_callsigns_activity_targets(&network_callsigns);
+
     let activity_info = get_callsigns_activity_info(
         txn,
         user_id,
         network_id,
-        &network_callsigns
-            .iter()
-            .filter(|nc| {
-                (!nc.developing && nc.sigint_callsign_id.is_none())
-                    || (nc.sc_developing.unwrap_or(false))
-            })
-            .map(|nc| nc.sigint_callsign.clone())
-            .collect::<Vec<_>>(),
+        &activity_callsigns,
     )
     .await
     .context(h!())?;

@@ -995,14 +995,17 @@ view shared model user =
                     developingCallsigns =
                         getDevelopingCallsigns networkCallsigns
 
-                    developingCallsignsVisible =
-                        CallsignsSection.filterVisible shared.now model.developingCallsignsShowStale developingCallsigns
+                    ( developingCallsignsActive, developingCallsignsStale ) =
+                        CallsignsSection.partitionVisible shared.now developingCallsigns
 
                     developingCallsignsHiddenCount =
                         CallsignsSection.hiddenCount shared.now model.developingCallsignsShowStale developingCallsigns
 
-                    developingCallsignsSorted =
-                        CallsignsSection.sortVisible model.developingCallsignsSortByMessages developingCallsignsVisible
+                    developingCallsignsActiveSorted =
+                        CallsignsSection.sortVisible model.developingCallsignsSortByMessages developingCallsignsActive
+
+                    developingCallsignsStaleSorted =
+                        CallsignsSection.sortVisible model.developingCallsignsSortByMessages developingCallsignsStale
                 in
                 CallsignsSection.view
                     { title = "В дорозвідці"
@@ -1024,9 +1027,10 @@ view shared model user =
                                 else
                                     "Сортувати по сеансам"
                             , onClick = ToggleDevelopingCallsignsSortByMessages
-                            }
+                        }
                     , emptyText = "Немає позивних в дорозвідці"
-                    , items = developingCallsignsSorted
+                    , activeItems = developingCallsignsActiveSorted
+                    , staleItems = developingCallsignsStaleSorted
                     , renderItem =
                         \callsign ->
                             let
@@ -1076,7 +1080,7 @@ view shared model user =
 
             _ ->
                 text ""
-        , div [ class "mb-[8px] flex justify-between items-center" ]
+        , div [ class "mt-8 mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Співпадіння з каталогом" ]
             ]
         , case model.callsigns of
@@ -1150,14 +1154,17 @@ viewCallsigns callsigns model user shared =
                                             }
                             )
 
-                callsignsUnknownVisible =
-                    CallsignsSection.filterVisible shared.now model.unknownCallsignsShowStale callsignsUnknown
-
                 callsignsUnknownHiddenCount =
                     CallsignsSection.hiddenCount shared.now model.unknownCallsignsShowStale callsignsUnknown
 
-                callsignsUnknownSorted =
-                    CallsignsSection.sortVisible model.unknownCallsignsSortByMessages callsignsUnknownVisible
+                ( callsignsUnknownActive, callsignsUnknownStale ) =
+                    CallsignsSection.partitionVisible shared.now callsignsUnknown
+
+                callsignsUnknownActiveSorted =
+                    CallsignsSection.sortVisible model.unknownCallsignsSortByMessages callsignsUnknownActive
+
+                callsignsUnknownStaleSorted =
+                    CallsignsSection.sortVisible model.unknownCallsignsSortByMessages callsignsUnknownStale
               in
               div [ class "table-responsive-modern" ]
                 [ -- Таблиця "Всі позивні" (з пагінацією)
@@ -1165,64 +1172,67 @@ viewCallsigns callsigns model user shared =
                 , -- Пейджер для таблиці
                   Pager.view model.callsignsPager
                     |> Html.map CallsignsPagerMsg
-                , CallsignsSection.view
-                    { title = "Присутні в перехопленнях"
-                    , activeHint = "Активні протягом 2 тижнів"
-                    , staleHint = "Показано активні та застарілі позивні"
-                    , showStale = model.unknownCallsignsShowStale
-                    , hiddenCount = callsignsUnknownHiddenCount
-                    , toggleLabels =
-                        { show = "Показати застарілі"
-                        , hide = "Сховати застарілі"
-                        }
-                    , onToggleStale = ToggleUnknownCallsignsShowStale
-                    , maybeSortButton =
-                        Just
-                            { label =
-                                if model.unknownCallsignsSortByMessages then
-                                    "Сортувати по імені"
-
-                                else
-                                    "Сортувати по сеансам"
-                            , onClick = ToggleUnknownCallsignsSortByMessages
+                , div [ class "mt-6" ]
+                    [ CallsignsSection.view
+                        { title = "Присутні в перехопленнях"
+                        , activeHint = "Активні протягом 2 тижнів"
+                        , staleHint = "Показано активні та застарілі позивні"
+                        , showStale = model.unknownCallsignsShowStale
+                        , hiddenCount = callsignsUnknownHiddenCount
+                        , toggleLabels =
+                            { show = "Показати застарілі"
+                            , hide = "Сховати застарілі"
                             }
-                    , emptyText = "Немає активних позивних"
-                    , items = callsignsUnknownSorted
-                    , renderItem =
-                        \entry ->
-                            let
-                                config =
-                                    DropdownBadge.config
-                                        (String.toUpper entry.callsign)
-                                        (model.unknownCallsignDropdown == Just entry.callsign)
-                                        (ToggleUnknownCallsignDropdown entry.callsign)
-                                        CloseUnknownCallsignDropdown
-                                        (DropdownBadge.InternalAction
-                                            { icon = "bi-plus"
-                                            , label = "Додати"
-                                            , action = OpenAddFromUnknownSidebar entry.callsign
-                                            }
-                                            :: (case model.network of
-                                                    Success network ->
-                                                        [ DropdownBadge.ExternalLink
-                                                            { icon = "bi-arrow-right"
-                                                            , label = "Проаналізувати"
-                                                            , url = IdUtils.createAnalysisUrl shared network entry.callsign
-                                                            }
-                                                        ]
+                        , onToggleStale = ToggleUnknownCallsignsShowStale
+                        , maybeSortButton =
+                            Just
+                                { label =
+                                    if model.unknownCallsignsSortByMessages then
+                                        "Сортувати по імені"
 
-                                                    _ ->
-                                                        []
-                                               )
-                                        )
-                            in
-                            div [ class "relative inline-flex items-start" ]
-                                [ DropdownBadge.view
-                                    (DropdownBadge.withAutoDirection DropdownBadge.Up config)
-                                , span [ class "badge badge-messages" ]
-                                    [ text <| String.fromInt entry.messageCount ]
-                                ]
-                    }
+                                    else
+                                        "Сортувати по сеансам"
+                                , onClick = ToggleUnknownCallsignsSortByMessages
+                            }
+                        , emptyText = "Немає активних позивних"
+                        , activeItems = callsignsUnknownActiveSorted
+                        , staleItems = callsignsUnknownStaleSorted
+                        , renderItem =
+                            \entry ->
+                                let
+                                    config =
+                                        DropdownBadge.config
+                                            (String.toUpper entry.callsign)
+                                            (model.unknownCallsignDropdown == Just entry.callsign)
+                                            (ToggleUnknownCallsignDropdown entry.callsign)
+                                            CloseUnknownCallsignDropdown
+                                            (DropdownBadge.InternalAction
+                                                { icon = "bi-plus"
+                                                , label = "Додати"
+                                                , action = OpenAddFromUnknownSidebar entry.callsign
+                                                }
+                                                :: (case model.network of
+                                                        Success network ->
+                                                            [ DropdownBadge.ExternalLink
+                                                                { icon = "bi-arrow-right"
+                                                                , label = "Проаналізувати"
+                                                                , url = IdUtils.createAnalysisUrl shared network entry.callsign
+                                                                }
+                                                            ]
+
+                                                        _ ->
+                                                            []
+                                                   )
+                                            )
+                                in
+                                div [ class "relative inline-flex items-start" ]
+                                    [ DropdownBadge.view
+                                        (DropdownBadge.withAutoDirection DropdownBadge.Up config)
+                                    , span [ class "badge badge-messages" ]
+                                        [ text <| String.fromInt entry.messageCount ]
+                                    ]
+                        }
+                    ]
                 ]
             ]
         ]
