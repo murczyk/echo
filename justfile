@@ -74,8 +74,24 @@ build-front:
 
     npm run build
 
-dev-back:
-    (cd wdintel-rs && RUST_BACKTRACE=0 {{ rust_log }}cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }})
+[arg('verbose', long='verbose')]
+dev-back verbose="true":
+    #!/bin/bash
+    set -euo pipefail
+
+    pids="$(lsof -ti :8081 || true)"
+    if [ -n "$pids" ]; then
+        kill $pids 2>/dev/null || true
+    fi
+
+    cd wdintel-rs
+    if [ "{{ verbose }}" = "false" ]; then
+        export RUST_LOG=error
+    elif [ "{{ log_sql }}" = "true" ]; then
+        export RUST_LOG=sqlx=trace,seaorm=trace
+    fi
+
+    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }}
 
 dev-back-noproj:
     # Run backend without `proj` feature for local development
@@ -83,6 +99,28 @@ dev-back-noproj:
 
 dev-back-sudo:
     (cd wdintel-rs && cargo build && cd .. && {{ rust_log }}sudo ./target/debug/wdintel-rs --mode=debug server {{ dev_back_args }})
+
+dev-north:
+    #!/bin/bash
+    set -euo pipefail
+
+    pids="$(lsof -ti :6432 || true)"
+    if [ -n "$pids" ]; then
+        kill $pids
+    fi
+
+    ssh -nNT -L 6432:localhost:5432 echo-pivnich-dev >/tmp/dev-north-6432.log 2>&1 &
+    tunnel_pid=$!
+    trap 'kill "$tunnel_pid" 2>/dev/null || true' EXIT INT TERM
+
+    for _ in $(seq 1 20); do
+        if (echo >/dev/tcp/127.0.0.1/6432) >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.5
+    done
+
+    PGPASSWORD="{{ pgpwd }}" psql -U wd -h 127.0.0.1 -p 6432 wd
 
 # mkdir -p ~/Downloads/storage
 
@@ -135,6 +173,12 @@ dev-py:
 
     FLASK="$PWD/wdintel-rs/wdintel-py/.venv/bin/flask"
     STORAGE="{{ storage_dir }}"
+
+    pids="$(lsof -ti :5000 || true)"
+    if [ -n "$pids" ]; then
+        kill $pids 2>/dev/null || true
+    fi
+
     (cd wdintel-rs/wdintel-py && WD_CALLSIGNS_SPM=$STORAGE/wiki.model WD_CALLSIGNS=$STORAGE/callsigns20230512.pt WD_FASTTEXT_MODELS="{{ wd_fasttext_models }}" $FLASK --app service --debug run)
 
 setup-dev:
