@@ -24,6 +24,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerMenu } from '../../../components/PowerMenu';
 import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
+import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import {
   buildNetworkColumnOrder,
@@ -32,7 +33,7 @@ import {
   NETWORK_CALLSIGN_COLUMN_SIZES,
   NETWORK_COLUMNS_VISIBILITY,
 } from './NetworkCallsignsTableShared';
-import { NetworkCallsignSourceIcon } from './NetworkCallsignSourceUi';
+import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows, formatNetworkCallsignDatetime } from '../network-callsigns';
 
@@ -187,7 +188,7 @@ function NetworkCallsignsNetworkTableContent({
         accessorKey: 'position',
         id: 'position',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
+        Cell: ({ row }) => renderMrtCellTextValue(row.original.position),
       },
       {
         header: 'Підрозділ',
@@ -233,7 +234,7 @@ function NetworkCallsignsNetworkTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
         grow: false,
         enableResizing: false,
-        Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
+        Cell: ({ row }) => <NetworkCallsignSourceCell sourceName={row.original.sourceName} />,
       },
     ], []);
 

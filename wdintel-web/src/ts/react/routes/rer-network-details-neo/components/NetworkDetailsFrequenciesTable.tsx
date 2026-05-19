@@ -26,6 +26,7 @@ import {
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { renderMrtCellWithFallback, renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { PowerChip } from '../../../components/PowerChip';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
@@ -43,6 +44,7 @@ const NETWORK_MRT_LOCALIZATION = {
 const DEFAULT_COLUMNS_VISIBILITY = {
   displayFreq: true,
   typeLabel: true,
+  encryptionLabel: true,
   messageCount: true,
   callsignLabel: true,
   lastDatetime: true,
@@ -83,26 +85,18 @@ function renderFrequencyStatusIndicator(isActive: boolean) {
 }
 
 function renderCategoryChip(label: string) {
-  if (label === '—') {
-    return (
-      <Typography variant="body2" sx={{ minHeight: 26, display: 'inline-flex', alignItems: 'center' }}>
-        —
-      </Typography>
-    );
-  }
-
-  return (
+  return renderMrtCellWithFallback(label, (text) => (
     <PowerChip
       size="small"
       color="default"
-      label={label}
+      label={text}
       fontSize="0.75rem"
       fontWeight={600}
       labelPaddingX={0.85}
       labelPaddingY={0.1}
       sx={{ height: 26, lineHeight: 1 }}
     />
-  );
+  ));
 }
 
 function renderFrequencyCell(row: NetworkFreqTableRow) {
@@ -187,6 +181,7 @@ function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
   return [
     { header: 'Частота', accessorKey: 'displayFreq', id: 'displayFreq', size: 280, Cell: ({ row }) => renderFrequencyCell(row.original) },
     { header: 'Тип', accessorKey: 'typeLabel', id: 'typeLabel', size: 120, Cell: ({ row }) => renderCategoryChip(row.original.typeLabel) },
+    { header: 'Шифрування', accessorKey: 'encryptionLabel', id: 'encryptionLabel', size: 180, Cell: ({ row }) => renderCategoryChip(row.original.encryptionLabel) },
     { header: 'К-сть', accessorKey: 'messageCount', id: 'messageCount', size: 110, Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{getRowMessageCount(row.original)}</Typography> },
     {
       header: 'Позивні',
@@ -195,11 +190,7 @@ function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
       size: 300,
       Cell: ({ row }) => {
         const label = getRowCallsignLabel(row.original);
-        return (
-          <Typography variant="body2" title={label} sx={{ maxWidth: '100%' }} noWrap>
-            {label}
-          </Typography>
-        );
+        return renderMrtCellTextValue(label, { title: label, sx: { maxWidth: '100%' }, noWrap: true });
       },
     },
     {

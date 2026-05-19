@@ -60,7 +60,7 @@ describe('frequency utils', () => {
     });
   });
 
-  it('preserves kind labels for digital frequencies', () => {
+  it('preserves DMRe as a distinct frequency type label', () => {
     const rows = buildNetworkFreqRows(
       [
         createFreq({ networkFreqId: 10, freq: '652.1111', kind: 'DMRe' }),

@@ -137,10 +137,6 @@ update _ msg model =
                 compareTwoFreqs updateReq originalFreq =
                     updateReq.networkFreqId
                         == originalFreq.networkFreqId
-                        && updateReq.kind
-                        == Maybe.withDefault "VHF" originalFreq.kind
-                        && updateReq.modulationId
-                        == originalFreq.modulationId
                         && updateReq.activeFrom
                         == originalFreq.activeFrom
                         && updateReq.encryptionKeyIds
@@ -393,26 +389,6 @@ update _ msg model =
                 kindSelect =
                     model.freqEditKindSelect
 
-                nextSignalType =
-                    NetworksUtils.signalTypeFromNetworkKind updatedNetworkKind
-
-                updatedModulationSelection =
-                    case model.modulations of
-                        Success modulations ->
-                            NetworksUtils.clearIncompatibleModulationId modulations
-                                model.freqEditModulationSelect.selected
-                                nextSignalType
-
-                        _ ->
-                            model.freqEditModulationSelect.selected
-
-                modulationSelect2 =
-                    let
-                        modulationSelect =
-                            model.freqEditModulationSelect
-                    in
-                    { modulationSelect | selected = updatedModulationSelection }
-
                 kindSelect2 =
                     { kindSelect
                         | state = imodel
@@ -422,21 +398,13 @@ update _ msg model =
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( networkFreqId, freqId, updateReq ) ->
-                            Just
-                                ( networkFreqId
-                                , freqId
-                                , { updateReq
-                                    | kind = NetworksUtils.networkKindToString updatedNetworkKind
-                                    , modulationId = updatedModulationSelection
-                                  }
-                                )
+                            Just ( networkFreqId, freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
 
                         Nothing ->
                             model.freqEditSidebar
             in
             ( { model
                 | freqEditKindSelect = kindSelect2
-                , freqEditModulationSelect = modulationSelect2
                 , freqEditSidebar = updatedSidebar
               }
             , E.sendCmd <|
@@ -465,13 +433,7 @@ update _ msg model =
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( networkFreqId, freqId, updateReq ) ->
-                            Just
-                                ( networkFreqId
-                                , freqId
-                                , { updateReq
-                                    | modulationId = updatedModulationId
-                                  }
-                                )
+                            Just ( networkFreqId, freqId, { updateReq | modulationId = updatedModulationId } )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -664,19 +626,10 @@ update _ msg model =
 
                 oldFreqState =
                     model.freqCreateState
-
-                nextSignalType =
-                    NetworksUtils.signalTypeFromNetworkKind updatedKind
-
                 newFreqState =
-                    { oldFreqState
-                        | kind = NetworksUtils.networkKindToString updatedKind
-                    }
+                    { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
             in
-            ( { model
-                | freqCreateKindSelect = newSelect
-                , freqCreateState = newFreqState
-              }
+            ( { model | freqCreateKindSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqCreateKindSelectMsg selectCmd
             )
 
@@ -694,38 +647,13 @@ update _ msg model =
                     , selected = updatedModulation
                     }
 
-                nextSignalType =
-                    NetworksUtils.signalTypeFromNetworkKind model.freqCreateKindSelect.selected
-
-                updatedModulationSelection =
-                    case model.modulations of
-                        Success modulations ->
-                            NetworksUtils.clearIncompatibleModulationId modulations
-                                updatedModulation
-                                nextSignalType
-
-                        _ ->
-                            updatedModulation
-
-                modulationSelect2 =
-                    let
-                        modulationSelect =
-                            model.freqCreateModulationSelect
-                    in
-                    { modulationSelect | selected = updatedModulationSelection }
-
                 oldFreqState =
                     model.freqCreateState
 
                 newFreqState =
-                    { oldFreqState
-                        | modulationId = updatedModulationSelection
-                    }
+                    { oldFreqState | modulationId = updatedModulation }
             in
-            ( { model
-                | freqCreateModulationSelect = modulationSelect2
-                , freqCreateState = newFreqState
-              }
+            ( { model | freqCreateModulationSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqCreateModulationSelectMsg selectCmd
             )
 

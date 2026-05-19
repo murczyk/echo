@@ -424,14 +424,6 @@ pub async fn create_network(
                 .unwrap_or(Utc::now().naive_utc());
             let active_to =
                 frequency.active_to.map(dt_from_millis).transpose()?;
-            let modulation_name =
-                get_modulation_name_by_id(frequency.modulation_id, &txn)
-                    .await?;
-            validate_network_kind_modulation(
-                &frequency.kind,
-                modulation_name.as_deref(),
-            )?;
-
             let freq_id = sigint_network_freq::ActiveModel {
                 id: NotSet,
                 network_id: Set(network.id),
@@ -440,7 +432,7 @@ pub async fn create_network(
                 last_seen_dt: NotSet,
                 active_from: Set(active_from),
                 active_to: Set(active_to),
-                kind: Set(network_kind_from_str(&frequency.kind)?),
+                kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
                 modulation_id: Set(frequency.modulation_id),
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
@@ -736,95 +728,6 @@ pub async fn delete_network(
         .context(h!())?;
 
     Ok(Json(res))
-}
-
-pub async fn get_modulation_name_by_id(
-    modulation_id: Option<i32>,
-    txn: &DatabaseTransaction,
-) -> Result<Option<String>, AppError> {
-    match modulation_id {
-        Some(id) => {
-            let modulation = modulation::Entity::find_by_id(id)
-                .one(txn)
-                .await
-                .context(h!())?;
-            Ok(modulation.map(|m| m.name))
-        }
-        None => Ok(None),
-    }
-}
-
-fn is_digital_kind(kind: &str) -> bool {
-    matches!(kind.trim().to_uppercase().as_str(), "DMR" | "DMRE")
-}
-
-fn modulation_is_digital(modulation_name: Option<&str>) -> Option<bool> {
-    let modulation_name = modulation_name?.trim().to_uppercase();
-    match modulation_name.as_str() {
-        "NFM" | "AM" => Some(false),
-        "DMR" => Some(true),
-        _ => None,
-    }
-}
-
-fn validate_network_kind_modulation(
-    kind: &str,
-    modulation_name: Option<&str>,
-) -> Result<(), AppError> {
-    if let Some(modulation_is_digital) = modulation_is_digital(modulation_name)
-    {
-        if modulation_is_digital != is_digital_kind(kind) {
-            let modulation_name =
-                modulation_name.unwrap_or("—").trim().to_string();
-            return Err(AppError::BL {
-                msg: format!(
-                    "Kind {kind} is incompatible with modulation {modulation_name}"
-                ),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn network_kind_from_str(kind: &str) -> Result<SigintNetworkKind, AppError> {
-    match kind.trim().to_uppercase().as_str() {
-        "DMR" => Ok(SigintNetworkKind::Dmr),
-        "DMRE" => Ok(SigintNetworkKind::DmRe),
-        "VHF" => Ok(SigintNetworkKind::Vhf),
-        other => Err(AppError::BL {
-            msg: format!("Unsupported network kind: {other}"),
-        }),
-    }
-}
-
-#[cfg(test)]
-mod kind_tests {
-    use super::*;
-
-    #[test]
-    fn detects_digital_kinds() {
-        assert!(!is_digital_kind("VHF"));
-        assert!(is_digital_kind("DMR"));
-        assert!(is_digital_kind("DMRe"));
-    }
-
-    #[test]
-    fn analog_modulations_are_accepted() {
-        assert!(validate_network_kind_modulation("VHF", Some("NFM")).is_ok());
-        assert!(validate_network_kind_modulation("VHF", Some("AM")).is_ok());
-    }
-
-    #[test]
-    fn digital_modulation_is_accepted() {
-        assert!(validate_network_kind_modulation("DMR", Some("DMR")).is_ok());
-    }
-
-    #[test]
-    fn incompatible_kind_modulations_are_rejected() {
-        assert!(validate_network_kind_modulation("VHF", Some("DMR")).is_err());
-        assert!(validate_network_kind_modulation("DMR", Some("NFM")).is_err());
-        assert!(validate_network_kind_modulation("DMRe", Some("AM")).is_err());
-    }
 }
 
 #[post("/api/sigint/network-callsigns")]
@@ -1636,20 +1539,13 @@ pub async fn add_network_freq(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
-        let modulation_name =
-            get_modulation_name_by_id(req.freq_rec.modulation_id, &txn).await?;
-        validate_network_kind_modulation(
-            &req.freq_rec.kind,
-            modulation_name.as_deref(),
-        )?;
-
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             last_seen_dt: NotSet,
-            kind: Set(network_kind_from_str(&req.freq_rec.kind)?),
+            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
             modulation_id: Set(req.freq_rec.modulation_id),
             active_from: Set(active_from),
             active_to: Set(active_to),
@@ -1946,12 +1842,6 @@ pub async fn update_network_freq(
         }
 
         let network_freq_id = network_freq_model.id;
-        let modulation_name =
-            get_modulation_name_by_id(req.modulation_id, &txn).await?;
-        validate_network_kind_modulation(
-            &req.kind,
-            modulation_name.as_deref(),
-        )?;
         invalidation_range = merge_invalidation_range(
             Some(network_freq_model.active_from),
             network_freq_model.active_to,
@@ -1961,7 +1851,7 @@ pub async fn update_network_freq(
         invalidation_freq = freq;
 
         let mut model = network_freq_model.into_active_model();
-        model.kind = Set(network_kind_from_str(&req.kind)?);
+        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
         model.modulation_id = Set(req.modulation_id);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);

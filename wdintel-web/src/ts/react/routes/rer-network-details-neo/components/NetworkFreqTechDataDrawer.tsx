@@ -25,7 +25,6 @@ import { formatErrorMessage, type NetworkFreqTechDataForm } from '../use-rer-net
 import { NetworkFreqKeysSection } from './NetworkFreqKeysSection';
 import { NetworkFreqSectionCard } from './NetworkFreqSectionCard';
 import { NetworkFreqSummaryHeader } from './NetworkFreqSummaryHeader';
-import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
 
 type Props = {
   open: boolean;
@@ -48,7 +47,27 @@ type NewKeyForm = {
   modulationId: number | null;
 };
 
+type TechForm = {
+  rx: string;
+  tx: string;
+  cc: string;
+  slot: string;
+  groupId: string;
+  channel: string;
+  encryptionType: 'none' | 'ARC40' | 'AES256' | 'VEDA';
+};
+
 const DISABLED_TECH_HELPER = 'Поки що не підтримується';
+
+const DEFAULT_TECH_FORM: TechForm = {
+  rx: '',
+  tx: '',
+  cc: '',
+  slot: '',
+  groupId: '',
+  channel: '',
+  encryptionType: 'none',
+};
 
 function formatKeyLabel(key: EncryptionKeyData): string {
   const parts = [key.description?.trim(), key.key?.trim()].filter((value) => value && value !== '');
@@ -90,6 +109,7 @@ function NetworkFreqTechDataDrawerComponent({
     description: '',
     modulationId: null,
   });
+  const [techForm, setTechForm] = useState<TechForm>(DEFAULT_TECH_FORM);
 
   const modulationItems = useMemo(
     () =>
@@ -102,6 +122,11 @@ function NetworkFreqTechDataDrawerComponent({
   );
 
   const selectedKeys = useMemo(() => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []), [form, keys]);
+
+  useEffect(() => {
+    if (!open) return;
+    setTechForm(DEFAULT_TECH_FORM);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !networkId || !canManageKeys) return;
@@ -212,13 +237,15 @@ function NetworkFreqTechDataDrawerComponent({
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
                 <TextField
                   label="Rx"
-                  value=""
+                  value={techForm.rx}
+                  onChange={(event) => setTechForm((current) => ({ ...current, rx: event.target.value }))}
                   disabled
                   fullWidth
                 />
                 <TextField
                   label="Tx"
-                  value=""
+                  value={techForm.tx}
+                  onChange={(event) => setTechForm((current) => ({ ...current, tx: event.target.value }))}
                   disabled
                   fullWidth
                 />
@@ -227,19 +254,22 @@ function NetworkFreqTechDataDrawerComponent({
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
                 <TextField
                   label="CC"
-                  value=""
+                  value={techForm.cc}
+                  onChange={(event) => setTechForm((current) => ({ ...current, cc: event.target.value }))}
                   disabled
                   fullWidth
                 />
                 <TextField
                   label="Slot"
-                  value=""
+                  value={techForm.slot}
+                  onChange={(event) => setTechForm((current) => ({ ...current, slot: event.target.value }))}
                   disabled
                   fullWidth
                 />
                 <TextField
                   label="Group ID"
-                  value=""
+                  value={techForm.groupId}
+                  onChange={(event) => setTechForm((current) => ({ ...current, groupId: event.target.value }))}
                   disabled
                   fullWidth
                 />
@@ -247,7 +277,8 @@ function NetworkFreqTechDataDrawerComponent({
 
               <TextField
                 label="Channel"
-                value=""
+                value={techForm.channel}
+                onChange={(event) => setTechForm((current) => ({ ...current, channel: event.target.value }))}
                 disabled
                 fullWidth
               />
@@ -256,6 +287,25 @@ function NetworkFreqTechDataDrawerComponent({
 
           {form ? (
             <>
+              <FormControl fullWidth disabled={formBlocked}>
+                <InputLabel id="network-freq-tech-encryption-type-label" shrink>
+                  Тип шифрування
+                </InputLabel>
+                <Select
+                  labelId="network-freq-tech-encryption-type-label"
+                  label="Тип шифрування"
+                  value={techForm.encryptionType}
+                  onChange={(event) =>
+                    setTechForm((current) => ({ ...current, encryptionType: String(event.target.value) as TechForm['encryptionType'] }))
+                  }
+                >
+                  <MenuItem value="none">Без шифрування</MenuItem>
+                  <MenuItem value="ARC40">ARC40</MenuItem>
+                  <MenuItem value="AES256">AES256</MenuItem>
+                  <MenuItem value="VEDA">VEDA</MenuItem>
+                </Select>
+              </FormControl>
+
               <NetworkFreqKeysSection
                 canManageKeys={canManageKeys}
                 saving={formBlocked}
@@ -320,7 +370,6 @@ function NetworkFreqTechDataDrawerComponent({
                   const value = event.target.value.trim();
                   setNewKeyForm((current) => ({ ...current, modulationId: value === '' ? null : Number(value) }));
                 }}
-                MenuProps={NEO_SELECT_MENU_PROPS}
               >
                 <MenuItem value="">
                   <em>Не вибрано</em>

@@ -13,6 +13,7 @@ import type {
   Unit,
   User,
 } from '../../../../Bindings';
+import { formatUtcDateInputValue } from '../../utils/misc';
 import type { NetworkFreqActivityByFreq } from './frequency-utils';
 import type {
   NetworkCallsignCatalogGroupView,
@@ -449,10 +450,7 @@ export function formatDateInputValue(value: number | null | undefined): string {
   if (value === null || value === undefined) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const year = String(date.getUTCFullYear()).padStart(4, '0');
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return formatUtcDateInputValue(date);
 }
 
 export function toNetworkEditForm(network: Network): NetworkEditForm {

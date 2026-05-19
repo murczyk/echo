@@ -123,10 +123,6 @@ update _ msg model =
                 compareTwoFreqs updateReq originalFreq =
                     updateReq.networkFreqId
                         == originalFreq.networkFreqId
-                        && updateReq.kind
-                        == Maybe.withDefault "VHF" originalFreq.kind
-                        && updateReq.modulationId
-                        == originalFreq.modulationId
                         && updateReq.activeFrom
                         == originalFreq.activeFrom
                         && updateReq.encryptionKeyIds
@@ -293,26 +289,6 @@ update _ msg model =
                 kindSelect =
                     model.freqEditKindSelect
 
-                nextSignalType =
-                    NetworksUtils.signalTypeFromNetworkKind updatedNetworkKind
-
-                updatedModulationSelection =
-                    case model.modulations of
-                        Success modulations ->
-                            NetworksUtils.clearIncompatibleModulationId modulations
-                                model.freqEditModulationSelect.selected
-                                nextSignalType
-
-                        _ ->
-                            model.freqEditModulationSelect.selected
-
-                modulationSelect2 =
-                    let
-                        modulationSelect =
-                            model.freqEditModulationSelect
-                    in
-                    { modulationSelect | selected = updatedModulationSelection }
-
                 kindSelect2 =
                     { kindSelect
                         | state = imodel
@@ -322,20 +298,13 @@ update _ msg model =
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( freqId, updateReq ) ->
-                            Just
-                                ( freqId
-                                , { updateReq
-                                    | kind = NetworksUtils.networkKindToString updatedNetworkKind
-                                    , modulationId = updatedModulationSelection
-                                  }
-                                )
+                            Just ( freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
 
                         Nothing ->
                             model.freqEditSidebar
             in
             ( { model
                 | freqEditKindSelect = kindSelect2
-                , freqEditModulationSelect = modulationSelect2
                 , freqEditSidebar = updatedSidebar
               }
             , E.sendCmd <|
@@ -361,27 +330,10 @@ update _ msg model =
                         , selected = updatedModulationId
                     }
 
-                signalType =
-                    case ( model.modulations, updatedModulationId ) of
-                        ( Success modulations, Just modulationId ) ->
-                            modulations
-                                |> ListX.find (\mod -> mod.id == modulationId)
-                                |> Maybe.map .name
-                                |> Maybe.andThen NetworksUtils.signalTypeFromModulationName
-                                |> Maybe.withDefault (NetworksUtils.signalTypeFromNetworkKind model.freqEditKindSelect.selected)
-
-                        _ ->
-                            NetworksUtils.signalTypeFromNetworkKind model.freqEditKindSelect.selected
-
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( freqId, updateReq ) ->
-                            Just
-                                ( freqId
-                                , { updateReq
-                                    | modulationId = updatedModulationId
-                                  }
-                                )
+                            Just ( freqId, { updateReq | modulationId = updatedModulationId } )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -520,34 +472,10 @@ update _ msg model =
                 oldFreqState =
                     model.freqCreateState
 
-                updatedModulation =
-                    case model.modulations of
-                        Success modulations ->
-                            NetworksUtils.clearIncompatibleModulationId modulations
-                                model.freqCreateState.modulationId
-                                (NetworksUtils.signalTypeFromNetworkKind updatedKind)
-
-                        _ ->
-                            model.freqCreateState.modulationId
-
-                modulationSelect2 =
-                    let
-                        modulationSelect =
-                            model.freqCreateModulationSelect
-                    in
-                    { modulationSelect | selected = updatedModulation }
-
                 newFreqState =
-                    { oldFreqState
-                        | kind = NetworksUtils.networkKindToString updatedKind
-                        , modulationId = updatedModulation
-                    }
+                    { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
             in
-            ( { model
-                | freqCreateKindSelect = newSelect
-                , freqCreateModulationSelect = modulationSelect2
-                , freqCreateState = newFreqState
-              }
+            ( { model | freqCreateKindSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqCreateKindSelectMsg selectCmd
             )
 
@@ -569,9 +497,7 @@ update _ msg model =
                     model.freqCreateState
 
                 newFreqState =
-                    { oldFreqState
-                        | modulationId = updatedModulation
-                    }
+                    { oldFreqState | modulationId = updatedModulation }
             in
             ( { model | freqCreateModulationSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqCreateModulationSelectMsg selectCmd

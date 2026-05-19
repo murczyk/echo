@@ -83,33 +83,6 @@ export function typeLabelFromKind(kind: string | null | undefined): string {
   return 'NFM';
 }
 
-const ENCRYPTION_TYPE_LABELS: Record<string, string> = {
-  none: 'Відсутнє',
-  ARC40: 'ARC40',
-  AES256: 'AES256',
-  TUT16: 'TУТ 16 bit',
-  TUT128VEDA: 'TУТ 128 bit (VEDA)',
-  HYTERA_AES256_BASIC: 'HYTERA AES256 basic',
-};
-
-export function formatEncryptionTypeLabel(value: string | null | undefined): string {
-  const normalized = normalizeText(value);
-  if (normalized === '') return '—';
-
-  const exactLabel = ENCRYPTION_TYPE_LABELS[normalized];
-  if (exactLabel) return exactLabel;
-
-  const normalizedUpper = normalized.toUpperCase();
-  if (normalizedUpper === 'NONE') return 'Відсутнє';
-  if (normalizedUpper === 'ARC40') return 'ARC40';
-  if (normalizedUpper === 'AES256' || normalizedUpper === 'AES-256' || normalizedUpper === 'AES 256') return 'AES256';
-  if (normalizedUpper === 'TUT16' || normalizedUpper === 'ТУТ16') return 'TУТ 16 bit';
-  if (normalizedUpper === 'TUT128VEDA' || normalizedUpper === 'ТУТ128VEDA') return 'TУТ 128 bit (VEDA)';
-  if (normalizedUpper === 'HYTERA_AES256_BASIC' || normalizedUpper === 'HYTERA AES256 BASIC') return 'HYTERA AES256 basic';
-
-  return normalized;
-}
-
 function encryptionLabelFromCandidate(candidate: string): string | null {
   const normalized = candidate.toUpperCase();
 

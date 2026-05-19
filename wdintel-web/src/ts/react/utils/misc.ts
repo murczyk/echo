@@ -82,6 +82,16 @@ export function formatDateTime24(value: number | null | undefined): string {
   });
 }
 
+export function formatUtcDateOnly(value: number | null | undefined): string {
+  if (isNullOrUndefined(value)) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const year = String(date.getUTCFullYear()).slice(-2);
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${day}.${month}.${year}`;
+}
+
 export const APP_DATE_INPUT_MIN = '2022-01-01';
 export const APP_DATETIME_INPUT_MIN = '2022-01-01T00:00';
 export const APP_DATE_INPUT_MIN_YEAR = 2022;
@@ -110,6 +120,13 @@ export function formatTimeInputValueInTimeZone(date: Date, timeZone: string = AP
 
 export function formatDateTimeInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
   return dayjs(date).tz(timeZone).format('YYYY-MM-DDTHH:mm');
+}
+
+export function formatUtcDateInputValue(date: Date): string {
+  const year = String(date.getUTCFullYear()).padStart(4, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function isValidDateInput(dateStr: string): boolean {
