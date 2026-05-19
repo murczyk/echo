@@ -13,6 +13,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import StarIcon from '@mui/icons-material/Star';
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import { memo, useEffect, useState } from 'react';
 
@@ -91,9 +92,59 @@ function MainRadioStationControl({
         label={
           <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
             <Typography variant="body2" noWrap sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
+              Головна радіостанція
+            </Typography>
+            <StarIcon fontSize="small" sx={{ color: 'warning.main' }} />
+          </Stack>
+        }
+      />
+    </Box>
+  );
+}
+
+function CommandControlMarker({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <Box
+      sx={(theme) => ({
+        border: '1px solid',
+        borderColor: checked ? theme.palette.info.main : 'divider',
+        borderRadius: 2,
+        bgcolor: checked ? 'action.selected' : 'transparent',
+        px: 1.25,
+        py: 0.75,
+      })}
+    >
+      <FormControlLabel
+        sx={{
+          m: 0,
+          width: '100%',
+          alignItems: 'center',
+          '& .MuiFormControlLabel-label': {
+            width: '100%',
+          },
+        }}
+        control={
+          <Checkbox
+            checked={checked}
+            onChange={(event) => onChange(event.target.checked)}
+            disabled={disabled}
+            size="small"
+          />
+        }
+        label={
+          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+            <Typography variant="body2" noWrap sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
               Ланка управління
             </Typography>
-            <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'warning.main' }} />
+            <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main' }} />
           </Stack>
         }
       />
@@ -265,6 +316,12 @@ export function NetworkCallsignDrawer({
                 checked={form.mainRadioStation}
                 disabled={saving}
                 onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
+              />
+
+              <CommandControlMarker
+                checked={form.commandControl}
+                disabled={saving}
+                onChange={(nextCommandControl) => updateForm(form, { commandControl: nextCommandControl }, onChange)}
               />
 
               <Stack spacing={1}>

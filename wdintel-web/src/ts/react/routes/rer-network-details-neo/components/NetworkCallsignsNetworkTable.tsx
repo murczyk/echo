@@ -2,6 +2,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
+import StarIcon from '@mui/icons-material/Star';
 import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
@@ -59,6 +60,7 @@ type Props = {
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
   onToggleMainRadioStation: (row: NetworkCallsignRowView) => void;
+  onToggleCommandControl: (row: NetworkCallsignRowView) => void;
   onReload: () => void;
   inFlightUpdateIds: number[];
   inFlightDeleteIds: number[];
@@ -74,6 +76,7 @@ export function NetworkCallsignsNetworkTable({
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onToggleMainRadioStation,
+  onToggleCommandControl,
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
@@ -96,6 +99,7 @@ export function NetworkCallsignsNetworkTable({
         onOpenEditDrawer={onOpenEditDrawer}
         onOpenDeleteDialog={onOpenDeleteDialog}
         onToggleMainRadioStation={onToggleMainRadioStation}
+        onToggleCommandControl={onToggleCommandControl}
         onReload={onReload}
         inFlightUpdateIds={inFlightUpdateIds}
         inFlightDeleteIds={inFlightDeleteIds}
@@ -114,6 +118,7 @@ function NetworkCallsignsNetworkTableContent({
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onToggleMainRadioStation,
+  onToggleCommandControl,
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
@@ -131,18 +136,21 @@ function NetworkCallsignsNetworkTableContent({
     const filtered = normalizedStatusFilter === 'All'
       ? visibleRows
       : visibleRows.filter((row) => (normalizedStatusFilter === 'Verified' ? row.status === 'verified' : row.status === 'developing'));
-    return filtered.slice().sort((left, right) => {
-      if (right.messageCount !== left.messageCount) {
-        return right.messageCount - left.messageCount;
-      }
-      if (right.mainRadioStation !== left.mainRadioStation) {
-        return Number(right.mainRadioStation) - Number(left.mainRadioStation);
-      }
-      if ((right.lastDatetime ?? 0) !== (left.lastDatetime ?? 0)) {
-        return (right.lastDatetime ?? 0) - (left.lastDatetime ?? 0);
-      }
-      return left.callsign.localeCompare(right.callsign, 'uk');
-    });
+
+    // comparator used inside each group: messageCount desc, lastDatetime desc, callsign uk
+    const intraGroupCmp = (a: NetworkCallsignRowView, b: NetworkCallsignRowView) => {
+      if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount;
+      if ((b.lastDatetime ?? 0) !== (a.lastDatetime ?? 0)) return (b.lastDatetime ?? 0) - (a.lastDatetime ?? 0);
+      return a.callsign.localeCompare(b.callsign, 'uk');
+    };
+
+    const copy = filtered.slice();
+    const mainGroup = copy.filter(r => r.mainRadioStation).slice().sort(intraGroupCmp);
+    const rest = copy.filter(r => !r.mainRadioStation);
+    const commandGroup = rest.filter(r => r.commandControl).slice().sort(intraGroupCmp);
+    const otherGroup = rest.filter(r => !r.commandControl).slice().sort(intraGroupCmp);
+
+    return [...mainGroup, ...commandGroup, ...otherGroup];
   }, [normalizedStatusFilter, visibleRows]);
 
   const statusCounts = useMemo(() => countNetworkCallsignStatusRows(visibleRows), [visibleRows]);
@@ -162,8 +170,13 @@ function NetworkCallsignsNetworkTableContent({
               {formatMrtCellTextValue(row.original.callsign)}
             </Typography>
             {row.original.mainRadioStation ? (
+              <Tooltip title="Головна радіостанція" arrow>
+                <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+              </Tooltip>
+            ) : null}
+            {row.original.commandControl ? (
               <Tooltip title="Ланка управління" arrow>
-                <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+                <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main', flexShrink: 0 }} />
               </Tooltip>
             ) : null}
           </Stack>
@@ -396,9 +409,24 @@ function NetworkCallsignsNetworkTableContent({
             disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
           >
             <ListItemIcon sx={{ color: rowMenuTarget.mainRadioStation ? 'warning.main' : 'text.secondary' }}>
+              <StarIcon fontSize="small" />
+            </ListItemIcon>
+            {rowMenuTarget.mainRadioStation ? 'Зняти головну' : 'Зробити головною'}
+          </MenuItem>
+        ) : null}
+        {rowMenuTarget ? (
+          <MenuItem
+            onClick={() => {
+              onToggleCommandControl(rowMenuTarget);
+              setRowMenuAnchorEl(null);
+              setRowMenuTarget(null);
+            }}
+            disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
+          >
+            <ListItemIcon sx={{ color: rowMenuTarget.commandControl ? 'info.main' : 'text.secondary' }}>
               <MilitaryTechOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            {rowMenuTarget.mainRadioStation ? 'Зняти позначку' : 'Зробити ланкою управління'}
+            {rowMenuTarget.commandControl ? 'Зняти ланку управління' : 'Зробити ланкою управління'}
           </MenuItem>
         ) : null}
         {rowMenuTarget ? (

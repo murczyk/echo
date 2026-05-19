@@ -31,6 +31,7 @@ export type NetworkCallsignDrawerForm = {
   unitDeveloping: boolean;
   developing: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type NetworkCallsignRowView = {
@@ -53,6 +54,7 @@ export type NetworkCallsignRowView = {
   sourceId: number | null;
   radioFreq: string | null;
   networkId: number;
+  commandControl: boolean;
 };
 
 export type NetworkCallsignCatalogCallsign = {
@@ -138,12 +140,16 @@ export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId
     unitDeveloping: false,
     developing: false,
     mainRadioStation: false,
+    commandControl: false,
   };
 }
 
 export function createNetworkCallsignDrawerForm(
   networkId: number,
-  networkCallsign: Pick<NetworkCallsignRowView, 'id' | 'callsign' | 'position' | 'comment' | 'sourceId' | 'radioFreq' | 'unitId' | 'unitDeveloping' | 'developing' | 'mainRadioStation'>,
+  networkCallsign: Pick<
+    NetworkCallsignRowView,
+    'id' | 'callsign' | 'position' | 'comment' | 'sourceId' | 'radioFreq' | 'unitId' | 'unitDeveloping' | 'developing' | 'mainRadioStation' | 'commandControl'
+  >,
 ): NetworkCallsignDrawerForm {
   return {
     id: networkCallsign.id,
@@ -157,6 +163,7 @@ export function createNetworkCallsignDrawerForm(
     unitDeveloping: networkCallsign.unitDeveloping,
     developing: networkCallsign.developing,
     mainRadioStation: networkCallsign.mainRadioStation,
+    commandControl: networkCallsign.commandControl,
   };
 }
 
@@ -257,6 +264,7 @@ export function buildNetworkCallsignRowViews(
       active: networkCallsign.active,
       developing: networkCallsign.developing,
       mainRadioStation: networkCallsign.mainRadioStation,
+      commandControl: networkCallsign.commandControl,
       unitDeveloping: networkCallsign.unitDeveloping,
       sourceId: networkCallsign.sourceId ?? null,
       radioFreq: networkCallsign.radioFreq ?? null,

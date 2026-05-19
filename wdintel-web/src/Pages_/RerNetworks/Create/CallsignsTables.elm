@@ -316,6 +316,7 @@ update _ msg model =
                                         Nothing
                             , unitDeveloping = False
                             , mainRadioStation = False
+                            , commandControl = False
                             }
                     in
                     ( { model
@@ -574,6 +575,7 @@ update _ msg model =
                                     , unitId = callsign.unitId
                                     , unitDeveloping = callsign.unitDeveloping
                                     , mainRadioStation = callsign.mainRadioStation
+                                    , commandControl = callsign.commandControl
                                     }
                             in
                             ( { model
@@ -865,6 +867,7 @@ update _ msg model =
                                         Nothing
                             , unitDeveloping = False
                             , mainRadioStation = False
+                            , commandControl = False
                             }
                     in
                     ( { model
@@ -1744,6 +1747,15 @@ callsignCreateSidebarContent shared model _ =
                             }
                             |> Checkbox.withContent [ text "Головна радіостанція" ]
                             |> Checkbox.view
+                        , Checkbox.new
+                            { isChecked = Maybe.map .commandControl model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (Maybe.map (\s -> { s | commandControl = not s.commandControl }))
+                            }
+                            |> Checkbox.withContent [ text "Ланка управління" ]
+                            |> Checkbox.view
                         ]
                     ]
                 , div []
@@ -2048,6 +2060,15 @@ editCallsignSidebarContent shared model _ =
                                         (Maybe.map (\s -> { s | mainRadioStation = not s.mainRadioStation }))
                             }
                             |> Checkbox.withContent [ text "Головна радіостанція" ]
+                            |> Checkbox.view
+                        , Checkbox.new
+                            { isChecked = Maybe.map .commandControl model.editCallsignState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (Maybe.map (\s -> { s | commandControl = not s.commandControl }))
+                            }
+                            |> Checkbox.withContent [ text "Ланка управління" ]
                             |> Checkbox.view
                         ]
                     ]

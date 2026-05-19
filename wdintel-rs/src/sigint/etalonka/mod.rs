@@ -90,6 +90,7 @@ fn etalonka_progress_style() -> ProgressStyle {
 
 pub enum CallsignTableType {
     MainRadioStations,
+    CommandControlStations,
     OtherStations,
     AbsentMainStation,
 }
@@ -1052,6 +1053,7 @@ fn add_network_callsigns_section(
     // Check if any main radio station exists
     let has_main_radio_station =
         net_callsigns.iter().any(|nc| nc.main_radio_station);
+    let has_command_control = net_callsigns.iter().any(|nc| nc.command_control);
 
     if has_main_radio_station {
         let nc_for_main_radio_station: Vec<NetworkCallsign> = net_callsigns
@@ -1070,10 +1072,29 @@ fn add_network_callsigns_section(
         }
     }
 
+    if has_command_control {
+        let nc_for_command_control: Vec<NetworkCallsign> = net_callsigns
+            .iter()
+            .filter(|nc| nc.command_control)
+            .cloned()
+            .collect();
+
+        if let Some(table) = build_nc_table(
+            &CallsignTableType::CommandControlStations,
+            &nc_for_command_control,
+            sources,
+            width_unit,
+        ) {
+            doc = doc.add_table(table).add_paragraph(Paragraph::new());
+        }
+    }
+
     if !net_callsigns.is_empty() {
         let nc_filtered: Vec<NetworkCallsign> = net_callsigns
             .iter()
-            .filter(|nc| !nc.main_radio_station && !nc.developing)
+            .filter(|nc| {
+                !nc.main_radio_station && !nc.command_control && !nc.developing
+            })
             .cloned()
             .collect();
 
@@ -1295,7 +1316,8 @@ fn build_basic_network_callsigns_table(
 
     // build optional title row and pass to build_table
     let title_row = match callsigns_table_type {
-        CallsignTableType::MainRadioStations => Some("Ланка управління"),
+        CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::CommandControlStations => Some("Ланка управління"),
         CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
         _ => None,
     }
@@ -1462,7 +1484,8 @@ fn build_extended_network_callsigns_table(
 
     // build optional title row and pass to build_table
     let title_row = match callsigns_table_type {
-        CallsignTableType::MainRadioStations => Some("Ланка управління"),
+        CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::CommandControlStations => Some("Ланка управління"),
         CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
         _ => None,
     }

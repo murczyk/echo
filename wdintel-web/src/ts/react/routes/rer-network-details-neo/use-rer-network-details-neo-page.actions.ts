@@ -325,6 +325,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
       unitDeveloping: form.unitDeveloping,
       developing: form.developing,
       mainRadioStation: form.mainRadioStation,
+      commandControl: form.commandControl,
     } as const;
     const updateCallsignId = state.callsignDrawerMode === 'edit' && form.id !== null ? form.id : null;
 
@@ -477,6 +478,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
         unitDeveloping: false,
         developing,
         mainRadioStation: false,
+        commandControl: false,
       });
 
       setState((current) => {
@@ -529,6 +531,59 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
         unitDeveloping: networkCallsign.unitDeveloping,
         developing: networkCallsign.developing,
         mainRadioStation: nextMainRadioStation,
+        commandControl: networkCallsign.commandControl,
+      });
+
+      setState((current) => {
+        const nextNetworkCallsigns = mergeNetworkCallsigns(current.networkCallsigns, [updatedNetworkCallsign]);
+        const derived = buildNetworkCallsignTabData(current.networkCallsignGroups, current.callsignActivityMap, nextNetworkCallsigns);
+
+        return {
+          ...current,
+          networkCallsigns: nextNetworkCallsigns,
+          catalogCallsignGroups: derived.catalogCallsignGroups,
+          unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
+          callsignCount: nextNetworkCallsigns.length,
+          callsignUpdateInFlightIds: current.callsignUpdateInFlightIds.filter((item) => item !== networkCallsign.id),
+          callsignWarning: null,
+        };
+      });
+    } catch (error) {
+      const errorMessage = formatErrorMessage(error);
+      setState((current) => ({
+        ...current,
+        callsignUpdateInFlightIds: current.callsignUpdateInFlightIds.filter((item) => item !== networkCallsign.id),
+        callsignWarning: errorMessage,
+      }));
+    }
+  }, [canManageCallsignActions, setState, state.callsignUpdateInFlightIds, state.network]);
+
+  const toggleNetworkCallsignCommandControl = useCallback(async (networkCallsign: NetworkCallsignRowView) => {
+    if (!canManageCallsignActions || !state.network) return;
+    if (state.callsignUpdateInFlightIds.includes(networkCallsign.id)) return;
+
+    const nextCommandControl = !networkCallsign.commandControl;
+
+    setState((current) => ({
+      ...current,
+      callsignWarning: null,
+      callsignUpdateInFlightIds: [...current.callsignUpdateInFlightIds, networkCallsign.id],
+    }));
+
+    try {
+      const updatedNetworkCallsign = await updateNetworkCallsign({
+        id: networkCallsign.id,
+        networkId: networkCallsign.networkId,
+        callsign: networkCallsign.callsign,
+        position: networkCallsign.position.trim() === '' ? null : networkCallsign.position.trim(),
+        comment: networkCallsign.comment.trim() === '' ? null : networkCallsign.comment.trim(),
+        sourceId: networkCallsign.sourceId,
+        radioFreq: networkCallsign.radioFreq,
+        unitId: networkCallsign.unitId,
+        unitDeveloping: networkCallsign.unitDeveloping,
+        developing: networkCallsign.developing,
+        mainRadioStation: networkCallsign.mainRadioStation,
+        commandControl: nextCommandControl,
       });
 
       setState((current) => {
@@ -582,6 +637,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
     addKnownCallsignsToNetwork: addKnownCallsigns,
     addInterceptedCallsignToNetwork,
     toggleNetworkCallsignMainRadioStation,
+    toggleNetworkCallsignCommandControl,
     loadCallsigns: reloadCallsignsData,
   };
 }

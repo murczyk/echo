@@ -246,6 +246,7 @@ mod m20260518_000001_add_sigint_network_freq_encryption_and_command_control;
 mod m20260518_000002_add_sigint_network_freq_signal_type;
 mod m20260519_000001_rollback_sigint_network_freq_encryption_and_command_control;
 mod m20260519_000002_rollback_sigint_network_freq_signal_type;
+mod m20260519_091147_add_command_control_to_sigint_network_callsign;
 
 pub struct Migrator;
 
@@ -499,6 +500,7 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260518_000001_add_sigint_network_freq_encryption_and_command_control::Migration),
             Box::new(m20260518_000002_add_sigint_network_freq_signal_type::Migration),
+            Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
             Box::new(m20260519_000001_rollback_sigint_network_freq_encryption_and_command_control::Migration),
             Box::new(m20260519_000002_rollback_sigint_network_freq_signal_type::Migration),
         ]

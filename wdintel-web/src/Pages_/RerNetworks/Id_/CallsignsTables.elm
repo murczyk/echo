@@ -375,6 +375,7 @@ update _ msg model =
                                         Nothing
                             , unitDeveloping = False
                             , mainRadioStation = False
+                            , commandControl = False
                             }
                     in
                     ( { model
@@ -633,6 +634,7 @@ update _ msg model =
                                     , unitId = callsign.unitId
                                     , unitDeveloping = callsign.unitDeveloping
                                     , mainRadioStation = callsign.mainRadioStation
+                                    , commandControl = callsign.commandControl
                                     }
                             in
                             ( { model
@@ -924,6 +926,7 @@ update _ msg model =
                                         Nothing
                             , unitDeveloping = False
                             , mainRadioStation = False
+                            , commandControl = False
                             }
                     in
                     ( { model
@@ -1245,9 +1248,17 @@ viewNetworkCallsigns networkCallsigns model user shared =
         regularCallsigns =
             getRegularCallsigns networkCallsigns
 
-        -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
-        sortedCallsigns =
-            Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState regularCallsigns
+        -- Групуємо та сортуємо так, щоб: 1) Головна радіостанція, 2) Ланка управління, 3) інші.
+        -- Для кожної групи застосовуємо поточний стан сортування таблиці окремо,
+        -- потім з'єднуємо результати, щоб зберегти пріоритет груп.
+        ( mainGroup, rest ) = List.partition .mainRadioStation regularCallsigns
+        ( commandGroup, otherGroup ) = List.partition .commandControl rest
+
+        sortedMain = Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState mainGroup
+        sortedCommand = Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState commandGroup
+        sortedOthers = Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState otherGroup
+
+        sortedCallsigns = List.concat [ sortedMain, sortedCommand, sortedOthers ]
 
         paginatedCallsigns =
             Pager.getPageData model.networkCallsignsPager sortedCallsigns

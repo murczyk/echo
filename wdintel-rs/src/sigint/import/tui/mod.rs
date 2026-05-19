@@ -751,6 +751,7 @@ async fn import_network_callsigns(
             unit_developing: Set(import_signal.unit_developing),
             unit_id: Set(unit_id),
             main_radio_station: Set(import_signal.main_radio_station),
+            command_control: Set(false),
             deleted: Set(import_signal.deleted),
             created_at: Set(import_signal.created_at),
             sigint_origin_id: Set(import_signal.sigint_origin_id),
