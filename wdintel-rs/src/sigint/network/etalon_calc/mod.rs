@@ -14,8 +14,7 @@ fn should_backfill_freq(
     freq: &sigint_network_freq::Model,
     frequencies: &[String],
 ) -> bool {
-    !freq.deleted
-        && (frequencies.is_empty() || frequencies.contains(&freq.freq))
+    frequencies.is_empty() || frequencies.contains(&freq.freq)
 }
 
 pub async fn invalidate_network_inbox_for_group_with_key<'a, 'async_trait, C>(
@@ -237,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn should_backfill_freq_ignores_deleted_records() {
+    fn should_backfill_freq_matches_frequency_filter() {
         let active = sigint_network_freq::Model {
             id: 1,
             network_id: 10,
@@ -263,6 +262,6 @@ mod tests {
         let frequencies = vec!["145.1000".to_string()];
 
         assert!(should_backfill_freq(&active, &frequencies));
-        assert!(!should_backfill_freq(&deleted, &frequencies));
+        assert!(should_backfill_freq(&deleted, &frequencies));
     }
 }

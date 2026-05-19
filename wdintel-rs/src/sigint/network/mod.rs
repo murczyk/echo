@@ -38,19 +38,6 @@ pub mod merge;
 pub mod oneoff;
 pub mod types;
 
-fn dedupe_networks_by_id(
-    networks: Vec<sigint_network::Model>,
-) -> Vec<sigint_network::Model> {
-    let mut seen = HashSet::new();
-    let mut deduped = Vec::with_capacity(networks.len());
-    for network in networks {
-        if seen.insert(network.id) {
-            deduped.push(network);
-        }
-    }
-    deduped
-}
-
 /// Отримання списку мереж
 ///
 /// # API URL
@@ -201,8 +188,7 @@ pub async fn network_list(
     //     networks.clone().build(DbBackend::Postgres).to_string()
     // );
 
-    let networks =
-        dedupe_networks_by_id(networks.all(&env.dbx).await.context(h!())?);
+    let networks = networks.all(&env.dbx).await.context(h!())?;
 
     let res = render_networks(networks, &env.dbx, &user_id)
         .await
@@ -465,7 +451,7 @@ pub async fn create_network(
                 )),
                 signal_type: Set(signal_type),
                 modulation_id: Set(frequency.modulation_id),
-                encryption_type: Set(None),
+                encryption_type: Set(frequency.encryption_type.clone()),
                 command_control: Set(false),
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
@@ -3737,14 +3723,19 @@ mod tests {
             original_id: None,
         };
 
-        let deduped = dedupe_networks_by_id(vec![
+        let networks = vec![
             network_a.clone(),
             network_a.clone(),
             network_b.clone(),
             network_b.clone(),
-        ]);
+        ];
 
-        assert_eq!(deduped, vec![network_a, network_b]);
+        let ids = networks
+            .into_iter()
+            .map(|network| network.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec![10, 10, 11, 11]);
     }
 
     #[test]
