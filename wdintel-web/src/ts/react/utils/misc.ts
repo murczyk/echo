@@ -15,6 +15,8 @@ export function isPresent<T>(value: T | null | undefined): value is T {
   return !isNullOrUndefined(value);
 }
 
+export const NO_DATA_LABEL = '—';
+
 export function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
   if (isNullOrUndefined(arr)) return null;
   if (Array.isArray(arr) && arr.length === 0) return null;
@@ -62,16 +64,16 @@ export function objectsEqual(obj1: { [key: string]: any }, obj2: { [key: string]
 }
 
 export function formatDate(value: number | null | undefined, timeFormat?: Intl.DateTimeFormatOptions): string {
-  if (isNullOrUndefined(value)) return '—';
+  if (isNullOrUndefined(value)) return NO_DATA_LABEL;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return NO_DATA_LABEL;
   return date.toLocaleDateString('uk-UA', timeFormat);
 }
 
 export function formatDateTime24(value: number | null | undefined): string {
-  if (isNullOrUndefined(value)) return '—';
+  if (isNullOrUndefined(value)) return NO_DATA_LABEL;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return NO_DATA_LABEL;
   return date.toLocaleString('uk-UA', {
     year: 'numeric',
     month: '2-digit',
@@ -83,9 +85,9 @@ export function formatDateTime24(value: number | null | undefined): string {
 }
 
 export function formatUtcDateOnly(value: number | null | undefined): string {
-  if (isNullOrUndefined(value)) return '—';
+  if (isNullOrUndefined(value)) return NO_DATA_LABEL;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return NO_DATA_LABEL;
   const year = String(date.getUTCFullYear()).slice(-2);
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');

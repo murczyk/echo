@@ -3,6 +3,7 @@ import type { TypographyProps } from '@mui/material/Typography';
 import type { ReactNode } from 'react';
 
 import { formatMrtCellTextValue } from '../../formatMrtCellTextValue';
+import { NO_DATA_LABEL } from '../../../utils/misc';
 
 export function renderMrtCellTextValue(
   value: string | null | undefined,
@@ -20,7 +21,7 @@ export function renderMrtCellWithFallback(
   renderNonEmpty: (text: string) => ReactNode,
 ): ReactNode {
   const text = formatMrtCellTextValue(value);
-  if (text === '—') {
+  if (text === NO_DATA_LABEL) {
     return renderMrtCellTextValue(text);
   }
 

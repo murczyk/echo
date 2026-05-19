@@ -626,6 +626,7 @@ update _ msg model =
 
                 oldFreqState =
                     model.freqCreateState
+
                 newFreqState =
                     { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
             in
@@ -804,10 +805,10 @@ update _ msg model =
                         addFreqReq =
                             { networkId = network.id
                             , freqRec =
-                            { freq = model.freqCreateState.freq
-                            , kind = model.freqCreateState.kind
-                            , modulationId = model.freqCreateState.modulationId
-                            , encryptionKeyIds = model.freqCreateState.encryptionKeyIds
+                                { freq = model.freqCreateState.freq
+                                , kind = model.freqCreateState.kind
+                                , modulationId = model.freqCreateState.modulationId
+                                , encryptionKeyIds = model.freqCreateState.encryptionKeyIds
                                 , description = description
                                 , activeFrom = model.freqCreateState.activeFrom
                                 , activeTo = model.freqCreateState.activeTo
@@ -1364,10 +1365,10 @@ freqsTableConfig shared model user =
                                                             , freq = freq.freq
                                                             , kind = Maybe.withDefault "VHF" freq.kind
                                                             , modulationId = freq.modulationId
-                                                            , encryptionKeyIds = freq.encryptionKeyIds
+                                                                , encryptionKeyIds = freq.encryptionKeyIds
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
-                                                            }
+                                                                }
                                                         ]
                                                         [ i [ class "bi bi-pencil-square" ] [] ]
                                                     , button
@@ -1826,6 +1827,7 @@ freqCreateSidebarContent shared model _ =
                                     model.freqCreateModulationSelect.items
                                     "Не вибрано"
                                     defaultOptions
+
                     _ ->
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
                 ]

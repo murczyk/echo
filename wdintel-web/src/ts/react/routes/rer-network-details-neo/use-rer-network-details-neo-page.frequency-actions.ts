@@ -19,11 +19,7 @@ import {
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
 import { buildNetworkFreqActivityByFreq } from './frequency-utils';
-import type {
-  NetworkFreqCreateWizardForm,
-  NetworkFreqEditForm,
-  NetworkFreqTechDataForm,
-} from './use-rer-network-details-neo-page.shared';
+import type { NetworkFreqCreateWizardForm, NetworkFreqEditForm, NetworkFreqTechDataForm } from './use-rer-network-details-neo-page.shared';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 

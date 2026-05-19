@@ -2,7 +2,7 @@ import { Box, Button, Chip, Divider, Paper, Skeleton, Stack, Typography } from '
 import type { ReactNode } from 'react';
 
 import type { Network } from '../../../../../Bindings';
-import { formatUtcDateOnly } from '../../../utils/misc';
+import { NO_DATA_LABEL, formatUtcDateOnly } from '../../../utils/misc';
 import { normalizeLookupName } from '../use-rer-network-details-neo-page.shared';
 
 function FieldRow({ label, value }: { label: string; value: ReactNode }) {
@@ -173,12 +173,12 @@ export function NetworkDetailsLeftPanel({
                     </Typography>
                   ) : (
                     <Typography variant="body2" color="text.secondary">
-                      —
+                      {NO_DATA_LABEL}
                     </Typography>
                   )
                 }
               />
-              <FieldRow label="Район функціонування" value={<Typography variant="body2">{normalizeLookupName(network?.location, '—')}</Typography>} />
+              <FieldRow label="Район функціонування" value={<Typography variant="body2">{normalizeLookupName(network?.location)}</Typography>} />
               <FieldRow
                 label="Смуги"
                 value={
@@ -195,12 +195,12 @@ export function NetworkDetailsLeftPanel({
                     </Stack>
                   ) : (
                     <Typography variant="body2" color="text.secondary">
-                      —
+                      {NO_DATA_LABEL}
                     </Typography>
                   )
                 }
               />
-              <FieldRow label="Склад кореспондентів" value={<Typography variant="body2">{callsignCount ?? '—'}</Typography>} />
+              <FieldRow label="Склад кореспондентів" value={<Typography variant="body2">{callsignCount ?? NO_DATA_LABEL}</Typography>} />
               <FieldRow
                 label="Активність"
                 value={
@@ -221,14 +221,14 @@ export function NetworkDetailsLeftPanel({
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <SectionTitle>Операційні</SectionTitle>
-              <FieldRow label="Призначення" value={<Typography variant="body2">{normalizeLookupName(network?.purpose, '—')}</Typography>} />
+              <FieldRow label="Призначення" value={<Typography variant="body2">{normalizeLookupName(network?.purpose)}</Typography>} />
               <FieldRow label="Діапазон" value={<Typography variant="body2">{rangeLabel}</Typography>} />
               <FieldRow label="Тип передачі" value={<Typography variant="body2">{transferTypeLabel}</Typography>} />
-              <FieldRow label="Режим" value={<Typography variant="body2">{normalizeLookupName(network?.operationMode, '—')}</Typography>} />
-              <FieldRow label="Характер" value={<Typography variant="body2">{normalizeLookupName(network?.operationType, '—')}</Typography>} />
+              <FieldRow label="Режим" value={<Typography variant="body2">{normalizeLookupName(network?.operationMode)}</Typography>} />
+              <FieldRow label="Характер" value={<Typography variant="body2">{normalizeLookupName(network?.operationType)}</Typography>} />
               <FieldRow
                 label="Період функціонування"
-                value={<Typography variant="body2">{normalizeLookupName(network?.operationPeriod, '—')}</Typography>}
+                value={<Typography variant="body2">{normalizeLookupName(network?.operationPeriod)}</Typography>}
               />
               <FieldRow
                 label="Пости"
@@ -237,7 +237,7 @@ export function NetworkDetailsLeftPanel({
                     <ChipList labels={postItems.map((item) => item.label)} />
                   ) : (
                     <Typography variant="body2" color="text.secondary">
-                      —
+                      {NO_DATA_LABEL}
                     </Typography>
                   )
                 }
@@ -246,10 +246,10 @@ export function NetworkDetailsLeftPanel({
                 label="Радіостанція"
                 value={
                   network?.radioStation?.trim() ? (
-                    <Typography variant="body2">{normalizeLookupName(network.radioStation, '—')}</Typography>
+                    <Typography variant="body2">{normalizeLookupName(network.radioStation)}</Typography>
                   ) : (
                     <Typography variant="body2" color="text.secondary">
-                      —
+                      {NO_DATA_LABEL}
                     </Typography>
                   )
                 }
@@ -262,7 +262,7 @@ export function NetworkDetailsLeftPanel({
               <SectionTitle>Додатково</SectionTitle>
               <FieldRow label="Створено" value={<Typography variant="body2">{formatUtcDateOnly(network?.createdAt)}</Typography>} />
               <FieldRow label="Оновлено" value={<Typography variant="body2">{formatUtcDateOnly(network?.lastUpdatedAt)}</Typography>} />
-              <FieldRow label="Оператор" value={<Typography variant="body2">{normalizeLookupName(network?.lastUpdatedBy, '—')}</Typography>} />
+              <FieldRow label="Оператор" value={<Typography variant="body2">{normalizeLookupName(network?.lastUpdatedBy)}</Typography>} />
             </Box>
           </Box>
         )}

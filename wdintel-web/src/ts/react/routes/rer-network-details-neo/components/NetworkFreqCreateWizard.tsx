@@ -29,7 +29,6 @@ import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
 import { NetworkFreqActivityControl } from './NetworkFreqActivityControl';
 import { NetworkFreqKeysSection } from './NetworkFreqKeysSection';
 import { NetworkFreqSectionCard } from './NetworkFreqSectionCard';
-import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
 
 type Props = {
   open: boolean;
@@ -52,7 +51,27 @@ type NewKeyForm = {
   modulationId: number | null;
 };
 
+type TechForm = {
+  rx: string;
+  tx: string;
+  cc: string;
+  slot: string;
+  groupId: string;
+  channel: string;
+  encryptionType: 'none' | 'ARC40' | 'AES256' | 'VEDA';
+};
+
 const DISABLED_TECH_HELPER = 'Поки що не підтримується';
+
+const DEFAULT_TECH_FORM: TechForm = {
+  rx: '',
+  tx: '',
+  cc: '',
+  slot: '',
+  groupId: '',
+  channel: '',
+  encryptionType: 'none',
+};
 
 function formatKeyLabel(key: EncryptionKeyData): string {
   const parts = [key.description?.trim(), key.key?.trim()].filter((value) => value && value !== '');
@@ -88,6 +107,7 @@ function NetworkFreqCreateWizardComponent({
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const [newKeySaving, setNewKeySaving] = useState(false);
   const [freqTouched, setFreqTouched] = useState(false);
+  const [techForm, setTechForm] = useState<TechForm>(DEFAULT_TECH_FORM);
   const [newKeyForm, setNewKeyForm] = useState<NewKeyForm>({
     key: '',
     description: '',
@@ -120,6 +140,7 @@ function NetworkFreqCreateWizardComponent({
   useEffect(() => {
     if (!open) return;
     setFreqTouched(false);
+    setTechForm(DEFAULT_TECH_FORM);
   }, [open]);
 
   useEffect(() => {
@@ -239,7 +260,6 @@ function NetworkFreqCreateWizardComponent({
                     displayEmpty
                     value={form.modulationId === null ? '' : String(form.modulationId)}
                     onChange={handleModulationChange}
-                    MenuProps={NEO_SELECT_MENU_PROPS}
                     renderValue={(value) => {
                       if (value === '') {
                         return <span style={{ opacity: 0.7 }}>Виберіть модуляцію</span>;
@@ -259,14 +279,12 @@ function NetworkFreqCreateWizardComponent({
                     label="Тип *"
                     value={form.kind}
                     onChange={(event) => onChange({ ...form, kind: String(event.target.value) as NetworkFreqCreateWizardForm['kind'] })}
-                    MenuProps={NEO_SELECT_MENU_PROPS}
                   >
                     <MenuItem value="DMR">DMR</MenuItem>
                     <MenuItem value="DMRe">DMRe</MenuItem>
                     <MenuItem value="NFM">NFM</MenuItem>
                   </Select>
                 </FormControl>
-
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -307,13 +325,15 @@ function NetworkFreqCreateWizardComponent({
                   >
                     <TextField
                       label="Rx"
-                      value=""
+                      value={techForm.rx}
+                      onChange={(event) => setTechForm((current) => ({ ...current, rx: event.target.value }))}
                       disabled
                       fullWidth
                     />
                     <TextField
                       label="Tx"
-                      value=""
+                      value={techForm.tx}
+                      onChange={(event) => setTechForm((current) => ({ ...current, tx: event.target.value }))}
                       disabled
                       fullWidth
                     />
@@ -328,19 +348,22 @@ function NetworkFreqCreateWizardComponent({
                   >
                     <TextField
                       label="CC"
-                      value=""
+                      value={techForm.cc}
+                      onChange={(event) => setTechForm((current) => ({ ...current, cc: event.target.value }))}
                       disabled
                       fullWidth
                     />
                     <TextField
                       label="Slot"
-                      value=""
+                      value={techForm.slot}
+                      onChange={(event) => setTechForm((current) => ({ ...current, slot: event.target.value }))}
                       disabled
                       fullWidth
                     />
                     <TextField
                       label="Group ID"
-                      value=""
+                      value={techForm.groupId}
+                      onChange={(event) => setTechForm((current) => ({ ...current, groupId: event.target.value }))}
                       disabled
                       fullWidth
                     />
@@ -348,12 +371,31 @@ function NetworkFreqCreateWizardComponent({
 
                   <TextField
                     label="Channel"
-                    value=""
+                    value={techForm.channel}
+                    onChange={(event) => setTechForm((current) => ({ ...current, channel: event.target.value }))}
                     disabled
                     fullWidth
                   />
                 </Stack>
               </NetworkFreqSectionCard>
+              <FormControl fullWidth disabled={saving}>
+                <InputLabel id="network-freq-create-encryption-type-label" shrink>
+                  Тип шифрування
+                </InputLabel>
+                <Select
+                  labelId="network-freq-create-encryption-type-label"
+                  label="Тип шифрування"
+                  value={techForm.encryptionType}
+                  onChange={(event) =>
+                    setTechForm((current) => ({ ...current, encryptionType: String(event.target.value) as TechForm['encryptionType'] }))
+                  }
+                >
+                  <MenuItem value="none">Без шифрування</MenuItem>
+                  <MenuItem value="ARC40">ARC40</MenuItem>
+                  <MenuItem value="AES256">AES256</MenuItem>
+                  <MenuItem value="VEDA">VEDA</MenuItem>
+                </Select>
+              </FormControl>
               <NetworkFreqKeysSection
                 canManageKeys={canManageKeys}
                 saving={saving}
@@ -417,7 +459,6 @@ function NetworkFreqCreateWizardComponent({
                   const value = event.target.value.trim();
                   setNewKeyForm((current) => ({ ...current, modulationId: value === '' ? null : Number(value) }));
                 }}
-                MenuProps={NEO_SELECT_MENU_PROPS}
               >
                 <MenuItem value="">
                   <em>Не вибрано</em>

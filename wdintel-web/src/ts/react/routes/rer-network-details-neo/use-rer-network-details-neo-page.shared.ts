@@ -13,7 +13,7 @@ import type {
   Unit,
   User,
 } from '../../../../Bindings';
-import { formatUtcDateInputValue } from '../../utils/misc';
+import { NO_DATA_LABEL, formatUtcDateInputValue } from '../../utils/misc';
 import type { NetworkFreqActivityByFreq } from './frequency-utils';
 import type {
   NetworkCallsignCatalogGroupView,
@@ -318,7 +318,7 @@ export function formatErrorMessage(error: unknown): string {
   }
 }
 
-export function normalizeLookupName(value: string | null | undefined, fallback: string): string {
+export function normalizeLookupName(value: string | null | undefined, fallback: string = NO_DATA_LABEL): string {
   const trimmed = value?.trim() ?? '';
   return trimmed === '' ? fallback : trimmed;
 }
@@ -328,7 +328,7 @@ export function formatClassicNetworkHeaderName(networkName: string | null | unde
   const units = unitNames.map((unitName) => unitName.trim()).filter((unitName) => unitName !== '');
 
   if (name === '' && units.length === 0) {
-    return '—';
+    return NO_DATA_LABEL;
   }
 
   return ['р/м', name, units.join(', ')].filter((part) => part !== '').join(' ');
@@ -357,13 +357,13 @@ export function displayNetworkType(kind: string | null | undefined): string {
     case 'DMRe':
       return 'DMRe';
     default:
-      return normalizeLookupName(kind, '—');
+      return normalizeLookupName(kind);
   }
 }
 
 export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
-  const kinds = [...new Set(freqs.map((freq) => displayNetworkType(freq.kind)).filter((kind) => kind !== '—'))];
-  return kinds.length === 0 ? '—' : kinds.join(', ');
+  const kinds = [...new Set(freqs.map((freq) => displayNetworkType(freq.kind)).filter((kind) => kind !== NO_DATA_LABEL))];
+  return kinds.length === 0 ? NO_DATA_LABEL : kinds.join(', ');
 }
 
 export function formatTransferTypeLabel(freqs: Array<Network['freqs'][number]>, modulationsById: Map<number, string>): string {
@@ -374,7 +374,7 @@ export function formatTransferTypeLabel(freqs: Array<Network['freqs'][number]>, 
     .filter((label) => label.trim() !== '');
 
   const uniqueLabels = [...new Set(labels)];
-  return uniqueLabels.length === 0 ? '—' : uniqueLabels.join(', ');
+  return uniqueLabels.length === 0 ? NO_DATA_LABEL : uniqueLabels.join(', ');
 }
 
 export function buildLookupMap<T extends { id: number; name: string }>(items: T[]): Map<number, string> {

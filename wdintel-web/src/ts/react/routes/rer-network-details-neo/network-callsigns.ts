@@ -5,7 +5,7 @@ import type {
   NetworkCallsignRes,
   Source,
 } from '../../../../Bindings';
-import { formatDateTime24 } from '../../utils/misc';
+import { NO_DATA_LABEL, formatDateTime24 } from '../../utils/misc';
 
 export type NetworkCallsignSectionMode = 'network' | 'catalog' | 'intercepted';
 
@@ -259,7 +259,7 @@ export function buildNetworkCallsignRowViews(
       lastDatetime: networkCallsign.lastDatetime ?? null,
       messageCount: networkCallsign.messageCount,
       comment: networkCallsign.comment?.trim() ?? '',
-      sourceName: networkCallsign.sourceId === null ? '—' : sourcesById.get(networkCallsign.sourceId)?.name?.trim() || `#${networkCallsign.sourceId}`,
+      sourceName: networkCallsign.sourceId === null ? NO_DATA_LABEL : sourcesById.get(networkCallsign.sourceId)?.name?.trim() || `#${networkCallsign.sourceId}`,
       knownCallsignId: networkCallsign.knownCallsignId ?? null,
       active: networkCallsign.active,
       developing: networkCallsign.developing,
@@ -411,5 +411,5 @@ export function countNetworkCallsignStatusRows(rows: NetworkCallsignRowView[]): 
 }
 
 export function formatNetworkCallsignDatetime(value: number | null): string {
-  return value === null ? '—' : formatDateTime24(value);
+  return value === null ? NO_DATA_LABEL : formatDateTime24(value);
 }

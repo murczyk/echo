@@ -555,7 +555,6 @@ async fn load_network_freq_rows(
                 row.try_get("", "active_from").context(h!())?;
             let active_to: Option<NaiveDateTime> =
                 row.try_get("", "active_to").context(h!())?;
-            let kind: String = row.try_get("", "kind").unwrap_or_default();
             let active_to = active_to.map(|dt| dt.and_utc().timestamp_millis());
             let active_from = active_from.and_utc().timestamp_millis();
 
@@ -590,7 +589,7 @@ async fn load_network_freq_rows(
                 is_active: active_to.is_none(),
                 active_from,
                 active_to,
-                kind: Some(kind),
+                kind: row.try_get("", "kind").ok(),
             })
         })
         .collect();

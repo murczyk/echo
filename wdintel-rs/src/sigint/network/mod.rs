@@ -69,7 +69,6 @@ pub async fn network_list(
     .await?;
 
     let mut networks = sigint_network::Entity::find()
-        .distinct()
         .join_as(
             JoinType::LeftJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
@@ -3445,62 +3444,6 @@ mod tests {
         let active_from = update_network_freq_active_from(active_from_millis);
 
         assert_eq!(active_from, dt(5));
-    }
-
-    #[test]
-    fn network_list_dedupes_duplicate_rows_by_id() {
-        let network_a = sigint_network::Model {
-            id: 10,
-            name: "Network A".to_string(),
-            location: "Location A".to_string(),
-            deleted: false,
-            created_at: dt(1),
-            updated_by: Some("Tester".to_string()),
-            updated_at: dt(1),
-            radio_station: None,
-            purpose: None,
-            operation_mode: None,
-            operation_type: None,
-            operation_period: None,
-            merged_to: None,
-            active_from: Some(dt(1)),
-            active_to: None,
-            sigint_origin_id: None,
-            original_id: None,
-        };
-        let network_b = sigint_network::Model {
-            id: 11,
-            name: "Network B".to_string(),
-            location: "Location B".to_string(),
-            deleted: false,
-            created_at: dt(2),
-            updated_by: Some("Tester".to_string()),
-            updated_at: dt(2),
-            radio_station: None,
-            purpose: None,
-            operation_mode: None,
-            operation_type: None,
-            operation_period: None,
-            merged_to: None,
-            active_from: Some(dt(2)),
-            active_to: None,
-            sigint_origin_id: None,
-            original_id: None,
-        };
-
-        let networks = vec![
-            network_a.clone(),
-            network_a.clone(),
-            network_b.clone(),
-            network_b.clone(),
-        ];
-
-        let ids = networks
-            .into_iter()
-            .map(|network| network.id)
-            .collect::<Vec<_>>();
-
-        assert_eq!(ids, vec![10, 10, 11, 11]);
     }
 
     #[test]

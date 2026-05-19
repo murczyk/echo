@@ -52,7 +52,7 @@ function updateForm(
   onChange({ ...form, ...next });
 }
 
-function MainRadioStationControl({
+function MainRadioStationCheckbox({
   checked,
   disabled,
   onChange,
@@ -102,7 +102,7 @@ function MainRadioStationControl({
   );
 }
 
-function CommandControlMarker({
+function CommandControlCheckbox({
   checked,
   disabled,
   onChange,
@@ -312,13 +312,13 @@ export function NetworkCallsignDrawer({
                 placeholder="Введіть позивний"
               />
 
-              <MainRadioStationControl
+              <MainRadioStationCheckbox
                 checked={form.mainRadioStation}
                 disabled={saving}
                 onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
               />
 
-              <CommandControlMarker
+              <CommandControlCheckbox
                 checked={form.commandControl}
                 disabled={saving}
                 onChange={(nextCommandControl) => updateForm(form, { commandControl: nextCommandControl }, onChange)}

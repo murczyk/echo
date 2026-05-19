@@ -1026,10 +1026,10 @@ freqsTableConfig shared model user =
                                                             , freq = freq.freq
                                                             , kind = Maybe.withDefault "VHF" freq.kind
                                                             , modulationId = freq.modulationId
-                                                            , encryptionKeyIds = freq.encryptionKeyIds
+                                                                , encryptionKeyIds = freq.encryptionKeyIds
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
-                                                            }
+                                                                }
                                                         ]
                                                         [ i [ class "bi bi-pencil-square" ] [] ]
                                                     , button

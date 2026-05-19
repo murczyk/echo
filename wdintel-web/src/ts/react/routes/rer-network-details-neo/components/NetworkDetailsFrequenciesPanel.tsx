@@ -6,6 +6,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   'mrt-row-numbers': true,
   displayFreq: true,
   typeLabel: true,
+  encryptionLabel: true,
   messageCount: true,
   callsignLabel: true,
   lastDatetime: true,
@@ -19,7 +20,7 @@ export function NetworkDetailsFrequenciesPanel(props: Props) {
       tableId="network-details-frequencies"
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
       defaultColumnOrder={buildNetworkColumnOrder({
-        dataColumnIds: ['displayFreq', 'typeLabel', 'messageCount', 'callsignLabel', 'lastDatetime'],
+        dataColumnIds: ['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount', 'callsignLabel', 'lastDatetime'],
       })}
     >
       <NetworkDetailsFrequenciesTable {...props} />
