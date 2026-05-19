@@ -23,6 +23,7 @@ export type NetworkCallsignDrawerForm = {
   id: number | null;
   networkId: number;
   callsign: string;
+  status: NetworkCallsignStatus;
   position: string;
   comment: string;
   sourceId: number | null;
@@ -132,6 +133,7 @@ export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId
     id: null,
     networkId,
     callsign: '',
+    status: 'verified',
     position: '',
     comment: '',
     sourceId: null,
@@ -148,13 +150,14 @@ export function createNetworkCallsignDrawerForm(
   networkId: number,
   networkCallsign: Pick<
     NetworkCallsignRowView,
-    'id' | 'callsign' | 'position' | 'comment' | 'sourceId' | 'radioFreq' | 'unitId' | 'unitDeveloping' | 'developing' | 'mainRadioStation' | 'commandControl'
+    'id' | 'callsign' | 'status' | 'position' | 'comment' | 'sourceId' | 'radioFreq' | 'unitId' | 'unitDeveloping' | 'developing' | 'mainRadioStation' | 'commandControl'
   >,
 ): NetworkCallsignDrawerForm {
   return {
     id: networkCallsign.id,
     networkId,
     callsign: networkCallsign.callsign,
+    status: networkCallsign.status,
     position: networkCallsign.position,
     comment: networkCallsign.comment,
     sourceId: networkCallsign.sourceId,

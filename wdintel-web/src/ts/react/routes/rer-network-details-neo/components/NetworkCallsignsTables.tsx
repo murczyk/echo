@@ -87,8 +87,8 @@ export function NetworkDetailsCallsignsPanel({
         Перейти:
       </Typography>
       <PowerChip label="Позивні мережі" selected={sectionMode === 'network'} onClick={() => onSectionModeChange('network')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
-      <PowerChip label="Каталог" selected={sectionMode === 'catalog'} onClick={() => onSectionModeChange('catalog')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
-      <PowerChip label="Перехоплення" selected={sectionMode === 'intercepted'} onClick={() => onSectionModeChange('intercepted')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
+      <PowerChip label="Співпадіння з каталогом" selected={sectionMode === 'catalog'} onClick={() => onSectionModeChange('catalog')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
+      <PowerChip label="Присутні в перехопленнях" selected={sectionMode === 'intercepted'} onClick={() => onSectionModeChange('intercepted')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
     </Stack>
   );
 

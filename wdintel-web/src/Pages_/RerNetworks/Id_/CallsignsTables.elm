@@ -1839,7 +1839,7 @@ callsignCreateSidebarContent shared model _ =
                         ]
                         []
                     ]
-                , div [ class "flex flex-col gap-2" ]
+                , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .mainRadioStation model.callsignCreateState |> Maybe.withDefault False
@@ -2155,7 +2155,7 @@ editCallsignSidebarContent shared model _ =
                         ]
                         []
                     ]
-                , div [ class "flex flex-col gap-2" ]
+                , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .mainRadioStation model.editCallsignState |> Maybe.withDefault False

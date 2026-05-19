@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { KnownCallsignShortRes, NetworkCallsign, NetworkCallsignRes, Source } from '../../../../Bindings';
+import type { NetworkCallsignRowView } from './network-callsigns';
 import {
   buildNetworkCallsignRowViews,
   buildNetworkCallsignTabData,
@@ -103,16 +104,20 @@ describe('network-callsigns helpers', () => {
   });
 
   it('preserves both network markers in drawer forms', () => {
-    const row = createNetworkCallsign({
-      id: 8,
-      mainRadioStation: true,
-      commandControl: true,
-    });
+    const row = {
+      ...createNetworkCallsign({
+        id: 8,
+        mainRadioStation: true,
+        commandControl: true,
+      }),
+      status: 'verified',
+    } as NetworkCallsignRowView;
 
     expect(createDefaultNetworkCallsignDrawerForm(10, 4)).toEqual({
       id: null,
       networkId: 10,
       callsign: '',
+      status: 'verified',
       position: '',
       comment: '',
       sourceId: null,
@@ -126,6 +131,7 @@ describe('network-callsigns helpers', () => {
     expect(createNetworkCallsignDrawerForm(10, row)).toMatchObject({
       id: 8,
       networkId: 10,
+      status: 'verified',
       mainRadioStation: true,
       commandControl: true,
     });

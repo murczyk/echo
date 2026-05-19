@@ -25,6 +25,7 @@ import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './Network
 import {
   normalizeCallsignDisplay,
   NetworkCallsignSourceId,
+  type NetworkCallsignStatus,
   type NetworkCallsignDrawerForm,
   type NetworkCallsignDrawerMode,
 } from '../network-callsigns';
@@ -52,20 +53,26 @@ function updateForm(
   onChange({ ...form, ...next });
 }
 
-function MainRadioStationCheckbox({
+function StatusFlagCheckbox({
   checked,
   disabled,
   onChange,
+  label,
+  icon,
+  accentColor,
 }: {
   checked: boolean;
   disabled: boolean;
   onChange: (next: boolean) => void;
+  label: string;
+  icon: JSX.Element;
+  accentColor: string;
 }) {
   return (
     <Box
       sx={(theme) => ({
         border: '1px solid',
-        borderColor: checked ? theme.palette.warning.main : 'divider',
+        borderColor: checked ? accentColor : 'divider',
         borderRadius: 2,
         bgcolor: checked ? 'action.selected' : 'transparent',
         px: 1.25,
@@ -92,59 +99,9 @@ function MainRadioStationCheckbox({
         label={
           <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
             <Typography variant="body2" noWrap sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
-              Головна радіостанція
+              {label}
             </Typography>
-            <StarIcon fontSize="small" sx={{ color: 'warning.main' }} />
-          </Stack>
-        }
-      />
-    </Box>
-  );
-}
-
-function CommandControlCheckbox({
-  checked,
-  disabled,
-  onChange,
-}: {
-  checked: boolean;
-  disabled: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <Box
-      sx={(theme) => ({
-        border: '1px solid',
-        borderColor: checked ? theme.palette.info.main : 'divider',
-        borderRadius: 2,
-        bgcolor: checked ? 'action.selected' : 'transparent',
-        px: 1.25,
-        py: 0.75,
-      })}
-    >
-      <FormControlLabel
-        sx={{
-          m: 0,
-          width: '100%',
-          alignItems: 'center',
-          '& .MuiFormControlLabel-label': {
-            width: '100%',
-          },
-        }}
-        control={
-          <Checkbox
-            checked={checked}
-            onChange={(event) => onChange(event.target.checked)}
-            disabled={disabled}
-            size="small"
-          />
-        }
-        label={
-          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-            <Typography variant="body2" noWrap sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
-              Ланка управління
-            </Typography>
-            <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main' }} />
+            {icon}
           </Stack>
         }
       />
@@ -153,16 +110,40 @@ function CommandControlCheckbox({
 }
 
 function CallsignStatusControl({
-  developing,
+  status,
   disabled,
   onChange,
 }: {
-  developing: boolean;
+  status: NetworkCallsignStatus;
   disabled: boolean;
-  onChange: (nextDeveloping: boolean) => void;
+  onChange: (nextStatus: NetworkCallsignStatus) => void;
 }) {
-  const verifiedSelected = !developing;
-  const developingSelected = developing;
+  if (status === 'catalog') {
+    return (
+      <Box
+        sx={(theme) => ({
+          minHeight: 52,
+          border: '1px solid',
+          borderColor: theme.palette.info.main,
+          borderRadius: 2,
+          bgcolor: theme.palette.mode === 'dark' ? 'rgba(33, 150, 243, 0.12)' : 'rgba(33, 150, 243, 0.08)',
+          px: 1.5,
+          display: 'flex',
+          alignItems: 'center',
+        })}
+      >
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'info.main', flexShrink: 0 }} />
+          <Typography variant="body2" sx={{ fontWeight: 700, color: 'info.main', fontSize: '0.9rem' }}>
+            Каталог
+          </Typography>
+        </Stack>
+      </Box>
+    );
+  }
+
+  const verifiedSelected = status === 'verified';
+  const developingSelected = status === 'developing';
 
   return (
     <Box
@@ -179,7 +160,7 @@ function CallsignStatusControl({
     >
       <ButtonBase
         disabled={disabled}
-        onClick={() => onChange(false)}
+        onClick={() => onChange('verified')}
         sx={(theme) => ({
           minHeight: 38,
           borderRadius: 1.5,
@@ -209,7 +190,7 @@ function CallsignStatusControl({
       </ButtonBase>
       <ButtonBase
         disabled={disabled}
-        onClick={() => onChange(true)}
+        onClick={() => onChange('developing')}
         sx={(theme) => ({
           minHeight: 38,
           borderRadius: 1.5,
@@ -312,26 +293,47 @@ export function NetworkCallsignDrawer({
                 placeholder="Введіть позивний"
               />
 
-              <MainRadioStationCheckbox
-                checked={form.mainRadioStation}
-                disabled={saving}
-                onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
-              />
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: 1.25,
+                }}
+              >
+                <StatusFlagCheckbox
+                  checked={form.mainRadioStation}
+                  disabled={saving}
+                  onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
+                  label="Головна радіостанція"
+                  accentColor="var(--mui-palette-warning-main)"
+                  icon={<StarIcon fontSize="small" sx={{ color: 'warning.main' }} />}
+                />
 
-              <CommandControlCheckbox
-                checked={form.commandControl}
-                disabled={saving}
-                onChange={(nextCommandControl) => updateForm(form, { commandControl: nextCommandControl }, onChange)}
-              />
+                <StatusFlagCheckbox
+                  checked={form.commandControl}
+                  disabled={saving}
+                  onChange={(nextCommandControl) => updateForm(form, { commandControl: nextCommandControl }, onChange)}
+                  label="Ланка управління"
+                  accentColor="var(--mui-palette-info-main)"
+                  icon={<MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main' }} />}
+                />
+              </Box>
 
               <Stack spacing={1}>
                 <Typography variant="body2" color="text.secondary">
                   Статус
                 </Typography>
                 <CallsignStatusControl
-                  developing={form.developing}
+                  status={form.status}
                   disabled={saving}
-                  onChange={(nextDeveloping) => updateForm(form, { developing: nextDeveloping }, onChange)}
+                  onChange={(nextStatus) => updateForm(
+                    form,
+                    {
+                      status: nextStatus,
+                      developing: nextStatus === 'developing',
+                    },
+                    onChange,
+                  )}
                 />
               </Stack>
 

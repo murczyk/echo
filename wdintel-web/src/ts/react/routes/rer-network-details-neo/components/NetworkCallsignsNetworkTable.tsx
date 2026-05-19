@@ -44,12 +44,23 @@ const NETWORK_MRT_LOCALIZATION = {
 };
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing'];
-const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Catalog' | 'Unknown'>, string> = {
+const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing', 'Catalog'];
+const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Unknown'>, string> = {
   All: 'Всі',
   Verified: 'Верифіковано',
   Developing: 'В дорозвідці',
+  Catalog: 'Каталог',
 };
+
+function getNetworkStatusFilterCount(
+  filter: NetworkCallsignStatusFilter,
+  statusCounts: ReturnType<typeof countNetworkCallsignStatusRows>,
+) {
+  if (filter === 'All') return statusCounts.all;
+  if (filter === 'Verified') return statusCounts.verified;
+  if (filter === 'Developing') return statusCounts.developing;
+  return statusCounts.catalog;
+}
 
 type Props = {
   rows: NetworkCallsignRowView[];
@@ -136,7 +147,13 @@ function NetworkCallsignsNetworkTableContent({
   const tableStateRows = useMemo(() => {
     const filtered = normalizedStatusFilter === 'All'
       ? visibleRows
-      : visibleRows.filter((row) => (normalizedStatusFilter === 'Verified' ? row.status === 'verified' : row.status === 'developing'));
+      : visibleRows.filter((row) => (
+        normalizedStatusFilter === 'Verified'
+          ? row.status === 'verified'
+          : normalizedStatusFilter === 'Developing'
+            ? row.status === 'developing'
+            : row.status === 'catalog'
+      ));
 
     // comparator used inside each group: messageCount desc, lastDatetime desc, callsign uk
     const intraGroupCmp = (a: NetworkCallsignRowView, b: NetworkCallsignRowView) => {
@@ -166,7 +183,7 @@ function NetworkCallsignsNetworkTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
         Cell: ({ row }) => (
           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-            <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} developing={row.original.status === 'developing'} />
+            <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} status={row.original.status} />
             <Typography variant="body2" fontWeight={700} noWrap title={row.original.callsign}>
               {formatMrtCellTextValue(row.original.callsign)}
             </Typography>
@@ -366,7 +383,7 @@ function NetworkCallsignsNetworkTableContent({
               {NETWORK_STATUS_FILTER_ORDER.map((filter) => (
                 <PowerChip
                   key={filter}
-                  label={<CountChipLabel label={NETWORK_STATUS_FILTER_LABELS[filter]} count={filter === 'All' ? statusCounts.all : filter === 'Verified' ? statusCounts.verified : statusCounts.developing} />}
+                  label={<CountChipLabel label={NETWORK_STATUS_FILTER_LABELS[filter]} count={getNetworkStatusFilterCount(filter, statusCounts)} />}
                   selected={normalizedStatusFilter === filter}
                   onClick={() => onStatusFilterChange(filter)}
                   interactive
