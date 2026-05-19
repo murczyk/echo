@@ -244,6 +244,8 @@ mod m20260511_145205_delta_login_lower_unique;
 mod m20260513_102326_add_sigint_network_description_topic;
 mod m20260518_000001_add_sigint_network_freq_encryption_and_command_control;
 mod m20260518_000002_add_sigint_network_freq_signal_type;
+mod m20260519_000001_rollback_sigint_network_freq_encryption_and_command_control;
+mod m20260519_000002_rollback_sigint_network_freq_signal_type;
 
 pub struct Migrator;
 
@@ -497,6 +499,8 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260518_000001_add_sigint_network_freq_encryption_and_command_control::Migration),
             Box::new(m20260518_000002_add_sigint_network_freq_signal_type::Migration),
+            Box::new(m20260519_000001_rollback_sigint_network_freq_encryption_and_command_control::Migration),
+            Box::new(m20260519_000002_rollback_sigint_network_freq_signal_type::Migration),
         ]
     }
 }

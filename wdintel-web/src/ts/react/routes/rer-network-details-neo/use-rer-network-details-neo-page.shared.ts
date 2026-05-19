@@ -55,14 +55,10 @@ export type NetworkDescriptionMode = 'create' | 'edit';
 
 export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'activity' | 'pelengation';
 
-export type NetworkSignalType = 'analog' | 'digital';
-
 export type NetworkFreqCreateWizardForm = {
   freq: string;
   kind: 'DMR' | 'DMRe' | 'NFM';
-  signalType: NetworkSignalType;
   modulationId: number | null;
-  encryptionType: string;
   description: string;
   activeFrom: string;
   activeTo: string;
@@ -72,9 +68,7 @@ export type NetworkFreqCreateWizardForm = {
 export type NetworkFreqEditForm = {
   networkFreqId: number;
   kind: 'DMR' | 'DMRe' | 'NFM';
-  signalType: NetworkSignalType;
   modulationId: number | null;
-  encryptionType: string;
   activeFrom: string;
   activeTo: string;
 };
@@ -82,25 +76,7 @@ export type NetworkFreqEditForm = {
 export type NetworkFreqTechDataForm = {
   networkFreqId: number;
   encryptionKeyIds: number[];
-  encryptionType: string;
 };
-
-export type NetworkEncryptionTypeValue =
-  | 'none'
-  | 'ARC40'
-  | 'AES256'
-  | 'TUT16'
-  | 'TUT128VEDA'
-  | 'HYTERA_AES256_BASIC';
-
-export const NETWORK_ENCRYPTION_TYPE_OPTIONS: Array<{ value: NetworkEncryptionTypeValue; label: string }> = [
-  { value: 'none', label: 'Відсутнє' },
-  { value: 'ARC40', label: 'ARC40' },
-  { value: 'AES256', label: 'AES256' },
-  { value: 'TUT16', label: 'TУТ 16 bit' },
-  { value: 'TUT128VEDA', label: 'TУТ 128 bit (VEDA)' },
-  { value: 'HYTERA_AES256_BASIC', label: 'HYTERA AES256 basic' },
-];
 
 export const FREQUENCY_FORMAT_ERROR = 'Невірний формат частоти (наприклад: 146.5000)';
 
@@ -301,9 +277,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqCreateWizardForm: {
     freq: '',
     kind: 'DMR',
-    signalType: 'digital',
     modulationId: null,
-    encryptionType: 'none',
     description: '',
     activeFrom: '',
     activeTo: '',
@@ -386,17 +360,6 @@ export function displayNetworkType(kind: string | null | undefined): string {
   }
 }
 
-export function displayNetworkSignalType(signalType: string | null | undefined): string {
-  switch (signalType?.trim().toLowerCase()) {
-    case 'analog':
-      return 'аналоговий';
-    case 'digital':
-      return 'цифровий';
-    default:
-      return '—';
-  }
-}
-
 export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
   const kinds = [...new Set(freqs.map((freq) => displayNetworkType(freq.kind)).filter((kind) => kind !== '—'))];
   return kinds.length === 0 ? '—' : kinds.join(', ');
@@ -457,9 +420,7 @@ export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   return {
     freq: '',
     kind: 'DMR',
-    signalType: 'digital',
     modulationId: null,
-    encryptionType: 'none',
     description: '',
     activeFrom: '',
     activeTo: '',
@@ -471,9 +432,7 @@ export function toNetworkFreqEditForm(freq: NetworkFreqsRes): NetworkFreqEditFor
   return {
     networkFreqId: freq.networkFreqId,
     kind: typeLabelFromKind(freq.kind),
-    signalType: freq.signalType.trim().toLowerCase() === 'digital' ? 'digital' : 'analog',
     modulationId: freq.modulationId,
-    encryptionType: freq.encryptionType ?? 'none',
     activeFrom: formatDateInputValue(freq.activeFrom),
     activeTo: formatDateInputValue(freq.activeTo),
   };
@@ -483,7 +442,6 @@ export function toNetworkFreqTechDataForm(freq: NetworkFreqsRes): NetworkFreqTec
   return {
     networkFreqId: freq.networkFreqId,
     encryptionKeyIds: [...freq.encryptionKeyIds],
-    encryptionType: freq.encryptionType ?? 'none',
   };
 }
 
@@ -519,27 +477,6 @@ export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'DMR
   if (normalized === 'DMR') return 'DMR';
   if (normalized === 'DMRE') return 'DMRe';
   return 'NFM';
-}
-
-export function signalTypeFromKind(kind: string | null | undefined): NetworkSignalType {
-  const normalized = kind?.trim().toUpperCase() ?? '';
-  if (normalized === 'DMR' || normalized === 'DMRE') return 'digital';
-  return 'analog';
-}
-
-export function signalTypeFromModulationName(modulationName: string | null | undefined): NetworkSignalType | null {
-  const normalized = modulationName?.trim().toUpperCase() ?? '';
-  if (normalized === 'DMR') return 'digital';
-  if (normalized === 'NFM' || normalized === 'AM') return 'analog';
-  return null;
-}
-
-export function isModulationCompatibleWithSignalType(
-  modulationName: string | null | undefined,
-  signalType: NetworkSignalType,
-): boolean {
-  const modulationSignalType = signalTypeFromModulationName(modulationName);
-  return modulationSignalType === null || modulationSignalType === signalType;
 }
 
 export function parseNetworkDetailsDateInput(value: string): number | null {

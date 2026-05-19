@@ -23,11 +23,6 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import {
   formatErrorMessage,
   getFrequencyFormatError,
-  NETWORK_ENCRYPTION_TYPE_OPTIONS,
-  displayNetworkSignalType,
-  isModulationCompatibleWithSignalType,
-  signalTypeFromKind,
-  signalTypeFromModulationName,
   type NetworkFreqCreateWizardForm,
 } from '../use-rer-network-details-neo-page.shared';
 import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
@@ -102,17 +97,12 @@ function NetworkFreqCreateWizardComponent({
 
   const modulationItems = useMemo(
     () =>
-      modulations
-        .filter((modulation) => {
-          const modulationSignalType = signalTypeFromModulationName(modulation.name);
-          return modulationSignalType === null || modulationSignalType === form.signalType;
-        })
-        .map((modulation) => (
-          <MenuItem key={modulation.id} value={String(modulation.id)}>
-            {modulation.name}
-          </MenuItem>
-        )),
-    [form.signalType, modulations],
+      modulations.map((modulation) => (
+        <MenuItem key={modulation.id} value={String(modulation.id)}>
+          {modulation.name}
+        </MenuItem>
+      )),
+    [modulations],
   );
 
   const selectedKeys = useMemo(() => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []), [form, keys]);
@@ -161,33 +151,7 @@ function NetworkFreqCreateWizardComponent({
 
   const handleModulationChange = (event: SelectChangeEvent<string>) => {
     const value = event.target.value.trim();
-    const selectedModulation = modulations.find((modulation) => String(modulation.id) === value);
-    onChange({
-      ...form,
-      modulationId: value === '' ? null : Number(value),
-      signalType: signalTypeFromModulationName(selectedModulation?.name) ?? form.signalType,
-    });
-  };
-
-  const handleKindChange = (event: SelectChangeEvent<string>) => {
-    const nextKind = String(event.target.value) as NetworkFreqCreateWizardForm['kind'];
-    const nextSignalType = signalTypeFromKind(nextKind);
-    const nextModulationId =
-      form.modulationId === null
-        ? null
-        : isModulationCompatibleWithSignalType(
-            modulations.find((modulation) => modulation.id === form.modulationId)?.name,
-            nextSignalType,
-          )
-          ? form.modulationId
-          : null;
-
-    onChange({
-      ...form,
-      kind: nextKind,
-      signalType: nextSignalType,
-      modulationId: nextModulationId,
-    });
+    onChange({ ...form, modulationId: value === '' ? null : Number(value) });
   };
 
   const handleSelectedKeysChange = (_event: unknown, next: EncryptionKeyData[]) => {
@@ -288,27 +252,21 @@ function NetworkFreqCreateWizardComponent({
                   </Select>
                 </FormControl>
 
-              <FormControl fullWidth disabled={saving}>
-                <InputLabel id="network-freq-create-kind-label">Сумісний тип *</InputLabel>
-                <Select
-                  labelId="network-freq-create-kind-label"
-                  label="Сумісний тип *"
-                  value={form.kind}
-                  onChange={handleKindChange}
-                  MenuProps={NEO_SELECT_MENU_PROPS}
-                >
-                  <MenuItem value="DMR">DMR</MenuItem>
-                  <MenuItem value="DMRe">DMRe</MenuItem>
-                  <MenuItem value="NFM">NFM</MenuItem>
-                </Select>
-              </FormControl>
+                <FormControl fullWidth disabled={saving}>
+                  <InputLabel id="network-freq-create-kind-label">Тип *</InputLabel>
+                  <Select
+                    labelId="network-freq-create-kind-label"
+                    label="Тип *"
+                    value={form.kind}
+                    onChange={(event) => onChange({ ...form, kind: String(event.target.value) as NetworkFreqCreateWizardForm['kind'] })}
+                    MenuProps={NEO_SELECT_MENU_PROPS}
+                  >
+                    <MenuItem value="DMR">DMR</MenuItem>
+                    <MenuItem value="DMRe">DMRe</MenuItem>
+                    <MenuItem value="NFM">NFM</MenuItem>
+                  </Select>
+                </FormControl>
 
-              <TextField
-                label="Тип сигналу"
-                value={displayNetworkSignalType(form.signalType)}
-                disabled
-                fullWidth
-              />
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -396,25 +354,6 @@ function NetworkFreqCreateWizardComponent({
                   />
                 </Stack>
               </NetworkFreqSectionCard>
-              <FormControl fullWidth disabled={saving}>
-                <InputLabel id="network-freq-create-encryption-type-label" shrink>
-                  Шифрування
-                </InputLabel>
-                <Select
-                  labelId="network-freq-create-encryption-type-label"
-                  label="Шифрування"
-                  value={form.encryptionType}
-                  onChange={(event) => onChange({ ...form, encryptionType: String(event.target.value) as NetworkFreqCreateWizardForm['encryptionType'] })}
-                  MenuProps={NEO_SELECT_MENU_PROPS}
-                >
-                  {NETWORK_ENCRYPTION_TYPE_OPTIONS.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
               <NetworkFreqKeysSection
                 canManageKeys={canManageKeys}
                 saving={saving}

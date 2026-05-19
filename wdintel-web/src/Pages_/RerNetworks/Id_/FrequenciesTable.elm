@@ -88,48 +88,6 @@ updateFreqCallsigns networkFreqId callsigns freqs =
         freqs
 
 
-type alias EncryptionTypeOption =
-    ( String, String )
-
-
-encryptionTypeOptions : List EncryptionTypeOption
-encryptionTypeOptions =
-    [ ( "none", "Відсутнє" )
-    , ( "ARC40", "ARC40" )
-    , ( "AES256", "AES256" )
-    , ( "TUT16", "TУТ 16 bit" )
-    , ( "TUT128VEDA", "TУТ 128 bit (VEDA)" )
-    , ( "HYTERA_AES256_BASIC", "HYTERA AES256 basic" )
-    ]
-
-
-encryptionTypeValue : Maybe String -> String
-encryptionTypeValue encryptionType =
-    Maybe.withDefault "none" encryptionType
-
-
-encryptionTypeLabel : Maybe String -> String
-encryptionTypeLabel encryptionType =
-    case encryptionTypeValue encryptionType of
-        "ARC40" ->
-            "ARC40"
-
-        "AES256" ->
-            "AES256"
-
-        "TUT16" ->
-            "TУТ 16 bit"
-
-        "TUT128VEDA" ->
-            "TУТ 128 bit (VEDA)"
-
-        "HYTERA_AES256_BASIC" ->
-            "HYTERA AES256 basic"
-
-        _ ->
-            "Відсутнє"
-
-
 update : Shared.Model -> FrequenciesMsg -> Model -> ( Model, Effect FrequenciesMsg )
 update _ msg model =
     case msg of
@@ -153,13 +111,10 @@ update _ msg model =
                                       , networkFreqId = f.networkFreqId
                                       , freq = f.freq
                                       , kind = Maybe.withDefault "VHF" f.kind
-                                      , signalType = Just f.signalType
                                       , modulationId = f.modulationId
-                                      , encryptionType = f.encryptionType
                                       , encryptionKeyIds = f.encryptionKeyIds
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
-                                      , commandControl = f.commandControl
                                       }
                                     )
                                 )
@@ -184,20 +139,14 @@ update _ msg model =
                         == originalFreq.networkFreqId
                         && updateReq.kind
                         == Maybe.withDefault "VHF" originalFreq.kind
-                        && Maybe.withDefault originalFreq.signalType updateReq.signalType
-                        == originalFreq.signalType
                         && updateReq.modulationId
                         == originalFreq.modulationId
                         && updateReq.activeFrom
                         == originalFreq.activeFrom
-                        && updateReq.encryptionType
-                        == originalFreq.encryptionType
                         && updateReq.encryptionKeyIds
                         == originalFreq.encryptionKeyIds
                         && updateReq.activeTo
                         == originalFreq.activeTo
-                        && updateReq.commandControl
-                        == originalFreq.commandControl
 
                 ( m1, eff1 ) =
                     case model.freqsEditingState of
@@ -478,7 +427,6 @@ update _ msg model =
                                 , freqId
                                 , { updateReq
                                     | kind = NetworksUtils.networkKindToString updatedNetworkKind
-                                    , signalType = Just nextSignalType
                                     , modulationId = updatedModulationSelection
                                   }
                                 )
@@ -514,18 +462,6 @@ update _ msg model =
                         , selected = updatedModulationId
                     }
 
-                signalType =
-                    case ( model.modulations, updatedModulationId ) of
-                        ( Success modulations, Just modulationId ) ->
-                            modulations
-                                |> ListX.find (\mod -> mod.id == modulationId)
-                                |> Maybe.map .name
-                                |> Maybe.andThen NetworksUtils.signalTypeFromModulationName
-                                |> Maybe.withDefault (NetworksUtils.signalTypeFromNetworkKind model.freqEditKindSelect.selected)
-
-                        _ ->
-                            NetworksUtils.signalTypeFromNetworkKind model.freqEditKindSelect.selected
-
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( networkFreqId, freqId, updateReq ) ->
@@ -534,7 +470,6 @@ update _ msg model =
                                 , freqId
                                 , { updateReq
                                     | modulationId = updatedModulationId
-                                    , signalType = Just signalType
                                   }
                                 )
 
@@ -675,9 +610,7 @@ update _ msg model =
                 , freqCreateState =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
-                    , signalType = Just (NetworksUtils.signalTypeFromNetworkKind NetworksUtils.VHF)
                     , modulationId = Nothing
-                    , encryptionType = Nothing
                     , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
@@ -738,7 +671,6 @@ update _ msg model =
                 newFreqState =
                     { oldFreqState
                         | kind = NetworksUtils.networkKindToString updatedKind
-                        , signalType = Just nextSignalType
                     }
             in
             ( { model
@@ -769,11 +701,11 @@ update _ msg model =
                     case model.modulations of
                         Success modulations ->
                             NetworksUtils.clearIncompatibleModulationId modulations
-                                model.freqCreateState.modulationId
+                                updatedModulation
                                 nextSignalType
 
                         _ ->
-                            model.freqCreateState.modulationId
+                            updatedModulation
 
                 modulationSelect2 =
                     let
@@ -782,25 +714,12 @@ update _ msg model =
                     in
                     { modulationSelect | selected = updatedModulationSelection }
 
-                signalType =
-                    case ( model.modulations, updatedModulation ) of
-                        ( Success modulations, Just modulationId ) ->
-                            modulations
-                                |> ListX.find (\mod -> mod.id == modulationId)
-                                |> Maybe.map .name
-                                |> Maybe.andThen NetworksUtils.signalTypeFromModulationName
-                                |> Maybe.withDefault (NetworksUtils.signalTypeFromNetworkKind model.freqCreateKindSelect.selected)
-
-                        _ ->
-                            NetworksUtils.signalTypeFromNetworkKind model.freqCreateKindSelect.selected
-
                 oldFreqState =
                     model.freqCreateState
 
                 newFreqState =
                     { oldFreqState
                         | modulationId = updatedModulationSelection
-                        , signalType = Just signalType
                     }
             in
             ( { model
@@ -959,9 +878,7 @@ update _ msg model =
                             , freqRec =
                             { freq = model.freqCreateState.freq
                             , kind = model.freqCreateState.kind
-                            , signalType = model.freqCreateState.signalType
                             , modulationId = model.freqCreateState.modulationId
-                            , encryptionType = model.freqCreateState.encryptionType
                             , encryptionKeyIds = model.freqCreateState.encryptionKeyIds
                                 , description = description
                                 , activeFrom = model.freqCreateState.activeFrom
@@ -995,9 +912,7 @@ update _ msg model =
                 , freqCreateState =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
-                    , signalType = Just (NetworksUtils.signalTypeFromNetworkKind NetworksUtils.VHF)
                     , modulationId = Nothing
-                    , encryptionType = Nothing
                     , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
@@ -1347,15 +1262,7 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "16%"
             , Table.customColumn
-                { name = "Шифрування"
-                , viewData =
-                    \freq ->
-                        encryptionTypeLabel freq.encryptionType
-                , sorter = TableSorter.unsortable
-                }
-                |> Table.withColumnWidth "10%"
-            , Table.customColumn
-                { name = "Тип сигналу"
+                { name = "Тип"
                 , viewData =
                     \freq ->
                         Maybe.withDefault "" freq.kind
@@ -1528,13 +1435,10 @@ freqsTableConfig shared model user =
                                                             , networkFreqId = freq.networkFreqId
                                                             , freq = freq.freq
                                                             , kind = Maybe.withDefault "VHF" freq.kind
-                                                            , signalType = Just freq.signalType
                                                             , modulationId = freq.modulationId
-                                                            , encryptionType = freq.encryptionType
                                                             , encryptionKeyIds = freq.encryptionKeyIds
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
-                                                            , commandControl = freq.commandControl
                                                             }
                                                         ]
                                                         [ i [ class "bi bi-pencil-square" ] [] ]
@@ -1675,7 +1579,7 @@ freqEditSidebarContent shared model _ networkFreqId freqId updateReq =
         , div [ class "flex-1 overflow-y-auto p-6" ]
             [ div [ class "space-y-6" ]
                 [ div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Сумісний тип" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип" ]
                     , let
                         selectedItem =
                             Just <|
@@ -1693,7 +1597,7 @@ freqEditSidebarContent shared model _ networkFreqId freqId updateReq =
                                 selectedItem
                                 model.freqEditKindSelect.state
                                 model.freqEditKindSelect.items
-                                "Виберіть сумісний тип"
+                                "Виберіть тип"
                                 defaultOptions
                     ]
                 , div [ class "space-y-2" ]
@@ -1730,31 +1634,6 @@ freqEditSidebarContent shared model _ networkFreqId freqId updateReq =
                                 model.freqEditModulationSelect.items
                                 "Не вибрано"
                                 defaultOptions
-                    ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Шифрування" ]
-                    , select
-                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                        , value <| encryptionTypeValue updateReq.encryptionType
-                        , onInput
-                            (\encryptionType ->
-                                UpdateFreqEditSidebar
-                                    { updateReq
-                                        | encryptionType =
-                                            if encryptionType == "none" then
-                                                Nothing
-
-                                            else
-                                                Just encryptionType
-                                    }
-                            )
-                        ]
-                        (List.map
-                            (\( optionValue, optionLabel ) ->
-                                option [ value optionValue ] [ text optionLabel ]
-                            )
-                            encryptionTypeOptions
-                        )
                     ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключі" ]
@@ -1968,7 +1847,7 @@ freqCreateSidebarContent shared model _ =
                     ]
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Сумісний тип" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип" ]
                 , let
                     selectedItem =
                         Select.basicMenuItem
@@ -1985,7 +1864,7 @@ freqCreateSidebarContent shared model _ =
                             (Just selectedItem)
                             model.freqCreateKindSelect.state
                             model.freqCreateKindSelect.items
-                            "Виберіть сумісний тип"
+                            "Виберіть тип"
                             defaultOptions
                 ]
             , div []
@@ -2021,33 +1900,6 @@ freqCreateSidebarContent shared model _ =
                                     defaultOptions
                     _ ->
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
-                ]
-            , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Шифрування" ]
-                , select
-                    [ class "w-full p-2 border rounded border-border bg-background text-foreground"
-                    , value <| encryptionTypeValue model.freqCreateState.encryptionType
-                    , onInput
-                        (\encryptionType ->
-                            UpdateFreqCreateField
-                                (\state ->
-                                    { state
-                                        | encryptionType =
-                                            if encryptionType == "none" then
-                                                Nothing
-
-                                            else
-                                                Just encryptionType
-                                    }
-                                )
-                        )
-                    ]
-                    (List.map
-                        (\( optionValue, optionLabel ) ->
-                            option [ value optionValue ] [ text optionLabel ]
-                        )
-                        encryptionTypeOptions
-                    )
                 ]
             , div [ class "space-y-2" ]
                 [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключі" ]

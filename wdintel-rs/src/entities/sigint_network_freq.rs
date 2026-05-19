@@ -23,11 +23,6 @@ pub struct Model {
     pub deleted: bool,
     pub original_id: Option<i64>,
     pub last_seen_dt: Option<DateTime>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub encryption_type: Option<String>,
-    pub command_control: bool,
-    #[sea_orm(column_type = "Text")]
-    pub signal_type: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

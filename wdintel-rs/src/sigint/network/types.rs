@@ -450,14 +450,11 @@ pub struct NetworkFreq {
     pub network_id: i64,
     pub freq: String,
     pub deleted: bool,
-    pub command_control: bool,
-    pub signal_type: String,
     pub active_from: i64,
     pub active_to: Option<i64>,
     pub created_at: i64,
     pub kind: String,
     pub modulation_id: Option<i32>,
-    pub encryption_type: Option<String>,
     pub encryption_keys: Vec<EncryptionKeyData>,
 }
 
@@ -467,9 +464,7 @@ pub struct NetworkFreq {
 pub struct AddNetworkFreq {
     pub freq: String,
     pub kind: String,
-    pub signal_type: Option<String>,
     pub modulation_id: Option<i32>,
-    pub encryption_type: Option<String>,
     pub encryption_key_ids: Vec<i64>,
     pub description: Option<AddNetworkFrequencyDescription>,
     pub active_from: Option<i64>,
@@ -484,13 +479,10 @@ pub struct UpdateNetworkFreqReq {
     pub network_freq_id: i64,
     pub freq: String,
     pub kind: String,
-    pub signal_type: Option<String>,
     pub modulation_id: Option<i32>,
-    pub encryption_type: Option<String>,
     pub encryption_key_ids: Vec<i64>,
     pub active_from: i64,
     pub active_to: Option<i64>,
-    pub command_control: bool,
 }
 
 #[derive(

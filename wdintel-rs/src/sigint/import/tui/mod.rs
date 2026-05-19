@@ -2,7 +2,6 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::sigint::import::types::EtalonData;
-use crate::sigint::network::derive_signal_type_from_kind;
 use crate::sigint::unit::types::Unit;
 use crate::sigint::unit::{render_unit, unit_name};
 use crate::types::*;
@@ -1075,12 +1074,7 @@ async fn import_network_freqs(
             created_at: Set(import_freq.created_at),
             last_seen_dt: Set(import_freq.last_seen_dt),
             kind: Set(import_freq.kind.clone()),
-            signal_type: Set(derive_signal_type_from_kind(
-                import_freq.kind.to_value().as_ref(),
-            )),
             modulation_id: Set(modulation_id),
-            encryption_type: Set(None),
-            command_control: Set(false),
             active_from: Set(import_freq.active_from),
             active_to: Set(import_freq.active_to),
             sigint_origin_id: Set(import_freq.sigint_origin_id),

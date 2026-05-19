@@ -402,7 +402,6 @@ async fn add_network_freq_window(
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
-            signal_type: Set("analog".to_string()),
             ..Default::default()
         },
     )

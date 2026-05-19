@@ -211,7 +211,6 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     freqTechDrawerSaving: state.freqTechDrawerSaving,
     freqTechDrawerError: state.freqTechDrawerError,
     saveFreqTechDrawer: actions.saveFreqTechDrawer,
-    toggleFreqCommandControl: actions.toggleFreqCommandControl,
     openFreqRowActions: actions.openFreqRowActions,
     closeFreqRowActions: actions.closeFreqRowActions,
     freqRowActionMenuAnchorEl: state.freqRowActionMenuAnchorEl,

@@ -1295,7 +1295,7 @@ fn build_basic_network_callsigns_table(
 
     // build optional title row and pass to build_table
     let title_row = match callsigns_table_type {
-        CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::MainRadioStations => Some("Ланка управління"),
         CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
         _ => None,
     }
@@ -1462,7 +1462,7 @@ fn build_extended_network_callsigns_table(
 
     // build optional title row and pass to build_table
     let title_row = match callsigns_table_type {
-        CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::MainRadioStations => Some("Ланка управління"),
         CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
         _ => None,
     }
@@ -1972,7 +1972,6 @@ mod tests {
             freq: Set(freq.clone()),
             created_at: Set(now),
             kind: Set(sea_orm_active_enums::SigintNetworkKind::Vhf),
-            signal_type: Set("analog".to_string()),
             modulation_id: Set(None),
             active_from: Set(now - chrono::Duration::days(1)),
             active_to: Set(None),

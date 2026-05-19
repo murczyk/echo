@@ -94,9 +94,6 @@ pub enum SigintNetworkFreq {
     ActiveFrom,
     ActiveTo,
     ModulationId,
-    EncryptionType,
-    CommandControl,
-    SignalType,
     Kind,
     Deleted,
 }
@@ -313,27 +310,6 @@ async fn load_freqs_impl(
         .expr_as(
             Expr::col((
                 SigintNetworkFreq::Table,
-                SigintNetworkFreq::SignalType,
-            )),
-            Alias::new("signal_type"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::EncryptionType,
-            )),
-            Alias::new("encryption_type"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::CommandControl,
-            )),
-            Alias::new("command_control"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
                 SigintNetworkFreq::ActiveFrom,
             )),
             Alias::new("active_from"),
@@ -483,27 +459,6 @@ fn build_network_freqs_base_query(
         .expr_as(
             Expr::col((
                 SigintNetworkFreq::Table,
-                SigintNetworkFreq::SignalType,
-            )),
-            Alias::new("signal_type"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::EncryptionType,
-            )),
-            Alias::new("encryption_type"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::CommandControl,
-            )),
-            Alias::new("command_control"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
                 SigintNetworkFreq::ActiveFrom,
             )),
             Alias::new("active_from"),
@@ -601,18 +556,6 @@ async fn load_network_freq_rows(
             let active_to: Option<NaiveDateTime> =
                 row.try_get("", "active_to").context(h!())?;
             let kind: String = row.try_get("", "kind").unwrap_or_default();
-            let signal_type: String =
-                row.try_get("", "signal_type").unwrap_or_else(|_| {
-                    match kind.trim().to_uppercase().as_str() {
-                        "DMR" | "DMRE" => "digital".to_string(),
-                        _ => "analog".to_string(),
-                    }
-                });
-            let encryption_type: Option<String> =
-                row.try_get("", "encryption_type").ok();
-            let command_control: bool =
-                row.try_get("", "command_control").unwrap_or(false);
-
             let active_to = active_to.map(|dt| dt.and_utc().timestamp_millis());
             let active_from = active_from.and_utc().timestamp_millis();
 
@@ -645,12 +588,9 @@ async fn load_network_freq_rows(
 
                 created_at: created_at.and_utc().timestamp_millis(),
                 is_active: active_to.is_none(),
-                command_control,
-                signal_type,
                 active_from,
                 active_to,
                 kind: Some(kind),
-                encryption_type,
             })
         })
         .collect();
@@ -675,13 +615,9 @@ async fn load_network_freq_rows(
                     .collect();
             }
             networks.sort_by(|left, right| {
-                right
-                    .command_control
-                    .cmp(&left.command_control)
-                    .then_with(|| left.freq.cmp(&right.freq))
-                    .then_with(|| {
-                        left.network_freq_id.cmp(&right.network_freq_id)
-                    })
+                left.freq.cmp(&right.freq).then_with(|| {
+                    left.network_freq_id.cmp(&right.network_freq_id)
+                })
             });
             Ok(networks)
         }

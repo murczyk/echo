@@ -201,7 +201,6 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           onOpenFreqEditDrawer={page.openFreqEditDrawer}
           onOpenFreqTechDrawer={page.openFreqTechDrawer}
           onOpenDeleteFreqDialog={page.openDeleteFreqDialog}
-          onToggleFreqCommandControl={page.toggleFreqCommandControl}
           onOpenFreqRowActions={page.openFreqRowActions}
           onCloseFreqRowActions={page.closeFreqRowActions}
           freqRowActionMenuAnchorEl={page.freqRowActionMenuAnchorEl}

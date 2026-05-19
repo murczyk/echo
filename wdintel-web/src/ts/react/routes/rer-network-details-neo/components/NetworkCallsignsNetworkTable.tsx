@@ -1,8 +1,7 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-import StarIcon from '@mui/icons-material/Star';
-import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
@@ -163,8 +162,8 @@ function NetworkCallsignsNetworkTableContent({
               {formatMrtCellTextValue(row.original.callsign)}
             </Typography>
             {row.original.mainRadioStation ? (
-              <Tooltip title="Головна радіостанція" arrow>
-                <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+              <Tooltip title="Ланка управління" arrow>
+                <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
               </Tooltip>
             ) : null}
           </Stack>
@@ -397,9 +396,9 @@ function NetworkCallsignsNetworkTableContent({
             disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
           >
             <ListItemIcon sx={{ color: rowMenuTarget.mainRadioStation ? 'warning.main' : 'text.secondary' }}>
-              {rowMenuTarget.mainRadioStation ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+              <MilitaryTechOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            {rowMenuTarget.mainRadioStation ? 'Зняти позначку' : 'Зробити головною'}
+            {rowMenuTarget.mainRadioStation ? 'Зняти позначку' : 'Зробити ланкою управління'}
           </MenuItem>
         ) : null}
         {rowMenuTarget ? (

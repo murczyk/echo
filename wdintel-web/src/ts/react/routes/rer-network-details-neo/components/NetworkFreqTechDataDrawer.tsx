@@ -21,11 +21,7 @@ import type { EncryptionKeyData, ModulationRec, NetworkFreqsRes } from '../../..
 import { createKey, listKeys } from '../../../services/api/networks';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import {
-  formatErrorMessage,
-  NETWORK_ENCRYPTION_TYPE_OPTIONS,
-  type NetworkFreqTechDataForm,
-} from '../use-rer-network-details-neo-page.shared';
+import { formatErrorMessage, type NetworkFreqTechDataForm } from '../use-rer-network-details-neo-page.shared';
 import { NetworkFreqKeysSection } from './NetworkFreqKeysSection';
 import { NetworkFreqSectionCard } from './NetworkFreqSectionCard';
 import { NetworkFreqSummaryHeader } from './NetworkFreqSummaryHeader';
@@ -260,27 +256,6 @@ function NetworkFreqTechDataDrawerComponent({
 
           {form ? (
             <>
-              <FormControl fullWidth disabled={formBlocked}>
-                <InputLabel id="network-freq-tech-encryption-type-label" shrink>
-                  Шифрування
-                </InputLabel>
-                <Select
-                  labelId="network-freq-tech-encryption-type-label"
-                  label="Шифрування"
-                  displayEmpty
-                  value={form.encryptionType}
-                  onChange={(event) => onChange({ ...form, encryptionType: String(event.target.value) })}
-                  MenuProps={NEO_SELECT_MENU_PROPS}
-                  renderValue={(value) => NETWORK_ENCRYPTION_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value}
-                >
-                  {NETWORK_ENCRYPTION_TYPE_OPTIONS.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
               <NetworkFreqKeysSection
                 canManageKeys={canManageKeys}
                 saving={formBlocked}

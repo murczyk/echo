@@ -16,13 +16,7 @@ import { memo, useMemo } from 'react';
 import type { ModulationRec, NetworkFreqsRes } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { NETWORK_ENCRYPTION_TYPE_OPTIONS, type NetworkFreqEditForm } from '../use-rer-network-details-neo-page.shared';
-import {
-  displayNetworkSignalType,
-  isModulationCompatibleWithSignalType,
-  signalTypeFromKind,
-  signalTypeFromModulationName,
-} from '../use-rer-network-details-neo-page.shared';
+import { type NetworkFreqEditForm } from '../use-rer-network-details-neo-page.shared';
 import { NetworkFreqActivityControl } from './NetworkFreqActivityControl';
 import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
 import { NetworkFreqSummaryHeader } from './NetworkFreqSummaryHeader';
@@ -46,50 +40,18 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
 
   const modulationItems = useMemo(
     () =>
-      modulations
-        .filter((modulation) => {
-          const modulationSignalType = signalTypeFromModulationName(modulation.name);
-          return modulationSignalType === null || modulationSignalType === form?.signalType;
-        })
-        .map((modulation) => (
-          <MenuItem key={modulation.id} value={String(modulation.id)}>
-            {modulation.name}
-          </MenuItem>
-        )),
-    [form?.signalType, modulations],
+      modulations.map((modulation) => (
+        <MenuItem key={modulation.id} value={String(modulation.id)}>
+          {modulation.name}
+        </MenuItem>
+      )),
+    [modulations],
   );
 
   const handleModulationChange = (event: SelectChangeEvent<string>) => {
     if (!form) return;
     const value = event.target.value.trim();
-    const selectedModulation = modulations.find((modulation) => String(modulation.id) === value);
-    onChange({
-      ...form,
-      modulationId: value === '' ? null : Number(value),
-      signalType: signalTypeFromModulationName(selectedModulation?.name) ?? form.signalType,
-    });
-  };
-
-  const handleKindChange = (event: SelectChangeEvent<string>) => {
-    if (!form) return;
-    const nextKind = String(event.target.value) as NetworkFreqEditForm['kind'];
-    const nextSignalType = signalTypeFromKind(nextKind);
-    const nextModulationId =
-      form.modulationId === null
-        ? null
-        : isModulationCompatibleWithSignalType(
-            modulations.find((modulation) => modulation.id === form.modulationId)?.name,
-            nextSignalType,
-          )
-          ? form.modulationId
-          : null;
-
-    onChange({
-      ...form,
-      kind: nextKind,
-      signalType: nextSignalType,
-      modulationId: nextModulationId,
-    });
+    onChange({ ...form, modulationId: value === '' ? null : Number(value) });
   };
 
   return (
@@ -130,25 +92,17 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
           {form ? (
             <>
               <FormControl fullWidth size="small" disabled={formBlocked}>
-                <InputLabel id="network-freq-edit-kind-label">Сумісний тип</InputLabel>
+                <InputLabel id="network-freq-edit-kind-label">Тип</InputLabel>
                 <Select
                   labelId="network-freq-edit-kind-label"
-                  label="Сумісний тип"
+                  label="Тип"
                   value={form.kind}
-                  onChange={handleKindChange}
+                  onChange={(event) => onChange({ ...form, kind: String(event.target.value) as NetworkFreqEditForm['kind'] })}
                   MenuProps={NEO_SELECT_MENU_PROPS}
                 >
                   <MenuItem value="DMR">DMR</MenuItem>
                   <MenuItem value="DMRe">DMRe</MenuItem>
                   <MenuItem value="NFM">NFM</MenuItem>
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth size="small" disabled>
-                <InputLabel shrink>Тип сигналу</InputLabel>
-                <Select displayEmpty value={form.signalType} label="Тип сигналу">
-                  <MenuItem value="analog">{displayNetworkSignalType('analog')}</MenuItem>
-                  <MenuItem value="digital">{displayNetworkSignalType('digital')}</MenuItem>
                 </Select>
               </FormControl>
 
@@ -172,30 +126,6 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
                   }}
                 >
                   {modulationItems}
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth size="small" disabled={formBlocked}>
-                <InputLabel id="network-freq-edit-encryption-label" shrink>
-                  Шифрування
-                </InputLabel>
-                <Select
-                  labelId="network-freq-edit-encryption-label"
-                  label="Шифрування"
-                  displayEmpty
-                  value={form.encryptionType}
-                  onChange={(event) => onChange({ ...form, encryptionType: String(event.target.value) })}
-                  MenuProps={NEO_SELECT_MENU_PROPS}
-                  renderValue={(value) => {
-                    const selected = NETWORK_ENCRYPTION_TYPE_OPTIONS.find((option) => option.value === value);
-                    return selected?.label ?? value;
-                  }}
-                >
-                  {NETWORK_ENCRYPTION_TYPE_OPTIONS.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
                 </Select>
               </FormControl>
 

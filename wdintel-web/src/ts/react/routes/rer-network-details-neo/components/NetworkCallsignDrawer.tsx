@@ -13,8 +13,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import StarIcon from '@mui/icons-material/Star';
-import StarBorderIcon from '@mui/icons-material/StarBorder';
+import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import { memo, useEffect, useState } from 'react';
 
 import type { Source } from '../../../../../Bindings';
@@ -92,9 +91,9 @@ function MainRadioStationControl({
         label={
           <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
             <Typography variant="body2" noWrap sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
-              Головна радіостанція
+              Ланка управління
             </Typography>
-            {checked ? <StarIcon fontSize="small" sx={{ color: 'warning.main' }} /> : <StarBorderIcon fontSize="small" />}
+            <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'warning.main' }} />
           </Stack>
         }
       />
