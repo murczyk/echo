@@ -1089,7 +1089,7 @@ fn add_network_callsigns_section(
 
     if has_main_radio_station {
         let nc_for_main_radio_station = select_callsigns_for_table_type(
-            &net_callsigns,
+            net_callsigns,
             &CallsignTableType::MainRadioStations,
         );
 
@@ -1105,7 +1105,7 @@ fn add_network_callsigns_section(
 
     if has_command_control {
         let nc_for_command_control = select_callsigns_for_table_type(
-            &net_callsigns,
+            net_callsigns,
             &CallsignTableType::CommandControlStations,
         );
 
@@ -1121,7 +1121,7 @@ fn add_network_callsigns_section(
 
     if !net_callsigns.is_empty() {
         let nc_filtered = select_callsigns_for_table_type(
-            &net_callsigns,
+            net_callsigns,
             if has_main_radio_station {
                 &CallsignTableType::OtherStations
             } else {
