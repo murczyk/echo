@@ -279,7 +279,7 @@ fn process_messages_for_interception_report(
         // parse date from format like 2023-12-22
         let date = get_parsed_date(date).context(h!())?;
 
-        write_data_to_sheet(
+        let is_write_success = write_data_to_sheet(
             sheet1,
             &all_tags,
             SheetRowData {
@@ -291,6 +291,9 @@ fn process_messages_for_interception_report(
             },
         )
         .context(h!())?;
+        if !is_write_success {
+            continue;
+        }
         index += 1;
     }
 
@@ -567,7 +570,7 @@ fn write_data_to_sheet(
     sheet1: &mut Worksheet,
     all_tags: &HashMap<i64, String>,
     data: SheetRowData,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let i = data.row_number;
     let date = data.date;
     let date_fmt = Format::new().set_num_format("dd.mm.yyyy");
@@ -575,7 +578,13 @@ fn write_data_to_sheet(
     let m = data.message;
     let freq = m.freq.to_owned().unwrap_or("".to_string());
     let without_model_tags = data.without_model_tags;
-    let m_body = extract_text(&m.body.clone().unwrap_or("".to_string()))?.body;
+    let m_body = if let Some(body) = eject_body_from_message(
+        extract_text(&m.body.clone().unwrap_or("".to_string()))?.body,
+    ) {
+        body
+    } else {
+        return Ok(false);
+    };
     let unit = m.unit.to_owned().unwrap_or("".to_string());
     let comment = m.comment.to_owned().unwrap_or("".to_string());
     let coords = m.coords.to_owned().unwrap_or("".to_string());
@@ -622,7 +631,212 @@ fn write_data_to_sheet(
     sheet1.write_string(i, 9, &mes_tags).context(h!())?;
     sheet1.write_string(i, 10, important).context(h!())?;
 
-    Ok(())
+    Ok(true)
+}
+fn eject_body_from_message(body: String) -> Option<String> {
+    let lines: Vec<&str> = body
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut result = Vec::new();
+
+    for line in lines {
+        if is_body_line(line) {
+            result.push(line);
+        }
+    }
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result.join("\n"))
+    }
+}
+
+fn is_body_line(line: &str) -> bool {
+    let s = line.trim();
+
+    if s.len() < 2 {
+        return false;
+    }
+
+    if s == "—" || s == "-" {
+        return false;
+    }
+
+    // Skip obvious metadata
+    if looks_like_datetime(s) {
+        return false;
+    }
+
+    if looks_like_code(s) {
+        return false;
+    }
+
+    // "- text"
+    if s.starts_with("- ") {
+        return true;
+    }
+
+    // "— text"
+    if s.starts_with("—") {
+        return true;
+    }
+
+    // "1 — text"
+    if starts_with_number_long_dash(s) {
+        return true;
+    }
+
+    // "1 - text"
+    if starts_with_number_short_dash(s) {
+        return true;
+    }
+
+    // "1. text"
+    if starts_with_number_dot_text(s) {
+        return true;
+    }
+
+    false
+}
+
+fn looks_like_datetime(s: &str) -> bool {
+    // 01.01.2026
+    // 1:17
+    // 01.01.2026 1:17:25
+    // 01.01.2026, 00:00:42
+
+    let normalized = s.replace(',', " ");
+    let parts: Vec<&str> = normalized.split_whitespace().collect();
+
+    if parts.is_empty() {
+        return false;
+    }
+
+    if parts.len() == 1 {
+        return is_date(parts[0]) || is_time(parts[0]);
+    }
+
+    parts
+        .windows(2)
+        .any(|pair| is_date(pair[0]) && is_time(pair[1]))
+}
+
+fn is_date(s: &str) -> bool {
+    let mut chunks = s.split('.');
+    let Some(day) = chunks.next() else {
+        return false;
+    };
+    let Some(month) = chunks.next() else {
+        return false;
+    };
+    let Some(year) = chunks.next() else {
+        return false;
+    };
+
+    if chunks.next().is_some() {
+        return false;
+    }
+
+    day.len() == 2
+        && month.len() == 2
+        && year.len() == 4
+        && day.chars().all(|c| c.is_ascii_digit())
+        && month.chars().all(|c| c.is_ascii_digit())
+        && year.chars().all(|c| c.is_ascii_digit())
+}
+
+fn is_time(s: &str) -> bool {
+    let chunks: Vec<&str> = s.split(':').collect();
+
+    if !(chunks.len() == 2 || chunks.len() == 3) {
+        return false;
+    }
+
+    let hour = chunks[0];
+    let minute = chunks[1];
+    let second = if chunks.len() == 3 {
+        Some(chunks[2])
+    } else {
+        None
+    };
+
+    if !(hour.len() == 1 || hour.len() == 2) {
+        return false;
+    }
+
+    if minute.len() != 2 {
+        return false;
+    }
+
+    if !hour.chars().all(|c| c.is_ascii_digit())
+        || !minute.chars().all(|c| c.is_ascii_digit())
+    {
+        return false;
+    }
+
+    if let Some(second) = second {
+        if second.len() != 2 || !second.chars().all(|c| c.is_ascii_digit()) {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn looks_like_code(s: &str) -> bool {
+    // "37U CP 78127 61039"
+
+    let uppercase = s.chars().filter(|c| c.is_ascii_uppercase()).count();
+
+    let digits = s.chars().filter(|c| c.is_ascii_digit()).count();
+
+    uppercase >= 2 && digits >= 4
+}
+
+fn starts_with_number_short_dash(s: &str) -> bool {
+    let mut parts = s.splitn(2, '-');
+
+    let left = parts.next().unwrap_or("").trim();
+
+    !left.is_empty() && left.chars().all(|c| c.is_ascii_digit())
+}
+
+fn starts_with_number_long_dash(s: &str) -> bool {
+    let mut parts = s.splitn(2, '—');
+
+    let left = parts.next().unwrap_or("").trim();
+
+    !left.is_empty() && left.chars().all(|c| c.is_ascii_digit())
+}
+
+fn starts_with_number_dot_text(s: &str) -> bool {
+    let Some(dot_pos) = s.find('.') else {
+        return false;
+    };
+
+    let (left, right) = s.split_at(dot_pos);
+
+    if left.is_empty() {
+        return false;
+    }
+
+    if !left.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
+    // after dot must contain actual text
+    let text = right.trim_start_matches('.').trim();
+
+    if text.is_empty() {
+        return false;
+    }
+
+    // reject dates like 01.01.2026
+    !text.chars().next().unwrap_or(' ').is_ascii_digit()
 }
 
 fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
@@ -637,5 +851,152 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
             to.join(", ")
         };
         (from, to_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::eject_body_from_message;
+
+    #[test]
+    fn eject_body_keeps_only_number_long_dash_lines() {
+        let input = r#"01.01.2026, 00:00:42
+148.1261
+УКХ р/м управління шр 89 тп, придана до 77 омсп 49 ЗА (р-н ЯБЛУНІВКА - ОЛЕКСАНДРО-КАЛИНОВЕ)
+КОРМУШКА (124)
+НВ
+
+1 —  Тихий я Кормушка доложи обстановку
+1 —  Тихий, Тихий на связь, Тихий на связь, Тихий на связь."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(
+            output,
+            Some(
+                "1 —  Тихий я Кормушка доложи обстановку\n1 —  Тихий, Тихий на связь, Тихий на связь, Тихий на связь.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn eject_body_keeps_only_number_dot_lines() {
+        let input = r#"23:58
+31.12.2025
+148.070
+йм. 85 омсбр
+р-н Соледар-Васюківка
+1. Принял, принял тебя Берсерк, плюс."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(
+            output,
+            Some("1. Принял, принял тебя Берсерк, плюс.".to_string())
+        );
+    }
+
+    #[test]
+    fn eject_body_keeps_only_lines_with_long_dash_prefix() {
+        let input = r#"Отримано з поста "18 Бр НГУ БСП ДОНБАС"
+--------------------------------------
+01.01.2026, 00:00:03
+148.0095
+УКХ р/м управління підрозділу зі складу 24 мсп 70 мсд (р-н Часів Яр)
+НВ
+НВ
+
+— Удачи Океану, еще 2 прилета, азимут 290.
+— Удача принял."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(
+            output,
+            Some(
+                "— Удачи Океану, еще 2 прилета, азимут 290.\n— Удача принял."
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn eject_body_keeps_number_dot_lines_without_frequency() {
+        let input = r#"23:57
+31.12.2025
+шр мсб 85 омсбр
+р-н Соледар-Васюківка-Миколаївка
+1. Штиль, Штиль, Бирюк на приеме, говори.
+1. Штиль, да, принял."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(
+            output,
+            Some(
+                "1. Штиль, Штиль, Бирюк на приеме, говори.\n1. Штиль, да, принял.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn eject_body_keeps_dialogue_with_parentheses_line() {
+        let input = r#"01.01.2026, 00:00:28
+159.3900
+УКХ р/м управління 1 мсб 255 мсп 20 мсд (р-н НОВООЛЕНІВКА - РУСИН ЯР)
+ЧИЖ (2551387)
+МАЙОР (5513156)
+
+1 —  Майор, Майор, я Чиж, на приеме.
+2 —  (...)
+1 —  Да, плюс,да плюс."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(
+            output,
+            Some(
+                "1 —  Майор, Майор, я Чиж, на приеме.\n2 —  (...)\n1 —  Да, плюс,да плюс.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn eject_body_returns_none_when_no_message_body_exists_case_one() {
+        let input = r#"01.01.2026 0:01:09
+148.310
+x:53-48839
+y:73-71279
+37U CP 70970 46277
+Пд.Мирноград"#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(output, None);
+    }
+
+    #[test]
+    fn eject_body_returns_none_when_only_metadata_exists_case_two() {
+        let input = r#"Частота: 155.126(МГц)
+Локація: ПдСх Рівне
+Підрозділ: УКХ р/м НВ підрозділу
+Координати: 37U CP 68638 49448
+
+
+Дата: 01.01.2026
+Час: 00:05:34"#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(output, None);
+    }
+
+    #[test]
+    fn eject_body_returns_none_when_len_less_than_two() {
+        let input = r#"—"#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(output, None);
     }
 }
