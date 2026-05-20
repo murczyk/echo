@@ -4,10 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { KnownCallsignShortRes, NetworkCallsign, NetworkCallsignRes, Source } from '../../../../Bindings';
+import type { NetworkCallsignRowView } from './network-callsigns';
 import {
   buildNetworkCallsignRowViews,
   buildNetworkCallsignTabData,
   countNetworkCallsignStatusRows,
+  createDefaultNetworkCallsignDrawerForm,
+  createNetworkCallsignDrawerForm,
   createNetworkCallsignActivityMap,
   flattenCatalogCallsignRows,
   normalizeCallsignDisplay,
@@ -35,6 +38,7 @@ function createNetworkCallsign(overrides: Partial<NetworkCallsign> = {}): Networ
     freqs: ['145.1000'],
     unitDeveloping: false,
     mainRadioStation: false,
+    commandControl: false,
     ...overrides,
   };
 }
@@ -96,6 +100,40 @@ describe('network-callsigns helpers', () => {
       developing: 1,
       catalog: 1,
       unknown: 1,
+    });
+  });
+
+  it('preserves both network markers in drawer forms', () => {
+    const row = {
+      ...createNetworkCallsign({
+        id: 8,
+        mainRadioStation: true,
+        commandControl: true,
+      }),
+      status: 'verified',
+    } as NetworkCallsignRowView;
+
+    expect(createDefaultNetworkCallsignDrawerForm(10, 4)).toEqual({
+      id: null,
+      networkId: 10,
+      callsign: '',
+      status: 'verified',
+      position: '',
+      comment: '',
+      sourceId: null,
+      radioFreq: '',
+      unitId: 4,
+      unitDeveloping: false,
+      developing: false,
+      mainRadioStation: false,
+      commandControl: false,
+    });
+    expect(createNetworkCallsignDrawerForm(10, row)).toMatchObject({
+      id: 8,
+      networkId: 10,
+      status: 'verified',
+      mainRadioStation: true,
+      commandControl: true,
     });
   });
 

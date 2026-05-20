@@ -17,6 +17,7 @@ import type { DevelopingFilter } from '../../../../../Bindings';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
+import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -102,8 +103,7 @@ type Updater<T> = T | ((prev: T) => T);
 
 function CommentCell({ comment }: { comment: string }) {
   const text = formatMrtCellTextValue(comment);
-  if (text === '—') return <Typography variant="body2">{text}</Typography>;
-  if (text.length <= 80) return <Typography variant="body2">{text}</Typography>;
+  if (text.length <= 80) return renderMrtCellTextValue(text);
 
   return (
     <Tooltip title={text} placement="top-start">

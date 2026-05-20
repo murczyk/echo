@@ -27,8 +27,9 @@ pub struct Model {
     pub developing: bool,
     pub unit_developing: bool,
     pub unit_id: Option<i64>,
-    pub original_id: Option<i64>,
     pub main_radio_station: bool,
+    pub command_control: bool,
+    pub original_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

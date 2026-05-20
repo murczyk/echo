@@ -2035,6 +2035,7 @@ export type CreateNetworkCallsignReq = {
   unitDeveloping: boolean;
   developing: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type CallsignUnitStatsRsp = {
@@ -2065,6 +2066,7 @@ export type NetworkCallsign = {
   freqs: Array<string> | null;
   unitDeveloping: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type NetworkCallsignsActivityReq = {
@@ -2088,6 +2090,7 @@ export type UpdateNetworkCallsignReq = {
   unitDeveloping: boolean;
   developing: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type EtalonkaExtendedSettings = {

@@ -5303,6 +5303,7 @@ type alias CreateNetworkCallsignReq =
     , unitDeveloping : Bool
     , developing : Bool
     , mainRadioStation : Bool
+    , commandControl : Bool
     }
 
 
@@ -5319,6 +5320,7 @@ createNetworkCallsignReqEncoder struct =
         , ( "unit_developing", (Json.Encode.bool) struct.unitDeveloping )
         , ( "developing", (Json.Encode.bool) struct.developing )
         , ( "main_radio_station", (Json.Encode.bool) struct.mainRadioStation )
+        , ( "command_control", (Json.Encode.bool) struct.commandControl )
         ]
 
 
@@ -5367,6 +5369,7 @@ type alias NetworkCallsign =
     , freqs : Maybe (List (String))
     , unitDeveloping : Bool
     , mainRadioStation : Bool
+    , commandControl : Bool
     }
 
 
@@ -5391,6 +5394,7 @@ networkCallsignEncoder struct =
         , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.freqs )
         , ( "unit_developing", (Json.Encode.bool) struct.unitDeveloping )
         , ( "main_radio_station", (Json.Encode.bool) struct.mainRadioStation )
+        , ( "command_control", (Json.Encode.bool) struct.commandControl )
         ]
 
 
@@ -5432,6 +5436,7 @@ type alias UpdateNetworkCallsignReq =
     , unitDeveloping : Bool
     , developing : Bool
     , mainRadioStation : Bool
+    , commandControl : Bool
     }
 
 
@@ -5449,6 +5454,7 @@ updateNetworkCallsignReqEncoder struct =
         , ( "unit_developing", (Json.Encode.bool) struct.unitDeveloping )
         , ( "developing", (Json.Encode.bool) struct.developing )
         , ( "main_radio_station", (Json.Encode.bool) struct.mainRadioStation )
+        , ( "command_control", (Json.Encode.bool) struct.commandControl )
         ]
 
 
@@ -10950,6 +10956,7 @@ createNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_developing" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "main_radio_station" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "command_control" (Json.Decode.bool)))
 
 
 callsignUnitStatsRspDecoder : Json.Decode.Decoder CallsignUnitStatsRsp
@@ -10986,6 +10993,7 @@ networkCallsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_developing" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "main_radio_station" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "command_control" (Json.Decode.bool)))
 
 
 networkCallsignsActivityReqDecoder : Json.Decode.Decoder NetworkCallsignsActivityReq
@@ -11015,6 +11023,7 @@ updateNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_developing" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "main_radio_station" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "command_control" (Json.Decode.bool)))
 
 
 etalonkaExtendedSettingsDecoder : Json.Decode.Decoder EtalonkaExtendedSettings

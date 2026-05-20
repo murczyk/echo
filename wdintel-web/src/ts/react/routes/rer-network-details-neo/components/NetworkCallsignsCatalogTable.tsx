@@ -15,6 +15,7 @@ import {
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -25,7 +26,7 @@ import {
   CATALOG_COLUMNS_VISIBILITY,
   NETWORK_CALLSIGN_COLUMN_SIZES,
 } from './NetworkCallsignsTableShared';
-import { NetworkCallsignSourceIcon } from './NetworkCallsignSourceUi';
+import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 
 const catalogMRTOptions = getDefaultMRTOptions<NetworkCallsignCatalogRowView>();
@@ -102,7 +103,7 @@ function NetworkCallsignsCatalogTableContent({
         accessorKey: 'position',
         id: 'position',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
+        Cell: ({ row }) => renderMrtCellTextValue(row.original.position),
       },
       {
         header: 'Підрозділ',
@@ -156,7 +157,7 @@ function NetworkCallsignsCatalogTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
         grow: false,
         enableResizing: false,
-        Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
+        Cell: ({ row }) => <NetworkCallsignSourceCell sourceName={row.original.sourceName} />,
       },
     ], [canManage, inFlightAddIds, isInitialLoading, onAddKnownCallsign]);
 

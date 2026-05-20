@@ -26,6 +26,7 @@ import {
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { renderMrtCellWithFallback, renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { PowerChip } from '../../../components/PowerChip';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
@@ -84,18 +85,18 @@ function renderFrequencyStatusIndicator(isActive: boolean) {
 }
 
 function renderCategoryChip(label: string) {
-  return (
+  return renderMrtCellWithFallback(label, (text) => (
     <PowerChip
       size="small"
       color="default"
-      label={label}
+      label={text}
       fontSize="0.75rem"
       fontWeight={600}
       labelPaddingX={0.85}
       labelPaddingY={0.1}
       sx={{ height: 26, lineHeight: 1 }}
     />
-  );
+  ));
 }
 
 function renderFrequencyCell(row: NetworkFreqTableRow) {
@@ -189,11 +190,7 @@ function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
       size: 300,
       Cell: ({ row }) => {
         const label = getRowCallsignLabel(row.original);
-        return (
-          <Typography variant="body2" title={label} sx={{ maxWidth: '100%' }} noWrap>
-            {label}
-          </Typography>
-        );
+        return renderMrtCellTextValue(label, { title: label, sx: { maxWidth: '100%' }, noWrap: true });
       },
     },
     {

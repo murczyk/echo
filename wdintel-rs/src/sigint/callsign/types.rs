@@ -230,6 +230,7 @@ pub struct NetworkCallsign {
     pub freqs: Option<Vec<String>>,
     pub unit_developing: bool,
     pub main_radio_station: bool,
+    pub command_control: bool,
 }
 
 #[derive(
@@ -271,6 +272,7 @@ pub struct CreateNetworkCallsignReq {
     pub unit_developing: bool,
     pub developing: bool,
     pub main_radio_station: bool,
+    pub command_control: bool,
 }
 
 #[derive(
@@ -288,6 +290,7 @@ pub struct UpdateNetworkCallsignReq {
     pub unit_developing: bool,
     pub developing: bool,
     pub main_radio_station: bool,
+    pub command_control: bool,
 }
 
 #[derive(

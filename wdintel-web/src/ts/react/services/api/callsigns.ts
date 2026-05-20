@@ -72,6 +72,7 @@ type NetworkCallsignLike = Partial<NetworkCallsign> & {
   radio_freq?: string | null;
   unit_developing?: boolean;
   main_radio_station?: boolean;
+  command_control?: boolean;
   freqs?: string[] | null;
 };
 

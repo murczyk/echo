@@ -423,7 +423,6 @@ pub async fn create_network(
                 .unwrap_or(Utc::now().naive_utc());
             let active_to =
                 frequency.active_to.map(dt_from_millis).transpose()?;
-
             let freq_id = sigint_network_freq::ActiveModel {
                 id: NotSet,
                 network_id: Set(network.id),
@@ -728,22 +727,6 @@ pub async fn delete_network(
         .context(h!())?;
 
     Ok(Json(res))
-}
-
-pub async fn get_modulation_name_by_id(
-    modulation_id: Option<i32>,
-    txn: &DatabaseTransaction,
-) -> Result<Option<String>, AppError> {
-    match modulation_id {
-        Some(id) => {
-            let modulation = modulation::Entity::find_by_id(id)
-                .one(txn)
-                .await
-                .context(h!())?;
-            Ok(modulation.map(|m| m.name))
-        }
-        None => Ok(None),
-    }
 }
 
 #[post("/api/sigint/network-callsigns")]
@@ -1555,7 +1538,6 @@ pub async fn add_network_freq(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
-
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
@@ -1944,7 +1926,6 @@ pub async fn update_network_freq(
 
 fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
     dt_from_millis(active_from_millis).unwrap_or(Utc::now().naive_utc())
-        - chrono::Duration::days(1)
 }
 
 #[post("/api/sigint/network/delete-freq")]
@@ -3457,12 +3438,12 @@ mod tests {
     }
 
     #[test]
-    fn update_network_freq_active_from_uses_previous_day() {
+    fn update_network_freq_active_from_preserves_input_day() {
         let active_from_millis = dt(5).and_utc().timestamp_millis();
 
         let active_from = update_network_freq_active_from(active_from_millis);
 
-        assert_eq!(active_from, dt(4));
+        assert_eq!(active_from, dt(5));
     }
 
     #[test]
