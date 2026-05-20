@@ -18,6 +18,7 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - Derive changed endpoints from diffs in Elm effects or `services/api/*`.
 - Derive impacted screens/routes from changed components/pages.
 - Derive available test/build scripts from `justfile` and `wdintel-web/package.json`.
+- Derive whether touched UI state is URL-backed, localStorage-backed, or user-settings-backed.
 
 ## Procedure (checklist)
 - REST API contract checks:
@@ -34,6 +35,11 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - Verify keyboard navigation and focus state visibility.
 - Verify loading, empty, error, success states.
 - Verify no break in core flows for impacted page routes.
+- State persistence checks:
+- For `TableStateProvider`, verify URL-backed `globalFilter`, `columnFilters`, `sorting`, and non-default `date` remain shareable and back-button aware.
+- Verify localStorage-backed table layout (`tableId` column visibility/order/sizing/toggles) survives reload and handles stale columns.
+- For saved filters, verify apply/update/save-as-new/rename/delete dirty-state behavior and duplicate/empty names where relevant.
+- For `/api/user/settings`, verify settings normalize defaults, save failures surface, rapid toggles preserve the latest value, and other mounted surfaces receive update events.
 - Run project checks:
 - `just build-front`
 - For Elm-heavy changes: `cd wdintel-web && elm make <touched>.elm --output=/dev/null`
@@ -43,6 +49,7 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 ## Definition of Done (checklist)
 - API contract compatibility verified or intentionally migrated.
 - UX regression checks completed across breakpoints and states.
+- Relevant URL/localStorage/user-settings persistence behavior is verified.
 - Relevant build/tests pass.
 - Any necessary type/mock/doc updates are included.
 - No silent handling regressions for API errors.

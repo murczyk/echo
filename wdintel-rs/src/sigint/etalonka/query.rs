@@ -555,7 +555,6 @@ async fn load_network_freq_rows(
                 row.try_get("", "active_from").context(h!())?;
             let active_to: Option<NaiveDateTime> =
                 row.try_get("", "active_to").context(h!())?;
-
             let active_to = active_to.map(|dt| dt.and_utc().timestamp_millis());
             let active_from = active_from.and_utc().timestamp_millis();
 
@@ -614,6 +613,11 @@ async fn load_network_freq_rows(
                     })
                     .collect();
             }
+            networks.sort_by(|left, right| {
+                left.freq.cmp(&right.freq).then_with(|| {
+                    left.network_freq_id.cmp(&right.network_freq_id)
+                })
+            });
             Ok(networks)
         }
         _err => _err,

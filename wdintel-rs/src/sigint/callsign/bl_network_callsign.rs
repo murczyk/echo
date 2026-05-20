@@ -26,6 +26,7 @@ pub struct NetworkCallsignResult {
     pub developing: bool,
     pub unit_developing: bool,
     pub main_radio_station: bool,
+    pub command_control: bool,
     pub created_at: NaiveDateTime,
     pub deleted: bool,
     // fields from known callsign
@@ -82,6 +83,7 @@ pub async fn bl_create_network_callsign(
         &req.callsign,
         known_callsign.id,
         req.main_radio_station,
+        req.command_control,
         user_id,
         txn,
     )
@@ -115,6 +117,7 @@ async fn create_network_callsign_not_linked(
         developing: Set(req.developing),
         sigint_origin_id: NotSet,
         main_radio_station: Set(req.main_radio_station),
+        command_control: Set(req.command_control),
         original_id: NotSet,
     }
     .insert(txn)
@@ -152,6 +155,7 @@ async fn create_network_callsign_linked(
     sigint_callsign: &str,
     sigint_callsign_id: i64,
     main_radio_station: bool,
+    command_control: bool,
     user_id: &str,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
@@ -171,6 +175,7 @@ async fn create_network_callsign_linked(
         unit_id: NotSet,
         unit_developing: NotSet,
         main_radio_station: Set(main_radio_station),
+        command_control: Set(command_control),
         original_id: NotSet,
     }
     .insert(txn)
@@ -214,6 +219,7 @@ pub async fn bl_add_as_known_network_callsigns(
             network_id,
             &known_callsign.callsign,
             known_callsign_id,
+            false,
             false,
             user_id,
             txn,
@@ -377,6 +383,7 @@ async fn update_network_callsign_linked(
         Set(known_callsign.callsign.clone());
     network_callsign_record.sigint_callsign_id = Set(Some(known_callsign.id));
     network_callsign_record.main_radio_station = Set(req.main_radio_station);
+    network_callsign_record.command_control = Set(req.command_control);
     network_callsign_record.unit_developing = Set(req.unit_developing);
     network_callsign_record.developing = Set(req.developing);
     if clear_position_comment {
@@ -434,6 +441,7 @@ async fn update_network_callsign_not_linked(
     network_callsign_record.unit_developing = Set(req.unit_developing);
     network_callsign_record.developing = Set(req.developing);
     network_callsign_record.main_radio_station = Set(req.main_radio_station);
+    network_callsign_record.command_control = Set(req.command_control);
 
     let network_callsign =
         network_callsign_record.update(txn).await.context(h!())?;
@@ -570,18 +578,14 @@ pub async fn bl_get_network_callsigns_list(
         .await
         .context(h!())?;
 
+    let activity_callsigns =
+        network_callsigns_activity_targets(&network_callsigns);
+
     let activity_info = get_callsigns_activity_info(
         dbx,
         user_id,
         req.network_id,
-        &network_callsigns
-            .iter()
-            .filter(|nc| {
-                (nc.sigint_callsign_id.is_none() && !nc.developing)
-                    || (!nc.sc_developing.unwrap_or(false))
-            })
-            .map(|nc| nc.sigint_callsign.clone())
-            .collect::<Vec<_>>(),
+        &activity_callsigns,
     )
     .await
     .context(h!())?;
@@ -662,6 +666,7 @@ where
             sigint_network_callsign::Column::Developing,
             sigint_network_callsign::Column::UnitDeveloping,
             sigint_network_callsign::Column::MainRadioStation,
+            sigint_network_callsign::Column::CommandControl,
             sigint_network_callsign::Column::CreatedAt,
             sigint_network_callsign::Column::Deleted,
         ])
@@ -735,6 +740,16 @@ where
         )
 }
 
+fn network_callsigns_activity_targets(
+    network_callsigns: &[NetworkCallsignResult],
+) -> Vec<String> {
+    network_callsigns
+        .iter()
+        .map(|network_callsign| network_callsign.sigint_callsign.clone())
+        .filter(|callsign| !callsign.trim().is_empty())
+        .collect()
+}
+
 pub async fn bl_get_network_callsigns_info_batch<'a, 'async_trait, C>(
     txn: &'a C,
     user_id: &str,
@@ -749,18 +764,14 @@ where
             .await
             .context(h!())?;
 
+    let activity_callsigns =
+        network_callsigns_activity_targets(&network_callsigns);
+
     let activity_info = get_callsigns_activity_info(
         txn,
         user_id,
         network_id,
-        &network_callsigns
-            .iter()
-            .filter(|nc| {
-                (!nc.developing && nc.sigint_callsign_id.is_none())
-                    || (nc.sc_developing.unwrap_or(false))
-            })
-            .map(|nc| nc.sigint_callsign.clone())
-            .collect::<Vec<_>>(),
+        &activity_callsigns,
     )
     .await
     .context(h!())?;
@@ -832,6 +843,7 @@ pub fn render_network_callsign(
             .clone()
             .or(network_callsign.sc_unit_name.clone()),
         unit_developing: network_callsign.unit_developing,
+        command_control: network_callsign.command_control,
         source_id: network_callsign
             .source_id
             .or(network_callsign.sc_source_id.map(|v| v as i64)),

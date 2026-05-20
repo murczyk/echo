@@ -18,6 +18,7 @@ import type { Network, NetworkDescrType } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { NetworkDescriptionForm } from '../use-rer-network-details-neo-page.shared';
+import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
 
 type Props = {
   open: boolean;
@@ -128,6 +129,7 @@ function NetworkDescriptionDrawerComponent({
               label="Частота (необов'язково)"
               value={form.networkFreqId === null ? '' : String(form.networkFreqId)}
               onChange={handleFrequencyChange}
+              MenuProps={NEO_SELECT_MENU_PROPS}
             >
               <MenuItem value="">
                 <em>Без частоти</em>

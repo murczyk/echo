@@ -10,6 +10,7 @@ import { type ReactNode } from 'react';
 
 import type { Source } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
+import { renderMrtCellWithFallback } from '../../../components/mui-customized/table/mrt-cell-text';
 
 const SOURCE_DISPLAY_ORDER = ['РЕР', 'ПРОЛОМ', 'ДОПИТ', 'ВЗАЄМОДІЯ', 'OSINT', 'ДОКУМЕНТ'] as const;
 
@@ -83,6 +84,10 @@ export function NetworkCallsignSourceIcon({ sourceName }: { sourceName: string }
       </Box>
     </Tooltip>
   );
+}
+
+export function NetworkCallsignSourceCell({ sourceName }: { sourceName: string }) {
+  return renderMrtCellWithFallback(sourceName, (text) => <NetworkCallsignSourceIcon sourceName={text} />);
 }
 
 export function NetworkCallsignSourceChipLabel({ sourceName }: { sourceName: string }) {

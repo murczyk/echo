@@ -258,6 +258,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     addKnownCallsignsToNetwork: actions.addKnownCallsignsToNetwork,
     addInterceptedCallsignToNetwork: actions.addInterceptedCallsignToNetwork,
     toggleNetworkCallsignMainRadioStation: actions.toggleNetworkCallsignMainRadioStation,
+    toggleNetworkCallsignCommandControl: actions.toggleNetworkCallsignCommandControl,
     loadPelengPoints,
     descriptionDrawerOpen: state.descriptionDrawerOpen,
     descriptionDrawerMode: state.descriptionDrawerMode,

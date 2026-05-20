@@ -118,6 +118,7 @@ export function buildNetworkLoadingRows(): NetworkCallsignRowView[] {
     sourceId: null,
     radioFreq: null,
     networkId: 0,
+    commandControl: false,
   }));
 }
 

@@ -8,7 +8,7 @@ module Shared.Components.DropdownBadge exposing
     )
 
 import Html exposing (Html, a, button, div, i, span, text)
-import Html.Attributes exposing (class, href, target, title)
+import Html.Attributes exposing (class, href, target)
 import Html.Events exposing (onClick, stopPropagationOn)
 import Json.Decode as Decode
 
@@ -74,7 +74,6 @@ view cfg =
         ]
         [ button
             [ class cfg.badgeClass
-            , title "Клікніть для дій"
             ]
             [ text cfg.text
             , span [ class "opacity-70" ] [ text "⋮" ]
@@ -101,7 +100,7 @@ viewDropdown actions direction =
                     "top-full left-0 mt-1"
     in
     div
-        [ class ("absolute " ++ positionClass ++ " bg-[var(--color-card)] border border-[var(--color-border-muted)] rounded shadow-lg z-50 min-w-[160px]")
+        [ class ("absolute " ++ positionClass ++ " bg-[var(--color-card)] border border-[var(--color-border-muted)] rounded shadow-lg z-50 min-w-[160px] opacity-100")
         ]
         (List.map viewAction actions)
 

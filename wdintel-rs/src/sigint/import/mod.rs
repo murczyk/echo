@@ -1535,6 +1535,7 @@ where
             unit_developing: Set(rec.unit_developing),
             unit_id: Set(rec.unit_id),
             main_radio_station: Set(rec.main_radio_station),
+            command_control: Set(rec.command_control),
         };
 
         let new_rec = if new_record {

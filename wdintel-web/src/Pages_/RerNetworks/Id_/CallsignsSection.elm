@@ -3,12 +3,13 @@ module Pages_.RerNetworks.Id_.CallsignsSection exposing
     , SectionConfig
     , hiddenCount
     , filterVisible
+    , partitionVisible
     , sortVisible
     , view
     )
 
 import Html exposing (Html, div, span, text)
-import Html.Attributes exposing (class, style)
+import Html.Attributes exposing (class)
 import Time
 import Shared.Components.Button as Button
 import Utils.Time
@@ -40,7 +41,8 @@ type alias SectionConfig msg item =
     , onToggleStale : msg
     , maybeSortButton : Maybe (SortButton msg)
     , emptyText : String
-    , items : List item
+    , activeItems : List item
+    , staleItems : List item
     , renderItem : item -> Html msg
     }
 
@@ -53,7 +55,7 @@ activeSince nowMillis =
 
 isVisible : Int -> ActivityCallsign a -> Bool
 isVisible nowMillis callsign =
-    callsign.messageCount > 2
+    callsign.messageCount > 0
         && Maybe.withDefault False
             (Maybe.map (\lastDatetime -> lastDatetime >= activeSince nowMillis) callsign.lastDatetime)
 
@@ -70,6 +72,11 @@ filterVisible nowMillis showStale callsigns =
 hiddenCount : Int -> Bool -> List (ActivityCallsign a) -> Int
 hiddenCount nowMillis showStale callsigns =
     List.length callsigns - List.length (filterVisible nowMillis showStale callsigns)
+
+
+partitionVisible : Int -> List (ActivityCallsign a) -> ( List (ActivityCallsign a), List (ActivityCallsign a) )
+partitionVisible nowMillis callsigns =
+    List.partition (isVisible nowMillis) callsigns
 
 
 sortVisible : Bool -> List (ActivityCallsign a) -> List (ActivityCallsign a)
@@ -92,33 +99,17 @@ sortVisible sortByMessages callsigns =
 
 view : SectionConfig msg item -> Html msg
 view config =
-    let
-        hintText =
-            if config.showStale then
-                config.staleHint
-
-            else
-                config.activeHint
-    in
-    div [ class "p-3 bg-[var(--color-bg-muted)] rounded" ]
+    div [ class "p-3 bg-[var(--color-bg-muted)] rounded flex flex-col gap-3" ]
         [ div [ class "flex flex-wrap items-start justify-between gap-3" ]
-            [ div [ class "min-w-0 flex flex-col gap-1" ]
+            [ div [ class "min-w-0 flex flex-col" ]
                 [ span [ class "font-medium" ] [ text (config.title ++ ":") ]
-                , div [ class "opacity-75", style "color" "var(--color-text)" ]
-                    [ text hintText ]
                 ]
             , div [ class "flex flex-wrap items-center gap-2" ]
                 (maybeSortButtonView config.maybeSortButton
                     ++ maybeToggleButtonView config
                 )
             ]
-        , if List.isEmpty config.items then
-            div [ class "text-[var(--color-text-muted)] text-sm mt-2" ]
-                [ text config.emptyText ]
-
-          else
-            div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
-                (List.map config.renderItem config.items)
+        , viewItems config
         ]
 
 
@@ -141,13 +132,24 @@ maybeSortButtonView maybeSortButton =
 maybeToggleButtonView : SectionConfig msg item -> List (Html msg)
 maybeToggleButtonView config =
     if config.showStale || config.hiddenCount > 0 then
+        let
+            staleCountText =
+                if config.showStale then
+                    ""
+
+                else if List.isEmpty config.staleItems then
+                    ""
+
+                else
+                    " (" ++ String.fromInt (List.length config.staleItems) ++ ")"
+        in
         [ Button.new
             { label =
                 if config.showStale then
                     config.toggleLabels.hide
 
                 else
-                    config.toggleLabels.show
+                    config.toggleLabels.show ++ staleCountText
             , onClick = config.onToggleStale
             }
             |> Button.withStyleSecondary
@@ -156,3 +158,50 @@ maybeToggleButtonView config =
 
     else
         []
+
+
+viewItems : SectionConfig msg item -> Html msg
+viewItems config =
+    if List.isEmpty config.activeItems && List.isEmpty config.staleItems then
+        div [ class "text-[var(--color-text-muted)] text-sm mt-2" ]
+            [ text config.emptyText ]
+
+    else if not config.showStale && List.isEmpty config.activeItems then
+        div [ class "text-[var(--color-text-muted)] text-sm mt-2" ]
+            [ text config.emptyText ]
+
+    else if config.showStale then
+        div [ class "flex flex-col gap-4" ]
+            (List.filterMap identity
+                [ if List.isEmpty config.activeItems then
+                    Nothing
+
+                  else
+                    Just (viewItemGroup "Активні" config.activeItems config.renderItem)
+                , if List.isEmpty config.staleItems then
+                    Nothing
+
+                  else
+                    Just (viewItemGroup "Застарілі" config.staleItems config.renderItem)
+                ]
+            )
+
+    else
+        viewItemGroup "" config.activeItems config.renderItem
+
+
+viewItemGroup : String -> List item -> (item -> Html msg) -> Html msg
+viewItemGroup label items renderItem =
+    div [ class "flex flex-col gap-2" ]
+        (if label == "" then
+            [ div [ class "flex flex-wrap gap-[4px] text-[13px]" ]
+                (List.map renderItem items)
+            ]
+
+         else
+            [ span [ class "mt-1 mb-1 block text-[11px] uppercase tracking-[0.12em] opacity-70 leading-none" ]
+                [ text label ]
+            , div [ class "flex flex-wrap gap-[4px] text-[13px]" ]
+                (List.map renderItem items)
+            ]
+        )

@@ -1,6 +1,6 @@
 ---
 name: frontend-react-mui-implementation
-description: Implement or refactor React + MUI features in wdintel-web/src/ts/react using custom-element entrypoints, useNeoMuiTheme, and typed API service patterns.
+description: Implement or refactor React + MUI features in wdintel-web/src/ts/react using custom-element entrypoints, useNeoMuiTheme, route hook splitting, user-settings hooks, and typed API service patterns.
 ---
 
 # Frontend React+MUI Implementation
@@ -18,6 +18,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Derive target custom element tag from related Elm page (for hybrid pages).
 - Derive existing theme/style conventions from nearby component.
 - Derive API shape from `Bindings` types and `services/api/*`.
+- Derive accepted route split from nearby `use-*-page.*` / `helpers*` files before adding new modules.
 - Ask only if the mount target element/tag is unclear.
 
 ## Procedure (checklist)
@@ -41,6 +42,24 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - If you touch a React file and see mixed import styles, normalize that file to the direct-import style as part of the change.
 - Keep functions focused; split large handlers/helpers.
 - Keep files small: prefer 200-300 lines, and treat 500 lines as a hard cap that should trigger a split before merging.
+- For large neo route pages/hooks, follow the accepted split:
+- `index.tsx`: page composition and presentational wiring.
+- `use-*-page.ts`: orchestration, memoized derived values, lazy-load triggers, returned view model.
+- `use-*-page.shared.ts`: types, constants, pure format/permission helpers, empty state.
+- `use-*-page.load.ts`: initial/reference/lazy API loading with abort or generation guards.
+- `use-*-page.actions.ts` plus focused `*.actions.ts`: mutations, drawers/dialogs, in-flight/error state.
+- `helpers*.ts`: pure row/form/filter/search mapping with colocated specs.
+- Keep pure helpers outside components/hooks when they can be unit-tested.
+- In async effects, use `AbortController` for request cancellation or a generation ref for stale route/page reloads; never set state after abort/stale generation.
+- Load independent reference data with `Promise.all`; keep noncritical follow-up loads from blocking primary page readiness.
+- Use central nullish helpers from `utils/misc.ts` (`isNullOrUndefined`, `isPresent`, `isNullish`) instead of manual `value === null || value === undefined` checks.
+- For cross-page user preferences, prefer typed hooks and `services/api/user-settings.ts` normalizers/serializers over component-local API calls.
+- When settings must update multiple mounted surfaces, dispatch/listen to the existing settings update event instead of relying on page reloads.
+- For save-on-change settings, queue saves with refs so rapid toggles coalesce and later values are not lost.
+- Prefer shared controls for repeated UX:
+- `SavedFiltersControl` for saved filter CRUD.
+- `PowerAlert` for dismissible severity-based alerts.
+- `PageHeader` and existing top-action styles for neo page headers/actions.
 - Run frontend verification:
 - `just build-front`
 - Run targeted TS tests if touched:
@@ -51,6 +70,8 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Theme stays synced via `useNeoMuiTheme`.
 - API errors, including 401, are handled explicitly.
 - Contract types and normalizers remain aligned with backend responses.
+- Route files stay split by responsibility when page logic grows.
+- Shared user settings are normalized, persisted, and broadcast consistently.
 - `just build-front` passes.
 
 ## Tiny examples
@@ -66,6 +87,7 @@ if (isUnauthorizedError(error)) {
 - Verify request and response shape transforms stayed compatible.
 - Verify loading/empty/error states and disabled-in-flight behavior.
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
+- Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
 - Check keyboard access and focus trapping for dialogs/drawers.
 - Confirm mobile/tablet/desktop layout still works for touched route.
 
