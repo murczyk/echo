@@ -6,7 +6,8 @@ use crate::rer_importer::types::InboxMessage;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
 use anyhow::Context;
-use chrono::{Datelike, TimeZone};
+use chrono::{DateTime, Datelike, TimeZone};
+use chrono_tz::Tz;
 use docx_rs::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -27,9 +28,24 @@ enum NetworkKey {
 
 #[derive(Default)]
 struct PostStats {
+    current_freqs: BTreeSet<String>,
+    previous_freqs: BTreeSet<String>,
     current_total: usize,
     previous_total: usize,
-    networks: BTreeSet<NetworkKey>,
+    all_networks: BTreeSet<NetworkKey>,
+    reference_networks: BTreeSet<NetworkKey>,
+}
+
+fn collect_reference_network_keys(
+    message: &InboxMessage,
+) -> BTreeSet<NetworkKey> {
+    let mut networks = BTreeSet::new();
+    if let Some(ids) = message.network_ids.as_ref() {
+        for id in ids.iter().copied() {
+            networks.insert(NetworkKey::Id(id));
+        }
+    }
+    networks
 }
 
 pub async fn report_docx_kind_posts(
@@ -93,8 +109,13 @@ pub async fn report_docx_kind_posts(
 
         let networks = collect_network_keys(message, strict_networks);
         for network_key in networks {
-            entry.networks.insert(network_key.clone());
+            entry.all_networks.insert(network_key.clone());
             overall_networks.insert(network_key);
+        }
+
+        let reference_networks = collect_reference_network_keys(message);
+        for network_key in reference_networks {
+            entry.reference_networks.insert(network_key);
         }
 
         if let Some(freq) = message
@@ -102,18 +123,23 @@ pub async fn report_docx_kind_posts(
             .as_ref()
             .and_then(|value| parse_frequency(value))
         {
+            entry.current_freqs.insert(format_frequency(freq));
             freq_values.push(freq);
         }
     }
 
-    let mut previous_by_post: BTreeMap<String, usize> = BTreeMap::new();
     for (_, message) in &previous_messages {
         let post_name = normalized_post_name(message);
-        *previous_by_post.entry(post_name).or_default() += 1;
-    }
+        let entry = posts.entry(post_name.clone()).or_default();
+        entry.previous_total += 1;
 
-    for (post_name, count) in previous_by_post {
-        posts.entry(post_name).or_default().previous_total = count;
+        if let Some(freq) = message
+            .freq
+            .as_ref()
+            .and_then(|value| parse_frequency(value))
+        {
+            entry.previous_freqs.insert(format_frequency(freq));
+        }
     }
 
     let mut posts_vec: Vec<(String, PostStats)> = posts
@@ -128,7 +154,32 @@ pub async fn report_docx_kind_posts(
             .then(name_a.cmp(name_b))
     });
 
-    let freq_range = if freq_values.is_empty() {
+    let freq_range = get_freq_range(freq_values);
+
+    let date_from_local =
+        dt_zoned_from_millis(since_date_inclusive_ms).context(h!())?;
+    let date_to_local =
+        dt_zoned_from_millis(till_date_inclusive_ms).context(h!())?;
+
+    let summary_paragraph_text = build_summary_paragraph(
+        overall_networks.len(),
+        current_total,
+        previous_total,
+        freq_range,
+    );
+
+    let doc = generate_docx_kind_posts(
+        summary_paragraph_text,
+        posts_vec,
+        date_from_local,
+        date_to_local,
+    );
+
+    build_docx_kind_posts(outpath, doc)
+}
+
+fn get_freq_range(freq_values: Vec<f64>) -> Option<(f64, f64)> {
+    if freq_values.is_empty() {
         None
     } else {
         let min = freq_values.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -145,23 +196,17 @@ pub async fn report_docx_kind_posts(
         } else {
             None
         }
-    };
+    }
+}
 
-    let date_from_local =
-        dt_zoned_from_millis(since_date_inclusive_ms).context(h!())?;
-    let date_to_local =
-        dt_zoned_from_millis(till_date_inclusive_ms).context(h!())?;
-
+fn generate_docx_kind_posts(
+    summary_paragraph_text: String,
+    posts_vec: Vec<(String, PostStats)>,
+    date_from_local: DateTime<Tz>,
+    date_to_local: DateTime<Tz>,
+) -> Docx {
     let (date_from_txt, time_from_txt) = format_date_time(date_from_local);
     let (date_to_txt, time_to_txt) = format_date_time(date_to_local);
-
-    let summary_paragraph_text = build_summary_paragraph(
-        overall_networks.len(),
-        current_total,
-        previous_total,
-        freq_range,
-    );
-
     let mut doc = Docx::new().default_size(24);
 
     doc = doc
@@ -206,11 +251,11 @@ pub async fn report_docx_kind_posts(
         )
         .add_paragraph(blank_paragraph());
 
-    for (post_name, stats) in posts_vec {
+    for (post_name, stats) in &posts_vec {
         let paragraph = Paragraph::new()
             .add_run(
                 Run::new()
-                    .add_text(&post_name)
+                    .add_text(post_name)
                     .bold()
                     .size(28)
                     .fonts(
@@ -225,7 +270,7 @@ pub async fn report_docx_kind_posts(
                         " Було дешифровано {} перехоплень (попередня доба — {}) робочих {} мереж",
                         stats.current_total,
                         stats.previous_total,
-                        stats.networks.len()
+                        stats.all_networks.len()
                     ))
                     .size(28)
                     .fonts(
@@ -239,13 +284,172 @@ pub async fn report_docx_kind_posts(
             .add_paragraph(blank_paragraph());
     }
 
-    let file = std::fs::File::create(outpath)?;
-    doc.build()
+    let table_rows = generate_table_for_docx_kind_posts(posts_vec);
+
+    doc.add_table(Table::new(table_rows))
+}
+
+fn generate_table_for_docx_kind_posts(
+    posts_vec: Vec<(String, PostStats)>,
+) -> Vec<TableRow> {
+    const TABLE_SIZE: usize = 22;
+
+    let mut table_rows: Vec<TableRow> = vec![];
+    let mut table_total_row = get_table_total_row();
+    let cell_headers = get_cell_headers();
+
+    table_rows.push(TableRow::new(cell_headers));
+
+    for (post_name, stats) in &posts_vec {
+        let table_cels = get_table_cell_stats(post_name.clone(), stats);
+        table_rows.push(TableRow::new(table_cels));
+
+        update_table_total_row_parameters(&mut table_total_row, stats);
+    }
+
+    let table_cells_of_total =
+        get_cells_of_total(&table_total_row, TABLE_SIZE, true);
+    table_rows.push(TableRow::new(table_cells_of_total));
+
+    table_rows
+}
+
+fn get_table_total_row() -> PostStats {
+    PostStats {
+        current_freqs: BTreeSet::new(),
+        previous_freqs: BTreeSet::new(),
+        current_total: 0,
+        previous_total: 0,
+        all_networks: BTreeSet::new(),
+        reference_networks: BTreeSet::new(),
+    }
+}
+
+fn get_cells_of_total(
+    table_total_row: &PostStats,
+    table_size: usize,
+    is_bold: bool,
+) -> Vec<TableCell> {
+    get_table_cells(
+        vec![
+            "Загалом".to_string(),
+            table_total_row.current_freqs.len().to_string(),
+            table_total_row.previous_freqs.len().to_string(),
+            table_total_row.current_total.to_string(),
+            table_total_row.previous_total.to_string(),
+            table_total_row.all_networks.len().to_string(),
+            table_total_row.reference_networks.len().to_string(),
+        ],
+        table_size,
+        is_bold,
+    )
+}
+
+fn update_table_total_row_parameters(
+    total_row: &mut PostStats,
+    stats: &PostStats,
+) {
+    total_row
+        .current_freqs
+        .extend(stats.current_freqs.iter().cloned());
+    total_row
+        .previous_freqs
+        .extend(stats.previous_freqs.iter().cloned());
+    total_row.current_total += stats.current_total;
+    total_row.previous_total += stats.previous_total;
+    total_row
+        .all_networks
+        .extend(stats.all_networks.iter().cloned());
+    total_row
+        .reference_networks
+        .extend(stats.reference_networks.iter().cloned());
+}
+
+fn get_table_cell_stats(
+    post_name: String,
+    stats: &PostStats,
+) -> Vec<TableCell> {
+    get_table_cells(
+        vec![
+            post_name.clone(),
+            stats.current_freqs.len().to_string(),
+            stats.previous_freqs.len().to_string(),
+            stats.current_total.to_string(),
+            stats.previous_total.to_string(),
+            stats.all_networks.len().to_string(),
+            stats.reference_networks.len().to_string(),
+        ],
+        22,
+        false,
+    )
+}
+
+fn get_cell_headers() -> Vec<TableCell> {
+    let header_cell = |text: &str| {
+        TableCell::new().add_paragraph(
+            get_table_cell_paragraph(text.to_string(), 22, true)
+                .align(AlignmentType::Center),
+        )
+    };
+    vec![
+        header_cell("Пост"),
+        header_cell("Кількість частот за день"),
+        header_cell("Кількість частот за попередній день"),
+        header_cell("Кількість перехоплень"),
+        header_cell("Кількість перехоплень за попередній день"),
+        header_cell("Кількість прив'язаних мереж"),
+        header_cell("Кількість еталонних мереж"),
+    ]
+}
+
+fn get_table_cells(
+    title_array: Vec<String>,
+    table_size: usize,
+    is_bold: bool,
+) -> Vec<TableCell> {
+    title_array
+        .into_iter()
+        .map(|title| get_table_cell(title, table_size, is_bold))
+        .collect()
+}
+
+fn get_table_cell(
+    cell_name: String,
+    table_size: usize,
+    is_bold: bool,
+) -> TableCell {
+    TableCell::new()
+        .add_paragraph(get_table_cell_paragraph(cell_name, table_size, is_bold))
+}
+
+fn get_table_cell_paragraph(
+    cell_name: String,
+    table_size: usize,
+    is_bold: bool,
+) -> Paragraph {
+    Paragraph::new().add_run(get_table_cell_run(cell_name, table_size, is_bold))
+}
+
+fn get_table_cell_run(
+    cell_name: String,
+    table_size: usize,
+    is_bold: bool,
+) -> Run {
+    let mut run = Run::new().add_text(cell_name).size(table_size);
+
+    if is_bold {
+        run = run.bold();
+    }
+    run
+}
+
+fn build_docx_kind_posts(outpath: &Path, doc: Docx) -> Result<(), AppError> {
+    let file = std::fs::File::create(outpath).context(h!())?;
+    Ok(doc
+        .build()
         .pack(file)
         .map_err(anyhow::Error::from)
-        .context(h!())?;
-
-    Ok(())
+        .context(h!())?)
 }
 
 fn build_shifted_req(
