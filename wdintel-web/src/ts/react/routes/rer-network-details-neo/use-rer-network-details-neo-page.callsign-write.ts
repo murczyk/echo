@@ -27,6 +27,11 @@ type BuildNetworkCallsignWritePayloadInput = {
   commandControl: boolean;
 };
 
+type NetworkCallsignMarkerOverrides = {
+  mainRadioStation?: boolean;
+  commandControl?: boolean;
+};
+
 function trimOrNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
@@ -34,7 +39,7 @@ function trimOrNull(value: string): string | null {
 
 export function buildNetworkCallsignWritePayload(
   input: BuildNetworkCallsignWritePayloadInput,
-  overrides: Partial<Pick<NetworkCallsignWritePayload, 'mainRadioStation' | 'commandControl'>> = {},
+  overrides: NetworkCallsignMarkerOverrides = {},
 ): NetworkCallsignWritePayload {
   return {
     networkId: input.networkId,

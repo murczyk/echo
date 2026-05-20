@@ -148,10 +148,7 @@ export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId
 
 export function createNetworkCallsignDrawerForm(
   networkId: number,
-  networkCallsign: Pick<
-    NetworkCallsignRowView,
-    'id' | 'callsign' | 'status' | 'position' | 'comment' | 'sourceId' | 'radioFreq' | 'unitId' | 'unitDeveloping' | 'developing' | 'mainRadioStation' | 'commandControl'
-  >,
+  networkCallsign: NetworkCallsignRowView,
 ): NetworkCallsignDrawerForm {
   return {
     id: networkCallsign.id,
