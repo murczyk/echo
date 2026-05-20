@@ -2,9 +2,18 @@ use anyhow::Context;
 // use aws_sdk_s3::error::SdkError;
 use crate::types::error;
 use crate::types::warn;
+use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::error::Error as StdError;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use thiserror::Error;
+
+static INTERNAL_SERVER_ERROR_LOGS: Lazy<Mutex<HashMap<u64, Instant>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+const INTERNAL_SERVER_ERROR_LOG_COOLDOWN: Duration = Duration::from_secs(30);
 
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -130,9 +139,7 @@ impl actix_web::error::ResponseError for AppError {
                 .body(msg.clone())
             }
             _ => {
-                error!("Internal server error: {:?}", self);
-                println!("Internal server error: {self:?}");
-                println!("Internal server error: {self:?}");
+                log_internal_server_error(self);
                 match self {
                     AppError::IO { .. }
                     | AppError::JoinErr { .. }
@@ -156,6 +163,42 @@ impl actix_web::error::ResponseError for AppError {
                 .body("Internal server error")
             }
         }
+    }
+}
+
+fn log_internal_server_error(err: &AppError) {
+    use std::hash::{Hash, Hasher};
+
+    let fingerprint = {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        format!("{:#?}", err).hash(&mut hasher);
+        hasher.finish()
+    };
+
+    let mut logs = INTERNAL_SERVER_ERROR_LOGS
+        .lock()
+        .expect("internal server error log state mutex poisoned");
+    logs.retain(|_, last_logged_at| {
+        last_logged_at.elapsed() < INTERNAL_SERVER_ERROR_LOG_COOLDOWN
+    });
+
+    let should_log = match logs.get_mut(&fingerprint) {
+        Some(last_logged_at) => {
+            if last_logged_at.elapsed() < INTERNAL_SERVER_ERROR_LOG_COOLDOWN {
+                false
+            } else {
+                *last_logged_at = Instant::now();
+                true
+            }
+        }
+        None => {
+            logs.insert(fingerprint, Instant::now());
+            true
+        }
+    };
+
+    if should_log {
+        error!("Internal server error: {:?}", err);
     }
 }
 

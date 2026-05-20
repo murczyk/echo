@@ -1,8 +1,12 @@
+import dayjs from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 import type {
   AreaOfResponsibility,
   ModulationRec,
   Network,
   NetworkDescrType,
+  NetworkCallsignRelationsRsp,
   NetworkPoint,
   NetworkStatus,
   NetworkFreqsRes,
@@ -13,7 +17,7 @@ import type {
   Unit,
   User,
 } from '../../../../Bindings';
-import { NO_DATA_LABEL, formatUtcDateInputValue } from '../../utils/misc';
+import { APP_TIME_ZONE, NO_DATA_LABEL, formatUtcDateInputValue } from '../../utils/misc';
 import type { NetworkFreqActivityByFreq } from './frequency-utils';
 import type {
   NetworkCallsignCatalogGroupView,
@@ -25,6 +29,9 @@ import type {
   NetworkCallsignSectionMode,
   NetworkCallsignStatusFilter,
 } from './network-callsigns';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export type NetworkEditForm = {
   id: number;
@@ -54,7 +61,9 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'activity' | 'pelengation';
+export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'relations' | 'activity' | 'pelengation';
+
+export const NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY = 10;
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
@@ -123,6 +132,18 @@ export type NetworkDetailsNeoPageState = {
   callsignActivityMap: NetworkCallsignActivityMap;
   catalogCallsignGroups: NetworkCallsignCatalogGroupView[];
   unknownInterceptedCallsigns: NetworkCallsignInterceptedView[];
+  relations: NetworkCallsignRelationsRsp | null;
+  relationsLoaded: boolean;
+  relationsLoading: boolean;
+  relationsError: string | null;
+  relationsSearch: string;
+  relationsEnabledFreqs: string[];
+  relationsMinIntensity: number;
+  relationsShowLabels: boolean;
+  relationsSelectedNodeId: string | null;
+  relationsSelectedEdgeId: string | null;
+  relationsSince: string;
+  relationsTill: string;
   callsignsLoaded: boolean;
   callsignsLoading: boolean;
   callsignsError: string | null;
@@ -224,6 +245,18 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   callsignActivityMap: new Map(),
   catalogCallsignGroups: [],
   unknownInterceptedCallsigns: [],
+  relations: null,
+  relationsLoaded: false,
+  relationsLoading: false,
+  relationsError: null,
+  relationsSearch: '',
+  relationsEnabledFreqs: [],
+  relationsMinIntensity: NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY,
+  relationsShowLabels: true,
+  relationsSelectedNodeId: null,
+  relationsSelectedEdgeId: null,
+  relationsSince: '',
+  relationsTill: '',
   callsignsLoaded: false,
   callsignsLoading: false,
   callsignsError: null,
@@ -482,4 +515,68 @@ export function parseNetworkDetailsDateInput(value: string): number | null {
   if (text === '') return null;
   const parsed = Date.parse(`${text}T00:00:00Z`);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseNetworkDetailsDateInputExclusiveEnd(value: string): number | null {
+  const since = parseNetworkDetailsDateInput(value);
+  return since === null ? null : since + 24 * 60 * 60 * 1000;
+}
+
+export type NetworkRelationsDateRange = {
+  relationsSince: string;
+  relationsTill: string;
+};
+
+export function getDefaultNetworkRelationsDateRange(now: Date = new Date()): NetworkRelationsDateRange {
+  const today = dayjs(now).tz(APP_TIME_ZONE).startOf('day');
+  const from = today.subtract(1, 'month');
+
+  return {
+    relationsSince: from.format('YYYY-MM-DD'),
+    relationsTill: today.format('YYYY-MM-DD'),
+  };
+}
+
+export function normalizeNetworkRelationsSinceChange(currentSince: string, currentTill: string, nextSince: string): NetworkRelationsDateRange {
+  const trimmedSince = nextSince.trim();
+  if (trimmedSince === '') {
+    return {
+      relationsSince: currentSince,
+      relationsTill: currentTill,
+    };
+  }
+
+  if (currentTill.trim() !== '' && trimmedSince > currentTill.trim()) {
+    return {
+      relationsSince: trimmedSince,
+      relationsTill: trimmedSince,
+    };
+  }
+
+  return {
+    relationsSince: trimmedSince,
+    relationsTill: currentTill.trim(),
+  };
+}
+
+export function normalizeNetworkRelationsTillChange(currentSince: string, currentTill: string, nextTill: string): NetworkRelationsDateRange {
+  const trimmedTill = nextTill.trim();
+  if (trimmedTill === '') {
+    return {
+      relationsSince: currentSince,
+      relationsTill: currentTill,
+    };
+  }
+
+  if (currentSince.trim() !== '' && trimmedTill < currentSince.trim()) {
+    return {
+      relationsSince: trimmedTill,
+      relationsTill: trimmedTill,
+    };
+  }
+
+  return {
+    relationsSince: currentSince.trim(),
+    relationsTill: trimmedTill,
+  };
 }

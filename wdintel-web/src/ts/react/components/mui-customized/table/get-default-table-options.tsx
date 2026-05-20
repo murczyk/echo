@@ -14,6 +14,7 @@ import { isNullOrUndefined } from '../../../utils/misc';
 import { TableEmptyState } from '../../TableEmptyState';
 import { CUSTOM_STYLES } from './custom-styles';
 import { windowWidth } from '../../../utils/browser';
+import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../../routes/shared/empty-state-text';
 
 function onSharedSelectFilterMouseDown(event: MouseEvent<HTMLDivElement>) {
   const target = event.target as HTMLElement | null;
@@ -74,7 +75,7 @@ export function renderDefaultMrtEmptyRowsFallback<TData extends MRT_RowData>({
   noDataMessage = 'Немає даних',
   noDataActionLabel,
   onNoDataAction,
-  filteredMessage = 'Нічого не знайдено',
+  filteredMessage = EMPTY_STATE_NO_RESULTS_TEXT,
   clearFiltersLabel = 'Очистити фільтри',
   onClearFilters,
 }: MrtEmptyStateProps<TData>) {

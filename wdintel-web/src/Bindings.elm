@@ -6389,6 +6389,136 @@ networkPointEncoder struct =
         ]
 
 
+type alias NetworkCallsignRelationsReq =
+    { networkId : Int
+    , sinceDateInclusiveMs : Maybe (Int)
+    , tillDateNoninclusiveMs : Maybe (Int)
+    }
+
+
+networkCallsignRelationsReqEncoder : NetworkCallsignRelationsReq -> Json.Encode.Value
+networkCallsignRelationsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceDateInclusiveMs )
+        , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateNoninclusiveMs )
+        ]
+
+
+type alias NetworkCallsignRelationNode =
+    { id : String
+    , label : String
+    , weight : Int
+    , relationCount : Int
+    , activityCount : Int
+    , position : Maybe (String)
+    , unitName : Maybe (String)
+    , knownCallsignId : Maybe (Int)
+    }
+
+
+networkCallsignRelationNodeEncoder : NetworkCallsignRelationNode -> Json.Encode.Value
+networkCallsignRelationNodeEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "weight", (Json.Encode.int) struct.weight )
+        , ( "relation_count", (Json.Encode.int) struct.relationCount )
+        , ( "activity_count", (Json.Encode.int) struct.activityCount )
+        , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.position )
+        , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitName )
+        , ( "known_callsign_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.knownCallsignId )
+        ]
+
+
+type alias NetworkCallsignRelationEdgeFreq =
+    { freq : String
+    , weight : Int
+    , messageIds : List (Int)
+    }
+
+
+networkCallsignRelationEdgeFreqEncoder : NetworkCallsignRelationEdgeFreq -> Json.Encode.Value
+networkCallsignRelationEdgeFreqEncoder struct =
+    Json.Encode.object
+        [ ( "freq", (Json.Encode.string) struct.freq )
+        , ( "weight", (Json.Encode.int) struct.weight )
+        , ( "message_ids", (Json.Encode.list (Json.Encode.int)) struct.messageIds )
+        ]
+
+
+type alias NetworkCallsignRelationMessagePreview =
+    { id : Int
+    , timestamp : Maybe (Int)
+    , freq : Maybe (String)
+    , text : String
+    , callsigns : List (String)
+    }
+
+
+networkCallsignRelationMessagePreviewEncoder : NetworkCallsignRelationMessagePreview -> Json.Encode.Value
+networkCallsignRelationMessagePreviewEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
+        , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
+        ]
+
+
+type alias NetworkCallsignRelationEdge =
+    { id : String
+    , source : String
+    , target : String
+    , weight : Int
+    , byFreq : List (NetworkCallsignRelationEdgeFreq)
+    , messagesPreview : List (NetworkCallsignRelationMessagePreview)
+    }
+
+
+networkCallsignRelationEdgeEncoder : NetworkCallsignRelationEdge -> Json.Encode.Value
+networkCallsignRelationEdgeEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "source", (Json.Encode.string) struct.source )
+        , ( "target", (Json.Encode.string) struct.target )
+        , ( "weight", (Json.Encode.int) struct.weight )
+        , ( "by_freq", (Json.Encode.list (networkCallsignRelationEdgeFreqEncoder)) struct.byFreq )
+        , ( "messages_preview", (Json.Encode.list (networkCallsignRelationMessagePreviewEncoder)) struct.messagesPreview )
+        ]
+
+
+type alias NetworkCallsignRelationFreq =
+    { freq : String
+    , enabledByDefault : Bool
+    }
+
+
+networkCallsignRelationFreqEncoder : NetworkCallsignRelationFreq -> Json.Encode.Value
+networkCallsignRelationFreqEncoder struct =
+    Json.Encode.object
+        [ ( "freq", (Json.Encode.string) struct.freq )
+        , ( "enabled_by_default", (Json.Encode.bool) struct.enabledByDefault )
+        ]
+
+
+type alias NetworkCallsignRelationsRsp =
+    { nodes : List (NetworkCallsignRelationNode)
+    , edges : List (NetworkCallsignRelationEdge)
+    , freqs : List (NetworkCallsignRelationFreq)
+    }
+
+
+networkCallsignRelationsRspEncoder : NetworkCallsignRelationsRsp -> Json.Encode.Value
+networkCallsignRelationsRspEncoder struct =
+    Json.Encode.object
+        [ ( "nodes", (Json.Encode.list (networkCallsignRelationNodeEncoder)) struct.nodes )
+        , ( "edges", (Json.Encode.list (networkCallsignRelationEdgeEncoder)) struct.edges )
+        , ( "freqs", (Json.Encode.list (networkCallsignRelationFreqEncoder)) struct.freqs )
+        ]
+
+
 type alias UpdFreqNetwork =
     { id : Maybe (Int)
     , unitIds : List (Int)
@@ -11509,6 +11639,71 @@ networkPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "body" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+
+
+networkCallsignRelationsReqDecoder : Json.Decode.Decoder NetworkCallsignRelationsReq
+networkCallsignRelationsReqDecoder =
+    Json.Decode.succeed NetworkCallsignRelationsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+
+
+networkCallsignRelationNodeDecoder : Json.Decode.Decoder NetworkCallsignRelationNode
+networkCallsignRelationNodeDecoder =
+    Json.Decode.succeed NetworkCallsignRelationNode
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "weight" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "relation_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_id" (Json.Decode.nullable (Json.Decode.int))))
+
+
+networkCallsignRelationEdgeFreqDecoder : Json.Decode.Decoder NetworkCallsignRelationEdgeFreq
+networkCallsignRelationEdgeFreqDecoder =
+    Json.Decode.succeed NetworkCallsignRelationEdgeFreq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "weight" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+networkCallsignRelationMessagePreviewDecoder : Json.Decode.Decoder NetworkCallsignRelationMessagePreview
+networkCallsignRelationMessagePreviewDecoder =
+    Json.Decode.succeed NetworkCallsignRelationMessagePreview
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
+
+
+networkCallsignRelationEdgeDecoder : Json.Decode.Decoder NetworkCallsignRelationEdge
+networkCallsignRelationEdgeDecoder =
+    Json.Decode.succeed NetworkCallsignRelationEdge
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "target" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "weight" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "by_freq" (Json.Decode.list (networkCallsignRelationEdgeFreqDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages_preview" (Json.Decode.list (networkCallsignRelationMessagePreviewDecoder))))
+
+
+networkCallsignRelationFreqDecoder : Json.Decode.Decoder NetworkCallsignRelationFreq
+networkCallsignRelationFreqDecoder =
+    Json.Decode.succeed NetworkCallsignRelationFreq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled_by_default" (Json.Decode.bool)))
+
+
+networkCallsignRelationsRspDecoder : Json.Decode.Decoder NetworkCallsignRelationsRsp
+networkCallsignRelationsRspDecoder =
+    Json.Decode.succeed NetworkCallsignRelationsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nodes" (Json.Decode.list (networkCallsignRelationNodeDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "edges" (Json.Decode.list (networkCallsignRelationEdgeDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list (networkCallsignRelationFreqDecoder))))
 
 
 updFreqNetworkDecoder : Json.Decode.Decoder UpdFreqNetwork

@@ -29,7 +29,11 @@ import { NetworkDetailsTabPanel } from './components/NetworkDetailsTabPanel';
 import { NetworkDetailsLeftPanel } from './components/NetworkDetailsLeftPanel';
 import { NetworkEditDrawer } from './components/NetworkEditDrawer';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
-import { formatClassicNetworkHeaderName } from './use-rer-network-details-neo-page.shared';
+import {
+  formatClassicNetworkHeaderName,
+  parseNetworkDetailsDateInput,
+  parseNetworkDetailsDateInputExclusiveEnd,
+} from './use-rer-network-details-neo-page.shared';
 
 type Props = {
   networkId: number;
@@ -234,6 +238,35 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
             inFlightUpdateIds: page.callsignUpdateInFlightIds,
             inFlightDeleteIds: page.callsignDeleteInFlightIds,
           }}
+          relations={page.relations}
+          relationsLoaded={page.relationsLoaded}
+          relationsLoading={page.relationsLoading}
+          relationsError={page.relationsError}
+          relationsSearch={page.relationsSearch}
+          relationsEnabledFreqs={page.relationsEnabledFreqs}
+          relationsMinIntensity={page.relationsMinIntensity}
+          relationsShowLabels={page.relationsShowLabels}
+          relationsSelectedNodeId={page.relationsSelectedNodeId}
+          relationsSelectedEdgeId={page.relationsSelectedEdgeId}
+          onReloadRelations={() => {
+            if (page.network) {
+              void page.loadRelations(
+                page.network.id,
+                parseNetworkDetailsDateInput(page.relationsSince),
+                parseNetworkDetailsDateInputExclusiveEnd(page.relationsTill),
+              );
+            }
+          }}
+          onRelationsSearchChange={page.setRelationsSearch}
+          onRelationsEnabledFreqsChange={page.setRelationsEnabledFreqs}
+          onRelationsMinIntensityChange={page.setRelationsMinIntensity}
+          onRelationsShowLabelsChange={page.setRelationsShowLabels}
+          onRelationsSelectNodeId={page.setRelationsSelectedNodeId}
+          onRelationsSelectEdgeId={page.setRelationsSelectedEdgeId}
+          relationsSince={page.relationsSince}
+          relationsTill={page.relationsTill}
+          onRelationsSinceChange={page.setRelationsSince}
+          onRelationsTillChange={page.setRelationsTill}
         />
       </Box>
 

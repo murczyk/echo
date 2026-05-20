@@ -1,36 +1,41 @@
 import { describe, expect, it } from 'vitest';
 
-import type { User } from '../../../../Bindings';
 import {
-  canDeleteNetwork,
-  canEditNetwork,
-  canManageDescriptions,
-  canManageNetworkCallsignActions,
+  getDefaultNetworkRelationsDateRange,
+  parseNetworkDetailsDateInput,
+  parseNetworkDetailsDateInputExclusiveEnd,
+  normalizeNetworkRelationsSinceChange,
+  normalizeNetworkRelationsTillChange,
 } from './use-rer-network-details-neo-page.shared';
 
-function makeUser(roles: string[]): User {
-  return { roles } as User;
-}
-
-describe('rer-network-details neo permissions', () => {
-  it('allows network mutations only for admin or Rer-equivalent UnitsEditor users', () => {
-    expect(canEditNetwork(makeUser(['Admin']))).toBe(true);
-    expect(canDeleteNetwork(makeUser(['Admin']))).toBe(true);
-    expect(canEditNetwork(makeUser(['Rer', 'UnitsEditor']))).toBe(true);
-    expect(canDeleteNetwork(makeUser(['Rer', 'UnitsEditor']))).toBe(true);
-    expect(canEditNetwork(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-    expect(canDeleteNetwork(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-
-    expect(canEditNetwork(makeUser(['UnitsEditor']))).toBe(false);
-    expect(canDeleteNetwork(makeUser(['UnitsEditor']))).toBe(false);
-    expect(canEditNetwork(makeUser(['Rer']))).toBe(false);
-    expect(canDeleteNetwork(makeUser(['Rer']))).toBe(false);
+describe('use-rer-network-details-neo-page.shared date parsing', () => {
+  it('parses inclusive start dates at UTC midnight', () => {
+    expect(parseNetworkDetailsDateInput('2026-05-20')).toBe(Date.parse('2026-05-20T00:00:00Z'));
   });
 
-  it('keeps subordinate network actions aligned with network mutation permissions', () => {
-    expect(canManageDescriptions(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-    expect(canManageNetworkCallsignActions(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-    expect(canManageDescriptions(makeUser(['UnitsEditor']))).toBe(false);
-    expect(canManageNetworkCallsignActions(makeUser(['UnitsEditor']))).toBe(false);
+  it('parses exclusive end dates as next-day UTC midnight', () => {
+    expect(parseNetworkDetailsDateInputExclusiveEnd('2026-05-20')).toBe(Date.parse('2026-05-21T00:00:00Z'));
+  });
+
+  it('defaults the relations range to the last month through today', () => {
+    const range = getDefaultNetworkRelationsDateRange(new Date('2026-05-20T12:00:00Z'));
+    expect(range).toEqual({
+      relationsSince: '2026-04-20',
+      relationsTill: '2026-05-20',
+    });
+  });
+
+  it('clamps the since date to the till date when it moves forward past the end', () => {
+    expect(normalizeNetworkRelationsSinceChange('2026-05-10', '2026-05-20', '2026-05-25')).toEqual({
+      relationsSince: '2026-05-25',
+      relationsTill: '2026-05-25',
+    });
+  });
+
+  it('clamps the till date to the since date when it moves backward before the start', () => {
+    expect(normalizeNetworkRelationsTillChange('2026-05-20', '2026-05-25', '2026-05-10')).toEqual({
+      relationsSince: '2026-05-10',
+      relationsTill: '2026-05-10',
+    });
   });
 });

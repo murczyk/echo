@@ -66,46 +66,6 @@ export function createSearchControl(): SearchControl {
   return new SearchControlClass({ position: 'topleft' }) as SearchControl;
 }
 
-export function createMapZoomControl() {
-  const ZoomControlClass = L.Control.extend({
-    onAdd: function (map: L.Map) {
-      this._map = map;
-      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-zoom-control');
-
-      const createButton = (iconClass: string, ariaLabel: string, onClick: () => void) => {
-        const button = document.createElement('button');
-        button.className = 'analysis-map-zoom-button';
-        button.type = 'button';
-        button.setAttribute('aria-label', ariaLabel);
-        button.title = ariaLabel;
-        button.innerHTML = `<i class="${iconClass}"></i>`;
-        button.addEventListener('click', (e) => {
-          e.stopPropagation();
-          onClick();
-        });
-        return button;
-      };
-
-      const zoomInButton = createButton('bi bi-plus-lg', 'Збільшити мапу', () => this._map.zoomIn());
-      const zoomOutButton = createButton('bi bi-dash-lg', 'Зменшити мапу', () => this._map.zoomOut());
-
-      this._container.appendChild(zoomInButton);
-      this._container.appendChild(zoomOutButton);
-
-      L.DomEvent.on(this._container, 'dblclick', (e) => {
-        e.stopPropagation();
-        L.DomEvent.preventDefault(e);
-      });
-
-      L.DomEvent.disableClickPropagation(this._container);
-      L.DomEvent.disableScrollPropagation(this._container);
-      return this._container;
-    },
-  });
-
-  return new ZoomControlClass({ position: 'bottomright' });
-}
-
 export function createAttributionControl() {
   return L.control.attribution({ position: 'bottomleft' });
 }
@@ -144,25 +104,4 @@ export function createTimeswitchControl(dates: { startDate: number; endDate: num
     },
   });
   return new TimeswitchControl({ position: 'topleft' });
-}
-
-export function createExitControl2(closeMap: () => void) {
-  const ExitControl = L.Control.extend({
-    _closeMapHandler: (event: Event) => {
-      L.DomEvent.stopPropagation(event);
-      L.DomEvent.preventDefault(event);
-      closeMap.call(this, event);
-    },
-    onAdd: function (map: L.Map) {
-      let container = L.DomUtil.create('div', 'exit-button');
-      this._button = L.DomUtil.create('div', '', container);
-      this._button.innerHTML = '<i class="bi bi-x-lg" style="font-size: 18px;"></i>';
-      L.DomEvent.on(this._button, 'click', this._closeMapHandler);
-      return container;
-    },
-    onRemove: function (map: L.Map) {
-      L.DomEvent.off(this._button, 'click', this._closeMapHandler);
-    },
-  });
-  return new ExitControl({ position: 'topright' });
 }

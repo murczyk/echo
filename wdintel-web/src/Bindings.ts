@@ -2455,6 +2455,57 @@ export type NetworkPoint = {
   id: number;
 };
 
+export type NetworkCallsignRelationsReq = {
+  networkId: number;
+  sinceDateInclusiveMs: number | null;
+  tillDateNoninclusiveMs: number | null;
+};
+
+export type NetworkCallsignRelationNode = {
+  id: string;
+  label: string;
+  weight: number;
+  relationCount: number;
+  activityCount: number;
+  position: string | null;
+  unitName: string | null;
+  knownCallsignId: number | null;
+};
+
+export type NetworkCallsignRelationEdgeFreq = {
+  freq: string;
+  weight: number;
+  messageIds: Array<number>;
+};
+
+export type NetworkCallsignRelationMessagePreview = {
+  id: number;
+  timestamp: number | null;
+  freq: string | null;
+  text: string;
+  callsigns: Array<string>;
+};
+
+export type NetworkCallsignRelationEdge = {
+  id: string;
+  source: string;
+  target: string;
+  weight: number;
+  byFreq: Array<NetworkCallsignRelationEdgeFreq>;
+  messagesPreview: Array<NetworkCallsignRelationMessagePreview>;
+};
+
+export type NetworkCallsignRelationFreq = {
+  freq: string;
+  enabledByDefault: boolean;
+};
+
+export type NetworkCallsignRelationsRsp = {
+  nodes: Array<NetworkCallsignRelationNode>;
+  edges: Array<NetworkCallsignRelationEdge>;
+  freqs: Array<NetworkCallsignRelationFreq>;
+};
+
 export type UpdFreqNetwork = {
   id: number | null;
   unitIds: Array<number>;

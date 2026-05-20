@@ -17,6 +17,8 @@ import type {
   SingleNetworkFreqsReq,
   ListKeysRsp,
   SingleNetworkCallsignsListRsp,
+  NetworkCallsignRelationsReq,
+  NetworkCallsignRelationsRsp,
   UpdateNetworkDescriptionReq,
   UpdateNetworkFreqReq,
   UpdateNetworkPostsReq,
@@ -107,6 +109,11 @@ export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<st
   } satisfies NetworkFreqCallsignsReq));
   const normalized = transformSnakeToCamel<{ networkFreqId: number; callsigns: string[] }>(data);
   return normalized.callsigns ?? [];
+}
+
+export async function getNetworkCallsignRelations(req: NetworkCallsignRelationsReq): Promise<NetworkCallsignRelationsRsp> {
+  const data = await postJson<NetworkCallsignRelationsRsp>('/api/sigint/network-callsigns/relations', transformCamelToSnake(req));
+  return transformSnakeToCamel<NetworkCallsignRelationsRsp>(data);
 }
 
 export async function addFreqToNetwork(req: AddNetworkFreqReq): Promise<Network> {

@@ -60,6 +60,9 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `SavedFiltersControl` for saved filter CRUD.
 - `PowerAlert` for dismissible severity-based alerts.
 - `PageHeader` and existing top-action styles for neo page headers/actions.
+- For React pages that need date selection, prefer MUI X `DatePicker` / `DateTimePicker` with the app locale/theme conventions.
+- Do not use native `input type="date"` / `datetime-local` unless there is a documented repo-specific reason.
+- Reuse the existing date-picker patterns in `DateTimeRangeControl.tsx` and `NetworkFreqDatePickerField.tsx` instead of adding ad hoc native inputs.
 - Run frontend verification:
 - `just build-front`
 - Run targeted TS tests if touched:
