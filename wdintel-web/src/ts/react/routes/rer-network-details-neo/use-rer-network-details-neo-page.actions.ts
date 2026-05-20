@@ -11,6 +11,7 @@ import {
   type NetworkEditForm,
 } from './use-rer-network-details-neo-page.shared';
 import { useRerNetworkDetailsNeoPageDescriptionActions } from './use-rer-network-details-neo-page.description-actions';
+import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-details-neo-page.report-actions';
 import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
 import { useRerNetworkDetailsNeoPageCallsignActions } from './use-rer-network-details-neo-page.callsign-actions';
 import { useRerNetworkDetailsNeoPageCallsignMutations } from './use-rer-network-details-neo-page.callsign-mutations';
@@ -40,6 +41,7 @@ function syncNetworkRelations(editForm: NetworkEditForm) {
 
 export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration, currentNetworkIdRef, loadCallsigns }: Args) {
   const descriptionActions = useRerNetworkDetailsNeoPageDescriptionActions({ state, setState });
+  const reportActions = useRerNetworkDetailsNeoPageReportActions({ state, setState });
   const frequencyActions = useRerNetworkDetailsNeoPageFrequencyActions({
     state,
     setState,
@@ -197,6 +199,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
 
   return {
     ...descriptionActions,
+    ...reportActions,
     ...frequencyActions,
     ...callsignActions,
     ...callsignMutationActions,
