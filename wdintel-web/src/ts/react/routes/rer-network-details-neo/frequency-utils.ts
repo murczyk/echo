@@ -1,4 +1,5 @@
 import type { EncryptionKeyData, NetworkFreqsRes } from '../../../../Bindings';
+import { NO_DATA_LABEL } from '../../utils/misc';
 
 export type NetworkFreqActivityPoint = {
   day: string;
@@ -53,13 +54,13 @@ export function parseNetworkFreqUnits(value: string | null | undefined): number 
 
 export function formatNetworkFreqValue(value: string | number | null | undefined): string {
   if (value === null || value === undefined) {
-    return '—';
+    return NO_DATA_LABEL;
   }
 
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) {
     const text = normalizeText(String(value));
-    return text === '' ? '—' : text;
+    return text === '' ? NO_DATA_LABEL : text;
   }
 
   return parsed.toFixed(4);
@@ -80,7 +81,6 @@ export function typeLabelFromKind(kind: string | null | undefined): string {
   const normalized = normalizeText(kind).toUpperCase();
   if (normalized === 'DMR') return 'DMR';
   if (normalized === 'DMRE') return 'DMRe';
-
   return 'NFM';
 }
 
@@ -146,7 +146,7 @@ export function encryptionLabelFromKeys(
 
   const uniqueLabels = [...new Set(labels)];
   if (uniqueLabels.length === 0) {
-    return '-';
+    return NO_DATA_LABEL;
   }
 
   return uniqueLabels.join(', ');
@@ -155,9 +155,9 @@ export function encryptionLabelFromKeys(
 function joinCallsigns(callsigns: Array<string> | null | undefined): string {
   const normalized = (callsigns ?? [])
     .map((callsign) => normalizeText(callsign))
-    .filter((callsign) => callsign !== '');
+    .filter((callsign) => callsign !== '' && callsign !== 'НВ');
   const uniqueValues = [...new Set(normalized)];
-  if (uniqueValues.length === 0) return '—';
+  if (uniqueValues.length === 0) return NO_DATA_LABEL;
   return uniqueValues.join(', ');
 }
 

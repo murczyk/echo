@@ -375,6 +375,7 @@ update _ msg model =
                                         Nothing
                             , unitDeveloping = False
                             , mainRadioStation = False
+                            , commandControl = False
                             }
                     in
                     ( { model
@@ -633,6 +634,7 @@ update _ msg model =
                                     , unitId = callsign.unitId
                                     , unitDeveloping = callsign.unitDeveloping
                                     , mainRadioStation = callsign.mainRadioStation
+                                    , commandControl = callsign.commandControl
                                     }
                             in
                             ( { model
@@ -924,6 +926,7 @@ update _ msg model =
                                         Nothing
                             , unitDeveloping = False
                             , mainRadioStation = False
+                            , commandControl = False
                             }
                     in
                     ( { model
@@ -1245,9 +1248,17 @@ viewNetworkCallsigns networkCallsigns model user shared =
         regularCallsigns =
             getRegularCallsigns networkCallsigns
 
-        -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
-        sortedCallsigns =
-            Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState regularCallsigns
+        -- Групуємо та сортуємо так, щоб: 1) Головна радіостанція, 2) Ланка управління, 3) інші.
+        -- Для кожної групи застосовуємо поточний стан сортування таблиці окремо,
+        -- потім з'єднуємо результати, щоб зберегти пріоритет груп.
+        ( mainGroup, rest ) = List.partition .mainRadioStation regularCallsigns
+        ( commandGroup, otherGroup ) = List.partition .commandControl rest
+
+        sortedMain = Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState mainGroup
+        sortedCommand = Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState commandGroup
+        sortedOthers = Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState otherGroup
+
+        sortedCallsigns = List.concat [ sortedMain, sortedCommand, sortedOthers ]
 
         paginatedCallsigns =
             Pager.getPageData model.networkCallsignsPager sortedCallsigns
@@ -1259,6 +1270,18 @@ viewNetworkCallsigns networkCallsigns model user shared =
         , Pager.view model.networkCallsignsPager
             |> Html.map NetworkCallsignsPagerMsg
         ]
+
+
+callsignPriority : B.NetworkCallsign -> Int
+callsignPriority row =
+    if row.mainRadioStation then
+        0
+
+    else if row.commandControl then
+        1
+
+    else
+        2
 
 
 callsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config CallsignTableRow CallsignsMsg
@@ -1586,17 +1609,24 @@ networkCallsignsTableConfig shared model _ =
                                 String.toUpper row.callsign
 
                             callsignContent =
-                                if row.mainRadioStation then
-                                    [ text callsignText
-                                    , span [ class "ml-2 badge badge-main-radio" ]
-                                        [ text "ГВЗ" ]
-                                    ]
+                                List.concat
+                                    [ [ text callsignText ]
+                                    , if row.mainRadioStation then
+                                        [ i [ class "bi bi-star-fill ml-2", title "Головна радіостанція" ] []
+                                        ]
 
-                                else
-                                    [ text callsignText ]
+                                      else
+                                        []
+                                    , if row.commandControl then
+                                        [ i [ class "bi bi-person-badge-fill ml-2", title "Ланка управління" ] []
+                                        ]
+
+                                      else
+                                        []
+                                    ]
                         in
                         { attributes = [], children = callsignContent }
-                , sorter = TableSorter.increasingOrDecreasingBy .callsign
+                , sorter = TableSorter.increasingOrDecreasingBy (\row -> ( callsignPriority row, String.toUpper row.callsign ))
                 }
                 |> Table.withColumnWidth "12%"
             , Table.veryCustomColumn
@@ -1809,7 +1839,7 @@ callsignCreateSidebarContent shared model _ =
                         ]
                         []
                     ]
-                , div []
+                , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .mainRadioStation model.callsignCreateState |> Maybe.withDefault False
@@ -1819,6 +1849,17 @@ callsignCreateSidebarContent shared model _ =
                                         (Maybe.map (\s -> { s | mainRadioStation = not s.mainRadioStation }))
                             }
                             |> Checkbox.withContent [ text "Головна радіостанція" ]
+                            |> Checkbox.view
+                        ]
+                    , div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .commandControl model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (Maybe.map (\s -> { s | commandControl = not s.commandControl }))
+                            }
+                            |> Checkbox.withContent [ text "Ланка управління" ]
                             |> Checkbox.view
                         ]
                     ]
@@ -2114,7 +2155,7 @@ editCallsignSidebarContent shared model _ =
                         ]
                         []
                     ]
-                , div []
+                , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .mainRadioStation model.editCallsignState |> Maybe.withDefault False
@@ -2124,6 +2165,17 @@ editCallsignSidebarContent shared model _ =
                                         (Maybe.map (\s -> { s | mainRadioStation = not s.mainRadioStation }))
                             }
                             |> Checkbox.withContent [ text "Головна радіостанція" ]
+                            |> Checkbox.view
+                        ]
+                    , div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .commandControl model.editCallsignState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (Maybe.map (\s -> { s | commandControl = not s.commandControl }))
+                            }
+                            |> Checkbox.withContent [ text "Ланка управління" ]
                             |> Checkbox.view
                         ]
                     ]

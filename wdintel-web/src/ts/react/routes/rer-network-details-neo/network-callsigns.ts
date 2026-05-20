@@ -5,7 +5,7 @@ import type {
   NetworkCallsignRes,
   Source,
 } from '../../../../Bindings';
-import { formatDateTime24 } from '../../utils/misc';
+import { NO_DATA_LABEL, formatDateTime24 } from '../../utils/misc';
 
 export type NetworkCallsignSectionMode = 'network' | 'catalog' | 'intercepted';
 
@@ -23,6 +23,7 @@ export type NetworkCallsignDrawerForm = {
   id: number | null;
   networkId: number;
   callsign: string;
+  status: NetworkCallsignStatus;
   position: string;
   comment: string;
   sourceId: number | null;
@@ -31,6 +32,7 @@ export type NetworkCallsignDrawerForm = {
   unitDeveloping: boolean;
   developing: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type NetworkCallsignRowView = {
@@ -53,6 +55,7 @@ export type NetworkCallsignRowView = {
   sourceId: number | null;
   radioFreq: string | null;
   networkId: number;
+  commandControl: boolean;
 };
 
 export type NetworkCallsignCatalogCallsign = {
@@ -130,6 +133,7 @@ export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId
     id: null,
     networkId,
     callsign: '',
+    status: 'verified',
     position: '',
     comment: '',
     sourceId: null,
@@ -138,17 +142,19 @@ export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId
     unitDeveloping: false,
     developing: false,
     mainRadioStation: false,
+    commandControl: false,
   };
 }
 
 export function createNetworkCallsignDrawerForm(
   networkId: number,
-  networkCallsign: Pick<NetworkCallsignRowView, 'id' | 'callsign' | 'position' | 'comment' | 'sourceId' | 'radioFreq' | 'unitId' | 'unitDeveloping' | 'developing' | 'mainRadioStation'>,
+  networkCallsign: NetworkCallsignRowView,
 ): NetworkCallsignDrawerForm {
   return {
     id: networkCallsign.id,
     networkId,
     callsign: networkCallsign.callsign,
+    status: networkCallsign.status,
     position: networkCallsign.position,
     comment: networkCallsign.comment,
     sourceId: networkCallsign.sourceId,
@@ -157,6 +163,7 @@ export function createNetworkCallsignDrawerForm(
     unitDeveloping: networkCallsign.unitDeveloping,
     developing: networkCallsign.developing,
     mainRadioStation: networkCallsign.mainRadioStation,
+    commandControl: networkCallsign.commandControl,
   };
 }
 
@@ -190,6 +197,37 @@ function resolveActivity(
   return activityMap.get(normalizeCallsignDisplay(callsign)) ?? toActivityFallback(fallback);
 }
 
+function compareCallsignViewsByActivityDesc(
+  left: Pick<NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView, 'messageCount' | 'lastDatetime' | 'callsign'>,
+  right: Pick<NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView, 'messageCount' | 'lastDatetime' | 'callsign'>,
+): number {
+  if (left.messageCount !== right.messageCount) {
+    return right.messageCount - left.messageCount;
+  }
+
+  const leftLastDatetime = left.lastDatetime ?? 0;
+  const rightLastDatetime = right.lastDatetime ?? 0;
+  if (leftLastDatetime !== rightLastDatetime) {
+    return rightLastDatetime - leftLastDatetime;
+  }
+
+  return left.callsign.localeCompare(right.callsign, 'uk');
+}
+
+function compareCatalogCallsignGroupsByActivityDesc(
+  left: NetworkCallsignCatalogGroupView,
+  right: NetworkCallsignCatalogGroupView,
+): number {
+  return compareCallsignViewsByActivityDesc(left, right);
+}
+
+function compareInterceptedCallsignsByActivityDesc(
+  left: NetworkCallsignInterceptedView,
+  right: NetworkCallsignInterceptedView,
+): number {
+  return compareCallsignViewsByActivityDesc(left, right);
+}
+
 export function getNetworkCallsignStatus(networkCallsign: Pick<NetworkCallsign, 'active' | 'developing' | 'knownCallsignId'>): NetworkCallsignStatus {
   if (networkCallsign.developing) return 'developing';
   if (networkCallsign.knownCallsignId !== null) return 'catalog';
@@ -221,11 +259,12 @@ export function buildNetworkCallsignRowViews(
       lastDatetime: networkCallsign.lastDatetime ?? null,
       messageCount: networkCallsign.messageCount,
       comment: networkCallsign.comment?.trim() ?? '',
-      sourceName: networkCallsign.sourceId === null ? '—' : sourcesById.get(networkCallsign.sourceId)?.name?.trim() || `#${networkCallsign.sourceId}`,
+      sourceName: networkCallsign.sourceId === null ? NO_DATA_LABEL : sourcesById.get(networkCallsign.sourceId)?.name?.trim() || `#${networkCallsign.sourceId}`,
       knownCallsignId: networkCallsign.knownCallsignId ?? null,
       active: networkCallsign.active,
       developing: networkCallsign.developing,
       mainRadioStation: networkCallsign.mainRadioStation,
+      commandControl: networkCallsign.commandControl,
       unitDeveloping: networkCallsign.unitDeveloping,
       sourceId: networkCallsign.sourceId ?? null,
       radioFreq: networkCallsign.radioFreq ?? null,
@@ -260,6 +299,7 @@ export function buildNetworkCallsignTabData(
 
   groups.forEach((group) => {
     const callsign = normalizeCallsignDisplay(group.callsign);
+    if (callsign === 'НВ') return;
     const activity = resolveActivity(activityMap, callsign, group);
     const knownCallsigns = (group.knownCallsigns ?? []).map(buildCatalogCallsign);
 
@@ -289,6 +329,9 @@ export function buildNetworkCallsignTabData(
       activity,
     });
   });
+
+  catalogCallsignGroups.sort(compareCatalogCallsignGroupsByActivityDesc);
+  unknownInterceptedCallsigns.sort(compareInterceptedCallsignsByActivityDesc);
 
   return {
     catalogCallsignGroups,
@@ -328,22 +371,26 @@ export function mergeNetworkCallsigns(existingNetworkCallsigns: NetworkCallsign[
 }
 
 export function flattenCatalogCallsignRows(groups: NetworkCallsignCatalogGroupView[]): NetworkCallsignCatalogRowView[] {
-  return groups.flatMap((group) =>
-    group.knownCallsigns.map((knownCallsign) => ({
-      id: knownCallsign.id,
-      knownCallsignId: knownCallsign.id,
-      callsign: knownCallsign.callsign,
-      position: knownCallsign.position,
-      unitName: knownCallsign.unitName,
-      lastDatetime: group.lastDatetime,
-      messageCount: group.messageCount,
-      comment: knownCallsign.comment,
-      dateBoundAt: knownCallsign.createdAt,
-      sourceName: knownCallsign.sourceName,
-      networkCallsign: group.callsign,
-      freqs: group.freqs,
-    })),
-  );
+  return [...groups]
+    .sort(compareCatalogCallsignGroupsByActivityDesc)
+    .flatMap((group) =>
+      [...group.knownCallsigns]
+        .sort((left, right) => right.createdAt - left.createdAt)
+        .map((knownCallsign) => ({
+          id: knownCallsign.id,
+          knownCallsignId: knownCallsign.id,
+          callsign: knownCallsign.callsign,
+          position: knownCallsign.position,
+          unitName: knownCallsign.unitName,
+          lastDatetime: group.lastDatetime,
+          messageCount: group.messageCount,
+          comment: knownCallsign.comment,
+          dateBoundAt: knownCallsign.createdAt,
+          sourceName: knownCallsign.sourceName,
+          networkCallsign: group.callsign,
+          freqs: group.freqs,
+        })),
+    );
 }
 
 export function countNetworkCallsignStatusRows(rows: NetworkCallsignRowView[]): NetworkCallsignStatusCounts {
@@ -364,5 +411,5 @@ export function countNetworkCallsignStatusRows(rows: NetworkCallsignRowView[]): 
 }
 
 export function formatNetworkCallsignDatetime(value: number | null): string {
-  return value === null ? '—' : formatDateTime24(value);
+  return value === null ? NO_DATA_LABEL : formatDateTime24(value);
 }

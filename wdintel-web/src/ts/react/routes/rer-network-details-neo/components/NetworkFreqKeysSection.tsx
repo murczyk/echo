@@ -9,10 +9,20 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { createFilterOptions } from '@mui/material/Autocomplete';
 import { memo } from 'react';
 
 import type { EncryptionKeyData } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { NEO_AUTOCOMPLETE_SLOT_PROPS } from './dropdownProps';
+
+const keyAutocompleteFilterOptions = createFilterOptions<EncryptionKeyData>({
+  stringify: (option) =>
+    [option.description, option.key]
+      .filter((value): value is string => Boolean(value && value.trim() !== ''))
+      .join(' '),
+  limit: 10,
+});
 
 type Props = {
   canManageKeys: boolean;
@@ -68,10 +78,12 @@ function NetworkFreqKeysSectionComponent({
               value={selectedKeys}
               loading={keysLoading}
               disabled={saving || networkId === null}
+              filterOptions={keyAutocompleteFilterOptions}
               getOptionLabel={formatKeyLabel}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               onChange={onSelectedKeysChange}
               noOptionsText="Немає доступних ключів"
+              slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
               renderInput={(params) => (
                 <TextField {...params} placeholder="Пошук і вибір ключів" />
               )}

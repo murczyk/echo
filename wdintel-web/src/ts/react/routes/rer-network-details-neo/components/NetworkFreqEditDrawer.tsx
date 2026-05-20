@@ -20,6 +20,7 @@ import { type NetworkFreqEditForm } from '../use-rer-network-details-neo-page.sh
 import { NetworkFreqActivityControl } from './NetworkFreqActivityControl';
 import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
 import { NetworkFreqSummaryHeader } from './NetworkFreqSummaryHeader';
+import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
 
 type Props = {
   open: boolean;
@@ -97,6 +98,7 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
                   label="Тип"
                   value={form.kind}
                   onChange={(event) => onChange({ ...form, kind: String(event.target.value) as NetworkFreqEditForm['kind'] })}
+                  MenuProps={NEO_SELECT_MENU_PROPS}
                 >
                   <MenuItem value="DMR">DMR</MenuItem>
                   <MenuItem value="DMRe">DMRe</MenuItem>
@@ -114,6 +116,7 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
                   displayEmpty
                   value={form.modulationId === null ? '' : String(form.modulationId)}
                   onChange={handleModulationChange}
+                  MenuProps={NEO_SELECT_MENU_PROPS}
                   renderValue={(value) => {
                     if (value === '') {
                       return <span style={{ opacity: 0.7 }}>Виберіть модуляцію</span>;

@@ -1,8 +1,8 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import StarIcon from '@mui/icons-material/Star';
-import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
@@ -24,6 +24,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerMenu } from '../../../components/PowerMenu';
 import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
+import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import {
   buildNetworkColumnOrder,
@@ -32,7 +33,7 @@ import {
   NETWORK_CALLSIGN_COLUMN_SIZES,
   NETWORK_COLUMNS_VISIBILITY,
 } from './NetworkCallsignsTableShared';
-import { NetworkCallsignSourceIcon } from './NetworkCallsignSourceUi';
+import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows, formatNetworkCallsignDatetime } from '../network-callsigns';
 
@@ -43,12 +44,23 @@ const NETWORK_MRT_LOCALIZATION = {
 };
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing'];
-const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Catalog' | 'Unknown'>, string> = {
+const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing', 'Catalog'];
+const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Unknown'>, string> = {
   All: 'Всі',
   Verified: 'Верифіковано',
   Developing: 'В дорозвідці',
+  Catalog: 'Каталог',
 };
+
+function getNetworkStatusFilterCount(
+  filter: NetworkCallsignStatusFilter,
+  statusCounts: ReturnType<typeof countNetworkCallsignStatusRows>,
+) {
+  if (filter === 'All') return statusCounts.all;
+  if (filter === 'Verified') return statusCounts.verified;
+  if (filter === 'Developing') return statusCounts.developing;
+  return statusCounts.catalog;
+}
 
 type Props = {
   rows: NetworkCallsignRowView[];
@@ -60,6 +72,7 @@ type Props = {
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
   onToggleMainRadioStation: (row: NetworkCallsignRowView) => void;
+  onToggleCommandControl: (row: NetworkCallsignRowView) => void;
   onReload: () => void;
   inFlightUpdateIds: number[];
   inFlightDeleteIds: number[];
@@ -75,6 +88,7 @@ export function NetworkCallsignsNetworkTable({
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onToggleMainRadioStation,
+  onToggleCommandControl,
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
@@ -97,6 +111,7 @@ export function NetworkCallsignsNetworkTable({
         onOpenEditDrawer={onOpenEditDrawer}
         onOpenDeleteDialog={onOpenDeleteDialog}
         onToggleMainRadioStation={onToggleMainRadioStation}
+        onToggleCommandControl={onToggleCommandControl}
         onReload={onReload}
         inFlightUpdateIds={inFlightUpdateIds}
         inFlightDeleteIds={inFlightDeleteIds}
@@ -115,6 +130,7 @@ function NetworkCallsignsNetworkTableContent({
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onToggleMainRadioStation,
+  onToggleCommandControl,
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
@@ -131,8 +147,28 @@ function NetworkCallsignsNetworkTableContent({
   const tableStateRows = useMemo(() => {
     const filtered = normalizedStatusFilter === 'All'
       ? visibleRows
-      : visibleRows.filter((row) => (normalizedStatusFilter === 'Verified' ? row.status === 'verified' : row.status === 'developing'));
-    return filtered.slice().sort((left, right) => Number(right.mainRadioStation) - Number(left.mainRadioStation));
+      : visibleRows.filter((row) => (
+        normalizedStatusFilter === 'Verified'
+          ? row.status === 'verified'
+          : normalizedStatusFilter === 'Developing'
+            ? row.status === 'developing'
+            : row.status === 'catalog'
+      ));
+
+    // comparator used inside each group: messageCount desc, lastDatetime desc, callsign uk
+    const intraGroupCmp = (a: NetworkCallsignRowView, b: NetworkCallsignRowView) => {
+      if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount;
+      if ((b.lastDatetime ?? 0) !== (a.lastDatetime ?? 0)) return (b.lastDatetime ?? 0) - (a.lastDatetime ?? 0);
+      return a.callsign.localeCompare(b.callsign, 'uk');
+    };
+
+    const copy = filtered.slice();
+    const mainGroup = copy.filter(r => r.mainRadioStation).slice().sort(intraGroupCmp);
+    const rest = copy.filter(r => !r.mainRadioStation);
+    const commandGroup = rest.filter(r => r.commandControl).slice().sort(intraGroupCmp);
+    const otherGroup = rest.filter(r => !r.commandControl).slice().sort(intraGroupCmp);
+
+    return [...mainGroup, ...commandGroup, ...otherGroup];
   }, [normalizedStatusFilter, visibleRows]);
 
   const statusCounts = useMemo(() => countNetworkCallsignStatusRows(visibleRows), [visibleRows]);
@@ -147,13 +183,18 @@ function NetworkCallsignsNetworkTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
         Cell: ({ row }) => (
           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-            <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} developing={row.original.status === 'developing'} />
+            <NetworkCallsignStatusDot statusLabel={row.original.statusLabel} status={row.original.status} />
             <Typography variant="body2" fontWeight={700} noWrap title={row.original.callsign}>
               {formatMrtCellTextValue(row.original.callsign)}
             </Typography>
             {row.original.mainRadioStation ? (
               <Tooltip title="Головна радіостанція" arrow>
                 <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+              </Tooltip>
+            ) : null}
+            {row.original.commandControl ? (
+              <Tooltip title="Ланка управління" arrow>
+                <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main', flexShrink: 0 }} />
               </Tooltip>
             ) : null}
           </Stack>
@@ -164,7 +205,7 @@ function NetworkCallsignsNetworkTableContent({
         accessorKey: 'position',
         id: 'position',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
+        Cell: ({ row }) => renderMrtCellTextValue(row.original.position),
       },
       {
         header: 'Підрозділ',
@@ -210,7 +251,7 @@ function NetworkCallsignsNetworkTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
         grow: false,
         enableResizing: false,
-        Cell: ({ row }) => (row.original.sourceName === '—' ? <Typography variant="body2">—</Typography> : <NetworkCallsignSourceIcon sourceName={row.original.sourceName} />),
+        Cell: ({ row }) => <NetworkCallsignSourceCell sourceName={row.original.sourceName} />,
       },
     ], []);
 
@@ -342,7 +383,7 @@ function NetworkCallsignsNetworkTableContent({
               {NETWORK_STATUS_FILTER_ORDER.map((filter) => (
                 <PowerChip
                   key={filter}
-                  label={<CountChipLabel label={NETWORK_STATUS_FILTER_LABELS[filter]} count={filter === 'All' ? statusCounts.all : filter === 'Verified' ? statusCounts.verified : statusCounts.developing} />}
+                  label={<CountChipLabel label={NETWORK_STATUS_FILTER_LABELS[filter]} count={getNetworkStatusFilterCount(filter, statusCounts)} />}
                   selected={normalizedStatusFilter === filter}
                   onClick={() => onStatusFilterChange(filter)}
                   interactive
@@ -386,9 +427,24 @@ function NetworkCallsignsNetworkTableContent({
             disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
           >
             <ListItemIcon sx={{ color: rowMenuTarget.mainRadioStation ? 'warning.main' : 'text.secondary' }}>
-              {rowMenuTarget.mainRadioStation ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+              <StarIcon fontSize="small" />
             </ListItemIcon>
-            {rowMenuTarget.mainRadioStation ? 'Зняти позначку' : 'Зробити головною'}
+            {rowMenuTarget.mainRadioStation ? 'Зняти головну' : 'Зробити головною'}
+          </MenuItem>
+        ) : null}
+        {rowMenuTarget ? (
+          <MenuItem
+            onClick={() => {
+              onToggleCommandControl(rowMenuTarget);
+              setRowMenuAnchorEl(null);
+              setRowMenuTarget(null);
+            }}
+            disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
+          >
+            <ListItemIcon sx={{ color: rowMenuTarget.commandControl ? 'info.main' : 'text.secondary' }}>
+              <MilitaryTechOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            {rowMenuTarget.commandControl ? 'Зняти ланку управління' : 'Зробити ланкою управління'}
           </MenuItem>
         ) : null}
         {rowMenuTarget ? (
