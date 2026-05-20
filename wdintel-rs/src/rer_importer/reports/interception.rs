@@ -2,12 +2,14 @@ use super::super::types::*;
 use crate::config::*;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
+// Import necessary items from rust_xlsxwriter
+use crate::rer_importer;
 use crate::rer_importer::analysis::*;
 use crate::types::*;
-use chrono::prelude::*;
-// Import necessary items from rust_xlsxwriter
 use crate::utils::orm::ArrayColumnOps;
-use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook};
+use chrono::prelude::*;
+use rer_importer::body_noheader::extract_text;
+use rust_xlsxwriter::{Color, ExcelDateTime, Format, FormatAlign, FormatBorder, RowNum, Workbook, Worksheet};
 use sea_orm::{prelude::Expr, *};
 use sea_query::*;
 use serde_json::json;
@@ -25,6 +27,275 @@ struct InboxMessage {
     coords: Option<String>,
     inbox_tags: Option<serde_json::Value>,
     important: Option<i64>,
+}
+
+struct SheetProcessingData<'a> {
+    row_number: RowNum,
+    date: ExcelDateTime,
+    time: String,
+    message: &'a InboxMessage,
+    without_model_tags: bool,
+}
+
+pub async fn report_xlsx_kind_interception(
+    user_login: &str,
+    env: &Env,
+    req: &super::types::ReportPreviewReq,
+    outpath: &PathBuf,
+) -> Result<(), AppError> {
+    let mut workbook = Workbook::new(); // Use rust_xlsxwriter
+    let sheet1 = get_worksheet(&mut workbook)?;
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
+    // Define formats using rust_xlsxwriter
+
+    set_colors_and_formats_for_sheet(sheet1)?;
+
+    let read_db = env.replica();
+    let all_tags = get_all_tags(&read_db).await?;
+
+    let messages = get_inbox_messages_report(user_login, env, &inbox_req)
+        .await
+        .context(h!())?;
+    process_messages_for_interception_report(
+        sheet1,
+        messages,
+        all_tags,
+        without_model_tags,
+    )?;
+
+    workbook.save(outpath).context(h!())?; // Save the workbook
+
+    Ok(())
+}
+
+fn get_worksheet(workbook: &mut Workbook) -> Result<&mut Worksheet, AppError> {
+    Ok(workbook.add_worksheet().set_name("Пеленги").context(h!())?) // Use rust_xlsxwriter
+}
+
+fn set_colors_and_formats_for_sheet(
+    sheet1: &mut Worksheet,
+) -> Result<(), AppError> {
+    let coltitle_base = Format::new()
+        .set_bold()
+        .set_border(FormatBorder::Thin)
+        .set_align(FormatAlign::Center)
+        .set_font_size(12.0);
+
+    let coltitle_blue = coltitle_base
+        .clone()
+        .set_background_color(Color::RGB(0x5b9bd5));
+    let coltitle_yellow = coltitle_base
+        .clone()
+        .set_background_color(Color::RGB(0xfef2cb));
+    let coltitle_gray = coltitle_base
+        .clone()
+        .set_background_color(Color::RGB(0xd8d8d8));
+    let coltitle_orange = coltitle_base
+        .clone()
+        .set_background_color(Color::RGB(0xffc000));
+    let coltitle_pink = coltitle_base
+        .clone()
+        .set_background_color(Color::RGB(0xff33cc));
+    let coltitle_green = coltitle_base
+        .clone()
+        .set_background_color(Color::RGB(0x77bc65));
+    let coltitle_brown = coltitle_base
+        .clone()
+        .set_background_color(Color::RGB(0xf67315));
+
+    let format_blue = Format::new()
+        .set_background_color(Color::RGB(0x5b9bd5))
+        .set_border(FormatBorder::Thin);
+    let format_yellow = Format::new()
+        .set_background_color(Color::RGB(0xfef2cb))
+        .set_border(FormatBorder::Thin);
+    let format_gray = Format::new()
+        .set_background_color(Color::RGB(0xd8d8d8))
+        .set_border(FormatBorder::Thin);
+    let format_blue_wrap = format_blue.clone().set_text_wrap();
+    let format_orange = Format::new()
+        .set_background_color(Color::RGB(0xffc000))
+        .set_border(FormatBorder::Thin);
+    let format_pink_wrap = Format::new()
+        .set_background_color(Color::RGB(0xff33cc))
+        .set_border(FormatBorder::Thin)
+        .set_text_wrap();
+    let format_green_wrap = Format::new()
+        .set_background_color(Color::RGB(0x77bc65))
+        .set_border(FormatBorder::Thin)
+        .set_text_wrap();
+    let format_brown_wrap = Format::new()
+        .set_background_color(Color::RGB(0xf67315))
+        .set_border(FormatBorder::Thin)
+        .set_text_wrap();
+
+    // Write headers with formats
+    sheet1
+        .write_string_with_format(0, 0, "Дата", &coltitle_blue)
+        .context(h!())?;
+    sheet1.set_column_width(0, 10.0).context(h!())?; // Set width
+    sheet1.set_column_format(0, &format_blue).context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 1, "Час", &coltitle_yellow)
+        .context(h!())?;
+    sheet1.set_column_width(1, 10.0).context(h!())?; // Set width
+    sheet1.set_column_format(1, &format_yellow).context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 2, "Частота", &coltitle_gray)
+        .context(h!())?;
+    sheet1.set_column_width(2, 10.0).context(h!())?; // Set width
+    sheet1.set_column_format(2, &format_gray).context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 3, "Назва р\\м", &coltitle_blue)
+        .context(h!())?;
+    sheet1.set_column_width(3, 40.0).context(h!())?; // Set width
+    sheet1
+        .set_column_format(3, &format_blue_wrap)
+        .context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 4, "хто", &coltitle_orange)
+        .context(h!())?;
+    sheet1.set_column_width(4, 20.0).context(h!())?; // Set width
+    sheet1.set_column_format(4, &format_orange).context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 5, "кому", &coltitle_orange)
+        .context(h!())?;
+    sheet1.set_column_width(5, 20.0).context(h!())?; // Set width
+    sheet1.set_column_format(5, &format_orange).context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 6, "р\\обмін", &coltitle_blue)
+        .context(h!())?;
+    sheet1.set_column_width(6, 60.0).context(h!())?; // Set width
+    sheet1
+        .set_column_format(6, &format_blue_wrap)
+        .context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 7, "примітки", &coltitle_pink)
+        .context(h!())?;
+    sheet1.set_column_width(7, 40.0).context(h!())?; // Set width
+    sheet1
+        .set_column_format(7, &format_pink_wrap)
+        .context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 8, "координати", &coltitle_green)
+        .context(h!())?;
+    sheet1.set_column_width(8, 30.0).context(h!())?; // Set width
+    sheet1
+        .set_column_format(8, &format_green_wrap)
+        .context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 9, "теги", &coltitle_brown)
+        .context(h!())?;
+    sheet1.set_column_width(9, 30.0).context(h!())?; // Set width
+    sheet1
+        .set_column_format(9, &format_brown_wrap)
+        .context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 10, "важливе", &coltitle_gray)
+        .context(h!())?;
+    sheet1.set_column_width(10, 10.0).context(h!())?; // Set width
+    sheet1.set_column_format(10, &format_gray).context(h!())?; // Set format
+
+    Ok(())
+}
+
+async fn get_all_tags(
+    read_db: &DatabaseConnection,
+) -> Result<HashMap<i64, String>, AppError> {
+    let all_tags = {
+        let tags_vec = tag::Entity::find()
+            .columns([tag::Column::Id, tag::Column::Title])
+            .into_tuple::<(i64, String)>()
+            .all(read_db)
+            .await
+            .context(h!())?;
+        let mut tags = HashMap::new();
+        for tag in tags_vec {
+            tags.insert(tag.0, tag.1);
+        }
+        tags
+    };
+    Ok(all_tags)
+}
+
+async fn get_inbox_messages_report(
+    user_login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<InboxMessage>, AppError> {
+    let combined_query =
+        build_inbox_messages_report_sql(user_login, env, req).await?;
+    let read_db = env.replica();
+
+    let results = read_db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            combined_query,
+        ))
+        .await
+        .context(h!())?;
+
+    let messages: Vec<InboxMessage> = results
+        .iter()
+        .map(|qr| InboxMessage::from_query_result(qr, ""))
+        .collect::<Result<Vec<_>, DbErr>>()
+        .context(h!())?;
+
+    let mut keys = HashSet::new();
+    let mut result = vec![];
+    for m in messages {
+        let key = (m.date.clone(), m.time.clone(), m.body.clone());
+        if keys.contains(&key) {
+            continue;
+        }
+        keys.insert(key);
+        result.push(m);
+    }
+    Ok(result)
+}
+
+fn process_messages_for_interception_report(
+    sheet1: &mut Worksheet,
+    messages: Vec<InboxMessage>,
+    all_tags: HashMap<i64, String>,
+    without_model_tags: bool,
+) -> Result<(), AppError> {
+    for (index, message) in (messages.into_iter()).enumerate() {
+        // ... existing data processing ...
+        let Some(date) = message.date.as_ref() else {
+            continue;
+        };
+
+        let Some(time) = message.time.as_ref() else {
+            continue;
+        };
+
+        // parse date from format like 2023-12-22
+        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
+        let date = ExcelDateTime::from_ymd(
+            date.year() as u16,
+            date.month() as u8,
+            date.day() as u8,
+        )
+        .context(h!())?;
+
+        write_data_to_sheet(
+            sheet1,
+            &all_tags,
+            SheetProcessingData {
+                row_number: index as RowNum + 1,
+                message: &message,
+                date,
+                time: time.clone(),
+                without_model_tags,
+            },
+        )
+        .context(h!())?;
+    }
+
+    Ok(())
 }
 
 async fn build_inbox_messages_report_sql(
@@ -196,13 +467,9 @@ async fn build_inbox_messages_report_sql(
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
 
-    q = crate::rer_importer::inbox::query::get_pagination_filters(
-        env,
-        req,
-        q.clone(),
-    )
-    .await
-    .c(h!())?;
+    q = rer_importer::inbox::query::get_pagination_filters(env, req, q.clone())
+        .await
+        .c(h!())?;
 
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -270,13 +537,12 @@ async fn build_inbox_messages_report_sql(
         // emulate NULLS FIRST: order nulls before non-nulls
         .to_owned();
 
-    dedup_q = crate::rer_importer::inbox::query::get_pagination_filter_real_lower_bound_stmt(env, req, dedup_q)
+    dedup_q = rer_importer::inbox::query::get_pagination_filter_real_lower_bound_stmt(env, req, dedup_q)
         .await
         .context(h!())?;
-    dedup_q =
-        crate::rer_importer::inbox::query::get_bl_ordering_stmt(req, dedup_q)
-            .await
-            .context(h!())?;
+    dedup_q = rer_importer::inbox::query::get_bl_ordering_stmt(req, dedup_q)
+        .await
+        .context(h!())?;
 
     // Step 3: Combine CTEs and main query, add filter by initial window values and business logic ordering
     let combined_query = Query::with()
@@ -288,40 +554,68 @@ async fn build_inbox_messages_report_sql(
     Ok(combined_query)
 }
 
-async fn get_inbox_messages_report(
-    user_login: &str,
-    env: &Env,
-    req: &InboxMessagesReq,
-) -> Result<Vec<InboxMessage>, AppError> {
-    let combined_query =
-        build_inbox_messages_report_sql(user_login, env, req).await?;
-    let read_db = env.replica();
+fn write_data_to_sheet(
+    sheet1: &mut Worksheet,
+    all_tags: &HashMap<i64, String>,
+    data: SheetProcessingData,
+) -> Result<(), AppError> {
+    let i = data.row_number;
+    let date = data.date;
+    let date_fmt = Format::new().set_num_format("dd.mm.yyyy");
+    let time = data.time;
+    let m = data.message;
+    let freq = m.freq.to_owned().unwrap_or("".to_string());
+    let without_model_tags = data.without_model_tags;
+    let m_body = extract_text(&m.body.clone().unwrap_or("".to_string()))?.body;
+    let unit = m.unit.to_owned().unwrap_or("".to_string());
+    let comment = m.comment.to_owned().unwrap_or("".to_string());
+    let coords = m.coords.to_owned().unwrap_or("".to_string());
+    let important = m.important.map_or("", |_| "Так").to_string();
 
-    let results = read_db
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            combined_query,
-        ))
-        .await
+    let (from, to) = process_callsigns(
+        m.callsigns
+            .clone()
+            .unwrap_or(json!([]))
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|x| x.as_str().unwrap_or("").to_string())
+            .collect::<Vec<String>>(),
+    );
+    let from = from.clone().to_uppercase();
+    let to = to.clone().to_uppercase();
+
+
+    let inbox_tags: Vec<InboxMessageTag> = m
+        .inbox_tags
+        .clone()
+        .map(|val| serde_json::from_value(val).unwrap_or_default())
+        .unwrap_or_default();
+    let mes_tags = inbox_tags
+        .into_iter()
+        .filter(|tag| tag.confidence >= TAG_MINIMUM_CONFIDENCE)
+        .filter(|tag| !without_model_tags || tag.model.is_none())
+        .filter_map(|tag| all_tags.get(&tag.tag_id))
+        .map(|s| s.to_string())
+        .join(",");
+
+
+    // Write data using rust_xlsxwriter
+    sheet1
+        .write_datetime_with_format(i, 0, date, &date_fmt)
         .context(h!())?;
+    sheet1.write_string(i, 1, time).context(h!())?;
+    sheet1.write_string(i, 2, freq).context(h!())?;
+    sheet1.write_string(i, 3, unit).context(h!())?;
+    sheet1.write_string(i, 4, from).context(h!())?;
+    sheet1.write_string(i, 5, to).context(h!())?;
+    sheet1.write_string(i, 6, m_body).context(h!())?;
+    sheet1.write_string(i, 7, comment).context(h!())?;
+    sheet1.write_string(i, 8, coords).context(h!())?;
+    sheet1.write_string(i, 9, &mes_tags).context(h!())?;
+    sheet1.write_string(i, 10, important).context(h!())?;
 
-    let messages: Vec<InboxMessage> = results
-        .iter()
-        .map(|qr| InboxMessage::from_query_result(qr, ""))
-        .collect::<Result<Vec<_>, DbErr>>()
-        .context(h!())?;
-
-    let mut keys = HashSet::new();
-    let mut result = vec![];
-    for m in messages {
-        let key = (m.date.clone(), m.time.clone(), m.body.clone());
-        if keys.contains(&key) {
-            continue;
-        }
-        keys.insert(key);
-        result.push(m);
-    }
-    Ok(result)
+    Ok(())
 }
 
 fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
@@ -337,233 +631,4 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
         };
         (from, to_str)
     }
-}
-
-pub async fn report_xlsx_kind_interception(
-    user_login: &str,
-    env: &Env,
-    req: &super::types::ReportPreviewReq,
-    outpath: &PathBuf,
-) -> Result<(), AppError> {
-    let mut workbook = Workbook::new(); // Use rust_xlsxwriter
-    let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?; // Use rust_xlsxwriter
-    let date_format = Format::new().set_num_format("dd.mm.yyyy");
-    let mut inbox_req = req.req.clone();
-    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
-    // Define formats using rust_xlsxwriter
-    let coltitle_base = Format::new()
-        .set_bold()
-        .set_border(FormatBorder::Thin)
-        .set_align(FormatAlign::Center)
-        .set_font_size(12.0);
-
-    let coltitle_blue = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0x5b9bd5));
-    let coltitle_yellow = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0xfef2cb));
-    let coltitle_gray = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0xd8d8d8));
-    let coltitle_orange = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0xffc000));
-    let coltitle_pink = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0xff33cc));
-    let coltitle_green = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0x77bc65));
-    let coltitle_brown = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0xf67315));
-
-    let format_blue = Format::new()
-        .set_background_color(Color::RGB(0x5b9bd5))
-        .set_border(FormatBorder::Thin);
-    let format_yellow = Format::new()
-        .set_background_color(Color::RGB(0xfef2cb))
-        .set_border(FormatBorder::Thin);
-    let format_gray = Format::new()
-        .set_background_color(Color::RGB(0xd8d8d8))
-        .set_border(FormatBorder::Thin);
-    let format_blue_wrap = format_blue.clone().set_text_wrap();
-    let format_orange = Format::new()
-        .set_background_color(Color::RGB(0xffc000))
-        .set_border(FormatBorder::Thin);
-    let format_pink_wrap = Format::new()
-        .set_background_color(Color::RGB(0xff33cc))
-        .set_border(FormatBorder::Thin)
-        .set_text_wrap();
-    let format_green_wrap = Format::new()
-        .set_background_color(Color::RGB(0x77bc65))
-        .set_border(FormatBorder::Thin)
-        .set_text_wrap();
-    let format_brown_wrap = Format::new()
-        .set_background_color(Color::RGB(0xf67315))
-        .set_border(FormatBorder::Thin)
-        .set_text_wrap();
-
-    // Write headers with formats
-    sheet1
-        .write_string_with_format(0, 0, "Дата", &coltitle_blue)
-        .context(h!())?;
-    sheet1.set_column_width(0, 10.0).context(h!())?; // Set width
-    sheet1.set_column_format(0, &format_blue).context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 1, "Час", &coltitle_yellow)
-        .context(h!())?;
-    sheet1.set_column_width(1, 10.0).context(h!())?; // Set width
-    sheet1.set_column_format(1, &format_yellow).context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 2, "Частота", &coltitle_gray)
-        .context(h!())?;
-    sheet1.set_column_width(2, 10.0).context(h!())?; // Set width
-    sheet1.set_column_format(2, &format_gray).context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 3, "Назва р\\м", &coltitle_blue)
-        .context(h!())?;
-    sheet1.set_column_width(3, 40.0).context(h!())?; // Set width
-    sheet1
-        .set_column_format(3, &format_blue_wrap)
-        .context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 4, "хто", &coltitle_orange)
-        .context(h!())?;
-    sheet1.set_column_width(4, 20.0).context(h!())?; // Set width
-    sheet1.set_column_format(4, &format_orange).context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 5, "кому", &coltitle_orange)
-        .context(h!())?;
-    sheet1.set_column_width(5, 20.0).context(h!())?; // Set width
-    sheet1.set_column_format(5, &format_orange).context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 6, "р\\обмін", &coltitle_blue)
-        .context(h!())?;
-    sheet1.set_column_width(6, 60.0).context(h!())?; // Set width
-    sheet1
-        .set_column_format(6, &format_blue_wrap)
-        .context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 7, "примітки", &coltitle_pink)
-        .context(h!())?;
-    sheet1.set_column_width(7, 40.0).context(h!())?; // Set width
-    sheet1
-        .set_column_format(7, &format_pink_wrap)
-        .context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 8, "координати", &coltitle_green)
-        .context(h!())?;
-    sheet1.set_column_width(8, 30.0).context(h!())?; // Set width
-    sheet1
-        .set_column_format(8, &format_green_wrap)
-        .context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 9, "теги", &coltitle_brown)
-        .context(h!())?;
-    sheet1.set_column_width(9, 30.0).context(h!())?; // Set width
-    sheet1
-        .set_column_format(9, &format_brown_wrap)
-        .context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 10, "важливе", &coltitle_gray)
-        .context(h!())?;
-    sheet1.set_column_width(10, 10.0).context(h!())?; // Set width
-    sheet1.set_column_format(10, &format_gray).context(h!())?; // Set format
-
-    let read_db = env.replica();
-    let all_tags = {
-        let tags_vec = tag::Entity::find()
-            .columns([tag::Column::Id, tag::Column::Title])
-            .into_tuple::<(i64, String)>()
-            .all(&read_db)
-            .await
-            .context(h!())?;
-        let mut tags = HashMap::new();
-        for tag in tags_vec {
-            tags.insert(tag.0, tag.1);
-        }
-        tags
-    };
-
-    let mut i = 1;
-    for m in get_inbox_messages_report(user_login, env, &inbox_req)
-        .await
-        .context(h!())?
-    {
-        // ... existing data processing ...
-        let Some(date) = m.date.as_ref() else {
-            continue;
-        };
-        // parse date from format like 2023-12-22
-        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
-        let Some(time) = m.time.as_ref() else {
-            continue;
-        };
-        let freq = m.freq.unwrap_or("".to_string());
-        let date = rust_xlsxwriter::ExcelDateTime::from_ymd(
-            date.year() as u16,
-            date.month() as u8,
-            date.day() as u8,
-        )
-        .context(h!())?;
-
-        // Write data using rust_xlsxwriter
-        sheet1
-            .write_datetime_with_format(i, 0, date, &date_format)
-            .context(h!())?;
-        sheet1.write_string(i, 1, time.to_string()).context(h!())?;
-        sheet1.write_string(i, 2, &freq).context(h!())?;
-        sheet1
-            .write_string(i, 3, m.unit.clone().unwrap_or("".to_string()))
-            .context(h!())?;
-
-        let (from, to) = process_callsigns(
-            m.callsigns
-                .clone()
-                .unwrap_or(json!([]))
-                .as_array()
-                .unwrap_or(&vec![])
-                .iter()
-                .map(|x| x.as_str().unwrap_or("").to_string())
-                .collect::<Vec<String>>(),
-        );
-        sheet1
-            .write_string(i, 4, from.to_uppercase())
-            .context(h!())?;
-        sheet1.write_string(i, 5, to.to_uppercase()).context(h!())?;
-        sheet1
-            .write_string(i, 6, m.body.clone().unwrap_or("".to_string()))
-            .context(h!())?;
-        sheet1
-            .write_string(i, 7, m.comment.clone().unwrap_or("".to_string()))
-            .context(h!())?;
-        sheet1
-            .write_string(i, 8, m.coords.clone().unwrap_or("".to_string()))
-            .context(h!())?;
-
-        let inbox_tags: Vec<InboxMessageTag> = m
-            .inbox_tags
-            .clone()
-            .map(|val| serde_json::from_value(val).unwrap_or_default())
-            .unwrap_or_default();
-        let mes_tags = inbox_tags
-            .into_iter()
-            .filter(|tag| tag.confidence >= TAG_MINIMUM_CONFIDENCE)
-            .filter(|tag| !without_model_tags || tag.model.is_none())
-            .filter_map(|tag| all_tags.get(&tag.tag_id))
-            .map(|s| s.to_string())
-            .join(",");
-        sheet1.write_string(i, 9, &mes_tags).context(h!())?;
-        sheet1
-            .write_string(i, 10, m.important.map_or("", |_| "Так"))
-            .context(h!())?;
-        i += 1;
-    }
-
-    workbook.save(outpath).context(h!())?; // Save the workbook
-
-    Ok(())
 }
