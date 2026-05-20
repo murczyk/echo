@@ -2,14 +2,17 @@ use super::super::types::*;
 use crate::config::*;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
-// Import necessary items from rust_xlsxwriter
 use crate::rer_importer;
 use crate::rer_importer::analysis::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use rer_importer::body_noheader::extract_text;
-use rust_xlsxwriter::{Color, ExcelDateTime, Format, FormatAlign, FormatBorder, RowNum, Workbook, Worksheet};
+// Import necessary items from rust_xlsxwriter
+use rust_xlsxwriter::{
+    Color, ExcelDateTime, Format, FormatAlign, FormatBorder, RowNum, Workbook,
+    Worksheet,
+};
 use sea_orm::{prelude::Expr, *};
 use sea_query::*;
 use serde_json::json;
@@ -29,7 +32,7 @@ struct InboxMessage {
     important: Option<i64>,
 }
 
-struct SheetProcessingData<'a> {
+struct SheetRowData<'a> {
     row_number: RowNum,
     date: ExcelDateTime,
     time: String,
@@ -262,7 +265,8 @@ fn process_messages_for_interception_report(
     all_tags: HashMap<i64, String>,
     without_model_tags: bool,
 ) -> Result<(), AppError> {
-    for (index, message) in (messages.into_iter()).enumerate() {
+    let mut index = 0;
+    for message in messages {
         // ... existing data processing ...
         let Some(date) = message.date.as_ref() else {
             continue;
@@ -273,18 +277,12 @@ fn process_messages_for_interception_report(
         };
 
         // parse date from format like 2023-12-22
-        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
-        let date = ExcelDateTime::from_ymd(
-            date.year() as u16,
-            date.month() as u8,
-            date.day() as u8,
-        )
-        .context(h!())?;
+        let date = get_parsed_date(date).context(h!())?;
 
         write_data_to_sheet(
             sheet1,
             &all_tags,
-            SheetProcessingData {
+            SheetRowData {
                 row_number: index as RowNum + 1,
                 message: &message,
                 date,
@@ -293,9 +291,20 @@ fn process_messages_for_interception_report(
             },
         )
         .context(h!())?;
+        index += 1;
     }
 
     Ok(())
+}
+
+fn get_parsed_date(date: &String) -> Result<ExcelDateTime, AppError> {
+    let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
+    Ok(ExcelDateTime::from_ymd(
+        date.year() as u16,
+        date.month() as u8,
+        date.day() as u8,
+    )
+    .context(h!())?)
 }
 
 async fn build_inbox_messages_report_sql(
@@ -557,7 +566,7 @@ async fn build_inbox_messages_report_sql(
 fn write_data_to_sheet(
     sheet1: &mut Worksheet,
     all_tags: &HashMap<i64, String>,
-    data: SheetProcessingData,
+    data: SheetRowData,
 ) -> Result<(), AppError> {
     let i = data.row_number;
     let date = data.date;
@@ -585,7 +594,6 @@ fn write_data_to_sheet(
     let from = from.clone().to_uppercase();
     let to = to.clone().to_uppercase();
 
-
     let inbox_tags: Vec<InboxMessageTag> = m
         .inbox_tags
         .clone()
@@ -598,7 +606,6 @@ fn write_data_to_sheet(
         .filter_map(|tag| all_tags.get(&tag.tag_id))
         .map(|s| s.to_string())
         .join(",");
-
 
     // Write data using rust_xlsxwriter
     sheet1
