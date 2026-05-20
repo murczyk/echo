@@ -36,6 +36,7 @@ import {
   buildNetworkCallsignTabData,
 } from './network-callsigns';
 import { useRerNetworkDetailsNeoPageDescriptionActions } from './use-rer-network-details-neo-page.description-actions';
+import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-details-neo-page.report-actions';
 import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
@@ -63,6 +64,7 @@ function syncNetworkRelations(editForm: NetworkEditForm) {
 
 export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration, currentNetworkIdRef, loadCallsigns }: Args) {
   const descriptionActions = useRerNetworkDetailsNeoPageDescriptionActions({ state, setState });
+  const reportActions = useRerNetworkDetailsNeoPageReportActions({ state, setState });
   const frequencyActions = useRerNetworkDetailsNeoPageFrequencyActions({
     state,
     setState,
@@ -557,6 +559,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
 
   return {
     ...descriptionActions,
+    ...reportActions,
     ...frequencyActions,
     openMenu,
     closeMenu,
