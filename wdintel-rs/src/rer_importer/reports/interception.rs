@@ -848,11 +848,16 @@ fn starts_with_number_short_dash(s: &str) -> bool {
 }
 
 fn starts_with_number_long_dash(s: &str) -> bool {
-    let mut parts = s.splitn(2, '—');
+    let Some((left_raw, right_raw)) = s.split_once('—') else {
+        return false;
+    };
 
-    let left = parts.next().unwrap_or("").trim();
+    let left = left_raw.trim();
+    if left.is_empty() || !left.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
 
-    !left.is_empty() && left.chars().all(|c| c.is_ascii_digit())
+    !right_raw.trim().is_empty()
 }
 
 fn starts_with_number_dot_text(s: &str) -> bool {
@@ -1011,6 +1016,15 @@ x:53-48839
 y:73-71279
 37U CP 70970 46277
 Пд.Мирноград"#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(output, None);
+    }
+
+    #[test]
+    fn eject_body_returns_none_for_numeric_line_without_long_dash() {
+        let input = r#"148310"#;
 
         let output = eject_body_from_message(input.to_string());
 
