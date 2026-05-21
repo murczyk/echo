@@ -12,13 +12,15 @@ import {
   normalizeNetworkRelationsSinceChange,
   normalizeNetworkRelationsTillChange,
   networkStatusDisplay,
-  parseNetworkDetailsDateInputExclusiveEnd,
-  parseNetworkDetailsDateInput,
   sortDescriptionsByCreatedAtDesc,
   type NetworkDetailsNeoPageState,
   type NetworkOption,
 } from './use-rer-network-details-neo-page.shared';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
+import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
 
 function buildOptions<T extends { id: number; name: string }>(items: T[]): NetworkOption[] {
   return items.map((item) => ({ id: item.id, label: item.name }));
@@ -132,8 +134,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   }, [setState]);
 
   const relationsDateRangeValid = useMemo(() => {
-    const since = parseNetworkDetailsDateInput(state.relationsSince);
-    const till = parseNetworkDetailsDateInput(state.relationsTill);
+    const since = parseDateInputInTimeZone(state.relationsSince);
+    const till = parseDateInputInTimeZone(state.relationsTill);
     if (since === null || till === null) return false;
     return since <= till;
   }, [state.relationsSince, state.relationsTill]);
@@ -155,8 +157,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (state.activeNetworkDetailsTab !== 'relations') return;
     if (!relationsDateRangeValid) return;
     if (state.relationsLoaded || state.relationsLoading || state.relationsError !== null) return;
-    const since = parseNetworkDetailsDateInput(state.relationsSince);
-    const till = parseNetworkDetailsDateInputExclusiveEnd(state.relationsTill);
+    const since = parseDateInputInTimeZone(state.relationsSince);
+    const till = parseDateInputExclusiveEndInTimeZone(state.relationsTill);
     if (since === null || till === null) return;
     void loadRelations(
       state.network.id,

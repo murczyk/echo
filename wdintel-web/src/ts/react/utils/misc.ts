@@ -166,3 +166,16 @@ export function combineDateTimeInputToMs(dateTimeStr: string, timeZone: string =
   const [dateStr, timeStr] = dateTimeStr.split('T');
   return combineDateTimeToMs(dateStr, timeStr, timeZone);
 }
+
+export function parseDateInputInTimeZone(dateStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+  const trimmed = dateStr.trim();
+  if (trimmed === '') return null;
+
+  const parsed = dayjs.tz(trimmed, 'YYYY-MM-DD', timeZone);
+  return parsed.isValid() ? parsed.startOf('day').valueOf() : null;
+}
+
+export function parseDateInputExclusiveEndInTimeZone(dateStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+  const since = parseDateInputInTimeZone(dateStr, timeZone);
+  return since === null ? null : since + 24 * 60 * 60 * 1000;
+}

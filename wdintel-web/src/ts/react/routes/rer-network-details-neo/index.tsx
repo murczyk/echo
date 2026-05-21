@@ -33,9 +33,11 @@ import { NetworkEditDrawer } from './components/NetworkEditDrawer';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
 import {
   formatClassicNetworkHeaderName,
-  parseNetworkDetailsDateInput,
-  parseNetworkDetailsDateInputExclusiveEnd,
 } from './use-rer-network-details-neo-page.shared';
+import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
 
 type Props = {
   networkId: number;
@@ -258,8 +260,8 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           relationsSelectedEdgeId={page.relationsSelectedEdgeId}
           onReloadRelations={() => {
             if (page.network) {
-              const since = parseNetworkDetailsDateInput(page.relationsSince);
-              const till = parseNetworkDetailsDateInputExclusiveEnd(page.relationsTill);
+              const since = parseDateInputInTimeZone(page.relationsSince);
+              const till = parseDateInputExclusiveEndInTimeZone(page.relationsTill);
               if (since === null || till === null) return;
               void page.loadRelations(
                 page.network.id,

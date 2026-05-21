@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import dayjs from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 
 import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
+import { APP_TIME_ZONE } from '../../utils/misc';
 import {
   deriveRelationsEnabledFreqs,
   isCurrentRelationsWindow,
 } from './use-rer-network-details-neo-page.load';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 function makeRelations(freqs: NetworkCallsignRelationsRsp['freqs']): NetworkCallsignRelationsRsp {
   return {
@@ -42,8 +49,8 @@ describe('use-rer-network-details-neo-page.load relations helpers', () => {
   });
 
   it('detects when the current UI window still matches the request window', () => {
-    const since = Date.parse('2026-05-20T00:00:00Z');
-    const till = Date.parse('2026-05-21T00:00:00Z');
+    const since = dayjs.tz('2026-05-20', 'YYYY-MM-DD', APP_TIME_ZONE).startOf('day').valueOf();
+    const till = dayjs.tz('2026-05-21', 'YYYY-MM-DD', APP_TIME_ZONE).startOf('day').valueOf();
 
     expect(isCurrentRelationsWindow('2026-05-20', '2026-05-20', since, till)).toBe(true);
     expect(isCurrentRelationsWindow('2026-05-21', '2026-05-21', since, till)).toBe(false);

@@ -10,11 +10,13 @@ import { getUnitsList } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
 import { fetchCurrentUser } from '../../services/api/user';
 import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
+import {
   EMPTY_STATE,
   getDefaultNetworkRelationsDateRange,
   formatErrorMessage,
-  parseNetworkDetailsDateInput,
-  parseNetworkDetailsDateInputExclusiveEnd,
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
 import {
@@ -49,8 +51,8 @@ export function isCurrentRelationsWindow(
   tillDateNoninclusiveMs: number,
 ): boolean {
   return (
-    parseNetworkDetailsDateInput(currentSince) === sinceDateInclusiveMs &&
-    parseNetworkDetailsDateInputExclusiveEnd(currentTill) === tillDateNoninclusiveMs
+    parseDateInputInTimeZone(currentSince) === sinceDateInclusiveMs &&
+    parseDateInputExclusiveEndInTimeZone(currentTill) === tillDateNoninclusiveMs
   );
 }
 

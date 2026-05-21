@@ -313,6 +313,18 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
   });
 
+  it('shows the no-data card for an empty successful graph response', () => {
+    const view = renderPanel({
+      nodes: [],
+      edges: [],
+      freqs: [],
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Немає графових даних');
+    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними.");
+  });
+
   it('keeps the graph visible while refreshing relations', () => {
     const view = renderPanel();
     rendered.push(view);

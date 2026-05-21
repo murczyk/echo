@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import dayjs from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 
+import { APP_TIME_ZONE } from '../../utils/misc';
 import {
   getDefaultNetworkRelationsDateRange,
   parseNetworkDetailsDateInput,
@@ -7,6 +11,13 @@ import {
   normalizeNetworkRelationsSinceChange,
   normalizeNetworkRelationsTillChange,
 } from './use-rer-network-details-neo-page.shared';
+import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 describe('use-rer-network-details-neo-page.shared date parsing', () => {
   it('parses inclusive start dates at UTC midnight', () => {
@@ -15,6 +26,14 @@ describe('use-rer-network-details-neo-page.shared date parsing', () => {
 
   it('parses exclusive end dates as next-day UTC midnight', () => {
     expect(parseNetworkDetailsDateInputExclusiveEnd('2026-05-20')).toBe(Date.parse('2026-05-21T00:00:00Z'));
+  });
+
+  it('parses relations dates in the app timezone', () => {
+    const since = dayjs.tz('2026-05-20', 'YYYY-MM-DD', APP_TIME_ZONE).startOf('day').valueOf();
+    const till = since + 24 * 60 * 60 * 1000;
+
+    expect(parseDateInputInTimeZone('2026-05-20')).toBe(since);
+    expect(parseDateInputExclusiveEndInTimeZone('2026-05-20')).toBe(till);
   });
 
   it('defaults the relations range to the last month through today', () => {
