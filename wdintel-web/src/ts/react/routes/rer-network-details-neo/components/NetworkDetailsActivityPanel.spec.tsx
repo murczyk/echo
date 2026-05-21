@@ -17,7 +17,6 @@ vi.mock('@mui/material', () => ({
   ),
   CircularProgress: () => <div>loading</div>,
   Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => <section ref={ref}>{children}</section>),
-  Skeleton: ({ children }: { children?: ReactNode }) => <div>{children ?? 'skeleton'}</div>,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
@@ -61,7 +60,7 @@ describe('NetworkDetailsActivityPanel', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Завантаження активності мережі');
+    expect(view.container.textContent).toContain('Завантажуємо активність мережі');
     expect(view.container.textContent).toContain('Активність мережі');
   });
 
@@ -77,7 +76,8 @@ describe('NetworkDetailsActivityPanel', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Відсутня активність за останні 10 днів');
+    expect(view.container.textContent).toContain('Немає даних активності');
+    expect(view.container.textContent).toContain('Активність будеться після першої фіксації сигналу.');
     expect(view.container.querySelector('svg[data-chart="network-activity"]')).toBeNull();
   });
 

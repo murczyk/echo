@@ -1,16 +1,15 @@
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import AddIcon from '@mui/icons-material/Add';
-import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import RemoveIcon from '@mui/icons-material/Remove';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import {
-  Badge,
   Box,
   Button,
   Checkbox,
   Chip,
-  CircularProgress,
   Divider,
   FormControlLabel,
   IconButton,
@@ -38,6 +37,8 @@ import type {
 import { PowerAlert } from '../../../components/PowerAlert';
 import { APP_DATETIME_INPUT_MIN } from '../../../utils/misc';
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
+import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
+import { NetworkDetailsLoadingState } from './NetworkDetailsLoadingState';
 import {
   buildNetworkCallsignRelationsGraphView,
   filterNetworkCallsignRelationEdgeMessages,
@@ -367,14 +368,6 @@ export function NetworkCallsignRelationsPanel({
   const intensitySliderMax = Math.max(maxIntensity, NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
   const legendFreqs = graphView.freqs;
   const denseGraph = visibleNodes.length > 40 || graphView.edges.length > 90 || viewBox.width > layout.bounds.width * 1.6;
-  const activeFilterCount = useMemo(
-    () => {
-      const disabledFreqCount = legendFreqs.filter((freq) => !relationsEnabledFreqs.includes(freq.freq)).length;
-      const minIntensityActive = relationsMinIntensity !== NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY ? 1 : 0;
-      return disabledFreqCount + minIntensityActive;
-    },
-    [legendFreqs, relationsEnabledFreqs, relationsMinIntensity],
-  );
   const relationsDateMin = useMemo(() => dayjs(APP_DATETIME_INPUT_MIN).startOf('day'), []);
   const relationsDateMax = useMemo(() => dayjs().startOf('day'), []);
   const relationsSinceMax = useMemo(() => {
@@ -483,14 +476,14 @@ export function NetworkCallsignRelationsPanel({
   if (relationsError) {
     return (
       <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
+        <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, alignItems: 'center' }}>
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків
           </Typography>
           <PowerAlert severity="error" autoHideDuration={null} sx={{ width: '100%' }}>
             {relationsError}
           </PowerAlert>
-          <Button variant="outlined" onClick={onReload} sx={{ alignSelf: 'flex-start' }}>
+          <Button variant="outlined" onClick={onReload}>
             Спробувати ще раз
           </Button>
         </Stack>
@@ -505,23 +498,7 @@ export function NetworkCallsignRelationsPanel({
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків
           </Typography>
-          <Paper
-            variant="outlined"
-            sx={{
-              minHeight: 360,
-              display: 'grid',
-              placeItems: 'center',
-              bgcolor: graphOverlayBg,
-              borderColor: graphOverlayBorder,
-            }}
-          >
-            <Stack alignItems="center" spacing={1}>
-              <CircularProgress size={24} />
-              <Typography variant="body2" sx={{ color: graphOverlayTextSecondary }}>
-                Завантажуємо граф зв'язків…
-              </Typography>
-            </Stack>
-          </Paper>
+          <NetworkDetailsLoadingState message="Завантажуємо граф зв'язків…" />
         </Stack>
       </Box>
     );
@@ -534,27 +511,17 @@ export function NetworkCallsignRelationsPanel({
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків
           </Typography>
-          <Paper
-            variant="outlined"
-            sx={{
-              minHeight: 360,
-              display: 'grid',
-              placeItems: 'center',
-              bgcolor: graphOverlayBg,
-              borderColor: graphOverlayBorder,
-              px: 3,
-              textAlign: 'center',
-            }}
-          >
-            <Stack spacing={1} alignItems="center">
-              <Typography variant="body2" sx={{ color: graphOverlayTextSecondary }}>
-                Немає даних для графа зв'язків
-              </Typography>
+          <NetworkDetailsEmptyState
+            icon={<AccountTreeOutlinedIcon />}
+            title="Немає графових даних"
+            description="Граф будується після першого зв'язку між позивними."
+            minHeight={360}
+            action={
               <Button variant="outlined" onClick={onReload}>
                 Оновити
               </Button>
-            </Stack>
-          </Paper>
+            }
+          />
         </Stack>
       </Box>
     );
@@ -567,7 +534,7 @@ export function NetworkCallsignRelationsPanel({
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків
           </Typography>
-                  <Typography variant="body2" sx={{ color: graphOverlayTextSecondary, textAlign: 'right' }}>
+          <Typography variant="body2" sx={{ color: graphOverlayTextSecondary, textAlign: 'right' }}>
             {graphCounts.nodes} вузлів · {graphCounts.edges} зв'язків · {totalIntensity} перехоплень
           </Typography>
         </Stack>
@@ -623,43 +590,43 @@ export function NetworkCallsignRelationsPanel({
           </Stack>
 
           <Box sx={{ flexShrink: 0 }}>
-            <Tooltip title="Фільтри">
-              <Badge badgeContent={activeFilterCount} color="error" invisible={activeFilterCount === 0}>
-                <IconButton
-                  id={filterButtonId}
-                  aria-describedby={filterAnchorEl ? filterPopoverId : undefined}
-                  onClick={(event) => setFilterAnchorEl(event.currentTarget)}
-                >
-                  <FilterAltIcon />
-                </IconButton>
-              </Badge>
+            <Tooltip title="Налаштування">
+              <IconButton
+                id={filterButtonId}
+                aria-label="Налаштування"
+                aria-describedby={filterAnchorEl ? filterPopoverId : undefined}
+                onClick={(event) => setFilterAnchorEl(event.currentTarget)}
+              >
+                <SettingsRoundedIcon />
+              </IconButton>
             </Tooltip>
           </Box>
         </Stack>
 
-          <Paper
-            variant="outlined"
+        <Paper
+          variant="outlined"
+          sx={{
+            minHeight: 0,
+            flex: 1,
+            position: 'relative',
+            overflow: 'hidden',
+            borderRadius: 2,
+            borderColor: graphFrameBorder,
+            bgcolor: graphFrameBg,
+            boxShadow: isDarkMode ? 'inset 0 1px 0 rgba(255,255,255,0.03)' : 'inset 0 1px 0 rgba(0,0,0,0.03)',
+          }}
+        >
+          <Box
             sx={{
-              minHeight: 0,
-              flex: 1,
-              position: 'relative',
-              overflow: 'hidden',
-              borderColor: graphFrameBorder,
-              bgcolor: graphFrameBg,
-              boxShadow: isDarkMode ? 'inset 0 1px 0 rgba(255,255,255,0.03)' : 'inset 0 1px 0 rgba(0,0,0,0.03)',
+              position: 'absolute',
+              inset: 0,
+              backgroundImage:
+                `linear-gradient(${graphGridLine} 1px, transparent 1px), linear-gradient(90deg, ${graphGridLine} 1px, transparent 1px)`,
+              backgroundSize: '48px 48px',
+              opacity: isDarkMode ? 0.5 : 0.38,
+              pointerEvents: 'none',
             }}
-          >
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                backgroundImage:
-                  `linear-gradient(${graphGridLine} 1px, transparent 1px), linear-gradient(90deg, ${graphGridLine} 1px, transparent 1px)`,
-                backgroundSize: '48px 48px',
-                opacity: isDarkMode ? 0.5 : 0.38,
-                pointerEvents: 'none',
-              }}
-            />
+          />
 
           <Box
             sx={{
@@ -856,7 +823,9 @@ export function NetworkCallsignRelationsPanel({
                 <Box
                   sx={{
                     width: '100%',
-                    overflow: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
                     borderRadius: 2,
                     bgcolor: graphOverlayBg,
                     border: `1px solid ${graphOverlayBorder}`,
@@ -869,6 +838,7 @@ export function NetworkCallsignRelationsPanel({
                       position: 'relative',
                       pr: selectedNode ? 4.5 : 1.5,
                       borderBottom: selectedEdge || selectedNode ? `1px solid ${graphOverlayBorder}` : 'none',
+                      flexShrink: 0,
                     }}
                   >
                     {selectedEdge ? (
@@ -916,7 +886,7 @@ export function NetworkCallsignRelationsPanel({
                   </Box>
 
                   {(selectedEdge || selectedNode) ? (
-                    <Box sx={{ p: 1.5 }}>
+                    <Box sx={{ p: 1.5, overflow: 'auto', minHeight: 0 }}>
                       {selectedEdge ? (
                         <Stack spacing={1.5}>
                           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -1159,41 +1129,38 @@ export function NetworkCallsignRelationsPanel({
         onClose={() => setFilterAnchorEl(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 2,
+              overflow: 'hidden',
+              bgcolor: graphOverlayBg,
+              border: `1px solid ${graphOverlayBorder}`,
+              boxShadow: graphOverlayShadow,
+            },
+          },
+        }}
       >
-          <Box sx={{ width: 320, p: 2, color: graphOverlayText, bgcolor: graphOverlayBg, border: `1px solid ${graphOverlayBorder}` }}>
-            <Stack spacing={1.5}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                Фільтри
+        <Box sx={{ width: 320, p: 2, color: graphOverlayText }}>
+          <Stack spacing={1.5}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+              Налаштування
             </Typography>
             <Stack spacing={0.75}>
               {legendFreqs.map((freq) => {
                 const enabled = relationsEnabledFreqs.includes(freq.freq);
                 return (
-                  <Box key={freq.freq} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                    <FormControlLabel
-                      control={<Checkbox checked={enabled} onChange={(_, checked) => handleFilterToggle(freq.freq, checked)} />}
-                      label={
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Box sx={{ width: 18, height: 3, borderRadius: 999, bgcolor: freq.color }} />
-                          <span>{freq.freq}</span>
-                        </Stack>
-                      }
-                      sx={{ m: 0, flex: 1 }}
-                    />
-                    <Tooltip title={enabled ? 'Частота вже активна' : 'Очистити частоту'}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleFilterToggle(freq.freq, true)}
-                          disabled={enabled}
-                          aria-label={`Очистити частоту ${freq.freq}`}
-                          data-testid={`clear-freq-${freq.freq}`}
-                        >
-                          <CloseOutlinedIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Box>
+                  <FormControlLabel
+                    key={freq.freq}
+                    control={<Checkbox checked={enabled} onChange={(_, checked) => handleFilterToggle(freq.freq, checked)} />}
+                    label={
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Box sx={{ width: 18, height: 3, borderRadius: 999, bgcolor: freq.color }} />
+                        <span>{freq.freq}</span>
+                      </Stack>
+                    }
+                    sx={{ m: 0 }}
+                  />
                 );
               })}
             </Stack>
@@ -1203,24 +1170,9 @@ export function NetworkCallsignRelationsPanel({
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   Інтенсивність
                 </Typography>
-                <Stack direction="row" alignItems="center" spacing={0.5}>
-                  <Typography variant="caption" sx={{ color: graphOverlayTextSecondary }}>
-                    {relationsMinIntensity}
-                  </Typography>
-                  <Tooltip title="Відновити початкову інтенсивність">
-                    <span>
-                      <IconButton
-                        size="small"
-                        onClick={() => onMinIntensityChange(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY)}
-                        disabled={relationsMinIntensity === NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY}
-                        aria-label="Відновити початкову інтенсивність"
-                        data-testid="clear-min-intensity"
-                      >
-                        <CloseOutlinedIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Stack>
+                <Typography variant="caption" sx={{ color: graphOverlayTextSecondary }}>
+                  {relationsMinIntensity}
+                </Typography>
               </Stack>
               <Slider
                 value={relationsMinIntensity}
@@ -1228,20 +1180,20 @@ export function NetworkCallsignRelationsPanel({
                 max={intensitySliderMax}
                 step={1}
                 track="normal"
-                marks
                 onChange={(_, value) => onMinIntensityChange(Array.isArray(value) ? value[0] ?? NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY : value)}
+                sx={{
+                  '& .MuiSlider-track': {
+                    border: 'none',
+                  },
+                  '& .MuiSlider-rail': {
+                    opacity: 0.38,
+                  },
+                  '& .MuiSlider-mark': {
+                    display: 'none',
+                  },
+                }}
               />
             </Stack>
-            <Button
-              variant="outlined"
-              onClick={() => {
-                onEnabledFreqsChange(legendFreqs.map((freq) => freq.freq));
-                onMinIntensityChange(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
-              }}
-              data-testid="clear-all-filters"
-            >
-              Відновити початкову інтенсивність
-            </Button>
           </Stack>
         </Box>
       </Popover>

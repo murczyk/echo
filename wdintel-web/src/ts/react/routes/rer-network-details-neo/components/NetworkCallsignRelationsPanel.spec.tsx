@@ -109,12 +109,12 @@ describe('NetworkCallsignRelationsPanel', () => {
     vi.clearAllMocks();
   });
 
-  it('shows search clear, badge count, and filter clears', () => {
+  it('shows search clear and settings toggles', () => {
     const view = renderPanel();
     rendered.push(view);
 
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
-    expect(view.container.querySelector('.MuiBadge-badge')?.textContent).toBe('2');
+    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
 
     act(() => {
       view.container.querySelector<HTMLButtonElement>('[aria-label="Очистити пошук"]')?.click();
@@ -126,20 +126,10 @@ describe('NetworkCallsignRelationsPanel', () => {
     });
 
     act(() => {
-      document.body.querySelector<HTMLButtonElement>('[data-testid="clear-freq-852.111"]')?.click();
+      const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      checkboxes[1]?.click();
     });
-    expect(view.props.onEnabledFreqsChange).toHaveBeenLastCalledWith(['652.111', '852.111']);
-
-    act(() => {
-      document.body.querySelector<HTMLButtonElement>('[data-testid="clear-min-intensity"]')?.click();
-    });
-    expect(view.props.onMinIntensityChange).toHaveBeenLastCalledWith(10);
-
-    act(() => {
-      document.body.querySelector<HTMLButtonElement>('[data-testid="clear-all-filters"]')?.click();
-    });
-    expect(view.props.onEnabledFreqsChange).toHaveBeenLastCalledWith(['652.111', '852.111']);
-    expect(view.props.onMinIntensityChange).toHaveBeenLastCalledWith(10);
+    expect(view.props.onEnabledFreqsChange).toHaveBeenLastCalledWith([]);
   });
 
   it('keeps filter controls available when filters hide all graph data', () => {
@@ -159,5 +149,46 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
     expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).not.toBeNull();
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
+  });
+
+  it('shows the shared loading card before relations arrive', () => {
+    const view = renderPanel();
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relations={null}
+          relationsLoaded={false}
+          relationsLoading={true}
+          relationsError={null}
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain('Завантажуємо граф зв\'язків');
+    expect(view.container.textContent).toContain('Граф зв\'язків');
+  });
+
+  it('shows a no-data card before relations arrive', () => {
+    const view = renderPanel();
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relations={null}
+          relationsLoaded={true}
+          relationsLoading={false}
+          relationsError={null}
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain('Немає графових даних');
+    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними.");
+    expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
   });
 });
