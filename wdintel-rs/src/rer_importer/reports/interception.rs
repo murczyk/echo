@@ -638,11 +638,11 @@ fn select_report_message_body(
     full_message: &str,
     keep_full_message: bool,
 ) -> Result<String, AppError> {
-    let body_text = extract_text(full_message)?.body;
-
     if keep_full_message {
-        return Ok(body_text);
+        return Ok(full_message);
     }
+
+    let body_text = extract_text(full_message)?.body;
 
     Ok(eject_body_from_message(body_text.clone()).unwrap_or(body_text))
 }
