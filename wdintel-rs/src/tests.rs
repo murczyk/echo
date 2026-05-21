@@ -87,10 +87,6 @@ pub mod test {
 
     #[ctor]
     fn init_tests() {
-        if std::env::var_os("WDINTEL_RS_INIT_TEST_DB").is_none() {
-            return;
-        }
-
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             init().await;
         });

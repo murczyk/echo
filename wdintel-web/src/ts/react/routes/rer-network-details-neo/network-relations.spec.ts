@@ -90,6 +90,33 @@ describe('network relations helpers', () => {
     expect(graph.visibleNodeIds.has('CHARLIE')).toBe(false);
   });
 
+  it('assigns stable distinct fallback colors beyond the base palette', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(
+      {
+        ...createGraph(),
+        freqs: [
+          { freq: '652.111', enabledByDefault: true },
+          { freq: '852.111', enabledByDefault: true },
+          { freq: '445.500', enabledByDefault: true },
+          { freq: '741.250', enabledByDefault: true },
+          { freq: '159.7400', enabledByDefault: true },
+          { freq: '159.7350', enabledByDefault: true },
+          { freq: '159.7380', enabledByDefault: true },
+          { freq: '159.7375', enabledByDefault: true },
+          { freq: '159.7430', enabledByDefault: true },
+        ],
+      },
+      '',
+      ['652.111', '852.111', '445.500', '741.250', '159.7400', '159.7350', '159.7380', '159.7375', '159.7430'],
+      1,
+    );
+
+    expect(graph.freqs).toHaveLength(9);
+    expect(graph.freqs[0]).toMatchObject({ freq: '652.111', color: '#d59a57' });
+    expect(graph.freqs[8].color).toMatch(/^hsl\(\d+ 68% \d+%\)$/);
+    expect(new Set(graph.freqs.map((freq) => freq.color)).size).toBe(9);
+  });
+
   it('keeps search matches highlighted while preserving visible neighbors', () => {
     const graph = buildNetworkCallsignRelationsGraphView(createGraph(), 'brav', ['652.111', '852.111'], 1);
 
