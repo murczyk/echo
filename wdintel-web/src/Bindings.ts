@@ -2476,7 +2476,6 @@ export type NetworkCallsignRelationNode = {
 export type NetworkCallsignRelationEdgeFreq = {
   freq: string;
   weight: number;
-  messageIds: Array<number>;
 };
 
 export type NetworkCallsignRelationMessagePreview = {

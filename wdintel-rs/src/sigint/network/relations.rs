@@ -51,14 +51,12 @@ struct NodeEnrichment {
 struct EdgeAggregation {
     weight: i64,
     by_freq: BTreeMap<String, EdgeFreqAggregation>,
-    message_ids: BTreeSet<i64>,
     message_previews: Vec<RelationMessage>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct EdgeFreqAggregation {
     weight: i64,
-    message_ids: BTreeSet<i64>,
 }
 
 #[post("/api/sigint/network-callsigns/relations")]
@@ -372,11 +370,9 @@ fn aggregate_network_callsign_relations(
                         .entry((source.clone(), target.clone()))
                         .or_default();
                     edge.weight += 1;
-                    edge.message_ids.insert(message.id);
                     edge.message_previews.push(message.clone());
                     let entry = edge.by_freq.entry(freq.clone()).or_default();
                     entry.weight += 1;
-                    entry.message_ids.insert(message.id);
                 }
             }
         } else {
@@ -389,7 +385,6 @@ fn aggregate_network_callsign_relations(
                         .entry((source.clone(), target.clone()))
                         .or_default();
                     edge.weight += 1;
-                    edge.message_ids.insert(message.id);
                     edge.message_previews.push(message.clone());
                 }
             }
@@ -450,7 +445,6 @@ fn aggregate_network_callsign_relations(
                 .map(|(freq, freq_stats)| NetworkCallsignRelationEdgeFreq {
                     freq,
                     weight: freq_stats.weight,
-                    message_ids: freq_stats.message_ids.into_iter().collect(),
                 })
                 .collect::<Vec<_>>();
             by_freq.sort_by(|left, right| {
@@ -617,7 +611,6 @@ mod tests {
             .unwrap();
         assert_eq!(edge.weight, 1);
         assert_eq!(edge.by_freq[0].freq, "652.111");
-        assert_eq!(edge.by_freq[0].message_ids, vec![1]);
         assert_eq!(edge.messages_preview[0].id, 1);
     }
 

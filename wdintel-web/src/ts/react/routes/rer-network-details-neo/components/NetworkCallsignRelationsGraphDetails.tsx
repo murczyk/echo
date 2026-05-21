@@ -40,7 +40,10 @@ export function NetworkCallsignRelationsGraphDetails({
         zIndex: 3,
         width: { xs: 'calc(100% - 32px)', md: 360 },
         maxHeight: 'calc(100% - 32px)',
+        display: 'flex',
+        flexDirection: 'column',
         alignItems: 'stretch',
+        overflow: 'hidden',
       }}
     >
       <Box
@@ -60,7 +63,7 @@ export function NetworkCallsignRelationsGraphDetails({
           sx={{
             p: 1.5,
             position: 'relative',
-            pr: selectedNode ? 4.5 : 1.5,
+            pr: selectedEdge || selectedNode ? 4.5 : 1.5,
             borderBottom: selectedEdge || selectedNode ? `1px solid ${overlayBorder}` : 'none',
             flexShrink: 0,
           }}
@@ -93,7 +96,20 @@ export function NetworkCallsignRelationsGraphDetails({
               </Typography>
             </Stack>
           )}
-          {selectedNode ? (
+          {selectedEdge ? (
+            <IconButton
+              size="small"
+              onClick={() => onSelectEdgeId(null)}
+              aria-label="Закрити деталі зв'язку"
+              sx={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+              }}
+            >
+              <CloseOutlinedIcon fontSize="small" />
+            </IconButton>
+          ) : selectedNode ? (
             <IconButton
               size="small"
               onClick={() => onSelectNodeId(null)}
@@ -110,7 +126,7 @@ export function NetworkCallsignRelationsGraphDetails({
         </Box>
 
         {(selectedEdge || selectedNode) ? (
-          <Box sx={{ p: 1.5, overflow: 'auto', minHeight: 0 }}>
+          <Box sx={{ p: 1.5, overflow: 'auto', minHeight: 0, flex: 1 }}>
             {selectedEdge ? (
               <Stack spacing={1.5}>
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>

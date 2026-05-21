@@ -42,7 +42,7 @@ function createDenseRelations(): NetworkCallsignRelationsRsp {
       source,
       target,
       weight: 1,
-      byFreq: [{ freq: '652.111', weight: 1, messageIds: [index + 1] }],
+      byFreq: [{ freq: '652.111', weight: 1 }],
       messagesPreview: [],
     };
   });
@@ -77,7 +77,7 @@ function createDenseUiRelations(): NetworkCallsignRelationsRsp {
       source,
       target,
       weight: 1,
-      byFreq: [{ freq: '652.111', weight: 1, messageIds: [index + 1] }],
+      byFreq: [{ freq: '652.111', weight: 1 }],
       messagesPreview: [],
     };
   });
@@ -120,8 +120,8 @@ function createSparseRelations(): NetworkCallsignRelationsRsp {
         target: 'BRAVO',
         weight: 20,
         byFreq: [
-          { freq: '652.111', weight: 12, messageIds: [1, 2] },
-          { freq: '852.111', weight: 8, messageIds: [3] },
+          { freq: '652.111', weight: 12 },
+          { freq: '852.111', weight: 8 },
         ],
         messagesPreview: [
           { id: 1, timestamp: 1, freq: '652.111', text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
@@ -173,8 +173,8 @@ function renderPanel(relations?: NetworkCallsignRelationsRsp | null, overrides: 
           target: 'BRAVO',
           weight: 20,
           byFreq: [
-            { freq: '652.111', weight: 12, messageIds: [1, 2] },
-            { freq: '852.111', weight: 8, messageIds: [3] },
+            { freq: '652.111', weight: 12 },
+            { freq: '852.111', weight: 8 },
           ],
           messagesPreview: [
             { id: 1, timestamp: 1, freq: '652.111', text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
@@ -272,6 +272,24 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
   });
 
+  it('lets the user close an opened relation edge drill-down', () => {
+    const view = renderPanel(undefined, {
+      relationsSelectedEdgeId: 'ALPHA__BRAVO',
+    });
+    rendered.push(view);
+
+    const closeButton = [...view.container.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.getAttribute('aria-label')?.startsWith('Закрити деталі зв'),
+    );
+    expect(closeButton).not.toBeNull();
+
+    act(() => {
+      closeButton?.click();
+    });
+
+    expect(view.props.onSelectEdgeId).toHaveBeenCalledWith(null);
+  });
+
   it('shows the shared loading card before relations arrive', () => {
     const view = renderPanel();
     rendered.push(view);
@@ -313,7 +331,7 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
   });
 
-  it('shows the no-data card for an empty successful graph response', () => {
+  it('keeps the graph shell available when a successful response has no edges', () => {
     const view = renderPanel({
       nodes: [],
       edges: [],
@@ -321,8 +339,33 @@ describe('NetworkCallsignRelationsPanel', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Немає графових даних');
-    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними.");
+    expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
+    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+  });
+
+  it('keeps the graph shell available when relations contain nodes but no edges', () => {
+    const view = renderPanel({
+      nodes: [
+        {
+          id: 'ALPHA',
+          label: 'ALPHA',
+          weight: 1,
+          relationCount: 0,
+          activityCount: 1,
+          position: null,
+          unitName: null,
+          knownCallsignId: null,
+        },
+      ],
+      edges: [],
+      freqs: [{ freq: '652.111', enabledByDefault: true }],
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
+    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
   });
 
   it('keeps the graph visible while refreshing relations', () => {

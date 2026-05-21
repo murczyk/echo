@@ -6436,7 +6436,6 @@ networkCallsignRelationNodeEncoder struct =
 type alias NetworkCallsignRelationEdgeFreq =
     { freq : String
     , weight : Int
-    , messageIds : List (Int)
     }
 
 
@@ -6445,7 +6444,6 @@ networkCallsignRelationEdgeFreqEncoder struct =
     Json.Encode.object
         [ ( "freq", (Json.Encode.string) struct.freq )
         , ( "weight", (Json.Encode.int) struct.weight )
-        , ( "message_ids", (Json.Encode.list (Json.Encode.int)) struct.messageIds )
         ]
 
 
@@ -11670,7 +11668,6 @@ networkCallsignRelationEdgeFreqDecoder =
     Json.Decode.succeed NetworkCallsignRelationEdgeFreq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "weight" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 networkCallsignRelationMessagePreviewDecoder : Json.Decode.Decoder NetworkCallsignRelationMessagePreview

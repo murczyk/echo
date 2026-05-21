@@ -9,7 +9,7 @@ import { buildDistinctColorPalette } from '../shared/distinct-colors';
 
 export type NetworkCallsignRelationsEdgeView = NetworkCallsignRelationEdge & {
   visibleWeight: number;
-  visibleByFreq: Array<{ freq: string; weight: number; messageIds: number[] }>;
+  visibleByFreq: Array<{ freq: string; weight: number }>;
 };
 
 export type NetworkCallsignRelationFreqView = NetworkCallsignRelationFreq & {
@@ -56,9 +56,8 @@ export const NETWORK_RELATIONS_RENDER_LIMITS: NetworkCallsignRelationsRenderLimi
 export function filterNetworkCallsignRelationEdgeMessages(edge: NetworkCallsignRelationsEdgeView | null): NetworkCallsignRelationEdgeMessageView[] {
   if (!edge) return [];
   if (edge.byFreq.length === 0) return edge.messagesPreview;
-  const visibleMessageIds = new Set(edge.visibleByFreq.flatMap((item) => item.messageIds));
   const visibleFreqs = new Set(edge.visibleByFreq.map((item) => item.freq));
-  return edge.messagesPreview.filter((message) => visibleMessageIds.has(message.id) || (message.freq !== null && visibleFreqs.has(message.freq)));
+  return edge.messagesPreview.filter((message) => message.freq !== null && visibleFreqs.has(message.freq));
 }
 
 function normalizeRelationText(value: string | null | undefined): string {
@@ -102,7 +101,6 @@ export function buildNetworkCallsignRelationsGraphView(
       .map((item) => ({
         freq: item.freq,
         weight: item.weight,
-        messageIds: [...item.messageIds],
       }));
     const visibleWeight = edge.byFreq.length === 0 ? edge.weight : visibleByFreq.reduce((total, item) => total + item.weight, 0);
     const visible = visibleWeight >= minIntensity;

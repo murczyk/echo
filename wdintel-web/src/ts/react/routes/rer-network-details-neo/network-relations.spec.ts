@@ -51,8 +51,8 @@ function createGraph(): NetworkCallsignRelationsRsp {
         target: 'BRAVO',
         weight: 3,
         byFreq: [
-          { freq: '652.111', weight: 2, messageIds: [1, 2] },
-          { freq: '852.111', weight: 1, messageIds: [3] },
+          { freq: '652.111', weight: 2 },
+          { freq: '852.111', weight: 1 },
         ],
         messagesPreview: [
           { id: 1, timestamp: 1000, freq: '652.111', text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
@@ -63,7 +63,7 @@ function createGraph(): NetworkCallsignRelationsRsp {
         source: 'BRAVO',
         target: 'CHARLIE',
         weight: 1,
-        byFreq: [{ freq: '852.111', weight: 1, messageIds: [4] }],
+        byFreq: [{ freq: '852.111', weight: 1 }],
         messagesPreview: [
           { id: 4, timestamp: 2000, freq: '852.111', text: 'bravo charlie', callsigns: ['BRAVO', 'CHARLIE'] },
         ],
@@ -174,8 +174,8 @@ describe('network relations helpers', () => {
             target: 'BRAVO',
             weight: 3,
             byFreq: [
-              { freq: '652.111', weight: 2, messageIds: [1, 2] },
-              { freq: '852.111', weight: 1, messageIds: [3] },
+              { freq: '652.111', weight: 2 },
+              { freq: '852.111', weight: 1 },
             ],
             messagesPreview: [],
           },
@@ -251,7 +251,7 @@ describe('network relations helpers', () => {
             source: 'ALPHA',
             target: 'BRAVO',
             weight: 5,
-            byFreq: [{ freq: '652.111', weight: 5, messageIds: [1] }],
+            byFreq: [{ freq: '652.111', weight: 5 }],
             messagesPreview: [],
           },
           {
@@ -259,7 +259,7 @@ describe('network relations helpers', () => {
             source: 'BRAVO',
             target: 'CHARLIE',
             weight: 3,
-            byFreq: [{ freq: '652.111', weight: 3, messageIds: [2] }],
+            byFreq: [{ freq: '652.111', weight: 3 }],
             messagesPreview: [],
           },
           {
@@ -267,7 +267,7 @@ describe('network relations helpers', () => {
             source: 'CHARLIE',
             target: 'DELTA',
             weight: 1,
-            byFreq: [{ freq: '652.111', weight: 1, messageIds: [3] }],
+            byFreq: [{ freq: '652.111', weight: 1 }],
             messagesPreview: [],
           },
         ],
@@ -323,7 +323,7 @@ describe('network relations helpers', () => {
             source: `NODE_${sourceIndex}`,
             target: `NODE_${targetIndex}`,
             weight: 1,
-            byFreq: [{ freq: '652.111', weight: 1, messageIds: [index + 1] }],
+            byFreq: [{ freq: '652.111', weight: 1 }],
             messagesPreview: [],
           };
         }),
@@ -362,7 +362,7 @@ describe('network relations helpers', () => {
             source: `NODE_${sourceIndex}`,
             target: `NODE_${targetIndex}`,
             weight: 1,
-            byFreq: [{ freq: '652.111', weight: 1, messageIds: [index + 1] }],
+            byFreq: [{ freq: '652.111', weight: 1 }],
             messagesPreview: [],
           };
         }),

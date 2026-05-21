@@ -56,7 +56,6 @@ export function NetworkCallsignRelationsPanel({
   onRelationsTillChange,
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
-  const relationsIsEmpty = relations !== null && relations.nodes.length === 0 && relations.edges.length === 0 && relations.freqs.length === 0;
 
   if (relationsError) {
     return (
@@ -89,7 +88,7 @@ export function NetworkCallsignRelationsPanel({
     );
   }
 
-  if (!relations || relationsIsEmpty) {
+  if (!relations) {
     return (
       <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>

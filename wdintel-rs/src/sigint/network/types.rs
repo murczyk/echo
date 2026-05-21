@@ -229,7 +229,6 @@ pub struct NetworkCallsignRelationNode {
 pub struct NetworkCallsignRelationEdgeFreq {
     pub freq: String,
     pub weight: i64,
-    pub message_ids: Vec<i64>,
 }
 
 #[derive(
