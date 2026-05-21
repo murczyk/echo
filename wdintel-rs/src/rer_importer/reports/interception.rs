@@ -670,7 +670,7 @@ fn is_body_line(line: &str) -> bool {
     }
 
     // "- text" / "-- text"
-    if s.starts_with("- ") || s.starts_with("--") {
+    if s.starts_with("- ") || s.starts_with("-- ") {
         return true;
     }
 
