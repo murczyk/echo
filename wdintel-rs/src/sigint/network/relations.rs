@@ -119,8 +119,8 @@ async fn load_network_relation_messages(
     dbx: &DatabaseConnection,
     network_id: i64,
     groups: &[String],
-    since_date_inclusive_ms: Option<i64>,
-    till_date_noninclusive_ms: Option<i64>,
+    since_date_inclusive_ms: i64,
+    till_date_noninclusive_ms: i64,
 ) -> Result<Vec<RelationMessage>, AppError> {
     let mut query = signal_message::Entity::find()
         .select_only()
@@ -155,18 +155,14 @@ async fn load_network_relation_messages(
         .filter(sigint_network::Column::Id.eq(network_id))
         .filter(datasource_group::Column::GroupMasterKey.is_in(groups.to_vec()));
 
-    if let Some(since_date_inclusive_ms) = since_date_inclusive_ms {
-        query = query.filter(
-            sigint_inbox_item::Column::Datetime
-                .gte(dt_from_millis(since_date_inclusive_ms)?),
-        );
-    }
-    if let Some(till_date_noninclusive_ms) = till_date_noninclusive_ms {
-        query = query.filter(
-            sigint_inbox_item::Column::Datetime
-                .lt(dt_from_millis(till_date_noninclusive_ms)?),
-        );
-    }
+    query = query.filter(
+        sigint_inbox_item::Column::Datetime
+            .gte(dt_from_millis(since_date_inclusive_ms)?),
+    );
+    query = query.filter(
+        sigint_inbox_item::Column::Datetime
+            .lt(dt_from_millis(till_date_noninclusive_ms)?),
+    );
 
     let rows = query
         .into_model::<NetworkCallsignRelationMessageRow>()

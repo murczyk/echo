@@ -17,6 +17,7 @@ cd "$repo_root/wdintel-rs"
 if [ "$verbose" = "false" ]; then
     export ECHO_DEV_BACK_REST_ONLY=true
     export RUST_LOG=error,access_log=info
+    server_args+=(--no-bgworker)
 elif [ "$log_sql" = "true" ]; then
     export RUST_LOG=sqlx=trace,seaorm=trace
 fi
@@ -35,14 +36,33 @@ if [ "$verbose" = "false" ]; then
                 line ~ /^error: /
         }
 
+        function is_build_continuation(line) {
+            return line ~ /^[[:space:]]/ ||
+                line ~ /^= note:/ ||
+                line ~ /^= help:/ ||
+                line ~ /^note:/ ||
+                line ~ /^help:/
+        }
+
         {
-            if (is_http_error($0) || is_build_error($0)) {
+            if (is_http_error($0)) {
                 print
-                keep = 1
+                build_keep = 0
                 next
             }
 
-            keep = 0
+            if (is_build_error($0)) {
+                print
+                build_keep = 1
+                next
+            }
+
+            if (build_keep && is_build_continuation($0)) {
+                print
+                next
+            }
+
+            build_keep = 0
         }
     '
 else

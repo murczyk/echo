@@ -205,8 +205,8 @@ pub struct ListNetworkPointsRsp {
 )]
 pub struct NetworkCallsignRelationsReq {
     pub network_id: i64,
-    pub since_date_inclusive_ms: Option<i64>,
-    pub till_date_noninclusive_ms: Option<i64>,
+    pub since_date_inclusive_ms: i64,
+    pub till_date_noninclusive_ms: i64,
 }
 
 #[derive(

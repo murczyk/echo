@@ -2458,8 +2458,8 @@ export type NetworkPoint = {
 
 export type NetworkCallsignRelationsReq = {
   networkId: number;
-  sinceDateInclusiveMs: number | null;
-  tillDateNoninclusiveMs: number | null;
+  sinceDateInclusiveMs: number;
+  tillDateNoninclusiveMs: number;
 };
 
 export type NetworkCallsignRelationNode = {

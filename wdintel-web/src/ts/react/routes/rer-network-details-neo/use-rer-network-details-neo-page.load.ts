@@ -30,7 +30,7 @@ export function useRerNetworkDetailsNeoPageLoad(
 ): {
   reload: () => () => void;
   loadCallsigns: (networkId: number) => Promise<void>;
-  loadRelations: (networkId: number, sinceDateInclusiveMs: number | null, tillDateNoninclusiveMs: number | null) => Promise<void>;
+  loadRelations: (networkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => Promise<void>;
   loadNetworkActivity: (networkId: number) => Promise<void>;
   loadPelengPoints: (networkId: number, activeFrom: number | null, activeTo: number | null) => Promise<void>;
 } {
@@ -109,7 +109,7 @@ export function useRerNetworkDetailsNeoPageLoad(
     }
   }, [reloadGeneration, setState]);
 
-  const loadRelations = useCallback(async (targetNetworkId: number, sinceDateInclusiveMs: number | null, tillDateNoninclusiveMs: number | null) => {
+  const loadRelations = useCallback(async (targetNetworkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => {
     const generation = reloadGeneration.current;
     const requestId = ++relationsLoadRequestIdRef.current;
     const isCurrent = () => reloadGeneration.current === generation && relationsLoadRequestIdRef.current === requestId;

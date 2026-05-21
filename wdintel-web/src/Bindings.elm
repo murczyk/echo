@@ -6393,8 +6393,8 @@ networkPointEncoder struct =
 
 type alias NetworkCallsignRelationsReq =
     { networkId : Int
-    , sinceDateInclusiveMs : Maybe (Int)
-    , tillDateNoninclusiveMs : Maybe (Int)
+    , sinceDateInclusiveMs : Int
+    , tillDateNoninclusiveMs : Int
     }
 
 
@@ -6402,8 +6402,8 @@ networkCallsignRelationsReqEncoder : NetworkCallsignRelationsReq -> Json.Encode.
 networkCallsignRelationsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
-        , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceDateInclusiveMs )
-        , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateNoninclusiveMs )
+        , ( "since_date_inclusive_ms", (Json.Encode.int) struct.sinceDateInclusiveMs )
+        , ( "till_date_noninclusive_ms", (Json.Encode.int) struct.tillDateNoninclusiveMs )
         ]
 
 
@@ -11648,8 +11648,8 @@ networkCallsignRelationsReqDecoder : Json.Decode.Decoder NetworkCallsignRelation
 networkCallsignRelationsReqDecoder =
     Json.Decode.succeed NetworkCallsignRelationsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.int)))
 
 
 networkCallsignRelationNodeDecoder : Json.Decode.Decoder NetworkCallsignRelationNode

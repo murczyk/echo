@@ -155,10 +155,13 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (state.activeNetworkDetailsTab !== 'relations') return;
     if (!relationsDateRangeValid) return;
     if (state.relationsLoaded || state.relationsLoading || state.relationsError !== null) return;
+    const since = parseNetworkDetailsDateInput(state.relationsSince);
+    const till = parseNetworkDetailsDateInputExclusiveEnd(state.relationsTill);
+    if (since === null || till === null) return;
     void loadRelations(
       state.network.id,
-      parseNetworkDetailsDateInput(state.relationsSince),
-      parseNetworkDetailsDateInputExclusiveEnd(state.relationsTill),
+      since,
+      till,
     );
   }, [
     loadRelations,

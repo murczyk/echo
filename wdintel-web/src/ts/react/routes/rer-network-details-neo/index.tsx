@@ -258,10 +258,13 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           relationsSelectedEdgeId={page.relationsSelectedEdgeId}
           onReloadRelations={() => {
             if (page.network) {
+              const since = parseNetworkDetailsDateInput(page.relationsSince);
+              const till = parseNetworkDetailsDateInputExclusiveEnd(page.relationsTill);
+              if (since === null || till === null) return;
               void page.loadRelations(
                 page.network.id,
-                parseNetworkDetailsDateInput(page.relationsSince),
-                parseNetworkDetailsDateInputExclusiveEnd(page.relationsTill),
+                since,
+                till,
               );
             }
           }}
