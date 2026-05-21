@@ -1758,6 +1758,7 @@ export type ReportPreviewReq = {
   reportTagsOnlyThisUnit: boolean | null;
   report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
+  interceptionKeepFullMessage: boolean | null;
   digestOmitExoId: boolean | null;
   digestForm1217: boolean | null;
 };
