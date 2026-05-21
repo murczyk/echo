@@ -98,7 +98,7 @@ export function buildNetworkCallsignRelationsGraphView(
   const adjacencyByNodeId = new Map<string, Set<string>>();
   const edges = (graph?.edges ?? []).map<NetworkCallsignRelationsEdgeView>((edge) => {
     const visibleByFreq = edge.byFreq
-      .filter((item) => enabledFreqSet.size === 0 || enabledFreqSet.has(normalizeEnabledFreq(item.freq)))
+      .filter((item) => enabledFreqSet.has(normalizeEnabledFreq(item.freq)))
       .map((item) => ({
         freq: item.freq,
         weight: item.weight,

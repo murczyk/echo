@@ -137,6 +137,14 @@ describe('network relations helpers', () => {
     expect(filterNetworkCallsignRelationEdgeMessages(edge ?? null).map((message) => message.id)).toEqual([1]);
   });
 
+  it('hides frequency-bucket edges when no frequencies are enabled', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(createGraph(), '', [], 1);
+
+    expect(graph.edges).toHaveLength(0);
+    expect(graph.visibleEdgeIds.size).toBe(0);
+    expect(graph.visibleNodeIds.size).toBe(0);
+  });
+
   it('preserves edge previews when no frequency buckets exist', () => {
     const edge = {
       id: 'ALPHA__BRAVO',
