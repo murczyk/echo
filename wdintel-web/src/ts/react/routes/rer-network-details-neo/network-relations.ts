@@ -39,6 +39,10 @@ export type NetworkCallsignRelationsGraphView = {
   adjacencyByNodeId: Map<string, Set<string>>;
 };
 
+export const NETWORK_RELATIONS_MAX_RENDER_NODES = 250;
+export const NETWORK_RELATIONS_MAX_RENDER_EDGES = 800;
+const NETWORK_RELATIONS_RENDER_SOFT_LIMIT_MULTIPLIER = 2;
+
 export function filterNetworkCallsignRelationEdgeMessages(edge: NetworkCallsignRelationsEdgeView | null): NetworkCallsignRelationEdgeMessageView[] {
   if (!edge) return [];
   const visibleMessageIds = new Set(edge.visibleByFreq.flatMap((item) => item.messageIds));
@@ -166,6 +170,12 @@ export function normalizeNetworkCallsignRelationSearch(value: string): string {
   return normalizeRelationText(value);
 }
 
+export function limitGraphEdgesByWeight(edges: NetworkCallsignRelationsEdgeView[], maxEdges: number): NetworkCallsignRelationsEdgeView[] {
+  return [...edges]
+    .sort((left, right) => right.visibleWeight - left.visibleWeight || left.id.localeCompare(right.id))
+    .slice(0, Math.max(0, maxEdges));
+}
+
 export type RelationGraphViewBox = {
   x: number;
   y: number;
@@ -189,6 +199,10 @@ export type RelationGraphLayout = {
   nodes: RelationGraphLayoutNode[];
   positions: Map<string, { x: number; y: number }>;
   bounds: RelationGraphViewBox;
+};
+
+export type NetworkCallsignRelationsGraphRenderView = NetworkCallsignRelationsGraphView & {
+  warning: boolean;
 };
 
 const MIN_VIEWBOX_SIZE = 900;
@@ -282,6 +296,52 @@ export function createRelationGraphLayout(nodes: NetworkCallsignRelationNode[], 
     nodes: layoutNodes,
     positions: new Map(layoutNodes.map((node) => [node.id, { x: node.x, y: node.y }] as const)),
     bounds,
+  };
+}
+
+export function buildRenderableNetworkCallsignRelationsGraphView(
+  graphView: NetworkCallsignRelationsGraphView,
+  visibleNodes: NetworkCallsignRelationsNodeView[],
+  maxRenderNodes = NETWORK_RELATIONS_MAX_RENDER_NODES,
+  maxRenderEdges = NETWORK_RELATIONS_MAX_RENDER_EDGES,
+): NetworkCallsignRelationsGraphRenderView {
+  if (visibleNodes.length > maxRenderNodes * NETWORK_RELATIONS_RENDER_SOFT_LIMIT_MULTIPLIER || graphView.edges.length > maxRenderEdges * NETWORK_RELATIONS_RENDER_SOFT_LIMIT_MULTIPLIER) {
+    return { ...graphView, nodes: [], edges: [], warning: true };
+  }
+
+  const limitedEdges = graphView.edges.length > maxRenderEdges ? limitGraphEdgesByWeight(graphView.edges, maxRenderEdges) : graphView.edges;
+  if (limitedEdges.length === 0) {
+    return { ...graphView, nodes: [], edges: [], warning: false };
+  }
+
+  const limitedNodeIds = new Set<string>();
+  for (const edge of limitedEdges) {
+    limitedNodeIds.add(edge.source);
+    limitedNodeIds.add(edge.target);
+  }
+
+  const renderNodes = visibleNodes.filter((node) => limitedNodeIds.has(node.id));
+  if (renderNodes.length === 0) {
+    return { ...graphView, nodes: [], edges: [], warning: true };
+  }
+
+  if (renderNodes.length > maxRenderNodes) {
+    return { ...graphView, nodes: [], edges: [], warning: true };
+  }
+
+  if (graphView.matchedNodeIds.size > 0) {
+    for (const matchedNodeId of graphView.matchedNodeIds) {
+      if (!limitedNodeIds.has(matchedNodeId)) {
+        return { ...graphView, nodes: [], edges: [], warning: true };
+      }
+    }
+  }
+
+  return {
+    ...graphView,
+    nodes: renderNodes,
+    edges: limitedEdges,
+    warning: false,
   };
 }
 

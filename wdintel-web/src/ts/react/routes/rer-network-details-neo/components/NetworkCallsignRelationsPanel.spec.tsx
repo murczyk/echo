@@ -5,6 +5,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { NetworkCallsignRelationsRsp } from '../../../../../Bindings';
+
 vi.mock('./NetworkDatePickerField', () => ({
   NetworkDatePickerField: ({ label }: { label: string }) => <div data-testid={`date-picker-${label}`} />,
 }));
@@ -17,13 +19,86 @@ type Rendered = {
   root: Root;
 };
 
-function renderPanel() {
+function createDenseRelations(): NetworkCallsignRelationsRsp {
+  const nodes = Array.from({ length: 251 }, (_, index) => {
+    const id = `NODE_${String(index).padStart(3, '0')}`;
+    return {
+      id,
+      label: id,
+      weight: 1,
+      relationCount: index === 0 || index === 250 ? 1 : 2,
+      activityCount: 1,
+      position: null,
+      unitName: null,
+      knownCallsignId: null,
+    };
+  });
+
+  const edges = Array.from({ length: 250 }, (_, index) => {
+    const source = `NODE_${String(index).padStart(3, '0')}`;
+    const target = `NODE_${String(index + 1).padStart(3, '0')}`;
+    return {
+      id: `${source}__${target}`,
+      source,
+      target,
+      weight: 1,
+      byFreq: [{ freq: '652.111', weight: 1, messageIds: [index + 1] }],
+      messagesPreview: [],
+    };
+  });
+
+  return {
+    nodes,
+    edges,
+    freqs: [{ freq: '652.111', enabledByDefault: true }],
+  };
+}
+
+function createSubsetRelations(): NetworkCallsignRelationsRsp {
+  return {
+    nodes: [
+      {
+        id: 'ALPHA',
+        label: 'ALPHA',
+        weight: 3,
+        relationCount: 801,
+        activityCount: 3,
+        position: null,
+        unitName: null,
+        knownCallsignId: null,
+      },
+      {
+        id: 'BRAVO',
+        label: 'BRAVO',
+        weight: 2,
+        relationCount: 801,
+        activityCount: 2,
+        position: null,
+        unitName: null,
+        knownCallsignId: null,
+      },
+    ],
+    edges: Array.from({ length: 801 }, (_, index) => ({
+      id: `ALPHA__BRAVO__${String(index).padStart(3, '0')}`,
+      source: 'ALPHA',
+      target: 'BRAVO',
+      weight: 801 - index,
+      byFreq: [{ freq: '652.111', weight: 801 - index, messageIds: [index + 1] }],
+      messagesPreview: [],
+    })),
+    freqs: [{ freq: '652.111', enabledByDefault: true }],
+  };
+}
+
+type PanelProps = Parameters<typeof NetworkCallsignRelationsPanel>[0];
+
+function renderPanel(relations?: NetworkCallsignRelationsRsp | null, overrides: Partial<PanelProps> = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  const props = {
-    relations: {
+  const props: PanelProps = {
+    relations: relations ?? {
       nodes: [
         {
           id: 'ALPHA',
@@ -86,7 +161,8 @@ function renderPanel() {
     onSelectEdgeId: vi.fn(),
     onRelationsSinceChange: vi.fn(),
     onRelationsTillChange: vi.fn(),
-  } as const;
+    ...overrides,
+  };
 
   act(() => {
     root.render(<NetworkCallsignRelationsPanel {...(props as any)} />);
@@ -124,6 +200,8 @@ describe('NetworkCallsignRelationsPanel', () => {
     act(() => {
       view.container.querySelector<HTMLButtonElement>('[id$="-filters"]')?.click();
     });
+
+    expect(document.body.querySelector('[aria-label="Закрити налаштування"]')).not.toBeNull();
 
     act(() => {
       const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
@@ -190,5 +268,69 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.textContent).toContain('Немає графових даних');
     expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними.");
     expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
+  });
+
+  it('shows the dense-graph warning while keeping graph controls visible', () => {
+    const view = renderPanel(createDenseRelations(), {
+      relationsSearch: 'node',
+      relationsEnabledFreqs: ['652.111'],
+      relationsMinIntensity: 1,
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain("Забагато зв'язків для відображення");
+    expect(view.container.textContent).toContain('Збільшіть інтенсивність, звузьте період або вимкніть частоти.');
+    expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="date-picker-Від"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="date-picker-До"]')).not.toBeNull();
+  });
+
+  it('shows the subset hint when the graph is trimmed for performance', () => {
+    const view = renderPanel(createSubsetRelations(), {
+      relationsSearch: '',
+      relationsEnabledFreqs: ['652.111'],
+      relationsMinIntensity: 1,
+      relationsShowLabels: true,
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Показано лише найсильніші зв\'язки для швидкодії');
+    expect(view.container.textContent).not.toContain("Забагато зв'язків для відображення");
+  });
+
+  it('turns off labels when dense mode hides them', () => {
+    const view = renderPanel(createDenseRelations(), {
+      relationsSearch: 'node',
+      relationsEnabledFreqs: ['652.111'],
+      relationsMinIntensity: 1,
+      relationsShowLabels: true,
+    });
+    rendered.push(view);
+
+    expect(view.props.onShowLabelsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('restores labels after dense mode clears', () => {
+    const view = renderPanel(createDenseRelations(), {
+      relationsSearch: 'node',
+      relationsEnabledFreqs: ['652.111'],
+      relationsMinIntensity: 1,
+      relationsShowLabels: true,
+    });
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relationsSearch=""
+          relationsMinIntensity={12}
+          relationsShowLabels={false}
+        />,
+      );
+    });
+
+    expect(view.props.onShowLabelsChange).toHaveBeenLastCalledWith(true);
   });
 });

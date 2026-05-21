@@ -117,7 +117,7 @@ export function NetworkCallsignRelationsGraphCanvas({
                 fill={isDarkMode ? 'rgba(255,255,255,0.62)' : '#111111'}
                 fontSize="14"
                 fontWeight="600"
-                style={{ pointerEvents: 'none' }}
+                style={{ pointerEvents: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
               >
                 {getRelationEdgeLabel(edge)}
               </text>
@@ -163,7 +163,7 @@ export function NetworkCallsignRelationsGraphCanvas({
                 fill={isDarkMode ? 'rgba(255,255,255,0.88)' : '#111111'}
                 fontSize="18"
                 fontWeight="700"
-                style={{ pointerEvents: 'none' }}
+                style={{ pointerEvents: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
               >
                 {node.label}
               </text>

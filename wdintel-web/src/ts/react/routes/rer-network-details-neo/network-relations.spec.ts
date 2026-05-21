@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
 import {
   buildNetworkCallsignRelationsGraphView,
+  buildRenderableNetworkCallsignRelationsGraphView,
   filterNetworkCallsignRelationEdgeMessages,
+  limitGraphEdgesByWeight,
   normalizeNetworkCallsignRelationSearch,
 } from './network-relations';
 
@@ -132,5 +134,123 @@ describe('network relations helpers', () => {
     const edge = graph.edges.find((item) => item.id === 'ALPHA__BRAVO');
 
     expect(filterNetworkCallsignRelationEdgeMessages(edge ?? null).map((message) => message.id)).toEqual([1]);
+  });
+
+  it('limits edges by visible weight deterministically', () => {
+    const edges = limitGraphEdgesByWeight(
+      [
+        { id: 'BRAVO__CHARLIE', source: 'BRAVO', target: 'CHARLIE', weight: 1, visibleWeight: 3, visibleByFreq: [], messagesPreview: [], byFreq: [] },
+        { id: 'ALPHA__DELTA', source: 'ALPHA', target: 'DELTA', weight: 1, visibleWeight: 7, visibleByFreq: [], messagesPreview: [], byFreq: [] },
+        { id: 'ALPHA__BRAVO', source: 'ALPHA', target: 'BRAVO', weight: 1, visibleWeight: 7, visibleByFreq: [], messagesPreview: [], byFreq: [] },
+      ] as any,
+      2,
+    );
+
+    expect(edges.map((edge) => edge.id)).toEqual(['ALPHA__BRAVO', 'ALPHA__DELTA']);
+  });
+
+  it('renders a top-weight subset when the graph is only slightly over the edge cap', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(
+      {
+        ...createGraph(),
+        nodes: [
+          ...createGraph().nodes,
+          {
+            id: 'DELTA',
+            label: 'DELTA',
+            weight: 1,
+            relationCount: 1,
+            activityCount: 1,
+            position: null,
+            unitName: null,
+            knownCallsignId: null,
+          },
+        ],
+        edges: [
+          {
+            id: 'ALPHA__BRAVO',
+            source: 'ALPHA',
+            target: 'BRAVO',
+            weight: 5,
+            byFreq: [{ freq: '652.111', weight: 5, messageIds: [1] }],
+            messagesPreview: [],
+          },
+          {
+            id: 'BRAVO__CHARLIE',
+            source: 'BRAVO',
+            target: 'CHARLIE',
+            weight: 3,
+            byFreq: [{ freq: '652.111', weight: 3, messageIds: [2] }],
+            messagesPreview: [],
+          },
+          {
+            id: 'CHARLIE__DELTA',
+            source: 'CHARLIE',
+            target: 'DELTA',
+            weight: 1,
+            byFreq: [{ freq: '652.111', weight: 1, messageIds: [3] }],
+            messagesPreview: [],
+          },
+        ],
+        freqs: [{ freq: '652.111', enabledByDefault: true }],
+      },
+      '',
+      ['652.111'],
+      1,
+    );
+
+    const renderView = buildRenderableNetworkCallsignRelationsGraphView(graph, graph.nodes.filter((node) => node.visible), 4, 2);
+
+    expect(renderView.warning).toBe(false);
+    expect(renderView.edges.map((edge) => edge.id)).toEqual(['ALPHA__BRAVO', 'BRAVO__CHARLIE']);
+    expect(renderView.nodes.map((node) => node.id)).toEqual(['ALPHA', 'BRAVO', 'CHARLIE']);
+  });
+
+  it('warns when the trimmed graph still exceeds the node cap', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(createGraph(), '', ['652.111', '852.111'], 1);
+    const renderView = buildRenderableNetworkCallsignRelationsGraphView(graph, graph.nodes.filter((node) => node.visible), 1, 2);
+
+    expect(renderView.warning).toBe(true);
+    expect(renderView.nodes).toHaveLength(0);
+    expect(renderView.edges).toHaveLength(0);
+  });
+
+  it('warns immediately when the graph is far beyond the soft cap', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(
+      {
+        nodes: Array.from({ length: 170 }, (_, index) => ({
+          id: `NODE_${index}`,
+          label: `NODE_${index}`,
+          weight: 1,
+          relationCount: 1,
+          activityCount: 1,
+          position: null,
+          unitName: null,
+          knownCallsignId: null,
+        })),
+        edges: Array.from({ length: 1700 }, (_, index) => {
+          const sourceIndex = index % 169;
+          const targetIndex = sourceIndex + 1;
+          return {
+            id: `EDGE_${String(index).padStart(4, '0')}`,
+            source: `NODE_${sourceIndex}`,
+            target: `NODE_${targetIndex}`,
+            weight: 1,
+            byFreq: [{ freq: '652.111', weight: 1, messageIds: [index + 1] }],
+            messagesPreview: [],
+          };
+        }),
+        freqs: [{ freq: '652.111', enabledByDefault: true }],
+      },
+      '',
+      ['652.111'],
+      1,
+    );
+
+    const renderView = buildRenderableNetworkCallsignRelationsGraphView(graph, graph.nodes.filter((node) => node.visible), 250, 800);
+
+    expect(renderView.warning).toBe(true);
+    expect(renderView.nodes).toHaveLength(0);
+    expect(renderView.edges).toHaveLength(0);
   });
 });

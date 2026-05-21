@@ -1,6 +1,5 @@
 import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
-import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { Box, FormControlLabel, IconButton, InputAdornment, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -14,9 +13,12 @@ import { NetworkCallsignRelationsGraphStage } from './NetworkCallsignRelationsGr
 import {
   buildRelationNeighborIds,
   buildNetworkCallsignRelationsGraphView,
+  buildRenderableNetworkCallsignRelationsGraphView,
   createRelationGraphLayout,
   filterNetworkCallsignRelationEdgeMessages,
   getRelationEdgeBounds,
+  NETWORK_RELATIONS_MAX_RENDER_EDGES,
+  NETWORK_RELATIONS_MAX_RENDER_NODES,
   intersectsRelationViewBox,
   isPointVisibleInRelationViewBox,
   moveRelationGraphViewBox,
@@ -74,25 +76,37 @@ export function NetworkCallsignRelationsGraph({
   const dragRef = useRef<{ x: number; y: number; viewBox: RelationGraphViewBox } | null>(null);
   const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null);
   const [viewBox, setViewBox] = useState<RelationGraphViewBox>({ x: -450, y: -450, width: 900, height: 900 });
+  const labelsAutoDisabledRef = useRef(false);
 
   const graphView = useMemo(
     () => buildNetworkCallsignRelationsGraphView(relations, relationsSearch, relationsEnabledFreqs, relationsMinIntensity),
     [relations, relationsEnabledFreqs, relationsMinIntensity, relationsSearch],
   );
   const visibleNodes = useMemo(() => graphView.nodes.filter((node) => node.visible), [graphView.nodes]);
-  const layout = useMemo(() => createRelationGraphLayout(visibleNodes, graphView.edges), [graphView.edges, visibleNodes]);
+  const graphTooDense = visibleNodes.length > NETWORK_RELATIONS_MAX_RENDER_NODES || graphView.edges.length > NETWORK_RELATIONS_MAX_RENDER_EDGES;
+  const renderGraphView = useMemo(
+    () =>
+      graphTooDense
+        ? buildRenderableNetworkCallsignRelationsGraphView(graphView, visibleNodes)
+        : { ...graphView, nodes: visibleNodes, edges: graphView.edges, warning: false },
+    [graphTooDense, graphView, visibleNodes],
+  );
+  const layout = useMemo(
+    () => (renderGraphView.warning ? createRelationGraphLayout([], []) : createRelationGraphLayout(renderGraphView.nodes, renderGraphView.edges)),
+    [renderGraphView],
+  );
   const selectedNode = useMemo(
-    () => graphView.nodes.find((node) => node.id === relationsSelectedNodeId) ?? null,
-    [graphView.nodes, relationsSelectedNodeId],
+    () => renderGraphView.nodes.find((node) => node.id === relationsSelectedNodeId) ?? null,
+    [renderGraphView.nodes, relationsSelectedNodeId],
   );
   const selectedEdge = useMemo(
-    () => graphView.edges.find((edge) => edge.id === relationsSelectedEdgeId) ?? null,
-    [graphView.edges, relationsSelectedEdgeId],
+    () => renderGraphView.edges.find((edge) => edge.id === relationsSelectedEdgeId) ?? null,
+    [renderGraphView.edges, relationsSelectedEdgeId],
   );
   const selectedEdgeVisibleMessages = useMemo(() => filterNetworkCallsignRelationEdgeMessages(selectedEdge), [selectedEdge]);
   const selectedNodeEdges = useMemo(
-    () => graphView.edges.filter((edge) => edge.source === relationsSelectedNodeId || edge.target === relationsSelectedNodeId),
-    [graphView.edges, relationsSelectedNodeId],
+    () => renderGraphView.edges.filter((edge) => edge.source === relationsSelectedNodeId || edge.target === relationsSelectedNodeId),
+    [renderGraphView.edges, relationsSelectedNodeId],
   );
   const selectedNeighborIds = useMemo(() => {
     if (selectedNode) {
@@ -114,12 +128,20 @@ export function NetworkCallsignRelationsGraph({
     }),
     [graphView.edges.length, visibleNodes.length],
   );
-  const hasRenderableGraph = graphCounts.nodes > 0 && graphCounts.edges > 0;
-  const totalIntensity = graphView.edges.reduce((total, edge) => total + edge.visibleWeight, 0);
-  const maxIntensity = Math.max(1, ...graphView.edges.map((edge) => edge.visibleWeight));
+  const displayGraphCounts = renderGraphView.warning
+    ? graphCounts
+    : {
+        nodes: renderGraphView.nodes.length,
+        edges: renderGraphView.edges.length,
+      };
+  const graphSubsetHintVisible = graphTooDense && !renderGraphView.warning;
+  const summaryEdges = renderGraphView.warning ? graphView.edges : renderGraphView.edges;
+  const hasRenderableGraph = renderGraphView.nodes.length > 0 && renderGraphView.edges.length > 0;
+  const totalIntensity = summaryEdges.reduce((total, edge) => total + edge.visibleWeight, 0);
+  const maxIntensity = Math.max(1, ...summaryEdges.map((edge) => edge.visibleWeight));
   const intensitySliderMax = Math.max(maxIntensity, NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
   const legendFreqs = graphView.freqs;
-  const denseGraph = visibleNodes.length > 40 || graphView.edges.length > 90 || viewBox.width > layout.bounds.width * 1.6;
+  const denseGraph = renderGraphView.nodes.length > 40 || renderGraphView.edges.length > 90 || viewBox.width > layout.bounds.width * 1.6;
   const relationsDateMin = useMemo(() => dayjs(APP_DATETIME_INPUT_MIN).startOf('day'), []);
   const relationsDateMax = useMemo(() => dayjs().startOf('day'), []);
   const relationsSinceMax = useMemo(() => {
@@ -133,7 +155,7 @@ export function NetworkCallsignRelationsGraph({
   const visibleEdgeIdsForRender = useMemo(() => {
     if (!hasRenderableGraph) return new Set<string>();
     const ids = new Set<string>();
-    for (const edge of graphView.edges) {
+    for (const edge of renderGraphView.edges) {
       const bounds = getRelationEdgeBounds(edge, layout.positions);
       const isSelected = relationsSelectedEdgeId === edge.id;
       const touchesSelectedNode = relationsSelectedNodeId !== null && (edge.source === relationsSelectedNodeId || edge.target === relationsSelectedNodeId);
@@ -142,11 +164,11 @@ export function NetworkCallsignRelationsGraph({
       }
     }
     return ids;
-  }, [graphView.edges, hasRenderableGraph, layout.positions, relationsSelectedEdgeId, relationsSelectedNodeId, viewBox]);
+  }, [hasRenderableGraph, layout.positions, relationsSelectedEdgeId, relationsSelectedNodeId, renderGraphView.edges, viewBox]);
   const visibleNodeIdsForRender = useMemo(() => {
     if (!hasRenderableGraph) return new Set<string>();
     const ids = new Set<string>();
-    for (const node of graphView.nodes) {
+    for (const node of renderGraphView.nodes) {
       if (!node.visible) continue;
       const position = layout.positions.get(node.id);
       if (!position) continue;
@@ -159,11 +181,24 @@ export function NetworkCallsignRelationsGraph({
       }
     }
     return ids;
-  }, [graphView.nodes, hasRenderableGraph, layout.positions, relationsSelectedNodeId, selectedEdge, viewBox]);
+  }, [hasRenderableGraph, layout.positions, relationsSelectedNodeId, renderGraphView.nodes, selectedEdge, viewBox]);
 
   useEffect(() => {
     setViewBox(layout.bounds);
   }, [layout.bounds]);
+
+  useEffect(() => {
+    if (relationsShowLabels && (denseGraph || renderGraphView.warning)) {
+      labelsAutoDisabledRef.current = true;
+      onShowLabelsChange(false);
+      return;
+    }
+
+    if (!relationsShowLabels && labelsAutoDisabledRef.current && !denseGraph && !renderGraphView.warning) {
+      labelsAutoDisabledRef.current = false;
+      onShowLabelsChange(true);
+    }
+  }, [denseGraph, onShowLabelsChange, relationsShowLabels, renderGraphView.warning]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -228,7 +263,7 @@ export function NetworkCallsignRelationsGraph({
             Граф зв'язків
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>
-            {graphCounts.nodes} вузлів · {graphCounts.edges} зв'язків · {totalIntensity} перехоплень
+            {displayGraphCounts.nodes} вузлів · {displayGraphCounts.edges} зв'язків · {totalIntensity} перехоплень
           </Typography>
         </Stack>
 
@@ -282,24 +317,29 @@ export function NetworkCallsignRelationsGraph({
             />
           </Stack>
 
-          <Box sx={{ flexShrink: 0 }}>
-            <Tooltip title="Налаштування">
-              <IconButton
-                id={filterButtonId}
-                aria-label="Налаштування"
-                aria-describedby={filterAnchorEl ? filterPopoverId : undefined}
-                onClick={(event) => setFilterAnchorEl(event.currentTarget)}
-              >
-                <SettingsRoundedIcon />
-              </IconButton>
-            </Tooltip>
+          <Box
+            sx={{
+              flexShrink: 0,
+              minWidth: 0,
+              maxWidth: { xs: 180, sm: 240, md: 320 },
+              textAlign: 'right',
+            }}
+          >
+            {graphSubsetHintVisible ? (
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.35 }}>
+                Показано лише найсильніші зв&apos;язки для швидкодії
+              </Typography>
+            ) : null}
           </Box>
         </Stack>
 
         <NetworkCallsignRelationsGraphStage
           headingId={headingId}
+          filterButtonId={filterButtonId}
+          filterPopoverId={filterPopoverId}
+          filterAnchorEl={filterAnchorEl}
           svgRef={svgRef}
-          graphView={graphView}
+          graphView={renderGraphView}
           layout={layout}
           viewBox={viewBox}
           selectedNodeId={relationsSelectedNodeId}
@@ -314,11 +354,13 @@ export function NetworkCallsignRelationsGraph({
           relationsShowLabels={relationsShowLabels}
           denseGraph={denseGraph}
           graphIsFilteredEmpty={!hasRenderableGraph}
+          graphWarning={renderGraphView.warning}
           legendFreqs={legendFreqs}
           relationsEnabledFreqs={relationsEnabledFreqs}
           relationsMinIntensity={relationsMinIntensity}
           onEnabledFreqsChange={onEnabledFreqsChange}
           onMinIntensityChange={onMinIntensityChange}
+          onOpenFilters={(anchorEl) => setFilterAnchorEl(anchorEl)}
           onSelectNodeId={onSelectNodeId}
           onSelectEdgeId={onSelectEdgeId}
           onPointerDown={handlePointerDown}

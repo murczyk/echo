@@ -1,6 +1,7 @@
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
-import { Box, Button, IconButton, Paper, Stack, Typography } from '@mui/material';
+import { Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
 
@@ -19,6 +20,9 @@ import type {
 
 type Props = {
   headingId: string;
+  filterButtonId: string;
+  filterPopoverId: string;
+  filterAnchorEl: HTMLElement | null;
   svgRef: MutableRefObject<SVGSVGElement | null>;
   graphView: NetworkCallsignRelationsGraphView;
   layout: RelationGraphLayout;
@@ -35,11 +39,13 @@ type Props = {
   relationsShowLabels: boolean;
   denseGraph: boolean;
   graphIsFilteredEmpty: boolean;
+  graphWarning: boolean;
   legendFreqs: NetworkCallsignRelationFreqView[];
   relationsEnabledFreqs: string[];
   relationsMinIntensity: number;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
+  onOpenFilters: (anchorEl: HTMLElement) => void;
   onSelectNodeId: (nodeId: string | null) => void;
   onSelectEdgeId: (edgeId: string | null) => void;
   onPointerDown: (event: ReactPointerEvent<SVGSVGElement>) => void;
@@ -52,6 +58,9 @@ type Props = {
 
 export function NetworkCallsignRelationsGraphStage({
   headingId,
+  filterButtonId,
+  filterPopoverId,
+  filterAnchorEl,
   svgRef,
   graphView,
   layout,
@@ -68,11 +77,13 @@ export function NetworkCallsignRelationsGraphStage({
   relationsShowLabels,
   denseGraph,
   graphIsFilteredEmpty,
+  graphWarning,
   legendFreqs,
   relationsEnabledFreqs,
   relationsMinIntensity,
   onEnabledFreqsChange,
   onMinIntensityChange,
+  onOpenFilters,
   onSelectNodeId,
   onSelectEdgeId,
   onPointerDown,
@@ -203,10 +214,65 @@ export function NetworkCallsignRelationsGraphStage({
           >
             <RemoveIcon sx={{ fontSize: 24 }} />
           </IconButton>
+          <Tooltip title="Налаштування">
+            <IconButton
+              id={filterButtonId}
+              aria-label="Налаштування"
+              aria-describedby={filterAnchorEl ? filterPopoverId : undefined}
+              onClick={(event) => onOpenFilters(event.currentTarget)}
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 0,
+                color: graphZoomControlText,
+                flex: '0 0 44px',
+                minWidth: 44,
+                bgcolor: 'transparent',
+                '&:hover': {
+                  bgcolor: graphZoomControlHoverBg,
+                  color: graphZoomControlText,
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
+                  outlineOffset: -3,
+                },
+                '&:active': {
+                  bgcolor: graphZoomControlHoverBg,
+                  color: graphZoomControlText,
+                },
+                '& .MuiSvgIcon-root': {
+                  color: 'inherit',
+                },
+              }}
+            >
+              <SettingsRoundedIcon sx={{ fontSize: 22 }} />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
 
-      {graphIsFilteredEmpty ? (
+      {graphWarning ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+            display: 'grid',
+            placeItems: 'center',
+            px: 3,
+            textAlign: 'center',
+          }}
+        >
+          <Stack spacing={1} alignItems="center">
+            <Typography variant="h6" sx={{ color: graphOverlayText }}>
+              Забагато зв'язків для відображення
+            </Typography>
+            <Typography variant="body2" sx={{ color: graphOverlayTextSecondary, maxWidth: 480 }}>
+              Збільшіть інтенсивність, звузьте період або вимкніть частоти.
+            </Typography>
+          </Stack>
+        </Box>
+      ) : graphIsFilteredEmpty ? (
         <Box
           sx={{
             position: 'absolute',
