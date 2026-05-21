@@ -29,6 +29,7 @@ chrono-tz = "0.10.4"
 lazy_static = "1.5.0"
 once_cell = "1.21.4"
 regex = "1.12.3"
+pulldown-cmark = "0.13.0"
 tempfile = "3.27.0"
 walkdir = "^2.5.0"
 zip = "4.6.1"
@@ -163,6 +164,7 @@ assets = [
 	[ "../wdintel-web/dist/d3-force-3.0.0/*", "usr/share/echo/d3-force-3.0.0/", "755", ],
 	[ "../wdintel-web/dist/assets/*", "usr/share/echo/assets/", "755", ],
 	[ "../wdintel-web/dist/data/*", "usr/share/echo/data/", "755", ],
+	[ "../wdintel-web/dist/releases/**/*", "usr/share/echo/releases/", "755", ],
 	[ "../wdintel-web/dist/*", "usr/share/echo/dist/", "755", ],
 	[ "../wdintel-web/dist/img/*", "usr/share/echo/img/", "755", ],
 	[ "../wdintel-web/dist/img/google_earth_icons/*", "usr/share/echo/img/google_earth_icons/", "755", ],
