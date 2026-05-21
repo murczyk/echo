@@ -28,6 +28,7 @@ import Shared.Msg exposing (Msg(..))
 import Task
 import TimeZone
 import Url
+import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
 
@@ -82,6 +83,8 @@ init flagsResult _ =
                 Shared.Model.Light
       , location = Nothing
       , serverInfo = Nothing
+      , changelogPreview = Nothing
+      , changelogLastSeen = Nothing
       , masterUnits = NotAsked
       , now = flags.now
       , timeZone = TimeZone.europe__kyiv ()
@@ -96,6 +99,7 @@ init flagsResult _ =
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
         , E.sendCmd <| Api.server_info GotServerInfo
+        , E.sendCmd <| Api.changelog_index GotChangelogIndex
         , E.getUnits MasterUnitsLoadedByApi
             { sortBy = Nothing
             , afterUnitId = Nothing
@@ -103,6 +107,7 @@ init flagsResult _ =
             }
         , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         , E.sendCmd <| Ports.shared_loadThemeMode ()
+        , E.sendCmd <| Ports.shared_loadLastSeenChangelog ()
         ]
     )
 
@@ -184,6 +189,27 @@ update req msg model =
             , E.none
             )
 
+        LastSeenChangelogLoaded value ->
+            let
+                trimmedValue =
+                    String.trim value
+            in
+            ( { model
+                | changelogLastSeen =
+                    if String.isEmpty trimmedValue then
+                        Nothing
+
+                    else
+                        Just trimmedValue
+              }
+            , E.none
+            )
+
+        SaveChangelogLastSeen version ->
+            ( { model | changelogLastSeen = Just version }
+            , E.sendCmd <| Ports.shared_saveLastSeenChangelog version
+            )
+
         TriggerResize ->
             ( model
             , E.sendCmd <| Ports.shared_triggerResize ()
@@ -207,6 +233,34 @@ update req msg model =
 
         GotServerInfo (Ok v) ->
             ( { model | serverInfo = Just v }, E.none )
+
+        GotChangelogIndex (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження changelog" err
+            )
+
+        GotChangelogIndex (Ok releases) ->
+            case List.head releases of
+                Just latestRelease ->
+                    ( model, E.sendCmd <| Api.changelog_latest latestRelease.releaseId GotChangelogLatest )
+
+                Nothing ->
+                    ( model, E.none )
+
+        GotChangelogLatest (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження останнього релізу" err
+            )
+
+        GotChangelogLatest (Ok releasePage) ->
+            let
+                preview =
+                    { version = releasePage.releaseId
+                    , preview = releasePage.headings
+                    , fullUrl = "/updates"
+                    }
+            in
+            ( { model | changelogPreview = Just preview }, E.none )
 
         MasterUnitsLoadedByApi (Err err) ->
             ( { model | masterUnits = Failure err }, E.none )
@@ -458,6 +512,7 @@ subscriptions _ _ =
     Sub.batch
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
+        , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
         ]
 
 

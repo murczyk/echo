@@ -4,6 +4,7 @@ set -euo pipefail
 verbose="${1:-true}"
 log_sql="${2:-false}"
 shift 2 || true
+server_args=()
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -15,6 +16,7 @@ fi
 cd "$repo_root/wdintel-rs"
 if [ "$verbose" = "false" ]; then
     export RUST_LOG=error
+    server_args+=(--no-bgworker)
 elif [ "$log_sql" = "true" ]; then
     export RUST_LOG=sqlx=trace,seaorm=trace
 fi
@@ -22,7 +24,7 @@ fi
 if [ "$verbose" = "false" ]; then
     server_port="${ECHO_SERVER_PORT:-8081}"
     echo "backend is running in silent mode on port ${server_port}, only REST API errors will be shown" >&2
-    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@" 2>&1 | awk '
+    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@" 2>&1 | awk '
         function is_rest_error(line) {
             return line ~ /Internal server error:/ ||
                 line ~ /Service unavailable during shutdown:/ ||
@@ -55,5 +57,5 @@ if [ "$verbose" = "false" ]; then
         }
     '
 else
-    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@"
+    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@"
 fi

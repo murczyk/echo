@@ -19,6 +19,11 @@ import type {
 } from '../../../../Bindings';
 import { APP_TIME_ZONE, NO_DATA_LABEL, formatUtcDateInputValue } from '../../utils/misc';
 import type { NetworkFreqActivityByFreq } from './frequency-utils';
+import {
+  createDefaultNetworkEtalonkaReportState,
+  type NetworkEtalonkaReportState,
+  type NetworkEtalonkaReportType,
+} from './use-rer-network-details-neo-page.etalonka-report';
 import type {
   NetworkCallsignCatalogGroupView,
   NetworkCallsignActivityMap,
@@ -32,6 +37,9 @@ import type {
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+export type { NetworkEtalonkaReportState, NetworkEtalonkaReportType };
+export { createDefaultNetworkEtalonkaReportState };
 
 export type NetworkEditForm = {
   id: number;
@@ -206,6 +214,7 @@ export type NetworkDetailsNeoPageState = {
   freqDeleteTarget: NetworkFreqsRes | null;
   freqDeleteSubmitting: boolean;
   freqDeleteError: string | null;
+  etalonkaReport: NetworkEtalonkaReportState;
   deleteDialogOpen: boolean;
   deleteInProgress: boolean;
   menuAnchorEl: HTMLElement | null;
@@ -331,6 +340,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqDeleteTarget: null,
   freqDeleteSubmitting: false,
   freqDeleteError: null,
+  etalonkaReport: createDefaultNetworkEtalonkaReportState(),
   deleteDialogOpen: false,
   deleteInProgress: false,
   menuAnchorEl: null,

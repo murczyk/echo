@@ -1,6 +1,7 @@
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import SummarizeOutlinedIcon from '@mui/icons-material/SummarizeOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import {
   Box,
@@ -25,6 +26,7 @@ import { NetworkFreqEditDrawer } from './components/NetworkFreqEditDrawer';
 import { NetworkFreqTechDataDrawer } from './components/NetworkFreqTechDataDrawer';
 import { NetworkDescriptionDrawer } from './components/NetworkDescriptionDrawer';
 import { NetworkCallsignDrawer } from './components/NetworkCallsignDrawer';
+import { NetworkEtalonkaReportDialog } from './components/NetworkEtalonkaReportDialog';
 import { NetworkDetailsTabPanel } from './components/NetworkDetailsTabPanel';
 import { NetworkDetailsLeftPanel } from './components/NetworkDetailsLeftPanel';
 import { NetworkEditDrawer } from './components/NetworkEditDrawer';
@@ -113,6 +115,12 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           <Stack direction="row" spacing={1} alignItems="center">
             <EditIcon fontSize="small" />
             <span>Редагувати</span>
+          </Stack>
+        </MenuItem>
+        <MenuItem onClick={page.openEtalonkaReportDialog} disabled={!page.network}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <SummarizeOutlinedIcon fontSize="small" />
+            <span>Завантажити еталонний опис</span>
           </Stack>
         </MenuItem>
         <MenuItem onClick={page.openDeleteDialog} disabled={!page.canDelete || !page.network} sx={{ color: 'error.main' }}>
@@ -399,6 +407,20 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
       >
         {page.freqDeleteError ? <PowerAlert severity="error">{page.freqDeleteError}</PowerAlert> : null}
       </ConfirmDangerDialog>
+
+      <NetworkEtalonkaReportDialog
+        report={page.etalonkaReport}
+        onClose={page.closeEtalonkaReportDialog}
+        onDownload={page.downloadEtalonkaReport}
+        onTypeChange={page.setEtalonkaReportType}
+        onActiveFreqsOnlyChange={page.setEtalonkaReportActiveFreqsOnly}
+        onIncludeSigintSignsChange={page.setEtalonkaReportIncludeSigintSigns}
+        onIncludeConfirmationChange={page.setEtalonkaReportIncludeConfirmation}
+        onIncludeUnitCallsignsChange={page.setEtalonkaReportIncludeUnitCallsigns}
+        onIncludePelengsMapChange={page.setEtalonkaReportIncludePelengsMap}
+        onFromDateTimeStrChange={page.setEtalonkaReportFromDateTimeStr}
+        onToDateTimeStrChange={page.setEtalonkaReportToDateTimeStr}
+      />
     </Box>
   );
 }
