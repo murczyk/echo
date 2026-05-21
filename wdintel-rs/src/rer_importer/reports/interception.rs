@@ -644,7 +644,7 @@ fn select_report_message_body(
 
     let body_text = extract_text(full_message)?.body;
 
-    Ok(eject_body_from_message(body_text.clone()).unwrap_or(body_text))
+    Ok(eject_body_from_message(body_text).unwrap_or(full_message.to_string()))
 }
 
 fn eject_body_from_message(body: String) -> Option<String> {
