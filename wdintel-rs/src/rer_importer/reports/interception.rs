@@ -639,7 +639,7 @@ fn select_report_message_body(
     keep_full_message: bool,
 ) -> Result<String, AppError> {
     if keep_full_message {
-        return Ok(full_message);
+        return Ok(full_message.to_string());
     }
 
     let body_text = extract_text(full_message)?.body;
