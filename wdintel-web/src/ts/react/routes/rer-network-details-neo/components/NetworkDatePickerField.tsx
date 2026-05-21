@@ -60,6 +60,8 @@ export function NetworkDatePickerField({
             return;
           }
 
+          if (!nextValue.isValid()) return;
+
           onChange(nextValue.format('YYYY-MM-DD'));
         }}
         disabled={disabled}

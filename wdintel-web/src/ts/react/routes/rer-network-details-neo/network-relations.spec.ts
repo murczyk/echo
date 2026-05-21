@@ -137,6 +137,24 @@ describe('network relations helpers', () => {
     expect(filterNetworkCallsignRelationEdgeMessages(edge ?? null).map((message) => message.id)).toEqual([1]);
   });
 
+  it('preserves edge previews when no frequency buckets exist', () => {
+    const edge = {
+      id: 'ALPHA__BRAVO',
+      source: 'ALPHA',
+      target: 'BRAVO',
+      weight: 3,
+      visibleWeight: 3,
+      visibleByFreq: [],
+      byFreq: [],
+      messagesPreview: [
+        { id: 1, timestamp: 1000, freq: null, text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
+        { id: 2, timestamp: 1001, freq: null, text: 'alpha bravo again', callsigns: ['ALPHA', 'BRAVO'] },
+      ],
+    } as any;
+
+    expect(filterNetworkCallsignRelationEdgeMessages(edge).map((message) => message.id)).toEqual([1, 2]);
+  });
+
   it('excludes edges when active frequency filters match no buckets', () => {
     const graph = buildNetworkCallsignRelationsGraphView(
       {

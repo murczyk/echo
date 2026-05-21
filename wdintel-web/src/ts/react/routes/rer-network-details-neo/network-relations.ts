@@ -55,6 +55,7 @@ export const NETWORK_RELATIONS_RENDER_LIMITS: NetworkCallsignRelationsRenderLimi
 
 export function filterNetworkCallsignRelationEdgeMessages(edge: NetworkCallsignRelationsEdgeView | null): NetworkCallsignRelationEdgeMessageView[] {
   if (!edge) return [];
+  if (edge.byFreq.length === 0) return edge.messagesPreview;
   const visibleMessageIds = new Set(edge.visibleByFreq.flatMap((item) => item.messageIds));
   const visibleFreqs = new Set(edge.visibleByFreq.map((item) => item.freq));
   return edge.messagesPreview.filter((message) => visibleMessageIds.has(message.id) || (message.freq !== null && visibleFreqs.has(message.freq)));
