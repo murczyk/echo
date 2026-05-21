@@ -1,6 +1,9 @@
 import ReactMarkdown from 'react-markdown';
 
-import { rewriteRelativeMediaUrls } from '../markdown-helpers';
+import {
+  RELEASE_VIDEO_LINK_TITLE,
+  rewriteRelativeMediaUrls,
+} from '../markdown-helpers';
 import { resolveReleaseMediaUrl } from '../releases.service';
 
 interface MarkdownBodyProps {
@@ -45,12 +48,21 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
           />
         ),
         a: ({ node: _node, ...props }) => (
-          <a
-            className="text-[var(--color-primary)] underline"
-            target={props.href?.startsWith('http') ? '_blank' : undefined}
-            rel={props.href?.startsWith('http') ? 'noreferrer' : undefined}
-            {...props}
-          />
+          props.title === RELEASE_VIDEO_LINK_TITLE ? (
+            <video
+              className="w-full rounded border border-[var(--color-border)] bg-black"
+              controls
+              preload="metadata"
+              src={props.href}
+            />
+          ) : (
+            <a
+              className="text-[var(--color-primary)] underline"
+              target={props.href?.startsWith('http') ? '_blank' : undefined}
+              rel={props.href?.startsWith('http') ? 'noreferrer' : undefined}
+              {...props}
+            />
+          )
         ),
       }}
     >

@@ -14,6 +14,7 @@ export interface ParsedRelease {
 }
 
 const FALLBACK_SECTION_ID = 'release-section-top';
+export const RELEASE_VIDEO_LINK_TITLE = '__release_video__';
 
 function splitLinesPreservingFences(markdown: string): Array<{ line: string; inFence: boolean }> {
   const lines = markdown.split('\n');
@@ -98,12 +99,12 @@ const MEDIA_PATTERNS: Array<{
     regex: /\{\{\s*video\(\s*id="([^"]+)"[^)]*\)\s*\}\}/g,
     group: 1,
     rebuild: (_match, resolved) =>
-      `<video src="${resolved}" controls preload="metadata"></video>`,
+      `[Відео](${resolved} "${RELEASE_VIDEO_LINK_TITLE}")`,
   },
   {
     regex: /\{\{\s*(?:img|image)\(\s*id="([^"]+)"[^)]*\)\s*\}\}/g,
     group: 1,
-    rebuild: (_match, resolved) => `<img src="${resolved}" />`,
+    rebuild: (_match, resolved) => `![](${resolved})`,
   },
 ];
 
