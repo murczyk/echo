@@ -49,7 +49,7 @@
     {
       "label": "stop-back-and-front-servers",
       "type": "shell",
-      "command": "bash -lc 'set -euo pipefail; pkill -TERM -f \"cargo watch -- cargo run -- --mode=debug server\" >/dev/null 2>&1 || true; pkill -TERM -f \"elm-land server\" >/dev/null 2>&1 || true; sleep 0.4; for p in 8081 1234; do fuser -k -TERM $p/tcp >/dev/null 2>&1 || true; done; sleep 0.2; for p in 8081 1234; do fuser -k -KILL $p/tcp >/dev/null 2>&1 || true; done'",
+      "command": "bash -lc 'set -euo pipefail; pkill -TERM -f \"cargo watch -- cargo run -- --mode=debug server\" >/dev/null 2>&1 || true; pkill -TERM -f \"elm-land server\" >/dev/null 2>&1 || true; pkill -TERM -f \"dev-py\" >/dev/null 2>&1 || true; sleep 0.4; for p in 8081 1234 5000; do fuser -k -TERM $p/tcp >/dev/null 2>&1 || true; done; sleep 0.2; for p in 8081 1234 5000; do fuser -k -KILL $p/tcp >/dev/null 2>&1 || true; done'",
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
     },
@@ -69,7 +69,7 @@
     {
       "label": "start-back-server", // port 8081
       "type": "shell",
-      "command": "just dev-back",
+      "command": "just dev-back --verbose=false",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": { "panel": "new" }
