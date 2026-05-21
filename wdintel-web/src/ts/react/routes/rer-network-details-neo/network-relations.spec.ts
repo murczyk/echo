@@ -4,7 +4,6 @@ import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
 import {
   buildNetworkCallsignRelationsGraphView,
   buildRenderableNetworkCallsignRelationsGraphView,
-  filterNetworkCallsignRelationEdgeMessages,
   limitGraphEdgesByWeight,
   normalizeNetworkCallsignRelationSearch,
   NETWORK_RELATIONS_RENDER_LIMITS,
@@ -54,9 +53,6 @@ function createGraph(): NetworkCallsignRelationsRsp {
           { freq: '652.111', weight: 2 },
           { freq: '852.111', weight: 1 },
         ],
-        messagesPreview: [
-          { id: 1, timestamp: 1000, freq: '652.111', text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
-        ],
       },
       {
         id: 'BRAVO__CHARLIE',
@@ -64,9 +60,6 @@ function createGraph(): NetworkCallsignRelationsRsp {
         target: 'CHARLIE',
         weight: 1,
         byFreq: [{ freq: '852.111', weight: 1 }],
-        messagesPreview: [
-          { id: 4, timestamp: 2000, freq: '852.111', text: 'bravo charlie', callsigns: ['BRAVO', 'CHARLIE'] },
-        ],
       },
     ],
     freqs: [
@@ -130,37 +123,12 @@ describe('network relations helpers', () => {
     expect(graph.visibleNodeIds.has('CHARLIE')).toBe(true);
   });
 
-  it('filters edge previews to currently visible frequencies', () => {
-    const graph = buildNetworkCallsignRelationsGraphView(createGraph(), '', ['652.111'], 1);
-    const edge = graph.edges.find((item) => item.id === 'ALPHA__BRAVO');
-
-    expect(filterNetworkCallsignRelationEdgeMessages(edge ?? null).map((message) => message.id)).toEqual([1]);
-  });
-
   it('hides frequency-bucket edges when no frequencies are enabled', () => {
     const graph = buildNetworkCallsignRelationsGraphView(createGraph(), '', [], 1);
 
     expect(graph.edges).toHaveLength(0);
     expect(graph.visibleEdgeIds.size).toBe(0);
     expect(graph.visibleNodeIds.size).toBe(0);
-  });
-
-  it('preserves edge previews when no frequency buckets exist', () => {
-    const edge = {
-      id: 'ALPHA__BRAVO',
-      source: 'ALPHA',
-      target: 'BRAVO',
-      weight: 3,
-      visibleWeight: 3,
-      visibleByFreq: [],
-      byFreq: [],
-      messagesPreview: [
-        { id: 1, timestamp: 1000, freq: null, text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
-        { id: 2, timestamp: 1001, freq: null, text: 'alpha bravo again', callsigns: ['ALPHA', 'BRAVO'] },
-      ],
-    } as any;
-
-    expect(filterNetworkCallsignRelationEdgeMessages(edge).map((message) => message.id)).toEqual([1, 2]);
   });
 
   it('excludes edges when active frequency filters match no buckets', () => {
@@ -177,7 +145,6 @@ describe('network relations helpers', () => {
               { freq: '652.111', weight: 2 },
               { freq: '852.111', weight: 1 },
             ],
-            messagesPreview: [],
           },
         ],
       },
@@ -201,7 +168,6 @@ describe('network relations helpers', () => {
             target: 'BRAVO',
             weight: 3,
             byFreq: [],
-            messagesPreview: [],
           },
         ],
       },
@@ -218,9 +184,9 @@ describe('network relations helpers', () => {
   it('limits edges by visible weight deterministically', () => {
     const edges = limitGraphEdgesByWeight(
       [
-        { id: 'BRAVO__CHARLIE', source: 'BRAVO', target: 'CHARLIE', weight: 1, visibleWeight: 3, visibleByFreq: [], messagesPreview: [], byFreq: [] },
-        { id: 'ALPHA__DELTA', source: 'ALPHA', target: 'DELTA', weight: 1, visibleWeight: 7, visibleByFreq: [], messagesPreview: [], byFreq: [] },
-        { id: 'ALPHA__BRAVO', source: 'ALPHA', target: 'BRAVO', weight: 1, visibleWeight: 7, visibleByFreq: [], messagesPreview: [], byFreq: [] },
+        { id: 'BRAVO__CHARLIE', source: 'BRAVO', target: 'CHARLIE', weight: 1, visibleWeight: 3, visibleByFreq: [], byFreq: [] },
+        { id: 'ALPHA__DELTA', source: 'ALPHA', target: 'DELTA', weight: 1, visibleWeight: 7, visibleByFreq: [], byFreq: [] },
+        { id: 'ALPHA__BRAVO', source: 'ALPHA', target: 'BRAVO', weight: 1, visibleWeight: 7, visibleByFreq: [], byFreq: [] },
       ] as any,
       2,
     );
@@ -252,7 +218,6 @@ describe('network relations helpers', () => {
             target: 'BRAVO',
             weight: 5,
             byFreq: [{ freq: '652.111', weight: 5 }],
-            messagesPreview: [],
           },
           {
             id: 'BRAVO__CHARLIE',
@@ -260,7 +225,6 @@ describe('network relations helpers', () => {
             target: 'CHARLIE',
             weight: 3,
             byFreq: [{ freq: '652.111', weight: 3 }],
-            messagesPreview: [],
           },
           {
             id: 'CHARLIE__DELTA',
@@ -268,7 +232,6 @@ describe('network relations helpers', () => {
             target: 'DELTA',
             weight: 1,
             byFreq: [{ freq: '652.111', weight: 1 }],
-            messagesPreview: [],
           },
         ],
         freqs: [{ freq: '652.111', enabledByDefault: true }],
@@ -305,7 +268,7 @@ describe('network relations helpers', () => {
   it('warns immediately when the graph is far beyond the soft cap', () => {
     const graph = buildNetworkCallsignRelationsGraphView(
       {
-        nodes: Array.from({ length: 170 }, (_, index) => ({
+        nodes: Array.from({ length: 601 }, (_, index) => ({
           id: `NODE_${index}`,
           label: `NODE_${index}`,
           weight: 1,
@@ -315,8 +278,8 @@ describe('network relations helpers', () => {
           unitName: null,
           knownCallsignId: null,
         })),
-        edges: Array.from({ length: 1700 }, (_, index) => {
-          const sourceIndex = index % 169;
+        edges: Array.from({ length: 600 }, (_, index) => {
+          const sourceIndex = index % 600;
           const targetIndex = sourceIndex + 1;
           return {
             id: `EDGE_${String(index).padStart(4, '0')}`,
@@ -324,7 +287,6 @@ describe('network relations helpers', () => {
             target: `NODE_${targetIndex}`,
             weight: 1,
             byFreq: [{ freq: '652.111', weight: 1 }],
-            messagesPreview: [],
           };
         }),
         freqs: [{ freq: '652.111', enabledByDefault: true }],
@@ -363,7 +325,6 @@ describe('network relations helpers', () => {
             target: `NODE_${targetIndex}`,
             weight: 1,
             byFreq: [{ freq: '652.111', weight: 1 }],
-            messagesPreview: [],
           };
         }),
         freqs: [{ freq: '652.111', enabledByDefault: true }],

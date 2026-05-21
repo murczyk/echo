@@ -234,24 +234,12 @@ pub struct NetworkCallsignRelationEdgeFreq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct NetworkCallsignRelationMessagePreview {
-    pub id: i64,
-    pub timestamp: Option<i64>,
-    pub freq: Option<String>,
-    pub text: String,
-    pub callsigns: Vec<String>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
 pub struct NetworkCallsignRelationEdge {
     pub id: String,
     pub source: String,
     pub target: String,
     pub weight: i64,
     pub by_freq: Vec<NetworkCallsignRelationEdgeFreq>,
-    pub messages_preview: Vec<NetworkCallsignRelationMessagePreview>,
 }
 
 #[derive(

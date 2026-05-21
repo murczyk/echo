@@ -31,7 +31,6 @@ type Props = {
   selectedEdgeId: string | null;
   selectedNode: NetworkCallsignRelationsNodeView | null;
   selectedEdge: NetworkCallsignRelationsEdgeView | null;
-  selectedEdgeVisibleMessages: Array<{ id: number; timestamp: number | null; freq: string | null; text: string; callsigns: string[] }>;
   selectedNodeEdges: NetworkCallsignRelationsEdgeView[];
   selectedNeighborIds: Set<string>;
   visibleEdgeIdsForRender: Set<string>;
@@ -70,7 +69,6 @@ export function NetworkCallsignRelationsGraphStage({
   selectedEdgeId,
   selectedNode,
   selectedEdge,
-  selectedEdgeVisibleMessages,
   selectedNodeEdges,
   selectedNeighborIds,
   visibleEdgeIdsForRender,
@@ -370,10 +368,9 @@ export function NetworkCallsignRelationsGraphStage({
           </Box>
 
           <NetworkCallsignRelationsGraphDetails
-            selectedNode={selectedNode}
-            selectedEdge={selectedEdge}
-            selectedEdgeVisibleMessages={selectedEdgeVisibleMessages}
-            selectedNodeEdges={selectedNodeEdges}
+          selectedNode={selectedNode}
+          selectedEdge={selectedEdge}
+          selectedNodeEdges={selectedNodeEdges}
             selectedEdgeId={selectedEdgeId}
             overlayBorder={graphOverlayBorder}
             overlayTextSecondary={graphOverlayTextSecondary}

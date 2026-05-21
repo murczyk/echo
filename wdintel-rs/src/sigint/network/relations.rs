@@ -51,7 +51,6 @@ struct NodeEnrichment {
 struct EdgeAggregation {
     weight: i64,
     by_freq: BTreeMap<String, EdgeFreqAggregation>,
-    message_previews: Vec<RelationMessage>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -370,7 +369,6 @@ fn aggregate_network_callsign_relations(
                         .entry((source.clone(), target.clone()))
                         .or_default();
                     edge.weight += 1;
-                    edge.message_previews.push(message.clone());
                     let entry = edge.by_freq.entry(freq.clone()).or_default();
                     entry.weight += 1;
                 }
@@ -385,7 +383,6 @@ fn aggregate_network_callsign_relations(
                         .entry((source.clone(), target.clone()))
                         .or_default();
                     edge.weight += 1;
-                    edge.message_previews.push(message.clone());
                 }
             }
         }
@@ -453,35 +450,12 @@ fn aggregate_network_callsign_relations(
                     .cmp(&left.weight)
                     .then_with(|| left.freq.cmp(&right.freq))
             });
-            let mut messages_preview = edge.message_previews;
-            messages_preview.sort_by(|left, right| {
-                right
-                    .timestamp
-                    .unwrap_or_default()
-                    .cmp(&left.timestamp.unwrap_or_default())
-                    .then_with(|| right.id.cmp(&left.id))
-            });
-            messages_preview.dedup_by(|left, right| left.id == right.id);
-            if messages_preview.len() > 5 {
-                messages_preview.truncate(5);
-            }
-
             NetworkCallsignRelationEdge {
                 id: edge_id(&source, &target),
                 source,
                 target,
                 weight: edge.weight,
                 by_freq,
-                messages_preview: messages_preview
-                    .into_iter()
-                    .map(|message| NetworkCallsignRelationMessagePreview {
-                        id: message.id,
-                        timestamp: message.timestamp,
-                        freq: message.freq,
-                        text: message.text,
-                        callsigns: message.callsigns,
-                    })
-                    .collect(),
             }
         })
         .collect::<Vec<_>>();
@@ -611,7 +585,6 @@ mod tests {
             .unwrap();
         assert_eq!(edge.weight, 1);
         assert_eq!(edge.by_freq[0].freq, "652.111");
-        assert_eq!(edge.messages_preview[0].id, 1);
     }
 
     #[test]

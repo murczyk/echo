@@ -6447,33 +6447,12 @@ networkCallsignRelationEdgeFreqEncoder struct =
         ]
 
 
-type alias NetworkCallsignRelationMessagePreview =
-    { id : Int
-    , timestamp : Maybe (Int)
-    , freq : Maybe (String)
-    , text : String
-    , callsigns : List (String)
-    }
-
-
-networkCallsignRelationMessagePreviewEncoder : NetworkCallsignRelationMessagePreview -> Json.Encode.Value
-networkCallsignRelationMessagePreviewEncoder struct =
-    Json.Encode.object
-        [ ( "id", (Json.Encode.int) struct.id )
-        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
-        , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
-        , ( "text", (Json.Encode.string) struct.text )
-        , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
-        ]
-
-
 type alias NetworkCallsignRelationEdge =
     { id : String
     , source : String
     , target : String
     , weight : Int
     , byFreq : List (NetworkCallsignRelationEdgeFreq)
-    , messagesPreview : List (NetworkCallsignRelationMessagePreview)
     }
 
 
@@ -6485,7 +6464,6 @@ networkCallsignRelationEdgeEncoder struct =
         , ( "target", (Json.Encode.string) struct.target )
         , ( "weight", (Json.Encode.int) struct.weight )
         , ( "by_freq", (Json.Encode.list (networkCallsignRelationEdgeFreqEncoder)) struct.byFreq )
-        , ( "messages_preview", (Json.Encode.list (networkCallsignRelationMessagePreviewEncoder)) struct.messagesPreview )
         ]
 
 
@@ -11670,16 +11648,6 @@ networkCallsignRelationEdgeFreqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "weight" (Json.Decode.int)))
 
 
-networkCallsignRelationMessagePreviewDecoder : Json.Decode.Decoder NetworkCallsignRelationMessagePreview
-networkCallsignRelationMessagePreviewDecoder =
-    Json.Decode.succeed NetworkCallsignRelationMessagePreview
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
-
-
 networkCallsignRelationEdgeDecoder : Json.Decode.Decoder NetworkCallsignRelationEdge
 networkCallsignRelationEdgeDecoder =
     Json.Decode.succeed NetworkCallsignRelationEdge
@@ -11688,7 +11656,6 @@ networkCallsignRelationEdgeDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "target" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "weight" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "by_freq" (Json.Decode.list (networkCallsignRelationEdgeFreqDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages_preview" (Json.Decode.list (networkCallsignRelationMessagePreviewDecoder))))
 
 
 networkCallsignRelationFreqDecoder : Json.Decode.Decoder NetworkCallsignRelationFreq

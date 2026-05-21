@@ -2478,21 +2478,12 @@ export type NetworkCallsignRelationEdgeFreq = {
   weight: number;
 };
 
-export type NetworkCallsignRelationMessagePreview = {
-  id: number;
-  timestamp: number | null;
-  freq: string | null;
-  text: string;
-  callsigns: Array<string>;
-};
-
 export type NetworkCallsignRelationEdge = {
   id: string;
   source: string;
   target: string;
   weight: number;
   byFreq: Array<NetworkCallsignRelationEdgeFreq>;
-  messagesPreview: Array<NetworkCallsignRelationMessagePreview>;
 };
 
 export type NetworkCallsignRelationFreq = {

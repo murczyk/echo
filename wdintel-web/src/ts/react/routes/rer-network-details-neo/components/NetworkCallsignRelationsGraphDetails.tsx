@@ -1,17 +1,14 @@
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import { Box, Chip, Divider, IconButton, Paper, Stack, Typography } from '@mui/material';
 
-import {
-  filterNetworkCallsignRelationEdgeMessages,
-  type NetworkCallsignRelationsEdgeView,
-  type NetworkCallsignRelationsNodeView,
-  type NetworkCallsignRelationEdgeMessageView,
+import type {
+  NetworkCallsignRelationsEdgeView,
+  NetworkCallsignRelationsNodeView,
 } from '../network-relations';
 
 type Props = {
   selectedNode: NetworkCallsignRelationsNodeView | null;
   selectedEdge: NetworkCallsignRelationsEdgeView | null;
-  selectedEdgeVisibleMessages: NetworkCallsignRelationEdgeMessageView[];
   selectedNodeEdges: NetworkCallsignRelationsEdgeView[];
   selectedEdgeId: string | null;
   overlayBorder: string;
@@ -23,7 +20,6 @@ type Props = {
 export function NetworkCallsignRelationsGraphDetails({
   selectedNode,
   selectedEdge,
-  selectedEdgeVisibleMessages,
   selectedNodeEdges,
   selectedEdgeId,
   overlayBorder,
@@ -92,7 +88,7 @@ export function NetworkCallsignRelationsGraphDetails({
                 Виберіть вузол або зв'язок
               </Typography>
               <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
-                Підсвітка сусідів і перехоплень з'явиться тут
+                Підсвітка сусідів з'явиться тут
               </Typography>
             </Stack>
           )}
@@ -135,41 +131,9 @@ export function NetworkCallsignRelationsGraphDetails({
                   ))}
                 </Stack>
                 <Divider sx={{ borderColor: overlayBorder }} />
-                <Stack spacing={1}>
-                  {selectedEdgeVisibleMessages.map((message) => (
-                    <Paper
-                      key={message.id}
-                      variant="outlined"
-                      sx={{
-                        p: 1,
-                        bgcolor: 'rgba(255,255,255,0.02)',
-                        borderColor: overlayBorder,
-                      }}
-                    >
-                      <Stack spacing={0.5}>
-                        <Stack direction="row" justifyContent="space-between" spacing={1}>
-                          <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
-                            #{message.id}
-                          </Typography>
-                          <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
-                            {message.freq ?? 'без частоти'}
-                          </Typography>
-                        </Stack>
-                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
-                          {message.text || 'Без тексту'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
-                          {message.callsigns.join(' · ')}
-                        </Typography>
-                      </Stack>
-                    </Paper>
-                  ))}
-                  {selectedEdgeVisibleMessages.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: overlayTextSecondary }}>
-                      Немає перехоплень у поточних фільтрах
-                    </Typography>
-                  ) : null}
-                </Stack>
+                <Typography variant="body2" sx={{ color: overlayTextSecondary }}>
+                  Зв'язок побудовано за перехопленнями та частотами.
+                </Typography>
               </Stack>
             ) : selectedNode ? (
               <Stack spacing={1.5}>
@@ -190,8 +154,6 @@ export function NetworkCallsignRelationsGraphDetails({
                   ) : (
                     selectedNodeEdges.map((edge) => {
                       const partner = edge.source === selectedNode.id ? edge.target : edge.source;
-                      const topFreq = edge.visibleByFreq[0];
-                      const visiblePreview = filterNetworkCallsignRelationEdgeMessages(edge)[0];
                       return (
                         <Paper
                           key={edge.id}
@@ -218,11 +180,6 @@ export function NetworkCallsignRelationsGraphDetails({
                                 <Chip key={item.freq} size="small" label={`${item.freq} · ${item.weight}`} sx={{ bgcolor: 'rgba(255,255,255,0.06)' }} />
                               ))}
                             </Stack>
-                            {topFreq && visiblePreview ? (
-                              <Typography variant="caption" sx={{ color: overlayTextSecondary }} noWrap title={visiblePreview.text ?? ''}>
-                                {visiblePreview.text || 'Без тексту'}
-                              </Typography>
-                            ) : null}
                           </Stack>
                         </Paper>
                       );

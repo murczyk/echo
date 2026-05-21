@@ -20,13 +20,13 @@ type Rendered = {
 };
 
 function createDenseRelations(): NetworkCallsignRelationsRsp {
-  const nodes = Array.from({ length: 251 }, (_, index) => {
+  const nodes = Array.from({ length: 301 }, (_, index) => {
     const id = `NODE_${String(index).padStart(3, '0')}`;
     return {
       id,
       label: id,
       weight: 1,
-      relationCount: index === 0 || index === 250 ? 1 : 2,
+      relationCount: index === 0 || index === 300 ? 1 : 2,
       activityCount: 1,
       position: null,
       unitName: null,
@@ -34,7 +34,7 @@ function createDenseRelations(): NetworkCallsignRelationsRsp {
     };
   });
 
-  const edges = Array.from({ length: 250 }, (_, index) => {
+  const edges = Array.from({ length: 300 }, (_, index) => {
     const source = `NODE_${String(index).padStart(3, '0')}`;
     const target = `NODE_${String(index + 1).padStart(3, '0')}`;
     return {
@@ -43,7 +43,6 @@ function createDenseRelations(): NetworkCallsignRelationsRsp {
       target,
       weight: 1,
       byFreq: [{ freq: '652.111', weight: 1 }],
-      messagesPreview: [],
     };
   });
 
@@ -78,7 +77,6 @@ function createDenseUiRelations(): NetworkCallsignRelationsRsp {
       target,
       weight: 1,
       byFreq: [{ freq: '652.111', weight: 1 }],
-      messagesPreview: [],
     };
   });
 
@@ -122,9 +120,6 @@ function createSparseRelations(): NetworkCallsignRelationsRsp {
         byFreq: [
           { freq: '652.111', weight: 12 },
           { freq: '852.111', weight: 8 },
-        ],
-        messagesPreview: [
-          { id: 1, timestamp: 1, freq: '652.111', text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
         ],
       },
     ],
@@ -175,9 +170,6 @@ function renderPanel(relations?: NetworkCallsignRelationsRsp | null, overrides: 
           byFreq: [
             { freq: '652.111', weight: 12 },
             { freq: '852.111', weight: 8 },
-          ],
-          messagesPreview: [
-            { id: 1, timestamp: 1, freq: '652.111', text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
           ],
         },
       ],

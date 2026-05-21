@@ -21,14 +21,6 @@ export type NetworkCallsignRelationsNodeView = NetworkCallsignRelationNode & {
   visible: boolean;
 };
 
-export type NetworkCallsignRelationEdgeMessageView = {
-  id: number;
-  timestamp: number | null;
-  freq: string | null;
-  text: string;
-  callsigns: string[];
-};
-
 export type NetworkCallsignRelationsGraphView = {
   nodes: NetworkCallsignRelationsNodeView[];
   edges: NetworkCallsignRelationsEdgeView[];
@@ -48,17 +40,10 @@ type NetworkCallsignRelationsRenderLimits = {
 // These are pragmatic browser-performance guardrails for the force layout and SVG rendering path.
 // The soft multiplier delays the warning state until the graph is well beyond the hard cap.
 export const NETWORK_RELATIONS_RENDER_LIMITS: NetworkCallsignRelationsRenderLimits = {
-  maxRenderNodes: 250,
-  maxRenderEdges: 800,
+  maxRenderNodes: 300,
+  maxRenderEdges: 1000,
   softLimitMultiplier: 2,
 };
-
-export function filterNetworkCallsignRelationEdgeMessages(edge: NetworkCallsignRelationsEdgeView | null): NetworkCallsignRelationEdgeMessageView[] {
-  if (!edge) return [];
-  if (edge.byFreq.length === 0) return edge.messagesPreview;
-  const visibleFreqs = new Set(edge.visibleByFreq.map((item) => item.freq));
-  return edge.messagesPreview.filter((message) => message.freq !== null && visibleFreqs.has(message.freq));
-}
 
 function normalizeRelationText(value: string | null | undefined): string {
   return (value?.trim() ?? '').toLocaleUpperCase('uk-UA');

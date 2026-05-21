@@ -16,7 +16,6 @@ import {
   buildNetworkCallsignRelationsGraphView,
   buildRenderableNetworkCallsignRelationsGraphView,
   createRelationGraphLayout,
-  filterNetworkCallsignRelationEdgeMessages,
   getRelationEdgeBounds,
   NETWORK_RELATIONS_RENDER_LIMITS,
   intersectsRelationViewBox,
@@ -106,7 +105,6 @@ export function NetworkCallsignRelationsGraph({
     () => renderGraphView.edges.find((edge) => edge.id === relationsSelectedEdgeId) ?? null,
     [renderGraphView.edges, relationsSelectedEdgeId],
   );
-  const selectedEdgeVisibleMessages = useMemo(() => filterNetworkCallsignRelationEdgeMessages(selectedEdge), [selectedEdge]);
   const selectedNodeEdges = useMemo(
     () => renderGraphView.edges.filter((edge) => edge.source === relationsSelectedNodeId || edge.target === relationsSelectedNodeId),
     [renderGraphView.edges, relationsSelectedNodeId],
@@ -356,7 +354,6 @@ export function NetworkCallsignRelationsGraph({
           selectedEdgeId={relationsSelectedEdgeId}
           selectedNode={selectedNode}
           selectedEdge={selectedEdge}
-          selectedEdgeVisibleMessages={selectedEdgeVisibleMessages}
           selectedNodeEdges={selectedNodeEdges}
           selectedNeighborIds={selectedNeighborIds}
           visibleEdgeIdsForRender={visibleEdgeIdsForRender}
