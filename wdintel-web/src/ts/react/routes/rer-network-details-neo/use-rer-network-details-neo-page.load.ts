@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
+import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
 
 import { listAors } from '../../services/api/aor';
 import { getNetworkById, getNetworkCallsignRelations, getNetworkGroupsActivityOne, listNetworkPoints } from '../../services/api/networks';
@@ -12,6 +13,8 @@ import {
   EMPTY_STATE,
   getDefaultNetworkRelationsDateRange,
   formatErrorMessage,
+  parseNetworkDetailsDateInput,
+  parseNetworkDetailsDateInputExclusiveEnd,
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
 import {
@@ -22,6 +25,34 @@ import {
 type ReloadGenerationRef = MutableRefObject<number>;
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
+
+export function deriveRelationsEnabledFreqs(
+  currentRelationsEnabledFreqs: string[],
+  currentRelations: NetworkCallsignRelationsRsp | null,
+  relations: NetworkCallsignRelationsRsp,
+): string[] {
+  const fallbackEnabledFreqs = relations.freqs.filter((freq) => freq.enabledByDefault).map((freq) => freq.freq);
+  const fallbackFreqs = fallbackEnabledFreqs.length > 0 ? fallbackEnabledFreqs : relations.freqs.map((freq) => freq.freq);
+
+  if (currentRelations === null) {
+    return fallbackFreqs;
+  }
+
+  const nextEnabledFreqs = currentRelationsEnabledFreqs.filter((freq) => relations.freqs.some((item) => item.freq === freq));
+  return nextEnabledFreqs.length > 0 ? nextEnabledFreqs : fallbackFreqs;
+}
+
+export function isCurrentRelationsWindow(
+  currentSince: string,
+  currentTill: string,
+  sinceDateInclusiveMs: number,
+  tillDateNoninclusiveMs: number,
+): boolean {
+  return (
+    parseNetworkDetailsDateInput(currentSince) === sinceDateInclusiveMs &&
+    parseNetworkDetailsDateInputExclusiveEnd(currentTill) === tillDateNoninclusiveMs
+  );
+}
 
 export function useRerNetworkDetailsNeoPageLoad(
   networkId: number,
@@ -142,10 +173,14 @@ export function useRerNetworkDetailsNeoPageLoad(
       if (!isCurrent()) return;
 
       setState((current) => {
-        const nextEnabledFreqs =
-          current.relations === null
-            ? relations.freqs.filter((freq) => freq.enabledByDefault).map((freq) => freq.freq)
-            : current.relationsEnabledFreqs.filter((freq) => relations.freqs.some((item) => item.freq === freq));
+        if (!isCurrentRelationsWindow(current.relationsSince, current.relationsTill, sinceDateInclusiveMs, tillDateNoninclusiveMs)) {
+          return {
+            ...current,
+            relationsLoading: false,
+            relationsLoaded: false,
+            relationsError: null,
+          };
+        }
 
         return {
           ...current,
@@ -153,7 +188,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           relationsLoaded: true,
           relationsLoading: false,
           relationsError: null,
-          relationsEnabledFreqs: nextEnabledFreqs,
+          relationsEnabledFreqs: deriveRelationsEnabledFreqs(current.relationsEnabledFreqs, current.relations, relations),
         };
       });
     } catch (error) {
