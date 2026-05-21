@@ -103,7 +103,7 @@ export function buildNetworkCallsignRelationsGraphView(
         weight: item.weight,
         messageIds: [...item.messageIds],
       }));
-    const visibleWeight = visibleByFreq.length > 0 ? visibleByFreq.reduce((total, item) => total + item.weight, 0) : edge.weight;
+    const visibleWeight = edge.byFreq.length === 0 ? edge.weight : visibleByFreq.reduce((total, item) => total + item.weight, 0);
     const visible = visibleWeight >= minIntensity;
 
     if (visible) {

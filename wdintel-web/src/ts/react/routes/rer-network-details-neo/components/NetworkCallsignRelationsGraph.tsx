@@ -86,8 +86,7 @@ export function NetworkCallsignRelationsGraph({
   );
   const visibleNodes = useMemo(() => graphView.nodes.filter((node) => node.visible), [graphView.nodes]);
   const graphTooDense =
-    visibleNodes.length > NETWORK_RELATIONS_RENDER_LIMITS.maxRenderNodes * NETWORK_RELATIONS_RENDER_LIMITS.softLimitMultiplier ||
-    graphView.edges.length > NETWORK_RELATIONS_RENDER_LIMITS.maxRenderEdges * NETWORK_RELATIONS_RENDER_LIMITS.softLimitMultiplier;
+    visibleNodes.length > NETWORK_RELATIONS_RENDER_LIMITS.maxRenderNodes || graphView.edges.length > NETWORK_RELATIONS_RENDER_LIMITS.maxRenderEdges;
   const renderGraphView = useMemo(
     () =>
       graphTooDense

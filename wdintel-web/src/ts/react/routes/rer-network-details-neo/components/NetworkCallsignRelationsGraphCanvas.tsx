@@ -81,7 +81,7 @@ export function NetworkCallsignRelationsGraphCanvas({
         if (!visibleEdgeIdsForRender.has(edge.id)) return null;
         const sourcePosition = layout.positions.get(edge.source);
         const targetPosition = layout.positions.get(edge.target);
-        if (!sourcePosition || !targetPosition || !edge.visibleByFreq.length) return null;
+        if (!sourcePosition || !targetPosition) return null;
         const selected = selectedEdgeId === edge.id;
         const highlighted = selected || (selectedNodeId !== null && (edge.source === selectedNodeId || edge.target === selectedNodeId));
         const stroke = getRelationEdgeStroke(edge, legendFreqs);

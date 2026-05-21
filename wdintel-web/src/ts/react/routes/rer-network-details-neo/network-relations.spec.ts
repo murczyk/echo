@@ -137,6 +137,58 @@ describe('network relations helpers', () => {
     expect(filterNetworkCallsignRelationEdgeMessages(edge ?? null).map((message) => message.id)).toEqual([1]);
   });
 
+  it('excludes edges when active frequency filters match no buckets', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(
+      {
+        ...createGraph(),
+        edges: [
+          {
+            id: 'ALPHA__BRAVO',
+            source: 'ALPHA',
+            target: 'BRAVO',
+            weight: 3,
+            byFreq: [
+              { freq: '652.111', weight: 2, messageIds: [1, 2] },
+              { freq: '852.111', weight: 1, messageIds: [3] },
+            ],
+            messagesPreview: [],
+          },
+        ],
+      },
+      '',
+      ['999.999'],
+      1,
+    );
+
+    expect(graph.edges).toHaveLength(0);
+    expect(graph.visibleEdgeIds.has('ALPHA__BRAVO')).toBe(false);
+  });
+
+  it('falls back to edge weight when no frequency buckets exist', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(
+      {
+        ...createGraph(),
+        edges: [
+          {
+            id: 'ALPHA__BRAVO',
+            source: 'ALPHA',
+            target: 'BRAVO',
+            weight: 3,
+            byFreq: [],
+            messagesPreview: [],
+          },
+        ],
+      },
+      '',
+      ['999.999'],
+      2,
+    );
+
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.edges[0].visibleWeight).toBe(3);
+    expect(graph.visibleEdgeIds.has('ALPHA__BRAVO')).toBe(true);
+  });
+
   it('limits edges by visible weight deterministically', () => {
     const edges = limitGraphEdgesByWeight(
       [
