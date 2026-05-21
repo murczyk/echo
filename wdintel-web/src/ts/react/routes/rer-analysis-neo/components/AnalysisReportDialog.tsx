@@ -392,7 +392,7 @@ export function AnalysisReportDialog({
                 {report.template === 'interception' ? (
                   <ReportCheckboxLabel
                     checked={report.interceptionKeepFullMessage}
-                    label="Повне повідомлення (без обрізання)"
+                    label="Повний текст повідомлення"
                     onChange={(value) => onUpdate({ interceptionKeepFullMessage: value })}
                   />
                 ) : null}
