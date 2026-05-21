@@ -389,6 +389,13 @@ export function AnalysisReportDialog({
                   label="Без автоматичних тегів"
                   onChange={(value) => onUpdate({ withoutModelTags: value })}
                 />
+                {report.template === 'interception' ? (
+                  <ReportCheckboxLabel
+                    checked={report.interceptionKeepFullMessage}
+                    label="Повне повідомлення (без обрізання)"
+                    onChange={(value) => onUpdate({ interceptionKeepFullMessage: value })}
+                  />
+                ) : null}
                 {(() => {
                   const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Без автоматичних тегів'));
                   return hint ? (

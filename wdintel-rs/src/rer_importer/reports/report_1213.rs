@@ -1144,6 +1144,7 @@ mod tests {
             report_tags_only_this_unit: None,
             report_1213_linked_networks_only: Some(true),
             without_comments: None,
+            interception_keep_full_message: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
         };
@@ -1237,6 +1238,7 @@ mod tests {
             report_tags_only_this_unit: None,
             report_1213_linked_networks_only: Some(true),
             without_comments: None,
+            interception_keep_full_message: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
         };
@@ -1371,6 +1373,7 @@ mod tests {
             report_tags_only_this_unit: Some(true),
             report_1213_linked_networks_only: Some(true),
             without_comments: None,
+            interception_keep_full_message: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
         };
@@ -1536,6 +1539,7 @@ mod tests {
             report_tags_only_this_unit: None,
             report_1213_linked_networks_only: Some(false),
             without_comments: None,
+            interception_keep_full_message: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
         };
@@ -1609,6 +1613,7 @@ mod tests {
             report_tags_only_this_unit: None,
             report_1213_linked_networks_only: Some(true),
             without_comments: None,
+            interception_keep_full_message: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
         };

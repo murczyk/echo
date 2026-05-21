@@ -38,6 +38,7 @@ struct SheetRowData<'a> {
     time: String,
     message: &'a InboxMessage,
     without_model_tags: bool,
+    keep_full_message: bool,
 }
 
 pub async fn report_xlsx_kind_interception(
@@ -51,6 +52,7 @@ pub async fn report_xlsx_kind_interception(
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
+    let keep_full_message = req.interception_keep_full_message.unwrap_or(false);
     // Define formats using rust_xlsxwriter
 
     set_colors_and_formats_for_sheet(sheet1)?;
@@ -66,6 +68,7 @@ pub async fn report_xlsx_kind_interception(
         messages,
         all_tags,
         without_model_tags,
+        keep_full_message,
     )?;
 
     workbook.save(outpath).context(h!())?; // Save the workbook
@@ -264,6 +267,7 @@ fn process_messages_for_interception_report(
     messages: Vec<InboxMessage>,
     all_tags: HashMap<i64, String>,
     without_model_tags: bool,
+    keep_full_message: bool,
 ) -> Result<(), AppError> {
     let mut index = 0;
     for message in messages {
@@ -288,6 +292,7 @@ fn process_messages_for_interception_report(
                 date,
                 time: time.clone(),
                 without_model_tags,
+                keep_full_message,
             },
         )
         .context(h!())?;
@@ -575,10 +580,11 @@ fn write_data_to_sheet(
     let m = data.message;
     let freq = m.freq.to_owned().unwrap_or("".to_string());
     let without_model_tags = data.without_model_tags;
-    let m_body = eject_body_from_message(
-        extract_text(&m.body.clone().unwrap_or("".to_string()))?.body,
-    )
-    .unwrap_or_default();
+    let keep_full_message = data.keep_full_message;
+    let m_body = select_report_message_body(
+        &m.body.clone().unwrap_or("".to_string()),
+        keep_full_message,
+    )?;
     let unit = m.unit.to_owned().unwrap_or("".to_string());
     let comment = m.comment.to_owned().unwrap_or("".to_string());
     let coords = m.coords.to_owned().unwrap_or("".to_string());
@@ -627,6 +633,20 @@ fn write_data_to_sheet(
 
     Ok(())
 }
+
+fn select_report_message_body(
+    full_message: &str,
+    keep_full_message: bool,
+) -> Result<String, AppError> {
+    let body_text = extract_text(full_message)?.body;
+
+    if keep_full_message {
+        return Ok(body_text);
+    }
+
+    Ok(eject_body_from_message(body_text.clone()).unwrap_or(body_text))
+}
+
 fn eject_body_from_message(body: String) -> Option<String> {
     let lines: Vec<&str> = body
         .lines()
@@ -800,11 +820,31 @@ fn is_only_dashes(s: &str) -> bool {
 }
 
 fn starts_with_number_short_dash(s: &str) -> bool {
-    let mut parts = s.splitn(2, '-');
+    let Some((left_raw, right_raw)) = s.split_once('-') else {
+        return false;
+    };
 
-    let left = parts.next().unwrap_or("").trim();
+    let left = left_raw.trim();
+    if left.is_empty() || !left.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
 
-    !left.is_empty() && left.chars().all(|c| c.is_ascii_digit())
+    let has_space_before_dash = left_raw
+        .chars()
+        .last()
+        .map(|c| c.is_whitespace())
+        .unwrap_or(false);
+    let has_space_after_dash = right_raw
+        .chars()
+        .next()
+        .map(|c| c.is_whitespace())
+        .unwrap_or(false);
+
+    if !has_space_before_dash && !has_space_after_dash {
+        return false;
+    }
+
+    !right_raw.trim().is_empty()
 }
 
 fn starts_with_number_long_dash(s: &str) -> bool {
@@ -858,7 +898,7 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::eject_body_from_message;
+    use super::{eject_body_from_message, select_report_message_body};
 
     #[test]
     fn eject_body_keeps_only_number_long_dash_lines() {
@@ -1028,10 +1068,7 @@ y:73-71279
 
         let output = eject_body_from_message(input.to_string());
 
-        assert_eq!(
-            output,
-            Some("--Морган плюс.\n--Принял.".to_string())
-        );
+        assert_eq!(output, Some("--Морган плюс.\n--Принял.".to_string()));
     }
 
     #[test]
@@ -1043,5 +1080,48 @@ y:73-71279
         let output = eject_body_from_message(input.to_string());
 
         assert_eq!(output, Some("--Морган плюс.".to_string()));
+    }
+
+    #[test]
+    fn eject_body_when_message_has_header_with_numbers_and_callsigns() {
+        let input = r#"КУЗЯ
+42-Й, 651-Й, 78-Й
+
+— 42, 42, Кузя по постам 0 8.
+— Кузя, Кузя, 42 принял.
+— 7 8, 7 8, я 6 5 1, по постам 0 8.
+— Я 7 8, принял."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(output, Some("— 42, 42, Кузя по постам 0 8.\n— Кузя, Кузя, 42 принял.\n— 7 8, 7 8, я 6 5 1, по постам 0 8.\n— Я 7 8, принял.".to_string()));
+    }
+
+    // Tests: Keep full message body
+    #[test]
+    fn select_report_message_body_falls_back_to_full_message_when_trimmed_empty(
+    ) {
+        let input = r#"01.01.2026 0:01:09
+148.310
+x:53-48839
+y:73-71279
+37U CP 70970 46277
+Пд.Мирноград"#;
+
+        let output = select_report_message_body(input, false).unwrap();
+
+        assert_eq!(output, input.to_string());
+    }
+
+    #[test]
+    fn select_report_message_body_keeps_full_message_when_flag_is_on() {
+        let input = r#"01.01.2026, 00:00:42
+148.1261
+УКХ р/м управління шр 89 тп
+1 — Тихий я Кормушка доложи обстановку"#;
+
+        let output = select_report_message_body(input, true).unwrap();
+
+        assert_eq!(output, input.to_string());
     }
 }
