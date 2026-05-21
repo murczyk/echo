@@ -39,9 +39,19 @@ export type NetworkCallsignRelationsGraphView = {
   adjacencyByNodeId: Map<string, Set<string>>;
 };
 
-export const NETWORK_RELATIONS_MAX_RENDER_NODES = 250;
-export const NETWORK_RELATIONS_MAX_RENDER_EDGES = 800;
-const NETWORK_RELATIONS_RENDER_SOFT_LIMIT_MULTIPLIER = 2;
+type NetworkCallsignRelationsRenderLimits = {
+  maxRenderNodes: number;
+  maxRenderEdges: number;
+  softLimitMultiplier: number;
+};
+
+// These are pragmatic browser-performance guardrails for the force layout and SVG rendering path.
+// The soft multiplier delays the warning state until the graph is well beyond the hard cap.
+export const NETWORK_RELATIONS_RENDER_LIMITS: NetworkCallsignRelationsRenderLimits = {
+  maxRenderNodes: 250,
+  maxRenderEdges: 800,
+  softLimitMultiplier: 2,
+};
 
 export function filterNetworkCallsignRelationEdgeMessages(edge: NetworkCallsignRelationsEdgeView | null): NetworkCallsignRelationEdgeMessageView[] {
   if (!edge) return [];
@@ -93,7 +103,7 @@ export function buildNetworkCallsignRelationsGraphView(
         weight: item.weight,
         messageIds: [...item.messageIds],
       }));
-    const visibleWeight = visibleByFreq.reduce((total, item) => total + item.weight, 0);
+    const visibleWeight = visibleByFreq.length > 0 ? visibleByFreq.reduce((total, item) => total + item.weight, 0) : edge.weight;
     const visible = visibleWeight >= minIntensity;
 
     if (visible) {
@@ -302,10 +312,11 @@ export function createRelationGraphLayout(nodes: NetworkCallsignRelationNode[], 
 export function buildRenderableNetworkCallsignRelationsGraphView(
   graphView: NetworkCallsignRelationsGraphView,
   visibleNodes: NetworkCallsignRelationsNodeView[],
-  maxRenderNodes = NETWORK_RELATIONS_MAX_RENDER_NODES,
-  maxRenderEdges = NETWORK_RELATIONS_MAX_RENDER_EDGES,
+  renderLimits: NetworkCallsignRelationsRenderLimits = NETWORK_RELATIONS_RENDER_LIMITS,
 ): NetworkCallsignRelationsGraphRenderView {
-  if (visibleNodes.length > maxRenderNodes * NETWORK_RELATIONS_RENDER_SOFT_LIMIT_MULTIPLIER || graphView.edges.length > maxRenderEdges * NETWORK_RELATIONS_RENDER_SOFT_LIMIT_MULTIPLIER) {
+  const { maxRenderNodes, maxRenderEdges, softLimitMultiplier } = renderLimits;
+
+  if (visibleNodes.length > maxRenderNodes * softLimitMultiplier || graphView.edges.length > maxRenderEdges * softLimitMultiplier) {
     return { ...graphView, nodes: [], edges: [], warning: true };
   }
 

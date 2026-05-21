@@ -18,8 +18,7 @@ import {
   createRelationGraphLayout,
   filterNetworkCallsignRelationEdgeMessages,
   getRelationEdgeBounds,
-  NETWORK_RELATIONS_MAX_RENDER_EDGES,
-  NETWORK_RELATIONS_MAX_RENDER_NODES,
+  NETWORK_RELATIONS_RENDER_LIMITS,
   intersectsRelationViewBox,
   isPointVisibleInRelationViewBox,
   moveRelationGraphViewBox,
@@ -86,11 +85,13 @@ export function NetworkCallsignRelationsGraph({
     [relations, relationsEnabledFreqs, relationsMinIntensity, relationsSearch],
   );
   const visibleNodes = useMemo(() => graphView.nodes.filter((node) => node.visible), [graphView.nodes]);
-  const graphTooDense = visibleNodes.length > NETWORK_RELATIONS_MAX_RENDER_NODES || graphView.edges.length > NETWORK_RELATIONS_MAX_RENDER_EDGES;
+  const graphTooDense =
+    visibleNodes.length > NETWORK_RELATIONS_RENDER_LIMITS.maxRenderNodes * NETWORK_RELATIONS_RENDER_LIMITS.softLimitMultiplier ||
+    graphView.edges.length > NETWORK_RELATIONS_RENDER_LIMITS.maxRenderEdges * NETWORK_RELATIONS_RENDER_LIMITS.softLimitMultiplier;
   const renderGraphView = useMemo(
     () =>
       graphTooDense
-        ? buildRenderableNetworkCallsignRelationsGraphView(graphView, visibleNodes)
+        ? buildRenderableNetworkCallsignRelationsGraphView(graphView, visibleNodes, NETWORK_RELATIONS_RENDER_LIMITS)
         : { ...graphView, nodes: visibleNodes, edges: graphView.edges, warning: false },
     [graphTooDense, graphView, visibleNodes],
   );
