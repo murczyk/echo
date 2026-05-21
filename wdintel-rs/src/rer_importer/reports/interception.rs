@@ -660,6 +660,10 @@ fn is_body_line(line: &str) -> bool {
         return false;
     }
 
+    if is_only_dashes(s) {
+        return false;
+    }
+
     // Skip obvious metadata
     if looks_like_datetime(s) {
         return false;
@@ -669,8 +673,8 @@ fn is_body_line(line: &str) -> bool {
         return false;
     }
 
-    // "- text" / "-- text"
-    if s.starts_with("- ") || s.starts_with("-- ") {
+    // "- text" / "--text" / "-- text"
+    if s.starts_with("- ") || s.starts_with("--") {
         return true;
     }
 
@@ -789,6 +793,10 @@ fn looks_like_code(s: &str) -> bool {
     let digits = s.chars().filter(|c| c.is_ascii_digit()).count();
 
     uppercase >= 2 && digits >= 4
+}
+
+fn is_only_dashes(s: &str) -> bool {
+    s.chars().all(|c| c == '-' || c == '—')
 }
 
 fn starts_with_number_short_dash(s: &str) -> bool {
@@ -1009,5 +1017,31 @@ y:73-71279
                 "-- Тихий я Кормушка доложи обстановку\n-- Тихий, Тихий на связь.".to_string()
             )
         );
+    }
+
+    #[test]
+    fn eject_body_keeps_lines_with_double_hyphen_without_space() {
+        let input = r#"01.01.2026, 00:00:42
+148.1261
+--Морган плюс.
+--Принял."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(
+            output,
+            Some("--Морган плюс.\n--Принял.".to_string())
+        );
+    }
+
+    #[test]
+    fn eject_body_filters_separator_lines_of_dashes() {
+        let input = r#"--------------------------------------------
+————————————————————
+--Морган плюс."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(output, Some("--Морган плюс.".to_string()));
     }
 }
