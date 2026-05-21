@@ -9,7 +9,10 @@ import File exposing (File)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Markdown.Block as Block
+import Markdown.Parser
 import Shared.Components.Toast
+import Shared.Msg exposing (ChangelogReleaseMeta, ChangelogReleasePage)
 import Url.Builder
 import Utils.Api.RetryableHttp as RetryableHttp
 import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
@@ -616,6 +619,68 @@ server_info toMsg =
         , body = Http.jsonBody (Encode.object [])
         , expect = leExpectJson toMsg serverInfoDecoder
         }
+
+
+changelog_index :
+    (Result ApiError (List Shared.Msg.ChangelogReleaseMeta) -> msg)
+    -> Cmd msg
+changelog_index toMsg =
+    Http.get
+        { url = "/releases/index.json"
+        , expect = leExpectJson toMsg changelogIndexDecoder
+        }
+
+
+changelogIndexDecoder : Decode.Decoder (List Shared.Msg.ChangelogReleaseMeta)
+changelogIndexDecoder =
+    Decode.list
+        (Decode.map2
+            Shared.Msg.ChangelogReleaseMeta
+            (Decode.field "release_id" Decode.string)
+            (Decode.field "title" Decode.string)
+        )
+
+
+changelog_latest :
+    String
+    -> (Result ApiError Shared.Msg.ChangelogReleasePage -> msg)
+    -> Cmd msg
+changelog_latest releaseId toMsg =
+    Http.get
+        { url = "/releases/" ++ releaseId ++ "/release.md"
+        , expect =
+            Http.expectStringResponse toMsg
+                (resolve (parseChangelogMarkdown releaseId))
+        }
+
+
+parseChangelogMarkdown : String -> String -> Result String Shared.Msg.ChangelogReleasePage
+parseChangelogMarkdown releaseId rawMarkdown =
+    Markdown.Parser.parse rawMarkdown
+        |> Result.mapError
+            (List.map Markdown.Parser.deadEndToString
+                >> String.join "\n"
+            )
+        |> Result.map
+            (\blocks ->
+                { releaseId = releaseId
+                , headings =
+                    blocks
+                        |> List.filterMap
+                            (\block ->
+                                case block of
+                                    Block.Heading level inlines ->
+                                        if level == Block.H1 then
+                                            Nothing
+
+                                        else
+                                            Just (Block.extractInlineText inlines)
+
+                                    _ ->
+                                        Nothing
+                            )
+                }
+            )
 
 
 datasource_list :

@@ -44,6 +44,7 @@ type alias Props msg =
     , isNavbarVisible : Bool
     , openDropdown : Maybe String
     , onDropdownToggle : Maybe String -> msg
+    , onChangelogSeen : String -> msg
     , onCloseDropdownOnly : msg
     , mobileNavOpen : Bool
     , onToggleMobileNav : msg
@@ -254,6 +255,32 @@ navBar user shared activeName props =
                     [ menuWithSubs "admin" "Адмін" adminSubs ]
                 ]
 
+        changelogData =
+            case shared.changelogPreview of
+                Just preview ->
+                    if List.isEmpty preview.preview then
+                        Nothing
+
+                    else
+                        let
+                            unseen =
+                                case shared.changelogLastSeen of
+                                    Just lastSeen ->
+                                        lastSeen /= preview.version
+
+                                    Nothing ->
+                                        True
+                        in
+                        Just
+                            { preview = preview.preview
+                            , version = preview.version
+                            , fullUrl = preview.fullUrl
+                            , unseen = unseen
+                            }
+
+                Nothing ->
+                    Nothing
+
         navbarStyles =
             [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
             , class "border-b border-black/15 py-2"
@@ -356,7 +383,8 @@ navBar user shared activeName props =
                     ]
                 , div
                     [ class "app-navbar-toolbar ml-auto flex shrink-0 items-center gap-2" ]
-                    [ if props.supportsFullscreenToggle then
+                    [ changelogDropdown props changelogData
+                    , if props.supportsFullscreenToggle then
                         button
                             [ class "flex appearance-none items-center border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
                             , onClick props.onNavbarVisibilityChange
@@ -396,8 +424,95 @@ navBar user shared activeName props =
         ]
 
 
+changelogDropdown : Props msg -> Maybe { preview : List String, version : String, fullUrl : String, unseen : Bool } -> Html msg
+changelogDropdown props maybeData =
+    case maybeData of
+        Nothing ->
+            text ""
+
+        Just data ->
+            let
+                dropdownKey =
+                    "changelog"
+
+                isOpen =
+                    props.openDropdown == Just dropdownKey
+
+                toggleMsg =
+                    if isOpen then
+                        props.onDropdownToggle Nothing
+
+                    else
+                        props.onDropdownToggle (Just dropdownKey)
+
+                badge =
+                    if data.unseen then
+                        span
+                            [ class "ml-1 inline-block h-2 w-2 rounded-full bg-amber-300" ]
+                            []
+
+                    else
+                        text ""
+            in
+            div [ class "relative" ]
+                [ button
+                    [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center"
+                    , onClick toggleMsg
+                    , onDropdownTriggerKey toggleMsg
+                    , attribute "aria-haspopup" "true"
+                    , attribute "aria-expanded"
+                        (if isOpen then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , attribute "aria-label" "Останні зміни"
+                    , title "Останні зміни"
+                    , type_ "button"
+                    ]
+                    [ img
+                        [ src "/img/changelog.png"
+                        , alt "Останні зміни"
+                        , class "h-6 w-6"
+                        ]
+                        []
+                    , badge
+                    ]
+                , div [ class "absolute right-0 pt-2 z-[3001]" ]
+                    [ ul
+                        [ class "w-72 p-3 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
+                        , classList
+                            [ ( "hidden", not isOpen )
+                            , ( "block", isOpen )
+                            ]
+                        ]
+                        [ div [ class "text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2" ]
+                            [ text ("Останні зміни: Реліз " ++ String.replace "-" "." data.version) ]
+                        , ul [ class "space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1" ]
+                            (List.map renderChangelogLine data.preview)
+                        , div [ class "mt-3 flex items-center justify-between" ]
+                            [ a
+                                [ href data.fullUrl
+                                , target "_blank"
+                                , rel "noopener noreferrer"
+                                , class "text-sm font-semibold text-amber-600 hover:text-amber-500"
+                                , onClick (props.onChangelogSeen data.version)
+                                ]
+                                [ text "Читати повністю" ]
+                            ]
+                        ]
+                    ]
+                ]
+
+
 
 -- Main navbar links: always white text
+
+
+renderChangelogLine : String -> Html msg
+renderChangelogLine line =
+    li [ class "ml-4 list-disc leading-snug break-words" ] [ text line ]
 
 
 menuItemRoute : { a | onDropdownToggle : Maybe b -> msg } -> String -> { path : Route.Path.Path, query : Dict.Dict String String, hash : Maybe String } -> String -> String -> Html msg

@@ -12,6 +12,7 @@
             "chelovek0v/bbase64": "1.0.1",
             "danhandrea/elm-date-format": "2.0.2",
             "danyx23/elm-uuid": "2.1.2",
+            "dillonkearns/elm-markdown": "7.0.1",
             "elm/browser": "1.0.2",
             "elm/bytes": "1.0.8",
             "elm/core": "1.0.5",

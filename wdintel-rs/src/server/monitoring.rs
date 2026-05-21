@@ -52,7 +52,6 @@ async fn server_info(
         version: env.version.clone(),
     }))
 }
-
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

@@ -1,4 +1,4 @@
-module Shared.Msg exposing (Msg(..))
+module Shared.Msg exposing (Msg(..), ChangelogReleaseMeta, ChangelogReleasePage)
 
 import Bindings as B
 import Core.Types exposing (ApiError, LocationRes)
@@ -7,15 +7,31 @@ import Shared.Components.Toast
 import Shared.Model exposing (ThemeMode)
 
 
+type alias ChangelogReleaseMeta =
+    { releaseId : String
+    , title : String
+    }
+
+
+type alias ChangelogReleasePage =
+    { releaseId : String
+    , headings : List String
+    }
+
+
 type Msg
     = SignIn B.User
     | SignOut
     | SignOutDone (Result ApiError ())
     | GotUser (Result ApiError B.User)
     | GotServerInfo (Result ApiError B.ServerInfo)
+    | GotChangelogIndex (Result ApiError (List ChangelogReleaseMeta))
+    | GotChangelogLatest (Result ApiError ChangelogReleasePage)
     | SetThemeMode ThemeMode
     | ThemeModeLoaded String
     | ToggleDarkMode
+    | LastSeenChangelogLoaded String
+    | SaveChangelogLastSeen String
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)
     | NetworksLoadedByApi (Result ApiError (List B.Network))
