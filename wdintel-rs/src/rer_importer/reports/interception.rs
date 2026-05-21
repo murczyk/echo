@@ -279,7 +279,7 @@ fn process_messages_for_interception_report(
         // parse date from format like 2023-12-22
         let date = get_parsed_date(date).context(h!())?;
 
-        let is_write_success = write_data_to_sheet(
+        write_data_to_sheet(
             sheet1,
             &all_tags,
             SheetRowData {
@@ -291,9 +291,6 @@ fn process_messages_for_interception_report(
             },
         )
         .context(h!())?;
-        if !is_write_success {
-            continue;
-        }
         index += 1;
     }
 
@@ -570,7 +567,7 @@ fn write_data_to_sheet(
     sheet1: &mut Worksheet,
     all_tags: &HashMap<i64, String>,
     data: SheetRowData,
-) -> Result<bool, AppError> {
+) -> Result<(), AppError> {
     let i = data.row_number;
     let date = data.date;
     let date_fmt = Format::new().set_num_format("dd.mm.yyyy");
@@ -578,13 +575,10 @@ fn write_data_to_sheet(
     let m = data.message;
     let freq = m.freq.to_owned().unwrap_or("".to_string());
     let without_model_tags = data.without_model_tags;
-    let m_body = if let Some(body) = eject_body_from_message(
+    let m_body = eject_body_from_message(
         extract_text(&m.body.clone().unwrap_or("".to_string()))?.body,
-    ) {
-        body
-    } else {
-        return Ok(false);
-    };
+    )
+    .unwrap_or_default();
     let unit = m.unit.to_owned().unwrap_or("".to_string());
     let comment = m.comment.to_owned().unwrap_or("".to_string());
     let coords = m.coords.to_owned().unwrap_or("".to_string());
@@ -631,7 +625,7 @@ fn write_data_to_sheet(
     sheet1.write_string(i, 9, &mes_tags).context(h!())?;
     sheet1.write_string(i, 10, important).context(h!())?;
 
-    Ok(true)
+    Ok(())
 }
 fn eject_body_from_message(body: String) -> Option<String> {
     let lines: Vec<&str> = body
@@ -675,8 +669,8 @@ fn is_body_line(line: &str) -> bool {
         return false;
     }
 
-    // "- text"
-    if s.starts_with("- ") {
+    // "- text" / "-- text"
+    if s.starts_with("- ") || s.starts_with("--") {
         return true;
     }
 
@@ -998,5 +992,22 @@ y:73-71279
         let output = eject_body_from_message(input.to_string());
 
         assert_eq!(output, None);
+    }
+
+    #[test]
+    fn eject_body_keeps_lines_with_double_hyphen_prefix() {
+        let input = r#"01.01.2026, 00:00:42
+148.1261
+-- Тихий я Кормушка доложи обстановку
+-- Тихий, Тихий на связь."#;
+
+        let output = eject_body_from_message(input.to_string());
+
+        assert_eq!(
+            output,
+            Some(
+                "-- Тихий я Кормушка доложи обстановку\n-- Тихий, Тихий на связь.".to_string()
+            )
+        );
     }
 }
