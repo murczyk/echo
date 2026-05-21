@@ -15,41 +15,30 @@ fi
 
 cd "$repo_root/wdintel-rs"
 if [ "$verbose" = "false" ]; then
-    export RUST_LOG=error
-    server_args+=(--no-bgworker)
+    export ECHO_DEV_BACK_REST_ONLY=true
+    export RUST_LOG=error,access_log=info
 elif [ "$log_sql" = "true" ]; then
     export RUST_LOG=sqlx=trace,seaorm=trace
 fi
 
 if [ "$verbose" = "false" ]; then
     server_port="${ECHO_SERVER_PORT:-8081}"
-    echo "backend is running in silent mode on port ${server_port}, only REST API errors will be shown" >&2
+    echo "backend is running in silent mode on port ${server_port}, only 4xx/5xx HTTP responses and build errors will be shown" >&2
     RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@" 2>&1 | awk '
-        function is_rest_error(line) {
-            return line ~ /Internal server error:/ ||
-                line ~ /Service unavailable during shutdown:/ ||
-                line ~ /not_found_details/ ||
-                line ~ /unauthenticated_details/ ||
-                line ~ /forbidden_details/ ||
-                line ~ /form_error_details/ ||
-                line ~ /business_error/
+        function is_http_error(line) {
+            return line ~ /access_log/ &&
+                line ~ /status=[45][0-9][0-9]/
         }
 
-        function is_continuation(line) {
-            return line ~ /^[[:space:]]/ ||
-                line ~ /^Caused by:/ ||
-                line ~ /^[0-9]+:/
+        function is_build_error(line) {
+            return line ~ /^error(\[[^]]+\])?:/ ||
+                line ~ /^error: /
         }
 
         {
-            if (is_rest_error($0)) {
+            if (is_http_error($0) || is_build_error($0)) {
                 print
                 keep = 1
-                next
-            }
-
-            if (keep && is_continuation($0)) {
-                print
                 next
             }
 

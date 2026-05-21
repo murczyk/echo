@@ -130,6 +130,7 @@ impl actix_web::error::ResponseError for AppError {
                 .body(msg.clone())
             }
             _ => {
+                error!("Internal server error: {:?}", self);
                 match self {
                     AppError::IO { .. }
                     | AppError::JoinErr { .. }
