@@ -71,7 +71,7 @@ export function ReleasesSidebar({
                 className={`pointer-events-none absolute bottom-1 -left-2 top-1 w-[2px] rounded-r bg-gradient-to-b from-[#005fb8] to-[#6fb5ff] transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
               />
               <span
-                className={`block pl-0 pr-0 transition-colors ${isSelected ? 'font-semibold text-[#005fb8]' : 'text-black group-hover:underline'}`}
+                className={`block pl-0 pr-0 transition-colors ${isSelected ? 'font-semibold text-[#005fb8]' : 'text-[var(--color-text)] group-hover:underline'}`}
               >
                 {release.title}
               </span>
