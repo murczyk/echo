@@ -1,5 +1,4 @@
-import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
-import { Box, Checkbox, Divider, FormControlLabel, IconButton, Popover, Slider, Stack, Typography } from '@mui/material';
+import { Box, Checkbox, Divider, FormControlLabel, Popover, Slider, Stack, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 
 import type { NetworkCallsignRelationFreqView } from '../network-relations';
@@ -56,23 +55,7 @@ export function NetworkCallsignRelationsGraphFilters({
       }}
     >
       <Box sx={{ width: 320, p: 2, color: overlayText, position: 'relative' }}>
-        <IconButton
-          aria-label="Закрити налаштування"
-          onClick={onClose}
-          size="small"
-          sx={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            color: overlayTextSecondary,
-            '&:hover': {
-              bgcolor: alpha(theme.palette.text.primary, isDarkMode ? 0.08 : 0.05),
-            },
-          }}
-        >
-          <CloseOutlinedIcon fontSize="small" />
-        </IconButton>
-        <Stack spacing={1.5} sx={{ pr: 4 }}>
+        <Stack spacing={1.5}>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
             Налаштування
           </Typography>

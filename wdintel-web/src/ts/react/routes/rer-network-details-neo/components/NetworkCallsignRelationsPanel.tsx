@@ -75,7 +75,7 @@ export function NetworkCallsignRelationsPanel({
     );
   }
 
-  if (relationsLoading || (!relationsLoaded && relations === null)) {
+  if (!relationsLoaded && relations === null) {
     return (
       <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
@@ -122,6 +122,7 @@ export function NetworkCallsignRelationsPanel({
       relationsSelectedEdgeId={relationsSelectedEdgeId}
       relationsSince={relationsSince}
       relationsTill={relationsTill}
+      relationsLoading={relationsLoading}
       onSearchChange={onSearchChange}
       onEnabledFreqsChange={onEnabledFreqsChange}
       onMinIntensityChange={onMinIntensityChange}

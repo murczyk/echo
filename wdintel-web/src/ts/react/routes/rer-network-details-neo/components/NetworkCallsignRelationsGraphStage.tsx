@@ -1,7 +1,7 @@
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
-import { Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
 
@@ -43,6 +43,7 @@ type Props = {
   legendFreqs: NetworkCallsignRelationFreqView[];
   relationsEnabledFreqs: string[];
   relationsMinIntensity: number;
+  relationsLoading: boolean;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
   onOpenFilters: (anchorEl: HTMLElement) => void;
@@ -81,6 +82,7 @@ export function NetworkCallsignRelationsGraphStage({
   legendFreqs,
   relationsEnabledFreqs,
   relationsMinIntensity,
+  relationsLoading,
   onEnabledFreqsChange,
   onMinIntensityChange,
   onOpenFilters,
@@ -402,6 +404,27 @@ export function NetworkCallsignRelationsGraphStage({
           />
         </>
       )}
+
+      {relationsLoading ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 4,
+            display: 'grid',
+            placeItems: 'center',
+            bgcolor: alpha(theme.palette.background.default, isDarkMode ? 0.78 : 0.58),
+            backdropFilter: 'blur(2px)',
+          }}
+        >
+          <Stack spacing={1.5} alignItems="center" sx={{ color: graphOverlayText }}>
+            <CircularProgress size={28} />
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              Оновлюємо граф зв&apos;язків…
+            </Typography>
+          </Stack>
+        </Box>
+      ) : null}
     </Paper>
   );
 }

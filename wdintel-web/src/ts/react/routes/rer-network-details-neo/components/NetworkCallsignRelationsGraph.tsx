@@ -1,4 +1,5 @@
 import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import { Box, FormControlLabel, IconButton, InputAdornment, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material';
 import dayjs from 'dayjs';
@@ -37,6 +38,7 @@ type Props = {
   relationsSelectedEdgeId: string | null;
   relationsSince: string;
   relationsTill: string;
+  relationsLoading: boolean;
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
@@ -60,6 +62,7 @@ export function NetworkCallsignRelationsGraph({
   relationsSelectedEdgeId,
   relationsSince,
   relationsTill,
+  relationsLoading,
   onSearchChange,
   onEnabledFreqsChange,
   onMinIntensityChange,
@@ -74,9 +77,9 @@ export function NetworkCallsignRelationsGraph({
   const filterPopoverId = `${headingId}-filters-popover`;
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ x: number; y: number; viewBox: RelationGraphViewBox } | null>(null);
+  const labelsAutoDisabledRef = useRef(false);
   const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null);
   const [viewBox, setViewBox] = useState<RelationGraphViewBox>({ x: -450, y: -450, width: 900, height: 900 });
-  const labelsAutoDisabledRef = useRef(false);
 
   const graphView = useMemo(
     () => buildNetworkCallsignRelationsGraphView(relations, relationsSearch, relationsEnabledFreqs, relationsMinIntensity),
@@ -134,7 +137,6 @@ export function NetworkCallsignRelationsGraph({
         nodes: renderGraphView.nodes.length,
         edges: renderGraphView.edges.length,
       };
-  const graphSubsetHintVisible = graphTooDense && !renderGraphView.warning;
   const summaryEdges = renderGraphView.warning ? graphView.edges : renderGraphView.edges;
   const hasRenderableGraph = renderGraphView.nodes.length > 0 && renderGraphView.edges.length > 0;
   const totalIntensity = summaryEdges.reduce((total, edge) => total + edge.visibleWeight, 0);
@@ -142,6 +144,7 @@ export function NetworkCallsignRelationsGraph({
   const intensitySliderMax = Math.max(maxIntensity, NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
   const legendFreqs = graphView.freqs;
   const denseGraph = renderGraphView.nodes.length > 40 || renderGraphView.edges.length > 90 || viewBox.width > layout.bounds.width * 1.6;
+  const graphLabelsHintVisible = denseGraph && !renderGraphView.warning;
   const relationsDateMin = useMemo(() => dayjs(APP_DATETIME_INPUT_MIN).startOf('day'), []);
   const relationsDateMax = useMemo(() => dayjs().startOf('day'), []);
   const relationsSinceMax = useMemo(() => {
@@ -188,13 +191,13 @@ export function NetworkCallsignRelationsGraph({
   }, [layout.bounds]);
 
   useEffect(() => {
-    if (relationsShowLabels && (denseGraph || renderGraphView.warning)) {
+    if (relationsShowLabels && (renderGraphView.warning || denseGraph)) {
       labelsAutoDisabledRef.current = true;
       onShowLabelsChange(false);
       return;
     }
 
-    if (!relationsShowLabels && labelsAutoDisabledRef.current && !denseGraph && !renderGraphView.warning) {
+    if (!relationsShowLabels && labelsAutoDisabledRef.current && !renderGraphView.warning && !denseGraph) {
       labelsAutoDisabledRef.current = false;
       onShowLabelsChange(true);
     }
@@ -310,27 +313,34 @@ export function NetworkCallsignRelationsGraph({
               allowEmpty={false}
               width={148}
             />
-            <FormControlLabel
-              control={<Switch checked={relationsShowLabels} onChange={(_, checked) => onShowLabelsChange(checked)} />}
-              label="Підписи"
-              sx={{ m: 0, flexShrink: 0 }}
-            />
+            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+              <FormControlLabel
+                control={<Switch checked={relationsShowLabels} onChange={(_, checked) => onShowLabelsChange(checked)} disabled={renderGraphView.warning || denseGraph} />}
+                label="Підписи"
+                sx={{ m: 0, flexShrink: 0 }}
+              />
+              {graphLabelsHintVisible ? (
+                <Tooltip title="Підписи приховано для збереження швидкодії. Звузьте період або підніміть інтенсивність.">
+                  <IconButton
+                    aria-label="Пояснення про підписи"
+                    size="small"
+                    sx={{
+                      color: 'text.secondary',
+                      width: 20,
+                      height: 20,
+                      ml: -0.25,
+                      '&:hover': {
+                        bgcolor: 'transparent',
+                        color: 'text.primary',
+                      },
+                    }}
+                  >
+                    <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              ) : null}
+            </Stack>
           </Stack>
-
-          <Box
-            sx={{
-              flexShrink: 0,
-              minWidth: 0,
-              maxWidth: { xs: 180, sm: 240, md: 320 },
-              textAlign: 'right',
-            }}
-          >
-            {graphSubsetHintVisible ? (
-              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.35 }}>
-                Показано лише найсильніші зв&apos;язки для швидкодії
-              </Typography>
-            ) : null}
-          </Box>
         </Stack>
 
         <NetworkCallsignRelationsGraphStage
@@ -361,6 +371,7 @@ export function NetworkCallsignRelationsGraph({
           onEnabledFreqsChange={onEnabledFreqsChange}
           onMinIntensityChange={onMinIntensityChange}
           onOpenFilters={(anchorEl) => setFilterAnchorEl(anchorEl)}
+          relationsLoading={relationsLoading}
           onSelectNodeId={onSelectNodeId}
           onSelectEdgeId={onSelectEdgeId}
           onPointerDown={handlePointerDown}

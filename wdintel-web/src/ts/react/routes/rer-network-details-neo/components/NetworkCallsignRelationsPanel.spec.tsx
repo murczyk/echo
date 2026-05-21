@@ -54,14 +54,49 @@ function createDenseRelations(): NetworkCallsignRelationsRsp {
   };
 }
 
-function createSubsetRelations(): NetworkCallsignRelationsRsp {
+function createDenseUiRelations(): NetworkCallsignRelationsRsp {
+  const nodes = Array.from({ length: 41 }, (_, index) => {
+    const id = `NODE_${String(index).padStart(3, '0')}`;
+    return {
+      id,
+      label: id,
+      weight: 1,
+      relationCount: index === 0 || index === 40 ? 1 : 2,
+      activityCount: 1,
+      position: null,
+      unitName: null,
+      knownCallsignId: null,
+    };
+  });
+
+  const edges = Array.from({ length: 40 }, (_, index) => {
+    const source = `NODE_${String(index).padStart(3, '0')}`;
+    const target = `NODE_${String(index + 1).padStart(3, '0')}`;
+    return {
+      id: `${source}__${target}`,
+      source,
+      target,
+      weight: 1,
+      byFreq: [{ freq: '652.111', weight: 1, messageIds: [index + 1] }],
+      messagesPreview: [],
+    };
+  });
+
+  return {
+    nodes,
+    edges,
+    freqs: [{ freq: '652.111', enabledByDefault: true }],
+  };
+}
+
+function createSparseRelations(): NetworkCallsignRelationsRsp {
   return {
     nodes: [
       {
         id: 'ALPHA',
         label: 'ALPHA',
         weight: 3,
-        relationCount: 801,
+        relationCount: 1,
         activityCount: 3,
         position: null,
         unitName: null,
@@ -71,22 +106,32 @@ function createSubsetRelations(): NetworkCallsignRelationsRsp {
         id: 'BRAVO',
         label: 'BRAVO',
         weight: 2,
-        relationCount: 801,
+        relationCount: 1,
         activityCount: 2,
         position: null,
         unitName: null,
         knownCallsignId: null,
       },
     ],
-    edges: Array.from({ length: 801 }, (_, index) => ({
-      id: `ALPHA__BRAVO__${String(index).padStart(3, '0')}`,
-      source: 'ALPHA',
-      target: 'BRAVO',
-      weight: 801 - index,
-      byFreq: [{ freq: '652.111', weight: 801 - index, messageIds: [index + 1] }],
-      messagesPreview: [],
-    })),
-    freqs: [{ freq: '652.111', enabledByDefault: true }],
+    edges: [
+      {
+        id: 'ALPHA__BRAVO',
+        source: 'ALPHA',
+        target: 'BRAVO',
+        weight: 20,
+        byFreq: [
+          { freq: '652.111', weight: 12, messageIds: [1, 2] },
+          { freq: '852.111', weight: 8, messageIds: [3] },
+        ],
+        messagesPreview: [
+          { id: 1, timestamp: 1, freq: '652.111', text: 'alpha bravo', callsigns: ['ALPHA', 'BRAVO'] },
+        ],
+      },
+    ],
+    freqs: [
+      { freq: '652.111', enabledByDefault: true },
+      { freq: '852.111', enabledByDefault: true },
+    ],
   };
 }
 
@@ -201,8 +246,6 @@ describe('NetworkCallsignRelationsPanel', () => {
       view.container.querySelector<HTMLButtonElement>('[id$="-filters"]')?.click();
     });
 
-    expect(document.body.querySelector('[aria-label="Закрити налаштування"]')).not.toBeNull();
-
     act(() => {
       const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       checkboxes[1]?.click();
@@ -270,6 +313,24 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
   });
 
+  it('keeps the graph visible while refreshing relations', () => {
+    const view = renderPanel();
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relationsLoading={true}
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain("Граф зв'язків");
+    expect(view.container.textContent).toContain("Оновлюємо граф зв'язків");
+    expect(view.container.textContent).not.toContain("Завантажуємо граф зв'язків");
+  });
+
   it('shows the dense-graph warning while keeping graph controls visible', () => {
     const view = renderPanel(createDenseRelations(), {
       relationsSearch: 'node',
@@ -286,17 +347,17 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.querySelector('[data-testid="date-picker-До"]')).not.toBeNull();
   });
 
-  it('shows the subset hint when the graph is trimmed for performance', () => {
-    const view = renderPanel(createSubsetRelations(), {
-      relationsSearch: '',
+  it('hides labels in dense mode and disables the switch', () => {
+    const view = renderPanel(createDenseUiRelations(), {
+      relationsSearch: 'node',
       relationsEnabledFreqs: ['652.111'],
       relationsMinIntensity: 1,
       relationsShowLabels: true,
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Показано лише найсильніші зв\'язки для швидкодії');
-    expect(view.container.textContent).not.toContain("Забагато зв'язків для відображення");
+    expect(view.container.querySelector('input[type="checkbox"][disabled]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label="Пояснення про підписи"]')).not.toBeNull();
   });
 
   it('turns off labels when dense mode hides them', () => {
@@ -312,7 +373,7 @@ describe('NetworkCallsignRelationsPanel', () => {
   });
 
   it('restores labels after dense mode clears', () => {
-    const view = renderPanel(createDenseRelations(), {
+    const view = renderPanel(createDenseUiRelations(), {
       relationsSearch: 'node',
       relationsEnabledFreqs: ['652.111'],
       relationsMinIntensity: 1,
@@ -324,6 +385,7 @@ describe('NetworkCallsignRelationsPanel', () => {
       view.root.render(
         <NetworkCallsignRelationsPanel
           {...(view.props as any)}
+          relations={createSparseRelations()}
           relationsSearch=""
           relationsMinIntensity={12}
           relationsShowLabels={false}
