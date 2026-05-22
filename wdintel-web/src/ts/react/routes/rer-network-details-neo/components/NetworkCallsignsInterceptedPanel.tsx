@@ -1,12 +1,14 @@
 import AddIcon from '@mui/icons-material/Add';
+import HearingOutlinedIcon from '@mui/icons-material/HearingOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-import { Box, Button, Chip, CircularProgress, ListItemIcon, MenuItem, Skeleton, Stack, Typography } from '@mui/material';
+import { Box, Button, Chip, CircularProgress, ListItemIcon, MenuItem, Skeleton, Stack } from '@mui/material';
 import { useState } from 'react';
 
 import type { NetworkCallsignInterceptedView } from '../network-callsigns';
 import { PowerMenu } from '../../../components/PowerMenu';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
 import { normalizeCallsignDisplay } from '../network-callsigns';
+import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 
 type InterceptedPanelProps = {
   rows: NetworkCallsignInterceptedView[];
@@ -203,19 +205,11 @@ export function NetworkCallsignsInterceptedPanel({
           </Box>
         ) : null}
         {showEmptyState ? (
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              px: 0,
-              py: 1,
-              width: '100%',
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.25 }}>
-              Немає перехоплених позивних без каталогу
-            </Typography>
-          </Box>
+          <NetworkDetailsEmptyState
+            icon={<HearingOutlinedIcon />}
+            title="Немає перехоплених позивних без каталогу"
+            minHeight={180}
+          />
         ) : null}
       </Stack>
       {mutationBusy ? (

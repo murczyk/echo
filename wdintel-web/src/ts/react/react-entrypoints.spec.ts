@@ -23,6 +23,7 @@ const ENTRYPOINTS = [
   { modulePath: './analysis-map-search-element', tag: 'analysis-map-search' },
   { modulePath: './rer-duty-neo-element', tag: 'rer-duty-neo' },
   { modulePath: './analysis-map-settings-element', tag: 'analysis-map-settings' },
+  { modulePath: './analysis-map-window-control-element', tag: 'analysis-map-window-control' },
   { modulePath: './keys-neo-element', tag: 'keys-neo' },
   { modulePath: './messenger-neo-element', tag: 'messenger-neo' },
   { modulePath: './settings-neo-element', tag: 'settings-neo' },

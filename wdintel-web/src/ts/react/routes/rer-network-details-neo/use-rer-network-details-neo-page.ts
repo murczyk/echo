@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRerNetworkDetailsNeoPageActions } from './use-rer-network-details-neo-page.actions';
 import {
   EMPTY_STATE,
@@ -7,14 +7,22 @@ import {
   canEditNetwork,
   canManageDescriptions,
   canManageNetworkCallsignActions,
+  canViewNetworkActivityTab,
+  canViewNetworkRelationsTab,
   formatNetworkFreqRange,
   formatTransferTypeLabel,
+  normalizeNetworkRelationsSinceChange,
+  normalizeNetworkRelationsTillChange,
   networkStatusDisplay,
   sortDescriptionsByCreatedAtDesc,
   type NetworkDetailsNeoPageState,
   type NetworkOption,
 } from './use-rer-network-details-neo-page.shared';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
+import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
 
 function buildOptions<T extends { id: number; name: string }>(items: T[]): NetworkOption[] {
   return items.map((item) => ({ id: item.id, label: item.name }));
@@ -33,7 +41,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     frequencyReloadGeneration.current += 1;
   }
 
-  const { reload, loadCallsigns, loadNetworkActivity, loadPelengPoints } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
+  const { reload, loadCallsigns, loadRelations, loadNetworkActivity, loadPelengPoints } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -44,6 +52,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
   const canManageDescriptionActions = useMemo(() => canManageDescriptions(state.currentUser), [state.currentUser]);
   const canManageCallsignActions = useMemo(() => canManageNetworkCallsignActions(state.currentUser), [state.currentUser]);
+  const canViewActivityTab = useMemo(() => canViewNetworkActivityTab(state.currentUser), [state.currentUser]);
+  const canViewRelationsTab = useMemo(() => canViewNetworkRelationsTab(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
   const pelengActiveFrom = state.network?.activeFrom ?? null;
@@ -79,6 +89,61 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     loadCallsigns,
   });
 
+  const setRelationsSearch = useCallback((relationsSearch: string) => {
+    setState((current) => ({ ...current, relationsSearch }));
+  }, [setState]);
+
+  const setRelationsEnabledFreqs = useCallback((relationsEnabledFreqs: string[]) => {
+    setState((current) => ({ ...current, relationsEnabledFreqs: [...relationsEnabledFreqs] }));
+  }, [setState]);
+
+  const setRelationsMinIntensity = useCallback((relationsMinIntensity: number) => {
+    setState((current) => ({ ...current, relationsMinIntensity }));
+  }, [setState]);
+
+  const setRelationsShowLabels = useCallback((relationsShowLabels: boolean) => {
+    setState((current) => ({ ...current, relationsShowLabels }));
+  }, [setState]);
+
+  const setRelationsSelectedNodeId = useCallback((relationsSelectedNodeId: string | null) => {
+    setState((current) => ({ ...current, relationsSelectedNodeId, relationsSelectedEdgeId: null }));
+  }, [setState]);
+
+  const setRelationsSelectedEdgeId = useCallback((relationsSelectedEdgeId: string | null) => {
+    setState((current) => ({ ...current, relationsSelectedEdgeId, relationsSelectedNodeId: null }));
+  }, [setState]);
+
+  const setRelationsSince = useCallback((relationsSince: string) => {
+    setState((current) => {
+      const next = normalizeNetworkRelationsSinceChange(current.relationsSince, current.relationsTill, relationsSince);
+      return {
+        ...current,
+        ...next,
+        relationsLoaded: false,
+        relationsError: null,
+      };
+    });
+  }, [setState]);
+
+  const setRelationsTill = useCallback((relationsTill: string) => {
+    setState((current) => {
+      const next = normalizeNetworkRelationsTillChange(current.relationsSince, current.relationsTill, relationsTill);
+      return {
+        ...current,
+        ...next,
+        relationsLoaded: false,
+        relationsError: null,
+      };
+    });
+  }, [setState]);
+
+  const relationsDateRangeValid = useMemo(() => {
+    const since = parseDateInputInTimeZone(state.relationsSince);
+    const till = parseDateInputInTimeZone(state.relationsTill);
+    if (since === null || till === null) return false;
+    return since <= till;
+  }, [state.relationsSince, state.relationsTill]);
+
   useEffect(() => {
     if (state.network === null) return;
     if (state.freqsLoaded || state.freqsLoading || state.freqsError !== null) return;
@@ -90,6 +155,31 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
     void loadCallsigns(state.network.id);
   }, [loadCallsigns, state.callsignsError, state.callsignsLoaded, state.callsignsLoading, state.network]);
+
+  useEffect(() => {
+    if (state.network === null) return;
+    if (state.activeNetworkDetailsTab !== 'relations') return;
+    if (!relationsDateRangeValid) return;
+    if (state.relationsLoaded || state.relationsLoading || state.relationsError !== null) return;
+    const since = parseDateInputInTimeZone(state.relationsSince);
+    const till = parseDateInputExclusiveEndInTimeZone(state.relationsTill);
+    if (since === null || till === null) return;
+    void loadRelations(
+      state.network.id,
+      since,
+      till,
+    );
+  }, [
+    loadRelations,
+    state.activeNetworkDetailsTab,
+    state.network,
+    state.relationsError,
+    state.relationsLoaded,
+    state.relationsLoading,
+    state.relationsSince,
+    state.relationsTill,
+    relationsDateRangeValid,
+  ]);
 
   useEffect(() => {
     if (state.network === null) return;
@@ -153,6 +243,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     canEdit,
     canManageDescriptionActions,
     canManageCallsignActions,
+    canViewActivityTab,
+    canViewRelationsTab,
     isAdmin,
     unitNames,
     aorItems,
@@ -259,6 +351,27 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     addInterceptedCallsignToNetwork: actions.addInterceptedCallsignToNetwork,
     toggleNetworkCallsignMainRadioStation: actions.toggleNetworkCallsignMainRadioStation,
     toggleNetworkCallsignCommandControl: actions.toggleNetworkCallsignCommandControl,
+    relations: state.relations,
+    relationsLoaded: state.relationsLoaded,
+    relationsLoading: state.relationsLoading,
+    relationsError: state.relationsError,
+    relationsSearch: state.relationsSearch,
+    setRelationsSearch,
+    relationsEnabledFreqs: state.relationsEnabledFreqs,
+    setRelationsEnabledFreqs,
+    relationsMinIntensity: state.relationsMinIntensity,
+    setRelationsMinIntensity,
+    relationsShowLabels: state.relationsShowLabels,
+    setRelationsShowLabels,
+    relationsSelectedNodeId: state.relationsSelectedNodeId,
+    setRelationsSelectedNodeId,
+    relationsSelectedEdgeId: state.relationsSelectedEdgeId,
+    setRelationsSelectedEdgeId,
+    relationsSince: state.relationsSince,
+    setRelationsSince,
+    relationsTill: state.relationsTill,
+    setRelationsTill,
+    loadRelations,
     loadPelengPoints,
     descriptionDrawerOpen: state.descriptionDrawerOpen,
     descriptionDrawerMode: state.descriptionDrawerMode,

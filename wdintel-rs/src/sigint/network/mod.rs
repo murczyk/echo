@@ -36,6 +36,7 @@ pub mod etalon_calc;
 pub mod goi;
 pub mod merge;
 pub mod oneoff;
+pub mod relations;
 pub mod types;
 
 /// Отримання списку мереж

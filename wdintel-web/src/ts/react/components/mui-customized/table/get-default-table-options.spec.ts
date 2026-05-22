@@ -13,6 +13,7 @@ import {
   renderDefaultMrtEmptyRowsFallback,
   withExplicitSelectAllOption,
 } from './get-default-table-options';
+import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../../routes/shared/empty-state-text';
 
 describe('getSharedFilterTextFieldProps', () => {
   it('returns select-specific props for select filters', () => {
@@ -219,7 +220,7 @@ describe('renderDefaultMrtEmptyRowsFallback', () => {
       } as any,
     });
 
-    expect(element.props.children.props.message).toBe('Нічого не знайдено');
+    expect(element.props.children.props.message).toBe(EMPTY_STATE_NO_RESULTS_TEXT);
   });
 
   it('honors an explicit external hasFilters override', () => {

@@ -412,7 +412,7 @@ navBar user shared activeName props =
                         , triggerClass = "block rounded px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
                         }
                     , button
-                        [ class "flex appearance-none items-center gap-1 border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
+                        [ class "flex appearance-none items-center gap-1 rounded border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
                         , onClick props.onLogout
                         ]
                         [ i [ class "bi bi-box-arrow-right text-lg" ] []
@@ -471,10 +471,9 @@ changelogDropdown props maybeData =
                     , title "Останні зміни"
                     , type_ "button"
                     ]
-                    [ img
-                        [ src "/img/changelog.png"
-                        , alt "Останні зміни"
-                        , class "h-6 w-6"
+                    [ i
+                        [ class "bi bi-megaphone text-lg leading-none"
+                        , attribute "aria-hidden" "true"
                         ]
                         []
                     , badge

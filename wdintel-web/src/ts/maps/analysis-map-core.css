@@ -25,62 +25,9 @@ body.analysis-map-fullscreen-open {
 	overflow: hidden;
 }
 
-#analysis-map .exit-button {
-	padding: 8px;
-	border-radius: 8px;
-	width: 48px;
-	height: 48px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	background: var(--bs-body-bg) !important;
-	color: var(--bs-body-color) !important;
-	border: 1px solid var(--bs-border-color);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-#analysis-map .analysis-map-window-control {
-	display: flex;
-	background: var(--bs-card-bg) !important;
-	border: 1px solid var(--bs-border-color);
-	border-radius: 8px;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-	overflow: hidden;
-}
-
-#analysis-map .leaflet-top.leaflet-right .analysis-map-window-control {
+#analysis-map .leaflet-top.leaflet-right .analysis-map-window-control-host {
 	margin-right: 10px;
 	margin-top: 10px;
-}
-
-#analysis-map .analysis-map-window-button {
-	background: transparent;
-	border: none;
-	cursor: pointer;
-	color: var(--bs-body-color);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 44px;
-	height: 44px;
-	padding: 0;
-	font-size: 18px;
-	transition: background-color 0.2s, color 0.2s;
-}
-
-#analysis-map .analysis-map-window-button + .analysis-map-window-button {
-	border-left: 1px solid var(--bs-border-color);
-}
-
-#analysis-map .analysis-map-window-button:hover {
-	background-color: var(--bs-secondary-bg);
-	color: var(--bs-primary);
-}
-
-#analysis-map .analysis-map-window-button:focus {
-	outline: 2px solid var(--bs-primary);
-	outline-offset: -2px;
 }
 
 #analysis-map .leaflet-popup-content-wrapper,
