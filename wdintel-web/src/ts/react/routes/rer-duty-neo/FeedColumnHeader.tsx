@@ -37,7 +37,7 @@ const columnPanelOverlaySx = {
   display: 'flex',
   alignItems: 'flex-start',
   zIndex: 2,
-  pointerEvents: 'none',
+  pointerEvents: 'auto',
 } as const;
 
 const columnPanelInnerSx = {
