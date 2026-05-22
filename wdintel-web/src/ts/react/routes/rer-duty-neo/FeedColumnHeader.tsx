@@ -72,7 +72,6 @@ export function FeedColumnHeader({
         backgroundColor: 'background.paper',
         borderRadius: 0,
         border: '1px solid rgba(148, 163, 184, 0.28)',
-        overflow: 'hidden',
         flexShrink: 0,
       }}
     >
