@@ -1,6 +1,6 @@
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
 import WhatshotOutlinedIcon from '@mui/icons-material/WhatshotOutlined';
-import { Box, Button, IconButton, Skeleton, Stack, Typography } from '@mui/material';
+import { Box, Button, IconButton, Stack, Typography } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import { createPortal } from 'react-dom';
 import { useId, useMemo } from 'react';
@@ -10,21 +10,7 @@ import { useNetworkDetailsPelengationMap } from './useNetworkDetailsPelengationM
 
 type Props = {
   pelengPoints: NetworkPoint[];
-  pelengPointsLoaded: boolean;
-  pelengPointsLoading: boolean;
 };
-
-function PelengationSkeleton() {
-  return (
-    <Stack spacing={1.5} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" sx={{ flexWrap: 'wrap' }}>
-        <Skeleton variant="text" width={180} height={32} />
-        <Skeleton variant="rounded" width={180} height={38} sx={{ borderRadius: 2 }} />
-      </Stack>
-      <Skeleton variant="rounded" sx={{ height: { xs: 220, sm: 280, md: 340 }, borderRadius: 3 }} />
-    </Stack>
-  );
-}
 
 function getMapShellSx(isFullscreen: boolean) {
   return (theme: Theme) => ({
@@ -100,8 +86,6 @@ function getMapControlSx(theme: Theme) {
 
 export function NetworkDetailsPelengationMap({
   pelengPoints,
-  pelengPointsLoaded,
-  pelengPointsLoading,
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
   const {
@@ -123,8 +107,6 @@ export function NetworkDetailsPelengationMap({
     const baseLabel = satelliteEnabled ? 'Супутник' : 'Карта';
     return heatmapEnabled ? `${baseLabel} • Heatmap` : baseLabel;
   }, [heatmapEnabled, satelliteEnabled]);
-
-  const showSkeleton = pelengPointsLoading || !pelengPointsLoaded || !mapReady;
 
   const mapPanel = (
     <Box component="section" sx={getMapShellSx(isFullscreen)}>
@@ -180,33 +162,6 @@ export function NetworkDetailsPelengationMap({
           {`${pointCountLabel} • ${activeLayerLabel}`}
         </Typography>
       </Box>
-
-      {showSkeleton ? (
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 1500,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            pt: 2,
-            bgcolor: 'rgba(10, 10, 8, 0.24)',
-            pointerEvents: 'none',
-          }}
-        >
-          <Box
-            sx={{
-              width: { xs: '88%', sm: '72%', md: '56%' },
-              maxWidth: 520,
-              minWidth: 240,
-              px: 2,
-            }}
-          >
-            <PelengationSkeleton />
-          </Box>
-        </Box>
-      ) : null}
     </Box>
   );
 
@@ -224,7 +179,6 @@ export function NetworkDetailsPelengationMap({
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
                 {pointCountLabel}
               </Typography>
-              {showSkeleton ? <Skeleton variant="rounded" width={84} height={18} sx={{ borderRadius: 1 }} /> : null}
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>

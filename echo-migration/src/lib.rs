@@ -245,6 +245,7 @@ mod m20260513_102326_add_sigint_network_description_topic;
 mod m20260519_091147_add_command_control_to_sigint_network_callsign;
 mod m20260520_120000_create_organism_keyword_set;
 
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -496,7 +497,10 @@ impl MigratorTrait for Migrator {
                 m20260513_102326_add_sigint_network_description_topic::Migration,
             ),
             Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
+<<<<<<< HEAD
             Box::new(m20260520_120000_create_organism_keyword_set::Migration),
+=======
+>>>>>>> main
         ]
     }
 }

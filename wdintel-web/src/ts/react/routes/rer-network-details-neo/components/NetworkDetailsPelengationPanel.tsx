@@ -1,6 +1,8 @@
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import type { NetworkPoint } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 import { NetworkDetailsPelengationMap } from './NetworkDetailsPelengationMap';
 
 type Props = {
@@ -21,14 +23,14 @@ export function NetworkDetailsPelengationPanel({
   if (pelengPointsError) {
     return (
       <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
-        <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
+        <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', alignItems: 'center' }}>
           <Typography component="h2" variant="h6">
             ПЕЛЕНГАЦІЯ
           </Typography>
           <PowerAlert severity="error" autoHideDuration={null} sx={{ width: '100%' }}>
             {pelengPointsError}
           </PowerAlert>
-          <Button variant="outlined" onClick={onReloadPelengPoints} sx={{ alignSelf: 'flex-start' }}>
+          <Button variant="outlined" onClick={onReloadPelengPoints}>
             Спробувати ще раз
           </Button>
         </Stack>
@@ -43,21 +45,12 @@ export function NetworkDetailsPelengationPanel({
           <Typography component="h2" variant="h6">
             Пеленгація
           </Typography>
-          <Box
-            sx={{
-              minHeight: 220,
-              display: 'grid',
-              placeItems: 'center',
-              borderRadius: 2,
-              border: '1px dashed',
-              borderColor: 'divider',
-              bgcolor: 'background.default',
-            }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              Точки перехоплення відсутні
-            </Typography>
-          </Box>
+          <NetworkDetailsEmptyState
+            icon={<LocationOnOutlinedIcon />}
+            title="Немає пеленгації"
+            description="Підключіть пости, щоб бачити геопросторові дані."
+            minHeight={360}
+          />
         </Stack>
       </Box>
     );
@@ -66,8 +59,6 @@ export function NetworkDetailsPelengationPanel({
   return (
     <NetworkDetailsPelengationMap
       pelengPoints={pelengPoints}
-      pelengPointsLoaded={pelengPointsLoaded}
-      pelengPointsLoading={pelengPointsLoading}
     />
   );
 }

@@ -1,3 +1,4 @@
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -5,6 +6,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Divider, Ic
 import { alpha } from '@mui/material/styles';
 
 import type { Network, NetworkDescrType } from '../../../../../Bindings';
+import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 
 type NetworkDescription = Network['descriptions'][number];
 
@@ -231,21 +233,11 @@ function DescriptionsList({
   return (
     <Stack spacing={1.5} sx={{ minHeight: 0, pb: 1.5 }}>
       {descriptions.length === 0 ? (
-        <Box
-          sx={{
-            minHeight: 180,
-            display: 'grid',
-            placeItems: 'center',
-            borderRadius: 2,
-            border: '1px dashed',
-            borderColor: 'divider',
-            bgcolor: 'background.default',
-          }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            {getDescriptionEmptyText(descrType)}
-          </Typography>
-        </Box>
+        <NetworkDetailsEmptyState
+          icon={<DescriptionOutlinedIcon />}
+          title={getDescriptionEmptyText(descrType)}
+          minHeight={220}
+        />
       ) : (
         <Stack spacing={1.5} sx={{ pb: 0.5 }}>
           {descriptions.map((description) => {

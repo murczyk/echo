@@ -107,12 +107,12 @@ function NetworkFreqCreateWizardComponent({
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const [newKeySaving, setNewKeySaving] = useState(false);
   const [freqTouched, setFreqTouched] = useState(false);
+  const [techForm, setTechForm] = useState<TechForm>(DEFAULT_TECH_FORM);
   const [newKeyForm, setNewKeyForm] = useState<NewKeyForm>({
     key: '',
     description: '',
     modulationId: null,
   });
-  const [techForm, setTechForm] = useState<TechForm>(DEFAULT_TECH_FORM);
   const freqValidationError = getFrequencyFormatError(form.freq);
 
   const modulationItems = useMemo(
@@ -139,8 +139,8 @@ function NetworkFreqCreateWizardComponent({
 
   useEffect(() => {
     if (!open) return;
-    setTechForm(DEFAULT_TECH_FORM);
     setFreqTouched(false);
+    setTechForm(DEFAULT_TECH_FORM);
   }, [open]);
 
   useEffect(() => {
@@ -396,7 +396,6 @@ function NetworkFreqCreateWizardComponent({
                   <MenuItem value="VEDA">VEDA</MenuItem>
                 </Select>
               </FormControl>
-
               <NetworkFreqKeysSection
                 canManageKeys={canManageKeys}
                 saving={saving}

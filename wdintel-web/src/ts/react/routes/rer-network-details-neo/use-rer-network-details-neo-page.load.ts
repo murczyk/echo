@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
+import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
 
 import { listAors } from '../../services/api/aor';
-import { getNetworkById, getNetworkGroupsActivityOne, listNetworkPoints } from '../../services/api/networks';
+import { getNetworkById, getNetworkCallsignRelations, getNetworkGroupsActivityOne, listNetworkPoints } from '../../services/api/networks';
 import { getModulations } from '../../services/api/modulations';
 import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity, listSources } from '../../services/api/callsigns';
 import { getUnitsList } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
 import { fetchCurrentUser } from '../../services/api/user';
 import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
+import {
   EMPTY_STATE,
+  getDefaultNetworkRelationsDateRange,
   formatErrorMessage,
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
@@ -22,6 +28,34 @@ type ReloadGenerationRef = MutableRefObject<number>;
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
+export function deriveRelationsEnabledFreqs(
+  currentRelationsEnabledFreqs: string[],
+  currentRelations: NetworkCallsignRelationsRsp | null,
+  relations: NetworkCallsignRelationsRsp,
+): string[] {
+  const fallbackEnabledFreqs = relations.freqs.filter((freq) => freq.enabledByDefault).map((freq) => freq.freq);
+  const fallbackFreqs = fallbackEnabledFreqs.length > 0 ? fallbackEnabledFreqs : relations.freqs.map((freq) => freq.freq);
+
+  if (currentRelations === null) {
+    return fallbackFreqs;
+  }
+
+  const nextEnabledFreqs = currentRelationsEnabledFreqs.filter((freq) => relations.freqs.some((item) => item.freq === freq));
+  return nextEnabledFreqs.length > 0 ? nextEnabledFreqs : fallbackFreqs;
+}
+
+export function isCurrentRelationsWindow(
+  currentSince: string,
+  currentTill: string,
+  sinceDateInclusiveMs: number,
+  tillDateNoninclusiveMs: number,
+): boolean {
+  return (
+    parseDateInputInTimeZone(currentSince) === sinceDateInclusiveMs &&
+    parseDateInputExclusiveEndInTimeZone(currentTill) === tillDateNoninclusiveMs
+  );
+}
+
 export function useRerNetworkDetailsNeoPageLoad(
   networkId: number,
   setState: SetState,
@@ -29,10 +63,12 @@ export function useRerNetworkDetailsNeoPageLoad(
 ): {
   reload: () => () => void;
   loadCallsigns: (networkId: number) => Promise<void>;
+  loadRelations: (networkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => Promise<void>;
   loadNetworkActivity: (networkId: number) => Promise<void>;
   loadPelengPoints: (networkId: number, activeFrom: number | null, activeTo: number | null) => Promise<void>;
 } {
   const callsignLoadRequestIdRef = useRef(0);
+  const relationsLoadRequestIdRef = useRef(0);
   const networkActivityLoadRequestIdRef = useRef(0);
   const pelengPointsLoadRequestIdRef = useRef(0);
 
@@ -102,6 +138,68 @@ export function useRerNetworkDetailsNeoPageLoad(
         ...current,
         callsignsLoading: false,
         callsignsError: formatErrorMessage(error),
+      }));
+    }
+  }, [reloadGeneration, setState]);
+
+  const loadRelations = useCallback(async (targetNetworkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => {
+    const generation = reloadGeneration.current;
+    const requestId = ++relationsLoadRequestIdRef.current;
+    const isCurrent = () => reloadGeneration.current === generation && relationsLoadRequestIdRef.current === requestId;
+
+    if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        relationsLoading: false,
+        relationsLoaded: false,
+        relationsError: 'Некоректний ID мережі',
+      }));
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      relationsLoading: true,
+      relationsError: null,
+      relationsSelectedNodeId: null,
+      relationsSelectedEdgeId: null,
+    }));
+
+    try {
+      const relations = await getNetworkCallsignRelations({
+        networkId: targetNetworkId,
+        sinceDateInclusiveMs,
+        tillDateNoninclusiveMs,
+      });
+      if (!isCurrent()) return;
+
+      setState((current) => {
+        if (!isCurrentRelationsWindow(current.relationsSince, current.relationsTill, sinceDateInclusiveMs, tillDateNoninclusiveMs)) {
+          return {
+            ...current,
+            relationsLoading: false,
+            relationsLoaded: false,
+            relationsError: null,
+          };
+        }
+
+        return {
+          ...current,
+          relations,
+          relationsLoaded: true,
+          relationsLoading: false,
+          relationsError: null,
+          relationsEnabledFreqs: deriveRelationsEnabledFreqs(current.relationsEnabledFreqs, current.relations, relations),
+        };
+      });
+    } catch (error) {
+      if (!isCurrent()) return;
+      setState((current) => ({
+        ...current,
+        relationsLoading: false,
+        relationsLoaded: false,
+        relationsError: formatErrorMessage(error),
       }));
     }
   }, [reloadGeneration, setState]);
@@ -250,6 +348,17 @@ export function useRerNetworkDetailsNeoPageLoad(
           deleteDescriptionTarget: null,
           deleteDescriptionSubmitting: false,
           deleteDescriptionError: null,
+          relations: null,
+          relationsLoaded: false,
+          relationsLoading: false,
+          relationsError: null,
+          relationsSearch: '',
+          relationsEnabledFreqs: [],
+          relationsMinIntensity: 10,
+          relationsShowLabels: true,
+          relationsSelectedNodeId: null,
+          relationsSelectedEdgeId: null,
+          ...getDefaultNetworkRelationsDateRange(),
         }));
 
         void fetchCurrentUser()
@@ -319,5 +428,5 @@ export function useRerNetworkDetailsNeoPageLoad(
     return reload();
   }, [reload]);
 
-  return { reload, loadCallsigns, loadNetworkActivity, loadPelengPoints };
+  return { reload, loadCallsigns, loadRelations, loadNetworkActivity, loadPelengPoints };
 }

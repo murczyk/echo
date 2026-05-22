@@ -1785,6 +1785,7 @@ export type ReportPreviewReq = {
   reportTagsOnlyThisUnit: boolean | null;
   report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
+  interceptionKeepFullMessage: boolean | null;
   digestOmitExoId: boolean | null;
   digestForm1217: boolean | null;
 };
@@ -2062,6 +2063,7 @@ export type CreateNetworkCallsignReq = {
   unitDeveloping: boolean;
   developing: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type CallsignUnitStatsRsp = {
@@ -2092,6 +2094,7 @@ export type NetworkCallsign = {
   freqs: Array<string> | null;
   unitDeveloping: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type NetworkCallsignsActivityReq = {
@@ -2115,6 +2118,7 @@ export type UpdateNetworkCallsignReq = {
   unitDeveloping: boolean;
   developing: boolean;
   mainRadioStation: boolean;
+  commandControl: boolean;
 };
 
 export type EtalonkaExtendedSettings = {
@@ -2477,6 +2481,47 @@ export type NetworkPoint = {
   lng: number;
   body: string;
   id: number;
+};
+
+export type NetworkCallsignRelationsReq = {
+  networkId: number;
+  sinceDateInclusiveMs: number;
+  tillDateNoninclusiveMs: number;
+};
+
+export type NetworkCallsignRelationNode = {
+  id: string;
+  label: string;
+  weight: number;
+  relationCount: number;
+  activityCount: number;
+  position: string | null;
+  unitName: string | null;
+  knownCallsignId: number | null;
+};
+
+export type NetworkCallsignRelationEdgeFreq = {
+  freq: string;
+  weight: number;
+};
+
+export type NetworkCallsignRelationEdge = {
+  id: string;
+  source: string;
+  target: string;
+  weight: number;
+  byFreq: Array<NetworkCallsignRelationEdgeFreq>;
+};
+
+export type NetworkCallsignRelationFreq = {
+  freq: string;
+  enabledByDefault: boolean;
+};
+
+export type NetworkCallsignRelationsRsp = {
+  nodes: Array<NetworkCallsignRelationNode>;
+  edges: Array<NetworkCallsignRelationEdge>;
+  freqs: Array<NetworkCallsignRelationFreq>;
 };
 
 export type UpdFreqNetwork = {

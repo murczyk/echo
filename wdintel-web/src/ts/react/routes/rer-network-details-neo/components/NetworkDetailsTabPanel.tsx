@@ -8,6 +8,7 @@ import { NetworkDetailsActivityPanel } from './NetworkDetailsActivityPanel';
 import { NetworkDetailsDescriptionsPanel } from './NetworkDetailsDescriptionsPanel';
 import { NetworkDetailsFrequenciesPanel } from './NetworkDetailsFrequenciesPanel';
 import { NetworkDetailsPelengationPanel } from './NetworkDetailsPelengationPanel';
+import { NetworkCallsignRelationsPanel } from './NetworkCallsignRelationsPanel';
 
 type CallsignPanelProps = ComponentProps<typeof NetworkDetailsCallsignsPanel>;
 
@@ -18,6 +19,8 @@ type Props = {
   signDescriptions: Network['descriptions'];
   canManageDescriptions: boolean;
   canManageFrequencies: boolean;
+  canViewActivityTab: boolean;
+  canViewRelationsTab: boolean;
   activeNetworkDetailsTab: NetworkDetailsTab;
   expandedDescriptionIds: number[];
   onSetActiveNetworkDetailsTab: (tab: NetworkDetailsTab) => void;
@@ -33,6 +36,27 @@ type Props = {
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
   networkActivityError: string | null;
+  relations: ComponentProps<typeof NetworkCallsignRelationsPanel>['relations'];
+  relationsLoaded: boolean;
+  relationsLoading: boolean;
+  relationsError: string | null;
+  relationsSearch: string;
+  relationsEnabledFreqs: string[];
+  relationsMinIntensity: number;
+  relationsShowLabels: boolean;
+  relationsSelectedNodeId: string | null;
+  relationsSelectedEdgeId: string | null;
+  relationsSince: string;
+  relationsTill: string;
+  onReloadRelations: () => void;
+  onRelationsSearchChange: (value: string) => void;
+  onRelationsEnabledFreqsChange: (freqs: string[]) => void;
+  onRelationsMinIntensityChange: (value: number) => void;
+  onRelationsShowLabelsChange: (value: boolean) => void;
+  onRelationsSelectNodeId: (nodeId: string | null) => void;
+  onRelationsSelectEdgeId: (edgeId: string | null) => void;
+  onRelationsSinceChange: (value: string) => void;
+  onRelationsTillChange: (value: string) => void;
   pelengPoints: NetworkPoint[];
   pelengPointsLoaded: boolean;
   pelengPointsLoading: boolean;
@@ -61,6 +85,8 @@ export function NetworkDetailsTabPanel({
   signDescriptions,
   canManageDescriptions,
   canManageFrequencies,
+  canViewActivityTab,
+  canViewRelationsTab,
   activeNetworkDetailsTab,
   expandedDescriptionIds,
   onSetActiveNetworkDetailsTab,
@@ -76,6 +102,27 @@ export function NetworkDetailsTabPanel({
   networkActivityLoaded,
   networkActivityLoading,
   networkActivityError,
+  relations,
+  relationsLoaded,
+  relationsLoading,
+  relationsError,
+  relationsSearch,
+  relationsEnabledFreqs,
+  relationsMinIntensity,
+  relationsShowLabels,
+  relationsSelectedNodeId,
+  relationsSelectedEdgeId,
+  relationsSince,
+  relationsTill,
+  onReloadRelations,
+  onRelationsSearchChange,
+  onRelationsEnabledFreqsChange,
+  onRelationsMinIntensityChange,
+  onRelationsShowLabelsChange,
+  onRelationsSelectNodeId,
+  onRelationsSelectEdgeId,
+  onRelationsSinceChange,
+  onRelationsTillChange,
   pelengPoints,
   pelengPointsLoaded,
   pelengPointsLoading,
@@ -133,8 +180,9 @@ export function NetworkDetailsTabPanel({
           <Tab value="signs" label="Розвід. ознаки" />
           <Tab value="frequencies" label="Частоти" />
           <Tab value="callsigns" label="Позивні" />
-          <Tab value="activity" label="Активність" />
+          {canViewActivityTab ? <Tab value="activity" label="Активність" /> : null}
           <Tab value="pelengation" label="Пеленгація" />
+          {canViewRelationsTab ? <Tab value="relations" label="Граф зв'язків" /> : null}
         </Tabs>
       </Box>
 
@@ -169,7 +217,35 @@ export function NetworkDetailsTabPanel({
               <NetworkDetailsCallsignsPanel {...callsignPanelProps} />
             </Box>
           </Box>
-        ) : activeNetworkDetailsTab === 'activity' ? (
+        ) : activeNetworkDetailsTab === 'relations' && canViewRelationsTab ? (
+          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              <NetworkCallsignRelationsPanel
+                relations={relations}
+                relationsLoaded={relationsLoaded}
+                relationsLoading={relationsLoading}
+                relationsError={relationsError}
+                relationsSearch={relationsSearch}
+                relationsEnabledFreqs={relationsEnabledFreqs}
+                relationsMinIntensity={relationsMinIntensity}
+                relationsShowLabels={relationsShowLabels}
+                relationsSelectedNodeId={relationsSelectedNodeId}
+                relationsSelectedEdgeId={relationsSelectedEdgeId}
+                relationsSince={relationsSince}
+                relationsTill={relationsTill}
+                onReload={onReloadRelations}
+                onSearchChange={onRelationsSearchChange}
+                onEnabledFreqsChange={onRelationsEnabledFreqsChange}
+                onMinIntensityChange={onRelationsMinIntensityChange}
+                onShowLabelsChange={onRelationsShowLabelsChange}
+                onSelectNodeId={onRelationsSelectNodeId}
+                onSelectEdgeId={onRelationsSelectEdgeId}
+                onRelationsSinceChange={onRelationsSinceChange}
+                onRelationsTillChange={onRelationsTillChange}
+              />
+            </Box>
+          </Box>
+        ) : activeNetworkDetailsTab === 'activity' && canViewActivityTab ? (
           <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsActivityPanel

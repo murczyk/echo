@@ -24,6 +24,7 @@ import './ts/react/analysis-map-palitras-element'
 import './ts/react/analysis-map-coord-menu-element'
 import './ts/react/analysis-map-settings-element'
 import './ts/react/analysis-map-layer-switch-element'
+import './ts/react/analysis-map-window-control-element'
 import './ts/react/analysis-count-chip-element'
 import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/dashboard-chart.ts'
@@ -54,6 +55,7 @@ import './ts/react/rer-network-details-neo-element'
 import './ts/react/rer-palitra-neo-element'
 import './ts/react/rer-callsigns-neo-element'
 import './ts/react/importer-beta-element'
+import './ts/react/updates-neo-element'
 import { saveLegacyRerAnalysisQueryState } from "./ts/rer-analysis-query-state-legacy"
 import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
 
@@ -74,6 +76,14 @@ let themeSwitchOverlay: HTMLDivElement | null = null;
 let themeSwitchStyleMounted = false;
 let themeApplyRequestToken = 0;
 
+function loadLastSeenChangelogVersion(): string | null {
+    return localStorage.getItem('echo-last-seen-changelog');
+}
+
+function saveLastSeenChangelogVersion(version: string): void {
+    localStorage.setItem('echo-last-seen-changelog', version);
+}
+
 function ensureThemeSwitchUi(): HTMLDivElement {
     if (!themeSwitchStyleMounted) {
         const style = document.createElement('style');
@@ -82,7 +92,6 @@ function ensureThemeSwitchUi(): HTMLDivElement {
 html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
   transition: none !important;
 }
-
 #theme-switch-overlay {
   position: fixed;
   inset: 0;
@@ -409,6 +418,19 @@ export const onReady = ({ app, env }) => {
             let res_latlng = { lat: res.x, lng: res.y };
             let arg = { coords: res_latlng };
             app.ports.home_usk2000ToWgs84Res.send(arg);
+        });
+    }
+
+    if (app.ports && app.ports.shared_saveLastSeenChangelog) {
+        app.ports.shared_saveLastSeenChangelog.subscribe((version: string) => {
+            saveLastSeenChangelogVersion(version);
+        });
+    }
+
+    if (app.ports && app.ports.shared_loadLastSeenChangelog) {
+        app.ports.shared_loadLastSeenChangelog.subscribe(() => {
+            const savedVersion = loadLastSeenChangelogVersion();
+            app.ports.shared_loadLastSeenChangelogRes.send(savedVersion || '');
         });
     }
 

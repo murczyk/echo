@@ -1,6 +1,7 @@
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import SummarizeOutlinedIcon from '@mui/icons-material/SummarizeOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import {
   Box,
@@ -25,11 +26,18 @@ import { NetworkFreqEditDrawer } from './components/NetworkFreqEditDrawer';
 import { NetworkFreqTechDataDrawer } from './components/NetworkFreqTechDataDrawer';
 import { NetworkDescriptionDrawer } from './components/NetworkDescriptionDrawer';
 import { NetworkCallsignDrawer } from './components/NetworkCallsignDrawer';
+import { NetworkEtalonkaReportDialog } from './components/NetworkEtalonkaReportDialog';
 import { NetworkDetailsTabPanel } from './components/NetworkDetailsTabPanel';
 import { NetworkDetailsLeftPanel } from './components/NetworkDetailsLeftPanel';
 import { NetworkEditDrawer } from './components/NetworkEditDrawer';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
-import { formatClassicNetworkHeaderName } from './use-rer-network-details-neo-page.shared';
+import {
+  formatClassicNetworkHeaderName,
+} from './use-rer-network-details-neo-page.shared';
+import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
 
 type Props = {
   networkId: number;
@@ -111,6 +119,12 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
             <span>Редагувати</span>
           </Stack>
         </MenuItem>
+        <MenuItem onClick={page.openEtalonkaReportDialog} disabled={!page.network}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <SummarizeOutlinedIcon fontSize="small" />
+            <span>Завантажити еталонний опис</span>
+          </Stack>
+        </MenuItem>
         <MenuItem onClick={page.openDeleteDialog} disabled={!page.canDelete || !page.network} sx={{ color: 'error.main' }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <DeleteIcon fontSize="small" />
@@ -173,6 +187,8 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           signDescriptions={page.signDescriptions}
           canManageDescriptions={page.canManageDescriptionActions}
           canManageFrequencies={page.canEdit}
+          canViewActivityTab={page.canViewActivityTab}
+          canViewRelationsTab={page.canViewRelationsTab}
           activeNetworkDetailsTab={page.activeNetworkDetailsTab}
           expandedDescriptionIds={page.expandedDescriptionIds}
           onSetActiveNetworkDetailsTab={page.setActiveNetworkDetailsTab}
@@ -224,6 +240,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
             onOpenEditDrawer: page.openCallsignDrawerForEdit,
             onOpenDeleteDialog: page.openCallsignDeleteDialog,
             onToggleMainRadioStation: page.toggleNetworkCallsignMainRadioStation,
+            onToggleCommandControl: page.toggleNetworkCallsignCommandControl,
             onAddKnownCallsign: page.addKnownCallsignsToNetwork,
             onAddInterceptedToDeveloping: (callsign) => page.addInterceptedCallsignToNetwork(callsign, true),
             onAddInterceptedToNetwork: (callsign) => page.addInterceptedCallsignToNetwork(callsign, false),
@@ -233,6 +250,38 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
             inFlightUpdateIds: page.callsignUpdateInFlightIds,
             inFlightDeleteIds: page.callsignDeleteInFlightIds,
           }}
+          relations={page.relations}
+          relationsLoaded={page.relationsLoaded}
+          relationsLoading={page.relationsLoading}
+          relationsError={page.relationsError}
+          relationsSearch={page.relationsSearch}
+          relationsEnabledFreqs={page.relationsEnabledFreqs}
+          relationsMinIntensity={page.relationsMinIntensity}
+          relationsShowLabels={page.relationsShowLabels}
+          relationsSelectedNodeId={page.relationsSelectedNodeId}
+          relationsSelectedEdgeId={page.relationsSelectedEdgeId}
+          onReloadRelations={() => {
+            if (page.network) {
+              const since = parseDateInputInTimeZone(page.relationsSince);
+              const till = parseDateInputExclusiveEndInTimeZone(page.relationsTill);
+              if (since === null || till === null) return;
+              void page.loadRelations(
+                page.network.id,
+                since,
+                till,
+              );
+            }
+          }}
+          onRelationsSearchChange={page.setRelationsSearch}
+          onRelationsEnabledFreqsChange={page.setRelationsEnabledFreqs}
+          onRelationsMinIntensityChange={page.setRelationsMinIntensity}
+          onRelationsShowLabelsChange={page.setRelationsShowLabels}
+          onRelationsSelectNodeId={page.setRelationsSelectedNodeId}
+          onRelationsSelectEdgeId={page.setRelationsSelectedEdgeId}
+          relationsSince={page.relationsSince}
+          relationsTill={page.relationsTill}
+          onRelationsSinceChange={page.setRelationsSince}
+          onRelationsTillChange={page.setRelationsTill}
         />
       </Box>
 
@@ -365,6 +414,20 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
       >
         {page.freqDeleteError ? <PowerAlert severity="error">{page.freqDeleteError}</PowerAlert> : null}
       </ConfirmDangerDialog>
+
+      <NetworkEtalonkaReportDialog
+        report={page.etalonkaReport}
+        onClose={page.closeEtalonkaReportDialog}
+        onDownload={page.downloadEtalonkaReport}
+        onTypeChange={page.setEtalonkaReportType}
+        onActiveFreqsOnlyChange={page.setEtalonkaReportActiveFreqsOnly}
+        onIncludeSigintSignsChange={page.setEtalonkaReportIncludeSigintSigns}
+        onIncludeConfirmationChange={page.setEtalonkaReportIncludeConfirmation}
+        onIncludeUnitCallsignsChange={page.setEtalonkaReportIncludeUnitCallsigns}
+        onIncludePelengsMapChange={page.setEtalonkaReportIncludePelengsMap}
+        onFromDateTimeStrChange={page.setEtalonkaReportFromDateTimeStr}
+        onToDateTimeStrChange={page.setEtalonkaReportToDateTimeStr}
+      />
     </Box>
   );
 }

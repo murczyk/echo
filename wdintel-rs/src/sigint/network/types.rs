@@ -203,6 +203,65 @@ pub struct ListNetworkPointsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct NetworkCallsignRelationsReq {
+    pub network_id: i64,
+    pub since_date_inclusive_ms: i64,
+    pub till_date_noninclusive_ms: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRelationNode {
+    pub id: String,
+    pub label: String,
+    pub weight: i64,
+    pub relation_count: i64,
+    pub activity_count: i64,
+    pub position: Option<String>,
+    pub unit_name: Option<String>,
+    pub known_callsign_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRelationEdgeFreq {
+    pub freq: String,
+    pub weight: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRelationEdge {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub weight: i64,
+    pub by_freq: Vec<NetworkCallsignRelationEdgeFreq>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRelationFreq {
+    pub freq: String,
+    pub enabled_by_default: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRelationsRsp {
+    pub nodes: Vec<NetworkCallsignRelationNode>,
+    pub edges: Vec<NetworkCallsignRelationEdge>,
+    pub freqs: Vec<NetworkCallsignRelationFreq>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct UpdFreqNetwork {
     pub id: Option<i64>,
     pub unit_ids: Vec<i64>,

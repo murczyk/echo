@@ -1,3 +1,4 @@
+use crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE;
 use crate::entities::*;
 use crate::palitra::schedule_palitra_goi_delete;
 use crate::palitra::types::*;
@@ -1765,18 +1766,21 @@ async fn insert_many_points(
     if point_lexeme_actives.is_empty() {
         return Ok(());
     }
-    palitra_point_lexeme::Entity::insert_many(point_lexeme_actives)
-        .on_conflict(
-            OnConflict::columns([
-                palitra_point_lexeme::Column::PalitraPointId,
-                palitra_point_lexeme::Column::Lexeme,
-            ])
-            .do_nothing()
-            .to_owned(),
-        )
-        .exec(txn)
-        .await
-        .context(h!())?;
+    for chunk in point_lexeme_actives.chunks(PALITRA_POINTS_INSERT_BATCH_SIZE) {
+        let models = chunk.iter().cloned().collect_vec();
+        palitra_point_lexeme::Entity::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([
+                    palitra_point_lexeme::Column::PalitraPointId,
+                    palitra_point_lexeme::Column::Lexeme,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec(txn)
+            .await
+            .context(h!())?;
+    }
 
     Ok(())
 }

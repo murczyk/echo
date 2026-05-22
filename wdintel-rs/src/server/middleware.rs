@@ -26,6 +26,13 @@ fn should_skip_access_log(path: &str) -> bool {
 }
 
 fn is_access_log_enabled(req: &ServiceRequest) -> bool {
+    if matches!(
+        std::env::var("ECHO_DEV_BACK_REST_ONLY").ok().as_deref(),
+        Some("1") | Some("true")
+    ) {
+        return true;
+    }
+
     req.app_data::<actix_web::web::Data<Env>>()
         .map(|env| {
             env.config

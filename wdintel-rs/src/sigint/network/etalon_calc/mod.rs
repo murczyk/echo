@@ -139,6 +139,7 @@ pub async fn invalidate_network_inbox(
     backfill_task.clone().insert(db).await.c(h!())?;
     let mut sigint_freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .all(db)
         .await
         .c(h!())?;
@@ -156,6 +157,7 @@ pub async fn invalidate_network_inbox(
 
     Ok(())
 }
+
 pub async fn calculate_sigint_inbox_item_networks<'a, 'async_trait, C>(
     sigint_inbox_items: Vec<sigint_inbox_item::Model>,
     dbx: &'a C,

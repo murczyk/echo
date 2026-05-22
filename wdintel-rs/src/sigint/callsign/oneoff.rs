@@ -53,6 +53,7 @@ async fn fix_callsign(
         unit_developing: c.unit_developing,
         developing: false,
         main_radio_station: c.main_radio_station,
+        command_control: c.command_control,
     };
     crate::sigint::callsign::bl_network_callsign::ensure_callsign(
         &req, "system", &txn, &cc, *unit_id,

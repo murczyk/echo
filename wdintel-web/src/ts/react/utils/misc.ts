@@ -15,6 +15,8 @@ export function isPresent<T>(value: T | null | undefined): value is T {
   return !isNullOrUndefined(value);
 }
 
+export const NO_DATA_LABEL = '—';
+
 export function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
   if (isNullOrUndefined(arr)) return null;
   if (Array.isArray(arr) && arr.length === 0) return null;
@@ -62,16 +64,16 @@ export function objectsEqual(obj1: { [key: string]: any }, obj2: { [key: string]
 }
 
 export function formatDate(value: number | null | undefined, timeFormat?: Intl.DateTimeFormatOptions): string {
-  if (isNullOrUndefined(value)) return '—';
+  if (isNullOrUndefined(value)) return NO_DATA_LABEL;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return NO_DATA_LABEL;
   return date.toLocaleDateString('uk-UA', timeFormat);
 }
 
 export function formatDateTime24(value: number | null | undefined): string {
-  if (isNullOrUndefined(value)) return '—';
+  if (isNullOrUndefined(value)) return NO_DATA_LABEL;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return NO_DATA_LABEL;
   return date.toLocaleString('uk-UA', {
     year: 'numeric',
     month: '2-digit',
@@ -80,6 +82,16 @@ export function formatDateTime24(value: number | null | undefined): string {
     minute: '2-digit',
     hour12: false,
   });
+}
+
+export function formatUtcDateOnly(value: number | null | undefined): string {
+  if (isNullOrUndefined(value)) return NO_DATA_LABEL;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return NO_DATA_LABEL;
+  const year = String(date.getUTCFullYear()).slice(-2);
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${day}.${month}.${year}`;
 }
 
 export const APP_DATE_INPUT_MIN = '2022-01-01';
@@ -110,6 +122,13 @@ export function formatTimeInputValueInTimeZone(date: Date, timeZone: string = AP
 
 export function formatDateTimeInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
   return dayjs(date).tz(timeZone).format('YYYY-MM-DDTHH:mm');
+}
+
+export function formatUtcDateInputValue(date: Date): string {
+  const year = String(date.getUTCFullYear()).padStart(4, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function isValidDateInput(dateStr: string): boolean {
@@ -146,4 +165,17 @@ export function combineDateTimeInputToMs(dateTimeStr: string, timeZone: string =
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) return null;
   const [dateStr, timeStr] = dateTimeStr.split('T');
   return combineDateTimeToMs(dateStr, timeStr, timeZone);
+}
+
+export function parseDateInputInTimeZone(dateStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+  const trimmed = dateStr.trim();
+  if (trimmed === '') return null;
+
+  const parsed = dayjs.tz(trimmed, 'YYYY-MM-DD', timeZone);
+  return parsed.isValid() ? parsed.startOf('day').valueOf() : null;
+}
+
+export function parseDateInputExclusiveEndInTimeZone(dateStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+  const since = parseDateInputInTimeZone(dateStr, timeZone);
+  return since === null ? null : since + 24 * 60 * 60 * 1000;
 }

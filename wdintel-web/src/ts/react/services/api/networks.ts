@@ -4,6 +4,8 @@ import type {
   AddNetworkDescriptionsReq,
   DeleteNetworkDescriptionReq,
   DeleteNetworkFreqReq,
+  EtalonkaNetworkBatchReq,
+  EtalonkaReportType,
   ListNetworksReq,
   ListKeysReq,
   Network,
@@ -17,6 +19,8 @@ import type {
   SingleNetworkFreqsReq,
   ListKeysRsp,
   SingleNetworkCallsignsListRsp,
+  NetworkCallsignRelationsReq,
+  NetworkCallsignRelationsRsp,
   UpdateNetworkDescriptionReq,
   UpdateNetworkFreqReq,
   UpdateNetworkPostsReq,
@@ -24,7 +28,7 @@ import type {
   UpdateNetworkUnitsReq,
   EncryptionKeyData,
 } from '../../../../Bindings';
-import { postJson } from './client';
+import { postBytes, postJson } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */
@@ -109,6 +113,11 @@ export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<st
   return normalized.callsigns ?? [];
 }
 
+export async function getNetworkCallsignRelations(req: NetworkCallsignRelationsReq): Promise<NetworkCallsignRelationsRsp> {
+  const data = await postJson<NetworkCallsignRelationsRsp>('/api/sigint/network-callsigns/relations', transformCamelToSnake(req));
+  return transformSnakeToCamel<NetworkCallsignRelationsRsp>(data);
+}
+
 export async function addFreqToNetwork(req: AddNetworkFreqReq): Promise<Network> {
   const data = await postJson<Network>('/api/sigint/network/add-freq', transformCamelToSnake(req));
   return transformSnakeToCamel<Network>(data);
@@ -142,6 +151,36 @@ export async function createKey(req: CreateEncryptionKeyReq): Promise<Encryption
 export async function deleteNetwork(networkId: number): Promise<Network> {
   const data = await postJson<Network>('/api/sigint/delete-network', { network_id: networkId });
   return transformSnakeToCamel<Network>(data);
+}
+
+function toEtalonkaReportTypeBody(etalonkaType: EtalonkaReportType) {
+  if ('AccordingToTheForm' in etalonkaType) {
+    return {
+      AccordingToTheForm: {
+        active_freqs_only: etalonkaType.AccordingToTheForm.activeFreqsOnly,
+        include_sigint_signs: etalonkaType.AccordingToTheForm.includeSigintSigns,
+        include_confirmation: etalonkaType.AccordingToTheForm.includeConfirmation,
+      },
+    };
+  }
+
+  return {
+    ExtendedReport: {
+      since_date_inclusive_ms: etalonkaType.ExtendedReport.sinceDateInclusiveMs,
+      till_date_inclusive_ms: etalonkaType.ExtendedReport.tillDateInclusiveMs,
+      active_freqs_only: etalonkaType.ExtendedReport.activeFreqsOnly,
+      include_unit_callsigns: etalonkaType.ExtendedReport.includeUnitCallsigns,
+      include_sigint_signs: etalonkaType.ExtendedReport.includeSigintSigns,
+      include_confirmation: etalonkaType.ExtendedReport.includeConfirmation,
+      include_pelengs_map: etalonkaType.ExtendedReport.includePelengsMap,
+    },
+  };
+}
+
+export async function downloadNetworkEtalonkaReport(req: EtalonkaNetworkBatchReq): Promise<Blob> {
+  const body = transformCamelToSnake(req) as Record<string, unknown>;
+  body.etalonka_type = toEtalonkaReportTypeBody(req.etalonkaType);
+  return postBytes('/api/sigint/etalonka/report-networks-batch-id', body as any);
 }
 
 export async function updateNetworkPosts(req: UpdateNetworkPostsReq): Promise<Network> {

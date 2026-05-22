@@ -167,27 +167,6 @@ html[data-bs-theme="dark"] .badge-no-unit-sm {
     transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 
-/* Badge Main Radio Station - Special badge for main radio station network callsign*/
-.badge-main-radio {
-    background-color: var(--ochre-light);
-    color: var(--ochre-dark);
-    border: 1px solid var(--ochre-light-active);
-    font-size: 0.75rem;
-    font-weight: 500;
-    border-radius: 9999px;
-    padding: 0.25rem 0.5rem;
-    margin-left: 4px;
-    vertical-align: middle;
-    display: inline-block;
-    transition: all 0.15s ease;
-}
-
-html[data-bs-theme="dark"] .badge-main-radio {
-    background-color: var(--ochre-dark);
-    color: var(--ochre-light);
-    border-color: var(--ochre-normal);
-}
-
 .badge-highlighed-token--ner {
     background-color: rgba(23, 162, 184);
 }
@@ -224,4 +203,3 @@ html[data-bs-theme="dark"] .badge-main-radio {
     color: #fff;
     font-weight: 700;
 }
-

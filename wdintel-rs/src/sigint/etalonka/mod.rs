@@ -90,8 +90,41 @@ fn etalonka_progress_style() -> ProgressStyle {
 
 pub enum CallsignTableType {
     MainRadioStations,
+    CommandControlStations,
     OtherStations,
     AbsentMainStation,
+}
+
+fn select_callsigns_for_table_type(
+    net_callsigns: &[NetworkCallsign],
+    callsigns_table_type: &CallsignTableType,
+) -> Vec<NetworkCallsign> {
+    match callsigns_table_type {
+        CallsignTableType::MainRadioStations => net_callsigns
+            .iter()
+            .filter(|nc| nc.main_radio_station)
+            .cloned()
+            .collect(),
+        CallsignTableType::CommandControlStations => net_callsigns
+            .iter()
+            .filter(|nc| nc.command_control && !nc.main_radio_station)
+            .cloned()
+            .collect(),
+        CallsignTableType::OtherStations => net_callsigns
+            .iter()
+            .filter(|nc| {
+                !nc.main_radio_station && !nc.command_control && !nc.developing
+            })
+            .cloned()
+            .collect(),
+        CallsignTableType::AbsentMainStation => net_callsigns
+            .iter()
+            .filter(|nc| {
+                !nc.main_radio_station && !nc.command_control && !nc.developing
+            })
+            .cloned()
+            .collect(),
+    }
 }
 
 pub async fn bl_etalonka_report_networks_data(
@@ -1052,13 +1085,13 @@ fn add_network_callsigns_section(
     // Check if any main radio station exists
     let has_main_radio_station =
         net_callsigns.iter().any(|nc| nc.main_radio_station);
+    let has_command_control = net_callsigns.iter().any(|nc| nc.command_control);
 
     if has_main_radio_station {
-        let nc_for_main_radio_station: Vec<NetworkCallsign> = net_callsigns
-            .iter()
-            .filter(|nc| nc.main_radio_station)
-            .cloned()
-            .collect();
+        let nc_for_main_radio_station = select_callsigns_for_table_type(
+            net_callsigns,
+            &CallsignTableType::MainRadioStations,
+        );
 
         if let Some(table) = build_nc_table(
             &CallsignTableType::MainRadioStations,
@@ -1070,12 +1103,31 @@ fn add_network_callsigns_section(
         }
     }
 
+    if has_command_control {
+        let nc_for_command_control = select_callsigns_for_table_type(
+            net_callsigns,
+            &CallsignTableType::CommandControlStations,
+        );
+
+        if let Some(table) = build_nc_table(
+            &CallsignTableType::CommandControlStations,
+            &nc_for_command_control,
+            sources,
+            width_unit,
+        ) {
+            doc = doc.add_table(table).add_paragraph(Paragraph::new());
+        }
+    }
+
     if !net_callsigns.is_empty() {
-        let nc_filtered: Vec<NetworkCallsign> = net_callsigns
-            .iter()
-            .filter(|nc| !nc.main_radio_station && !nc.developing)
-            .cloned()
-            .collect();
+        let nc_filtered = select_callsigns_for_table_type(
+            net_callsigns,
+            if has_main_radio_station {
+                &CallsignTableType::OtherStations
+            } else {
+                &CallsignTableType::AbsentMainStation
+            },
+        );
 
         if let Some(table) = build_nc_table(
             if has_main_radio_station {
@@ -1296,6 +1348,7 @@ fn build_basic_network_callsigns_table(
     // build optional title row and pass to build_table
     let title_row = match callsigns_table_type {
         CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::CommandControlStations => Some("Ланка управління"),
         CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
         _ => None,
     }
@@ -1463,6 +1516,7 @@ fn build_extended_network_callsigns_table(
     // build optional title row and pass to build_table
     let title_row = match callsigns_table_type {
         CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::CommandControlStations => Some("Ланка управління"),
         CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
         _ => None,
     }
@@ -1892,6 +1946,36 @@ mod tests {
     use serde_json::json;
     use serial_test::serial;
 
+    fn make_network_callsign(
+        id: i64,
+        callsign: &str,
+        main_radio_station: bool,
+        command_control: bool,
+        developing: bool,
+    ) -> NetworkCallsign {
+        NetworkCallsign {
+            id,
+            network_id: 1,
+            callsign: callsign.to_string(),
+            known_callsign_id: None,
+            position: None,
+            comment: None,
+            unit_id: None,
+            unit_name: None,
+            source_id: None,
+            radio_freq: None,
+            created_at: Utc::now().timestamp_millis(),
+            active: true,
+            developing,
+            message_count: 0,
+            last_datetime: None,
+            freqs: None,
+            unit_developing: false,
+            main_radio_station,
+            command_control,
+        }
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_bl_etalonka_report_networks_data_includes_callsigns() {
@@ -2154,5 +2238,50 @@ mod tests {
         assert_eq!(entry.freqs.len(), 1);
         assert_eq!(entry.freqs[0].freq, freq);
         assert_eq!(entry.freqs[0].message_count, 1);
+    }
+
+    #[test]
+    fn test_select_callsigns_for_table_type_excludes_main_from_command_control()
+    {
+        let rows = vec![
+            make_network_callsign(1, "MAIN", true, true, false),
+            make_network_callsign(2, "CMD", false, true, false),
+            make_network_callsign(3, "OTHER", false, false, false),
+        ];
+
+        let main_rows = select_callsigns_for_table_type(
+            &rows,
+            &CallsignTableType::MainRadioStations,
+        );
+        let command_rows = select_callsigns_for_table_type(
+            &rows,
+            &CallsignTableType::CommandControlStations,
+        );
+        let other_rows = select_callsigns_for_table_type(
+            &rows,
+            &CallsignTableType::OtherStations,
+        );
+
+        assert_eq!(
+            main_rows
+                .iter()
+                .map(|row| row.callsign.as_str())
+                .collect::<Vec<_>>(),
+            vec!["MAIN"]
+        );
+        assert_eq!(
+            command_rows
+                .iter()
+                .map(|row| row.callsign.as_str())
+                .collect::<Vec<_>>(),
+            vec!["CMD"]
+        );
+        assert_eq!(
+            other_rows
+                .iter()
+                .map(|row| row.callsign.as_str())
+                .collect::<Vec<_>>(),
+            vec!["OTHER"]
+        );
     }
 }

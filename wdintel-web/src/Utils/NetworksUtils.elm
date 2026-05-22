@@ -6,6 +6,7 @@ import Core.Unit as Unit
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class)
+import String
 
 
 renderNetworkNameWithoutType : B.Network -> Dict Int B.Unit -> Html msg

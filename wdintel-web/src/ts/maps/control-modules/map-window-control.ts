@@ -4,6 +4,10 @@ export interface MapWindowControl extends L.Control {
   setFullscreen: (isFullscreen: boolean) => void;
 }
 
+type AnalysisMapWindowControlElement = HTMLElement & {
+  setFullscreen?: (isFullscreen: boolean) => void;
+};
+
 export function createMapWindowControl(
   toggleFullscreen: () => void,
   initialFullscreen = false
@@ -11,60 +15,33 @@ export function createMapWindowControl(
   const MapWindowControlClass = L.Control.extend({
     _isFullscreen: initialFullscreen,
     _map: null as L.Map | null,
-    _fullscreenButton: null as HTMLButtonElement | null,
-
-    _updateFullscreenButton: function () {
-      if (!this._fullscreenButton) {
-        return;
-      }
-
-      this._fullscreenButton.innerHTML = this._isFullscreen
-        ? '<i class="bi bi-fullscreen-exit"></i>'
-        : '<i class="bi bi-arrows-fullscreen"></i>';
-      this._fullscreenButton.setAttribute(
-        'aria-label',
-        this._isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'
-      );
-      this._fullscreenButton.title = this._isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу';
-    },
+    _windowControlElement: null as AnalysisMapWindowControlElement | null,
 
     onAdd: function (_map: L.Map) {
       this._map = _map;
-      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-window-control');
+      this._container = L.DomUtil.create('div', 'leaflet-control analysis-map-window-control-host');
 
-      const createZoomButton = (iconClass: string, ariaLabel: string, onClick: () => void) => {
-        const button = document.createElement('button');
-        button.className = 'analysis-map-window-button';
-        button.type = 'button';
-        button.setAttribute('aria-label', ariaLabel);
-        button.title = ariaLabel;
-        button.innerHTML = `<i class="${iconClass}"></i>`;
-        button.addEventListener('click', (event) => {
-          L.DomEvent.stopPropagation(event);
-          L.DomEvent.preventDefault(event);
-          onClick();
-        });
-        return button;
-      };
+      const windowControlElement = document.createElement(
+        'analysis-map-window-control'
+      ) as AnalysisMapWindowControlElement;
+      this._windowControlElement = windowControlElement;
+      windowControlElement.setFullscreen?.(this._isFullscreen);
 
-      const zoomInButton = createZoomButton('bi bi-plus-lg', 'Збільшити мапу', () => this._map?.zoomIn());
-      const zoomOutButton = createZoomButton('bi bi-dash-lg', 'Зменшити мапу', () => this._map?.zoomOut());
-      const fullscreenButton = document.createElement('button');
-      fullscreenButton.className = 'analysis-map-window-button';
-      fullscreenButton.type = 'button';
-      fullscreenButton.addEventListener('click', (event) => {
-        L.DomEvent.stopPropagation(event);
-        L.DomEvent.preventDefault(event);
-        this._isFullscreen = !this._isFullscreen;
-        this._updateFullscreenButton();
+      windowControlElement.addEventListener('analysis-map-zoom-in', () => {
+        this._map?.zoomIn();
+      });
+      windowControlElement.addEventListener('analysis-map-zoom-out', () => {
+        this._map?.zoomOut();
+      });
+      windowControlElement.addEventListener('analysis-map-toggle-fullscreen', (event: Event) => {
+        const customEvent = event as CustomEvent<{ fullscreen?: boolean }>;
+        if (typeof customEvent.detail?.fullscreen === 'boolean') {
+          this._isFullscreen = customEvent.detail.fullscreen;
+        }
         toggleFullscreen();
       });
-      this._fullscreenButton = fullscreenButton;
-      this._updateFullscreenButton();
 
-      this._container.appendChild(zoomInButton);
-      this._container.appendChild(zoomOutButton);
-      this._container.appendChild(fullscreenButton);
+      this._container.appendChild(windowControlElement);
 
       L.DomEvent.disableClickPropagation(this._container);
       L.DomEvent.disableScrollPropagation(this._container);
@@ -73,7 +50,7 @@ export function createMapWindowControl(
 
     setFullscreen: function (isFullscreen: boolean) {
       this._isFullscreen = isFullscreen;
-      this._updateFullscreenButton();
+      this._windowControlElement?.setFullscreen?.(isFullscreen);
     },
   });
 

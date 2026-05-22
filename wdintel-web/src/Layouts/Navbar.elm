@@ -12,6 +12,7 @@ import Layout exposing (Layout)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Msg
 import Shared.Components.Navbar
 import Shared.Components.Toast as Toast
 import Shared.Model
@@ -78,6 +79,7 @@ type Msg
     | ToggleNavbarVisibility
     | ToggleMobileNav
     | SetOpenDropdown (Maybe String)
+    | ChangelogSeen String
     | CloseDropdownOnly
     | ToastMsg Toast.Msg
 
@@ -158,6 +160,11 @@ update route msg model =
         CloseDropdownOnly ->
             ( { model | openDropdown = Nothing }, E.none )
 
+        ChangelogSeen version ->
+            ( model
+            , E.sendSharedMsg (Shared.Msg.SaveChangelogLastSeen version)
+            )
+
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
 
@@ -207,6 +214,7 @@ view user activeName shared route { toContentMsg, model, content } =
             , isNavbarVisible = model.isNavbarVisible
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
+            , onChangelogSeen = ChangelogSeen
             , onCloseDropdownOnly = CloseDropdownOnly
             , mobileNavOpen = model.mobileNavOpen
             , onToggleMobileNav = ToggleMobileNav

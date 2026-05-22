@@ -1,36 +1,78 @@
 import { describe, expect, it } from 'vitest';
+import dayjs from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 
-import type { User } from '../../../../Bindings';
+import { APP_TIME_ZONE } from '../../utils/misc';
 import {
-  canDeleteNetwork,
-  canEditNetwork,
-  canManageDescriptions,
-  canManageNetworkCallsignActions,
+  getDefaultNetworkRelationsDateRange,
+  parseNetworkDetailsDateInput,
+  parseNetworkDetailsDateInputExclusiveEnd,
+  normalizeNetworkRelationsSinceChange,
+  normalizeNetworkRelationsTillChange,
+  canViewNetworkActivityTab,
+  canViewNetworkRelationsTab,
 } from './use-rer-network-details-neo-page.shared';
+import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../utils/misc';
 
-function makeUser(roles: string[]): User {
-  return { roles } as User;
-}
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
-describe('rer-network-details neo permissions', () => {
-  it('allows network mutations only for admin or Rer-equivalent UnitsEditor users', () => {
-    expect(canEditNetwork(makeUser(['Admin']))).toBe(true);
-    expect(canDeleteNetwork(makeUser(['Admin']))).toBe(true);
-    expect(canEditNetwork(makeUser(['Rer', 'UnitsEditor']))).toBe(true);
-    expect(canDeleteNetwork(makeUser(['Rer', 'UnitsEditor']))).toBe(true);
-    expect(canEditNetwork(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-    expect(canDeleteNetwork(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-
-    expect(canEditNetwork(makeUser(['UnitsEditor']))).toBe(false);
-    expect(canDeleteNetwork(makeUser(['UnitsEditor']))).toBe(false);
-    expect(canEditNetwork(makeUser(['Rer']))).toBe(false);
-    expect(canDeleteNetwork(makeUser(['Rer']))).toBe(false);
+describe('use-rer-network-details-neo-page.shared date parsing', () => {
+  it('parses inclusive start dates at UTC midnight', () => {
+    expect(parseNetworkDetailsDateInput('2026-05-20')).toBe(Date.parse('2026-05-20T00:00:00Z'));
   });
 
-  it('keeps subordinate network actions aligned with network mutation permissions', () => {
-    expect(canManageDescriptions(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-    expect(canManageNetworkCallsignActions(makeUser(['Full', 'UnitsEditor']))).toBe(true);
-    expect(canManageDescriptions(makeUser(['UnitsEditor']))).toBe(false);
-    expect(canManageNetworkCallsignActions(makeUser(['UnitsEditor']))).toBe(false);
+  it('parses exclusive end dates as next-day UTC midnight', () => {
+    expect(parseNetworkDetailsDateInputExclusiveEnd('2026-05-20')).toBe(Date.parse('2026-05-21T00:00:00Z'));
+  });
+
+  it('parses relations dates in the app timezone', () => {
+    const since = dayjs.tz('2026-05-20', 'YYYY-MM-DD', APP_TIME_ZONE).startOf('day').valueOf();
+    const till = since + 24 * 60 * 60 * 1000;
+
+    expect(parseDateInputInTimeZone('2026-05-20')).toBe(since);
+    expect(parseDateInputExclusiveEndInTimeZone('2026-05-20')).toBe(till);
+  });
+
+  it('defaults the relations range to the last month through today', () => {
+    const range = getDefaultNetworkRelationsDateRange(new Date('2026-05-20T12:00:00Z'));
+    expect(range).toEqual({
+      relationsSince: '2026-04-20',
+      relationsTill: '2026-05-20',
+    });
+  });
+
+  it('clamps the since date to the till date when it moves forward past the end', () => {
+    expect(normalizeNetworkRelationsSinceChange('2026-05-10', '2026-05-20', '2026-05-25')).toEqual({
+      relationsSince: '2026-05-25',
+      relationsTill: '2026-05-25',
+    });
+  });
+
+  it('clamps the till date to the since date when it moves backward before the start', () => {
+    expect(normalizeNetworkRelationsTillChange('2026-05-20', '2026-05-25', '2026-05-10')).toEqual({
+      relationsSince: '2026-05-10',
+      relationsTill: '2026-05-10',
+    });
+  });
+
+  it('allows the activity tab only for backend activity roles', () => {
+    expect(canViewNetworkActivityTab({ roles: ['Rer'] } as any)).toBe(true);
+    expect(canViewNetworkActivityTab({ roles: ['Full'] } as any)).toBe(true);
+    expect(canViewNetworkActivityTab({ roles: ['Admin'] } as any)).toBe(true);
+    expect(canViewNetworkActivityTab({ roles: ['Api'] } as any)).toBe(false);
+    expect(canViewNetworkActivityTab({ roles: ['ApiAgent'] } as any)).toBe(false);
+  });
+
+  it('allows the relations tab for Api and the legacy read roles', () => {
+    expect(canViewNetworkRelationsTab({ roles: ['Rer'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['Api'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['ApiAgent'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['Full'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['Admin'] } as any)).toBe(true);
   });
 });

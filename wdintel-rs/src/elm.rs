@@ -7,6 +7,10 @@ const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER: &str = r#"|> Json.Decode.andT
 const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" Json.Decode.bool, Json.Decode.succeed False ]))"#;
 const RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.bool)))"#;
 const RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "without_network" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
+const RER_ANALYSIS_FILTER_TAGS_OPTION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))"#;
+const RER_ANALYSIS_FILTER_TAGS_OPTION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))"#;
+const RER_ANALYSIS_REPORT_TAGS_ONLY_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))"#;
+const RER_ANALYSIS_REPORT_TAGS_ONLY_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool), Json.Decode.succeed Nothing ]))"#;
 const FILTER_TAGS_OPTION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))"#;
 const FILTER_TAGS_OPTION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))"#;
 const FILTER_TAGS_OPTION_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder))))"#;
@@ -336,6 +340,12 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::network::types::ListNetworkPointsReq,
             crate::sigint::network::types::ListNetworkPointsRsp,
             crate::sigint::network::types::NetworkPoint,
+            crate::sigint::network::types::NetworkCallsignRelationsReq,
+            crate::sigint::network::types::NetworkCallsignRelationNode,
+            crate::sigint::network::types::NetworkCallsignRelationEdgeFreq,
+            crate::sigint::network::types::NetworkCallsignRelationEdge,
+            crate::sigint::network::types::NetworkCallsignRelationFreq,
+            crate::sigint::network::types::NetworkCallsignRelationsRsp,
             crate::sigint::network::types::UpdFreqNetwork,
             crate::sigint::network::types::ListNetworksReq,
             crate::sigint::network::types::ListNetworksSortBy,
@@ -715,6 +725,12 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::network::types::ListNetworkPointsReq,
             crate::sigint::network::types::ListNetworkPointsRsp,
             crate::sigint::network::types::NetworkPoint,
+            crate::sigint::network::types::NetworkCallsignRelationsReq,
+            crate::sigint::network::types::NetworkCallsignRelationNode,
+            crate::sigint::network::types::NetworkCallsignRelationEdgeFreq,
+            crate::sigint::network::types::NetworkCallsignRelationEdge,
+            crate::sigint::network::types::NetworkCallsignRelationFreq,
+            crate::sigint::network::types::NetworkCallsignRelationsRsp,
             crate::sigint::network::types::UpdFreqNetwork,
             crate::sigint::network::types::ListNetworksReq,
             crate::sigint::network::types::ListNetworksSortBy,
@@ -872,6 +888,14 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER,
             RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER,
+        )
+        .replace(
+            RER_ANALYSIS_FILTER_TAGS_OPTION_STRICT_DECODER,
+            RER_ANALYSIS_FILTER_TAGS_OPTION_COMPAT_DECODER,
+        )
+        .replace(
+            RER_ANALYSIS_REPORT_TAGS_ONLY_STRICT_DECODER,
+            RER_ANALYSIS_REPORT_TAGS_ONLY_COMPAT_DECODER,
         )
         .replace(
             FILTER_TAGS_OPTION_STRICT_DECODER_RAW,

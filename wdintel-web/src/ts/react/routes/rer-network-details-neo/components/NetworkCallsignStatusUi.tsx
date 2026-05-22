@@ -1,11 +1,15 @@
 import { Box, Tooltip } from '@mui/material';
 
+import type { NetworkCallsignStatus } from '../network-callsigns';
+
 type Props = {
   statusLabel: string;
-  developing: boolean;
+  status: NetworkCallsignStatus;
 };
 
-export function NetworkCallsignStatusDot({ statusLabel, developing }: Props) {
+export function NetworkCallsignStatusDot({ statusLabel, status }: Props) {
+  const color = status === 'developing' ? 'warning.main' : status === 'catalog' ? 'info.main' : 'success.main';
+
   return (
     <Tooltip title={statusLabel} arrow>
       <Box
@@ -15,7 +19,7 @@ export function NetworkCallsignStatusDot({ statusLabel, developing }: Props) {
           width: 10,
           height: 10,
           borderRadius: '50%',
-          bgcolor: developing ? 'warning.main' : 'success.main',
+          bgcolor: color,
           flexShrink: 0,
           cursor: 'default',
         }}
