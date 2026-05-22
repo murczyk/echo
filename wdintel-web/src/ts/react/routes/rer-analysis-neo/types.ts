@@ -107,15 +107,15 @@ export type AnalysisMapAttrs = {
   palitrasLoadState: AnalysisPalitrasLoadState;
 };
 
-export type AnalysisCenterTab = 'messages' | 'summary' | 'map';
-export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';
+export type AnalysisCenterTab = 'messages' | 'map';
+export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns' | 'summary';
 
 export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCenterTab[] {
-  return analysisMapInSidebar ? ['messages', 'summary'] : ['messages', 'map', 'summary'];
+  return analysisMapInSidebar ? ['messages'] : ['messages', 'map'];
 }
 
 export function getAnalysisSidebarTabs(analysisMapInSidebar: boolean): AnalysisSidebarTab[] {
-  return analysisMapInSidebar ? ['map', 'stats', 'callsigns', 'newCallsigns'] : ['stats', 'callsigns', 'newCallsigns'];
+  return analysisMapInSidebar ? ['map', 'stats', 'callsigns', 'newCallsigns', 'summary'] : ['stats', 'callsigns', 'newCallsigns', 'summary'];
 }
 
 export type AnalysisPageState = {
@@ -179,6 +179,7 @@ export type AnalysisPageState = {
   savedFilterName: string;
   savedFilters: SavedFilter[];
   summaryLoading: boolean;
+  summaryLoaded: boolean;
   rightSidebarLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;

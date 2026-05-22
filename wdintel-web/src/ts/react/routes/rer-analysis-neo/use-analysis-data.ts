@@ -72,6 +72,7 @@ export function useAnalysisData({
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
   const [messageComments, setMessageComments] = useState<Record<number, MessageComment[]>>({});
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryLoaded, setSummaryLoaded] = useState(false);
   const [summaryRows, setSummaryRows] = useState<SummaryTableFreqRow[]>([]);
   const [rightSidebarLoading, setRightSidebarLoading] = useState(false);
   const [newCallsignsLoading, setNewCallsignsLoading] = useState(false);
@@ -244,6 +245,7 @@ export function useAnalysisData({
     setMapPalitrasLoadState,
     setMapPoints,
     setSummaryCallsignsInfo,
+    setSummaryLoaded,
     setSummaryLoading,
     setSummaryRows,
     setTopCallsigns,
@@ -487,9 +489,9 @@ export function useAnalysisData({
   }, [reload, reloadTriggerKey]);
 
   useEffect(() => {
-    if (centerTab !== 'summary') return;
+    if (!rightSidebarVisible || rightSidebarTab !== 'summary') return;
     void loadSummaryData();
-  }, [centerTab, loadSummaryData]);
+  }, [loadSummaryData, rightSidebarTab, rightSidebarVisible]);
 
   useEffect(() => {
     if (!rightSidebarVisible) return;
@@ -582,6 +584,7 @@ export function useAnalysisData({
     refreshMapDateRange,
     reload,
     summaryLoading,
+    summaryLoaded,
     rightSidebarLoading,
     summaryRows,
     summaryCallsignsInfo,

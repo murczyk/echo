@@ -136,6 +136,7 @@ const baseAnalysisData = {
   refreshMapDateRange: vi.fn(),
   reload: vi.fn(),
   summaryLoading: false,
+  summaryLoaded: false,
   rightSidebarLoading: false,
   summaryRows: [],
   summaryCallsignsInfo: {},

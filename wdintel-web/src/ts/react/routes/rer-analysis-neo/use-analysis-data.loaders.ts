@@ -78,6 +78,7 @@ type Params = {
   setMapPalitrasLoadState: Setter<AnalysisPalitrasLoadState>;
   setMapPoints: Setter<FreqDetailedPoint[]>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
+  setSummaryLoaded: Setter<boolean>;
   setSummaryLoading: Setter<boolean>;
   setSummaryRows: Setter<SummaryTableFreqRow[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
@@ -120,6 +121,7 @@ export function useAnalysisDataLoaders(params: Params) {
     setMapPalitrasLoadState,
     setMapPoints,
     setSummaryCallsignsInfo,
+    setSummaryLoaded,
     setSummaryLoading,
     setSummaryRows,
     setTopCallsigns,
@@ -370,6 +372,7 @@ export function useAnalysisDataLoaders(params: Params) {
       summaryRequestRef.current += 1;
       summaryRequestKeyRef.current = null;
       setSummaryRows([]);
+      setSummaryLoaded(true);
       setSummaryLoading(false);
       return;
     }
@@ -404,9 +407,12 @@ export function useAnalysisDataLoaders(params: Params) {
       summaryRequestKeyRef.current = null;
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      if (requestId === summaryRequestRef.current) setSummaryLoading(false);
+      if (requestId === summaryRequestRef.current) {
+        setSummaryLoaded(true);
+        setSummaryLoading(false);
+      }
     }
-  }, [onError, onUnauthorized, optionsFreqs, queryState, setSummaryCallsignsInfo, setSummaryLoading, setSummaryRows]);
+  }, [onError, onUnauthorized, optionsFreqs, queryState, setSummaryCallsignsInfo, setSummaryLoaded, setSummaryLoading, setSummaryRows]);
 
   const loadTopSidebarData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);

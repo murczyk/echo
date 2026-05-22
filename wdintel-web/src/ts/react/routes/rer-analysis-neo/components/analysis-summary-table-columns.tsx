@@ -28,11 +28,11 @@ export function buildAnalysisSummaryTableColumns(): MRT_ColumnDef<AnalysisSummar
       header: 'Частота',
       accessorKey: 'freq',
       id: 'freq',
-      size: 150,
+      size: 128,
       grow: false,
       enableSorting: true,
       Cell: ({ row }) => (
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        <Typography variant="body2" noWrap sx={{ fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {row.original.freq}
         </Typography>
       ),
@@ -41,7 +41,7 @@ export function buildAnalysisSummaryTableColumns(): MRT_ColumnDef<AnalysisSummar
       header: 'К-сть',
       accessorKey: 'count',
       id: 'count',
-      size: 84,
+      size: 72,
       grow: false,
       enableSorting: true,
       muiTableHeadCellProps: { align: 'right' },
@@ -51,29 +51,29 @@ export function buildAnalysisSummaryTableColumns(): MRT_ColumnDef<AnalysisSummar
       header: 'Координати',
       accessorFn: (row) => row.coordinateLabels.join(' '),
       id: 'coordinateLabels',
-      size: 180,
-      Cell: ({ row }) => <CompactListCell items={row.original.coordinateLabels} />,
+      size: 144,
+      Cell: ({ row }) => <CompactListCell items={row.original.coordinateLabels} maxVisible={2} />,
     },
     {
       header: 'Позивні',
       accessorFn: (row) => row.callsignChips.map((entry) => entry.callsign).join(' '),
       id: 'callsignSearchText',
-      size: 320,
+      size: 224,
       Cell: ({ row }) => <CallsignChipsCell callsigns={row.original.callsignChips} />,
     },
     {
       header: 'Підрозділи',
       accessorFn: (row) => row.unitLabels.join(' '),
       id: 'unitSearchText',
-      size: 320,
-      Cell: ({ row }) => <CompactListCell items={row.original.unitLabels} maxVisible={4} />,
+      size: 208,
+      Cell: ({ row }) => <CompactListCell items={row.original.unitLabels} maxVisible={2} />,
     },
     {
       header: 'Локації',
       accessorFn: (row) => row.locationLabels.join(' '),
       id: 'locationSearchText',
-      size: 220,
-      Cell: ({ row }) => <CompactListCell items={row.original.locationLabels} />,
+      size: 168,
+      Cell: ({ row }) => <CompactListCell items={row.original.locationLabels} maxVisible={2} />,
     },
   ];
 }

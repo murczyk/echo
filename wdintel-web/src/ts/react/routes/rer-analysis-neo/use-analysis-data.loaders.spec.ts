@@ -85,6 +85,7 @@ function renderLoaderHook(overrides: Partial<Parameters<typeof useAnalysisDataLo
       setMapPalitrasLoadState: vi.fn(),
       setMapPoints: vi.fn(),
       setSummaryCallsignsInfo: vi.fn(),
+      setSummaryLoaded: vi.fn(),
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTopCallsigns: vi.fn(),
@@ -177,6 +178,7 @@ describe('retryable loader caches', () => {
   });
 
   it('loads summary callsign infos together with summary rows', async () => {
+    const setSummaryLoaded = vi.fn();
     apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({
       rows: [
         {
@@ -186,13 +188,14 @@ describe('retryable loader caches', () => {
     });
     apiMocks.fetchAnalysisCallsignInfos.mockResolvedValueOnce([]);
 
-    renderLoaderHook();
+    renderLoaderHook({ setSummaryLoaded });
 
     await act(async () => {
       await latest?.loadSummaryData();
     });
 
     expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledWith(['alpha', 'bravo']);
+    expect(setSummaryLoaded).toHaveBeenCalledWith(true);
   });
 
   it('retries right sidebar loading after a failure for the same query', async () => {

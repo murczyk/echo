@@ -332,6 +332,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     savedFilterName: savedFilters.savedFilterName,
     savedFilters: savedFilters.savedFilters,
     summaryLoading: data.summaryLoading,
+    summaryLoaded: data.summaryLoaded,
     rightSidebarLoading: data.rightSidebarLoading,
     summaryRows: data.summaryRows,
     summaryCallsignsInfo: data.summaryCallsignsInfo,
