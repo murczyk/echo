@@ -118,11 +118,13 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   useDocumentClickAway({
     enabled: showFilters,
     refs: [headerRef, filtersPanelRef],
+    ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
     onClickAway: closeFilters,
   });
   useDocumentClickAway({
     enabled: showNotificationPanel,
     refs: [headerRef, notificationPanelRef],
+    ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
     onClickAway: closeNotificationPanel,
   });
 
