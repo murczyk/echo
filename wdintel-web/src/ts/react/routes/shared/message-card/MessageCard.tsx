@@ -239,6 +239,8 @@ export function AnalysisMessageCard(props: BaseMessageCardProps) {
   return <MessageCard {...props} displayMode="analysis" />;
 }
 
+const MESSAGE_CARD_ACTION_COLOR = 'var(--color-action)';
+
 function CardActionLink({
   href,
   icon,
@@ -260,31 +262,31 @@ function CardActionLink({
         aria-label={label}
         size="small"
         color="inherit"
-      sx={{
-        width: 30,
-        height: 30,
-        borderRadius: 999,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'color-mix(in srgb, var(--color-card) 88%, white 12%)',
-        color: 'text.primary',
-        transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease',
-        '& .MuiSvgIcon-root': {
-          fontSize: 16,
-          color: 'var(--color-icons)',
-          flexShrink: 0,
-        },
-        '&:hover': {
-          bgcolor: 'action.hover',
-          borderColor: 'var(--message-callsign-color)',
-          color: 'var(--message-callsign-color)',
-          textDecoration: 'none',
-        },
-        '&:focus-visible': {
-          outline: '2px solid var(--message-callsign-color)',
-          outlineOffset: '2px',
-        },
-      }}
+        sx={{
+          width: 30,
+          height: 30,
+          borderRadius: 999,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'color-mix(in srgb, var(--color-card) 88%, white 12%)',
+          color: 'text.primary',
+          transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease',
+          '& .MuiSvgIcon-root': {
+            fontSize: 16,
+            color: MESSAGE_CARD_ACTION_COLOR,
+            flexShrink: 0,
+          },
+          '&:hover': {
+            bgcolor: 'action.hover',
+            borderColor: MESSAGE_CARD_ACTION_COLOR,
+            color: MESSAGE_CARD_ACTION_COLOR,
+            textDecoration: 'none',
+          },
+          '&:focus-visible': {
+            outline: `2px solid ${MESSAGE_CARD_ACTION_COLOR}`,
+            outlineOffset: '2px',
+          },
+        }}
       >
         {icon}
       </IconButton>
