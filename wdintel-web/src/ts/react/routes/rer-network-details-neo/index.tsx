@@ -187,6 +187,8 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           signDescriptions={page.signDescriptions}
           canManageDescriptions={page.canManageDescriptionActions}
           canManageFrequencies={page.canEdit}
+          canViewActivityTab={page.canViewActivityTab}
+          canViewRelationsTab={page.canViewRelationsTab}
           activeNetworkDetailsTab={page.activeNetworkDetailsTab}
           expandedDescriptionIds={page.expandedDescriptionIds}
           onSetActiveNetworkDetailsTab={page.setActiveNetworkDetailsTab}

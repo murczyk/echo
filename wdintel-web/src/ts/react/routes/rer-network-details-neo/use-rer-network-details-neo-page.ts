@@ -7,6 +7,8 @@ import {
   canEditNetwork,
   canManageDescriptions,
   canManageNetworkCallsignActions,
+  canViewNetworkActivityTab,
+  canViewNetworkRelationsTab,
   formatNetworkFreqRange,
   formatTransferTypeLabel,
   normalizeNetworkRelationsSinceChange,
@@ -50,6 +52,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
   const canManageDescriptionActions = useMemo(() => canManageDescriptions(state.currentUser), [state.currentUser]);
   const canManageCallsignActions = useMemo(() => canManageNetworkCallsignActions(state.currentUser), [state.currentUser]);
+  const canViewActivityTab = useMemo(() => canViewNetworkActivityTab(state.currentUser), [state.currentUser]);
+  const canViewRelationsTab = useMemo(() => canViewNetworkRelationsTab(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
   const pelengActiveFrom = state.network?.activeFrom ?? null;
@@ -239,6 +243,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     canEdit,
     canManageDescriptionActions,
     canManageCallsignActions,
+    canViewActivityTab,
+    canViewRelationsTab,
     isAdmin,
     unitNames,
     aorItems,

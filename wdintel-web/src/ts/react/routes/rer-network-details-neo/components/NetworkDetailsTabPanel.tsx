@@ -19,6 +19,8 @@ type Props = {
   signDescriptions: Network['descriptions'];
   canManageDescriptions: boolean;
   canManageFrequencies: boolean;
+  canViewActivityTab: boolean;
+  canViewRelationsTab: boolean;
   activeNetworkDetailsTab: NetworkDetailsTab;
   expandedDescriptionIds: number[];
   onSetActiveNetworkDetailsTab: (tab: NetworkDetailsTab) => void;
@@ -83,6 +85,8 @@ export function NetworkDetailsTabPanel({
   signDescriptions,
   canManageDescriptions,
   canManageFrequencies,
+  canViewActivityTab,
+  canViewRelationsTab,
   activeNetworkDetailsTab,
   expandedDescriptionIds,
   onSetActiveNetworkDetailsTab,
@@ -176,9 +180,9 @@ export function NetworkDetailsTabPanel({
           <Tab value="signs" label="Розвід. ознаки" />
           <Tab value="frequencies" label="Частоти" />
           <Tab value="callsigns" label="Позивні" />
-          <Tab value="activity" label="Активність" />
+          {canViewActivityTab ? <Tab value="activity" label="Активність" /> : null}
           <Tab value="pelengation" label="Пеленгація" />
-          <Tab value="relations" label="Граф зв'язків" />
+          {canViewRelationsTab ? <Tab value="relations" label="Граф зв'язків" /> : null}
         </Tabs>
       </Box>
 
@@ -213,7 +217,7 @@ export function NetworkDetailsTabPanel({
               <NetworkDetailsCallsignsPanel {...callsignPanelProps} />
             </Box>
           </Box>
-        ) : activeNetworkDetailsTab === 'relations' ? (
+        ) : activeNetworkDetailsTab === 'relations' && canViewRelationsTab ? (
           <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkCallsignRelationsPanel
@@ -241,7 +245,7 @@ export function NetworkDetailsTabPanel({
               />
             </Box>
           </Box>
-        ) : activeNetworkDetailsTab === 'activity' ? (
+        ) : activeNetworkDetailsTab === 'activity' && canViewActivityTab ? (
           <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsActivityPanel

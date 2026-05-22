@@ -114,6 +114,20 @@ export function canManageNetworkCallsignActions(user: User | null): boolean {
   return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
 }
 
+export function canViewNetworkActivityTab(user: User | null): boolean {
+  const roles = new Set(user?.roles ?? []);
+  return roles.has('Admin') || roles.has('Full') || roles.has('Rer');
+}
+
+export function canViewNetworkRelationsTab(user: User | null): boolean {
+  const roles = new Set(user?.roles ?? []);
+  return roles.has('Admin')
+    || roles.has('Full')
+    || roles.has('Rer')
+    || roles.has('Api')
+    || roles.has('ApiAgent');
+}
+
 function canManageNetworkActions(roles: Set<string>): boolean {
   return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
 }

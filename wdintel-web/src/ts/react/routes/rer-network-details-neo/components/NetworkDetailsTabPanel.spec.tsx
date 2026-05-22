@@ -42,6 +42,8 @@ function renderPanel(): Rendered {
     signDescriptions: [],
     canManageDescriptions: false,
     canManageFrequencies: false,
+    canViewActivityTab: true,
+    canViewRelationsTab: true,
     activeNetworkDetailsTab: 'relations',
     expandedDescriptionIds: [],
     onSetActiveNetworkDetailsTab: vi.fn(),
@@ -124,5 +126,83 @@ describe('NetworkDetailsTabPanel', () => {
 
     expect(view.container.textContent).toContain("Граф зв'язків");
     expect(view.container.querySelector('[data-testid="relations-panel"]')).not.toBeNull();
+  });
+
+  it('hides the activity and relations tabs when access is not granted', async () => {
+    const view = renderPanel();
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkDetailsTabPanel
+          network={null}
+          loading={false}
+          confirmationDescriptions={[]}
+          signDescriptions={[]}
+          canManageDescriptions={false}
+          canManageFrequencies={false}
+          canViewActivityTab={false}
+          canViewRelationsTab={false}
+          activeNetworkDetailsTab="descriptions"
+          expandedDescriptionIds={[]}
+          onSetActiveNetworkDetailsTab={vi.fn()}
+          onToggleExpanded={vi.fn()}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          onCreate={vi.fn()}
+          freqs={[]}
+          freqsLoaded={false}
+          freqsLoading={false}
+          freqsError={null}
+          networkActivity={{}}
+          networkActivityLoaded={false}
+          networkActivityLoading={false}
+          networkActivityError={null}
+          relations={null}
+          relationsLoaded={false}
+          relationsLoading={false}
+          relationsError={null}
+          relationsSearch=""
+          relationsEnabledFreqs={[]}
+          relationsMinIntensity={10}
+          relationsShowLabels={true}
+          relationsSelectedNodeId={null}
+          relationsSelectedEdgeId={null}
+          relationsSince=""
+          relationsTill=""
+          onReloadRelations={vi.fn()}
+          onRelationsSearchChange={vi.fn()}
+          onRelationsEnabledFreqsChange={vi.fn()}
+          onRelationsMinIntensityChange={vi.fn()}
+          onRelationsShowLabelsChange={vi.fn()}
+          onRelationsSelectNodeId={vi.fn()}
+          onRelationsSelectEdgeId={vi.fn()}
+          onRelationsSinceChange={vi.fn()}
+          onRelationsTillChange={vi.fn()}
+          pelengPoints={[]}
+          pelengPointsLoaded={false}
+          pelengPointsLoading={false}
+          pelengPointsError={null}
+          onReloadNetworkActivity={vi.fn()}
+          onReloadPelengPoints={vi.fn()}
+          modulations={[]}
+          expandedFrequencyGroupIds={[]}
+          toggleFrequencyGroupExpanded={vi.fn()}
+          onOpenFreqCreateWizard={vi.fn()}
+          onOpenFreqEditDrawer={vi.fn()}
+          onOpenFreqTechDrawer={vi.fn()}
+          onOpenDeleteFreqDialog={vi.fn()}
+          onOpenFreqRowActions={vi.fn()}
+          onCloseFreqRowActions={vi.fn()}
+          freqRowActionMenuAnchorEl={null}
+          freqRowActionTargetId={null}
+          onReloadFrequencies={vi.fn()}
+          callsignPanelProps={{} as any}
+        />,
+      );
+    });
+
+    expect(view.container.textContent).not.toContain('Активність');
+    expect(view.container.textContent).not.toContain("Граф зв'язків");
   });
 });

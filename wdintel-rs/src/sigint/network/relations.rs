@@ -65,9 +65,13 @@ pub async fn network_callsigns_relations(
     req: Json<NetworkCallsignRelationsReq>,
 ) -> Result<Json<NetworkCallsignRelationsRsp>, AppError> {
     let user_id = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user_id,
+        vec!["Rer", "Api", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
 
     let req = req.into_inner();
     let network_id = req.network_id;

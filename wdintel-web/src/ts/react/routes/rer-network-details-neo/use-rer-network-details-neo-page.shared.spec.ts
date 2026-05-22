@@ -10,6 +10,8 @@ import {
   parseNetworkDetailsDateInputExclusiveEnd,
   normalizeNetworkRelationsSinceChange,
   normalizeNetworkRelationsTillChange,
+  canViewNetworkActivityTab,
+  canViewNetworkRelationsTab,
 } from './use-rer-network-details-neo-page.shared';
 import {
   parseDateInputExclusiveEndInTimeZone,
@@ -56,5 +58,21 @@ describe('use-rer-network-details-neo-page.shared date parsing', () => {
       relationsSince: '2026-05-10',
       relationsTill: '2026-05-10',
     });
+  });
+
+  it('allows the activity tab only for backend activity roles', () => {
+    expect(canViewNetworkActivityTab({ roles: ['Rer'] } as any)).toBe(true);
+    expect(canViewNetworkActivityTab({ roles: ['Full'] } as any)).toBe(true);
+    expect(canViewNetworkActivityTab({ roles: ['Admin'] } as any)).toBe(true);
+    expect(canViewNetworkActivityTab({ roles: ['Api'] } as any)).toBe(false);
+    expect(canViewNetworkActivityTab({ roles: ['ApiAgent'] } as any)).toBe(false);
+  });
+
+  it('allows the relations tab for Api and the legacy read roles', () => {
+    expect(canViewNetworkRelationsTab({ roles: ['Rer'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['Api'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['ApiAgent'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['Full'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['Admin'] } as any)).toBe(true);
   });
 });
