@@ -497,10 +497,7 @@ impl MigratorTrait for Migrator {
                 m20260513_102326_add_sigint_network_description_topic::Migration,
             ),
             Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
-<<<<<<< HEAD
             Box::new(m20260520_120000_create_organism_keyword_set::Migration),
-=======
->>>>>>> main
         ]
     }
 }
