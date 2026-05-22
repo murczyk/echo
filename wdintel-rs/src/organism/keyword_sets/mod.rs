@@ -2,8 +2,8 @@ pub mod bl;
 pub mod types;
 
 use self::bl::{
-    keyword_set_can_delete, keyword_set_can_edit, merge_lexeme_batches,
-    normalize_keyword_words,
+    keyword_set_can_delete, keyword_set_can_edit, keyword_set_name_taken_err,
+    map_keyword_set_db_err, merge_lexeme_batches, normalize_keyword_words,
 };
 use self::types::*;
 use crate::config::{
@@ -155,6 +155,24 @@ pub async fn resolve_inbox_keyword_words(
     normalize_keyword_words(&words_from_json(&row.words)?)
 }
 
+async fn ensure_keyword_set_name_available(
+    dbx: &DatabaseConnection,
+    organism_id: i64,
+    name: &str,
+    exclude_id: Option<i64>,
+) -> Result<(), AppError> {
+    let mut query = organism_keyword_set::Entity::find()
+        .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
+        .filter(organism_keyword_set::Column::Name.eq(name));
+    if let Some(id) = exclude_id {
+        query = query.filter(organism_keyword_set::Column::Id.ne(id));
+    }
+    if query.one(dbx).await.c(h!())?.is_some() {
+        return Err(keyword_set_name_taken_err());
+    }
+    Ok(())
+}
+
 async fn load_set_for_viewer(
     dbx: &DatabaseConnection,
     organism_id: i64,
@@ -229,22 +247,13 @@ pub async fn upsert_keyword_set(
                     msg: "Немає прав на редагування цього набору".to_string(),
                 });
             } else if name != existing.name {
-                let name_taken = organism_keyword_set::Entity::find()
-                    .filter(
-                        organism_keyword_set::Column::OrganismId
-                            .eq(organism_id),
-                    )
-                    .filter(organism_keyword_set::Column::Name.eq(name))
-                    .filter(organism_keyword_set::Column::Id.ne(id))
-                    .one(&env.dbx)
-                    .await
-                    .c(h!())?
-                    .is_some();
-                if name_taken {
-                    return Err(AppError::BL {
-                        msg: "Набір з такою назвою вже існує".to_string(),
-                    });
-                }
+                ensure_keyword_set_name_available(
+                    &env.dbx,
+                    organism_id,
+                    name,
+                    Some(id),
+                )
+                .await?;
             }
             let is_default = existing.is_system_default;
             let mut active: organism_keyword_set::ActiveModel = existing.into();
@@ -253,7 +262,10 @@ pub async fn upsert_keyword_set(
             }
             active.words = Set(words_json);
             active.updated_at = Set(now);
-            active.update(&env.dbx).await.c(h!())?
+            active
+                .update(&env.dbx)
+                .await
+                .map_err(map_keyword_set_db_err)?
         }
         None => {
             if name == ORGANISM_KEYWORD_SET_DEFAULT_NAME {
@@ -277,6 +289,8 @@ pub async fn upsert_keyword_set(
                     ),
                 });
             }
+            ensure_keyword_set_name_available(&env.dbx, organism_id, name, None)
+                .await?;
             organism_keyword_set::ActiveModel {
                 id: NotSet,
                 organism_id: Set(organism_id),
@@ -288,7 +302,7 @@ pub async fn upsert_keyword_set(
             }
             .insert(&env.dbx)
             .await
-            .c(h!())?
+            .map_err(map_keyword_set_db_err)?
         }
     };
 

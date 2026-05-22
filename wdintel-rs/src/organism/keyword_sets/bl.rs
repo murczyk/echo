@@ -2,7 +2,38 @@ use crate::config::{
     ORGANISM_KEYWORD_SET_MAX_WORDS_PER_SET, ORGANISM_KEYWORD_SET_MAX_WORD_LEN,
 };
 use crate::error::AppError;
+use sea_orm::DbErr;
 use std::collections::BTreeSet;
+use std::error::Error as StdError;
+
+pub const KEYWORD_SET_NAME_TAKEN_MSG: &str = "Набір з такою назвою вже існує";
+
+pub fn keyword_set_name_taken_err() -> AppError {
+    AppError::BL {
+        msg: KEYWORD_SET_NAME_TAKEN_MSG.to_string(),
+    }
+}
+
+pub fn map_keyword_set_db_err(err: DbErr) -> AppError {
+    if is_postgres_unique_violation(&err) {
+        keyword_set_name_taken_err()
+    } else {
+        err.into()
+    }
+}
+
+fn is_postgres_unique_violation(err: &DbErr) -> bool {
+    let mut source: Option<&(dyn StdError + 'static)> = Some(err);
+    while let Some(e) = source {
+        if let Some(sqlx::Error::Database(db)) = e.downcast_ref::<sqlx::Error>() {
+            if db.code().as_deref() == Some("23505") {
+                return true;
+            }
+        }
+        source = e.source();
+    }
+    false
+}
 
 pub fn normalize_keyword_words(words: &[String]) -> Result<Vec<String>, AppError> {
     let mut seen = BTreeSet::new();
