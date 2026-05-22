@@ -200,6 +200,6 @@ Restore on dev machine:
   scp $local_plain DEV_HOST:/var/tmp/
   ssh DEV_HOST "sudo -u postgres dropdb --if-exists --force ${restore_db_print} && sudo -u postgres psql postgres -c \"CREATE DATABASE ${restore_db_print}\" && sudo -u postgres pg_restore -d ${restore_db_print} /var/tmp/${local_plain_basename}"
 
-You can disable messengers by running:
-  cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im
+You can disable messengers and GOI sync by running:
+  cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
 EOF

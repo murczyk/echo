@@ -75,6 +75,11 @@ async fn goi_association_worker_step(
         load_goi_worker_integrations(&env.as_ref().dbx, with_api_jobs)
             .await
             .c(h!())?;
+    if integrations.is_empty() {
+        trace!("[goi_association_worker] no configured integrations, skipping");
+        tokio::time::sleep(goi_worker_sleep_duration()).await;
+        return Ok(());
+    }
 
     if with_api_jobs {
         run_goi_api_jobs(env, state, integrations).await;

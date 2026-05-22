@@ -148,14 +148,30 @@ pub async fn fix_datasource_default_aor(
     Ok(())
 }
 
-/// One-off: Disable all IM datasources by setting their status to "paused",
 pub async fn oneoff_disable_im(mode: Mode) -> Result<(), AppError> {
-    info!("oneoff_disable_im started");
     let config = config::read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
+    disable_im_datasources(&dbx, "oneoff-disable-im").await?;
+    Ok(())
+}
 
+pub async fn oneoff_disable_im_and_goi(mode: Mode) -> Result<(), AppError> {
+    let config = config::read_config(mode).context(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    disable_im_datasources(&dbx, "oneoff-disable-im-and-goi").await?;
+    disable_goi_integrations(&dbx).await?;
+    Ok(())
+}
+
+async fn disable_im_datasources(
+    db: &DatabaseConnection,
+    command: &str,
+) -> Result<(), AppError> {
+    info!("{command} disable_im_datasources started");
     datasource::Entity::update_many()
         .set(datasource::ActiveModel {
             status: Set(AccountStatus::Paused),
@@ -164,24 +180,53 @@ pub async fn oneoff_disable_im(mode: Mode) -> Result<(), AppError> {
         })
         .col_expr(
             datasource::Column::Description,
-            Expr::cust(
+            Expr::cust(format!(
                 "coalesce(description,'') \
-                 || ' | disabled by oneoff-disable-im' \
+                 || ' | disabled by {command}' \
                  || ' | lock id = ' \
-                 || coalesce(echo_client_lock_id::text,'')",
-            ),
+                 || coalesce(echo_client_lock_id::text,'')"
+            )),
         )
         .filter(datasource::Column::Status.eq(AccountStatus::Active))
-        .exec(&dbx)
+        .exec(db)
         .await
         .context(h!())?;
 
     echo_client_lock::Entity::delete_many()
-        .exec(&dbx)
+        .exec(db)
         .await
         .context(h!())?;
 
-    info!("oneoff_disable_im completed");
+    echo_account::Entity::update_many()
+        .set(echo_account::ActiveModel {
+            is_linked: Set(false),
+            ..Default::default()
+        })
+        .filter(echo_account::Column::IsLinked.eq(true))
+        .exec(db)
+        .await
+        .context(h!())?;
+
+    info!("{command} disable_im_datasources completed");
+
+    Ok(())
+}
+
+async fn disable_goi_integrations(
+    db: &DatabaseConnection,
+) -> Result<(), AppError> {
+    info!("oneoff-disable-im-and-goi disable_goi_integrations started");
+    goi_integration::Entity::update_many()
+        .set(goi_integration::ActiveModel {
+            ssh_user: Set(None),
+            api_login: Set(None),
+            api_password: Set(None),
+            ..Default::default()
+        })
+        .exec(db)
+        .await
+        .context(h!())?;
+    info!("oneoff-disable-im-and-goi disable_goi_integrations completed");
 
     Ok(())
 }
