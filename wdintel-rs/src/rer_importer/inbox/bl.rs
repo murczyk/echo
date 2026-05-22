@@ -196,30 +196,33 @@ pub async fn aggregate_to_inbox_messages(
     }
 
     let highlight_keywords = req.highlight_keywords.unwrap_or(false);
-    let organism_id =
-        crate::organism::keyword_sets::resolve_viewer_organism_id(
+    let keyword_set: Option<BTreeSet<String>> = if !highlight_keywords {
+        None
+    } else {
+        match crate::organism::keyword_sets::try_resolve_viewer_organism_id(
             &env.dbx, login,
         )
         .await
-        .ok();
-    let keyword_set: Option<BTreeSet<String>> = match organism_id {
-        Some(oid) => {
-            let words =
-                crate::organism::keyword_sets::resolve_inbox_keyword_words(
-                    &env.dbx,
-                    oid,
-                    req.highlight_keyword_set_id,
-                    highlight_keywords,
-                )
-                .await
-                .c(h!())?;
-            if words.is_empty() {
-                None
-            } else {
-                Some(keyword_set_from_words(&words))
+        .c(h!())?
+        {
+            Some(oid) => {
+                let words =
+                    crate::organism::keyword_sets::resolve_inbox_keyword_words(
+                        &env.dbx,
+                        oid,
+                        req.highlight_keyword_set_id,
+                        true,
+                    )
+                    .await
+                    .c(h!())?;
+                if words.is_empty() {
+                    None
+                } else {
+                    Some(keyword_set_from_words(&words))
+                }
             }
+            None => None,
         }
-        None => None,
     };
 
     let highlight_points = req.highlight_points.unwrap_or(false);

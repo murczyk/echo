@@ -19,10 +19,10 @@ use actix_web::{delete, get, post, put, web::Json};
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
-pub async fn resolve_viewer_organism_id(
+pub async fn try_resolve_viewer_organism_id(
     dbx: &DatabaseConnection,
     login: &str,
-) -> Result<i64, AppError> {
+) -> Result<Option<i64>, AppError> {
     let login_obj = login::Entity::find()
         .filter(login::Column::Login.eq(login.to_string()))
         .filter(login::Column::DeletedPermanently.eq(false))
@@ -30,12 +30,18 @@ pub async fn resolve_viewer_organism_id(
         .await
         .c(h!())?
         .c(h!())?;
-    match login_obj.organism_id {
-        Some(id) => Ok(id),
-        None => Err(AppError::BL {
+    Ok(login_obj.organism_id)
+}
+
+pub async fn resolve_viewer_organism_id(
+    dbx: &DatabaseConnection,
+    login: &str,
+) -> Result<i64, AppError> {
+    try_resolve_viewer_organism_id(dbx, login)
+        .await?
+        .ok_or_else(|| AppError::BL {
             msg: "User without organism_id is not supported".to_string(),
-        }),
-    }
+        })
 }
 
 fn words_from_json(jv: &sea_orm::entity::prelude::Json) -> Result<Vec<String>, AppError> {
