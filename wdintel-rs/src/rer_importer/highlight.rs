@@ -361,8 +361,16 @@ pub fn highlight(
     Ok(res)
 }
 
-pub fn extract_keywords(inp: &str) -> Result<Vec<CNHighlight>, AppError> {
-    let keywords = super::keywords::get_keywords();
+pub fn keyword_set_from_words(
+    words: &[String],
+) -> std::collections::BTreeSet<String> {
+    words.iter().map(|w| w.to_lowercase()).collect()
+}
+
+pub fn extract_keywords_with_set(
+    inp: &str,
+    keywords: &std::collections::BTreeSet<String>,
+) -> Result<Vec<CNHighlight>, AppError> {
     let bounds: Vec<String> = inp
         .to_string()
         .split_word_bounds()
@@ -382,6 +390,10 @@ pub fn extract_keywords(inp: &str) -> Result<Vec<CNHighlight>, AppError> {
         pos += cline_len(&bound);
     }
     Ok(res)
+}
+
+pub fn extract_keywords(inp: &str) -> Result<Vec<CNHighlight>, AppError> {
+    extract_keywords_with_set(inp, &super::keywords::get_keywords())
 }
 
 #[cfg(test)]
@@ -1119,6 +1131,23 @@ mod tests {
         println!("> res:\n{res:#?}");
         println!("> expected:\n{expected:#?}");
         assert_eq!(res, expected)
+    }
+
+    #[test]
+    fn test_extract_keywords_with_set_custom() {
+        let body = r#"над нами птичка летает"#;
+        let mut kw = std::collections::BTreeSet::new();
+        kw.insert("птичка".to_string());
+        let res = extract_keywords_with_set(body, &kw).unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].text, "птичка");
+    }
+
+    #[test]
+    fn test_keyword_set_from_words_lowercases() {
+        let set = keyword_set_from_words(&["НЕБО".to_string(), "небо".to_string()]);
+        assert_eq!(set.len(), 1);
+        assert!(set.contains("небо"));
     }
 
     #[test]

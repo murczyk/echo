@@ -445,6 +445,7 @@ export type InboxMessagesReq = {
   highlightSearchres: boolean | null;
   highlightSignals: boolean | null;
   highlightPoints: boolean | null;
+  highlightKeywordSetId: number | null;
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
@@ -933,6 +934,8 @@ export type RerDutyQueryStateWf = {
   postsSelected: Array<string> | null;
   postsDenied: Array<string> | null;
   lastViewedMessageId: number | null;
+  highlightKeywordsEnabled: boolean | null;
+  highlightKeywordSetId: number | null;
 };
 
 export type RerDutyShortStateCreateReq = {
@@ -1436,6 +1439,30 @@ export type SignalGroupFull = {
 export type OrganismGroup = {
   masterKey: string;
   organismId: number;
+};
+
+export type OrganismKeywordSetDto = {
+  id: number;
+  name: string;
+  words: Array<string>;
+  authorLogin: string | null;
+  isSystemDefault: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
+export type OrganismKeywordSetUpsertReq = {
+  id: number | null;
+  name: string;
+  words: Array<string>;
+};
+
+export type OrganismKeywordSetInflectReq = {
+  lemmas: Array<string>;
+};
+
+export type OrganismKeywordSetInflectRsp = {
+  words: Array<string>;
 };
 
 export type ListGoiAssociationsSortBy =

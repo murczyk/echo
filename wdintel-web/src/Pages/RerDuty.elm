@@ -435,6 +435,8 @@ emptyWaterfallQueryStateWf =
     , postsSelected = Nothing
     , postsDenied = Nothing
     , lastViewedMessageId = Nothing
+    , highlightKeywordsEnabled = Nothing
+    , highlightKeywordSetId = Nothing
     }
 
 
@@ -449,6 +451,8 @@ waterfallQueryState wf =
     , postsSelected = Just wf.postsSelect.selected
     , postsDenied = Just wf.postsDeniedSelect.selected
     , lastViewedMessageId = Utils.lastViewedIdToMaybe wf.lastViewedMessageId
+    , highlightKeywordsEnabled = Nothing
+    , highlightKeywordSetId = Nothing
     }
 
 

@@ -9,10 +9,11 @@ import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SettingsReportsSection } from './SettingsReportsSection';
+import { SettingsKeywordSetsSection } from './SettingsKeywordSetsSection';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 
-export type SettingsSection = 'general' | 'duty' | 'analysis' | 'reports';
+export type SettingsSection = 'general' | 'duty' | 'analysis' | 'reports' | 'keywords';
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
@@ -21,7 +22,9 @@ type SettingsNeoPageProps = {
 const SETTINGS_SECTION_QUERY_PARAM = 'section';
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === 'duty' || section === 'analysis' || section === 'reports') return section;
+  if (section === 'duty' || section === 'analysis' || section === 'reports' || section === 'keywords') {
+    return section;
+  }
   return 'general';
 }
 
@@ -117,6 +120,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               label="ЗВІТИ"
               id="settings-neo-tab-reports"
               aria-controls="settings-neo-panel-reports"
+            />
+            <Tab
+              value="keywords"
+              label="КЛЮЧОВІ СЛОВА"
+              id="settings-neo-tab-keywords"
+              aria-controls="settings-neo-panel-keywords"
             />
           </Tabs>
 
@@ -317,6 +326,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               rolesLoading={globalSettings.loadInProgress}
             />
           ) : null}
+
+          {settingsSection === 'keywords' ? <SettingsKeywordSetsSection /> : null}
         </Card>
       </Stack>
     </Box>

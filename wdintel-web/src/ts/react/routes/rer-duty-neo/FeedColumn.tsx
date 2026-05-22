@@ -3,6 +3,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
 import NotificationsOffOutlinedIcon from '@mui/icons-material/NotificationsOffOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
@@ -24,7 +25,12 @@ import type { TagsLayoutVariant } from './utils';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
 import { FeedFilterPanel, type FeedFilterPanelModel } from './FeedFilterPanel';
+import { FeedKeywordsPanel } from './FeedKeywordsPanel';
 import { FeedNotificationPanel } from './FeedNotificationPanel';
+import type {
+  OrganismKeywordSetDto,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
+} from '../../../../Bindings';
 import {
   getStoredDutyNotificationSettingsForFeed,
   requestBrowserNotificationPermission,
@@ -98,6 +104,10 @@ export type FeedColumnModel = {
     unreadCount?: number;
   };
   filterPanel: FeedFilterPanelModel;
+  keywordsPanel: {
+    keywordSets: OrganismKeywordSetDto[];
+    onFilterChange: (feedId: string, nextFilter: RerDutyFeedFilterState) => void;
+  };
   messageCard: {
     /** Current auth user display name for message watermarks */
     authUserName: string | null;
@@ -142,7 +152,7 @@ export type FeedColumnProps = {
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn({ column }, ref) {
-  const { feed, view, filterPanel, messageCard, actions } = column;
+  const { feed, view, filterPanel, keywordsPanel, messageCard, actions } = column;
   const {
     narrowScreen = false,
     feedCount,
@@ -184,6 +194,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   } = actions;
   const [showFilters, setShowFilters] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+  const [showKeywordsPanel, setShowKeywordsPanel] = useState(false);
   const [notificationStorageSyncKey, setNotificationStorageSyncKey] = useState(0);
   const bumpNotificationStorageSync = useCallback(() => {
     setNotificationStorageSyncKey((k) => k + 1);
@@ -193,6 +204,19 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [feed.id, notificationStorageSyncKey],
   );
   const dutyNotificationsOn = dutyNotificationSummary.soundEnabled || dutyNotificationSummary.browserEnabled;
+  const keywordsHighlightOn = feed.filter.highlightKeywordsEnabled ?? true;
+
+  const handleKeywordsHighlightToggle = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      keywordsPanel.onFilterChange(feed.id, {
+        ...feed.filter,
+        highlightKeywordsEnabled: !keywordsHighlightOn,
+      });
+    },
+    [feed.filter, feed.id, keywordsHighlightOn, keywordsPanel],
+  );
 
   const handleBellToggleDutyNotifications = useCallback(
     async (e: MouseEvent<HTMLButtonElement>) => {
@@ -330,16 +354,17 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               size="small"
               variant="text"
               className="self-stretch px-4"
-              startIcon={<SettingsOutlinedIcon />}
+              startIcon={<SettingsOutlinedIcon sx={{ color: 'inherit' }} />}
               endIcon={showFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               onClick={() => {
                 setShowFilters((s) => !s);
                 setShowNotificationPanel(false);
+                setShowKeywordsPanel(false);
               }}
               aria-expanded={showFilters}
               sx={{
                 borderRadius: 0,
-                color: showFilters ? 'primary.light' : 'text.primary',
+                color: showFilters ? 'primary.light' : 'text.secondary',
                 backgroundColor: 'transparent',
                 '&:hover': {
                   backgroundColor: 'action.hover',
@@ -367,12 +392,12 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                   height: 32,
                   width: 40,
                   maxHeight: 32,
-                  color: dutyNotificationsOn ? 'primary.main' : 'text.secondary',
+                  color: showNotificationPanel ? 'primary.light' : 'text.secondary',
                   '&:hover': { backgroundColor: 'action.hover' },
                 }}
               >
                 {dutyNotificationsOn ? (
-                  <NotificationsActiveOutlinedIcon sx={{ fontSize: 20 }} />
+                  <NotificationsActiveOutlinedIcon sx={{ fontSize: 20, color: 'inherit' }} />
                 ) : (
                   <Box
                     component="span"
@@ -385,8 +410,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                       height: 22,
                     }}
                   >
-                    <NotificationsOffOutlinedIcon sx={{ fontSize: 20 }} />
-                
+                    <NotificationsOffOutlinedIcon sx={{ fontSize: 20, color: 'inherit' }} />
                   </Box>
                 )}
               </IconButton>
@@ -398,11 +422,12 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 onClick={() => {
                   setShowNotificationPanel((s) => !s);
                   setShowFilters(false);
+                  setShowKeywordsPanel(false);
                 }}
                 aria-expanded={showNotificationPanel}
                 sx={{
                   borderRadius: 0,
-                  color: showNotificationPanel ? 'primary.light' : 'text.primary',
+                  color: showNotificationPanel ? 'primary.light' : 'text.secondary',
                   backgroundColor: 'transparent',
                   '&:hover': {
                     backgroundColor: 'action.hover',
@@ -410,6 +435,54 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
                 }}
               >
                 Сповіщення
+              </Button>
+            </Box>
+            <Box
+              className="flex items-stretch self-stretch border-l border-solid"
+              sx={{ borderColor: 'rgba(148, 163, 184, 0.28)' }}
+            >
+              <IconButton
+                type="button"
+                size="small"
+                aria-label={
+                  keywordsHighlightOn
+                    ? 'Вимкнути підсвічування ключових слів'
+                    : 'Увімкнути підсвічування ключових слів'
+                }
+                aria-pressed={keywordsHighlightOn}
+                onClick={handleKeywordsHighlightToggle}
+                sx={{
+                  borderRadius: 0,
+                  height: 32,
+                  width: 40,
+                  maxHeight: 32,
+                  color: showKeywordsPanel ? 'primary.light' : 'text.secondary',
+                  '&:hover': { backgroundColor: 'action.hover' },
+                }}
+              >
+                <KeyOutlinedIcon sx={{ fontSize: 20, color: 'inherit' }} />
+              </IconButton>
+              <Button
+                size="small"
+                variant="text"
+                className="self-stretch px-2 min-w-0"
+                endIcon={showKeywordsPanel ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                onClick={() => {
+                  setShowKeywordsPanel((s) => !s);
+                  setShowFilters(false);
+                  setShowNotificationPanel(false);
+                }}
+                aria-expanded={showKeywordsPanel}
+                sx={{
+                  borderRadius: 0,
+                  color: showKeywordsPanel ? 'primary.light' : 'text.secondary',
+                  backgroundColor: 'transparent',
+                  '&:hover': {
+                    backgroundColor: 'action.hover',
+                  },
+                }}
+              >
+                Ключові слова
               </Button>
             </Box>
           </Box>
@@ -436,6 +509,16 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               feedId={feed.id}
               storageSyncKey={notificationStorageSyncKey}
               onPersisted={bumpNotificationStorageSync}
+            />
+          </Box>
+        )}
+        {showKeywordsPanel && (
+          <Box>
+            <FeedKeywordsPanel
+              feedId={feed.id}
+              filter={feed.filter}
+              keywordSets={keywordsPanel.keywordSets}
+              onFilterChange={keywordsPanel.onFilterChange}
             />
           </Box>
         )}

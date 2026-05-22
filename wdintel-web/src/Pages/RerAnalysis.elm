@@ -348,6 +348,7 @@ getInboxReq model =
     , withoutMetadata = Just model.withoutMetadata
     , highlightCallsigns = Nothing
     , highlightKeywords = Nothing
+    , highlightKeywordSetId = Nothing
     , highlightSignals = Nothing
     , highlightSearchres = Just True
     , highlightPoints = Just True

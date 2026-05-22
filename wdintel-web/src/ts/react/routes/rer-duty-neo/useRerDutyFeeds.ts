@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { OrganismKeywordSetDto } from '../../../../Bindings';
+import {
+  defaultKeywordSetId,
+  fetchOrganismKeywordSets,
+  resolveKeywordSetId,
+} from '../../services/api/organism-keyword-sets';
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
@@ -93,6 +99,8 @@ function mergePostsFromMessages(
 }
 
 export function useRerDutyFeeds(authUserName: string | null) {
+  const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
+  const defaultSetId = useMemo(() => defaultKeywordSetId(keywordSets), [keywordSets]);
   const filterOpts = useRerDutyFilterOptions();
   const [testEnabled, setTestEnabled] = useState(false);
   const [testSinceMs, setTestSinceMs] = useState(0);
@@ -114,8 +122,40 @@ export function useRerDutyFeeds(authUserName: string | null) {
     testLimit,
     pollIntervalSec,
     disableAutoScroll: dutySettings.disableAutoScroll,
+    defaultKeywordSetId: defaultSetId,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
+  useEffect(() => {
+    let cancelled = false;
+    fetchOrganismKeywordSets()
+      .then((sets) => {
+        if (cancelled) return;
+        setKeywordSets(sets);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error(error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (defaultSetId == null) return;
+    feedState.setMessageFeeds((prev) => {
+      let changed = false;
+      const next = prev.map((feed) => {
+        const resolved = resolveKeywordSetId(keywordSets, feed.filter.highlightKeywordSetId);
+        if (resolved === feed.filter.highlightKeywordSetId) return feed;
+        changed = true;
+        return {
+          ...feed,
+          filter: { ...feed.filter, highlightKeywordSetId: resolved },
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [defaultSetId, keywordSets, feedState.setMessageFeeds]);
   const setFeedError = feedState.setError;
   useEffect(() => attachDutyNotificationAudioPrimingListeners(), []);
   useEffect(() => {
@@ -351,5 +391,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     loadingNewerFeedId: feedState.loadingNewerFeedId,
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
+    keywordSets,
+    defaultKeywordSetId: defaultSetId,
   };
 }

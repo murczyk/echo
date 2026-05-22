@@ -172,6 +172,64 @@ describe('rer-duty utils', () => {
     );
   });
 
+  it('compares keyword highlight fields in filtersEqual', () => {
+    const base = emptyFilter();
+    expect(
+      filtersEqual(
+        { ...base, highlightKeywordsEnabled: true, highlightKeywordSetId: 2 },
+        { ...base, highlightKeywordsEnabled: true, highlightKeywordSetId: 2 },
+      ),
+    ).toBe(true);
+    expect(
+      filtersEqual(
+        { ...base, highlightKeywordsEnabled: true, highlightKeywordSetId: 2 },
+        { ...base, highlightKeywordsEnabled: false, highlightKeywordSetId: 2 },
+      ),
+    ).toBe(false);
+    expect(
+      filtersEqual(
+        { ...base, highlightKeywordSetId: 1 },
+        { ...base, highlightKeywordSetId: 2 },
+      ),
+    ).toBe(false);
+  });
+
+  it('buildInboxReq maps keyword set id when highlighting enabled', () => {
+    const req = buildInboxReq({
+      filter: { ...emptyFilter(), highlightKeywordsEnabled: true, highlightKeywordSetId: 5 },
+      defaultKeywordSetId: 1,
+    });
+    expect(req.highlightKeywords).toBe(true);
+    expect(req.highlightKeywordSetId).toBe(5);
+  });
+
+  it('buildInboxReq omits keyword set when highlighting disabled', () => {
+    const req = buildInboxReq({
+      filter: { ...emptyFilter(), highlightKeywordsEnabled: false, highlightKeywordSetId: 5 },
+      defaultKeywordSetId: 1,
+    });
+    expect(req.highlightKeywords).toBe(false);
+    expect(req.highlightKeywordSetId).toBeNull();
+  });
+
+  it('parseStateFromUrl reads keyword fields from wf state', () => {
+    const state = {
+      messageFeeds: [
+        [
+          'mf-1',
+          {
+            highlight_keywords_enabled: false,
+            highlight_keyword_set_id: 3,
+          },
+        ],
+      ],
+    };
+    window.history.replaceState({}, '', `/?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const parsed = parseStateFromUrl();
+    expect(parsed.messageFeeds[0][1].highlightKeywordsEnabled).toBe(false);
+    expect(parsed.messageFeeds[0][1].highlightKeywordSetId).toBe(3);
+  });
+
   it('expands adjacent frequencies without repeating already selected ones', () => {
     expect(findAllAdjacentFreqs(['100.000', '100.001', '100.004', '101.000'], ['100.000'], 0.002)).toEqual(['100.001']);
     expect(findAllAdjacentFreqs(['100.000', '100.001'], ['100.000'], 0)).toEqual([]);

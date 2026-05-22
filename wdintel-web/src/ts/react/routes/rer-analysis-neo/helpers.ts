@@ -241,6 +241,7 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
     search: req.search,
     highlightCallsigns: true,
     highlightKeywords: true,
+    highlightKeywordSetId: null,
     highlightSearchres: true,
     highlightSignals: null,
     highlightPoints: true,

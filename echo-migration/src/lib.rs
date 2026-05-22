@@ -242,6 +242,8 @@ mod m20260507_151045_add_palitra_goi_sync_job;
 mod m20260510_101006_operator_dmr_metadata;
 mod m20260511_145205_delta_login_lower_unique;
 mod m20260513_102326_add_sigint_network_description_topic;
+mod m20260519_091147_add_command_control_to_sigint_network_callsign;
+mod m20260520_120000_create_organism_keyword_set;
 
 pub struct Migrator;
 
@@ -493,6 +495,8 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260513_102326_add_sigint_network_description_topic::Migration,
             ),
+            Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
+            Box::new(m20260520_120000_create_organism_keyword_set::Migration),
         ]
     }
 }
