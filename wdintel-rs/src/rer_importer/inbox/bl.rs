@@ -42,6 +42,7 @@ pub struct InboxMessageDesc {
     pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
     pub signal_tokens: Option<serde_json::Value>,
+    #[allow(dead_code)]
     pub keyword_tokens: Option<serde_json::Value>,
     pub location_v2: Option<String>,
     pub date: Option<String>,

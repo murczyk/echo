@@ -9,7 +9,6 @@ use self::types::*;
 use crate::config::{
     ORGANISM_KEYWORD_SET_DEFAULT_NAME, ORGANISM_KEYWORD_SET_INFLECT_MAX_LEMMAS,
     ORGANISM_KEYWORD_SET_MAX_SETS_PER_ORGANISM,
-    ORGANISM_KEYWORD_SET_MAX_WORDS_PER_SET,
 };
 use crate::entities::{login, organism_keyword_set};
 use crate::error::AppError;
@@ -18,6 +17,7 @@ use crate::types::*;
 use actix_web::web::{Data, Path};
 use actix_web::{delete, get, post, put, web::Json};
 use chrono::Utc;
+use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
 pub async fn resolve_viewer_organism_id(
     dbx: &DatabaseConnection,
@@ -86,19 +86,36 @@ pub async fn ensure_default_keyword_set(
 
     let words: Vec<String> = get_keywords().into_iter().collect();
     let words_json = serde_json::to_value(&words).c(h!())?;
-    let inserted = organism_keyword_set::ActiveModel {
+    organism_keyword_set::Entity::insert(organism_keyword_set::ActiveModel {
         id: NotSet,
         organism_id: Set(organism_id),
         author_login: Set(None),
         name: Set(ORGANISM_KEYWORD_SET_DEFAULT_NAME.to_string()),
-        words: Set(words_json.into()),
+        words: Set(words_json),
         is_system_default: Set(true),
         updated_at: Set(Utc::now().naive_utc()),
-    }
-    .insert(dbx)
+    })
+    .on_conflict(
+        OnConflict::columns([
+            organism_keyword_set::Column::OrganismId,
+            organism_keyword_set::Column::Name,
+        ])
+        .do_nothing()
+        .to_owned(),
+    )
+    .exec(dbx)
     .await
     .c(h!())?;
-    Ok(inserted)
+
+    organism_keyword_set::Entity::find()
+        .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
+        .filter(organism_keyword_set::Column::IsSystemDefault.eq(true))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: format!("Default keyword set missing for organism_id={organism_id}"),
+        })
 }
 
 pub async fn resolve_inbox_keyword_words(
@@ -228,7 +245,7 @@ pub async fn upsert_keyword_set(
             if !is_default {
                 active.name = Set(name.to_string());
             }
-            active.words = Set(words_json.into());
+            active.words = Set(words_json);
             active.updated_at = Set(now);
             active.update(&env.dbx).await.c(h!())?
         }
@@ -259,7 +276,7 @@ pub async fn upsert_keyword_set(
                 organism_id: Set(organism_id),
                 author_login: Set(Some(login.clone())),
                 name: Set(name.to_string()),
-                words: Set(words_json.into()),
+                words: Set(words_json),
                 is_system_default: Set(false),
                 updated_at: Set(now),
             }
