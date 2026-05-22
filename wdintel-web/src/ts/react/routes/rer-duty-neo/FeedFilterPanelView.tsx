@@ -114,6 +114,7 @@ export function FeedFilterPanelView({
           onValueChange={groups.onValueChange}
           options={groups.options}
           getOptionLabel={groups.getOptionLabel}
+          getOptionKey={groups.getOptionKey}
           placeholder={groups.placeholder}
           autocompleteClassName={groups.autocompleteClassName}
         />

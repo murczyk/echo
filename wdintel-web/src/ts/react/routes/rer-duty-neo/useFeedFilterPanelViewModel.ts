@@ -112,6 +112,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       onValueChange: groupsSelectionState.setLocalValue,
       options: sortedGroupKeys,
       getOptionLabel: (key: string) => groupInfos[key]?.name ?? key,
+      getOptionKey: (key: string) => key,
       placeholder: groupsSelectionState.localValue.length === 0 ? groupEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1',
     },
