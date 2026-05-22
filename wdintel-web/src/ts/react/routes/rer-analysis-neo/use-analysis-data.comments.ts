@@ -23,23 +23,7 @@ function normalizeLogin(login: string): string {
   return login.trim();
 }
 
-export function isOurOrganismComment(
-  authUserName: string | null,
-  currentUser: User | null,
-  users: Record<string, User | null>,
-  login: string,
-): boolean {
-  const commentLogin = normalizeLogin(login);
-  if (commentLogin === '') return false;
-  if (normalizeLogin(authUserName ?? '') === commentLogin) return true;
-  if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return true;
-
-  const commentUser = users[commentLogin] ?? null;
-  if (currentUser?.organismId == null || commentUser?.organismId == null) return false;
-  return currentUser.organismId === commentUser.organismId;
-}
-
-export function filterOtherOwnOrganismMessageComments(
+export function filterOtherMessageComments(
   authUserName: string | null,
   currentUser: User | null,
   users: Record<string, User | null>,
@@ -47,9 +31,13 @@ export function filterOtherOwnOrganismMessageComments(
 ): MessageComment[] {
   return comments.filter((comment) => {
     const commentLogin = normalizeLogin(comment.login);
+    if (commentLogin === '') return false;
     if (normalizeLogin(authUserName ?? '') === commentLogin) return false;
     if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
-    return isOurOrganismComment(authUserName, currentUser, users, comment.login);
+
+    const commentUser = users[commentLogin] ?? null;
+    if (isNullOrUndefined(currentUser?.organismId) || isNullOrUndefined(commentUser?.organismId)) return false;
+    return currentUser.organismId !== commentUser.organismId;
   });
 }
 

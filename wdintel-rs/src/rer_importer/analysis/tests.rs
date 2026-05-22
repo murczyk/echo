@@ -2081,7 +2081,7 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         db,
         "msg-other-org-comment-filter",
         "930.5",
-        test_dt(2026, 3, 1, 10, 10),
+        test_dt(2026, 3, 1, 10, 9),
         &[&fixture.alpha],
         &[],
         false,
@@ -2101,7 +2101,7 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
             login: Set(other_org_login.login.clone()),
             signal_message_id: Set(msg_other_org_comment.id),
             comment: Set("other org".to_string()),
-            created_at: Set(test_dt(2026, 3, 1, 10, 10)),
+            created_at: Set(test_dt(2026, 3, 1, 10, 9)),
             ..Default::default()
         },
     )
@@ -2164,7 +2164,7 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         fetch_selected_count_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        2
+        3
     );
     assert_eq!(
         fetch_callsign_counts_for_req(&fixture.env, &req)
@@ -2172,13 +2172,134 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
             .unwrap(),
         BTreeMap::from([
             ("CS-COM".to_string(), 1),
+            ("CS-COM-OTHER-ORG".to_string(), 1),
             ("CS-COM-SAME-ORG".to_string(), 1),
         ])
     );
     assert_eq!(
         fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
-        BTreeMap::from([(tag_comment.id, 2)])
+        BTreeMap::from([(tag_comment.id, 3)])
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible_message(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let other_organism = mk_organism(
+        db,
+        organism::ActiveModel {
+            name: Set("Commenter Other Organism".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_org_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("CommenterOtherOrg".to_string()),
+            organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let message = mk_analysis_message(
+        db,
+        "msg-other-org-comment-api",
+        "940.7",
+        test_dt(2026, 3, 1, 10, 5),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            login: Set(other_org_login.login.clone()),
+            signal_message_id: Set(message.id),
+            comment: Set("other organism visible comment".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 10, 6)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let logins = crate::users::get_organism_logins_by_login(db, &login.login)
+        .await
+        .unwrap();
+    let messages = crate::rer_importer::inbox::get_inbox_messages(
+        &login.login,
+        &logins,
+        &fixture.env,
+        &crate::rer_importer::types::InboxMessagesReq {
+            since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+            till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+            or_with_extended_form: Some(true),
+            nolimit: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(messages.iter().any(|(id, _)| *id == message.id));
+
+    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+        .await
+        .unwrap();
+    let entry = comments
+        .data
+        .iter()
+        .find(|entry| entry.message_id == message.id)
+        .unwrap();
+    assert_eq!(entry.comments.len(), 1);
+    assert_eq!(entry.comments[0].login, other_org_login.login);
+    assert_eq!(entry.comments[0].comment, "other organism visible comment");
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_comments_batch_skips_inaccessible_messages() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let message = mk_analysis_message(
+        db,
+        "msg-hidden-comment-api",
+        "940.8",
+        test_dt(2026, 3, 1, 10, 6),
+        &[&fixture.secret_hidden],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            login: Set(login.login.clone()),
+            signal_message_id: Set(message.id),
+            comment: Set("hidden comment".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 10, 7)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+        .await
+        .unwrap();
+
+    assert!(comments.data.is_empty());
 }
 
 #[tokio::test]

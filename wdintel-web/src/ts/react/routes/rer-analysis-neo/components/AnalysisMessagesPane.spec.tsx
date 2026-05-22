@@ -295,15 +295,15 @@ describe('AnalysisMessagesPane', () => {
           ],
         },
         users: {
-          'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
           'external-login': { name: 'external-login', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
         },
       }),
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('other-organism comment');
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain('peer-login:same-organism comment');
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain('external-login:other-organism comment');
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('peer-login:same-organism comment');
     expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('hidden self comment');
   });
 
