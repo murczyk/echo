@@ -10,6 +10,18 @@ import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-
 import { deleteVoid, getJson, postJson, putJson } from './client';
 
 export const ORGANISM_KEYWORD_SET_DEFAULT_DISPLAY_NAME = 'Стандартний';
+export const ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX = 'Новий набір';
+
+export function suggestNewKeywordSetName(sets: readonly OrganismKeywordSetDto[]): string {
+  const taken = new Set(sets.map((s) => s.name.trim()));
+  let n = 1;
+  while (true) {
+    const candidate =
+      n === 1 ? ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX : `${ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX} ${n}`;
+    if (!taken.has(candidate)) return candidate;
+    n += 1;
+  }
+}
 
 export function keywordSetDisplayName(set: OrganismKeywordSetDto): string {
   return set.isSystemDefault ? ORGANISM_KEYWORD_SET_DEFAULT_DISPLAY_NAME : set.name;

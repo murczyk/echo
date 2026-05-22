@@ -21,6 +21,7 @@ import {
   deleteOrganismKeywordSet,
   fetchOrganismKeywordSets,
   keywordSetDisplayName,
+  suggestNewKeywordSetName,
   upsertOrganismKeywordSet,
 } from '../../services/api/organism-keyword-sets';
 
@@ -166,7 +167,7 @@ export function SettingsKeywordSetsSection() {
     try {
       const created = await upsertOrganismKeywordSet({
         id: null,
-        name: 'Новий набір',
+        name: suggestNewKeywordSetName(sets),
         words: [],
       });
       writeSetIdToUrl(created.id);

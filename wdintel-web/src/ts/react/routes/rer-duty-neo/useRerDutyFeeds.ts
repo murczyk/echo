@@ -125,6 +125,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     defaultKeywordSetId: defaultSetId,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
+  const setFeedError = feedState.setError;
   useEffect(() => {
     let cancelled = false;
     fetchOrganismKeywordSets()
@@ -134,12 +135,14 @@ export function useRerDutyFeeds(authUserName: string | null) {
       })
       .catch((error) => {
         if (cancelled) return;
+        const detail = error instanceof Error ? error.message : String(error);
+        setFeedError(`Не вдалося завантажити набори ключових слів: ${detail}`);
         console.error(error);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setFeedError]);
   useEffect(() => {
     if (defaultSetId == null) return;
     feedState.setMessageFeeds((prev) => {
@@ -156,7 +159,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
       return changed ? next : prev;
     });
   }, [defaultSetId, keywordSets, feedState.setMessageFeeds]);
-  const setFeedError = feedState.setError;
   useEffect(() => attachDutyNotificationAudioPrimingListeners(), []);
   useEffect(() => {
     let cancelled = false;
