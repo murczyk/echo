@@ -170,6 +170,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
               size="small"
               options={sortedSavedFilters}
               value={selectedSavedFilter}
+              disablePortal
               getOptionLabel={(option) => option.name}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               onChange={(_event, next) => onApplySavedFilter(next)}
@@ -209,6 +210,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
           anchorEl={menuAnchorEl}
           open={isPresent(menuAnchorEl)}
           onClose={closeMenu}
+          disablePortal
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
