@@ -136,6 +136,8 @@ export function FeedColumnHeader({
                 height: 32,
                 width: 40,
                 maxHeight: 32,
+                borderRight: '1px solid',
+                borderRightColor: 'rgba(148, 163, 184, 0.28)',
                 color: dutyNotificationsOn ? 'primary.main' : 'text.secondary',
                 '&:hover': { backgroundColor: 'action.hover' },
               }}
@@ -161,12 +163,14 @@ export function FeedColumnHeader({
             <Button
               size="small"
               variant="text"
-              className="self-stretch px-2 min-w-0"
+              className="self-stretch px-4 min-w-0"
               endIcon={showNotificationPanel ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               onClick={onToggleNotificationPanel}
               aria-expanded={showNotificationPanel}
               sx={{
                 borderRadius: 0,
+                borderRight: '1px solid',
+                borderRightColor: 'rgba(148, 163, 184, 0.28)',
                 color: showNotificationPanel ? 'primary.light' : 'text.primary',
                 backgroundColor: 'transparent',
                 '&:hover': {

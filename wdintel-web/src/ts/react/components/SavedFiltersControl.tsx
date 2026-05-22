@@ -299,7 +299,7 @@ function TypographyLike({ children }: { children: ReactNode }) {
         fontSize: 13,
         fontWeight: 600,
         lineHeight: 1.2,
-        color: 'text.secondary',
+        color: 'text.primary',
         whiteSpace: 'nowrap',
         mb: 0,
       }}

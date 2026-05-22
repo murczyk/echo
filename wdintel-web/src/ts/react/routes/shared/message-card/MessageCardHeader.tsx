@@ -20,7 +20,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 
-
 import type { InboxMessage, Network } from '../../../../../Bindings';
 import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
 
@@ -57,13 +56,14 @@ function ActionIconButton({
     <Tooltip title={title}>
       <Button
         aria-label={title}
+        data-selected={selected}
         onClick={onClick}
         sx={{
           width: 30,
           minWidth: 30,
           height: 30,
           p: 0,
-          color: selected ? 'primary.main' : 'var(--color-action)',
+          color: MESSAGE_CARD_ACTION_COLOR,
           backgroundColor: 'transparent',
           '& .MuiSvgIcon-root': { fontSize: 18 },
           '&:hover': {
@@ -323,13 +323,15 @@ function ActionIconsRow({
   );
 }
 
+const MESSAGE_CARD_ACTION_COLOR = 'var(--color-action)';
+
 function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; text: string }) {
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }} title={text}>
-      <Box sx={{ color: 'var(--color-icons)', lineHeight: 0, flexShrink: 0 }} title={title}>
+      <Box sx={{ color: MESSAGE_CARD_ACTION_COLOR, lineHeight: 0, flexShrink: 0 }} title={title}>
         {icon}
       </Box>
-      <Typography variant="caption" sx={{ minWidth: 0, color: 'text.secondary' }} noWrap>
+      <Typography variant="caption" sx={{ minWidth: 0 }} noWrap>
         {text}
       </Typography>
     </Stack>
@@ -365,6 +367,7 @@ function NetworkEtalonSection({
       <Box
         component="span"
         aria-label={`Локація: ${location}`}
+        style={{ marginTop: '-4px' }}
         sx={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -375,11 +378,11 @@ function NetworkEtalonSection({
           p: 0,
           border: '1px solid transparent',
           borderRadius: '50%',
-          color: 'var(--color-icons)',
+          color: MESSAGE_CARD_ACTION_COLOR,
           flexShrink: 0,
           alignSelf: 'center',
           '&:hover': {
-            color: 'var(--message-callsign-color)',
+            color: MESSAGE_CARD_ACTION_COLOR,
           },
         }}
       >
@@ -458,8 +461,8 @@ function NetworkEtalonSection({
                 verticalAlign: 'top',
                 overflowWrap: 'anywhere',
                 wordBreak: 'break-word',
-                '&:hover': { color: 'var(--message-callsign-color)' },
-                '&:hover .MuiSvgIcon-root': { color: 'var(--message-callsign-color)', opacity: 1 },
+                '&:hover': { color: MESSAGE_CARD_ACTION_COLOR },
+                '&:hover .MuiSvgIcon-root': { color: MESSAGE_CARD_ACTION_COLOR, opacity: 1 },
               }}
             >
               <Box component="span" sx={{ fontWeight: 700 }}>
@@ -486,7 +489,7 @@ function NetworkEtalonSection({
                   height: '1.2em',
                   verticalAlign: 'middle',
                   ml: '0.2em',
-                  color: 'var(--color-icons)',
+                  color: MESSAGE_CARD_ACTION_COLOR,
                   opacity: 0.75,
                   display: 'inline-block',
                   position: 'relative',
@@ -520,7 +523,7 @@ function NetworkEtalonSection({
     <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}>
       {uniqueRenderedNetworks.length > 0 || fallbackLabel !== '' || showNetworkFallback ? (
         <PeopleOutlineOutlinedIcon
-          sx={{ fontSize: 18, color: 'var(--color-icons)', flexShrink: 0, alignSelf: 'center', mt: '1px' }}
+          sx={{ fontSize: 18, color: MESSAGE_CARD_ACTION_COLOR, flexShrink: 0, alignSelf: 'center', mt: '1px' }}
           titleAccess="Еталонна прив'язка"
         />
       ) : null}
@@ -591,14 +594,14 @@ export function MessageCardHeader({
   onEditDetails,
 }: MessageCardHeaderProps) {
   const dateTimeBlock = (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
-      <Stack direction="row" spacing={0.5} alignItems="center">
-        <ScheduleOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} />
+      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
+      <Stack direction="row" spacing={0.75} alignItems="center">
+        <ScheduleOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
         <Typography variant="caption">{formatTime(msg.time)}</Typography>
       </Stack>
       {isPresent(msg.date) ? (
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          <CalendarTodayOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} />
+        <Stack direction="row" spacing={0.75} alignItems="center">
+          <CalendarTodayOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
           <Typography variant="caption">{formatDateNoYear(msg.date)}</Typography>
         </Stack>
       ) : null}
@@ -609,7 +612,7 @@ export function MessageCardHeader({
     isPresent(msg.freq) ? (
       <CenteredInfoRow
         icon={
-          <SettingsInputAntennaOutlinedIcon sx={{ color: 'var(--color-icons)', fontSize: 18 }} titleAccess="Частота" />
+          <SettingsInputAntennaOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} titleAccess="Частота" />
         }
         text={
           <Box sx={{ minWidth: 0 }}>

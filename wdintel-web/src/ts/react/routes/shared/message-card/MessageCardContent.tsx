@@ -553,9 +553,9 @@ function MessageCardTagChips({
   const expandToggleButton = hasRest ? (
     <Button
       size="small"
-      color="primary"
-      variant="text"
-      onClick={() => setShowCompactRest((v) => !v)}
+          color="inherit"
+          variant="text"
+          onClick={() => setShowCompactRest((v) => !v)}
       aria-expanded={showCompactRest}
       aria-label={showCompactRest ? 'Згорнути додаткові теги' : 'Показати додаткові теги'}
       endIcon={showCompactRest ? <ExpandLessIcon fontSize="inherit" aria-hidden /> : <ExpandMoreIcon fontSize="inherit" aria-hidden />}
@@ -567,6 +567,7 @@ function MessageCardTagChips({
         fontSize: '0.875rem',
         fontWeight: 400,
         textTransform: 'none',
+        color: 'var(--color-action)',
         '& .MuiButton-endIcon': { ml: 1, mr: 0, '& i': { fontSize: '0.875rem' } },
       }}
     >
@@ -683,9 +684,9 @@ export function MessageCardMessageBody({
   const otherCommentsExpandToggleButton = hasOtherCommentsRest ? (
     <Button
       size="small"
-      color="primary"
-      variant="text"
-      onClick={() => setShowOtherCommentsRest((v) => !v)}
+          color="inherit"
+          variant="text"
+          onClick={() => setShowOtherCommentsRest((v) => !v)}
       aria-expanded={showOtherCommentsRest}
       aria-label={showOtherCommentsRest ? 'Згорнути додаткові коментарі' : 'Показати додаткові коментарі'}
       endIcon={showOtherCommentsRest ? <ExpandLessIcon fontSize="inherit" aria-hidden /> : <ExpandMoreIcon fontSize="inherit" aria-hidden />}
@@ -697,6 +698,7 @@ export function MessageCardMessageBody({
         fontSize: '0.875rem',
         fontWeight: 400,
         textTransform: 'none',
+        color: 'var(--color-action)',
         '& .MuiButton-endIcon': { ml: 1, mr: 0, '& i': { fontSize: '0.875rem' } },
         alignSelf: 'flex-start',
       }}
@@ -733,7 +735,7 @@ export function MessageCardMessageBody({
       ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-          <ChatBubbleOutlineOutlinedIcon sx={{ fontSize: 13, color: 'var(--color-icons)', flexShrink: 0 }} titleAccess="Коментар" />
+          <ChatBubbleOutlineOutlinedIcon sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }} titleAccess="Коментар" />
           <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
             {msg.extendedForm}
           </Typography>

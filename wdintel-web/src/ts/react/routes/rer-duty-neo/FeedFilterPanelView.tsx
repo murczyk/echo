@@ -1,4 +1,4 @@
-import { Box, Paper } from '@mui/material';
+import { Box } from '@mui/material';
 import type { SavedFilterDuty } from '../../../../Bindings';
 import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
@@ -62,8 +62,7 @@ export function FeedFilterPanelView({
   savedFilters,
 }: FeedFilterPanelViewProps) {
   return (
-    <Paper
-      variant="outlined"
+    <Box
       className="z-2"
       sx={{
         display: 'flex',
@@ -74,7 +73,6 @@ export function FeedFilterPanelView({
         alignSelf: 'stretch',
         minHeight: 0,
         overflow: 'hidden',
-        border: 0,
         borderRadius: 0,
         background: 'transparent',
         boxShadow: 'none',
@@ -101,8 +99,8 @@ export function FeedFilterPanelView({
           backgroundImage: isDarkMode
             ? 'linear-gradient(180deg, rgba(16, 20, 28, 0.98) 0%, rgba(12, 16, 24, 0.98) 100%)'
             : 'none',
-          borderTop: '1px solid',
-          borderTopColor: 'divider',
+          border: '1px solid',
+          borderColor: 'divider',
           borderRadius: 0,
         }}
       >
@@ -179,6 +177,6 @@ export function FeedFilterPanelView({
           onDeleteExisting={savedFilters.onDeleteExisting}
         />
       </Box>
-    </Paper>
+    </Box>
   );
 }
