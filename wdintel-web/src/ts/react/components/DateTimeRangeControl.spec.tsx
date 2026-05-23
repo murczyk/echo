@@ -71,4 +71,43 @@ describe('DateTimeRangeControl', () => {
       root.unmount();
     });
   });
+
+  it('accepts from the latest draft range after queued picker edits', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <DateTimeRangeControl
+          value={{ fromDateTimeStr: '2026-05-01T10:00', toDateTimeStr: '2026-05-02T10:00' }}
+          onChange={onChange}
+        />,
+      );
+    });
+
+    act(() => {
+      container.querySelector('input')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const fromPickerProps = dateTimePickerMock.mock.calls[0]?.[0];
+    const toPickerProps = dateTimePickerMock.mock.calls[1]?.[0];
+    expect(fromPickerProps).toBeDefined();
+    expect(toPickerProps).toBeDefined();
+
+    act(() => {
+      fromPickerProps?.onChange(dayjs('2026-05-03T12:30'));
+      toPickerProps?.onAccept(dayjs('2026-05-04T13:45'));
+    });
+
+    expect(onChange).toHaveBeenCalledWith({
+      fromDateTimeStr: '2026-05-03T12:30',
+      toDateTimeStr: '2026-05-04T13:45',
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });

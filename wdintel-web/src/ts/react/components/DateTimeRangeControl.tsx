@@ -6,7 +6,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import dayjs from 'dayjs';
 import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 
 dayjs.locale('uk');
@@ -50,12 +50,20 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [activePreset, setActivePreset] = useState<'custom' | 1 | 3 | 7 | 14 | 30>('custom');
   const [draftValue, setDraftValue] = useState(value);
+  const draftValueRef = useRef(value);
   const open = Boolean(anchorEl);
+
+  const updateDraftValue = useCallback((getNextValue: (current: DateTimeRangeValue) => DateTimeRangeValue) => {
+    const nextValue = getNextValue(draftValueRef.current);
+    draftValueRef.current = nextValue;
+    setDraftValue(nextValue);
+    return nextValue;
+  }, []);
 
   useEffect(() => {
     if (open) return;
-    setDraftValue(value);
-  }, [open, value]);
+    updateDraftValue(() => value);
+  }, [open, updateDraftValue, value]);
 
   const applyPreset = useCallback(
     (days: 1 | 3 | 7 | 14 | 30) => {
@@ -77,10 +85,10 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
       if (activeElement instanceof HTMLElement) {
         activeElement.blur();
       }
-      setDraftValue(value);
+      updateDraftValue(() => value);
       setAnchorEl(event.currentTarget);
     },
-    [value],
+    [updateDraftValue, value],
   );
 
   const closePopover = useCallback(() => {
@@ -209,13 +217,12 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
                     onChange={(nextValue) => {
                       const fromDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
                       setActivePreset('custom');
-                      setDraftValue((current) => ({ ...current, fromDateTimeStr }));
+                      updateDraftValue((current) => ({ ...current, fromDateTimeStr }));
                     }}
                     onAccept={(nextValue) => {
                       const fromDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
-                      const nextRange = { ...draftValue, fromDateTimeStr };
                       setActivePreset('custom');
-                      setDraftValue(nextRange);
+                      const nextRange = updateDraftValue((current) => ({ ...current, fromDateTimeStr }));
                       onChange(nextRange);
                     }}
                     minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
@@ -263,13 +270,12 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
                     onChange={(nextValue) => {
                       const toDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
                       setActivePreset('custom');
-                      setDraftValue((current) => ({ ...current, toDateTimeStr }));
+                      updateDraftValue((current) => ({ ...current, toDateTimeStr }));
                     }}
                     onAccept={(nextValue) => {
                       const toDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
-                      const nextRange = { ...draftValue, toDateTimeStr };
                       setActivePreset('custom');
-                      setDraftValue(nextRange);
+                      const nextRange = updateDraftValue((current) => ({ ...current, toDateTimeStr }));
                       onChange(nextRange);
                     }}
                     minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}

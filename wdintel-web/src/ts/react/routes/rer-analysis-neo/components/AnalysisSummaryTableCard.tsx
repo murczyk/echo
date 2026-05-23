@@ -106,7 +106,7 @@ function AnalysisSummaryTableCardInner({
       }),
     [callsignInfoMap, networkDisplayMap, networks, rows, unitsMap],
   );
-  const resolvedLoaded = loaded ?? rows.length > 0;
+  const resolvedLoaded = loaded ?? !loading;
   const showInitialSkeleton = !resolvedLoaded && data.length === 0;
   const showEmptyState = resolvedLoaded && !loading && data.length === 0;
   const loadingVisible = loading && !showInitialSkeleton;

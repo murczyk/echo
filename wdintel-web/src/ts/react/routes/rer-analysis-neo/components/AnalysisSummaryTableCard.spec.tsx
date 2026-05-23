@@ -317,6 +317,16 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.querySelector('table')).toBeNull();
   });
 
+  it('treats zero rows as loaded when the optional loaded prop is omitted', async () => {
+    const props = buildProps({ rows: [], loading: false });
+    delete props.loaded;
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
+    expect(view.container.querySelector('table')).toBeNull();
+  });
+
   it('routes filter and map row actions to the existing callbacks', async () => {
     const onSelectFreq = vi.fn();
     const onShowFreqOnMap = vi.fn();
