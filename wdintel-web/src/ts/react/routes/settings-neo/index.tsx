@@ -99,31 +99,31 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           >
             <Tab
               value="general"
-              label="ЗАГАЛЬНІ"
+              label="Загальні"
               id="settings-neo-tab-general"
               aria-controls="settings-neo-panel-general"
             />
             <Tab
               value="duty"
-              label="ОПЕРАТИВНИЙ"
+              label="Оперативний"
               id="settings-neo-tab-duty"
               aria-controls="settings-neo-panel-duty"
             />
             <Tab
               value="analysis"
-              label="АНАЛІЗ"
+              label="Аналіз"
               id="settings-neo-tab-analysis"
               aria-controls="settings-neo-panel-analysis"
             />
             <Tab
               value="reports"
-              label="ЗВІТИ"
+              label="Звіти"
               id="settings-neo-tab-reports"
               aria-controls="settings-neo-panel-reports"
             />
             <Tab
               value="keywords"
-              label="КЛЮЧОВІ СЛОВА"
+              label="Ключові слова"
               id="settings-neo-tab-keywords"
               aria-controls="settings-neo-panel-keywords"
             />

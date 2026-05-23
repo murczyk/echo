@@ -24,32 +24,12 @@ import {
   suggestNewKeywordSetName,
   upsertOrganismKeywordSet,
 } from '../../services/api/organism-keyword-sets';
-
-function readSetIdFromUrl(): number | null {
-  const raw = new URLSearchParams(window.location.search).get('setId');
-  if (raw == null || raw === '') return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
-function wordsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((w, i) => w === b[i]);
-}
-
-function writeSetIdToUrl(setId: number | null) {
-  const url = new URL(window.location.href);
-  if (setId == null) {
-    url.searchParams.delete('setId');
-  } else {
-    url.searchParams.set('setId', String(setId));
-  }
-  window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
-}
+import { strArraysEqual } from '../../utils/misc';
+import { readKeywordSetIdFromUrl, writeKeywordSetIdToUrl } from './settings-url';
 
 export function SettingsKeywordSetsSection() {
   const [sets, setSets] = useState<OrganismKeywordSetDto[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(() => readSetIdFromUrl());
+  const [selectedId, setSelectedId] = useState<number | null>(() => readKeywordSetIdFromUrl());
   const [name, setName] = useState('');
   const [words, setWords] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -67,7 +47,7 @@ export function SettingsKeywordSetsSection() {
     if (!selected?.canEdit) return false;
     const savedName = selected.isSystemDefault ? '' : selected.name;
     const editedName = selected.isSystemDefault ? '' : name.trim();
-    return editedName !== savedName || !wordsEqual(words, selected.words);
+    return editedName !== savedName || !strArraysEqual(words, selected.words);
   }, [selected, name, words]);
 
   useEffect(() => {
@@ -85,14 +65,14 @@ export function SettingsKeywordSetsSection() {
     try {
       const list = await fetchOrganismKeywordSets();
       setSets(list);
-      const urlId = readSetIdFromUrl();
+      const urlId = readKeywordSetIdFromUrl();
       const defaultSet = list.find((s) => s.isSystemDefault);
       const nextId =
         urlId != null && list.some((s) => s.id === urlId)
           ? urlId
           : (defaultSet?.id ?? list[0]?.id ?? null);
       setSelectedId(nextId);
-      if (nextId != null) writeSetIdToUrl(nextId);
+      if (nextId != null) writeKeywordSetIdToUrl(nextId);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -125,7 +105,7 @@ export function SettingsKeywordSetsSection() {
       return;
     }
     setSelectedId(id);
-    writeSetIdToUrl(id);
+    writeKeywordSetIdToUrl(id);
   };
 
   const clearSaveFeedback = () => {
@@ -147,7 +127,7 @@ export function SettingsKeywordSetsSection() {
       setSaveSuccess('Збережено');
       await reload();
       setSelectedId(saved.id);
-      writeSetIdToUrl(saved.id);
+      writeKeywordSetIdToUrl(saved.id);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -170,7 +150,7 @@ export function SettingsKeywordSetsSection() {
         name: suggestNewKeywordSetName(sets),
         words: [],
       });
-      writeSetIdToUrl(created.id);
+      writeKeywordSetIdToUrl(created.id);
       await reload();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
