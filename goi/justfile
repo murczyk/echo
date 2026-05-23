@@ -9,6 +9,7 @@ swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
 goi_version := "1.4.1"
+goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-tsur"
 
 default:
     @just --list
@@ -697,14 +698,31 @@ deploy-swapp-alt server:
     echo "Updating nginx on ${SERVER}..."
     just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
 
+[arg('servers', long='servers')]
+deploy-many _servers_pos="" servers="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "{{ _servers_pos }}" != "" ]]; then
+      echo "positional servers are not allowed; use: just deploy-many --servers=\"goi-stg goi-prod-01 ...\"" >&2
+      exit 1
+    fi
+    if [[ "{{ servers }}" == "" ]]; then
+      echo "missing --servers. usage: just deploy-many --servers=\"goi-stg goi-prod-01 ...\"" >&2
+      exit 1
+    fi
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo-install-utils run-many \
+      --values "{{ servers }}" \
+      --cwd "{{ goi_dir }}" \
+      -- just deploy --server={}
+
+deploy-many-all:
+    just deploy-many --servers "{{ goi_servers }}"
+
 deploy-all:
-    just deploy --server goi-stg
-    just deploy --server goi-jf
-    just deploy --server goi-prod-01
-    just deploy --server goi-prod-02
-    just deploy --server goi-prod-03
-    just deploy --server goi-prod-04
-    just deploy --server goi-prod-05
-    just deploy --server goi-prod-06
-    just deploy --server goi-prod-07
-    just deploy --server goi-tsur
+    just deploy-many-all
