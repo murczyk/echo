@@ -4,14 +4,6 @@ set -euo pipefail
 INCLUDE_PATH="${ECHO_DEV_FRONT_PROXY_INCLUDE:-/etc/nginx/echo-dev-front-proxy.inc}"
 UPSTREAM_HOST="${ECHO_DEV_FRONT_PROXY_HOST:-127.0.0.1}"
 
-run_as_root() {
-    if [[ "${EUID}" -eq 0 ]]; then
-        "$@"
-    else
-        sudo "$@"
-    fi
-}
-
 find_elm_land_pids_desc() {
     ps -eo pid=,etimes=,cmd= \
         | awk '/node .*elm-land server/ { print $1, $2 }' \
@@ -56,6 +48,13 @@ if [[ -z "${elm_land_port}" ]]; then
     exit 1
 fi
 
+if [[ "${EUID}" -ne 0 ]]; then
+    echo "⚠️  Skipping nginx sync: this script is not running as root." >&2
+    echo "🚧  wildducks.localhost may still proxy to an old Elm Land port." >&2
+    echo "🔧  Run under sudo to update ${INCLUDE_PATH} -> ${UPSTREAM_HOST}:${elm_land_port}." >&2
+    exit 0
+fi
+
 tmp_file="$(mktemp)"
 trap 'rm -f "${tmp_file}"' EXIT
 
@@ -70,13 +69,13 @@ proxy_connect_timeout 600;
 proxy_send_timeout 600;
 EOF
 
-if run_as_root test -f "${INCLUDE_PATH}" && run_as_root cmp -s "${tmp_file}" "${INCLUDE_PATH}"; then
+if test -f "${INCLUDE_PATH}" && cmp -s "${tmp_file}" "${INCLUDE_PATH}"; then
     echo "Nginx dev-front include is already in sync: ${INCLUDE_PATH} -> ${UPSTREAM_HOST}:${elm_land_port}"
 else
-    run_as_root cp "${tmp_file}" "${INCLUDE_PATH}"
+    cp "${tmp_file}" "${INCLUDE_PATH}"
     echo "Updated ${INCLUDE_PATH} -> ${UPSTREAM_HOST}:${elm_land_port}"
 fi
 
-run_as_root nginx -t
-run_as_root systemctl restart nginx
+nginx -t
+systemctl restart nginx
 echo "Restarted nginx. Frontend facade should now proxy to Elm Land on ${UPSTREAM_HOST}:${elm_land_port}"

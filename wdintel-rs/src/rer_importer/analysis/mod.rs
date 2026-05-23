@@ -754,31 +754,6 @@ fn tags_from_user_organism_exists(user_id: &str) -> SimpleExpr {
     Expr::exists(subquery)
 }
 
-fn user_or_organism_logins_subquery(user_id: &str) -> SelectStatement {
-    let user_alias = Alias::new("allowed_user");
-    Query::select()
-        .column((login::Entity, login::Column::Login))
-        .from(login::Entity)
-        .join_as(
-            JoinType::InnerJoin,
-            login::Entity,
-            user_alias.clone(),
-            Expr::col((user_alias.clone(), login::Column::Login))
-                .eq(user_id.to_string()),
-        )
-        .and_where(
-            Expr::col((login::Entity, login::Column::Login))
-                .eq(user_id.to_string())
-                .or(Expr::col((user_alias.clone(), login::Column::OrganismId))
-                    .is_not_null()
-                    .and(
-                        Expr::col((login::Entity, login::Column::OrganismId))
-                            .equals((user_alias, login::Column::OrganismId)),
-                    )),
-        )
-        .to_owned()
-}
-
 pub fn filter_selected_tags<Q>(
     q: Q,
     selected_tags: &Option<Vec<i64>>,
@@ -863,7 +838,6 @@ where
             m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
     }
     if or_with_extended_form == &Some(true) {
-        let allowed_logins = user_or_organism_logins_subquery(user_id);
         let comment_exists = sigint_comment::Entity::find()
             .select_only()
             .expr(Expr::value(1))
@@ -875,7 +849,6 @@ where
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
             .filter(sigint_comment::Column::Comment.eq("").not())
-            .filter(sigint_comment::Column::Login.in_subquery(allowed_logins))
             .into_query();
 
         q = q.filter(Expr::exists(comment_exists));
@@ -3200,15 +3173,27 @@ pub async fn batch_message_comments(
     env: actix_web::web::Data<Env>,
     req: Json<BatchMessageCommentsReq>,
 ) -> Result<Json<MessageComments>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
     let message_ids: Vec<i64> =
         req.messages.iter().map(|m| m.message_id).collect();
+    let comments =
+        batch_message_comments_bl(&env.dbx, &login, &message_ids).await?;
+    Ok(Json(comments))
+}
+
+pub async fn batch_message_comments_bl(
+    dbx: &DatabaseConnection,
+    login: &str,
+    message_ids: &[i64],
+) -> Result<MessageComments, AppError> {
+    let message_ids = accessible_message_ids(dbx, login, message_ids).await?;
     let comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
         .order_by_asc(sigint_comment::Column::CreatedAt)
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .c(h!())?;
     let mut res: BTreeMap<i64, Vec<MessageComment>> = BTreeMap::new();
@@ -3233,7 +3218,40 @@ pub async fn batch_message_comments(
             comments: comments.clone(),
         })
         .collect();
-    Ok(Json(MessageComments { data }))
+    Ok(MessageComments { data })
+}
+
+async fn accessible_message_ids(
+    dbx: &DatabaseConnection,
+    login: &str,
+    message_ids: &[i64],
+) -> Result<Vec<i64>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
+
+    Ok(signal_message::Entity::find()
+        .select_only()
+        .distinct()
+        .column(signal_message::Column::Id)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()))
+        .filter(
+            signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
+        )
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?)
 }
 
 #[post("/api/rer/message/comments")]

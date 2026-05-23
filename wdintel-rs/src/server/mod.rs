@@ -452,99 +452,8 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
     spawn_palitra_goi_sync_worker(bg_set, env);
 }
 
-pub async fn main_server(
-    mode: Mode,
-    ps: crate::ServerPs,
-    cancel_token: CancellationToken,
-    shutdown_handle: Handle,
-) -> Result<(), AppError> {
-    let env = init_runtime_env(mode).await.c(h!())?;
-    let config = env.config.clone();
-
-    let redis_session_store =
-        RedisSessionStore::new(crate::redis_conn_string(&config).c(h!())?)
-            .await
-            .c(h!())?;
-
-    let mut background_tasks: JoinSet<()> = JoinSet::new();
-    let session_env = env.clone();
-    let token_session = cancel_token.clone();
-    spawn_named_worker(
-        "session_activity_worker",
-        &mut background_tasks,
-        async move {
-            crate::session::run_activity_worker_nofail(
-                session_env,
-                token_session,
-            )
-            .await;
-        },
-    );
-    let should_start_bgworkers =
-        should_start_bgworkers_in_server(mode, ps.no_bgworker);
-    if should_start_bgworkers {
-        match mode {
-            Mode::Live => spawn_vault_background_workers(
-                env.clone(),
-                &mut background_tasks,
-            ),
-            Mode::Test | Mode::Debug => spawn_background_workers(
-                mode,
-                env.clone(),
-                cancel_token.clone(),
-                shutdown_handle.clone(),
-                true,
-                &mut background_tasks,
-            ),
-        }
-    } else {
-        info!("Background workers are disabled in server mode={mode}");
-    }
-
-    let bind_ip = "0.0.0.0";
-    let bind_port = if let Ok(port) = std::env::var("ECHO_SERVER_PORT") {
-        info!("port overridden from env: {port}");
-        port.parse::<u16>().c(h!())?
-    } else {
-        info!("starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable.");
-        8081
-    };
-
-    let env_for_server = env.clone();
-    let server_builder = HttpServer::new(move || {
-        let env = env_for_server.clone();
-        let cookie_secret = env.config.cookie_session_secret.clone();
-        let redis_for_middleware = env.redis.clone();
-        App::new()
-            .wrap(actix_web::middleware::Compress::default())
-            .app_data(actix_web::web::Data::from(env))
-            .app_data(
-                web::JsonConfig::default().limit(SERVER_JSON_PAYLOAD_MAX_BYTES),
-            )
-            // .wrap(
-            //     actix_web::middleware::Logger::default()
-            // )
-            .wrap(
-                IdentityMiddleware::builder()
-                    .visit_deadline(Some(std::time::Duration::from_secs(
-                        IDENTITY_DURATION_HOURS * 60 * 60,
-                    ))).build(),
-            )
-            .wrap(SessionMiddleware::new(
-                redis_session_store.clone(),
-                Key::from(cookie_secret.as_bytes()),
-            ))
-            .wrap(
-                actix_web::middleware::from_fn(
-                    middleware::mk_activity_middleware(Some(redis_for_middleware))
-                )
-            )
-            .wrap(
-                actix_web::middleware::from_fn(
-                    middleware::access_log_middleware
-                )
-            )
-            .service(self::monitoring::ping)
+fn configure_routes(cfg: &mut web::ServiceConfig) {
+    cfg.service(self::monitoring::ping)
             .service(self::monitoring::public_ping)
             .service(self::monitoring::server_info)
             .service(self::monitoring::monitoring)
@@ -852,7 +761,99 @@ pub async fn main_server(
             .service(crate::alpine::download_alpine_result)
             .service(
                 web::scope(get_assets_url())
-                    .route("/{filename:.*}", web::get().to(crate::storage::serve_assets)))
+                    .route("/{filename:.*}", web::get().to(crate::storage::serve_assets)));
+}
+
+pub async fn main_server(
+    mode: Mode,
+    ps: crate::ServerPs,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) -> Result<(), AppError> {
+    let env = init_runtime_env(mode).await.c(h!())?;
+    let config = env.config.clone();
+
+    let redis_session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&config).c(h!())?)
+            .await
+            .c(h!())?;
+
+    let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let session_env = env.clone();
+    let token_session = cancel_token.clone();
+    spawn_named_worker(
+        "session_activity_worker",
+        &mut background_tasks,
+        async move {
+            crate::session::run_activity_worker_nofail(
+                session_env,
+                token_session,
+            )
+            .await;
+        },
+    );
+    let should_start_bgworkers =
+        should_start_bgworkers_in_server(mode, ps.no_bgworker);
+    if should_start_bgworkers {
+        match mode {
+            Mode::Live => spawn_vault_background_workers(
+                env.clone(),
+                &mut background_tasks,
+            ),
+            Mode::Test | Mode::Debug => spawn_background_workers(
+                mode,
+                env.clone(),
+                cancel_token.clone(),
+                shutdown_handle.clone(),
+                true,
+                &mut background_tasks,
+            ),
+        }
+    } else {
+        info!("Background workers are disabled in server mode={mode}");
+    }
+
+    let bind_ip = "0.0.0.0";
+    let bind_port = if let Ok(port) = std::env::var("ECHO_SERVER_PORT") {
+        info!("port overridden from env: {port}");
+        port.parse::<u16>().c(h!())?
+    } else {
+        info!("starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable.");
+        8081
+    };
+
+    let env_for_server = env.clone();
+    let server_builder = HttpServer::new(move || {
+        let env = env_for_server.clone();
+        let cookie_secret = env.config.cookie_session_secret.clone();
+        let redis_for_middleware = env.redis.clone();
+        App::new()
+            .wrap(actix_web::middleware::Compress::default())
+            .app_data(actix_web::web::Data::from(env))
+            .app_data(
+                web::JsonConfig::default().limit(SERVER_JSON_PAYLOAD_MAX_BYTES),
+            )
+            // .wrap(
+            //     actix_web::middleware::Logger::default()
+            // )
+            .wrap(
+                IdentityMiddleware::builder()
+                    .visit_deadline(Some(std::time::Duration::from_secs(
+                        IDENTITY_DURATION_HOURS * 60 * 60,
+                    )))
+                    .build(),
+            )
+            .wrap(SessionMiddleware::new(
+                redis_session_store.clone(),
+                Key::from(cookie_secret.as_bytes()),
+            ))
+            .wrap(actix_web::middleware::from_fn(
+                middleware::mk_activity_middleware(Some(redis_for_middleware)),
+            ))
+            .wrap(actix_web::middleware::from_fn(
+                middleware::access_log_middleware,
+            ))
+            .configure(configure_routes)
     });
 
     let server = if let Some(listener) = systemd_listener()? {
@@ -988,4 +989,51 @@ pub async fn main_bgworker(
         .await
         .c(h!())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{http::StatusCode, test, App};
+
+    #[actix_web::test]
+    async fn test_api_sigint_units_route_is_registered() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let redis_session_store =
+            RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+                .await
+                .unwrap();
+        let app = test::init_service(
+            App::new()
+                .wrap(
+                    IdentityMiddleware::builder()
+                        .visit_deadline(Some(std::time::Duration::from_secs(
+                            IDENTITY_DURATION_HOURS * 60 * 60,
+                        )))
+                        .build(),
+                )
+                .wrap(SessionMiddleware::new(
+                    redis_session_store,
+                    Key::generate(),
+                ))
+                .app_data(
+                    web::JsonConfig::default()
+                        .limit(SERVER_JSON_PAYLOAD_MAX_BYTES),
+                )
+                .configure(configure_routes),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/sigint/units")
+            .set_json(crate::sigint::unit::types::ListUnitsReq {
+                sort_by: None,
+                after_unit_id: None,
+                before_unit_id: None,
+            })
+            .to_request();
+        let res = test::call_service(&app, req).await;
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
 }

@@ -41,8 +41,11 @@ export function FeedNotificationPanel({ feedId, storageSyncKey = 0, onPersisted 
   return (
     <Box
       sx={{
-        borderTop: '1px solid rgba(148, 163, 184, 0.28)',
+        border: '1px solid',
+        borderColor: 'divider',
         bgcolor: 'background.paper',
+        width: '100%',
+        maxWidth: '100%',
         px: { xs: 2, sm: 2.5 },
         py: 2,
       }}

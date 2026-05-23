@@ -2,7 +2,7 @@ use crate::config::*;
 use crate::entities::sea_orm_active_enums::*;
 use crate::entities::*;
 use crate::error::*;
-use crate::messenger::bl::{deactivate_account, list_echo_accounts};
+use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::types::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::info;
@@ -147,6 +147,14 @@ pub async fn bl_spawn_worker_if_not_running(
     now: NaiveDateTime,
     datasource: &EchoAccountF1,
 ) -> Result<(), AppError> {
+    if datasource.status != AccountStatus::Active.into_value() {
+        trace!(
+            "datasource {} is {}, skipping worker spawn",
+            datasource.id,
+            datasource.status
+        );
+        return Ok(());
+    }
     if has_unlinked_echo_account(datasource) {
         notify_unlinked_datasource(redis, config, dbx, datasource)
             .await
@@ -256,6 +264,10 @@ async fn run_new_worker(
                     .await;
                 return Ok(());
             };
+            if cli.status != AccountStatus::Active.into_value() {
+                info!("datasource {datasource_id} is paused, stopping worker...");
+                return Ok(());
+            }
             let sync_result =
                 sync_client_once(&config, cli, &dbx, &mut redis).await;
             if !sync_result.is_healthy {
@@ -518,27 +530,15 @@ async fn receive_thread(
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
 ) -> Result<usize, AppError> {
-    let mut datasource =
-        load_client_datasource(dbx, client_name).await.c(h!())?;
+    let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
         return Ok(0);
     }
     if datasource.status.eq(&AccountStatus::Paused) {
-        let txn = dbx.begin().await.cae(h!())?;
-        deactivate_account(
-            datasource.id,
-            &txn,
-            datasource.updated_by.clone(),
-            false,
-        )
-        .await
-        .c(h!())?;
-        let mut datasource_am = datasource.into_active_model();
-        datasource_am.status = Set(AccountStatus::Active);
-        datasource = datasource_am.update(&txn).await.c(h!())?;
-        txn.commit().await.c(h!())?;
+        trace!("datasource {datasource_id} is paused, skipping");
+        return Ok(0);
     }
     ensure_initial_signal_login_delay().await;
     echo_im::worker::signal_worker_tick_once(client_name, dbx)

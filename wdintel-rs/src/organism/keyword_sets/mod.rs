@@ -51,7 +51,7 @@ fn words_from_json(jv: &sea_orm::entity::prelude::Json) -> Result<Vec<String>, A
     })
 }
 
-fn viewer_is_admin(dbx: &DatabaseConnection, login: &str) -> bool {
+async fn viewer_is_admin(dbx: &DatabaseConnection, login: &str) -> bool {
     crate::users::has_role(dbx, login, "Admin").await.is_ok()
 }
 
