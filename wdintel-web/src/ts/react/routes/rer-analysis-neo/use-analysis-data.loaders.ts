@@ -158,9 +158,13 @@ export function useAnalysisDataLoaders(params: Params) {
   const invalidateSummaryData = useCallback((keepLoading = false) => {
     summaryRequestRef.current += 1;
     summaryRequestKeyRef.current = null;
+    if (!keepLoading) {
+      setSummaryRows([]);
+      setSummaryHasLoadedOnce(false);
+    }
     setSummaryLoaded(false);
     setSummaryLoading(keepLoading);
-  }, [setSummaryLoaded, setSummaryLoading]);
+  }, [setSummaryHasLoadedOnce, setSummaryLoaded, setSummaryLoading, setSummaryRows]);
 
   const invalidateRightSidebarData = useCallback(() => {
     rightSidebarRequestRef.current += 1;
