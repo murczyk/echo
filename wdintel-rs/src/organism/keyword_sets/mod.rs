@@ -245,22 +245,29 @@ pub async fn upsert_keyword_set(
         Some(id) => {
             let existing =
                 load_set_for_viewer(&env.dbx, organism_id, id).await?;
-            if existing.is_system_default {
-                if name != ORGANISM_KEYWORD_SET_DEFAULT_NAME {
-                    return Err(AppError::BL {
-                        msg: "Системний набір не можна перейменувати"
-                            .to_string(),
-                    });
-                }
-            } else if !keyword_set_can_manage(
+            if existing.is_system_default
+                && name != ORGANISM_KEYWORD_SET_DEFAULT_NAME
+            {
+                return Err(AppError::BL {
+                    msg: "Системний набір не можна перейменувати".to_string(),
+                });
+            }
+            if !keyword_set_can_edit(
+                existing.is_system_default,
                 existing.author_login.as_deref(),
                 &login,
                 is_admin,
             ) {
                 return Err(AppError::BL {
-                    msg: "Немає прав на редагування цього набору".to_string(),
+                    msg: if existing.is_system_default {
+                        "Редагування системного набору доступне лише адміністратору"
+                            .to_string()
+                    } else {
+                        "Немає прав на редагування цього набору".to_string()
+                    },
                 });
-            } else if name != existing.name {
+            }
+            if !existing.is_system_default && name != existing.name {
                 ensure_keyword_set_name_available(
                     &env.dbx,
                     organism_id,

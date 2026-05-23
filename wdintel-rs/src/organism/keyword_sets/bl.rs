@@ -99,8 +99,10 @@ pub fn keyword_set_can_edit(
     viewer_login: &str,
     viewer_is_admin: bool,
 ) -> bool {
-    is_system_default
-        || keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
+    if is_system_default {
+        return viewer_is_admin;
+    }
+    keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
 }
 
 pub fn keyword_set_can_delete(
@@ -179,8 +181,10 @@ mod tests {
 
     #[test]
     fn keyword_set_acl_rules() {
-        assert!(keyword_set_can_edit(true, None, "alice", false));
+        assert!(!keyword_set_can_edit(true, None, "alice", false));
+        assert!(keyword_set_can_edit(true, None, "alice", true));
         assert!(!keyword_set_can_delete(true, None, "alice", false));
+        assert!(!keyword_set_can_delete(true, None, "alice", true));
 
         assert!(keyword_set_can_edit(false, Some("alice"), "alice", false));
         assert!(keyword_set_can_delete(false, Some("alice"), "alice", false));
