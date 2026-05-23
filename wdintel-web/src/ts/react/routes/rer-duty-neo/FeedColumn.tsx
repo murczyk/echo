@@ -107,20 +107,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [feed.id, notificationStorageSyncKey],
   );
   const dutyNotificationsOn = dutyNotificationSummary.soundEnabled || dutyNotificationSummary.browserEnabled;
-  const keywordsHighlightOn = feed.filter.highlightKeywordsEnabled ?? true;
-
-  const handleKeywordsHighlightToggle = useCallback(
-    (e: MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      keywordsPanel.onFilterChange(feed.id, {
-        ...feed.filter,
-        highlightKeywordsEnabled: !keywordsHighlightOn,
-      });
-    },
-    [feed.filter, feed.id, keywordsHighlightOn, keywordsPanel],
-  );
-
   const handleBellToggleDutyNotifications = useCallback(
     async (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
@@ -203,7 +189,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         showNotificationPanel={showNotificationPanel}
         showKeywordsPanel={showKeywordsPanel}
         dutyNotificationsOn={dutyNotificationsOn}
-        keywordsHighlightOn={keywordsHighlightOn}
         onToggleFilters={() => {
           setShowFilters((s) => !s);
           setShowNotificationPanel(false);
@@ -220,7 +205,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           setShowNotificationPanel(false);
         }}
         onToggleDutyNotifications={handleBellToggleDutyNotifications}
-        onToggleKeywordsHighlight={handleKeywordsHighlightToggle}
         onRemoveColumn={onRemoveColumn}
         headerRef={headerRef}
         filtersPanelRef={filtersPanelRef}

@@ -19,12 +19,10 @@ type FeedColumnHeaderProps = {
   showNotificationPanel: boolean;
   showKeywordsPanel: boolean;
   dutyNotificationsOn: boolean;
-  keywordsHighlightOn: boolean;
   onToggleFilters: () => void;
   onToggleNotificationPanel: () => void;
   onToggleKeywordsPanel: () => void;
   onToggleDutyNotifications: (event: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
-  onToggleKeywordsHighlight: (event: MouseEvent<HTMLButtonElement>) => void;
   onRemoveColumn: () => void;
   headerRef: RefObject<HTMLDivElement | null>;
   filtersPanelRef: RefObject<HTMLDivElement | null>;
@@ -68,12 +66,10 @@ export function FeedColumnHeader({
   showNotificationPanel,
   showKeywordsPanel,
   dutyNotificationsOn,
-  keywordsHighlightOn,
   onToggleFilters,
   onToggleNotificationPanel,
   onToggleKeywordsPanel,
   onToggleDutyNotifications,
-  onToggleKeywordsHighlight,
   onRemoveColumn,
   headerRef,
   filtersPanelRef,
@@ -200,52 +196,26 @@ export function FeedColumnHeader({
               Сповіщення
             </Button>
           </Box>
-          <Box
-            className="flex items-stretch self-stretch border-l border-solid"
-            sx={{ borderColor: 'rgba(148, 163, 184, 0.28)' }}
+          <Button
+            size="small"
+            variant="text"
+            className="self-stretch px-4 min-w-0 border-l border-solid"
+            startIcon={<KeyOutlinedIcon />}
+            endIcon={showKeywordsPanel ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            onClick={onToggleKeywordsPanel}
+            aria-expanded={showKeywordsPanel}
+            sx={{
+              borderRadius: 0,
+              borderColor: 'rgba(148, 163, 184, 0.28)',
+              color: showKeywordsPanel ? 'primary.light' : 'text.primary',
+              backgroundColor: 'transparent',
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              },
+            }}
           >
-            <IconButton
-              type="button"
-              size="small"
-              aria-label={
-                keywordsHighlightOn
-                  ? 'Вимкнути підсвічування ключових слів'
-                  : 'Увімкнути підсвічування ключових слів'
-              }
-              aria-pressed={keywordsHighlightOn}
-              onClick={onToggleKeywordsHighlight}
-              sx={{
-                borderRadius: 0,
-                height: 32,
-                width: 40,
-                maxHeight: 32,
-                borderRight: '1px solid',
-                borderRightColor: 'rgba(148, 163, 184, 0.28)',
-                color: showKeywordsPanel ? 'primary.light' : 'text.secondary',
-                '&:hover': { backgroundColor: 'action.hover' },
-              }}
-            >
-              <KeyOutlinedIcon sx={{ fontSize: 20 }} />
-            </IconButton>
-            <Button
-              size="small"
-              variant="text"
-              className="self-stretch px-4 min-w-0"
-              endIcon={showKeywordsPanel ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-              onClick={onToggleKeywordsPanel}
-              aria-expanded={showKeywordsPanel}
-              sx={{
-                borderRadius: 0,
-                color: showKeywordsPanel ? 'primary.light' : 'text.primary',
-                backgroundColor: 'transparent',
-                '&:hover': {
-                  backgroundColor: 'action.hover',
-                },
-              }}
-            >
-              Ключові слова
-            </Button>
-          </Box>
+            Ключові слова
+          </Button>
         </Box>
         {canRemove && (
           <Button
