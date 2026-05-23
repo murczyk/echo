@@ -8,7 +8,7 @@ goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.3.10"
+goi_version := "1.4.1"
 
 default:
     @just --list
@@ -241,6 +241,7 @@ deploy-goi-echo-worker server:
     "
 
 # Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
+
 # Use only on Linux, preferrably 22.04 host
 [arg('server', long='server')]
 deploy-goi-echo-worker-from-local server:
@@ -360,8 +361,6 @@ deploy server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-
-
 
 [arg('server', long='server')]
 deploy-first server:
@@ -676,13 +675,13 @@ deploy-swapp-alt server:
     just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
 
 deploy-all:
-   just deploy --server goi-stg
-   just deploy --server goi-jf
-   just deploy --server goi-prod-01
-   just deploy --server goi-prod-02
-   just deploy --server goi-prod-03
-   just deploy --server goi-prod-04
-   just deploy --server goi-prod-05
-   just deploy --server goi-prod-06
-   just deploy --server goi-prod-07
-   just deploy --server goi-tsur
+    just deploy --server goi-stg
+    just deploy --server goi-jf
+    just deploy --server goi-prod-01
+    just deploy --server goi-prod-02
+    just deploy --server goi-prod-03
+    just deploy --server goi-prod-04
+    just deploy --server goi-prod-05
+    just deploy --server goi-prod-06
+    just deploy --server goi-prod-07
+    just deploy --server goi-tsur
