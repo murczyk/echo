@@ -85,20 +85,32 @@ pub fn normalize_inflect_output_words(words: &[String]) -> Vec<String> {
     res
 }
 
+pub fn keyword_set_can_manage(
+    author_login: Option<&str>,
+    viewer_login: &str,
+    viewer_is_admin: bool,
+) -> bool {
+    viewer_is_admin || author_login == Some(viewer_login)
+}
+
 pub fn keyword_set_can_edit(
     is_system_default: bool,
     author_login: Option<&str>,
     viewer_login: &str,
+    viewer_is_admin: bool,
 ) -> bool {
-    is_system_default || author_login == Some(viewer_login)
+    is_system_default
+        || keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
 }
 
 pub fn keyword_set_can_delete(
     is_system_default: bool,
     author_login: Option<&str>,
     viewer_login: &str,
+    viewer_is_admin: bool,
 ) -> bool {
-    !is_system_default && author_login == Some(viewer_login)
+    !is_system_default
+        && keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
 }
 
 pub fn merge_lexeme_batches(lexemes_batch: Vec<Vec<String>>) -> Vec<String> {
@@ -167,14 +179,22 @@ mod tests {
 
     #[test]
     fn keyword_set_acl_rules() {
-        assert!(keyword_set_can_edit(true, None, "alice"));
-        assert!(!keyword_set_can_delete(true, None, "alice"));
+        assert!(keyword_set_can_edit(true, None, "alice", false));
+        assert!(!keyword_set_can_delete(true, None, "alice", false));
 
-        assert!(keyword_set_can_edit(false, Some("alice"), "alice"));
-        assert!(keyword_set_can_delete(false, Some("alice"), "alice"));
+        assert!(keyword_set_can_edit(false, Some("alice"), "alice", false));
+        assert!(keyword_set_can_delete(false, Some("alice"), "alice", false));
 
-        assert!(!keyword_set_can_edit(false, Some("bob"), "alice"));
-        assert!(!keyword_set_can_delete(false, Some("bob"), "alice"));
+        assert!(!keyword_set_can_edit(false, Some("bob"), "alice", false));
+        assert!(!keyword_set_can_delete(false, Some("bob"), "alice", false));
+
+        assert!(!keyword_set_can_edit(false, None, "alice", false));
+        assert!(!keyword_set_can_delete(false, None, "alice", false));
+
+        assert!(keyword_set_can_edit(false, None, "alice", true));
+        assert!(keyword_set_can_delete(false, None, "alice", true));
+        assert!(keyword_set_can_edit(false, Some("bob"), "alice", true));
+        assert!(keyword_set_can_delete(false, Some("bob"), "alice", true));
     }
 
     #[test]

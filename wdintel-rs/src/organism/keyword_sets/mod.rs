@@ -2,8 +2,9 @@ pub mod bl;
 pub mod types;
 
 use self::bl::{
-    keyword_set_can_delete, keyword_set_can_edit, keyword_set_name_taken_err,
-    map_keyword_set_db_err, merge_lexeme_batches, normalize_keyword_words,
+    keyword_set_can_delete, keyword_set_can_edit, keyword_set_can_manage,
+    keyword_set_name_taken_err, map_keyword_set_db_err, merge_lexeme_batches,
+    normalize_keyword_words,
 };
 use self::types::*;
 use crate::config::{
@@ -50,20 +51,27 @@ fn words_from_json(jv: &sea_orm::entity::prelude::Json) -> Result<Vec<String>, A
     })
 }
 
+fn viewer_is_admin(dbx: &DatabaseConnection, login: &str) -> bool {
+    crate::users::has_role(dbx, login, "Admin").await.is_ok()
+}
+
 fn dto_from_model(
     row: organism_keyword_set::Model,
     login: &str,
+    is_admin: bool,
 ) -> OrganismKeywordSetDto {
     let words = words_from_json(&row.words).unwrap_or_default();
     let can_edit = keyword_set_can_edit(
         row.is_system_default,
         row.author_login.as_deref(),
         login,
+        is_admin,
     );
     let can_delete = keyword_set_can_delete(
         row.is_system_default,
         row.author_login.as_deref(),
         login,
+        is_admin,
     );
     OrganismKeywordSetDto {
         id: row.id,
@@ -194,6 +202,7 @@ pub async fn list_keyword_sets(
     env: Data<Env>,
 ) -> Result<Json<Vec<OrganismKeywordSetDto>>, AppError> {
     let login = user.id().c(h!())?;
+    let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     ensure_default_keyword_set(&env.dbx, organism_id)
         .await
@@ -207,7 +216,7 @@ pub async fn list_keyword_sets(
         .c(h!())?;
     Ok(Json(
         rows.into_iter()
-            .map(|r| dto_from_model(r, &login))
+            .map(|r| dto_from_model(r, &login, is_admin))
             .collect(),
     ))
 }
@@ -219,6 +228,7 @@ pub async fn upsert_keyword_set(
     req: Json<OrganismKeywordSetUpsertReq>,
 ) -> Result<Json<OrganismKeywordSetDto>, AppError> {
     let login = user.id().c(h!())?;
+    let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let words = normalize_keyword_words(&req.words)?;
     let name = req.name.trim();
@@ -242,7 +252,11 @@ pub async fn upsert_keyword_set(
                             .to_string(),
                     });
                 }
-            } else if existing.author_login.as_deref() != Some(login.as_str()) {
+            } else if !keyword_set_can_manage(
+                existing.author_login.as_deref(),
+                &login,
+                is_admin,
+            ) {
                 return Err(AppError::BL {
                     msg: "Немає прав на редагування цього набору".to_string(),
                 });
@@ -306,7 +320,7 @@ pub async fn upsert_keyword_set(
         }
     };
 
-    Ok(Json(dto_from_model(row, &login)))
+    Ok(Json(dto_from_model(row, &login, is_admin)))
 }
 
 #[delete("/api/organism/keyword-sets/{id}")]
@@ -316,17 +330,22 @@ pub async fn delete_keyword_set(
     path: Path<i64>,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
+    let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let id = path.into_inner();
     let existing = load_set_for_viewer(&env.dbx, organism_id, id).await?;
-    if existing.is_system_default {
+    if !keyword_set_can_delete(
+        existing.is_system_default,
+        existing.author_login.as_deref(),
+        &login,
+        is_admin,
+    ) {
         return Err(AppError::BL {
-            msg: "Системний набір не можна видалити".to_string(),
-        });
-    }
-    if existing.author_login.as_deref() != Some(login.as_str()) {
-        return Err(AppError::BL {
-            msg: "Немає прав на видалення цього набору".to_string(),
+            msg: if existing.is_system_default {
+                "Системний набір не можна видалити".to_string()
+            } else {
+                "Немає прав на видалення цього набору".to_string()
+            },
         });
     }
     organism_keyword_set::Entity::delete_by_id(id)
