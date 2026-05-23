@@ -1,7 +1,7 @@
 import { Box, Button, Chip, Stack, TextField, Typography } from '@mui/material';
 import type { SystemCssProperties } from '@mui/system';
 import type { Theme } from '@mui/material/styles';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { inflectOrganismKeywordForms } from '../services/api/organism-keyword-sets';
 
@@ -36,6 +36,12 @@ export function KeywordFormsEditor({
   const [lemmaInput, setLemmaInput] = useState('');
   const [inflectLoading, setInflectLoading] = useState(false);
   const [inflectError, setInflectError] = useState<string | null>(null);
+  const wordsRef = useRef(words);
+  const inflectRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    wordsRef.current = words;
+  }, [words]);
 
   const handleInflect = async () => {
     const lemmas = lemmaInput
@@ -43,16 +49,21 @@ export function KeywordFormsEditor({
       .map((s) => s.trim())
       .filter(Boolean);
     if (lemmas.length === 0) return;
+    const requestId = ++inflectRequestIdRef.current;
     setInflectLoading(true);
     setInflectError(null);
     try {
       const rsp = await inflectOrganismKeywordForms({ lemmas });
-      onWordsChange(mergeWords(words, rsp.words));
+      if (requestId !== inflectRequestIdRef.current) return;
+      onWordsChange(mergeWords(wordsRef.current, rsp.words));
       setLemmaInput('');
     } catch (e) {
+      if (requestId !== inflectRequestIdRef.current) return;
       setInflectError(e instanceof Error ? e.message : String(e));
     } finally {
-      setInflectLoading(false);
+      if (requestId === inflectRequestIdRef.current) {
+        setInflectLoading(false);
+      }
     }
   };
 
