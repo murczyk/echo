@@ -2,7 +2,7 @@ pub mod bl;
 pub mod types;
 
 use self::bl::{
-    keyword_set_can_delete, keyword_set_can_edit, keyword_set_can_manage,
+    keyword_set_can_delete, keyword_set_can_edit,
     keyword_set_name_taken_err, map_keyword_set_db_err, merge_lexeme_batches,
     normalize_keyword_words,
 };

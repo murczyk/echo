@@ -1,10 +1,8 @@
-import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import {
   Box,
   Button,
   Chip,
-  Divider,
   FormControl,
   FormControlLabel,
   InputLabel,
@@ -52,10 +50,13 @@ export function FeedKeywordsPanel({
   return (
     <Box
       sx={{
-        borderTop: '1px solid rgba(148, 163, 184, 0.28)',
+        border: '1px solid',
+        borderColor: 'divider',
         bgcolor: 'background.paper',
-        px: { xs: 1.5, sm: 2 },
-        py: { xs: 1.25, sm: 1.5 },
+        width: '100%',
+        maxWidth: '100%',
+        px: { xs: 2, sm: 2.5 },
+        py: 2,
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
