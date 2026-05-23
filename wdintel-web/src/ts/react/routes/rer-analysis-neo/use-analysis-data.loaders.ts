@@ -443,6 +443,7 @@ export function useAnalysisDataLoaders(params: Params) {
           await loadMissingCallsignInfos(callsignIds);
         } catch (loadError) {
           if (requestId !== summaryRequestRef.current) return;
+          summaryRequestKeyRef.current = null;
           if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
         }
         if (requestId !== summaryRequestRef.current) return;

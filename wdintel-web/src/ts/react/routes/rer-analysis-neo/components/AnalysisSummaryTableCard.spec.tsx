@@ -72,8 +72,10 @@ vi.mock('material-react-table', () => ({
   MaterialReactTable: ({ table }: { table: any }) => {
     const columns = table.columns as Array<any>;
     const data = table.data as Array<any>;
+    const callsignsColumn = columns.find((column) => column.id === 'callsignSearchText');
     return (
       <table aria-label={table.muiTableProps?.['aria-label']}>
+        <caption data-testid="callsigns-cell-overflow">{callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}</caption>
         <thead>
           <tr>
             <th>№</th>
@@ -415,5 +417,12 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('FOXTROT');
     expect(view.container.textContent).toContain('GOLF');
     expect(view.container.textContent).toContain('Згорнути');
+  });
+
+  it('does not clip expandable callsign cells at the table cell level', async () => {
+    const view = await renderComponent(buildProps());
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="callsigns-cell-overflow"]')?.textContent).toBe('visible');
   });
 });

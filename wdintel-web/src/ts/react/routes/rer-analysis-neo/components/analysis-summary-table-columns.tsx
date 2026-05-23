@@ -30,6 +30,7 @@ export const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [{ id: 'count', desc: true
 const rowActionsDisplayColumnDef = CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'] as Partial<
   MRT_ColumnDef<AnalysisSummaryTableRowView>
 >;
+const defaultBodyCellSx = ((CUSTOM_STYLES.muiTableBodyCellProps as { sx?: object }).sx ?? {});
 
 export function buildAnalysisSummaryTableColumns({
   onRenameUnit,
@@ -102,6 +103,14 @@ export function buildAnalysisSummaryTableColumns({
       accessorFn: (row) => row.callsignChips.map((entry) => entry.callsign).join(' '),
       id: 'callsignSearchText',
       size: 224,
+      muiTableBodyCellProps: {
+        sx: {
+          ...defaultBodyCellSx,
+          overflow: 'visible',
+          whiteSpace: 'normal',
+          textOverflow: 'clip',
+        },
+      },
       Cell: ({ row }) => <CallsignChipsCell callsigns={row.original.callsignChips} />,
     },
     {

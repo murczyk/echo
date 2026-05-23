@@ -224,6 +224,25 @@ describe('retryable loader caches', () => {
     expect(onError).toHaveBeenCalledWith('callsign failed');
   });
 
+  it('retries callsign info enrichment after a transient summary enrichment failure', async () => {
+    const row = { freq: '100.100', callsigns: ['alpha'] };
+    apiMocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [row] });
+    apiMocks.fetchAnalysisCallsignInfos.mockRejectedValueOnce(new Error('callsign failed'));
+    apiMocks.fetchAnalysisCallsignInfos.mockResolvedValueOnce([]);
+
+    renderLoaderHook();
+
+    await act(async () => {
+      await latest?.loadSummaryData();
+    });
+    await act(async () => {
+      await latest?.loadSummaryData();
+    });
+
+    expect(apiMocks.fetchAnalysisSummaryTable).toHaveBeenCalledTimes(2);
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
+  });
+
   it('does not refetch cached callsign infos for summary rows', async () => {
     apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({
       rows: [{ callsigns: ['alpha', 'bravo'] }],
@@ -247,14 +266,30 @@ describe('retryable loader caches', () => {
 
   it('keeps summary loading active when invalidating a visible summary reload', async () => {
     const setSummaryLoading = vi.fn();
+    const setSummaryRows = vi.fn();
 
-    renderLoaderHook({ setSummaryLoading });
+    renderLoaderHook({ setSummaryLoading, setSummaryRows });
 
     act(() => {
       latest?.invalidateSummaryData(true);
     });
 
     expect(setSummaryLoading).toHaveBeenCalledWith(true);
+    expect(setSummaryRows).not.toHaveBeenCalled();
+  });
+
+  it('clears stale summary rows when invalidating a hidden summary reload', async () => {
+    const setSummaryHasLoadedOnce = vi.fn();
+    const setSummaryRows = vi.fn();
+
+    renderLoaderHook({ setSummaryHasLoadedOnce, setSummaryRows });
+
+    act(() => {
+      latest?.invalidateSummaryData(false);
+    });
+
+    expect(setSummaryRows).toHaveBeenCalledWith([]);
+    expect(setSummaryHasLoadedOnce).toHaveBeenCalledWith(false);
   });
 
   it('retries right sidebar loading after a failure for the same query', async () => {

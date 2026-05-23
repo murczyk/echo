@@ -59,7 +59,18 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
   const hiddenCount = callsigns.length - visibleCallsigns.length;
 
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+    <Stack
+      direction="row"
+      spacing={0.5}
+      alignItems="center"
+      useFlexGap
+      sx={{
+        minWidth: 0,
+        overflow: expanded ? 'visible' : 'hidden',
+        whiteSpace: expanded ? 'normal' : 'nowrap',
+        flexWrap: expanded ? 'wrap' : 'nowrap',
+      }}
+    >
         {visibleCallsigns.map((entry, index) => {
           const hintIcon =
             entry.iconClass === 'info-circle-fill' ? <InfoIcon fontSize="inherit" /> : entry.iconClass === 'info-circle' ? <InfoOutlinedIcon fontSize="inherit" /> : null;
