@@ -6,6 +6,7 @@ import type { SxProps, Theme } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
+import { useEffect, useState } from 'react';
 
 dayjs.locale('uk');
 
@@ -28,6 +29,10 @@ function parseDate(value: string): Dayjs | null {
   return nextValue.isValid() ? nextValue : null;
 }
 
+function formatDate(value: Dayjs): string {
+  return value.format('YYYY-MM-DD');
+}
+
 export function NetworkDatePickerField({
   label,
   value,
@@ -39,6 +44,25 @@ export function NetworkDatePickerField({
   width = 162,
   textFieldSx,
 }: Props) {
+  const [draftValue, setDraftValue] = useState<Dayjs | null>(() => parseDate(value));
+
+  useEffect(() => {
+    setDraftValue(parseDate(value));
+  }, [value]);
+
+  const resetDraftValue = () => setDraftValue(parseDate(value));
+
+  const acceptDraftValue = (nextValue: Dayjs | null) => {
+    if (nextValue === null) {
+      if (allowEmpty) onChange('');
+      return;
+    }
+
+    if (!nextValue.isValid()) return;
+
+    onChange(formatDate(nextValue));
+  };
+
   return (
     <LocalizationProvider
       dateAdapter={AdapterDayjs}
@@ -51,23 +75,17 @@ export function NetworkDatePickerField({
     >
       <DatePicker
         label={label}
-        value={parseDate(value)}
+        value={draftValue}
         onChange={(nextValue) => {
-          if (nextValue === null) {
-            if (allowEmpty) {
-              onChange('');
-            }
-            return;
-          }
-
-          if (!nextValue.isValid()) return;
-
-          onChange(nextValue.format('YYYY-MM-DD'));
+          setDraftValue(nextValue);
         }}
+        onAccept={acceptDraftValue}
+        onClose={resetDraftValue}
         disabled={disabled}
         minDate={minDate}
         maxDate={maxDate}
         format="DD.MM.YYYY"
+        closeOnSelect={false}
         slotProps={{
           textField: {
             fullWidth: true,

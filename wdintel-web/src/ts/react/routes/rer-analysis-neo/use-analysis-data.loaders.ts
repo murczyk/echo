@@ -446,6 +446,7 @@ export function useAnalysisDataLoaders(params: Params) {
     } catch (loadError) {
       if (requestId !== summaryRequestRef.current) return;
       summaryRequestKeyRef.current = null;
+      setSummaryRows([]);
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
       if (requestId === summaryRequestRef.current) {

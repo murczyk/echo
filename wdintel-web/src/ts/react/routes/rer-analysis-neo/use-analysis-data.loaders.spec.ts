@@ -165,10 +165,11 @@ describe('retryable loader caches', () => {
 
   it('retries summary loading after a failure for the same query', async () => {
     const setSummaryLoaded = vi.fn();
+    const setSummaryRows = vi.fn();
     apiMocks.fetchAnalysisSummaryTable.mockRejectedValueOnce(new Error('summary failed'));
     apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({ rows: [] });
 
-    renderLoaderHook({ setSummaryLoaded });
+    renderLoaderHook({ setSummaryLoaded, setSummaryRows });
 
     await act(async () => {
       await latest?.loadSummaryData();
@@ -178,6 +179,7 @@ describe('retryable loader caches', () => {
     });
 
     expect(apiMocks.fetchAnalysisSummaryTable).toHaveBeenCalledTimes(2);
+    expect(setSummaryRows).toHaveBeenCalledWith([]);
     expect(setSummaryLoaded).toHaveBeenCalledWith(false);
   });
 
