@@ -80,7 +80,6 @@ vi.mock('material-react-table', () => ({
             {columns.map((column) => (
               <th key={column.id ?? column.accessorKey}>{column.header}</th>
             ))}
-            <th>{table.displayColumnDefOptions?.['mrt-row-actions']?.header ?? 'Дії'}</th>
           </tr>
         </thead>
         <tbody>
@@ -92,7 +91,6 @@ vi.mock('material-react-table', () => ({
                 const cellValue = column.Cell ? column.Cell({ row: { original: rowData } }) : rowData[column.accessorKey];
                 return <td key={key}>{cellValue}</td>;
               })}
-              <td>{table.renderRowActions?.({ row: { original: rowData } })}</td>
             </tr>
           ))}
         </tbody>
@@ -121,6 +119,10 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
 
 vi.mock('../../../components/SectionLoadingOverlay', () => ({
   SectionLoadingOverlay: (props: { open: boolean }) => (props.open ? <div>overlay</div> : null),
+}));
+
+vi.mock('../../../components/TableEmptyState', () => ({
+  TableEmptyState: ({ message }: { message: string }) => <div>{message}</div>,
 }));
 
 vi.mock('../../../components/PowerChip', () => ({
@@ -300,6 +302,19 @@ describe('AnalysisSummaryTableCard', () => {
     rendered.push(view);
 
     expect(view.container.textContent).not.toContain('overlay');
+  });
+
+  it('shows a compact empty state without rendering the MRT footer', async () => {
+    const view = await renderComponent(
+      buildProps({
+        loaded: true,
+        rows: [],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
+    expect(view.container.querySelector('table')).toBeNull();
   });
 
   it('routes filter and map row actions to the existing callbacks', async () => {

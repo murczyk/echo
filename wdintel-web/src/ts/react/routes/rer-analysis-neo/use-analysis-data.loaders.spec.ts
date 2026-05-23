@@ -84,7 +84,9 @@ function renderLoaderHook(overrides: Partial<Parameters<typeof useAnalysisDataLo
       setMapPalitrasLoaded: vi.fn(),
       setMapPalitrasLoadState: vi.fn(),
       setMapPoints: vi.fn(),
+      summaryCallsignsInfoRef: { current: {} },
       setSummaryCallsignsInfo: vi.fn(),
+      setSummaryHasLoadedOnce: vi.fn(),
       setSummaryLoaded: vi.fn(),
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
@@ -162,10 +164,11 @@ describe('retryable loader caches', () => {
   });
 
   it('retries summary loading after a failure for the same query', async () => {
+    const setSummaryLoaded = vi.fn();
     apiMocks.fetchAnalysisSummaryTable.mockRejectedValueOnce(new Error('summary failed'));
     apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({ rows: [] });
 
-    renderLoaderHook();
+    renderLoaderHook({ setSummaryLoaded });
 
     await act(async () => {
       await latest?.loadSummaryData();
@@ -175,9 +178,11 @@ describe('retryable loader caches', () => {
     });
 
     expect(apiMocks.fetchAnalysisSummaryTable).toHaveBeenCalledTimes(2);
+    expect(setSummaryLoaded).toHaveBeenCalledWith(false);
   });
 
   it('loads summary callsign infos together with summary rows', async () => {
+    const setSummaryHasLoadedOnce = vi.fn();
     const setSummaryLoaded = vi.fn();
     apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({
       rows: [
@@ -188,14 +193,49 @@ describe('retryable loader caches', () => {
     });
     apiMocks.fetchAnalysisCallsignInfos.mockResolvedValueOnce([]);
 
-    renderLoaderHook({ setSummaryLoaded });
+    renderLoaderHook({ setSummaryHasLoadedOnce, setSummaryLoaded });
 
     await act(async () => {
       await latest?.loadSummaryData();
     });
 
     expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledWith(['alpha', 'bravo']);
+    expect(setSummaryHasLoadedOnce).toHaveBeenCalledWith(true);
+    expect(setSummaryLoaded).toHaveBeenNthCalledWith(1, false);
     expect(setSummaryLoaded).toHaveBeenCalledWith(true);
+  });
+
+  it('does not refetch cached callsign infos for summary rows', async () => {
+    apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({
+      rows: [{ callsigns: ['alpha', 'bravo'] }],
+    });
+    apiMocks.fetchAnalysisCallsignInfos.mockResolvedValueOnce([]);
+
+    renderLoaderHook({
+      summaryCallsignsInfoRef: {
+        current: {
+          alpha: { callsign: 'alpha', res: [] },
+        },
+      },
+    });
+
+    await act(async () => {
+      await latest?.loadSummaryData();
+    });
+
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledWith(['bravo']);
+  });
+
+  it('keeps summary loading active when invalidating a visible summary reload', async () => {
+    const setSummaryLoading = vi.fn();
+
+    renderLoaderHook({ setSummaryLoading });
+
+    act(() => {
+      latest?.invalidateSummaryData(true);
+    });
+
+    expect(setSummaryLoading).toHaveBeenCalledWith(true);
   });
 
   it('retries right sidebar loading after a failure for the same query', async () => {

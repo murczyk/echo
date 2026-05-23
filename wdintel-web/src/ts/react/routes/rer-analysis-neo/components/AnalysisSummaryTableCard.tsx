@@ -1,7 +1,4 @@
 import DownloadIcon from '@mui/icons-material/Download';
-import EditIcon from '@mui/icons-material/Edit';
-import FilterAltIcon from '@mui/icons-material/FilterAlt';
-import MapIcon from '@mui/icons-material/Map';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 import {
   Box,
@@ -24,7 +21,6 @@ import { MaterialReactTable, useMaterialReactTable } from 'material-react-table'
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../../components/dialogStyles';
 import {
   CUSTOM_STYLES,
@@ -35,6 +31,7 @@ import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../../com
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
+import { TableEmptyState } from '../../../components/TableEmptyState';
 import { TableToolbarControls } from '../../../components/TableToolbarControls';
 import {
   buildAnalysisSummaryTableColumns,
@@ -44,7 +41,6 @@ import {
 } from './analysis-summary-table-columns';
 import { SummaryTableLoadingState } from './analysis-summary-table-cells';
 import { buildAnalysisSummaryTableRows, type AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
-import { useMinDurationBusy } from '../use-min-duration-busy';
 
 type Props = {
   callsignInfoMap: Record<string, CallsignInfoRes>;
@@ -110,10 +106,10 @@ function AnalysisSummaryTableCardInner({
       }),
     [callsignInfoMap, networkDisplayMap, networks, rows, unitsMap],
   );
-  const columns = useMemo(() => buildAnalysisSummaryTableColumns(), []);
   const resolvedLoaded = loaded ?? rows.length > 0;
-  const showInitialSkeleton = !resolvedLoaded;
-  const loadingVisible = useMinDurationBusy(loading && !showInitialSkeleton, 300);
+  const showInitialSkeleton = !resolvedLoaded && data.length === 0;
+  const showEmptyState = resolvedLoaded && !loading && data.length === 0;
+  const loadingVisible = loading && !showInitialSkeleton;
 
   useEffect(() => {
     if (!renameDialog) {
@@ -138,6 +134,16 @@ function AnalysisSummaryTableCardInner({
       selectedUnit: row.editableUnits[0],
     });
   }, []);
+
+  const columns = useMemo(
+    () =>
+      buildAnalysisSummaryTableColumns({
+        onRenameUnit: openRenameDialog,
+        onSelectFreq,
+        onShowFreqOnMap,
+      }),
+    [onSelectFreq, onShowFreqOnMap, openRenameDialog],
+  );
 
   const saveRename = useCallback(async () => {
     if (!renameDialog) return;
@@ -239,31 +245,16 @@ function AnalysisSummaryTableCardInner({
     enableGlobalFilter: true,
     enableHiding: true,
     enableFullScreenToggle: false,
-    enableRowActions: true,
+    enableRowActions: false,
     enableRowNumbers: true,
     enableRowVirtualization: data.length > 100,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
-    positionActionsColumn: 'last',
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     onSortingChange: tableStateContext.onSortingChange,
-    renderRowActions: ({ row }) => (
-      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-        <MrtRowActions>
-          <MrtRowActionButton label="У фільтр" onClick={() => onSelectFreq(row.original.freq)} icon={<FilterAltIcon fontSize="small" />} />
-          <MrtRowActionButton label="На мапі" onClick={() => onShowFreqOnMap(row.original.freq)} icon={<MapIcon fontSize="small" />} />
-          <MrtRowActionButton
-            label="Редагувати підрозділ"
-            onClick={() => openRenameDialog(row.original)}
-            disabled={row.original.editableUnits.length === 0}
-            icon={<EditIcon fontSize="small" />}
-          />
-        </MrtRowActions>
-      </Box>
-    ),
     defaultColumn: {
       size: sidebarMode ? 140 : 180,
       grow: 0,
@@ -297,15 +288,6 @@ function AnalysisSummaryTableCardInner({
     displayColumnDefOptions: {
       ...defaultMRTOptions.displayColumnDefOptions,
       ...CUSTOM_STYLES.displayColumnDefOptions,
-      'mrt-row-actions': {
-        ...(CUSTOM_STYLES.displayColumnDefOptions?.['mrt-row-actions'] ?? {}),
-        ...(defaultMRTOptions.displayColumnDefOptions?.['mrt-row-actions'] ?? {}),
-        size: mrtRowActionsColumnSize(3),
-        minSize: mrtRowActionsColumnSize(3),
-        maxSize: mrtRowActionsColumnSize(3),
-        header: 'Дії',
-        enableHiding: false,
-      },
     },
     muiTablePaperProps: {
       sx: {
@@ -379,7 +361,15 @@ function AnalysisSummaryTableCardInner({
 
       <Box sx={outerTableContainerSx}>
         <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: '100%' }}>
-          {showInitialSkeleton ? <SummaryTableLoadingState /> : <MaterialReactTable table={table} />}
+          {showInitialSkeleton ? (
+            <SummaryTableLoadingState />
+          ) : showEmptyState ? (
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TableEmptyState message="Частоти за обраними параметрами відсутні" />
+            </Box>
+          ) : (
+            <MaterialReactTable table={table} />
+          )}
           {loadingVisible ? (
             <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} />
           ) : null}

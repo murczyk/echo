@@ -1,11 +1,17 @@
-import { Typography } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import MapIcon from '@mui/icons-material/Map';
+import { Box, Typography } from '@mui/material';
 import { MRT_ColumnDef, type MRT_SortingState } from 'material-react-table';
 
+import { CUSTOM_STYLES } from '../../../components/mui-customized/table/custom-styles';
 import { buildDefaultColumnOrder } from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import type { AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
 import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
 
 export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY = {
+  rowActions: true,
   freq: true,
   count: true,
   coordinateLabels: true,
@@ -15,15 +21,52 @@ export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY = {
 };
 
 export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['freq', 'count', 'coordinateLabels', 'callsignSearchText', 'unitSearchText', 'locationSearchText'],
+  dataColumnIds: ['rowActions', 'freq', 'count', 'coordinateLabels', 'callsignSearchText', 'unitSearchText', 'locationSearchText'],
   withRowNumbers: true,
-  withRowActions: true,
 });
 
 export const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [{ id: 'count', desc: true }] satisfies MRT_SortingState;
 
-export function buildAnalysisSummaryTableColumns(): MRT_ColumnDef<AnalysisSummaryTableRowView>[] {
+const rowActionsDisplayColumnDef = CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'] as Partial<
+  MRT_ColumnDef<AnalysisSummaryTableRowView>
+>;
+
+export function buildAnalysisSummaryTableColumns({
+  onRenameUnit,
+  onSelectFreq,
+  onShowFreqOnMap,
+}: {
+  onRenameUnit: (row: AnalysisSummaryTableRowView) => void;
+  onSelectFreq: (freq: string) => void;
+  onShowFreqOnMap: (freq: string) => void;
+}): MRT_ColumnDef<AnalysisSummaryTableRowView>[] {
   return [
+    {
+      ...rowActionsDisplayColumnDef,
+      header: 'Дії',
+      id: 'rowActions',
+      size: mrtRowActionsColumnSize(3),
+      minSize: mrtRowActionsColumnSize(3),
+      maxSize: mrtRowActionsColumnSize(3),
+      grow: false,
+      enableColumnActions: false,
+      enableHiding: false,
+      enableSorting: false,
+      Cell: ({ row }) => (
+        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+          <MrtRowActions>
+            <MrtRowActionButton label="У фільтр" onClick={() => onSelectFreq(row.original.freq)} icon={<FilterAltIcon fontSize="small" />} />
+            <MrtRowActionButton label="На мапі" onClick={() => onShowFreqOnMap(row.original.freq)} icon={<MapIcon fontSize="small" />} />
+            <MrtRowActionButton
+              label="Редагувати підрозділ"
+              onClick={() => onRenameUnit(row.original)}
+              disabled={row.original.editableUnits.length === 0}
+              icon={<EditIcon fontSize="small" />}
+            />
+          </MrtRowActions>
+        </Box>
+      ),
+    },
     {
       header: 'Частота',
       accessorKey: 'freq',

@@ -107,6 +107,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     setRightSidebarTab: vi.fn(),
     showFreqOnMap: vi.fn(),
     summaryCallsignsInfo: {},
+    summaryHasLoadedOnce: false,
     summaryLoaded: false,
     summaryLoading: false,
     summaryRows: [],

@@ -137,6 +137,7 @@ const baseAnalysisData = {
   reload: vi.fn(),
   summaryLoading: false,
   summaryLoaded: false,
+  summaryHasLoadedOnce: false,
   rightSidebarLoading: false,
   summaryRows: [],
   summaryCallsignsInfo: {},

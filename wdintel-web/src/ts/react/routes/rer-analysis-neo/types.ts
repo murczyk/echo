@@ -180,6 +180,7 @@ export type AnalysisPageState = {
   savedFilters: SavedFilter[];
   summaryLoading: boolean;
   summaryLoaded: boolean;
+  summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;

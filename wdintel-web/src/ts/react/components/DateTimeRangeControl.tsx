@@ -6,7 +6,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import dayjs from 'dayjs';
 import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 
 dayjs.locale('uk');
@@ -49,7 +49,13 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [activePreset, setActivePreset] = useState<'custom' | 1 | 3 | 7 | 14 | 30>('custom');
+  const [draftValue, setDraftValue] = useState(value);
   const open = Boolean(anchorEl);
+
+  useEffect(() => {
+    if (open) return;
+    setDraftValue(value);
+  }, [open, value]);
 
   const applyPreset = useCallback(
     (days: 1 | 3 | 7 | 14 | 30) => {
@@ -71,9 +77,10 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
       if (activeElement instanceof HTMLElement) {
         activeElement.blur();
       }
+      setDraftValue(value);
       setAnchorEl(event.currentTarget);
     },
-    [],
+    [value],
   );
 
   const closePopover = useCallback(() => {
@@ -198,11 +205,18 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
                 <Stack spacing={1.25}>
                   <CompactTitle component="div">Від</CompactTitle>
                   <DateTimePicker
-                    value={parseDateTimeInAppTimeZone(value.fromDateTimeStr)}
+                    value={parseDateTimeInAppTimeZone(draftValue.fromDateTimeStr)}
                     onChange={(nextValue) => {
                       const fromDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
                       setActivePreset('custom');
-                      onChange({ ...value, fromDateTimeStr });
+                      setDraftValue((current) => ({ ...current, fromDateTimeStr }));
+                    }}
+                    onAccept={(nextValue) => {
+                      const fromDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
+                      const nextRange = { ...draftValue, fromDateTimeStr };
+                      setActivePreset('custom');
+                      setDraftValue(nextRange);
+                      onChange(nextRange);
                     }}
                     minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
                     format="DD.MM.YYYY HH:mm"
@@ -245,11 +259,18 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
                 <Stack spacing={1.25}>
                   <CompactTitle component="div">До</CompactTitle>
                   <DateTimePicker
-                    value={parseDateTimeInAppTimeZone(value.toDateTimeStr)}
+                    value={parseDateTimeInAppTimeZone(draftValue.toDateTimeStr)}
                     onChange={(nextValue) => {
                       const toDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
                       setActivePreset('custom');
-                      onChange({ ...value, toDateTimeStr });
+                      setDraftValue((current) => ({ ...current, toDateTimeStr }));
+                    }}
+                    onAccept={(nextValue) => {
+                      const toDateTimeStr = formatDateTimeInAppTimeZone(nextValue);
+                      const nextRange = { ...draftValue, toDateTimeStr };
+                      setActivePreset('custom');
+                      setDraftValue(nextRange);
+                      onChange(nextRange);
                     }}
                     minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
                     format="DD.MM.YYYY HH:mm"

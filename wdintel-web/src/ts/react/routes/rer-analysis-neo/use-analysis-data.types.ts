@@ -94,6 +94,7 @@ export type UseAnalysisDataResult = {
   reload: () => Promise<void>;
   summaryLoading: boolean;
   summaryLoaded: boolean;
+  summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;

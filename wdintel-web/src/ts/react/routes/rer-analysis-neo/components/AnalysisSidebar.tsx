@@ -42,6 +42,7 @@ type Props = Pick<
   | 'topLocations'
   | 'topUnits'
   | 'summaryCallsignsInfo'
+  | 'summaryHasLoadedOnce'
   | 'summaryLoaded'
   | 'summaryLoading'
   | 'summaryRows'
@@ -95,6 +96,7 @@ export function AnalysisSidebar({
   setRightSidebarTab,
   showFreqOnMap,
   summaryCallsignsInfo,
+  summaryHasLoadedOnce,
   summaryLoaded,
   summaryLoading,
   summaryRows,
@@ -266,7 +268,7 @@ export function AnalysisSidebar({
               onRenameUnit={renameSummaryUnit}
               onSelectFreq={selectOnlyFreq}
               onShowFreqOnMap={showFreqOnMap}
-              loaded={summaryLoaded}
+              loaded={summaryHasLoadedOnce}
               loading={summaryLoading}
               rows={summaryRows}
               sx={{ flex: 1, minWidth: 0 }}
