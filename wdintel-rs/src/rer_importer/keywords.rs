@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-/// See gen_keywords.ipynb to regen
 pub fn get_keywords() -> BTreeSet<String> {
     let kwds = vec![
         "птичка",
