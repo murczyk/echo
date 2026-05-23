@@ -425,6 +425,7 @@ export function useAnalysisDataLoaders(params: Params) {
       const rsp = await fetchAnalysisSummaryTable(analysisReq);
       if (requestId !== summaryRequestRef.current) return;
       const nextRows = rsp.rows ?? [];
+      setSummaryRows(nextRows);
       const callsignIds = Array.from(
         new Set(
           nextRows
@@ -434,10 +435,14 @@ export function useAnalysisDataLoaders(params: Params) {
         ),
       );
       if (callsignIds.length > 0) {
-        await loadMissingCallsignInfos(callsignIds);
+        try {
+          await loadMissingCallsignInfos(callsignIds);
+        } catch (loadError) {
+          if (requestId !== summaryRequestRef.current) return;
+          if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+        }
         if (requestId !== summaryRequestRef.current) return;
       }
-      setSummaryRows(nextRows);
     } catch (loadError) {
       if (requestId !== summaryRequestRef.current) return;
       summaryRequestKeyRef.current = null;

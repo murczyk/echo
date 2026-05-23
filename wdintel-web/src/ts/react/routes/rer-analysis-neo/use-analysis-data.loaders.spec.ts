@@ -205,6 +205,23 @@ describe('retryable loader caches', () => {
     expect(setSummaryLoaded).toHaveBeenCalledWith(true);
   });
 
+  it('renders summary rows when callsign info enrichment fails', async () => {
+    const onError = vi.fn();
+    const setSummaryRows = vi.fn();
+    const row = { freq: '100.100', callsigns: ['alpha'] };
+    apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({ rows: [row] });
+    apiMocks.fetchAnalysisCallsignInfos.mockRejectedValueOnce(new Error('callsign failed'));
+
+    renderLoaderHook({ onError, setSummaryRows });
+
+    await act(async () => {
+      await latest?.loadSummaryData();
+    });
+
+    expect(setSummaryRows).toHaveBeenCalledWith([row]);
+    expect(onError).toHaveBeenCalledWith('callsign failed');
+  });
+
   it('does not refetch cached callsign infos for summary rows', async () => {
     apiMocks.fetchAnalysisSummaryTable.mockResolvedValueOnce({
       rows: [{ callsigns: ['alpha', 'bravo'] }],
