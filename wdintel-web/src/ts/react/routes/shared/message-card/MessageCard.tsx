@@ -1,12 +1,14 @@
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { useMemo } from 'react';
 import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit } from '../../../../../Bindings';
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
-import { isPresent } from '../../../utils/misc';
+import { isPresent, NO_DATA_LABEL } from '../../../utils/misc';
 import {
   buildClassicAnalysisHref,
   buildClassicAnalysisMapHrefWithSearch,
@@ -18,6 +20,19 @@ import {
 
 /** Share of the header row (network vs relative time) reserved for etalon / network block. */
 export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
+
+dayjs.extend(customParseFormat);
+
+function formatTooltipTime(time: string | null): string {
+  if (time === null) return NO_DATA_LABEL;
+  const trimmed = time.trim();
+  if (trimmed === '') return NO_DATA_LABEL;
+  const parsed = dayjs(trimmed, ['HH:mm:ss', 'HH:mm'], true);
+  if (parsed.isValid()) {
+    return trimmed.split(':').length >= 3 ? parsed.format('HH:mm:ss') : parsed.format('HH:mm');
+  }
+  return trimmed;
+}
 
 export type MessageCardProps = {
   id: number;
@@ -108,14 +123,23 @@ export function MessageCard({
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
     isPresent(msg.timestamp) && isPresent(relativeTimeMs) ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
+  const tooltipTime = formatTooltipTime(msg.time);
 
   const topRight =
     displayMode === 'duty' ? (
       isPresent(timeDistance) ? (
         <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-            {timeDistance}
-          </Typography>
+          {tooltipTime === NO_DATA_LABEL ? (
+            <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+              {timeDistance}
+            </Typography>
+          ) : (
+            <Tooltip title={tooltipTime} placement="top" enterDelay={300}>
+              <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap', cursor: 'default' }}>
+                {timeDistance}
+              </Typography>
+            </Tooltip>
+          )}
         </Box>
       ) : (
         <Box sx={{ minHeight: 28 }} />
