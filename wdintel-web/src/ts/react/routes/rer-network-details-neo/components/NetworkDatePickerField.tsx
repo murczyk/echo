@@ -8,6 +8,8 @@ import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
 import { useEffect, useState } from 'react';
 
+import { formatNetworkDateValue, parseNetworkDateValue } from './network-date-picker.utils';
+
 dayjs.locale('uk');
 
 type Props = {
@@ -22,17 +24,6 @@ type Props = {
   textFieldSx?: SxProps<Theme>;
 };
 
-function parseDate(value: string): Dayjs | null {
-  const trimmed = value.trim();
-  if (trimmed === '') return null;
-  const nextValue = dayjs(trimmed);
-  return nextValue.isValid() ? nextValue : null;
-}
-
-function formatDate(value: Dayjs): string {
-  return value.format('YYYY-MM-DD');
-}
-
 export function NetworkDatePickerField({
   label,
   value,
@@ -44,13 +35,13 @@ export function NetworkDatePickerField({
   width = 162,
   textFieldSx,
 }: Props) {
-  const [draftValue, setDraftValue] = useState<Dayjs | null>(() => parseDate(value));
+  const [draftValue, setDraftValue] = useState<Dayjs | null>(() => parseNetworkDateValue(value));
 
   useEffect(() => {
-    setDraftValue(parseDate(value));
+    setDraftValue(parseNetworkDateValue(value));
   }, [value]);
 
-  const resetDraftValue = () => setDraftValue(parseDate(value));
+  const resetDraftValue = () => setDraftValue(parseNetworkDateValue(value));
 
   const acceptDraftValue = (nextValue: Dayjs | null) => {
     if (nextValue === null) {
@@ -60,7 +51,7 @@ export function NetworkDatePickerField({
 
     if (!nextValue.isValid()) return;
 
-    onChange(formatDate(nextValue));
+    onChange(formatNetworkDateValue(nextValue));
   };
 
   return (

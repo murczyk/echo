@@ -3,6 +3,7 @@ set -euo pipefail
 
 INCLUDE_PATH="${ECHO_DEV_FRONT_PROXY_INCLUDE:-/etc/nginx/echo-dev-front-proxy.inc}"
 UPSTREAM_HOST="${ECHO_DEV_FRONT_PROXY_HOST:-127.0.0.1}"
+SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
 find_elm_land_pids_desc() {
     ps -eo pid=,etimes=,cmd= \
@@ -49,10 +50,16 @@ if [[ -z "${elm_land_port}" ]]; then
 fi
 
 if [[ "${EUID}" -ne 0 ]]; then
-    echo "⚠️  Skipping nginx sync: this script is not running as root." >&2
-    echo "🚧  wildducks.localhost may still proxy to an old Elm Land port." >&2
-    echo "🔧  Run under sudo to update ${INCLUDE_PATH} -> ${UPSTREAM_HOST}:${elm_land_port}." >&2
-    exit 0
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo "⚠️  Skipping nginx sync: this script is not running as root and sudo is unavailable." >&2
+        echo "🚧  The dev frontend may still proxy to an old Elm Land port." >&2
+        exit 0
+    fi
+
+    exec sudo env \
+        ECHO_DEV_FRONT_PROXY_INCLUDE="${INCLUDE_PATH}" \
+        ECHO_DEV_FRONT_PROXY_HOST="${UPSTREAM_HOST}" \
+        bash "${SCRIPT_PATH}" "${elm_land_port}"
 fi
 
 tmp_file="$(mktemp)"
