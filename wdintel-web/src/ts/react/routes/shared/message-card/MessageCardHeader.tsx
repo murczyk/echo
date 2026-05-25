@@ -201,6 +201,7 @@ function ActionIconsRow({
   const [stackedLayout, setStackedLayout] = useState(compact);
   const canShowExcludeMenu = displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
   const canShowNavigationMenu = navigationMenuItems.length > 0;
+  const navigationMenuHasNetwork = navigationMenuItems.some((item) => item.kind === 'network');
   const hasFrequencyCopy = isPresent(msg.freq) && String(msg.freq).trim() !== '';
   const hasEtalonCopy = isPresent(onCopyEtalon);
   const canShowLocationCopy = etalonDisplayModel.primaryKind === 'location' && isPresent(onCopyLocation);
@@ -533,7 +534,8 @@ function ActionIconsRow({
           paper: {
             sx: {
               maxWidth: 320,
-              width: '100%',
+              minWidth: navigationMenuHasNetwork ? undefined : 140,
+              width: navigationMenuHasNetwork ? '100%' : 'fit-content',
             },
           },
         }}
