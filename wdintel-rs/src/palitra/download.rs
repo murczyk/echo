@@ -2,7 +2,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::kml::types as kml_types;
 use crate::palitra::bl;
-use crate::palitra::types::{Palitra, PalitraPoint, PalitraReadV2};
+use crate::palitra::types::{Coords, Palitra, PalitraPoint, PalitraReadV2};
 use crate::types::{Env, ShortContext};
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -22,6 +22,31 @@ use super::{
 };
 
 type ZipFileOptions = FileOptions<'static, zip::write::ExtendedFileOptions>;
+
+#[derive(Clone)]
+enum DeltaSplitFeature {
+    Point(PalitraPoint),
+    LineString {
+        coords: Vec<Coords>,
+        color: Option<String>,
+    },
+}
+
+impl DeltaSplitFeature {
+    fn point_count(&self) -> usize {
+        match self {
+            DeltaSplitFeature::Point(_) => 1,
+            DeltaSplitFeature::LineString { coords, .. } => coords.len(),
+        }
+    }
+
+    fn color(&self) -> Option<String> {
+        match self {
+            DeltaSplitFeature::Point(point) => point.color.clone(),
+            DeltaSplitFeature::LineString { color, .. } => color.clone(),
+        }
+    }
+}
 
 #[derive(Deserialize)]
 struct PalitraDeltaSplitDownloadReq {
@@ -119,18 +144,13 @@ fn write_delta_split_palitra(
     total_bytes: &mut u64,
     palitra_read: PalitraReadV2,
 ) -> Result<(), AppError> {
-    let points = collect_delta_split_points(&palitra_read);
-    if points.is_empty() {
+    let chunks = collect_delta_split_chunks(&palitra_read);
+    if chunks.is_empty() {
         return Ok(());
     }
-    let total_chunks = points
-        .len()
-        .div_ceil(crate::config::PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE);
+    let total_chunks = chunks.len();
 
-    for (chunk_index, chunk) in points
-        .chunks(crate::config::PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE)
-        .enumerate()
-    {
+    for (chunk_index, chunk) in chunks.iter().enumerate() {
         write_delta_split_chunk(
             zip,
             options,
@@ -139,20 +159,105 @@ fn write_delta_split_palitra(
             &palitra_read.palitra,
             chunk_index,
             total_chunks,
-            chunk,
+            chunk.as_slice(),
         )?;
     }
     Ok(())
 }
 
-fn collect_delta_split_points(
+fn collect_delta_split_chunks(
     palitra_read: &PalitraReadV2,
-) -> Vec<PalitraPoint> {
-    palitra_read
-        .geometries
+) -> Vec<Vec<DeltaSplitFeature>> {
+    chunk_delta_split_features(collect_delta_split_features(palitra_read))
+}
+
+fn collect_delta_split_features(
+    palitra_read: &PalitraReadV2,
+) -> Vec<DeltaSplitFeature> {
+    let mut features = Vec::new();
+    for geometry in &palitra_read.geometries {
+        features.extend(
+            geometry
+                .points
+                .iter()
+                .cloned()
+                .map(DeltaSplitFeature::Point),
+        );
+
+        let Some(geometry_data) = &geometry.geometry else {
+            continue;
+        };
+        let Some(line_strings) = &geometry_data.line_strings else {
+            continue;
+        };
+        for line_string in line_strings {
+            features.extend(split_delta_line_string(
+                line_string,
+                Some(geometry.color_hex.clone()),
+            ));
+        }
+    }
+    features
+}
+
+fn split_delta_line_string(
+    coords: &[Coords],
+    color: Option<String>,
+) -> Vec<DeltaSplitFeature> {
+    let coords = coords
         .iter()
-        .flat_map(|geometry| geometry.points.iter().cloned())
-        .collect_vec()
+        .filter(|coord| coord.lat.is_finite() && coord.lng.is_finite())
+        .cloned()
+        .collect_vec();
+    if coords.len() < 2 {
+        return vec![];
+    }
+
+    let max_points = crate::config::PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE;
+    let mut result = Vec::new();
+    let mut start = 0usize;
+    while start < coords.len() {
+        let end = (start + max_points).min(coords.len());
+        let segment = if end - start == 1 && start > 0 {
+            coords[start - 1..end].to_vec()
+        } else {
+            coords[start..end].to_vec()
+        };
+        if segment.len() >= 2 {
+            result.push(DeltaSplitFeature::LineString {
+                coords: segment,
+                color: color.clone(),
+            });
+        }
+        start = end;
+    }
+    result
+}
+
+fn chunk_delta_split_features(
+    features: Vec<DeltaSplitFeature>,
+) -> Vec<Vec<DeltaSplitFeature>> {
+    let max_points = crate::config::PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE;
+    let mut chunks = Vec::new();
+    let mut chunk = Vec::new();
+    let mut chunk_points = 0usize;
+
+    for feature in features {
+        let feature_points = feature.point_count();
+        if !chunk.is_empty() && chunk_points + feature_points > max_points {
+            chunks.push(chunk);
+            chunk = Vec::new();
+            chunk_points = 0;
+        }
+
+        chunk_points += feature_points;
+        chunk.push(feature);
+    }
+
+    if !chunk.is_empty() {
+        chunks.push(chunk);
+    }
+    chunks
 }
 
 fn write_delta_split_chunk(
@@ -163,11 +268,11 @@ fn write_delta_split_chunk(
     palitra: &Palitra,
     chunk_index: usize,
     total_chunks: usize,
-    points: &[PalitraPoint],
+    features: &[DeltaSplitFeature],
 ) -> Result<(), AppError> {
     let kmz_name =
         build_delta_split_kmz_name(palitra, chunk_index, total_chunks);
-    let kmz_bytes = build_delta_split_kmz_bytes(&kmz_name, points).c(h!())?;
+    let kmz_bytes = build_delta_split_kmz_bytes(&kmz_name, features).c(h!())?;
     add_delta_split_bytes(palitra, kmz_bytes.len() as u64, total_bytes)?;
     let file_name = ensure_unique_zip_entry_name(used_file_names, kmz_name);
     zip.start_file(file_name, options.clone()).c(h!())?;
@@ -243,9 +348,9 @@ fn force_kmz_extension(file_name: &str) -> String {
 
 fn build_delta_split_kmz_bytes(
     name: &str,
-    points: &[PalitraPoint],
+    features: &[DeltaSplitFeature],
 ) -> Result<Vec<u8>, AppError> {
-    let kml = build_delta_split_kml(name, points);
+    let kml = build_delta_split_kml(name, features);
     let rendered_kml = crate::kml::views::render_kml(&kml)?;
     let cursor = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(cursor);
@@ -257,18 +362,18 @@ fn build_delta_split_kmz_bytes(
 
 fn build_delta_split_kml(
     name: &str,
-    points: &[PalitraPoint],
+    features: &[DeltaSplitFeature],
 ) -> kml_types::Kml {
-    let color_style_ids = build_delta_split_style_ids(points);
+    let color_style_ids = build_delta_split_style_ids(features);
     let styles = color_style_ids
         .iter()
         .map(|(color_hex, style_id)| {
             build_delta_split_style(style_id, color_hex)
         })
         .collect_vec();
-    let nodes = points
+    let nodes = features
         .iter()
-        .map(|point| build_delta_split_placemark(point, &color_style_ids))
+        .map(|feature| build_delta_split_placemark(feature, &color_style_ids))
         .collect_vec();
 
     kml_types::Kml {
@@ -295,11 +400,11 @@ fn build_delta_split_kml(
 }
 
 fn build_delta_split_style_ids(
-    points: &[PalitraPoint],
+    features: &[DeltaSplitFeature],
 ) -> BTreeMap<String, String> {
-    points
+    features
         .iter()
-        .map(|point| normalize_color_hex_or_fallback(point.color.clone()))
+        .map(|feature| normalize_color_hex_or_fallback(feature.color()))
         .unique()
         .enumerate()
         .map(|(index, color_hex)| {
@@ -326,47 +431,88 @@ fn build_delta_split_style(
         }),
         label_style: None,
         balloon_style: None,
-        line_style: None,
+        line_style: Some(kml_types::LineStyle {
+            color: Some(kml_types::Color {
+                body: hex_color_to_kml_color(color_hex),
+            }),
+            width: Some(kml_types::Width {
+                body: "2".to_string(),
+            }),
+        }),
         poly_style: None,
     }
 }
 
 fn build_delta_split_placemark(
-    point: &PalitraPoint,
+    feature: &DeltaSplitFeature,
     color_style_ids: &BTreeMap<String, String>,
 ) -> kml_types::Node {
-    let color_hex = normalize_color_hex_or_fallback(point.color.clone());
+    let color_hex = normalize_color_hex_or_fallback(feature.color());
     let style_url =
         color_style_ids
             .get(&color_hex)
             .map(|style_id| kml_types::StyleUrl {
                 body: format!("#{style_id}"),
             });
-    kml_types::Node::Placemark(kml_types::Placemark {
-        name: point
-            .label
-            .as_deref()
-            .map(str::trim)
-            .filter(|label| !label.is_empty())
-            .map(str::to_string),
-        visibility: None,
-        description: None,
-        style_url,
-        style: None,
-        point: Some(kml_types::Point {
-            draw_order: None,
-            coordinates: Some(format!(
-                "{},{},0",
-                point.coords.lng, point.coords.lat
-            )),
-        }),
-        line_string: None,
-        multi_geometry: None,
-        polygon: None,
-        extended_data: None,
-        snippet: None,
-        snippet_lower: None,
-    })
+    match feature {
+        DeltaSplitFeature::Point(point) => {
+            kml_types::Node::Placemark(kml_types::Placemark {
+                name: point
+                    .label
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|label| !label.is_empty())
+                    .map(str::to_string),
+                visibility: None,
+                description: None,
+                style_url,
+                style: None,
+                point: Some(kml_types::Point {
+                    draw_order: None,
+                    coordinates: Some(format!(
+                        "{},{},0",
+                        point.coords.lng, point.coords.lat
+                    )),
+                }),
+                line_string: None,
+                multi_geometry: None,
+                polygon: None,
+                extended_data: None,
+                snippet: None,
+                snippet_lower: None,
+            })
+        }
+        DeltaSplitFeature::LineString { coords, .. } => {
+            kml_types::Node::Placemark(kml_types::Placemark {
+                name: None,
+                visibility: None,
+                description: None,
+                style_url,
+                style: None,
+                point: None,
+                line_string: Some(kml_types::LineString {
+                    tessellate: Some(kml_types::Tessellate {
+                        body: Some("1".to_string()),
+                    }),
+                    coordinates: Some(kml_types::Coordinates {
+                        body: Some(format_delta_line_coordinates(coords)),
+                    }),
+                }),
+                multi_geometry: None,
+                polygon: None,
+                extended_data: None,
+                snippet: None,
+                snippet_lower: None,
+            })
+        }
+    }
+}
+
+fn format_delta_line_coordinates(coords: &[Coords]) -> String {
+    coords
+        .iter()
+        .map(|coord| format!("{},{},0", coord.lng, coord.lat))
+        .join("\n")
 }
 
 fn hex_color_to_kml_color(color_hex: &str) -> String {
@@ -387,6 +533,7 @@ fn normalized_hex_color_body(color_hex: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::palitra::types::{Geometry, PalitraGeometryDetails};
 
     fn test_palitra(name: &str) -> Palitra {
         Palitra {
@@ -403,6 +550,28 @@ mod tests {
             access_organism_ids: vec![],
             access_logins: vec![],
         }
+    }
+
+    fn test_palitra_read(line_strings: Vec<Vec<Coords>>) -> PalitraReadV2 {
+        PalitraReadV2 {
+            palitra: test_palitra("demo"),
+            geometries: vec![PalitraGeometryDetails {
+                id: 7,
+                color_hex: "#112233".to_string(),
+                source_file_name: None,
+                last_uploaded_at_ts: None,
+                geometry: Some(Geometry {
+                    center: None,
+                    perimeter_linear_ring: None,
+                    line_strings: Some(line_strings),
+                }),
+                points: vec![],
+            }],
+        }
+    }
+
+    fn test_coords(lat: f64, lng: f64) -> Coords {
+        Coords { lat, lng }
     }
 
     #[test]
@@ -422,5 +591,52 @@ mod tests {
         assert_eq!(hex_color_to_kml_color("#aabbcc"), "ffccbbaa");
         assert_eq!(hex_color_to_kml_color("not-a-color"), "ff060606");
         assert_eq!(hex_color_to_kml_color("#abc"), "ff060606");
+    }
+
+    #[test]
+    fn preserves_line_strings_in_delta_split_download() {
+        let chunks = collect_delta_split_chunks(&test_palitra_read(vec![
+            vec![test_coords(50.45, 30.52), test_coords(50.46, 30.53)],
+        ]));
+
+        assert_eq!(chunks.len(), 1);
+        let kml = build_delta_split_kml("demo.kmz", &chunks[0]);
+        let kml_types::Node::Document(document) = &kml.nodes[0] else {
+            panic!("expected document node");
+        };
+        let kml_types::Node::Placemark(placemark) = &document.nodes[0] else {
+            panic!("expected placemark node");
+        };
+        let line_string = placemark
+            .line_string
+            .as_ref()
+            .expect("expected line string");
+        assert_eq!(
+            line_string
+                .coordinates
+                .as_ref()
+                .and_then(|coordinates| coordinates.body.as_deref()),
+            Some("30.52,50.45,0\n30.53,50.46,0")
+        );
+    }
+
+    #[test]
+    fn splits_long_line_strings_without_oversized_chunks() {
+        let coords = (0
+            ..=crate::config::PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE)
+            .map(|index| test_coords(index as f64, index as f64))
+            .collect_vec();
+
+        let chunks =
+            collect_delta_split_chunks(&test_palitra_read(vec![coords]));
+
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks.iter().all(|chunk| {
+            chunk
+                .iter()
+                .map(DeltaSplitFeature::point_count)
+                .sum::<usize>()
+                <= crate::config::PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE
+        }));
     }
 }
