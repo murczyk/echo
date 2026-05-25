@@ -14,7 +14,7 @@ import type {
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
-import { isPresent, NO_DATA_LABEL } from '../../../utils/misc';
+import { APP_TIME_ZONE, isPresent, NO_DATA_LABEL } from '../../../utils/misc';
 import {
   buildClassicAnalysisHref,
   buildClassicAnalysisMapHrefWithSearch,
@@ -32,14 +32,20 @@ export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
 
 dayjs.extend(customParseFormat);
 
-function formatTooltipTime(time: string | null): string {
+export function formatMessageCardTooltipTime(msg: Pick<InboxMessage, 'time' | 'timestamp'>): string {
+  const time = msg.time;
   if (time === null) return NO_DATA_LABEL;
   const trimmed = time.trim();
   if (trimmed === '') return NO_DATA_LABEL;
+
   const parsed = dayjs(trimmed, ['HH:mm:ss', 'HH:mm'], true);
   if (parsed.isValid()) {
-    return trimmed.split(':').length >= 3 ? parsed.format('HH:mm:ss') : parsed.format('HH:mm');
+    if (trimmed.split(':').length >= 3) return parsed.format('HH:mm:ss');
+    if (isPresent(msg.timestamp)) return dayjs(msg.timestamp).tz(APP_TIME_ZONE).format('HH:mm:ss');
+    return parsed.format('HH:mm');
   }
+
+  if (isPresent(msg.timestamp)) return dayjs(msg.timestamp).tz(APP_TIME_ZONE).format('HH:mm:ss');
   return trimmed;
 }
 
@@ -159,7 +165,7 @@ export function MessageCard({
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
     isPresent(msg.timestamp) && isPresent(relativeTimeMs) ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
-  const tooltipTime = formatTooltipTime(msg.time);
+  const tooltipTime = formatMessageCardTooltipTime(msg);
 
   const topRight =
     displayMode === 'duty' ? (

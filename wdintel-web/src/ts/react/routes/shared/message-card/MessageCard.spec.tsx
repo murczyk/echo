@@ -11,7 +11,7 @@ import type { InboxMessage, Network, Tag } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
 import { emptyFilter } from '../../rer-duty-neo/utils';
-import { MessageCard } from './MessageCard';
+import { formatMessageCardTooltipTime, MessageCard } from './MessageCard';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -472,6 +472,12 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
     expect(view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`)).not.toBeNull();
+  });
+
+  it('uses the timestamp for minute-only hover time so seconds are preserved', () => {
+    const tooltipTime = formatMessageCardTooltipTime({ time: '02:45', timestamp: 1_710_000_000_000 } as InboxMessage);
+    expect(tooltipTime).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(tooltipTime).not.toBe('02:45');
   });
 
   it('opens the duty navigation menu and routes the old destinations through it', async () => {
