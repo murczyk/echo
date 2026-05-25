@@ -46,6 +46,8 @@ type Params = {
   setOptions: Setter<import('./types').AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
+  setSummaryHasLoadedOnce: Setter<boolean>;
+  setSummaryLoaded: Setter<boolean>;
   setSummaryLoading: Setter<boolean>;
   setSummaryRows: Setter<SummaryTableFreqRow[]>;
   setTagsMap: Setter<Record<number, Tag>>;
@@ -86,6 +88,8 @@ export function useAnalysisDataStateUtils(params: Params) {
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
+    setSummaryHasLoadedOnce,
+    setSummaryLoaded,
     setSummaryLoading,
     setSummaryRows,
     setTagsMap,
@@ -128,6 +132,8 @@ export function useAnalysisDataStateUtils(params: Params) {
     setUnitsMap({});
     setNetworkDisplayMap({});
     setSummaryCallsignsInfo({});
+    setSummaryHasLoadedOnce(false);
+    setSummaryLoaded(false);
     setSummaryLoading(false);
     setMapDateRange({ startDate: 0, endDate: 0 });
     setHasLoadedInitialMessages(false);
@@ -171,6 +177,8 @@ export function useAnalysisDataStateUtils(params: Params) {
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
+    setSummaryHasLoadedOnce,
+    setSummaryLoaded,
     setSummaryLoading,
     setSummaryRows,
     setTagsMap,

@@ -30,6 +30,7 @@ import {
 } from '../../services/api/analysis';
 import { listPalitrasV2 } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
+import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq } from './helpers';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { topItems } from './use-analysis-data.shared';
@@ -77,7 +78,10 @@ type Params = {
   setMapPalitrasLoaded: Setter<boolean>;
   setMapPalitrasLoadState: Setter<AnalysisPalitrasLoadState>;
   setMapPoints: Setter<FreqDetailedPoint[]>;
+  summaryCallsignsInfoRef: React.MutableRefObject<Record<string, CallsignInfoRes>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
+  setSummaryHasLoadedOnce: Setter<boolean>;
+  setSummaryLoaded: Setter<boolean>;
   setSummaryLoading: Setter<boolean>;
   setSummaryRows: Setter<SummaryTableFreqRow[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
@@ -119,7 +123,10 @@ export function useAnalysisDataLoaders(params: Params) {
     setMapPalitrasLoaded,
     setMapPalitrasLoadState,
     setMapPoints,
+    summaryCallsignsInfoRef,
     setSummaryCallsignsInfo,
+    setSummaryHasLoadedOnce,
+    setSummaryLoaded,
     setSummaryLoading,
     setSummaryRows,
     setTopCallsigns,
@@ -134,6 +141,7 @@ export function useAnalysisDataLoaders(params: Params) {
   const summaryRequestKeyRef = useRef<string | null>(null);
   const rightSidebarRequestRef = useRef(0);
   const rightSidebarRequestKeyRef = useRef<string | null>(null);
+  const pendingCallsignInfoKeysRef = useRef(new Set<string>());
 
   const invalidateCorrelatedFreqsCache = useCallback(() => {
     correlatedFreqsRequestRef.current += 1;
@@ -147,12 +155,16 @@ export function useAnalysisDataLoaders(params: Params) {
     setCallsignGraphLoadVersion((current) => current + 1);
   }, [callsignGraphRequestRef, setCallsignGraph, setCallsignGraphLoading, setCallsignGraphLoadVersion]);
 
-  const invalidateSummaryData = useCallback(() => {
+  const invalidateSummaryData = useCallback((keepLoading = false) => {
     summaryRequestRef.current += 1;
     summaryRequestKeyRef.current = null;
-    setSummaryLoading(false);
-    setSummaryRows([]);
-  }, [setSummaryLoading, setSummaryRows]);
+    if (!keepLoading) {
+      setSummaryRows([]);
+      setSummaryHasLoadedOnce(false);
+    }
+    setSummaryLoaded(false);
+    setSummaryLoading(keepLoading);
+  }, [setSummaryHasLoadedOnce, setSummaryLoaded, setSummaryLoading, setSummaryRows]);
 
   const invalidateRightSidebarData = useCallback(() => {
     rightSidebarRequestRef.current += 1;
@@ -162,6 +174,34 @@ export function useAnalysisDataLoaders(params: Params) {
     setTopLocations([]);
     setTopUnits([]);
   }, [setRightSidebarLoading, setTopCallsigns, setTopLocations, setTopUnits]);
+
+  const loadMissingCallsignInfos = useCallback(
+    async (callsigns: string[]) => {
+      const missingCallsigns: string[] = [];
+      const seenKeys = new Set<string>();
+
+      callsigns.forEach((callsign) => {
+        const key = normalizeCallsignLookupValue(callsign);
+        if (key === '' || seenKeys.has(key)) return;
+        seenKeys.add(key);
+        if (summaryCallsignsInfoRef.current[key] || pendingCallsignInfoKeysRef.current.has(key)) return;
+        pendingCallsignInfoKeysRef.current.add(key);
+        missingCallsigns.push(callsign.trim());
+      });
+
+      if (missingCallsigns.length === 0) return;
+
+      try {
+        const callsignInfos = await fetchAnalysisCallsignInfos(missingCallsigns);
+        setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, callsignInfos));
+      } finally {
+        missingCallsigns.forEach((callsign) => {
+          pendingCallsignInfoKeysRef.current.delete(normalizeCallsignLookupValue(callsign));
+        });
+      }
+    },
+    [setSummaryCallsignsInfo, summaryCallsignsInfoRef],
+  );
 
   const refreshMapDateRange = useCallback(
     async (range: { startDate: number; endDate: number }) => {
@@ -370,6 +410,8 @@ export function useAnalysisDataLoaders(params: Params) {
       summaryRequestRef.current += 1;
       summaryRequestKeyRef.current = null;
       setSummaryRows([]);
+      setSummaryHasLoadedOnce(true);
+      setSummaryLoaded(true);
       setSummaryLoading(false);
       return;
     }
@@ -380,33 +422,45 @@ export function useAnalysisDataLoaders(params: Params) {
     const requestId = summaryRequestRef.current + 1;
     summaryRequestRef.current = requestId;
     summaryRequestKeyRef.current = requestKey;
+    setSummaryLoaded(false);
     setSummaryLoading(true);
 
     try {
       const rsp = await fetchAnalysisSummaryTable(analysisReq);
       if (requestId !== summaryRequestRef.current) return;
-      setSummaryRows(rsp.rows ?? []);
+      const nextRows = rsp.rows ?? [];
+      setSummaryRows(nextRows);
       const callsignIds = Array.from(
         new Set(
-          (rsp.rows ?? [])
+          nextRows
             .flatMap((row) => row.callsigns ?? [])
             .map((callsign) => callsign.trim())
             .filter((callsign) => callsign !== ''),
         ),
       );
       if (callsignIds.length > 0) {
-        const callsignInfos = await fetchAnalysisCallsignInfos(callsignIds);
+        try {
+          await loadMissingCallsignInfos(callsignIds);
+        } catch (loadError) {
+          if (requestId !== summaryRequestRef.current) return;
+          summaryRequestKeyRef.current = null;
+          if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+        }
         if (requestId !== summaryRequestRef.current) return;
-        setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, callsignInfos));
       }
     } catch (loadError) {
       if (requestId !== summaryRequestRef.current) return;
       summaryRequestKeyRef.current = null;
+      setSummaryRows([]);
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      if (requestId === summaryRequestRef.current) setSummaryLoading(false);
+      if (requestId === summaryRequestRef.current) {
+        setSummaryHasLoadedOnce(true);
+        setSummaryLoaded(true);
+        setSummaryLoading(false);
+      }
     }
-  }, [onError, onUnauthorized, optionsFreqs, queryState, setSummaryCallsignsInfo, setSummaryLoading, setSummaryRows]);
+  }, [loadMissingCallsignInfos, onError, onUnauthorized, optionsFreqs, queryState, setSummaryHasLoadedOnce, setSummaryLoaded, setSummaryLoading, setSummaryRows]);
 
   const loadTopSidebarData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
@@ -442,9 +496,8 @@ export function useAnalysisDataLoaders(params: Params) {
 
       const callsignIds = callsignsRsp.callsigns.map((item) => item.callsign);
       if (callsignIds.length > 0) {
-        const callsignInfos = await fetchAnalysisCallsignInfos(callsignIds);
+        await loadMissingCallsignInfos(callsignIds);
         if (requestId !== rightSidebarRequestRef.current) return;
-        setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, callsignInfos));
       }
     } catch (loadError) {
       if (requestId !== rightSidebarRequestRef.current) return;
@@ -456,9 +509,9 @@ export function useAnalysisDataLoaders(params: Params) {
   }, [
     onError,
     onUnauthorized,
+    loadMissingCallsignInfos,
     optionsFreqs,
     queryState,
-    setSummaryCallsignsInfo,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
