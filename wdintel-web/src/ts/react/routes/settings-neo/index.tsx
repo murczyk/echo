@@ -1,7 +1,7 @@
 import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { SyntheticEvent } from 'react';
-import { isNullOrUndefined } from '../../utils/misc';
+import { ELLIPSIS, isNullOrUndefined } from '../../utils/misc';
 
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
@@ -148,7 +148,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       clearText="Очистити"
                       noOptionsText="Немає варіантів"
                       loading={globalSettings.loadInProgress}
-                      loadingText="Завантаження..."
+                      loadingText={`Завантаження${ELLIPSIS}`}
                       renderOption={(props, option) => {
                         const { key: _unusedKey, ...optionProps } = props;
                         return (

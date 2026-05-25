@@ -233,6 +233,7 @@ export type AnalysisPageActions = {
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   setSavedFilterName: (name: string) => void;
+  addFrequencyToFilter: (freq: string) => void;
   showFreqOnMap: (freq: string) => void;
   toggleUnitFromMap: (unitName: string | null) => void;
   updateReport: (patch: Partial<AnalysisReportState>) => void;

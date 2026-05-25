@@ -18,6 +18,7 @@ import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import { memo, useEffect, useState } from 'react';
 
 import type { Source } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { getFrequencyFormatError, type NetworkOption } from '../use-rer-network-details-neo-page.shared';
@@ -453,7 +454,7 @@ export function NetworkCallsignDrawer({
           Скасувати
         </Button>
         <Button variant="contained" onClick={onSave} disabled={saving || !canSave}>
-          {saving ? 'Збереження…' : 'Зберегти'}
+          {saving ? `Збереження${ELLIPSIS}` : 'Зберегти'}
         </Button>
       </Box>
     </Drawer>

@@ -1,6 +1,7 @@
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
 import type { InboxMessage } from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
+import { ELLIPSIS } from '../../utils/misc';
 
 function blurActiveElement() {
   const activeElement = document.activeElement;
@@ -93,7 +94,7 @@ export function CommentDialog({ open, messagePreview, commentText, onCommentText
             fullWidth
             multiline
             minRows={4}
-            placeholder="Введіть коментар..."
+            placeholder={`Введіть коментар${ELLIPSIS}`}
             value={commentText}
             onChange={(e) => onCommentTextChange(e.target.value)}
           />

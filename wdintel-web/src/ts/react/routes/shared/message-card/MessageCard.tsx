@@ -1,10 +1,16 @@
-import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
-import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
-import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Tooltip, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { useMemo } from 'react';
-import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit } from '../../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  InboxMessage,
+  MessageComment,
+  Network,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
+  Tag,
+  Unit,
+} from '../../../../../Bindings';
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
@@ -12,11 +18,14 @@ import { isPresent, NO_DATA_LABEL } from '../../../utils/misc';
 import {
   buildClassicAnalysisHref,
   buildClassicAnalysisMapHrefWithSearch,
-  etalonFallbackWhenNoNetworks,
+  buildVisibleExcludeMenuOptions,
+  emptyFilter,
   getPointEtalonsFromMessage,
   messageRenderDistance,
+  type MessageEntityFilterKind,
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
+import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 
 /** Share of the header row (network vs relative time) reserved for etalon / network block. */
 export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
@@ -52,11 +61,12 @@ export type MessageCardProps = {
   senderName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
+  filterState?: RerDutyFeedFilterState;
   messageComments?: MessageComment[];
   searchText?: string | null;
   /** Loaded network models (for «в дорозвідці» badge); keys match `msg.networkIds`. */
   networkMap?: Record<number, Network>;
-  /** When false, show `msg.unit` if network ids are empty (and freq present). */
+  /** When false, allow `msg.unit` fallback when network ids are empty. */
   featureStrictNetworks?: boolean;
   tagsMap: Record<number, Tag>;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -66,9 +76,13 @@ export type MessageCardProps = {
   onImportant: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onCopyEtalon?: () => void;
+  onCopyLocation?: () => void;
+  onAddFrequencyToFilter?: (freq: string) => void;
   onComment: () => void;
   onDelete?: () => void;
   onEditDetails?: () => void;
+  onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   onToggleTag: (tagId: number) => void;
   rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
@@ -87,6 +101,7 @@ export function MessageCard({
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
+  filterState = emptyFilter(),
   messageComments = [],
   searchText,
   networkMap = {},
@@ -99,27 +114,48 @@ export function MessageCard({
   onImportant,
   onCopyText,
   onCopyFreq,
+  onCopyEtalon,
+  onCopyLocation,
+  onAddFrequencyToFilter,
   onComment,
   onDelete,
   onEditDetails,
+  onExcludeMessageEntity,
   onToggleTag,
   rightHeaderInsetPx = 0,
   analysisCallsignActions,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
-  const networkIds = Array.from(new Set(msg.networkIds ?? []));
   const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
     if (Object.keys(networkMap).length > 0) return networkMap;
     if (!networks) return {};
     return Object.fromEntries(networks.map((network) => [network.id, network]));
   }, [networkMap, networks]);
-  const etalonNoNetworkLabel = etalonFallbackWhenNoNetworks(msg, { featureStrictNetworks });
+  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
+    featureStrictNetworks,
+    networkDisplayMap,
+    networkMap: derivedNetworkMap,
+    networks,
+  });
+  const onCopyEtalonAction = etalonDisplayModel.copyEtalonValue == null ? undefined : onCopyEtalon;
+  const onCopyLocationAction = etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
+  const excludeMenuOptions =
+    displayMode === 'duty'
+      ? buildVisibleExcludeMenuOptions(filterState, {
+          group: { value: msg.groupMasterKey, label: groupName },
+          sender: { value: msg.sender, label: senderName },
+          freq: { value: msg.freq, label: msg.freq },
+          post: { value: msg.post, label: msg.post },
+        })
+      : [];
   const mapHref =
-    pointEtalons.length > 0
-      ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
-      : buildClassicAnalysisHref(msg, true);
+    displayMode === 'duty'
+      ? pointEtalons.length > 0
+        ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
+        : buildClassicAnalysisHref(msg, true)
+      : undefined;
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
     isPresent(msg.timestamp) && isPresent(relativeTimeMs) ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
@@ -148,23 +184,7 @@ export function MessageCard({
       <Box sx={{ minHeight: 28 }} />
     );
 
-  const actionsRight =
-    displayMode === 'duty' ? (
-      <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
-        <CardActionLink
-          href={mapHref}
-          icon={<MapOutlinedIcon aria-hidden />}
-          label="Відкрити мапу"
-          target="_blank"
-        />
-        <CardActionLink
-          href={buildClassicAnalysisHref(msg, false)}
-          icon={<BarChartOutlinedIcon aria-hidden />}
-          label="Відкрити аналіз"
-          target="_blank"
-        />
-      </Stack>
-    ) : null;
+  const analysisHref = displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined;
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
@@ -175,20 +195,23 @@ export function MessageCard({
     copiedFeedbackId,
     groupName,
     senderName,
-    networkIds,
-    networkDisplayMap,
-    networkMap: derivedNetworkMap,
-    etalonNoNetworkLabel,
+    etalonDisplayModel,
+    mapHref,
+    analysisHref,
     rightInsetPx: rightHeaderInsetPx,
     topRight,
-    actionsRight,
     onBookmark,
     onImportant,
     onComment,
     onCopyText,
     onCopyFreq,
+    onCopyEtalon: onCopyEtalonAction,
+    onCopyLocation: onCopyLocationAction,
+    onAddFrequencyToFilter,
     onDelete,
     onEditDetails,
+    onExcludeMessageEntity,
+    excludeMenuOptions,
   };
   const visibleMessageComments = displayMode === 'analysis' ? messageComments : [];
 
@@ -261,59 +284,4 @@ export function DutyMessageCard(props: BaseMessageCardProps) {
 
 export function AnalysisMessageCard(props: BaseMessageCardProps) {
   return <MessageCard {...props} displayMode="analysis" />;
-}
-
-const MESSAGE_CARD_ACTION_COLOR = 'var(--color-action)';
-
-function CardActionLink({
-  href,
-  icon,
-  label,
-  target,
-}: {
-  href: string;
-  icon: JSX.Element;
-  label: string;
-  target?: '_blank';
-}) {
-  return (
-    <Tooltip title={label} enterDelay={300}>
-      <IconButton
-        component="a"
-        href={href}
-        target={target}
-        rel={target === '_blank' ? 'noopener noreferrer' : undefined}
-        aria-label={label}
-        size="small"
-        color="inherit"
-        sx={{
-          width: 30,
-          height: 30,
-          borderRadius: 999,
-          border: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'color-mix(in srgb, var(--color-card) 88%, white 12%)',
-          color: 'text.primary',
-          transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease',
-          '& .MuiSvgIcon-root': {
-            fontSize: 16,
-            color: MESSAGE_CARD_ACTION_COLOR,
-            flexShrink: 0,
-          },
-          '&:hover': {
-            bgcolor: 'action.hover',
-            borderColor: MESSAGE_CARD_ACTION_COLOR,
-            color: MESSAGE_CARD_ACTION_COLOR,
-            textDecoration: 'none',
-          },
-          '&:focus-visible': {
-            outline: `2px solid ${MESSAGE_CARD_ACTION_COLOR}`,
-            outlineOffset: '2px',
-          },
-        }}
-      >
-        {icon}
-      </IconButton>
-    </Tooltip>
-  );
 }

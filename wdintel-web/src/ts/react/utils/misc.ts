@@ -16,6 +16,7 @@ export function isPresent<T>(value: T | null | undefined): value is T {
 }
 
 export const NO_DATA_LABEL = '—';
+export const ELLIPSIS = '…';
 
 export function emptyArrToNull<T>(arr: T[] | null | undefined): T[] | null {
   if (isNullOrUndefined(arr)) return null;

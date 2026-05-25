@@ -5,6 +5,7 @@ import type { FreqDailyActivityCount } from '../../../../../Bindings';
 import type { AnalysisGroupsActivityPeriod } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
+import { ELLIPSIS } from '../../../utils/misc';
 
 type Props = {
   groupsActivity: FreqDailyActivityCount | null;
@@ -120,7 +121,7 @@ export function AnalysisGroupsActivityCard({
         <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
           <CircularProgress size={18} />
           <CompactText color="text.secondary">
-            Завантажую активність по датах…
+            {`Завантажую активність по датах${ELLIPSIS}`}
           </CompactText>
         </Stack>
       ) : chartStatus === 'empty-period' ? (

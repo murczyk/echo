@@ -83,6 +83,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
   const columnRefsRef = useRef<Record<string, FeedColumnHandle | null>>({});
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const loadGenerationByFeedIdRef = useRef<Record<string, number>>({});
+  const pendingReloadFeedIdsRef = useRef<Set<string>>(new Set());
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const lastServerCountByFeedIdRef = useRef<Record<string, number>>({});
@@ -118,6 +120,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       delete arrowResultTimeoutsRef.current[key];
       setArrowResultByFeedId((prev) => (prev[feedId] === message ? { ...prev, [feedId]: null } : prev));
     }, 3000);
+  }, []);
+
+  const markFeedReloadRequested = useCallback((feedId: string) => {
+    loadGenerationByFeedIdRef.current = {
+      ...loadGenerationByFeedIdRef.current,
+      [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
+    };
+    pendingReloadFeedIdsRef.current = new Set([...pendingReloadFeedIdsRef.current, feedId]);
   }, []);
 
   useEffect(() => {
@@ -227,12 +237,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
+      const requestLoadVersion = loadGenerationByFeedIdRef.current[feedId] ?? 0;
       const effectiveFeed = overrides ? { ...feed, ...overrides } : feed;
       setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: true } : x)));
       setError(null);
       try {
         const req = buildReqForFeed(effectiveFeed, { loadLatest: true });
         const rsp = await fetchInboxMessages(req);
+        if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
         mergeInboxCallsigns(feedId, rsp.callsigns, { replace: true });
         const deduped = dedupeMessageItems(rsp.inboxItems);
         const initialReadIds = new Set<number>(deduped.map(([id]) => id));
@@ -260,6 +272,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           setGroupInfos((prev) => ({ ...prev, ...map }));
         }
       } catch (e) {
+        if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
       }
@@ -323,6 +336,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       if (loadNewerInFlightRef.current.has(feedId)) return;
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed || feed.items.length === 0) return;
+      const requestLoadVersion = loadGenerationByFeedIdRef.current[feedId] ?? 0;
       loadNewerInFlightRef.current.add(feedId);
       setLoadingNewerFeedId(feedId);
       const lastId = feed.items[feed.items.length - 1][0];
@@ -332,6 +346,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           nolimit: opts?.nolimit ?? undefined,
         });
         const rsp = await fetchInboxMessages(req);
+        if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
         mergeInboxCallsigns(feedId, rsp.callsigns);
         if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
         if (rsp.signalGroups?.length) {
@@ -393,6 +408,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
     messageFeeds.forEach((feed) => {
+      if (feed.loading) return;
       const signature = JSON.stringify({
         filter: {
           groupsSelected: feed.filter.groupsSelected ?? null,
@@ -483,27 +499,40 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const feedsNeedingLoadKey = useMemo(
     () =>
       messageFeeds
-        .filter((w) => w.loading && w.items.length === 0)
-        .map((w) => `${w.id}:${JSON.stringify(w.filter)}`)
+        .filter((w) => {
+          if (!w.loading) return false;
+          if (w.items.length === 0) return true;
+          return pendingReloadFeedIdsRef.current.has(w.id);
+        })
+        .map((w) => `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`)
         .join(';'),
     [messageFeeds],
   );
   const loadFeedInitialMessagesRef = useRef(loadFeedInitialMessages);
   loadFeedInitialMessagesRef.current = loadFeedInitialMessages;
-  /** Keys are `${feedId}:${JSON.stringify(filter)}` so a filter change on the same feed triggers a new load. */
-  const initialLoadStartedRef = useRef<Set<string>>(new Set());
+  /** Tracks auto-started reload requests so a pending manual fetch does not duplicate them. */
+  const loadStartedKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (shortStateIdRef.current && !shortStateReady) return;
-    const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
-    const needingKeys = new Set(needingLoad.map((w) => `${w.id}:${JSON.stringify(w.filter)}`));
-    const started = initialLoadStartedRef.current;
+    const needingLoad = messageFeeds.filter((w) => {
+      if (!w.loading) return false;
+      if (w.items.length === 0) return true;
+      return pendingReloadFeedIdsRef.current.has(w.id);
+    });
+    const needingKeys = new Set(
+      needingLoad.map((w) => `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`),
+    );
+    const started = loadStartedKeysRef.current;
     [...started].forEach((key) => {
       if (!needingKeys.has(key)) started.delete(key);
     });
     needingLoad.forEach((w) => {
-      const key = `${w.id}:${JSON.stringify(w.filter)}`;
+      const key = `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`;
       if (!started.has(key)) {
         started.add(key);
+        pendingReloadFeedIdsRef.current = new Set(
+          [...pendingReloadFeedIdsRef.current].filter((feedId) => feedId !== w.id),
+        );
         loadFeedInitialMessagesRef.current(w.id);
       }
     });
@@ -571,7 +600,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [featureShortStateEnabled, shortStateReady]
   );
 
-  const crud = useRerDutyFeedCrud(messageFeeds, setMessageFeeds, persistStateToUrl, deps.onFeedRemoved);
+  const crud = useRerDutyFeedCrud(
+    messageFeeds,
+    setMessageFeeds,
+    persistStateToUrl,
+    markFeedReloadRequested,
+    deps.onFeedRemoved,
+  );
 
   return {
     messageFeeds,

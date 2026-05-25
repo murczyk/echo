@@ -25,7 +25,10 @@ import {
 } from '../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
+import { ELLIPSIS } from '../../utils/misc';
 import { GoiKnowledgeRowView } from './use-goi-knowledge-page';
+
+const LOADING_MORE_TEXT = `Завантаження${ELLIPSIS}`;
 
 const defaultMRTOptions = getDefaultMRTOptions<GoiKnowledgeRowView>();
 
@@ -327,7 +330,7 @@ export function GoiKnowledgeTable(props: Props) {
             disabled={props.loadingMore}
             startIcon={props.loadingMore ? <CircularProgress size={16} /> : null}
           >
-            {props.loadingMore ? 'Завантаження...' : 'Завантажити ще'}
+            {props.loadingMore ? LOADING_MORE_TEXT : 'Завантажити ще'}
           </Button>
         </Box>
       ) : null}

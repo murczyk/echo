@@ -29,6 +29,7 @@ import {
 import { useId } from 'react';
 
 import type { User } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import {
   describeAppliedReportFilters,
@@ -39,6 +40,9 @@ import {
 } from '../report-helpers';
 import type { AnalysisQueryState } from '../types';
 import type { AnalysisAorEntry, AnalysisReportTaskRun } from '../types';
+
+const FORMING_TEXT = `Формується${ELLIPSIS}`;
+const PREPARING_TEXT = `Готуємо${ELLIPSIS}`;
 
 type Props = {
   aors: AnalysisAorEntry[];
@@ -437,7 +441,7 @@ export function AnalysisReportDialog({
                     color: latestTaskRun.error ? 'error.main' : latestTaskRunCancelled ? 'warning.main' : latestTaskRunSuccess ? 'success.main' : 'text.secondary',
                   }}
                 >
-                  {latestTaskRun.error ? 'Помилка' : latestTaskRunCancelled ? 'Скасовано' : latestTaskRun.running ? 'Формується…' : 'Готово'}
+                  {latestTaskRun.error ? 'Помилка' : latestTaskRunCancelled ? 'Скасовано' : latestTaskRun.running ? FORMING_TEXT : 'Готово'}
                 </Typography>
               </Stack>
               <LinearProgress
@@ -484,7 +488,7 @@ export function AnalysisReportDialog({
                               </Typography>
                             </Stack>
                             <Typography variant="caption" color={run.error ? 'error.main' : run.cancelled ? 'warning.main' : run.running ? 'warning.main' : 'success.main'}>
-                              {run.error ? 'Помилка' : run.cancelled ? 'Скасовано' : run.running ? 'Формується…' : 'Успішно'}
+                              {run.error ? 'Помилка' : run.cancelled ? 'Скасовано' : run.running ? FORMING_TEXT : 'Успішно'}
                             </Typography>
                           </Stack>
                         </AccordionSummary>
@@ -547,7 +551,7 @@ export function AnalysisReportDialog({
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
           <Button onClick={onClose}>Закрити</Button>
           <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight}>
-            {downloadInFlight ? 'Готуємо...' : downloadButtonLabel}
+            {downloadInFlight ? PREPARING_TEXT : downloadButtonLabel}
           </Button>
         </Stack>
       </DialogActions>

@@ -8,8 +8,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
 import type { InboxMessage, Network, Tag } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
+import { emptyFilter } from '../../rer-duty-neo/utils';
 import { MessageCard } from './MessageCard';
+import {
+  normalizeLocationDisplayValue,
+  resolveEtalonBindingDisplayValue,
+  resolveMessageCardEtalonDisplayModel,
+} from './message-card.utils';
+
+const COPY_TITLE = `Копіювати${ELLIPSIS}`;
+const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
+const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
 
@@ -31,6 +42,11 @@ function omitMuiLayoutProps(props: Record<string, unknown>) {
   delete clone.color;
   delete clone.onChange;
   delete clone.onKeyDown;
+  delete clone.anchorEl;
+  delete clone.onClose;
+  delete clone.open;
+  delete clone.MenuListProps;
+  delete clone.slotProps;
   return clone;
 }
 
@@ -145,6 +161,38 @@ vi.mock('@mui/material', () => ({
       {children}
     </a>
   ),
+  Menu: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
+    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
+  MenuItem: ({
+    children,
+    component,
+    href,
+    target,
+    rel,
+    onClick,
+    ...props
+  }: {
+    children?: ReactNode;
+    component?: string;
+    href?: string;
+    target?: string;
+    rel?: string;
+    onClick?: () => void;
+  } & Record<string, unknown>) => {
+    const Component = (component ?? 'button') as ElementType;
+    return (
+      <Component
+        {...(Component === 'button' ? { type: 'button' } : {})}
+        href={href}
+        target={target}
+        rel={rel}
+        onClick={onClick}
+        {...omitMuiLayoutProps(props)}
+      >
+        {children}
+      </Component>
+    );
+  },
   Stack: ({ children, component, ...props }: PrimitiveProps) => {
     const Component = component ?? 'div';
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
@@ -271,11 +319,16 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
     networkDisplayMap: { 7: 'р/м Alpha' },
     networkMap,
     tagsMap,
+    filterState: emptyFilter(),
     onBookmark: vi.fn(),
     onImportant: vi.fn(),
     onCopyText: vi.fn(),
     onCopyFreq: vi.fn(),
+    onCopyEtalon: vi.fn(),
+    onCopyLocation: vi.fn(),
+    onAddFrequencyToFilter: vi.fn(),
     onComment: vi.fn(),
+    onExcludeMessageEntity: vi.fn(),
     onToggleTag: vi.fn(),
     ...overrides,
   };
@@ -319,6 +372,80 @@ describe('MessageCard', () => {
     }
   });
 
+  it('resolves etalon display and copy values consistently', () => {
+    expect(
+      resolveEtalonBindingDisplayValue(buildMessage({ networkIds: [], unit: ' 1-й танк ' }), {
+        featureStrictNetworks: false,
+      }),
+    ).toEqual({
+      displayValue: '1-й танк',
+      copyValue: '1-й танк',
+    });
+    expect(
+      resolveEtalonBindingDisplayValue(buildMessage({ unit: null }), {
+        featureStrictNetworks: false,
+      }),
+    ).toEqual({
+      displayValue: '—',
+      copyValue: null,
+    });
+    expect(
+      resolveEtalonBindingDisplayValue(buildMessage({ unit: '1-й танк' }), {
+        featureStrictNetworks: true,
+      }),
+    ).toEqual({
+      displayValue: '—',
+      copyValue: null,
+    });
+    expect(
+      resolveEtalonBindingDisplayValue(buildMessage({ networkIds: [123], unit: '1-й танк' }), {
+        networkMap: {},
+        networkDisplayMap: {},
+      }),
+    ).toEqual({
+      displayValue: '—',
+      copyValue: null,
+    });
+  });
+
+  it('resolves the shared etalon and location display model with normalized display values', () => {
+    expect(
+      resolveMessageCardEtalonDisplayModel(buildMessage({ networkIds: [], location: '  ПІЩАНКА  ' }), {
+        featureStrictNetworks: false,
+      }),
+    ).toMatchObject({
+      primaryKind: 'location',
+      displayValue: 'Піщанка',
+      copyEtalonValue: null,
+      copyLocationValue: 'Піщанка',
+      showInlineLocationTooltip: false,
+      locationDisplayValue: 'Піщанка',
+    });
+    expect(normalizeLocationDisplayValue('ЛИМАН ПЕРШИЙ')).toBe('Лиман Перший');
+    expect(
+      resolveMessageCardEtalonDisplayModel(buildMessage({ networkIds: [], unit: ' 1-й танк ', location: null }), {
+        featureStrictNetworks: false,
+      }),
+    ).toMatchObject({
+      primaryKind: 'unit',
+      displayValue: '1-й танк',
+      copyEtalonValue: '1-й танк',
+      copyLocationValue: null,
+      showInlineLocationTooltip: false,
+    });
+    expect(
+      resolveMessageCardEtalonDisplayModel(buildMessage({ networkIds: [], unit: null, location: 'Не встановлена' }), {
+        featureStrictNetworks: true,
+      }),
+    ).toMatchObject({
+      primaryKind: 'empty',
+      displayValue: '—',
+      copyEtalonValue: null,
+      copyLocationValue: null,
+      showInlineLocationTooltip: false,
+    });
+  });
+
   it('renders compact divider layout content for narrow multi-feed columns', async () => {
     const view = await renderCard();
     rendered.push(view);
@@ -329,44 +456,87 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Повідомлення для перевірки вузького макета');
     expect(view.container.textContent).toContain('Коментар');
     expect(view.container.textContent).toContain('переміщення');
-    expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).not.toBeNull();
-    expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).not.toBeNull();
+    expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
   });
 
-  it('renders duty actions with timer and new-tab links', async () => {
+  it('renders duty actions with timer and the shared navigation menu button', async () => {
     const view = await renderCard();
     rendered.push(view);
 
     expect(view.container.textContent).toContain('1 хв');
     expect(view.container.textContent).not.toContain('Відкрити аналіз');
     expect(view.container.textContent).not.toContain('Відкрити мапу');
-    expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).not.toBeNull();
-    expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).not.toBeNull();
+    expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
+    expect(view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`)).not.toBeNull();
   });
 
-  it('routes duty action buttons to the classic analysis page', async () => {
+  it('opens the duty navigation menu and routes the old destinations through it', async () => {
     const view = await renderCard({
       msg: { ...buildMessage(), messageUid: 'uid-1' },
     });
     rendered.push(view);
 
-    const analysisButton = view.container.querySelector('button[aria-label="Відкрити аналіз"]');
-    const mapButton = view.container.querySelector('button[aria-label="Відкрити мапу"]');
-    if (!(analysisButton instanceof HTMLButtonElement)) throw new Error('analysis button not found');
-    if (!(mapButton instanceof HTMLButtonElement)) throw new Error('map button not found');
+    const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
+    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    expect(navigateButton.getAttribute('aria-haspopup')).toBe('menu');
+    await click(navigateButton);
+    expect(navigateButton.getAttribute('aria-expanded')).toBe('true');
 
-    const analysisUrl = new URL(String(analysisButton.getAttribute('href') ?? ''), 'https://example.test');
-    expect(analysisUrl.pathname).toBe('/rer-analysis');
-    expect(JSON.parse(analysisUrl.searchParams.get('state') ?? '')).toMatchObject({
-      search: 'uid-1',
-    });
+    const networkLinks = Array.from(view.container.querySelectorAll('a[href^="/rer-networks/"]'));
+    expect(networkLinks).toHaveLength(1);
+    expect(networkLinks[0]?.textContent).toContain('В мережу');
+    expect(networkLinks[0]?.textContent).toContain('р/м Alpha');
+    expect(networkLinks[0]?.getAttribute('target')).toBe('_blank');
+    expect(networkLinks[0]?.getAttribute('rel')).toBe('noopener noreferrer');
 
-    const mapUrl = new URL(String(mapButton.getAttribute('href') ?? ''), 'https://example.test');
+    const networkUrl = new URL(String(networkLinks[0]?.getAttribute('href') ?? ''), 'https://example.test');
+    expect(networkUrl.pathname).toBe('/rer-networks/7');
+
+    const mapLink = Array.from(view.container.querySelectorAll('a')).find((link) => link.textContent?.includes('На мапу'));
+    if (!(mapLink instanceof HTMLAnchorElement)) throw new Error('map link not found');
+    const mapUrl = new URL(String(mapLink.getAttribute('href') ?? ''), 'https://example.test');
     expect(mapUrl.pathname).toBe('/rer-analysis');
     expect(mapUrl.searchParams.get('showMap')).toBe('true');
     expect(JSON.parse(mapUrl.searchParams.get('state') ?? '')).toMatchObject({
       search: 'uid-1',
     });
+    expect(mapLink.getAttribute('target')).toBe('_blank');
+    expect(mapLink.getAttribute('rel')).toBe('noopener noreferrer');
+
+    const analysisLink = Array.from(view.container.querySelectorAll('a')).find((link) =>
+      link.textContent?.includes('В аналіз'),
+    );
+    if (!(analysisLink instanceof HTMLAnchorElement)) throw new Error('analysis link not found');
+    const analysisUrl = new URL(String(analysisLink.getAttribute('href') ?? ''), 'https://example.test');
+    expect(analysisUrl.pathname).toBe('/rer-analysis');
+    expect(JSON.parse(analysisUrl.searchParams.get('state') ?? '')).toMatchObject({
+      search: 'uid-1',
+    });
+    expect(analysisLink.getAttribute('target')).toBe('_blank');
+    expect(analysisLink.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('keeps analysis navigation limited to network destinations', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      msg: { ...buildMessage(), messageUid: 'uid-1' },
+    });
+    rendered.push(view);
+
+    const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
+    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    await click(navigateButton);
+
+    expect(view.container.textContent).toContain('В мережу');
+    expect(view.container.textContent).not.toContain('На мапу');
+    expect(view.container.textContent).not.toContain('В аналіз');
+    expect(view.container.querySelector('a[href^="/rer-networks/"]')).not.toBeNull();
+    expect(view.container.querySelector('a[href*="showMap=true"]')).toBeNull();
+    expect(view.container.querySelector('a[href*="/rer-analysis?"]')).toBeNull();
   });
 
   it('keeps distinct network ids visible even when the rendered labels match', async () => {
@@ -380,9 +550,78 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
+    expect(view.container.textContent).toContain('р/м Alpha');
+    const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
+    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    await click(navigateButton);
+
     const networkLinks = Array.from(view.container.querySelectorAll('a[href^="/rer-networks/"]'));
     expect(networkLinks).toHaveLength(2);
     expect(networkLinks.map((link) => link.getAttribute('href'))).toEqual(['/rer-networks/7', '/rer-networks/8']);
+  });
+
+  it('renders the location as the primary etalon row when no networks resolve', async () => {
+    const onCopyLocation = vi.fn();
+    const view = await renderCard({
+      msg: buildMessage({ networkIds: [], location: '  ПІЩАНКА  ' }),
+      onCopyLocation,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('a[href^="/rer-networks/"]')).toBeNull();
+    expect(view.container.textContent).toContain('Піщанка');
+    expect(view.container.querySelector('svg[data-testid="PlaceOutlinedIcon"]')).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).toBeNull();
+    expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
+    const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
+    if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
+    await click(copyButton);
+    expect(view.container.textContent).toContain('Копіювати локацію');
+    await click(getButton(view.container, 'Копіювати локацію'));
+    expect(onCopyLocation).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the location tooltip inline when resolved networks exist', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ location: 'ХАРКІВ', networkIds: [7] }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('р/м Alpha');
+    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label^="Локація:"]')).not.toBeNull();
+    const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
+    if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
+    await click(copyButton);
+    expect(view.container.textContent).not.toContain('Копіювати локацію');
+  });
+
+  it('renders the unit fallback when no networks resolve and no real location exists', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ networkIds: [], location: null, unit: ' 1-й танк ' }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('1-й танк');
+    expect(view.container.textContent).not.toContain('—');
+    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
+    if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
+    await click(copyButton);
+    expect(view.container.textContent).toContain('Копіювати прив\'язку');
+    expect(view.container.textContent).not.toContain('Копіювати локацію');
+  });
+
+  it('renders a dash when no networks resolve and location is missing or unset', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ networkIds: [], location: 'Не встановлена' }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('—');
+    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="PlaceOutlinedIcon"]')).toBeNull();
+    expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
 
   it('renders analysis actions without timer and with analysis-only callsign controls', async () => {
@@ -405,6 +644,9 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Відкрити мапу в новому вікні');
     expect(view.container.querySelector('button[aria-label="Відкрити мапу тут"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити мапу в новому вікні"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Виключити"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Мінус"]')).toBeNull();
+    expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
     expect(view.container.textContent).toContain('Запропоновані позивні');
     expect(view.container.querySelector('input[placeholder="Позивний"]')).not.toBeNull();
     expect(view.container.textContent).toContain('ALPHA');
@@ -435,12 +677,29 @@ describe('MessageCard', () => {
     expect(onAddSuggestedCallsign).toHaveBeenCalledWith('BRAVO');
   });
 
-  it('orders toolbar actions as comment, copy, important, bookmark, edit, delete', async () => {
-    const onEditDetails = vi.fn();
-    const onDelete = vi.fn();
+  it('orders duty toolbar actions as comment, important, bookmark, copy, navigate, minus', async () => {
+    const view = await renderCard();
+    rendered.push(view);
+
+    const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
+
+    const labels = Array.from(toolbar.querySelectorAll('button')).map((button) => button.getAttribute('aria-label'));
+    expect(labels).toEqual([
+      'Редагувати коментар',
+      'Позначити як важливе',
+      'Додати в закладки',
+      COPY_TITLE,
+      NAVIGATE_TITLE,
+      EXCLUDE_TITLE,
+    ]);
+  });
+
+  it('orders analysis toolbar actions as comment, important, bookmark, copy, navigate, overflow', async () => {
     const view = await renderCard({
-      onEditDetails,
-      onDelete,
+      displayMode: 'analysis',
+      onEditDetails: vi.fn(),
+      onDelete: vi.fn(),
     });
     rendered.push(view);
 
@@ -450,12 +709,220 @@ describe('MessageCard', () => {
     const labels = Array.from(toolbar.querySelectorAll('button')).map((button) => button.getAttribute('aria-label'));
     expect(labels).toEqual([
       'Редагувати коментар',
-      'Копіювати повідомлення',
       'Позначити як важливе',
       'Додати в закладки',
-      'Редагувати додаткові поля та позивні',
-      'Видалити',
+      COPY_TITLE,
+      NAVIGATE_TITLE,
+      'Більше дій',
     ]);
+  });
+
+  it('hides overflow in duty mode when no edit or delete actions are available', async () => {
+    const view = await renderCard();
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+  });
+
+  it('shows only edit and delete in the overflow menu when those handlers exist', async () => {
+    const view = await renderCard({
+      onEditDetails: vi.fn(),
+      onDelete: vi.fn(),
+    });
+    rendered.push(view);
+
+    const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflowButton instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    await click(overflowButton);
+
+    expect(view.container.textContent).toContain('Редагувати додаткові поля та позивні');
+    expect(view.container.textContent).toContain('Видалити');
+    expect(view.container.textContent).not.toContain('Позначити як важливе');
+    expect(view.container.textContent).not.toContain('Додати в закладки');
+  });
+
+  it('renders inactive and active important and bookmark icons in the toolbar', async () => {
+    const view = await renderCard();
+    rendered.push(view);
+
+    expect(view.container.querySelector('svg[data-testid="FlagOutlinedIcon"]')).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="BookmarkBorderOutlinedIcon"]')).not.toBeNull();
+
+    const activeView = await renderCard({
+      msg: buildMessage({ important: true, bookmarked: true }),
+    });
+    rendered.push(activeView);
+
+    expect(activeView.container.querySelector('svg[data-testid="FlagIcon"]')).not.toBeNull();
+    expect(activeView.container.querySelector('svg[data-testid="BookmarkIcon"]')).not.toBeNull();
+  });
+
+  it('renders the frequency filter button when frequency is present and calls the handler', async () => {
+    const onAddFrequencyToFilter = vi.fn();
+    const view = await renderCard({
+      onAddFrequencyToFilter,
+    });
+    rendered.push(view);
+
+    const filterButton = view.container.querySelector('button[aria-label="В фільтр"]');
+    if (!(filterButton instanceof HTMLButtonElement)) throw new Error('frequency filter button not found');
+    await click(filterButton);
+
+    expect(onAddFrequencyToFilter).toHaveBeenCalledWith('153.6250');
+  });
+
+  it('hides the frequency filter button when frequency is missing or blank', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ freq: '   ' }),
+      onAddFrequencyToFilter: vi.fn(),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="В фільтр"]')).toBeNull();
+  });
+
+  it('uses the selected important and bookmark labels in the toolbar', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ important: true, bookmarked: true }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Позначити як не важливе"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Прибрати з закладок"]')).not.toBeNull();
+  });
+
+  it('calls the toolbar important/bookmark actions and the overflow edit/delete actions', async () => {
+    const onImportant = vi.fn();
+    const onBookmark = vi.fn();
+    const onEditDetails = vi.fn();
+    const onDelete = vi.fn();
+    const view = await renderCard({
+      onImportant,
+      onBookmark,
+      onEditDetails,
+      onDelete,
+    });
+    rendered.push(view);
+
+    const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflowButton instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+
+    const importantButton = view.container.querySelector('button[aria-label="Позначити як важливе"]');
+    if (!(importantButton instanceof HTMLButtonElement)) throw new Error('important button not found');
+    await click(importantButton);
+    expect(onImportant).toHaveBeenCalledTimes(1);
+
+    const bookmarkButton = view.container.querySelector('button[aria-label="Додати в закладки"]');
+    if (!(bookmarkButton instanceof HTMLButtonElement)) throw new Error('bookmark button not found');
+    await click(bookmarkButton);
+    expect(onBookmark).toHaveBeenCalledTimes(1);
+
+    await click(overflowButton);
+    await click(getButton(view.container, 'Редагувати додаткові поля та позивні'));
+    expect(onEditDetails).toHaveBeenCalledTimes(1);
+
+    await click(overflowButton);
+    await click(getButton(view.container, 'Видалити'));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits edit and delete from the overflow menu when handlers are absent', async () => {
+    const view = await renderCard();
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Редагувати додаткові поля та позивні');
+    expect(view.container.textContent).not.toContain('Видалити');
+  });
+
+  it('opens the copy menu and routes message, frequency, and etalon copies through the shared handlers', async () => {
+    const onCopyText = vi.fn();
+    const onCopyFreq = vi.fn();
+    const onCopyEtalon = vi.fn();
+    const view = await renderCard({
+      msg: buildMessage({ unit: '1-й танк' }),
+      onCopyText,
+      onCopyFreq,
+      onCopyEtalon,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`)).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Копіювати частоту"]')).toBeNull();
+
+    const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
+    if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
+    await click(copyButton);
+
+    expect(view.container.textContent).toContain('Копіювати повідомлення');
+    expect(view.container.textContent).toContain('Копіювати частоту');
+    expect(view.container.textContent).toContain('Копіювати прив\'язку');
+
+    await click(getButton(view.container, 'Копіювати повідомлення'));
+    expect(onCopyText).toHaveBeenCalledTimes(1);
+
+    await click(copyButton);
+    await click(getButton(view.container, 'Копіювати частоту'));
+    expect(onCopyFreq).toHaveBeenCalledTimes(1);
+
+    await click(copyButton);
+    await click(getButton(view.container, 'Копіювати прив\'язку'));
+    expect(onCopyEtalon).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the frequency and etalon copy items when values are missing', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ freq: null, unit: null, networkIds: [] }),
+    });
+    rendered.push(view);
+
+    const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
+    if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
+    await click(copyButton);
+
+    expect(view.container.textContent).toContain('Копіювати повідомлення');
+    expect(view.container.textContent).not.toContain('Копіювати частоту');
+    expect(view.container.textContent).not.toContain('Копіювати прив\'язку');
+    expect(view.container.textContent).toContain('—');
+    expect(view.container.textContent).not.toContain('Не встановлена');
+  });
+
+  it('opens the exclude menu and applies the selected exclusion', async () => {
+    const onExcludeMessageEntity = vi.fn();
+    const view = await renderCard({
+      msg: { ...buildMessage(), post: 'POST-1' },
+      onExcludeMessageEntity,
+    });
+    rendered.push(view);
+
+    const excludeButton = view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`);
+    if (!(excludeButton instanceof HTMLButtonElement)) throw new Error('exclude button not found');
+    await click(excludeButton);
+
+    const excludeGroupButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Виключити групу'),
+    );
+    if (excludeGroupButton == null) throw new Error('exclude group menu item not found');
+    await click(excludeGroupButton);
+
+    expect(onExcludeMessageEntity).toHaveBeenCalledWith('group', 'group-1');
+    expect(view.container.textContent).not.toContain('Виключити групу');
+  });
+
+  it('hides the exclude button when every visible entity is already excluded', async () => {
+    const view = await renderCard({
+      msg: { ...buildMessage(), post: 'POST-1' },
+      filterState: {
+        ...emptyFilter(),
+        groupsDenied: ['group-1'],
+        deniedSenders: ['sender-1'],
+        freqsDenied: ['153.6250'],
+        postsDenied: ['POST-1'],
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`)).toBeNull();
   });
 
   it('renders provided analysis comments', async () => {

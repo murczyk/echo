@@ -17,10 +17,14 @@ import { memo, useMemo, type SyntheticEvent } from 'react';
 import type { NetworkStatus } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { ELLIPSIS } from '../../../utils/misc';
 import type { NetworkEditForm } from '../use-rer-network-details-neo-page.shared';
 import { NEO_AUTOCOMPLETE_SLOT_PROPS, NEO_SELECT_MENU_PROPS } from './dropdownProps';
 import type { NetworkEditLookupOption as LookupOption } from './network-edit-autocomplete';
 import { networkEditLookupFilterOptions } from './network-edit-autocomplete';
+
+const LOADING_TEXT = `Завантаження${ELLIPSIS}`;
+const REFERENCE_LOADING_TEXT = `Завантажуємо довідники${ELLIPSIS}`;
 
 type Props = {
   open: boolean;
@@ -103,7 +107,7 @@ function NetworkEditDrawerComponent({
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
-          {referenceLoading ? <PowerAlert severity="info">Завантажуємо довідники…</PowerAlert> : null}
+          {referenceLoading ? <PowerAlert severity="info">{REFERENCE_LOADING_TEXT}</PowerAlert> : null}
 
           {form ? (
             <>
@@ -117,8 +121,8 @@ function NetworkEditDrawerComponent({
                 value={selectedAors}
                 loading={referenceLoading}
                 disabled={formBlocked}
-                loadingText="Завантаження..."
-                noOptionsText={referenceLoading ? 'Завантаження...' : 'Немає варіантів'}
+                loadingText={LOADING_TEXT}
+                noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
                 getOptionLabel={(option) => option.label}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 onChange={handleAutocompleteChange('aorIds')}
@@ -146,8 +150,8 @@ function NetworkEditDrawerComponent({
                 value={selectedUnits}
                 loading={referenceLoading}
                 disabled={formBlocked}
-                loadingText="Завантаження..."
-                noOptionsText={referenceLoading ? 'Завантаження...' : 'Немає варіантів'}
+                loadingText={LOADING_TEXT}
+                noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
                 getOptionLabel={(option) => option.label}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 onChange={handleAutocompleteChange('unitIds')}
@@ -211,8 +215,8 @@ function NetworkEditDrawerComponent({
                 value={selectedPosts}
                 loading={referenceLoading}
                 disabled={formBlocked}
-                loadingText="Завантаження..."
-                noOptionsText={referenceLoading ? 'Завантаження...' : 'Немає варіантів'}
+                loadingText={LOADING_TEXT}
+                noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
                 getOptionLabel={(option) => option.label}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 onChange={handleAutocompleteChange('postIds')}

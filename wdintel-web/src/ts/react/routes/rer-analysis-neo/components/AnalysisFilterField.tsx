@@ -1,6 +1,7 @@
 import { Autocomplete, Chip, TextField } from '@mui/material';
 import { Box, Typography } from '@mui/material';
 import { useRef } from 'react';
+import { ELLIPSIS } from '../../../utils/misc';
 
 export type AnalysisFilterOption = string | {
   value: string;
@@ -69,13 +70,13 @@ export function AnalysisFilterField({ label, options, value, disabled, loading, 
       value={[...autocompleteValue, ...unknownAutocompleteValue]}
       disabled={disabled}
       loading={loading}
-      loadingText="Завантаження..."
+      loadingText={`Завантаження${ELLIPSIS}`}
       getOptionLabel={(option) => option.label}
       isOptionEqualToValue={(option, selected) => option.value === selected.value}
       openText="Відкрити"
       closeText="Закрити"
       clearText="Очистити"
-      noOptionsText={loading ? 'Завантаження...' : 'Немає варіантів'}
+      noOptionsText={loading ? `Завантаження${ELLIPSIS}` : 'Немає варіантів'}
       renderTags={(tagValue, getTagProps) =>
         tagValue.map((option, index) => {
           const tagProps = getTagProps({ index });

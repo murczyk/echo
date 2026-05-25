@@ -13,6 +13,7 @@ import {
 import { memo, useMemo } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import {
   accessTypeLabel,
   applyRestrictedAccess,
@@ -113,7 +114,7 @@ function AccessEditorComponent({
               label={restrictLogins && !loginSelectionAllowed ? 'Ваш логін' : 'Логіни'}
               helperText={
                 loading
-                  ? 'Завантажуємо логіни вашого підрозділу…'
+                  ? `Завантажуємо логіни вашого підрозділу${ELLIPSIS}`
                   : restrictLogins && !loginSelectionAllowed
                     ? 'Автоматично заповнюється вашим логіном'
                     : 'Оберіть логіни'

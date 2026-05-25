@@ -17,6 +17,7 @@ import type {
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
+import { resolveMessageCardEtalonDisplayModel } from '../../shared/message-card/message-card.utils';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildSenderLabel, copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -46,6 +47,7 @@ type Props = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
+  onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
@@ -74,6 +76,7 @@ type AnalysisMessageCardItemProps = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
+  onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   referenceTimeMs: number | null;
   users: Record<string, User | null>;
@@ -103,6 +106,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
+  onAddFrequencyToFilter,
   profiles,
   referenceTimeMs,
   users,
@@ -118,6 +122,10 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   const saveCallsignPatch = (updater: (message: InboxMessage) => InboxMessage) => {
     return onSaveMessageUpdate(id, updater);
   };
+  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(message, {
+    networkDisplayMap,
+    networks,
+  });
 
   return (
     <AnalysisMessageCard
@@ -149,6 +157,25 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
           onCopyFeedback(`freq-${id}`);
         });
       }}
+      onCopyEtalon={
+        etalonDisplayModel.copyEtalonValue == null
+          ? undefined
+          : () => {
+              void copyMessageValue(etalonDisplayModel.copyEtalonValue).then(() => {
+                onCopyFeedback(`etalon-${id}`);
+              });
+            }
+      }
+      onCopyLocation={
+        etalonDisplayModel.copyLocationValue == null
+          ? undefined
+          : () => {
+              void copyMessageValue(etalonDisplayModel.copyLocationValue).then(() => {
+                onCopyFeedback(`location-${id}`);
+              });
+            }
+      }
+      onAddFrequencyToFilter={onAddFrequencyToFilter}
       onComment={() => onCommentOpen(id, message)}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={() => onOpenEditor(id)}
@@ -204,6 +231,7 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
+  onAddFrequencyToFilter,
   profiles,
   users,
   tagsMap,
@@ -328,6 +356,7 @@ function AnalysisMessagesPaneComponent({
               onToggleMessageBookmark={onToggleMessageBookmark}
               onToggleMessageImportant={onToggleMessageImportant}
               onToggleMessageTag={onToggleMessageTag}
+              onAddFrequencyToFilter={onAddFrequencyToFilter}
               profiles={profiles}
               users={users}
               referenceTimeMs={referenceTimeMsRef.current}
