@@ -1,4 +1,4 @@
-import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import type { MRT_SortingState } from 'material-react-table';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
@@ -198,6 +198,45 @@ function RerPalitraNeoPageBody() {
             startIcon={page.inFlightArchiveId !== null ? <CircularProgress color='inherit' size={16} /> : null}
           >
             Перенести в архів
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={page.downloadDialogOpen}
+        onClose={page.cancelDownload}
+        disableRestoreFocus
+        TransitionProps={{ onExited: page.onDownloadDialogExited }}
+        fullWidth
+        maxWidth='sm'
+      >
+        <DialogTitle>Завантажити палітру</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 1.5 }}>
+            {'Палітра «' + (page.downloadDialogPalitra?.name ?? '') + '»'}
+          </DialogContentText>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={page.downloadSplitForDelta}
+                onChange={(event) => page.setDownloadSplitForDelta(event.target.checked)}
+                disabled={page.inFlightDownloadId !== null}
+              />
+            }
+            label='Розбити по 6500 точок (для Дельти)'
+          />
+        </DialogContent>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <Button onClick={page.cancelDownload} disabled={page.inFlightDownloadId !== null}>
+            Скасувати
+          </Button>
+          <Button
+            onClick={page.confirmDownload}
+            variant='contained'
+            disabled={page.inFlightDownloadId !== null}
+            startIcon={page.inFlightDownloadId !== null ? <CircularProgress color='inherit' size={16} /> : null}
+          >
+            Завантажити
           </Button>
         </DialogActions>
       </Dialog>

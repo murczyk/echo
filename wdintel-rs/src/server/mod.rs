@@ -751,6 +751,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::palitra::archive_palitra_folder)
             .service(crate::palitra::delete_palitra_folder)
             .service(crate::palitra::download_palitras)
+            .service(crate::palitra::download_palitras_delta_split)
             .service(crate::palitra::upload_palitra_points)
             .service(crate::palitra::analyze_kmz)
             .service(crate::alpine::convert_alpinequest_file)

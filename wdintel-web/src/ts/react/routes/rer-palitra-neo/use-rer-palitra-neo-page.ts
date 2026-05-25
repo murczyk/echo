@@ -42,6 +42,9 @@ export function useRerPalitraNeoPage() {
   const [inFlightUploadId, setInFlightUploadId] = useState<number | null>(null);
   const [archiveDialogPalitra, setArchiveDialogPalitra] = useState<Palitra | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [downloadDialogPalitra, setDownloadDialogPalitra] = useState<Palitra | null>(null);
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [downloadSplitForDelta, setDownloadSplitForDelta] = useState(false);
   const [deleteDialogPalitra, setDeleteDialogPalitra] = useState<Palitra | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPalitraIds, setSelectedPalitraIds] = useState<number[]>([]);
@@ -274,6 +277,9 @@ export function useRerPalitraNeoPage() {
     handleUnarchive,
     requestUploadPoints,
     handleDownload,
+    cancelDownload,
+    confirmDownload,
+    onDownloadDialogExited,
     requestDelete,
     cancelDelete,
     confirmDelete,
@@ -305,6 +311,9 @@ export function useRerPalitraNeoPage() {
     selectedColorFromKmz,
     archiveDialogPalitra,
     archiveDialogOpen,
+    downloadDialogPalitra,
+    downloadDialogOpen,
+    downloadSplitForDelta,
     deleteDialogPalitra,
     deleteDialogOpen,
     bulkDeleteDialogPalitras,
@@ -338,6 +347,9 @@ export function useRerPalitraNeoPage() {
     setInFlightUploadId,
     setArchiveDialogPalitra,
     setArchiveDialogOpen,
+    setDownloadDialogPalitra,
+    setDownloadDialogOpen,
+    setDownloadSplitForDelta,
     setDeleteDialogPalitra,
     setDeleteDialogOpen,
     setBulkDeleteDialogPalitras,
@@ -400,6 +412,10 @@ export function useRerPalitraNeoPage() {
     inFlightUploadId,
     archiveDialogPalitra,
     archiveDialogOpen,
+    downloadDialogPalitra,
+    downloadDialogOpen,
+    downloadSplitForDelta,
+    setDownloadSplitForDelta,
     deleteDialogPalitra,
     deleteDialogOpen,
     selectedPalitraIds,
@@ -442,6 +458,9 @@ export function useRerPalitraNeoPage() {
     handleUnarchive,
     requestUploadPoints,
     handleDownload,
+    cancelDownload,
+    confirmDownload,
+    onDownloadDialogExited,
     requestDelete,
     cancelDelete,
     confirmDelete,

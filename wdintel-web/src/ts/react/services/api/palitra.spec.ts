@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { analyzePalitraKmz, fetchPalitraReferenceData } from './palitra';
+import { analyzePalitraKmz, downloadPalitras, fetchPalitraReferenceData } from './palitra';
 
 describe('palitra API 401 handling', () => {
   beforeEach(() => {
@@ -82,5 +82,23 @@ describe('palitra reference loading', () => {
 
     expect(requestedUrls).not.toContain('/api/organism/list-logins');
     expect(requestedUrls).not.toContain('/api/logins');
+  });
+});
+
+describe('palitra downloads', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uses the Delta split endpoint when requested', async () => {
+    const requestedUrls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrls.push(String(input));
+      return new Response(new Blob(['zip']), { status: 200 });
+    }));
+
+    await downloadPalitras([42], { splitForDelta: true });
+
+    expect(requestedUrls).toEqual(['/api/palitra/download-delta-split']);
   });
 });

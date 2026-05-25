@@ -25,6 +25,9 @@ type Props = {
   selectedColorFromKmz: string;
   archiveDialogPalitra: Palitra | null;
   archiveDialogOpen: boolean;
+  downloadDialogPalitra: Palitra | null;
+  downloadDialogOpen: boolean;
+  downloadSplitForDelta: boolean;
   deleteDialogPalitra: Palitra | null;
   deleteDialogOpen: boolean;
   bulkDeleteDialogPalitras: Palitra[];
@@ -58,6 +61,9 @@ type Props = {
   setInFlightUploadId: SetState<number | null>;
   setArchiveDialogPalitra: SetState<Palitra | null>;
   setArchiveDialogOpen: SetState<boolean>;
+  setDownloadDialogPalitra: SetState<Palitra | null>;
+  setDownloadDialogOpen: SetState<boolean>;
+  setDownloadSplitForDelta: SetState<boolean>;
   setDeleteDialogPalitra: SetState<Palitra | null>;
   setDeleteDialogOpen: SetState<boolean>;
   setBulkDeleteDialogPalitras: SetState<Palitra[]>;
@@ -261,20 +267,42 @@ export function createPalitraPageActionHandlers(props: Props) {
     props.uploadPointsInputRef.current.click();
   }
 
-  async function handleDownload(palitra: Palitra) {
-    if (props.inFlightDownloadId !== null || props.folderActionsBlocked) return;
+  function handleDownload(palitra: Palitra) {
+    if (props.inFlightDownloadId !== null || props.downloadDialogOpen || props.folderActionsBlocked) return;
+    props.setStatus(null);
+    props.setDownloadDialogPalitra(palitra);
+    props.setDownloadSplitForDelta(false);
+    props.setDownloadDialogOpen(true);
+  }
+
+  function cancelDownload() {
+    if (props.inFlightDownloadId !== null) return;
+    props.setDownloadDialogOpen(false);
+  }
+
+  async function confirmDownload() {
+    const palitra = props.downloadDialogPalitra;
+    if (!palitra || props.inFlightDownloadId !== null || props.folderActionsBlocked) return;
 
     props.setInFlightDownloadId(palitra.id);
     props.setStatus(null);
 
     try {
-      const blob = await downloadPalitras([palitra.id]);
-      downloadBlob(blob, 'palitra-' + String(palitra.id) + '.zip');
+      const blob = await downloadPalitras([palitra.id], { splitForDelta: props.downloadSplitForDelta });
+      downloadBlob(blob, 'palitra-' + String(palitra.id) + (props.downloadSplitForDelta ? '-delta' : '') + '.zip');
+      props.setDownloadDialogOpen(false);
     } catch (downloadError) {
+      props.setDownloadDialogOpen(false);
       props.setStatus({ kind: 'error', text: 'Не вдалося завантажити палітру: ' + formatErrorMessage(downloadError) });
     } finally {
       props.setInFlightDownloadId(null);
     }
+  }
+
+  function onDownloadDialogExited() {
+    if (props.downloadDialogOpen || props.inFlightDownloadId !== null) return;
+    props.setDownloadDialogPalitra(null);
+    props.setDownloadSplitForDelta(false);
   }
 
   async function handleUploadPointsSelected(event: ChangeEvent<HTMLInputElement>) {
@@ -425,6 +453,9 @@ export function createPalitraPageActionHandlers(props: Props) {
     handleUnarchive,
     requestUploadPoints,
     handleDownload,
+    cancelDownload,
+    confirmDownload,
+    onDownloadDialogExited,
     requestDelete,
     cancelDelete,
     confirmDelete,

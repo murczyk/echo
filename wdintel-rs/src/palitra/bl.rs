@@ -1126,6 +1126,35 @@ pub async fn collect_downloadable_palitra_files(
     Ok(result)
 }
 
+pub async fn collect_downloadable_palitra_details(
+    login: String,
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraReadV2>> {
+    let accessible_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+    let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
+    let palitra_ids = palitra_ids
+        .into_iter()
+        .filter(|palitra_id| accessible_ids.contains(palitra_id))
+        .unique()
+        .collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let palitras = palitra::Entity::find()
+        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut result = Vec::with_capacity(palitras.len());
+    for palitra in palitras {
+        result.push(render_palitra_v2(Either::Left(palitra), dbx).await?);
+    }
+    Ok(result)
+}
+
 pub fn build_palitra_download_file_name(
     palitra: &palitra::Model,
     geometry: Option<&palitra_geometry::Model>,
