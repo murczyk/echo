@@ -17,6 +17,7 @@ import { memo, useMemo } from 'react';
 import type { Network, NetworkDescrType } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { ELLIPSIS } from '../../../utils/misc';
 import type { NetworkDescriptionForm } from '../use-rer-network-details-neo-page.shared';
 import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
 
@@ -46,7 +47,7 @@ function getDescriptionLabel(): string {
 }
 
 function getDescriptionPlaceholder(): string {
-  return 'Розгорнутий аналітичний текст...';
+  return `Розгорнутий аналітичний текст${ELLIPSIS}`;
 }
 
 function getTopicLabel(): string {

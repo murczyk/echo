@@ -4,6 +4,7 @@ import { useId } from 'react';
 import type { CorrelatedFreq } from '../../../../../Bindings';
 import { CompactPowerChip } from '../../../components/CompactPowerChip';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
+import { ELLIPSIS } from '../../../utils/misc';
 
 type Props = {
   correlatedFreqs: CorrelatedFreq[];
@@ -29,7 +30,7 @@ export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, selected
         <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
           <CircularProgress size={18} />
           <CompactText color="text.secondary">
-            Завантажую суміжні частоти…
+            {`Завантажую суміжні частоти${ELLIPSIS}`}
           </CompactText>
         </Stack>
       ) : correlatedFreqs.length === 0 ? (

@@ -2,7 +2,7 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import { Box, Button, Chip, Drawer, IconButton, Stack, TextField, Typography } from '@mui/material';
 import { memo, useEffect, useMemo, useState } from 'react';
-import { isNullOrUndefined } from '../../../utils/misc';
+import { ELLIPSIS, isNullOrUndefined } from '../../../utils/misc';
 
 
 import type { InboxMessage } from '../../../../../Bindings';
@@ -176,7 +176,7 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
         <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           <Button onClick={onClose}>Скасувати</Button>
           <Button variant="contained" onClick={() => currentMessage && onSave(currentMessage)} disabled={saveInFlight || isNullOrUndefined(currentMessage)}>
-            {saveInFlight ? 'Зберігаємо...' : 'Зберегти'}
+            {saveInFlight ? `Зберігаємо${ELLIPSIS}` : 'Зберегти'}
           </Button>
         </Stack>
       </Box>

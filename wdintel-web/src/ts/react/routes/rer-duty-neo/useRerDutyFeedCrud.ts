@@ -2,12 +2,7 @@ import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
-import {
-  emptyFilter,
-  filtersEqual,
-  generateMessageFeedId,
-  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
-} from './utils';
+import { emptyFilter, filtersEqual, generateMessageFeedId, VIRTUOSO_FIRST_ITEM_INDEX_INITIAL } from './utils';
 import type { MessageFeedState } from './utils';
 
 const MAX_MESSAGE_FEEDS = 4;
@@ -16,6 +11,7 @@ export function useRerDutyFeedCrud(
   messageFeeds: MessageFeedState[],
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>,
   persistStateToUrl: (next: MessageFeedState[]) => void,
+  markFeedReloadRequested: (feedId: string) => void,
   onFeedRemoved?: (feedId: string) => void,
 ) {
   const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
@@ -26,18 +22,15 @@ export function useRerDutyFeedCrud(
         persistStateToUrl(prev);
         return prev;
       }
+      markFeedReloadRequested(feedId);
       const next = prev.map((w) =>
         w.id === feedId
           ? {
               ...w,
               filter: f,
-              items: [],
               loading: true,
+              loadingOlder: false,
               hasReachedStart: false,
-              firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
-              referenceTimeMs: null,
-              readIds: new Set<number>(),
-              unreadCount: 0,
               adjacentFreqsRange: w.adjacentFreqsRange,
               highlightSignalsEnabled: w.highlightSignalsEnabled,
               onlyMyUnitTagsEnabled: w.onlyMyUnitTagsEnabled,
@@ -47,7 +40,7 @@ export function useRerDutyFeedCrud(
       persistStateToUrl(next);
       return next;
     });
-  }, [persistStateToUrl, setMessageFeeds]);
+  }, [markFeedReloadRequested, persistStateToUrl, setMessageFeeds]);
 
   const toggleGroup = useCallback(
     (feedId: string, key: string) => {

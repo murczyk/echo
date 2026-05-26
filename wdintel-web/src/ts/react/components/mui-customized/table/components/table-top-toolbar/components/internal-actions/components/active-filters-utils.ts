@@ -1,6 +1,6 @@
 import type { MRT_RowData, MRT_TableInstance } from 'material-react-table';
 import type { MRT_ColumnFiltersState } from 'material-react-table';
-import { isNullOrUndefined, isPresent } from '../../../../../../../../utils/misc';
+import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../../../../../../../utils/misc';
 
 
 export type ActiveFilterDescriptor = {
@@ -25,7 +25,7 @@ function truncateText(value: string, maxLength: number): string {
     return value;
   }
 
-  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
+  return `${value.slice(0, maxLength - 1).trimEnd()}${ELLIPSIS}`;
 }
 
 function formatPreviewItem(value: unknown): string {

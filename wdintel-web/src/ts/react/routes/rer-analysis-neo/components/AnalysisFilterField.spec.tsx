@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
+import { ELLIPSIS } from '../../../utils/misc';
 
 const autocompleteSpy = vi.fn();
 
@@ -145,8 +146,8 @@ describe('AnalysisFilterField', () => {
 
     expect(props.disableCloseOnSelect).toBe(true);
     expect(props.loading).toBe(true);
-    expect(props.loadingText).toBe('Завантаження...');
-    expect(props.noOptionsText).toBe('Завантаження...');
+    expect(props.loadingText).toBe(`Завантаження${ELLIPSIS}`);
+    expect(props.noOptionsText).toBe(`Завантаження${ELLIPSIS}`);
 
     act(() => {
       root.unmount();

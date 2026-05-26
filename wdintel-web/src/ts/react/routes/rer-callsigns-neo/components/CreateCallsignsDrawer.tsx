@@ -3,7 +3,7 @@ import AddIcon from '@mui/icons-material/Add';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { isNullOrUndefined } from '../../../utils/misc';
+import { ELLIPSIS, isNullOrUndefined } from '../../../utils/misc';
 import {
   Autocomplete,
   Box,
@@ -459,7 +459,7 @@ export function CreateCallsignsDrawer({
           onClick={onSubmit}
           disabled={formDisabled || isNullOrUndefined(addUnitId) || !hasDraftContent}
         >
-          {submitting ? 'Збереження…' : 'Додати'}
+          {submitting ? `Збереження${ELLIPSIS}` : 'Додати'}
         </Button>
       </Box>
     </Drawer>

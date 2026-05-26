@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerChip } from '../../../components/PowerChip';
+import { ELLIPSIS } from '../../../utils/misc';
 import { isFormValid } from '../helpers';
 import { KmzColorOption, PalitraCreateMode, PalitraFormState } from '../types';
 import { PalitraFormFields } from './PalitraFormFields';
@@ -192,7 +193,9 @@ function CreatePalitraDrawerComponent({
               ) : null}
 
               {kmzAnalysis ? <PowerAlert severity="success">KMZ проаналізовано, кольорів: {kmzAnalysis.topColors.length}</PowerAlert> : null}
-              {!referenceDataReady ? <PowerAlert severity="info">Завантажуємо довідники (логіни, підрозділи, смуги)…</PowerAlert> : null}
+              {!referenceDataReady ? (
+                <PowerAlert severity="info">Завантажуємо довідники (логіни, підрозділи, смуги){ELLIPSIS}</PowerAlert>
+              ) : null}
             </Stack>
           ) : null}
 
@@ -358,7 +361,7 @@ function CreatePalitraDrawerComponent({
             <Stack spacing={1.5} alignItems="center">
               <CircularProgress color="inherit" />
               <Typography variant="body2">
-                {kmzAnalyzing ? 'Аналіз KMZ...' : 'Додавання палітри...'}
+                {kmzAnalyzing ? `Аналіз KMZ${ELLIPSIS}` : `Додавання палітри${ELLIPSIS}`}
               </Typography>
             </Stack>
           </Box>

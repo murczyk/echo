@@ -16,6 +16,12 @@ const hoisted = vi.hoisted(() => ({
   attachDutyNotificationAudioPrimingListeners: vi.fn(),
   mergeResolvedCallsigns: vi.fn(),
   setFeedErrorMock: vi.fn(),
+  applyFilterMock: vi.fn(),
+  messageFeeds: [] as Array<{
+    id: string;
+    items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
+    filter: Record<string, unknown>;
+  }>,
   initialCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
   initialInboxCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
 }));
@@ -103,19 +109,7 @@ vi.mock('./useRerDutyFeedState', () => ({
     );
 
     return {
-      messageFeeds: [
-        {
-          items: [
-            [
-              1,
-              {
-                textMarked: [{ CNCallsignC: { text: 'БОРОДА' } }],
-              },
-            ],
-          ],
-          filter: {},
-        },
-      ],
+      messageFeeds: hoisted.messageFeeds,
       inboxCallsignInfoMap,
       callsignInfoMap,
       mergeResolvedCallsigns: (items: Array<{ callsign: string; res: unknown[] }>) => {
@@ -140,7 +134,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       removeMessageFeed: vi.fn(),
       loadFeedInitialMessages: vi.fn(),
       loadFeedOlderMessages: vi.fn(),
-      applyFilter: vi.fn(),
+      applyFilter: hoisted.applyFilterMock,
       toggleGroup: vi.fn(),
       selectAllGroups: vi.fn(),
       loadFeedNewerMessages: vi.fn(),
@@ -157,8 +151,10 @@ vi.mock('./useRerDutyFeedState', () => ({
   },
 }));
 
+let latest: ReturnType<typeof useRerDutyFeeds> | null = null;
+
 function TestHarness() {
-  useRerDutyFeeds(null);
+  latest = useRerDutyFeeds(null);
   return null;
 }
 
@@ -243,15 +239,31 @@ describe('getPendingDutyCallsignLookups', () => {
 });
 
 describe('useRerDutyFeeds', () => {
-  let container: HTMLElement;
-  let root: Root;
+let container: HTMLElement;
+let root: Root;
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    latest = null;
     hoisted.initialCallsignInfoMap = {};
     hoisted.initialInboxCallsignInfoMap = {};
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [
+          [
+            1,
+            {
+              textMarked: [{ CNCallsignC: { text: 'БОРОДА' } }],
+            },
+          ],
+        ],
+        filter: {},
+      },
+    ];
     hoisted.fetchAnalysisCallsignInfos.mockReset();
+    hoisted.applyFilterMock.mockReset();
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
     hoisted.currentSystemSettings.mockResolvedValue({
       rerDutyTestEnabled: false,
@@ -273,6 +285,7 @@ describe('useRerDutyFeeds', () => {
       container.remove();
       document.body.innerHTML = '';
     });
+    latest = null;
     vi.useRealTimers();
   });
 
@@ -294,6 +307,44 @@ describe('useRerDutyFeeds', () => {
 
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
+  });
+
+  it('adds a frequency to the selected feed filter without duplicating it', async () => {
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [
+          [
+            1,
+            {
+              textMarked: [{ CNCallsignC: { text: 'БОРОДА' } }],
+            },
+          ],
+        ],
+        filter: {
+          freqsSelected: ['153.6250'],
+          freqsDenied: ['153.6250', '200.0000'],
+        },
+      },
+    ];
+    await act(async () => {
+      root.render(React.createElement(TestHarness));
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(latest).not.toBeNull();
+    expect(typeof latest?.addFrequencyToFilter).toBe('function');
+
+    await act(async () => {
+      latest!.addFrequencyToFilter('mf-0', '153.6250');
+    });
+
+    expect(hoisted.applyFilterMock).toHaveBeenCalledWith('mf-0', expect.objectContaining({
+      freqsSelected: ['153.6250'],
+      freqsDenied: ['200.0000'],
+    }));
   });
 
   it('retries failed callsign lookups after the backoff expires even when inbox rows already exist', async () => {

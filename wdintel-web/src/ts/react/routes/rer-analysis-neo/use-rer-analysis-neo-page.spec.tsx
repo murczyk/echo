@@ -343,6 +343,43 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.centerTab).toBe('messages');
   });
 
+  it('adds a frequency filter through the summary sidebar without dropping existing selections', async () => {
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['111.1'] });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.addFrequencyToFilter('123.4');
+    });
+    await flushEffects();
+
+    expect(latest?.rightPanelOpen).toBe(true);
+    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1', '123.4']);
+    expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
+  });
+
+  it('does not duplicate a frequency already in the analysis filter', async () => {
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['123.4'] });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.addFrequencyToFilter('123.4');
+    });
+    await flushEffects();
+
+    expect(latest?.queryState.freqsSelected).toEqual(['123.4']);
+  });
+
   it('moves the active map away from the sidebar when the setting turns off', async () => {
     userSettingsMock.fetchUserSettings.mockResolvedValueOnce({
       tagsLayout: 'compact',

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
@@ -284,6 +284,22 @@ export function useRerDutyFeeds(authUserName: string | null) {
     () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
     [filterOpts.postsList, feedState.messageFeeds]
   );
+  const addFrequencyToFilter = useCallback(
+    (feedId: string, freq: string) => {
+      const feed = feedState.messageFeeds.find((item) => item.id === feedId);
+      if (!feed) return;
+      const trimmed = freq.trim();
+      if (trimmed === '') return;
+      const nextFreqs = Array.from(new Set([...(feed.filter.freqsSelected ?? []), trimmed]));
+      const nextDeniedFreqs = (feed.filter.freqsDenied ?? []).filter((value) => value.trim() !== trimmed);
+      feedState.applyFilter(feedId, {
+        ...feed.filter,
+        freqsSelected: nextFreqs.length > 0 ? nextFreqs : null,
+        freqsDenied: nextDeniedFreqs.length > 0 ? nextDeniedFreqs : null,
+      });
+    },
+    [feedState.applyFilter, feedState.messageFeeds],
+  );
 
   return {
     messageFeeds: feedState.messageFeeds,
@@ -300,6 +316,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,
     loadFeedOlderMessages: feedState.loadFeedOlderMessages,
     applyFilter: feedState.applyFilter,
+    addFrequencyToFilter,
     toggleGroup: feedState.toggleGroup,
     selectAllGroups: feedState.selectAllGroups,
     handleSaveFilter: actions.handleSaveFilter,

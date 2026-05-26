@@ -226,6 +226,27 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
   }, [data.invalidateFilterSectionLoads]);
 
+  const addFrequencyToFilter = useCallback((freq: string) => {
+    const trimmed = freq.trim();
+    if (trimmed === '') return;
+    data.invalidateFilterSectionLoads();
+    setRightPanelOpen(true);
+    setRightSidebarTab('stats');
+    setQueryState((current) => {
+      const nextFreqsSelected = current.freqsSelected.includes(trimmed)
+        ? current.freqsSelected
+        : [...current.freqsSelected, trimmed];
+      if (!current.includeOnlyNewFreqs && stringArraysEqual(current.freqsSelected, nextFreqsSelected)) {
+        return current;
+      }
+      return {
+        ...current,
+        includeOnlyNewFreqs: false,
+        freqsSelected: nextFreqsSelected,
+      };
+    });
+  }, [data.invalidateFilterSectionLoads, setRightSidebarTab]);
+
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
       data.invalidateFilterSectionLoads();
@@ -376,6 +397,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setNewestFirst,
     setRightSidebarTab,
     setSavedFilterName: savedFilters.setSavedFilterName,
+    addFrequencyToFilter,
     showFreqOnMap,
     toggleLeftPanel,
     toggleRightPanel,
