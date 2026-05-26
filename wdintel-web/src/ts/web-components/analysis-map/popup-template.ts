@@ -1,5 +1,6 @@
 import { messagesCountText } from '../../maps/utils/language-utils';
 import type { ContentNode } from '../../../Bindings';
+import { normalizeUnknownUnitFilterValue } from '../../react/routes/shared/analysis-unit-filter';
 import { Message, NetworkUnit } from './types';
 import { updateStateUrl } from './url-state';
 
@@ -84,12 +85,14 @@ function renderMessageText(message: Message[1]): string {
 
 function liTemplate(message_: Message, networkUnitName_: string | undefined, selectedUnits: string[]) {
   const unitName = networkUnitName_ ?? message_[1].unit ?? 'Не визначено';
+  const normalizedUnitName = normalizeUnknownUnitFilterValue(unitName);
+  const isUnitSelected = selectedUnits.some((selectedUnit) => normalizeUnknownUnitFilterValue(selectedUnit) === normalizedUnitName);
   const unitBlock = `
             <div>
               <span style="font-weight: 700; line-height: 22px;">Підрозділ:</span> 
               <span class="pointer" style="color: #0d6efd" id="map-message-id-${message_[0]}", data-unitname="${unitName}">
                 ${unitName}
-                <i class="bi bi-${selectedUnits.includes(unitName) ? 'dash' : 'plus'}-square" > </i>
+                <i class="bi bi-${isUnitSelected ? 'dash' : 'plus'}-square" > </i>
               </span>
             </div>
             `;

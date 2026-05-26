@@ -74,6 +74,14 @@ export const emptyOptions: AnalysisFilterOptions = {
   metadataHashes: [],
 };
 
+export function resetFilterOptionsForForcedReload(prev: AnalysisFilterOptions): AnalysisFilterOptions {
+  return {
+    ...emptyOptions,
+    freqs: prev.freqs,
+    newFreqs: prev.newFreqs,
+  };
+}
+
 export const emptyNewCallsigns: NewCallsignsRes = {
   notSeen24h: [],
   notSeen7days: [],

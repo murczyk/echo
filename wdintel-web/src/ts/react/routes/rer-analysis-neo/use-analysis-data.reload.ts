@@ -39,6 +39,7 @@ import {
   emptyOptions,
   isAnalysisInboxPageExhausted,
   normalizeFilterLabel,
+  resetFilterOptionsForForcedReload,
   toErrorMessage,
   topItems,
 } from './use-analysis-data.shared';
@@ -382,7 +383,12 @@ type ReloadParams = {
   loadMessageComments?: (messages: Array<[number, InboxMessage]>, forceReload?: boolean) => Promise<void>;
   invalidateSummaryLoads?: () => void;
   invalidateTopSidebarLoads?: () => void;
-  loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => Promise<void>;
+  getLoadedFilterSections?: () => AnalysisFilterSectionId[];
+  loadInitialFilterSections: (
+    analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
+    forceReload?: boolean,
+    loadedSections?: AnalysisFilterSectionId[],
+  ) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
 };
 
@@ -391,6 +397,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.reloadRequestRef.current = requestId;
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
   let startedSecondaryLoads = false;
+  // Reset loaded keys and clear non-frequency options, preserving freqs/newFreqs.
+  // Previously loaded lazy sections are reloaded below for the new request.
+  const loadedFilterSectionsBeforeReload = params.getLoadedFilterSections?.() ?? [];
 
   params.onError('');
   params.invalidateMessagePaging();
@@ -528,11 +537,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         label: normalizeFilterLabel(freq),
         count: nextFreqCountsByValue.get(freq) ?? 0,
       }));
-      params.setOptions({
-        ...emptyOptions,
+      params.setOptions((current) => ({
+        ...resetFilterOptionsForForcedReload(current),
         freqs: nextFreqOptions,
         newFreqs: nextNewFreqs,
-      });
+      }));
       params.setTopFreqs(topItems(effectiveFreqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
@@ -630,7 +639,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       loadReferenceData(),
       (async () => {
         try {
-          await params.loadInitialFilterSections(criticalData.resolvedAnalysisReq);
+          await params.loadInitialFilterSections(criticalData.resolvedAnalysisReq, true, loadedFilterSectionsBeforeReload);
         } finally {
           if (!isStaleReload()) params.setFiltersLoading(false);
         }
