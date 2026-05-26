@@ -1145,7 +1145,8 @@ mod tests {
 
     #[test]
     fn test_keyword_set_from_words_lowercases() {
-        let set = keyword_set_from_words(&["НЕБО".to_string(), "небо".to_string()]);
+        let set =
+            keyword_set_from_words(&["НЕБО".to_string(), "небо".to_string()]);
         assert_eq!(set.len(), 1);
         assert!(set.contains("небо"));
     }

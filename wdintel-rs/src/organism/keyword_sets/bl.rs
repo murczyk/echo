@@ -25,7 +25,8 @@ pub fn map_keyword_set_db_err(err: DbErr) -> AppError {
 fn is_postgres_unique_violation(err: &DbErr) -> bool {
     let mut source: Option<&(dyn StdError + 'static)> = Some(err);
     while let Some(e) = source {
-        if let Some(sqlx::Error::Database(db)) = e.downcast_ref::<sqlx::Error>() {
+        if let Some(sqlx::Error::Database(db)) = e.downcast_ref::<sqlx::Error>()
+        {
             if db.code().as_deref() == Some("23505") {
                 return true;
             }
@@ -35,7 +36,9 @@ fn is_postgres_unique_violation(err: &DbErr) -> bool {
     false
 }
 
-pub fn normalize_keyword_words(words: &[String]) -> Result<Vec<String>, AppError> {
+pub fn normalize_keyword_words(
+    words: &[String],
+) -> Result<Vec<String>, AppError> {
     let mut seen = BTreeSet::new();
     let mut res = vec![];
     for raw in words {
@@ -72,7 +75,8 @@ pub fn normalize_inflect_output_words(words: &[String]) -> Vec<String> {
     let mut res = vec![];
     for raw in words {
         let w = raw.trim().to_lowercase();
-        if w.is_empty() || w.chars().count() > ORGANISM_KEYWORD_SET_MAX_WORD_LEN {
+        if w.is_empty() || w.chars().count() > ORGANISM_KEYWORD_SET_MAX_WORD_LEN
+        {
             continue;
         }
         if seen.insert(w.clone()) {
@@ -100,7 +104,7 @@ pub fn keyword_set_can_edit(
     viewer_is_admin: bool,
 ) -> bool {
     if is_system_default {
-        return viewer_is_admin;
+        return true;
     }
     keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
 }
@@ -111,8 +115,10 @@ pub fn keyword_set_can_delete(
     viewer_login: &str,
     viewer_is_admin: bool,
 ) -> bool {
-    !is_system_default
-        && keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
+    if is_system_default {
+        return true;
+    }
+    keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
 }
 
 pub fn merge_lexeme_batches(lexemes_batch: Vec<Vec<String>>) -> Vec<String> {
@@ -164,7 +170,8 @@ mod tests {
 
     #[test]
     fn normalize_inflect_output_truncates_at_cap() {
-        let words: Vec<String> = (0..ORGANISM_KEYWORD_SET_MAX_WORDS_PER_SET + 50)
+        let words: Vec<String> = (0..ORGANISM_KEYWORD_SET_MAX_WORDS_PER_SET
+            + 50)
             .map(|i| format!("lemma{i}"))
             .collect();
         let out = normalize_inflect_output_words(&words);
@@ -175,16 +182,17 @@ mod tests {
     #[test]
     fn normalize_inflect_output_skips_overlong_without_error() {
         let long = "б".repeat(ORGANISM_KEYWORD_SET_MAX_WORD_LEN + 1);
-        let out = normalize_inflect_output_words(&["коротко".to_string(), long]);
+        let out =
+            normalize_inflect_output_words(&["коротко".to_string(), long]);
         assert_eq!(out, vec!["коротко"]);
     }
 
     #[test]
     fn keyword_set_acl_rules() {
-        assert!(!keyword_set_can_edit(true, None, "alice", false));
+        assert!(keyword_set_can_edit(true, None, "alice", false));
         assert!(keyword_set_can_edit(true, None, "alice", true));
-        assert!(!keyword_set_can_delete(true, None, "alice", false));
-        assert!(!keyword_set_can_delete(true, None, "alice", true));
+        assert!(keyword_set_can_delete(true, None, "alice", false));
+        assert!(keyword_set_can_delete(true, None, "alice", true));
 
         assert!(keyword_set_can_edit(false, Some("alice"), "alice", false));
         assert!(keyword_set_can_delete(false, Some("alice"), "alice", false));

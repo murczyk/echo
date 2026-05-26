@@ -1,11 +1,12 @@
 pub mod bl;
+pub mod default_words;
 pub mod types;
 
 use self::bl::{
-    keyword_set_can_delete, keyword_set_can_edit,
-    keyword_set_name_taken_err, map_keyword_set_db_err, merge_lexeme_batches,
-    normalize_keyword_words,
+    keyword_set_can_delete, keyword_set_can_edit, keyword_set_name_taken_err,
+    map_keyword_set_db_err, merge_lexeme_batches, normalize_keyword_words,
 };
+use self::default_words::default_keyword_words_vec;
 use self::types::*;
 use crate::config::{
     ORGANISM_KEYWORD_SET_DEFAULT_NAME, ORGANISM_KEYWORD_SET_INFLECT_MAX_LEMMAS,
@@ -13,7 +14,6 @@ use crate::config::{
 };
 use crate::entities::{login, organism_keyword_set};
 use crate::error::AppError;
-use crate::rer_importer::keywords::get_keywords;
 use crate::types::*;
 use actix_web::web::{Data, Path};
 use actix_web::{delete, get, post, put, web::Json};
@@ -45,12 +45,6 @@ pub async fn resolve_viewer_organism_id(
         })
 }
 
-fn words_from_json(jv: &sea_orm::entity::prelude::Json) -> Result<Vec<String>, AppError> {
-    serde_json::from_value(jv.clone()).map_err(|e| AppError::BL {
-        msg: format!("Invalid keyword words json: {e}"),
-    })
-}
-
 async fn viewer_is_admin(dbx: &DatabaseConnection, login: &str) -> bool {
     crate::users::has_role(dbx, login, "Admin").await.is_ok()
 }
@@ -60,7 +54,7 @@ fn dto_from_model(
     login: &str,
     is_admin: bool,
 ) -> OrganismKeywordSetDto {
-    let words = words_from_json(&row.words).unwrap_or_default();
+    let words = row.words.clone();
     let can_edit = keyword_set_can_edit(
         row.is_system_default,
         row.author_login.as_deref(),
@@ -98,14 +92,13 @@ pub async fn ensure_default_keyword_set(
         return Ok(existing);
     }
 
-    let words: Vec<String> = get_keywords().into_iter().collect();
-    let words_json = serde_json::to_value(&words).c(h!())?;
+    let words = default_keyword_words_vec();
     organism_keyword_set::Entity::insert(organism_keyword_set::ActiveModel {
         id: NotSet,
         organism_id: Set(organism_id),
         author_login: Set(None),
         name: Set(ORGANISM_KEYWORD_SET_DEFAULT_NAME.to_string()),
-        words: Set(words_json),
+        words: Set(words),
         is_system_default: Set(true),
         updated_at: Set(Utc::now().naive_utc()),
     })
@@ -128,7 +121,9 @@ pub async fn ensure_default_keyword_set(
         .await
         .c(h!())?
         .ok_or_else(|| AppError::BL {
-            msg: format!("Default keyword set missing for organism_id={organism_id}"),
+            msg: format!(
+                "Default keyword set missing for organism_id={organism_id}"
+            ),
         })
 }
 
@@ -160,7 +155,7 @@ pub async fn resolve_inbox_keyword_words(
             .c(h!())?
             .c(h!())?,
     };
-    normalize_keyword_words(&words_from_json(&row.words)?)
+    normalize_keyword_words(&row.words)
 }
 
 async fn ensure_keyword_set_name_available(
@@ -239,8 +234,6 @@ pub async fn upsert_keyword_set(
     }
 
     let now = Utc::now().naive_utc();
-    let words_json = serde_json::to_value(&words).c(h!())?;
-
     let row = match req.id {
         Some(id) => {
             let existing =
@@ -259,12 +252,7 @@ pub async fn upsert_keyword_set(
                 is_admin,
             ) {
                 return Err(AppError::BL {
-                    msg: if existing.is_system_default {
-                        "Редагування системного набору доступне лише адміністратору"
-                            .to_string()
-                    } else {
-                        "Немає прав на редагування цього набору".to_string()
-                    },
+                    msg: "Немає прав на редагування цього набору".to_string(),
                 });
             }
             if !existing.is_system_default && name != existing.name {
@@ -281,7 +269,7 @@ pub async fn upsert_keyword_set(
             if !is_default {
                 active.name = Set(name.to_string());
             }
-            active.words = Set(words_json);
+            active.words = Set(words.clone());
             active.updated_at = Set(now);
             active
                 .update(&env.dbx)
@@ -310,14 +298,19 @@ pub async fn upsert_keyword_set(
                     ),
                 });
             }
-            ensure_keyword_set_name_available(&env.dbx, organism_id, name, None)
-                .await?;
+            ensure_keyword_set_name_available(
+                &env.dbx,
+                organism_id,
+                name,
+                None,
+            )
+            .await?;
             organism_keyword_set::ActiveModel {
                 id: NotSet,
                 organism_id: Set(organism_id),
                 author_login: Set(Some(login.clone())),
                 name: Set(name.to_string()),
-                words: Set(words_json),
+                words: Set(words),
                 is_system_default: Set(false),
                 updated_at: Set(now),
             }
@@ -348,11 +341,7 @@ pub async fn delete_keyword_set(
         is_admin,
     ) {
         return Err(AppError::BL {
-            msg: if existing.is_system_default {
-                "Системний набір не можна видалити".to_string()
-            } else {
-                "Немає прав на видалення цього набору".to_string()
-            },
+            msg: "Немає прав на видалення цього набору".to_string(),
         });
     }
     organism_keyword_set::Entity::delete_by_id(id)
