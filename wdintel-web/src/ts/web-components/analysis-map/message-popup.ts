@@ -37,7 +37,7 @@ export function openMessagesPopup({
     const datetime2 = new Date(`${message2[1].date}T${message2[1].time} `);
     return datetime2.getTime() - datetime1.getTime();
   });
-  const popupContent = getPointPopupTemplate(sortedMessages, networkUnits, selectedUnits);
+  const popupContent = getPointPopupTemplate(sortedMessages, selectedUnits);
   const clickedMessageId = sortedMessages[0]?.[0];
   const isCluster = sortedMessages.length > 1;
   const clickedPointOnMap =

@@ -269,6 +269,10 @@ class AnalysisMap extends HTMLElement {
   private _handleMessagesLoadingAttributeChanged(newValue: string): void {
     this._messagesLoading = this._parseBooleanAttribute(newValue);
     this._syncMessagesLoadingIndicator();
+    if (!this._messagesLoading && this._messages.length === 0) {
+      this._clearMessagesPopupState();
+      return;
+    }
     this._scheduleMessagesPopupOpen();
   }
 
@@ -786,6 +790,21 @@ class AnalysisMap extends HTMLElement {
 
   private _openMessagesPopupIfReady(): void {
     this._scheduleMessagesPopupOpen();
+  }
+
+  private _clearMessagesPopupState(): void {
+    this._cancelMessagesPopupOpen();
+    this._messagesPopupPending = false;
+    this._messagesPopupOpenRetryCount = 0;
+
+    if (this._clickedPoint) {
+      this._clickedPoint.closePopup();
+    } else {
+      this._map?.closePopup();
+    }
+
+    this._clickedPoint = null;
+    this._clickedLatLng = null;
   }
 
   private _scheduleMessagesPopupOpen(): void {

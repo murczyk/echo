@@ -22,7 +22,7 @@ describe('getPointPopupTemplate', () => {
       ] as unknown as Message[1]['text_marked'],
     });
 
-    const html = getPointPopupTemplate([message], [] as NetworkUnit[], []);
+    const html = getPointPopupTemplate([message], []);
 
     expect(html).toContain('Оріон');
     expect(html).toContain('P-1');
@@ -34,9 +34,44 @@ describe('getPointPopupTemplate', () => {
       text_marked: [{ CNCallsignC: { text: 'БОРОДА', begin: 0, end: 6, etalon: 'БОРОДА' } }] as unknown as Message[1]['text_marked'],
     });
 
-    const html = getPointPopupTemplate([message], [] as NetworkUnit[], []);
+    const html = getPointPopupTemplate([message], []);
 
     expect(html).toContain('БОРОДА');
     expect(html).toContain('badge-highlighed-token--callsign');
+  });
+
+  it('prefers the message unit over a network-unit guess', () => {
+    const message = buildMessage({
+      freq: '145.5',
+      network_ids: [1],
+      unit: 'Header Unit',
+    });
+
+    const html = getPointPopupTemplate([message], []);
+
+    expect(html).toContain('Header Unit');
+    expect(html).not.toContain('Unit A');
+  });
+
+  it('shows an undefined unit when the message unit is missing', () => {
+    const message = buildMessage({
+      freq: '145.5',
+      network_ids: [1],
+    });
+
+    const html = getPointPopupTemplate([message], []);
+
+    expect(html).toContain('Не визначено');
+    expect(html).not.toContain('Unit A');
+  });
+
+  it('shows the selected icon for legacy undefined unit selections', () => {
+    const message = buildMessage({
+      unit: 'Не визначено',
+    });
+
+    const html = getPointPopupTemplate([message], ['Не визначено']);
+
+    expect(html).toContain('bi-dash-square');
   });
 });

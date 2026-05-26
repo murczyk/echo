@@ -178,6 +178,13 @@ describe('rer-analysis-neo helpers', () => {
     ]);
   });
 
+  it('normalizes legacy unit aliases in query state normalization', () => {
+    expect(normalizeQueryState(createQueryState({ unitsSelected: ['Не визначено', 'Unit A', ''] })).unitsSelected).toEqual([
+      '',
+      'Unit A',
+    ]);
+  });
+
   it('normalizes legacy peleng flags so both true becomes the neutral all state', () => {
     expect(
       normalizeQueryState(

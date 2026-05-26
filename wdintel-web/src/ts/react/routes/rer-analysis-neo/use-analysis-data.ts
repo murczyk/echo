@@ -180,20 +180,21 @@ export function useAnalysisData({
     setMessagesPaging(false);
   }, []);
 
-  const { invalidateFilterSectionLoads, loadFilterSection, loadInitialFilterSections } = useAnalysisFilterSections({
-    queryState,
-    optionsFreqValues,
-    unitsMapRef,
-    onError,
-    onUnauthorized,
-    setAorEntries,
-    setGroupInfos,
-    setNetworkDisplayMap,
-    setNetworks,
-    setOptions,
-    setProfiles,
-    setTagsMap,
-  });
+  const { getLoadedFilterSections, invalidateFilterSectionLoads, loadFilterSection, loadInitialFilterSections } =
+    useAnalysisFilterSections({
+      queryState,
+      optionsFreqValues,
+      unitsMapRef,
+      onError,
+      onUnauthorized,
+      setAorEntries,
+      setGroupInfos,
+      setNetworkDisplayMap,
+      setNetworks,
+      setOptions,
+      setProfiles,
+      setTagsMap,
+    });
 
   const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef,
@@ -391,12 +392,14 @@ export function useAnalysisData({
       setHasLoadedInitialMessages,
       invalidateSummaryLoads: () => invalidateSummaryData(rightSidebarVisible && rightSidebarTab === 'summary'),
       invalidateTopSidebarLoads: invalidateRightSidebarData,
+      getLoadedFilterSections,
       loadInitialFilterSections,
     });
   }, [
     clearAnalysisResults,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
+    getLoadedFilterSections,
     invalidateFilterSectionLoads,
     invalidateSummaryData,
     invalidateRightSidebarData,
