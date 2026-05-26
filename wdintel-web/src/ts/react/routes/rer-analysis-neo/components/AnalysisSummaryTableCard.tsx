@@ -1,7 +1,4 @@
 import DownloadIcon from '@mui/icons-material/Download';
-import EditIcon from '@mui/icons-material/Edit';
-import FilterAltIcon from '@mui/icons-material/FilterAlt';
-import MapIcon from '@mui/icons-material/Map';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 import {
   Box,
@@ -24,13 +21,17 @@ import { MaterialReactTable, useMaterialReactTable } from 'material-react-table'
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../../components/dialogStyles';
-import { FULL_WIDTH_TABLE_PAPER_SX, getPageScrollTableContainerSx } from '../../../components/mui-customized/table/custom-styles';
+import {
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  getPageScrollTableContainerSx,
+} from '../../../components/mui-customized/table/custom-styles';
 import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
+import { TableEmptyState } from '../../../components/TableEmptyState';
 import { TableToolbarControls } from '../../../components/TableToolbarControls';
 import {
   buildAnalysisSummaryTableColumns,
@@ -45,6 +46,7 @@ type Props = {
   callsignInfoMap: Record<string, CallsignInfoRes>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
+  loaded?: boolean;
   loading?: boolean;
   onDownloadXlsx: () => void;
   onRenameUnit: (freq: string, unit: string, unitNew: string) => Promise<void>;
@@ -53,6 +55,7 @@ type Props = {
   rows: SummaryTableFreqRow[];
   sx?: SxProps<Theme>;
   tableContainerSx?: SxProps<Theme>;
+  sidebarMode?: boolean;
   title?: string;
   unitsMap: Record<number, Unit>;
 };
@@ -74,6 +77,7 @@ function AnalysisSummaryTableCardInner({
   callsignInfoMap,
   networkDisplayMap,
   networks,
+  loaded,
   loading = false,
   onDownloadXlsx,
   onRenameUnit,
@@ -82,6 +86,7 @@ function AnalysisSummaryTableCardInner({
   rows,
   sx,
   tableContainerSx,
+  sidebarMode = false,
   unitsMap,
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
@@ -101,9 +106,10 @@ function AnalysisSummaryTableCardInner({
       }),
     [callsignInfoMap, networkDisplayMap, networks, rows, unitsMap],
   );
-  const columns = useMemo(() => buildAnalysisSummaryTableColumns(), []);
-  const isFirstLoad = loading && data.length === 0;
-  const isReloading = loading && data.length > 0;
+  const resolvedLoaded = loaded ?? !loading;
+  const showInitialSkeleton = !resolvedLoaded && data.length === 0;
+  const showEmptyState = resolvedLoaded && !loading && data.length === 0;
+  const loadingVisible = loading && !showInitialSkeleton;
 
   useEffect(() => {
     if (!renameDialog) {
@@ -129,6 +135,16 @@ function AnalysisSummaryTableCardInner({
     });
   }, []);
 
+  const columns = useMemo(
+    () =>
+      buildAnalysisSummaryTableColumns({
+        onRenameUnit: openRenameDialog,
+        onSelectFreq,
+        onShowFreqOnMap,
+      }),
+    [onSelectFreq, onShowFreqOnMap, openRenameDialog],
+  );
+
   const saveRename = useCallback(async () => {
     if (!renameDialog) return;
 
@@ -148,8 +164,18 @@ function AnalysisSummaryTableCardInner({
   }, [onRenameUnit, renameDialog, renameValue]);
 
   const paperSx = useMemo<SxProps<Theme>>(
-    () => [{ p: 2, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2 }, ...mergeSx(sx)] as SxProps<Theme>,
-    [sx],
+    () =>
+      [
+        {
+          p: sidebarMode ? 1 : 2,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: sidebarMode ? 1 : 2,
+        },
+        ...mergeSx(sx),
+      ] as SxProps<Theme>,
+    [sidebarMode, sx],
   );
 
   const outerTableContainerSx = useMemo<SxProps<Theme>>(
@@ -159,8 +185,8 @@ function AnalysisSummaryTableCardInner({
           position: 'relative',
           flex: 1,
           minHeight: 0,
-          overflowY: 'auto',
-          overflowX: 'auto',
+          minWidth: 0,
+          overflow: 'hidden',
           borderTop: '1px solid',
           borderLeft: '1px solid',
           borderColor: 'var(--bs-border-color)',
@@ -181,7 +207,8 @@ function AnalysisSummaryTableCardInner({
             borderBottom: '0 !important',
           },
           '& .MuiTable-root': {
-            width: '100%',
+            width: 'max-content',
+            minWidth: '100%',
           },
         },
         ...mergeSx(tableContainerSx),
@@ -192,7 +219,7 @@ function AnalysisSummaryTableCardInner({
   const mrtContainerSx = useMemo<SxProps<Theme>>(
     () =>
       getPageScrollTableContainerSx({
-        height: '100%',
+        height: 'auto',
         minHeight: 0,
         maxHeight: '100%',
       }) as SxProps<Theme>,
@@ -203,6 +230,7 @@ function AnalysisSummaryTableCardInner({
     columns,
     data,
     ...defaultMRTOptions,
+    layoutMode: 'grid-no-grow',
     getRowId: (row) => row.freq,
     enableSorting: true,
     enableSortingRemoval: false,
@@ -217,34 +245,36 @@ function AnalysisSummaryTableCardInner({
     enableGlobalFilter: true,
     enableHiding: true,
     enableFullScreenToggle: false,
-    enableRowActions: true,
+    enableRowActions: false,
     enableRowNumbers: true,
     enableRowVirtualization: data.length > 100,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
-    positionActionsColumn: 'last',
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     onSortingChange: tableStateContext.onSortingChange,
-    renderRowActions: ({ row }) => (
-      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-        <MrtRowActions>
-          <MrtRowActionButton label="У фільтр" onClick={() => onSelectFreq(row.original.freq)} icon={<FilterAltIcon fontSize="small" />} />
-          <MrtRowActionButton label="На мапі" onClick={() => onShowFreqOnMap(row.original.freq)} icon={<MapIcon fontSize="small" />} />
-          <MrtRowActionButton
-            label="Редагувати підрозділ"
-            onClick={() => openRenameDialog(row.original)}
-            disabled={row.original.editableUnits.length === 0}
-            icon={<EditIcon fontSize="small" />}
-          />
-        </MrtRowActions>
-      </Box>
-    ),
     defaultColumn: {
-      size: 180,
+      size: sidebarMode ? 140 : 180,
+      grow: 0,
       renderColumnActionsMenuItems,
+      muiTableHeadCellProps: {
+        sx: {
+          ...((CUSTOM_STYLES.muiTableHeadCellProps as { sx?: object }).sx ?? {}),
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        },
+      },
+      muiTableBodyCellProps: {
+        sx: {
+          ...((CUSTOM_STYLES.muiTableBodyCellProps as { sx?: object }).sx ?? {}),
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        },
+      },
     },
     initialState: {
       density: 'compact',
@@ -257,29 +287,33 @@ function AnalysisSummaryTableCardInner({
     },
     displayColumnDefOptions: {
       ...defaultMRTOptions.displayColumnDefOptions,
-      'mrt-row-actions': {
-        ...(defaultMRTOptions.displayColumnDefOptions?.['mrt-row-actions'] ?? {}),
-        size: mrtRowActionsColumnSize(3),
-        minSize: mrtRowActionsColumnSize(3),
-        maxSize: mrtRowActionsColumnSize(3),
-        header: 'Дії',
-        enableHiding: false,
-      },
+      ...CUSTOM_STYLES.displayColumnDefOptions,
     },
     muiTablePaperProps: {
-      sx: FULL_WIDTH_TABLE_PAPER_SX,
+      sx: {
+        ...FULL_WIDTH_TABLE_PAPER_SX,
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+      },
       style: {
         padding: 0,
       },
     },
     muiTableContainerProps: {
-      sx: mrtContainerSx,
+      sx: [
+        ...mergeSx(mrtContainerSx),
+        {
+          flex: 1,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+        },
+      ] as SxProps<Theme>,
     },
     muiBottomToolbarProps: {
       sx: {
-        position: 'sticky',
-        bottom: 0,
-        zIndex: 2,
+        flexShrink: 0,
         backgroundColor: 'var(--bs-body-bg)',
       },
     },
@@ -288,6 +322,10 @@ function AnalysisSummaryTableCardInner({
     },
     muiTableProps: {
       'aria-label': 'Таблиця частот аналізу',
+      sx: {
+        width: 'max-content',
+        minWidth: '100%',
+      },
     },
     state: {
       showAlertBanner: false,
@@ -309,6 +347,8 @@ function AnalysisSummaryTableCardInner({
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={paperSx}>
       <TableToolbarControls
         withGlobalTextFilter
+        desktopBreakpoint={sidebarMode ? 'md' : 'lg'}
+        leadingDesktopBreakpoint={sidebarMode ? 'md' : 'lg'}
         trailingActions={
           <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <Button startIcon={<DownloadIcon />} onClick={onDownloadXlsx} variant="outlined" aria-label="XLSX" title="XLSX">
@@ -320,9 +360,19 @@ function AnalysisSummaryTableCardInner({
       />
 
       <Box sx={outerTableContainerSx}>
-        <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          {isFirstLoad ? <SummaryTableLoadingState /> : <MaterialReactTable table={table} />}
-          {isReloading ? <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} /> : null}
+        <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: '100%' }}>
+          {showInitialSkeleton ? (
+            <SummaryTableLoadingState />
+          ) : showEmptyState ? (
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TableEmptyState message="Частоти за обраними параметрами відсутні" />
+            </Box>
+          ) : (
+            <MaterialReactTable table={table} />
+          )}
+          {loadingVisible ? (
+            <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} />
+          ) : null}
         </Box>
       </Box>
 

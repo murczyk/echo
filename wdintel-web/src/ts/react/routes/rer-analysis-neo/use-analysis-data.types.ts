@@ -93,6 +93,8 @@ export type UseAnalysisDataResult = {
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   reload: () => Promise<void>;
   summaryLoading: boolean;
+  summaryLoaded: boolean;
+  summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;

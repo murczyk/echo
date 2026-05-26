@@ -33,11 +33,14 @@ use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
 
 pub(crate) mod bl;
+mod download;
 pub mod goi_sync_worker;
 mod kmz;
 pub mod oneoff;
 pub mod types;
 pub mod worker;
+
+pub use download::download_palitras_delta_split;
 
 #[derive(Clone)]
 struct UserScope {

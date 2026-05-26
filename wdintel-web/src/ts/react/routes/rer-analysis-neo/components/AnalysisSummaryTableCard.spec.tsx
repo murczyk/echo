@@ -39,6 +39,7 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </select>
   ),
+  Skeleton: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TextField: (props: {
     label?: string;
@@ -71,15 +72,16 @@ vi.mock('material-react-table', () => ({
   MaterialReactTable: ({ table }: { table: any }) => {
     const columns = table.columns as Array<any>;
     const data = table.data as Array<any>;
+    const callsignsColumn = columns.find((column) => column.id === 'callsignSearchText');
     return (
       <table aria-label={table.muiTableProps?.['aria-label']}>
+        <caption data-testid="callsigns-cell-overflow">{callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}</caption>
         <thead>
           <tr>
             <th>№</th>
             {columns.map((column) => (
               <th key={column.id ?? column.accessorKey}>{column.header}</th>
             ))}
-            <th>{table.displayColumnDefOptions?.['mrt-row-actions']?.header ?? 'Дії'}</th>
           </tr>
         </thead>
         <tbody>
@@ -91,7 +93,6 @@ vi.mock('material-react-table', () => ({
                 const cellValue = column.Cell ? column.Cell({ row: { original: rowData } }) : rowData[column.accessorKey];
                 return <td key={key}>{cellValue}</td>;
               })}
-              <td>{table.renderRowActions?.({ row: { original: rowData } })}</td>
             </tr>
           ))}
         </tbody>
@@ -118,11 +119,24 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
   mrtRowActionsColumnSize: () => 96,
 }));
 
+vi.mock('../../../components/SectionLoadingOverlay', () => ({
+  SectionLoadingOverlay: (props: { open: boolean }) => (props.open ? <div>overlay</div> : null),
+}));
+
+vi.mock('../../../components/TableEmptyState', () => ({
+  TableEmptyState: ({ message }: { message: string }) => <div>{message}</div>,
+}));
+
 vi.mock('../../../components/PowerChip', () => ({
   PowerChip: (props: { label: ReactNode }) => <span>{props.label}</span>,
 }));
 
 vi.mock('../../../components/mui-customized/table/custom-styles', () => ({
+  CUSTOM_STYLES: {
+    displayColumnDefOptions: {},
+    muiTableHeadCellProps: { sx: {} },
+    muiTableBodyCellProps: { sx: {} },
+  },
   FULL_WIDTH_TABLE_PAPER_SX: {},
   getPageScrollTableContainerSx: () => ({}),
 }));
@@ -280,6 +294,41 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('XLSX');
   });
 
+  it('keeps the first load skeleton free of the reload overlay', async () => {
+    const view = await renderComponent(
+      buildProps({
+        loading: true,
+        rows: [],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('overlay');
+  });
+
+  it('shows a compact empty state without rendering the MRT footer', async () => {
+    const view = await renderComponent(
+      buildProps({
+        loaded: true,
+        rows: [],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
+    expect(view.container.querySelector('table')).toBeNull();
+  });
+
+  it('treats zero rows as loaded when the optional loaded prop is omitted', async () => {
+    const props = buildProps({ rows: [], loading: false });
+    delete props.loaded;
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
+    expect(view.container.querySelector('table')).toBeNull();
+  });
+
   it('routes filter and map row actions to the existing callbacks', async () => {
     const onSelectFreq = vi.fn();
     const onShowFreqOnMap = vi.fn();
@@ -343,7 +392,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
 
-  it('collapses callsigns after the first five and expands on demand', async () => {
+  it('collapses callsigns after the first three and expands on demand', async () => {
     const view = await renderComponent(
       buildProps({
         rows: [
@@ -356,15 +405,24 @@ describe('AnalysisSummaryTableCard', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('ALPHA');
-    expect(view.container.textContent).toContain('ECHO');
+    expect(view.container.textContent).toContain('CHARLIE');
+    expect(view.container.textContent).not.toContain('DELTA');
     expect(view.container.textContent).not.toContain('FOXTROT');
     expect(view.container.textContent).not.toContain('GOLF');
-    expect(view.container.textContent).toContain('Показати ще (2)');
+    expect(view.container.textContent).toContain('+4 ще');
 
-    await click(getButton(view.container, 'Показати ще (2)'));
+    await click(getButton(view.container, '+4 ще'));
 
+    expect(view.container.textContent).toContain('DELTA');
     expect(view.container.textContent).toContain('FOXTROT');
     expect(view.container.textContent).toContain('GOLF');
     expect(view.container.textContent).toContain('Згорнути');
+  });
+
+  it('does not clip expandable callsign cells at the table cell level', async () => {
+    const view = await renderComponent(buildProps());
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="callsigns-cell-overflow"]')?.textContent).toBe('visible');
   });
 });

@@ -72,6 +72,8 @@ export function useAnalysisData({
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
   const [messageComments, setMessageComments] = useState<Record<number, MessageComment[]>>({});
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryLoaded, setSummaryLoaded] = useState(false);
+  const [summaryHasLoadedOnce, setSummaryHasLoadedOnce] = useState(false);
   const [summaryRows, setSummaryRows] = useState<SummaryTableFreqRow[]>([]);
   const [rightSidebarLoading, setRightSidebarLoading] = useState(false);
   const [newCallsignsLoading, setNewCallsignsLoading] = useState(false);
@@ -116,11 +118,14 @@ export function useAnalysisData({
   const mapDateRangeLoadVersionRef = useRef(0);
   const messageCommentsLoadVersionRef = useRef(0);
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
+  const summaryCallsignsInfoRef = useRef(summaryCallsignsInfo);
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
+  const [summaryReloadBarrier, setSummaryReloadBarrier] = useState(0);
   const optionsFreqsRef = useRef<string[]>([]);
   const callsignGraphRequestRef = useRef(0);
   const reloadRequestRef = useRef(0);
   const lastReloadTriggerKeyRef = useRef<string | null>(null);
+  const summaryReloadPendingKeyRef = useRef<string | null>(null);
   const loadMoreMessagesRequestRef = useRef(0);
   const newCallsignsRequestRef = useRef(0);
   const shouldLoadNewCallsignsRef = useRef(shouldLoadNewCallsigns);
@@ -153,6 +158,10 @@ export function useAnalysisData({
   useEffect(() => {
     unitsMapRef.current = unitsMap;
   }, [unitsMap]);
+
+  useEffect(() => {
+    summaryCallsignsInfoRef.current = summaryCallsignsInfo;
+  }, [summaryCallsignsInfo]);
 
   useEffect(() => {
     currentUserRef.current = currentUser;
@@ -243,7 +252,10 @@ export function useAnalysisData({
     setMapPalitrasLoaded,
     setMapPalitrasLoadState,
     setMapPoints,
+    summaryCallsignsInfoRef,
     setSummaryCallsignsInfo,
+    setSummaryHasLoadedOnce,
+    setSummaryLoaded,
     setSummaryLoading,
     setSummaryRows,
     setTopCallsigns,
@@ -291,6 +303,8 @@ export function useAnalysisData({
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
+    setSummaryHasLoadedOnce,
+    setSummaryLoaded,
     setSummaryLoading,
     setSummaryRows,
     setTagsMap,
@@ -375,7 +389,7 @@ export function useAnalysisData({
       setTopUnits,
       setUnitsMap,
       setHasLoadedInitialMessages,
-      invalidateSummaryLoads: invalidateSummaryData,
+      invalidateSummaryLoads: () => invalidateSummaryData(rightSidebarVisible && rightSidebarTab === 'summary'),
       invalidateTopSidebarLoads: invalidateRightSidebarData,
       loadInitialFilterSections,
     });
@@ -393,6 +407,8 @@ export function useAnalysisData({
     onError,
     onUnauthorized,
     queryState,
+    rightSidebarTab,
+    rightSidebarVisible,
   ]);
 
   const {
@@ -483,13 +499,22 @@ export function useAnalysisData({
   useEffect(() => {
     if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
     lastReloadTriggerKeyRef.current = reloadTriggerKey;
-    void reload();
-  }, [reload, reloadTriggerKey]);
+    summaryReloadPendingKeyRef.current = reloadTriggerKey;
+    if (rightSidebarVisible && rightSidebarTab === 'summary') {
+      invalidateSummaryData(true);
+    }
+    void reload().finally(() => {
+      if (summaryReloadPendingKeyRef.current !== reloadTriggerKey) return;
+      summaryReloadPendingKeyRef.current = null;
+      setSummaryReloadBarrier((current) => current + 1);
+    });
+  }, [invalidateSummaryData, reload, reloadTriggerKey, rightSidebarTab, rightSidebarVisible]);
 
   useEffect(() => {
-    if (centerTab !== 'summary') return;
+    if (!rightSidebarVisible || rightSidebarTab !== 'summary') return;
+    if (summaryReloadPendingKeyRef.current !== null) return;
     void loadSummaryData();
-  }, [centerTab, loadSummaryData]);
+  }, [loadSummaryData, rightSidebarTab, rightSidebarVisible, summaryReloadBarrier]);
 
   useEffect(() => {
     if (!rightSidebarVisible) return;
@@ -582,6 +607,8 @@ export function useAnalysisData({
     refreshMapDateRange,
     reload,
     summaryLoading,
+    summaryLoaded,
+    summaryHasLoadedOnce,
     rightSidebarLoading,
     summaryRows,
     summaryCallsignsInfo,

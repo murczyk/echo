@@ -43,6 +43,10 @@ type PalitraDownloadReqBody = {
   palitra_ids: number[];
 };
 
+type PalitraDownloadOptions = {
+  splitForDelta?: boolean;
+};
+
 type PalitraFolderAssignReqBody = {
   palitra_ids: number[];
   folder: string;
@@ -383,11 +387,11 @@ export async function unarchivePalitra(palitraId: number): Promise<Palitra> {
   return normalizePalitra(data);
 }
 
-export async function downloadPalitras(palitraIds: number[]): Promise<Blob> {
+export async function downloadPalitras(palitraIds: number[], options?: PalitraDownloadOptions): Promise<Blob> {
   const body: PalitraDownloadReqBody = {
     palitra_ids: palitraIds,
   };
-  return postBytes('/api/palitra/download', body);
+  return postBytes(options?.splitForDelta ? '/api/palitra/download-delta-split' : '/api/palitra/download', body);
 }
 
 export async function assignPalitraFolder(palitraIds: number[], folder: string): Promise<number[]> {

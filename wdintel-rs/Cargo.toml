@@ -17,7 +17,7 @@ actix-files = "0.6.10"
 actix-multipart = "0.7.2"
 actix-identity = "0.8.0"
 actix-session = { version = "0.10.1", features = ["redis-session", "redis-pool"] }
-clap = { version = "4.6.0", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 dirs = "6.0.0"
 elm_rs = "=0.2.1"
 log = { workspace = true }
@@ -106,7 +106,7 @@ serial_test = "3.4.0"
 
 [dependencies.echo-install-utils]
 git = "ssh://git@github.com/echoua/echo-install-utils.git"
-rev = "bb5c826c880050a371c8479aadf3e3a979880aca"
+rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"

@@ -21,6 +21,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import dayjs from 'dayjs';
 import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -114,6 +115,16 @@ export function NetworkEtalonkaReportDialog({
 }: Props) {
   const isExtended = report.reportType === 'ExtendedReport';
   const dateTimeDisabled = report.downloading || !isExtended;
+  const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
+  const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
+
+  useEffect(() => {
+    setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
+  }, [report.fromDateTimeStr]);
+
+  useEffect(() => {
+    setToDateTimeDraft(parseDateTime(report.toDateTimeStr));
+  }, [report.toDateTimeStr]);
 
   return (
     <Dialog
@@ -230,33 +241,45 @@ export function NetworkEtalonkaReportDialog({
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
                       <DateTimePicker
                         label="Від"
-                        value={parseDateTime(report.fromDateTimeStr)}
-                        onChange={(value) => onFromDateTimeStrChange(formatDateTime(value))}
+                        value={fromDateTimeDraft}
+                        onChange={setFromDateTimeDraft}
+                        onAccept={(value) => onFromDateTimeStrChange(formatDateTime(value))}
+                        onClose={() => setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr))}
                         disabled={dateTimeDisabled}
                         minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
                         format="DD.MM.YYYY HH:mm"
                         ampm={false}
+                        closeOnSelect={false}
                         slotProps={{
                           textField: {
                             size: 'small',
                             fullWidth: true,
                             InputLabelProps: { shrink: true },
                           },
+                          actionBar: {
+                            actions: ['today', 'cancel', 'accept'],
+                          },
                         }}
                       />
                       <DateTimePicker
                         label="До"
-                        value={parseDateTime(report.toDateTimeStr)}
-                        onChange={(value) => onToDateTimeStrChange(formatDateTime(value))}
+                        value={toDateTimeDraft}
+                        onChange={setToDateTimeDraft}
+                        onAccept={(value) => onToDateTimeStrChange(formatDateTime(value))}
+                        onClose={() => setToDateTimeDraft(parseDateTime(report.toDateTimeStr))}
                         disabled={dateTimeDisabled}
                         minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
                         format="DD.MM.YYYY HH:mm"
                         ampm={false}
+                        closeOnSelect={false}
                         slotProps={{
                           textField: {
                             size: 'small',
                             fullWidth: true,
                             InputLabelProps: { shrink: true },
+                          },
+                          actionBar: {
+                            actions: ['today', 'cancel', 'accept'],
                           },
                         }}
                       />

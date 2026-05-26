@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1-rc.202605221408"
+version = "0.1.1-rc.202605251511"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"
@@ -17,7 +17,7 @@ description = "ЕХО - Root workspace"
 # Common dependencies that can be shared across workspace members
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tokio = { version = "1.50.0", features = ["tracing"] }
+tokio = { version = "1.52.2", features = ["tracing"] }
 anyhow = "1.0.102"
 chrono = "0.4.44"
 uuid = { version = "1.22.0", features = ["v4", "v7"] }

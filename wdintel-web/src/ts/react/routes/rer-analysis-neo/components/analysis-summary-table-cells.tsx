@@ -1,7 +1,7 @@
 import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Button, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import type { AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
@@ -19,18 +19,27 @@ export function CompactListCell({ items, maxVisible = 3 }: { items: string[]; ma
   const hiddenCount = items.length - visibleItems.length;
 
   return (
-    <Stack spacing={0.5}>
+    <Tooltip title={items.join(', ')}>
+      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
       {visibleItems.map((item, index) => (
-        <Typography key={`${item}-${index}`} variant="body2" title={item} sx={{ lineHeight: 1.35 }}>
+        <Typography
+          key={`${item}-${index}`}
+          component="span"
+          variant="body2"
+          noWrap
+          title={item}
+          sx={{ minWidth: 0, lineHeight: 1.35, cursor: 'default' }}
+        >
           {item}
         </Typography>
       ))}
       {hiddenCount > 0 ? (
-        <Typography variant="caption" color="text.secondary">
+        <Typography component="span" variant="caption" color="text.secondary" sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
           +{hiddenCount} ще
         </Typography>
       ) : null}
-    </Stack>
+      </Stack>
+    </Tooltip>
   );
 }
 
@@ -45,13 +54,23 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
     );
   }
 
-  const visibleCallsigns = expanded ? callsigns : callsigns.slice(0, 5);
-  const hasExpandableOverflow = callsigns.length > 5;
+  const visibleCallsigns = expanded ? callsigns : callsigns.slice(0, 3);
+  const hasExpandableOverflow = callsigns.length > 3;
   const hiddenCount = callsigns.length - visibleCallsigns.length;
 
   return (
-    <Stack spacing={0.75} alignItems="flex-start">
-      <Stack direction="row" gap={0.5} flexWrap="wrap" sx={{ maxWidth: '100%' }}>
+    <Stack
+      direction="row"
+      spacing={0.5}
+      alignItems="center"
+      useFlexGap
+      sx={{
+        minWidth: 0,
+        overflow: expanded ? 'visible' : 'hidden',
+        whiteSpace: expanded ? 'normal' : 'nowrap',
+        flexWrap: expanded ? 'wrap' : 'nowrap',
+      }}
+    >
         {visibleCallsigns.map((entry, index) => {
           const hintIcon =
             entry.iconClass === 'info-circle-fill' ? <InfoIcon fontSize="inherit" /> : entry.iconClass === 'info-circle' ? <InfoOutlinedIcon fontSize="inherit" /> : null;
@@ -66,25 +85,20 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
               size="small"
               color={entry.tooltip ? 'primary' : 'default'}
               selected={entry.isHighlighted}
+              title={entry.tooltip ?? entry.callsign.toUpperCase()}
+              sx={{ maxWidth: '100%', minWidth: 0, cursor: 'default' }}
             />
           );
 
           return (
-            <Fragment key={`${entry.callsign}-${index}`}>
-              {entry.tooltip ? (
-                <Tooltip title={entry.tooltip} placement="top">
-                  <span>{chip}</span>
-                </Tooltip>
-              ) : (
-                chip
-              )}
-            </Fragment>
+            <Tooltip key={`${entry.callsign}-${index}`} title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
+              <span>{chip}</span>
+            </Tooltip>
           );
         })}
-      </Stack>
       {hasExpandableOverflow ? (
-        <Button size="small" variant="text" onClick={() => setExpanded((current) => !current)} sx={{ minWidth: 0, px: 0 }}>
-          {expanded ? 'Згорнути' : `Показати ще (${hiddenCount})`}
+        <Button size="small" variant="text" onClick={() => setExpanded((current) => !current)} sx={{ minWidth: 0, px: 0.5, py: 0, flexShrink: 0, whiteSpace: 'nowrap' }}>
+          {expanded ? 'Згорнути' : `+${hiddenCount} ще`}
         </Button>
       ) : null}
     </Stack>
@@ -93,18 +107,18 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
 
 export function SummaryTableLoadingState() {
   return (
-    <Stack spacing={1.5} sx={{ px: 2, py: 2, minHeight: 0, flex: 1, overflow: 'hidden' }}>
-      <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center" justifyContent="space-between">
-        <Skeleton variant="rounded" width={280} height={40} />
-        <Stack direction="row" spacing={1.5} flexWrap="wrap" justifyContent="flex-end">
-          <Skeleton variant="rounded" width={92} height={32} />
-          <Skeleton variant="rounded" width={92} height={32} />
-          <Skeleton variant="rounded" width={92} height={32} />
+    <Stack spacing={1.25} sx={{ px: 1.5, py: 1.5, minHeight: 0, flex: 1, overflow: 'hidden' }}>
+      <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" justifyContent="space-between">
+        <Skeleton variant="rounded" width={220} height={36} />
+        <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent="flex-end">
+          <Skeleton variant="rounded" width={80} height={30} />
+          <Skeleton variant="rounded" width={80} height={30} />
+          <Skeleton variant="rounded" width={80} height={30} />
         </Stack>
       </Stack>
-      <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0 }}>
+      <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
         {Array.from({ length: 8 }).map((_, index) => (
-          <Skeleton key={index} variant="rounded" height={72} />
+          <Skeleton key={index} variant="rounded" height={60} />
         ))}
       </Stack>
     </Stack>

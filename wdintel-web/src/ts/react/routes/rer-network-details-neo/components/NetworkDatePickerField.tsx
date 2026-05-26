@@ -6,6 +6,9 @@ import type { SxProps, Theme } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
+import { useEffect, useState } from 'react';
+
+import { formatNetworkDateValue, parseNetworkDateValue } from './network-date-picker.utils';
 
 dayjs.locale('uk');
 
@@ -21,13 +24,6 @@ type Props = {
   textFieldSx?: SxProps<Theme>;
 };
 
-function parseDate(value: string): Dayjs | null {
-  const trimmed = value.trim();
-  if (trimmed === '') return null;
-  const nextValue = dayjs(trimmed);
-  return nextValue.isValid() ? nextValue : null;
-}
-
 export function NetworkDatePickerField({
   label,
   value,
@@ -39,6 +35,25 @@ export function NetworkDatePickerField({
   width = 162,
   textFieldSx,
 }: Props) {
+  const [draftValue, setDraftValue] = useState<Dayjs | null>(() => parseNetworkDateValue(value));
+
+  useEffect(() => {
+    setDraftValue(parseNetworkDateValue(value));
+  }, [value]);
+
+  const resetDraftValue = () => setDraftValue(parseNetworkDateValue(value));
+
+  const acceptDraftValue = (nextValue: Dayjs | null) => {
+    if (nextValue === null) {
+      if (allowEmpty) onChange('');
+      return;
+    }
+
+    if (!nextValue.isValid()) return;
+
+    onChange(formatNetworkDateValue(nextValue));
+  };
+
   return (
     <LocalizationProvider
       dateAdapter={AdapterDayjs}
@@ -51,23 +66,17 @@ export function NetworkDatePickerField({
     >
       <DatePicker
         label={label}
-        value={parseDate(value)}
+        value={draftValue}
         onChange={(nextValue) => {
-          if (nextValue === null) {
-            if (allowEmpty) {
-              onChange('');
-            }
-            return;
-          }
-
-          if (!nextValue.isValid()) return;
-
-          onChange(nextValue.format('YYYY-MM-DD'));
+          setDraftValue(nextValue);
         }}
+        onAccept={acceptDraftValue}
+        onClose={resetDraftValue}
         disabled={disabled}
         minDate={minDate}
         maxDate={maxDate}
         format="DD.MM.YYYY"
+        closeOnSelect={false}
         slotProps={{
           textField: {
             fullWidth: true,

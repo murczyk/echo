@@ -8,7 +8,8 @@ goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.3.10"
+goi_version := "1.4.1"
+goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur"
 
 default:
     @just --list
@@ -241,6 +242,7 @@ deploy-goi-echo-worker server:
     "
 
 # Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
+
 # Use only on Linux, preferrably 22.04 host
 [arg('server', long='server')]
 deploy-goi-echo-worker-from-local server:
@@ -290,19 +292,42 @@ deploy server:
     just goi-sync-from-cloud
 
     echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
-    ssh "$SERVER" "set -euo pipefail
-      sudo mkdir -p '${APP_DIR}'
-      sudo mkdir -p '${APP_DIR}/data'
-      sudo chown -R echo:echo '${APP_DIR}'
-    "
+    ssh "$SERVER" APP_DIR="$APP_DIR" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    sudo mkdir -p "${APP_DIR}" "${APP_DIR}/data"
+    sudo chown echo:echo "${APP_DIR}" "${APP_DIR}/data"
+    REMOTE
 
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
-    ssh "$SERVER" "set -euo pipefail
-      sudo rm -rf '${APP_DIR}/.next/node_modules'
-    "
+    ssh "$SERVER" APP_DIR="$APP_DIR" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    if [[ -d "${APP_DIR}/.next/node_modules" ]]; then
+      echo "Removing ${APP_DIR}/.next/node_modules (one dot per 1000 paths)..."
+      sudo find "${APP_DIR}/.next/node_modules" -depth -print0 \
+        | sudo xargs -0 -r -n 1000 sh -c 'rm -rf -- "$@"; printf "." >&2' sh
+      echo >&2
+    else
+      echo "${APP_DIR}/.next/node_modules is already absent."
+    fi
+    REMOTE
+
+    echo "Ensuring ownership under ${APP_DIR} on ${SERVER}..."
+    ssh "$SERVER" APP_DIR="$APP_DIR" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    echo "Chowning ${APP_DIR}, excluding node_modules/.runtime/.bootstrap/.output (one dot per 1000 paths)..."
+    sudo find "${APP_DIR}" \
+      \( -name node_modules -o -name .runtime -o -name .bootstrap -o -name .output \) -prune \
+      -o -mindepth 1 -print0 \
+      | sudo xargs -0 -r -n 1000 sh -c 'chown echo:echo -- "$@"; printf "." >&2' sh
+    echo >&2
+    REMOTE
 
     echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
-    rsync -az \
+    rsync -az --human-readable \
+      --info=flist2,progress2,stats2,name1 \
       --delete-after \
       --force \
       --exclude '.git/' \
@@ -360,8 +385,6 @@ deploy server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-
-
 
 [arg('server', long='server')]
 deploy-first server:
@@ -675,14 +698,31 @@ deploy-swapp-alt server:
     echo "Updating nginx on ${SERVER}..."
     just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
 
+[arg('servers', long='servers')]
+deploy-many _servers_pos="" servers="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "{{ _servers_pos }}" != "" ]]; then
+      echo "positional servers are not allowed; use: just deploy-many --servers=\"goi-stg goi-prod-01 ...\"" >&2
+      exit 1
+    fi
+    if [[ "{{ servers }}" == "" ]]; then
+      echo "missing --servers. usage: just deploy-many --servers=\"goi-stg goi-prod-01 ...\"" >&2
+      exit 1
+    fi
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo-install-utils run-many \
+      --values "{{ servers }}" \
+      --cwd "{{ goi_dir }}" \
+      -- just deploy --server={}
+
+deploy-many-all:
+    just deploy-many --servers "{{ goi_servers }}"
+
 deploy-all:
-   just deploy --server goi-stg
-   just deploy --server goi-jf
-   just deploy --server goi-prod-01
-   just deploy --server goi-prod-02
-   just deploy --server goi-prod-03
-   just deploy --server goi-prod-04
-   just deploy --server goi-prod-05
-   just deploy --server goi-prod-06
-   just deploy --server goi-prod-07
-   just deploy --server goi-tsur
+    just deploy-many-all
