@@ -72,6 +72,11 @@ export function useAnalysisFilterSections({
     loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
   }, []);
 
+  const getLoadedFilterSections = useCallback(
+    () => Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[],
+    [],
+  );
+
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
@@ -121,15 +126,18 @@ export function useAnalysisFilterSections({
   );
 
   const loadInitialFilterSections = useCallback(
-    async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload = false) => {
-      const previouslyLoadedSections = forceReload ? (Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[]) : [];
+    async (
+      analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
+      forceReload = false,
+      loadedSections: AnalysisFilterSectionId[] = [],
+    ) => {
       if (forceReload) {
         // Reset loaded keys and clear non-frequency options, preserving freqs/newFreqs.
         // Previously loaded lazy sections are reloaded below for the new request.
         invalidateFilterSectionLoads();
         setOptions(resetFilterOptionsForForcedReload);
       }
-      const sections = buildFilterSectionsToLoad(queryState, previouslyLoadedSections, forceReload);
+      const sections = buildFilterSectionsToLoad(queryState, loadedSections, forceReload);
       if (sections.length === 0) return;
 
       await Promise.all(
@@ -179,6 +187,7 @@ export function useAnalysisFilterSections({
   );
 
   return {
+    getLoadedFilterSections,
     invalidateFilterSectionLoads,
     loadFilterSection,
     loadInitialFilterSections,

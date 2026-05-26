@@ -844,6 +844,75 @@ describe('reloadAnalysisData', () => {
     expect(setTopFreqs).toHaveBeenCalledWith([]);
   });
 
+  it('forwards previously loaded lazy sections into forced filter reloads', async () => {
+    mocks.fetchInboxMessages.mockResolvedValue({ inboxItems: [[1, { networkIds: [] }]], callsigns: [{ callsign: 'alpha', res: [] }], pageLimit: 20 });
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [{ freq: '150.100', count: 1, isNew: false }] });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+    mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
+    mocks.getUnitsList.mockResolvedValue([]);
+    mocks.fetchNetworksByIds.mockResolvedValue([]);
+
+    const getLoadedFilterSections = vi.fn(() => ['units', 'locations', 'posts'] as AnalysisFilterSectionId[]);
+    const loadInitialFilterSections = vi.fn().mockResolvedValue(undefined);
+
+    await reloadAnalysisData({
+      clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: vi.fn(),
+      setCounts: vi.fn(),
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworkDisplayMap: vi.fn(),
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
+      setNewCallsigns: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading: vi.fn(),
+      setNewCallsignsLoadedKey: vi.fn(),
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions: vi.fn(),
+      setProfiles: vi.fn(),
+      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryLoading: vi.fn(),
+      setSummaryRows: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTopCallsigns: vi.fn(),
+      setTopFreqs: vi.fn(),
+      setTopLocations: vi.fn(),
+      setTopUnits: vi.fn(),
+      getLoadedFilterSections,
+      loadInitialFilterSections,
+      invalidateFilterSectionLoads: vi.fn(),
+    });
+
+    expect(getLoadedFilterSections).toHaveBeenCalledTimes(1);
+    expect(loadInitialFilterSections).toHaveBeenCalledWith(expect.any(Object), true, ['units', 'locations', 'posts']);
+  });
+
   it('keeps deferred panel data intact when the critical inbox request fails early', async () => {
     mocks.fetchInboxMessages.mockRejectedValue(new Error('inbox failed'));
     mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });

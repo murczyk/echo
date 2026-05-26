@@ -382,7 +382,12 @@ type ReloadParams = {
   loadMessageComments?: (messages: Array<[number, InboxMessage]>, forceReload?: boolean) => Promise<void>;
   invalidateSummaryLoads?: () => void;
   invalidateTopSidebarLoads?: () => void;
-  loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload?: boolean) => Promise<void>;
+  getLoadedFilterSections?: () => AnalysisFilterSectionId[];
+  loadInitialFilterSections: (
+    analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
+    forceReload?: boolean,
+    loadedSections?: AnalysisFilterSectionId[],
+  ) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
 };
 
@@ -391,6 +396,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.reloadRequestRef.current = requestId;
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
   let startedSecondaryLoads = false;
+  const loadedFilterSectionsBeforeReload = params.getLoadedFilterSections?.() ?? [];
 
   params.onError('');
   params.invalidateMessagePaging();
@@ -533,7 +539,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         freqs: nextFreqOptions,
         newFreqs: nextNewFreqs,
       }));
-      await params.loadInitialFilterSections(resolvedAnalysisReq, true);
+      await params.loadInitialFilterSections(resolvedAnalysisReq, true, loadedFilterSectionsBeforeReload);
       params.setTopFreqs(topItems(effectiveFreqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
