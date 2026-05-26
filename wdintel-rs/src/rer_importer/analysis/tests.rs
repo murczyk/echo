@@ -3217,6 +3217,219 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_units_match_etalon_units_during_active_window() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let etalon_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("Active Etalon Unit".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let etalon_network = mk_network_fixture_with_window(
+        db,
+        "Active Unit Match Network",
+        "944.4",
+        fixture.aor_a.id,
+        test_dt(2026, 2, 28, 0, 0),
+        Some(test_dt(2026, 6, 1, 0, 0)),
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(etalon_network.network.id),
+            unit_id: Set(etalon_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let msg_etalon = mk_analysis_message(
+        db,
+        "msg-unit-active-etalon",
+        "944.4",
+        test_dt(2026, 3, 2, 10, 6),
+        &[&fixture.group_x],
+        &[etalon_network.network.id],
+        true,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, msg_etalon.id, Some("Header Noise"))
+        .await
+        .unwrap();
+
+    let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+    req.selected_units = Some(vec!["Active Etalon Unit".to_string()]);
+    req.units_exact_match_only = Some(false);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([("944.4".to_string(), 1)])
+    );
+
+    req.units_exact_match_only = Some(true);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([("944.4".to_string(), 1)])
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_map_unit_filter_uses_message_network_links() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let selected_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("Selected Unit".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("Other Unit".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let selected_network = mk_network_fixture(
+        db,
+        "Selected Unit Network",
+        "944.5",
+        fixture.aor_a.id,
+        fixture.created_at,
+    )
+    .await
+    .unwrap();
+    let other_network = mk_network_fixture(
+        db,
+        "Other Unit Network",
+        "944.5",
+        fixture.aor_a.id,
+        fixture.created_at,
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(selected_network.network.id),
+            unit_id: Set(selected_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(other_network.network.id),
+            unit_id: Set(other_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let msg_selected = mk_analysis_message(
+        db,
+        "msg-selected-network",
+        "944.5",
+        test_dt(2026, 3, 2, 10, 10),
+        &[&fixture.group_x],
+        &[selected_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, msg_selected.id, Some("Header Noise"))
+        .await
+        .unwrap();
+
+    let msg_other = mk_analysis_message(
+        db,
+        "msg-other-network",
+        "944.5",
+        test_dt(2026, 3, 2, 10, 11),
+        &[&fixture.group_x],
+        &[other_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, msg_other.id, Some("Other Header"))
+        .await
+        .unwrap();
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let base_req = crate::rer_importer::types::InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_units: Some(vec!["Selected Unit".to_string()]),
+        units_exact_match_only: Some(false),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &base_req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_selected.id]
+    );
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        units_exact_match_only: Some(true),
+        ..base_req.clone()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_selected.id]
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let env = Data::from(fixture.env.clone());

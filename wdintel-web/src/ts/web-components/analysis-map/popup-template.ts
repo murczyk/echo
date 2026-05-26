@@ -82,8 +82,8 @@ function renderMessageText(message: Message[1]): string {
   return escapeHtml(message.text).replace(/\n/g, '<br>');
 }
 
-function liTemplate(message_: Message, networkUnitName_: string | undefined, selectedUnits: string[]) {
-  const unitName = networkUnitName_ ?? message_[1].unit ?? 'Не визначено';
+function liTemplate(message_: Message, selectedUnits: string[]) {
+  const unitName = message_[1].unit ?? 'Не визначено';
   const unitBlock = `
             <div>
               <span style="font-weight: 700; line-height: 22px;">Підрозділ:</span> 
@@ -108,16 +108,10 @@ function liTemplate(message_: Message, networkUnitName_: string | undefined, sel
     `;
 }
 
-export function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkUnit[], selectedUnits: string[]) {
+export function getPointPopupTemplate(sortedMessages: Message[], _networkUnits: NetworkUnit[], selectedUnits: string[]) {
   const body = sortedMessages
     .map((message) => {
-      const freq = message[1].freq;
-      const networkIds = message[1].network_ids;
-      const shouldUseNetworkUnits = Array.isArray(networkIds) && networkIds.length > 0 && !!freq;
-      const networkUnitName = shouldUseNetworkUnits
-        ? networkUnits.find((unit) => unit.frequencies.includes(freq!))?.name
-        : undefined;
-      return liTemplate(message, networkUnitName, selectedUnits);
+      return liTemplate(message, selectedUnits);
     })
     .join('');
 

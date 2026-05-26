@@ -39,4 +39,39 @@ describe('getPointPopupTemplate', () => {
     expect(html).toContain('БОРОДА');
     expect(html).toContain('badge-highlighed-token--callsign');
   });
+
+  it('prefers the message unit over a network-unit guess', () => {
+    const message = buildMessage({
+      freq: '145.5',
+      network_ids: [1],
+      unit: 'Header Unit',
+    });
+
+    const html = getPointPopupTemplate(
+      [message],
+      [
+        { name: 'Unit A', frequencies: ['145.5'] },
+      ],
+      [],
+    );
+
+    expect(html).toContain('Header Unit');
+    expect(html).not.toContain('Unit A');
+  });
+
+  it('shows an undefined unit when the message unit is missing', () => {
+    const message = buildMessage({
+      freq: '145.5',
+      network_ids: [1],
+    });
+
+    const html = getPointPopupTemplate(
+      [message],
+      [{ name: 'Unit A', frequencies: ['145.5'] }],
+      [],
+    );
+
+    expect(html).toContain('Не визначено');
+    expect(html).not.toContain('Unit A');
+  });
 });
