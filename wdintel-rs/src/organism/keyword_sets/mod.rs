@@ -1,15 +1,13 @@
 pub mod bl;
-pub mod default_words;
 pub mod types;
 
 use self::bl::{
     keyword_set_can_delete, keyword_set_can_edit, keyword_set_name_taken_err,
     map_keyword_set_db_err, merge_lexeme_batches, normalize_keyword_words,
 };
-use self::default_words::default_keyword_words_vec;
 use self::types::*;
 use crate::config::{
-    ORGANISM_KEYWORD_SET_DEFAULT_NAME, ORGANISM_KEYWORD_SET_INFLECT_MAX_LEMMAS,
+    ORGANISM_KEYWORD_SET_INFLECT_MAX_LEMMAS,
     ORGANISM_KEYWORD_SET_MAX_SETS_PER_ORGANISM,
 };
 use crate::entities::{login, organism_keyword_set};
@@ -18,8 +16,8 @@ use crate::types::*;
 use actix_web::web::{Data, Path};
 use actix_web::{delete, get, post, put, web::Json};
 use chrono::Utc;
-use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
+
 pub async fn try_resolve_viewer_organism_id(
     dbx: &DatabaseConnection,
     login: &str,
@@ -56,13 +54,11 @@ fn dto_from_model(
 ) -> OrganismKeywordSetDto {
     let words = row.words.clone();
     let can_edit = keyword_set_can_edit(
-        row.is_system_default,
         row.author_login.as_deref(),
         login,
         is_admin,
     );
     let can_delete = keyword_set_can_delete(
-        row.is_system_default,
         row.author_login.as_deref(),
         login,
         is_admin,
@@ -72,59 +68,9 @@ fn dto_from_model(
         name: row.name,
         words,
         author_login: row.author_login,
-        is_system_default: row.is_system_default,
         can_edit,
         can_delete,
     }
-}
-
-pub async fn ensure_default_keyword_set(
-    dbx: &DatabaseConnection,
-    organism_id: i64,
-) -> Result<organism_keyword_set::Model, AppError> {
-    if let Some(existing) = organism_keyword_set::Entity::find()
-        .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
-        .filter(organism_keyword_set::Column::IsSystemDefault.eq(true))
-        .one(dbx)
-        .await
-        .c(h!())?
-    {
-        return Ok(existing);
-    }
-
-    let words = default_keyword_words_vec();
-    organism_keyword_set::Entity::insert(organism_keyword_set::ActiveModel {
-        id: NotSet,
-        organism_id: Set(organism_id),
-        author_login: Set(None),
-        name: Set(ORGANISM_KEYWORD_SET_DEFAULT_NAME.to_string()),
-        words: Set(words),
-        is_system_default: Set(true),
-        updated_at: Set(Utc::now().naive_utc()),
-    })
-    .on_conflict(
-        OnConflict::columns([
-            organism_keyword_set::Column::OrganismId,
-            organism_keyword_set::Column::Name,
-        ])
-        .do_nothing()
-        .to_owned(),
-    )
-    .exec(dbx)
-    .await
-    .c(h!())?;
-
-    organism_keyword_set::Entity::find()
-        .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
-        .filter(organism_keyword_set::Column::IsSystemDefault.eq(true))
-        .one(dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: format!(
-                "Default keyword set missing for organism_id={organism_id}"
-            ),
-        })
 }
 
 pub async fn resolve_inbox_keyword_words(
@@ -136,24 +82,18 @@ pub async fn resolve_inbox_keyword_words(
     if !enabled {
         return Ok(vec![]);
     }
-    ensure_default_keyword_set(dbx, organism_id).await.c(h!())?;
-    let row = match set_id {
-        Some(id) => organism_keyword_set::Entity::find_by_id(id)
-            .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
-            .one(dbx)
-            .await
-            .c(h!())?,
-        None => None,
+    let Some(set_id) = set_id else {
+        return Ok(vec![]);
     };
-    let row = match row {
-        Some(r) => r,
-        None => organism_keyword_set::Entity::find()
-            .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
-            .filter(organism_keyword_set::Column::IsSystemDefault.eq(true))
-            .one(dbx)
-            .await
-            .c(h!())?
-            .c(h!())?,
+    let row = organism_keyword_set::Entity::find_by_id(set_id)
+        .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let Some(row) = row else {
+        return Err(AppError::BL {
+            msg: "Набір ключових слів не знайдено".to_string(),
+        });
     };
     normalize_keyword_words(&row.words)
 }
@@ -199,12 +139,8 @@ pub async fn list_keyword_sets(
     let login = user.id().c(h!())?;
     let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
-    ensure_default_keyword_set(&env.dbx, organism_id)
-        .await
-        .c(h!())?;
     let rows = organism_keyword_set::Entity::find()
         .filter(organism_keyword_set::Column::OrganismId.eq(organism_id))
-        .order_by_asc(organism_keyword_set::Column::IsSystemDefault)
         .order_by_asc(organism_keyword_set::Column::Name)
         .all(&env.dbx)
         .await
@@ -238,15 +174,7 @@ pub async fn upsert_keyword_set(
         Some(id) => {
             let existing =
                 load_set_for_viewer(&env.dbx, organism_id, id).await?;
-            if existing.is_system_default
-                && name != ORGANISM_KEYWORD_SET_DEFAULT_NAME
-            {
-                return Err(AppError::BL {
-                    msg: "Системний набір не можна перейменувати".to_string(),
-                });
-            }
             if !keyword_set_can_edit(
-                existing.is_system_default,
                 existing.author_login.as_deref(),
                 &login,
                 is_admin,
@@ -255,7 +183,7 @@ pub async fn upsert_keyword_set(
                     msg: "Немає прав на редагування цього набору".to_string(),
                 });
             }
-            if !existing.is_system_default && name != existing.name {
+            if name != existing.name {
                 ensure_keyword_set_name_available(
                     &env.dbx,
                     organism_id,
@@ -264,11 +192,8 @@ pub async fn upsert_keyword_set(
                 )
                 .await?;
             }
-            let is_default = existing.is_system_default;
             let mut active: organism_keyword_set::ActiveModel = existing.into();
-            if !is_default {
-                active.name = Set(name.to_string());
-            }
+            active.name = Set(name.to_string());
             active.words = Set(words.clone());
             active.updated_at = Set(now);
             active
@@ -277,12 +202,6 @@ pub async fn upsert_keyword_set(
                 .map_err(map_keyword_set_db_err)?
         }
         None => {
-            if name == ORGANISM_KEYWORD_SET_DEFAULT_NAME {
-                return Err(AppError::BL {
-                    msg: "Ця назва зарезервована для системного набору"
-                        .to_string(),
-                });
-            }
             let set_count = organism_keyword_set::Entity::find()
                 .filter(
                     organism_keyword_set::Column::OrganismId.eq(organism_id),
@@ -311,7 +230,6 @@ pub async fn upsert_keyword_set(
                 author_login: Set(Some(login.clone())),
                 name: Set(name.to_string()),
                 words: Set(words),
-                is_system_default: Set(false),
                 updated_at: Set(now),
             }
             .insert(&env.dbx)
@@ -335,7 +253,6 @@ pub async fn delete_keyword_set(
     let id = path.into_inner();
     let existing = load_set_for_viewer(&env.dbx, organism_id, id).await?;
     if !keyword_set_can_delete(
-        existing.is_system_default,
         existing.author_login.as_deref(),
         &login,
         is_admin,

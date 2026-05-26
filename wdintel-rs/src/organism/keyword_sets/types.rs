@@ -9,7 +9,6 @@ pub struct OrganismKeywordSetDto {
     pub name: String,
     pub words: Vec<String>,
     pub author_login: Option<String>,
-    pub is_system_default: bool,
     pub can_edit: bool,
     pub can_delete: bool,
 }

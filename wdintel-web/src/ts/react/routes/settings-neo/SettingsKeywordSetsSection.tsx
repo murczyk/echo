@@ -20,7 +20,6 @@ import { PowerButton } from '../../components/PowerButton';
 import {
   deleteOrganismKeywordSet,
   fetchOrganismKeywordSets,
-  keywordSetDisplayName,
   suggestNewKeywordSetName,
   upsertOrganismKeywordSet,
 } from '../../services/api/organism-keyword-sets';
@@ -38,16 +37,12 @@ export function SettingsKeywordSetsSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const selected = useMemo(
-    () => sets.find((s) => s.id === selectedId) ?? null,
-    [sets, selectedId],
-  );
+  const selected = useMemo(() => sets.find((s) => s.id === selectedId) ?? null, [sets, selectedId]);
 
   const isDirty = useMemo(() => {
     if (!selected?.canEdit) return false;
-    const savedName = selected.isSystemDefault ? '' : selected.name;
-    const editedName = selected.isSystemDefault ? '' : name.trim();
-    return editedName !== savedName || !strArraysEqual(words, selected.words);
+    const editedName = name.trim();
+    return editedName !== selected.name || !strArraysEqual(words, selected.words);
   }, [selected, name, words]);
 
   useEffect(() => {
@@ -66,11 +61,7 @@ export function SettingsKeywordSetsSection() {
       const list = await fetchOrganismKeywordSets();
       setSets(list);
       const urlId = readKeywordSetIdFromUrl();
-      const defaultSet = list.find((s) => s.isSystemDefault);
-      const nextId =
-        urlId != null && list.some((s) => s.id === urlId)
-          ? urlId
-          : (defaultSet?.id ?? list[0]?.id ?? null);
+      const nextId = urlId != null && list.some((s) => s.id === urlId) ? urlId : (list[0]?.id ?? null);
       setSelectedId(nextId);
       if (nextId != null) writeKeywordSetIdToUrl(nextId);
     } catch (e) {
@@ -90,7 +81,7 @@ export function SettingsKeywordSetsSection() {
       setWords([]);
       return;
     }
-    setName(selected.isSystemDefault ? '' : selected.name);
+    setName(selected.name);
     setWords(selected.words);
     setSaveError(null);
     setSaveSuccess(null);
@@ -98,10 +89,7 @@ export function SettingsKeywordSetsSection() {
 
   const selectSet = (id: number) => {
     if (id === selectedId) return;
-    if (
-      isDirty &&
-      !window.confirm('Є не збережені зміни. Перейти до іншого набору без збереження?')
-    ) {
+    if (isDirty && !window.confirm('Є не збережені зміни. Перейти до іншого набору без збереження?')) {
       return;
     }
     setSelectedId(id);
@@ -121,7 +109,7 @@ export function SettingsKeywordSetsSection() {
     try {
       const saved = await upsertOrganismKeywordSet({
         id: selected.id,
-        name: selected.isSystemDefault ? selected.name : name.trim(),
+        name: name.trim(),
         words,
       });
       setSaveSuccess('Збережено');
@@ -136,10 +124,7 @@ export function SettingsKeywordSetsSection() {
   };
 
   const handleCreate = async () => {
-    if (
-      isDirty &&
-      !window.confirm('Є не збережені зміни. Створити новий набір без збереження?')
-    ) {
+    if (isDirty && !window.confirm('Є не збережені зміни. Створити новий набір без збереження?')) {
       return;
     }
     setSaving(true);
@@ -166,9 +151,7 @@ export function SettingsKeywordSetsSection() {
     setSaveError(null);
     try {
       await deleteOrganismKeywordSet(selected.id);
-      const defaultSet = sets.find((s) => s.isSystemDefault);
       await reload();
-      if (defaultSet) selectSet(defaultSet.id);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -177,7 +160,12 @@ export function SettingsKeywordSetsSection() {
   };
 
   return (
-    <Box role="tabpanel" id="settings-neo-panel-keywords" aria-labelledby="settings-neo-tab-keywords" sx={{ p: { xs: 2, sm: 2.5 } }}>
+    <Box
+      role="tabpanel"
+      id="settings-neo-panel-keywords"
+      aria-labelledby="settings-neo-tab-keywords"
+      sx={{ p: { xs: 2, sm: 2.5 } }}
+    >
       <Stack spacing={2}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
           <KeyOutlinedIcon sx={{ fontSize: 20, color: 'primary.main', flexShrink: 0 }} aria-hidden />
@@ -217,15 +205,17 @@ export function SettingsKeywordSetsSection() {
               Видалити
             </Button>
           ) : null}
-          <PowerButton
-            size="small"
-            variant="outlined"
-            onClick={() => void handleCreate()}
-            disabled={saving || loading}
-            sx={{ flexShrink: 0 }}
-          >
-            Створити набір
-          </PowerButton>
+          {!isDirty ? (
+            <PowerButton
+              size="small"
+              variant="outlined"
+              onClick={() => void handleCreate()}
+              disabled={saving || loading}
+              sx={{ flexShrink: 0 }}
+            >
+              Створити набір
+            </PowerButton>
+          ) : null}
         </Stack>
         {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
         {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
@@ -236,25 +226,17 @@ export function SettingsKeywordSetsSection() {
         ) : null}
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
           <Box sx={{ width: { xs: '100%', md: 240 }, flexShrink: 0 }}>
-            <List dense disablePadding sx={{ maxHeight: { xs: 160, md: 'none' }, overflowY: { xs: 'auto', md: 'visible' } }}>
+            <List
+              dense
+              disablePadding
+              sx={{ maxHeight: { xs: 160, md: 'none' }, overflowY: { xs: 'auto', md: 'visible' } }}
+            >
               {sets.map((set) => (
-                <ListItemButton
-                  key={set.id}
-                  selected={set.id === selectedId}
-                  onClick={() => selectSet(set.id)}
-                >
+                <ListItemButton key={set.id} selected={set.id === selectedId} onClick={() => selectSet(set.id)}>
                   <ListItemText
-                    primary={keywordSetDisplayName(set)}
-                    secondary={
-                      set.id === selectedId && isDirty
-                        ? 'Не збережені зміни'
-                        : (set.authorLogin ?? undefined)
-                    }
-                    secondaryTypographyProps={
-                      set.id === selectedId && isDirty
-                        ? { color: 'warning.main' }
-                        : undefined
-                    }
+                    primary={set.name}
+                    secondary={set.id === selectedId && isDirty ? 'Не збережені зміни' : (set.authorLogin ?? undefined)}
+                    secondaryTypographyProps={set.id === selectedId && isDirty ? { color: 'warning.main' } : undefined}
                   />
                 </ListItemButton>
               ))}
@@ -265,23 +247,17 @@ export function SettingsKeywordSetsSection() {
               <Typography color="text.secondary">Завантаження…</Typography>
             ) : selected ? (
               <Stack spacing={1.5}>
-                {!selected.isSystemDefault ? (
-                  <TextField
-                    size="small"
-                    label="Назва набору"
-                    value={name}
-                    onChange={(e) => {
-                      clearSaveFeedback();
-                      setName(e.target.value);
-                    }}
-                    disabled={!selected.canEdit || saving}
-                    sx={{ maxWidth: 420 }}
-                  />
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    {keywordSetDisplayName(selected)} — спільний базовий набір організму
-                  </Typography>
-                )}
+                <TextField
+                  size="small"
+                  label="Назва набору"
+                  value={name}
+                  onChange={(e) => {
+                    clearSaveFeedback();
+                    setName(e.target.value);
+                  }}
+                  disabled={!selected.canEdit || saving}
+                  sx={{ maxWidth: 420 }}
+                />
                 <KeywordFormsEditor
                   words={words}
                   onWordsChange={(next) => {
@@ -292,7 +268,7 @@ export function SettingsKeywordSetsSection() {
                 />
               </Stack>
             ) : (
-              <Typography color="text.secondary">Оберіть набір зліва</Typography>
+              <Typography color="text.secondary">Оберіть набір або створіть новий</Typography>
             )}
           </Box>
         </Stack>

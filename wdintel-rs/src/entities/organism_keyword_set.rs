@@ -21,7 +21,6 @@ pub struct Model {
     pub name: String,
     #[sea_orm(column_type = "Text", array_type = "Text")]
     pub words: Vec<String>,
-    pub is_system_default: bool,
     pub updated_at: DateTime,
 }
 

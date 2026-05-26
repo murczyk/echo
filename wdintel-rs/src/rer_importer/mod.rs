@@ -35,7 +35,6 @@ pub mod import_csv;
 pub mod import_kmz;
 pub mod important;
 pub mod inbox;
-pub mod keywords;
 pub mod location;
 pub mod multimessage;
 pub mod points;

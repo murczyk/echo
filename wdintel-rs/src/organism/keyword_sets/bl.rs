@@ -98,26 +98,18 @@ pub fn keyword_set_can_manage(
 }
 
 pub fn keyword_set_can_edit(
-    is_system_default: bool,
     author_login: Option<&str>,
     viewer_login: &str,
     viewer_is_admin: bool,
 ) -> bool {
-    if is_system_default {
-        return true;
-    }
     keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
 }
 
 pub fn keyword_set_can_delete(
-    is_system_default: bool,
     author_login: Option<&str>,
     viewer_login: &str,
     viewer_is_admin: bool,
 ) -> bool {
-    if is_system_default {
-        return true;
-    }
     keyword_set_can_manage(author_login, viewer_login, viewer_is_admin)
 }
 
@@ -189,24 +181,19 @@ mod tests {
 
     #[test]
     fn keyword_set_acl_rules() {
-        assert!(keyword_set_can_edit(true, None, "alice", false));
-        assert!(keyword_set_can_edit(true, None, "alice", true));
-        assert!(keyword_set_can_delete(true, None, "alice", false));
-        assert!(keyword_set_can_delete(true, None, "alice", true));
+        assert!(keyword_set_can_edit(Some("alice"), "alice", false));
+        assert!(keyword_set_can_delete(Some("alice"), "alice", false));
 
-        assert!(keyword_set_can_edit(false, Some("alice"), "alice", false));
-        assert!(keyword_set_can_delete(false, Some("alice"), "alice", false));
+        assert!(!keyword_set_can_edit(Some("bob"), "alice", false));
+        assert!(!keyword_set_can_delete(Some("bob"), "alice", false));
 
-        assert!(!keyword_set_can_edit(false, Some("bob"), "alice", false));
-        assert!(!keyword_set_can_delete(false, Some("bob"), "alice", false));
+        assert!(!keyword_set_can_edit(None, "alice", false));
+        assert!(!keyword_set_can_delete(None, "alice", false));
 
-        assert!(!keyword_set_can_edit(false, None, "alice", false));
-        assert!(!keyword_set_can_delete(false, None, "alice", false));
-
-        assert!(keyword_set_can_edit(false, None, "alice", true));
-        assert!(keyword_set_can_delete(false, None, "alice", true));
-        assert!(keyword_set_can_edit(false, Some("bob"), "alice", true));
-        assert!(keyword_set_can_delete(false, Some("bob"), "alice", true));
+        assert!(keyword_set_can_edit(None, "alice", true));
+        assert!(keyword_set_can_delete(None, "alice", true));
+        assert!(keyword_set_can_edit(Some("bob"), "alice", true));
+        assert!(keyword_set_can_delete(Some("bob"), "alice", true));
     }
 
     #[test]

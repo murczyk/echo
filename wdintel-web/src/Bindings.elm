@@ -3792,7 +3792,6 @@ type alias OrganismKeywordSetDto =
     , name : String
     , words : List (String)
     , authorLogin : Maybe (String)
-    , isSystemDefault : Bool
     , canEdit : Bool
     , canDelete : Bool
     }
@@ -3805,7 +3804,6 @@ organismKeywordSetDtoEncoder struct =
         , ( "name", (Json.Encode.string) struct.name )
         , ( "words", (Json.Encode.list (Json.Encode.string)) struct.words )
         , ( "author_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.authorLogin )
-        , ( "is_system_default", (Json.Encode.bool) struct.isSystemDefault )
         , ( "can_edit", (Json.Encode.bool) struct.canEdit )
         , ( "can_delete", (Json.Encode.bool) struct.canDelete )
         ]
@@ -9889,7 +9887,6 @@ organismKeywordSetDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "words" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author_login" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_system_default" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_delete" (Json.Decode.bool)))
 

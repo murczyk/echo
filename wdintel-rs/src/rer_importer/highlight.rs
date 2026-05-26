@@ -392,10 +392,6 @@ pub fn extract_keywords_with_set(
     Ok(res)
 }
 
-pub fn extract_keywords(inp: &str) -> Result<Vec<CNHighlight>, AppError> {
-    extract_keywords_with_set(inp, &super::keywords::get_keywords())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1149,26 +1145,6 @@ mod tests {
             keyword_set_from_words(&["НЕБО".to_string(), "небо".to_string()]);
         assert_eq!(set.len(), 1);
         assert!(set.contains("небо"));
-    }
-
-    #[test]
-    fn test_extract_keywords_01() {
-        let body = r#"26.03.2023_18:31 F=422,4300(МГц)
-Не встановлено (НВ)
-НВ (НВ)
-НВ (НВ)
-"-   Всё птичка в гнезде""#;
-        let res = extract_keywords(body).unwrap();
-        println!("{res:?}");
-        assert_eq!(res.len(), 1);
-        assert_eq!(
-            res[0],
-            CNHighlight {
-                text: "птичка".to_string(),
-                begin: 78,
-                end: 84
-            }
-        );
     }
 
     #[test]

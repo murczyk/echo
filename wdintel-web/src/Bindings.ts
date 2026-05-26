@@ -1446,7 +1446,6 @@ export type OrganismKeywordSetDto = {
   name: string;
   words: Array<string>;
   authorLogin: string | null;
-  isSystemDefault: boolean;
   canEdit: boolean;
   canDelete: boolean;
 };

@@ -48,12 +48,11 @@ export type FeedStateDeps = {
   pollIntervalSec: number;
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
-  defaultKeywordSetId: number | null;
   onFeedRemoved?: (feedId: string) => void;
 };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
-  const { freqs, setProfiles, setGroupInfos, defaultKeywordSetId } = deps;
+  const { freqs, setProfiles, setGroupInfos } = deps;
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
     return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) => ({
@@ -219,10 +218,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
         reportTagsOnlyThisUnit: feed.onlyMyUnitTagsEnabled ? true : null,
-        defaultKeywordSetId,
       });
     },
-    [freqs, defaultKeywordSetId],
+    [freqs],
   );
 
   const loadFeedInitialMessages = useCallback(

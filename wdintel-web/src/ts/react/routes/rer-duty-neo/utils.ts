@@ -135,7 +135,6 @@ export function buildInboxReq(opts: {
   expandedFreqsDenied?: string[] | null;
   highlightSignals?: boolean | null;
   reportTagsOnlyThisUnit?: boolean | null;
-  defaultKeywordSetId?: number | null;
 }): InboxMessagesReq {
   const f = opts.filter;
   // send empty arrays as null (backend treats null/undefined vs [] differently)
@@ -177,7 +176,7 @@ export function buildInboxReq(opts: {
     highlightKeywordSetId: (() => {
       const enabled = f.highlightKeywordsEnabled ?? true;
       if (!enabled) return null;
-      return f.highlightKeywordSetId ?? opts.defaultKeywordSetId ?? null;
+      return f.highlightKeywordSetId ?? null;
     })(),
     highlightSearchres: true,
     highlightSignals: opts.highlightSignals ?? false,

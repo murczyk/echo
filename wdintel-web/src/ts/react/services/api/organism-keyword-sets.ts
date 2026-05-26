@@ -9,7 +9,6 @@ import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-
 
 import { deleteVoid, getJson, postJson, putJson } from './client';
 
-export const ORGANISM_KEYWORD_SET_DEFAULT_DISPLAY_NAME = 'Стандартний';
 export const ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX = 'Новий набір';
 
 export function suggestNewKeywordSetName(sets: readonly OrganismKeywordSetDto[]): string {
@@ -24,7 +23,7 @@ export function suggestNewKeywordSetName(sets: readonly OrganismKeywordSetDto[])
 }
 
 export function keywordSetDisplayName(set: OrganismKeywordSetDto): string {
-  return set.isSystemDefault ? ORGANISM_KEYWORD_SET_DEFAULT_DISPLAY_NAME : set.name;
+  return set.name;
 }
 
 export async function fetchOrganismKeywordSets(): Promise<OrganismKeywordSetDto[]> {
@@ -50,17 +49,11 @@ export async function inflectOrganismKeywordForms(
   return transformSnakeToCamel<OrganismKeywordSetInflectRsp>(raw);
 }
 
-export function defaultKeywordSetId(sets: OrganismKeywordSetDto[]): number | null {
-  const d = sets.find((s) => s.isSystemDefault);
-  return d?.id ?? null;
-}
-
 export function resolveKeywordSetId(
   sets: OrganismKeywordSetDto[],
   setId: number | null | undefined,
 ): number | null {
-  const defaultId = defaultKeywordSetId(sets);
-  if (setId == null) return defaultId;
+  if (setId == null) return null;
   if (sets.some((s) => s.id === setId)) return setId;
-  return defaultId;
+  return null;
 }

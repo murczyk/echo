@@ -197,7 +197,6 @@ describe('rer-duty utils', () => {
   it('buildInboxReq maps keyword set id when highlighting enabled', () => {
     const req = buildInboxReq({
       filter: { ...emptyFilter(), highlightKeywordsEnabled: true, highlightKeywordSetId: 5 },
-      defaultKeywordSetId: 1,
     });
     expect(req.highlightKeywords).toBe(true);
     expect(req.highlightKeywordSetId).toBe(5);
@@ -206,7 +205,6 @@ describe('rer-duty utils', () => {
   it('buildInboxReq omits keyword set when highlighting disabled', () => {
     const req = buildInboxReq({
       filter: { ...emptyFilter(), highlightKeywordsEnabled: false, highlightKeywordSetId: 5 },
-      defaultKeywordSetId: 1,
     });
     expect(req.highlightKeywords).toBe(false);
     expect(req.highlightKeywordSetId).toBeNull();
