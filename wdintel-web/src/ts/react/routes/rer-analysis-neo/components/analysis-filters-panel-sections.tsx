@@ -1,5 +1,4 @@
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography, type SelectChangeEvent } from '@mui/material';
+import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Typography, type SelectChangeEvent } from '@mui/material';
 import type { MouseEvent, ReactNode } from 'react';
 
 import type { AnalysisFilterSectionId } from '../types';
@@ -283,9 +282,6 @@ export function AnalysisFiltersPanelSections({
             label={
               <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.375, whiteSpace: 'nowrap' }}>
                 З коментарем
-                <Tooltip title="Від вас або вашого підрозділу">
-                  <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary', opacity: 0.85 }} />
-                </Tooltip>
               </Box>
             }
             sx={{
