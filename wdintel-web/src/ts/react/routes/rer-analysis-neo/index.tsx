@@ -661,6 +661,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       onToggleMessageBookmark={page.onToggleMessageBookmark}
                       onToggleMessageImportant={page.onToggleMessageImportant}
                       onToggleMessageTag={page.onToggleMessageTag}
+                      onAddFrequencyToFilter={page.addFrequencyToFilter}
                       profiles={page.profiles}
                       users={page.users}
                       tagsMap={page.tagsMap}

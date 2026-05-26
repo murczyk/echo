@@ -7,6 +7,8 @@ import {
   buildAnalysisHref,
   buildClassicAnalysisHref,
   buildClassicAnalysisMapHrefWithSearch,
+  buildVisibleExcludeMenuOptions,
+  excludeMessageEntityFromFilters,
   PAGE_ID,
   buildAnalysisMapHrefWithSearch,
   buildSenderOptions,
@@ -20,6 +22,7 @@ import {
   feedsUnreadDisplayTotal,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
+  isMessageEntityExcluded,
   messageHasPalitraTag,
   uniquePointEtalonsForMapSearch,
   parseStateFromUrl,
@@ -170,6 +173,111 @@ describe('rer-duty utils', () => {
     expect(filtersEqual({ ...emptyFilter(), freqsSelected: ['100.1'] }, { ...emptyFilter(), freqsSelected: ['100.1'] })).toBe(
       true,
     );
+  });
+
+  it('moves group filters from include to exclude and replaces the list', () => {
+    const next = excludeMessageEntityFromFilters(
+      { ...emptyFilter(), groupsSelected: ['group-a', 'group-b'], postsSelected: ['post-a'] },
+      'group',
+      'group-c',
+    );
+
+    expect(next.groupsSelected).toBeNull();
+    expect(next.groupsDenied).toEqual(['group-c']);
+    expect(next.postsSelected).toEqual(['post-a']);
+    expect(next.postsDenied).toBeNull();
+  });
+
+  it('appends to existing sender excludes and avoids duplicates', () => {
+    const initial = { ...emptyFilter(), deniedSenders: ['sender-a'] };
+    const appended = excludeMessageEntityFromFilters(initial, 'sender', 'sender-b');
+    const deduped = excludeMessageEntityFromFilters(appended, 'sender', 'sender-b');
+
+    expect(appended.deniedSenders).toEqual(['sender-a', 'sender-b']);
+    expect(deduped.deniedSenders).toEqual(['sender-a', 'sender-b']);
+  });
+
+  it('creates a fresh exclude filter from an empty state', () => {
+    const next = excludeMessageEntityFromFilters(emptyFilter(), 'freq', '153.6250');
+
+    expect(next.freqsSelected).toBeNull();
+    expect(next.freqsDenied).toEqual(['153.6250']);
+  });
+
+  it('preserves unrelated filters while excluding a post', () => {
+    const next = excludeMessageEntityFromFilters(
+      {
+        ...emptyFilter(),
+        groupsSelected: ['group-a'],
+        deniedSenders: ['sender-a'],
+        freqsSelected: ['153.6250'],
+      },
+      'post',
+      'post-a',
+    );
+
+    expect(next.groupsSelected).toEqual(['group-a']);
+    expect(next.deniedSenders).toEqual(['sender-a']);
+    expect(next.freqsSelected).toEqual(['153.6250']);
+    expect(next.postsSelected).toBeNull();
+    expect(next.postsDenied).toEqual(['post-a']);
+  });
+
+  it('reports whether a value is already excluded', () => {
+    const filters = {
+      ...emptyFilter(),
+      groupsDenied: ['group-a'],
+      deniedSenders: ['sender-a'],
+      freqsDenied: ['153.6250'],
+      postsDenied: ['post-a'],
+    };
+
+    expect(isMessageEntityExcluded(filters, 'group', 'group-a')).toBe(true);
+    expect(isMessageEntityExcluded(filters, 'sender', 'sender-a')).toBe(true);
+    expect(isMessageEntityExcluded(filters, 'freq', '153.6250')).toBe(true);
+    expect(isMessageEntityExcluded(filters, 'post', 'post-a')).toBe(true);
+    expect(isMessageEntityExcluded(filters, 'group', 'group-b')).toBe(false);
+  });
+
+  it('builds only visible exclude menu options', () => {
+    const options = buildVisibleExcludeMenuOptions(
+      {
+        ...emptyFilter(),
+        groupsDenied: ['group-a'],
+        freqsDenied: ['153.6250'],
+      },
+      {
+        group: { value: 'group-a', label: 'Група A' },
+        sender: { value: 'sender-a', label: 'Відправник A' },
+        freq: { value: '153.6250', label: '153.6250' },
+        post: { value: 'post-a', label: 'Пост A' },
+      },
+    );
+
+    expect(options).toEqual([
+      { entity: 'sender', value: 'sender-a', label: 'Відправник A' },
+      { entity: 'post', value: 'post-a', label: 'Пост A' },
+    ]);
+  });
+
+  it('hides all exclude options when every visible entity is already excluded', () => {
+    const options = buildVisibleExcludeMenuOptions(
+      {
+        ...emptyFilter(),
+        groupsDenied: ['group-a'],
+        deniedSenders: ['sender-a'],
+        freqsDenied: ['153.6250'],
+        postsDenied: ['post-a'],
+      },
+      {
+        group: { value: 'group-a', label: 'Група A' },
+        sender: { value: 'sender-a', label: 'Відправник A' },
+        freq: { value: '153.6250', label: '153.6250' },
+        post: { value: 'post-a', label: 'Пост A' },
+      },
+    );
+
+    expect(options).toEqual([]);
   });
 
   it('expands adjacent frequencies without repeating already selected ones', () => {

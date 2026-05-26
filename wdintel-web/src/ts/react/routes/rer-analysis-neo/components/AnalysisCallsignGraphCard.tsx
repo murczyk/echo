@@ -1,6 +1,6 @@
 import { Box, Button, CircularProgress, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
 import { useEffect, useId, useRef, useState } from 'react';
-import { isPresent } from '../../../utils/misc';
+import { ELLIPSIS, isPresent } from '../../../utils/misc';
 
 
 import type { NetJsonGraphAndMeta } from '../../../../../Bindings';
@@ -144,7 +144,7 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
         <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ minHeight: 220 }}>
           <CircularProgress size={24} />
           <Typography variant="body2" color="text.secondary">
-            Завантажуємо граф позивних…
+            {`Завантажуємо граф позивних${ELLIPSIS}`}
           </Typography>
         </Stack>
       ) : !graph ? (

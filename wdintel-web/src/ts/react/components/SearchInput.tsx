@@ -5,9 +5,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react';
 
 import { NeoMuiThemeProvider } from '../mui-theme';
+import { ELLIPSIS } from '../utils/misc';
 
 const DEFAULT_DEBOUNCE_MS = 300;
-const SEARCH_TEXT = 'Пошук...';
+const SEARCH_TEXT = `Пошук${ELLIPSIS}`;
 
 export type SearchInputProps = {
   initialValue?: string;

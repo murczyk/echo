@@ -5,6 +5,7 @@ import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ELLIPSIS } from '../../../utils/misc';
 
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -164,7 +165,7 @@ describe('AnalysisGroupsActivityCard', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('dashboard-chart')).not.toBeNull();
-    expect(view.container.textContent).not.toContain('Завантажую активність по датах…');
+    expect(view.container.textContent).not.toContain(`Завантажую активність по датах${ELLIPSIS}`);
   });
 
 });

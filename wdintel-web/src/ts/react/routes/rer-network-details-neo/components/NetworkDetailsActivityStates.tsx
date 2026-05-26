@@ -2,11 +2,12 @@ import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
 import { Box, Button, Stack, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../../components/PowerAlert';
+import { ELLIPSIS } from '../../../utils/misc';
 import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 import { NetworkDetailsLoadingState } from './NetworkDetailsLoadingState';
 
 export function NetworkDetailsActivityLoadingState() {
-  return <NetworkDetailsLoadingState message="Завантажуємо активність мережі…" />;
+  return <NetworkDetailsLoadingState message={`Завантажуємо активність мережі${ELLIPSIS}`} />;
 }
 
 export function NetworkDetailsActivityEmptyState() {

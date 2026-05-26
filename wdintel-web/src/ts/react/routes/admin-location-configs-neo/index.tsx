@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
+import { ELLIPSIS } from '../../utils/misc';
 import {
   AorLocationConfigItem,
   listAorLocationConfigs,
@@ -197,7 +198,7 @@ export function AdminLocationConfigsNeoPage() {
                             disabled={!isChanged || row.isSaving}
                             onClick={() => onSave(row)}
                           >
-                            {row.isSaving ? 'Збереження...' : 'Зберегти'}
+                            {row.isSaving ? `Збереження${ELLIPSIS}` : 'Зберегти'}
                           </PowerButton>
                           {row.saveError ? (
                             <Typography color="error" variant="caption">

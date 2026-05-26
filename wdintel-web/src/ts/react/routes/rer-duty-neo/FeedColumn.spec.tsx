@@ -1,7 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, forwardRef } from 'react';
+import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,7 +10,24 @@ import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: () => <div data-testid="virtuoso" />,
+  Virtuoso: forwardRef(function Virtuoso(
+    {
+      data,
+      itemContent,
+    }: {
+      data?: Array<[number, unknown]>;
+      itemContent?: (index: number, item: [number, unknown]) => ReactNode;
+    },
+    ref,
+  ) {
+    return (
+      <div ref={ref} data-testid="virtuoso">
+        {(data ?? []).map((item, index) => (
+          <div key={String(index)}>{itemContent?.(index, item)}</div>
+        ))}
+      </div>
+    );
+  }),
 }));
 
 vi.mock('./FeedFilterPanel', () => ({
@@ -21,7 +39,12 @@ vi.mock('./FeedNotificationPanel', () => ({
 }));
 
 vi.mock('../shared/message-card/MessageCard', () => ({
-  DutyMessageCard: () => <div data-testid="message-card" />,
+  DutyMessageCard: (props: { onCopyEtalon?: () => void; onCopyLocation?: () => void }) => (
+    <div data-testid="message-card">
+      {props.onCopyEtalon != null ? <span data-testid="copy-etalon">copy-etalon</span> : null}
+      {props.onCopyLocation != null ? <span data-testid="copy-location">copy-location</span> : null}
+    </div>
+  ),
 }));
 
 vi.mock('../../components/PowerChip', () => ({
@@ -137,10 +160,12 @@ function buildProps(): FeedColumnProps {
       actions: {
         onLoadOlder: vi.fn(),
         onRemoveColumn: vi.fn(),
-        onMessageBookmark: vi.fn(),
-        onMessageImportant: vi.fn(),
-        onMessageCopy: vi.fn(),
+          onMessageBookmark: vi.fn(),
+          onMessageImportant: vi.fn(),
+          onMessageAddFrequencyToFilter: vi.fn(),
+          onMessageCopy: vi.fn(),
         onMessageComment: vi.fn(),
+        onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
       },
     },
@@ -232,6 +257,32 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
+  });
+
+  it('passes the copy menu etalon action into duty message cards', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[7, minimalInboxMessage({ unit: '1-й танк' })]];
+    props.column.messageCard.networkDisplayMap = {};
+    props.column.messageCard.networkMap = {};
+    props.column.messageCard.featureStrictNetworks = false;
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-testid="copy-etalon"]')).not.toBeNull();
+  });
+
+  it('passes the copy menu location action into duty message cards when no networks resolve', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[7, minimalInboxMessage({ networkIds: [], location: 'ПІЩАНКА' })]];
+    props.column.messageCard.networkDisplayMap = {};
+    props.column.messageCard.networkMap = {};
+    props.column.messageCard.featureStrictNetworks = false;
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-testid="copy-location"]')).not.toBeNull();
   });
 
   it('closes the notifications panel when clicking its trigger again', async () => {
