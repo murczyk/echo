@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
+import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
 
 vi.mock('@mui/icons-material/DownloadOutlined', () => ({ default: () => <span>download</span> }));
 vi.mock('@mui/icons-material/EditOutlined', () => ({ default: () => <span>edit</span> }));
@@ -74,29 +75,33 @@ vi.mock('material-react-table', () => ({
     const data = table.data as Array<any>;
     const callsignsColumn = columns.find((column) => column.id === 'callsignSearchText');
     return (
-      <table aria-label={table.muiTableProps?.['aria-label']}>
-        <caption data-testid="callsigns-cell-overflow">{callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}</caption>
-        <thead>
-          <tr>
-            <th>№</th>
-            {columns.map((column) => (
-              <th key={column.id ?? column.accessorKey}>{column.header}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((rowData, index) => (
-            <tr key={rowData.freq}>
-              <td>{index + 1}</td>
-              {columns.map((column) => {
-                const key = column.id ?? column.accessorKey;
-                const cellValue = column.Cell ? column.Cell({ row: { original: rowData } }) : rowData[column.accessorKey];
-                return <td key={key}>{cellValue}</td>;
-              })}
+      <>
+        <div data-testid="callsigns-cell-overflow">{callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}</div>
+        <div data-testid="default-head-bg">{table.defaultColumn?.muiTableHeadCellProps?.sx?.backgroundColor ?? ''}</div>
+        <table aria-label={table.muiTableProps?.['aria-label']}>
+          <thead>
+            <tr>
+              <th>№</th>
+              {columns.map((column) => (
+                <th key={column.id ?? column.accessorKey}>{column.header}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.map((rowData, index) => (
+              <tr key={rowData.freq}>
+                <td>{index + 1}</td>
+                {columns.map((column) => {
+                  const key = column.id ?? column.accessorKey;
+                  const cellValue = column.Cell ? column.Cell({ row: { original: rowData } }) : rowData[column.accessorKey];
+                  return <td key={key}>{cellValue}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div data-testid="spacer-visible-in-menu">{String(table.displayColumnDefOptions?.['mrt-row-spacer']?.visibleInShowHideMenu ?? false)}</div>
+      </>
     );
   },
 }));
@@ -129,16 +134,6 @@ vi.mock('../../../components/TableEmptyState', () => ({
 
 vi.mock('../../../components/PowerChip', () => ({
   PowerChip: (props: { label: ReactNode }) => <span>{props.label}</span>,
-}));
-
-vi.mock('../../../components/mui-customized/table/custom-styles', () => ({
-  CUSTOM_STYLES: {
-    displayColumnDefOptions: {},
-    muiTableHeadCellProps: { sx: {} },
-    muiTableBodyCellProps: { sx: {} },
-  },
-  FULL_WIDTH_TABLE_PAPER_SX: {},
-  getPageScrollTableContainerSx: () => ({}),
 }));
 
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
@@ -243,6 +238,16 @@ async function renderComponent(props: ComponentProps<typeof AnalysisSummaryTable
   return { container, root };
 }
 
+async function renderStandalone(node: ReactNode): Promise<Rendered> {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(node);
+  });
+  return { container, root };
+}
+
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label) || item.getAttribute('aria-label') === label);
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
@@ -255,9 +260,15 @@ function getInput(container: HTMLElement, label: string): HTMLInputElement {
   return input;
 }
 
+function getTableRow(container: HTMLElement, rowIndex: number): HTMLTableRowElement {
+  const row = container.querySelectorAll('tbody tr')[rowIndex];
+  if (!(row instanceof HTMLTableRowElement)) throw new Error(`Row not found: ${rowIndex}`);
+  return row;
+}
+
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
-    element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    element.click();
   });
 }
 
@@ -292,6 +303,8 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Локації');
     expect(view.container.textContent).toContain('Дії');
     expect(view.container.textContent).toContain('XLSX');
+    expect(view.container.querySelector('[data-testid="spacer-visible-in-menu"]')?.textContent).toBe('false');
+    expect(view.container.querySelector('[data-testid="default-head-bg"]')?.textContent).toBe('var(--bs-body-bg)');
   });
 
   it('keeps the first load skeleton free of the reload overlay', async () => {
@@ -412,17 +425,64 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('+4 ще');
 
     await click(getButton(view.container, '+4 ще'));
-
     expect(view.container.textContent).toContain('DELTA');
-    expect(view.container.textContent).toContain('FOXTROT');
-    expect(view.container.textContent).toContain('GOLF');
     expect(view.container.textContent).toContain('Згорнути');
   });
 
-  it('does not clip expandable callsign cells at the table cell level', async () => {
-    const view = await renderComponent(buildProps());
+  it('shows expandable overflow controls for callsigns, units, and locations', async () => {
+    const view = await renderComponent(
+      buildProps({
+        rows: [
+          buildRow({
+            callsigns: ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf'],
+            units: ['unit-a', 'unit-b', 'unit-c', 'unit-d'],
+            locations: ['loc-a', 'loc-b', 'loc-c', 'loc-d', 'loc-e'],
+          }),
+        ],
+      }),
+    );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="callsigns-cell-overflow"]')?.textContent).toBe('visible');
+    const row = getTableRow(view.container, 0);
+    expect(row.children[5].textContent).toContain('+4 ще');
+    expect(row.children[6].textContent).toContain('р/м Сокіл');
+    expect(row.children[6].textContent).toContain('+3 ще');
+    expect(row.children[7].textContent).toContain('+3 ще');
+  });
+
+  it('renders standalone callsign chip overflow control', async () => {
+    const view = await renderStandalone(
+      <CallsignChipsCell
+        callsigns={[
+          { callsign: 'alpha', tooltip: null, iconClass: '', isHighlighted: false },
+          { callsign: 'bravo', tooltip: null, iconClass: '', isHighlighted: false },
+          { callsign: 'charlie', tooltip: null, iconClass: '', isHighlighted: false },
+          { callsign: 'delta', tooltip: null, iconClass: '', isHighlighted: false },
+          { callsign: 'echo', tooltip: null, iconClass: '', isHighlighted: false },
+        ]}
+      />,
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('+2 ще');
+    await click(getButton(view.container, '+2 ще'));
+    expect(view.container.textContent).toContain('DELTA');
+    expect(view.container.textContent).toContain('Згорнути');
+  });
+
+  it('renders standalone compact list overflow controls', async () => {
+    const view = await renderStandalone(
+      <div>
+        <CompactListCell items={['unit-a', 'unit-b', 'unit-c', 'unit-d']} />
+        <CompactListCell items={['loc-a', 'loc-b', 'loc-c', 'loc-d', 'loc-e']} />
+      </div>,
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('+2 ще');
+    expect(view.container.textContent).toContain('+3 ще');
+
+    await click(getButton(view.container, '+2 ще'));
+    expect(view.container.textContent).toContain('Згорнути');
   });
 });

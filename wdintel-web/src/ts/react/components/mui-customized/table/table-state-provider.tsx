@@ -16,7 +16,14 @@ import {
 
 type Updater<T> = T | ((prev: T) => T);
 
-const INTERNAL_COLUMN_IDS = ['mrt-row-actions', 'mrt-row-drag', 'mrt-row-numbers', 'mrt-row-select', 'mrt-row-expand'];
+export const INTERNAL_COLUMN_IDS = [
+  'mrt-row-actions',
+  'mrt-row-drag',
+  'mrt-row-numbers',
+  'mrt-row-select',
+  'mrt-row-expand',
+  'mrt-row-spacer',
+];
 
 function isInternalColumnId(columnId: string) {
   return INTERNAL_COLUMN_IDS.includes(columnId);

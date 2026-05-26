@@ -7,9 +7,7 @@ import type { ChangeEvent, MouseEvent } from 'react';
 import { PowerButton } from '../../../../../../../PowerButton';
 import { PowerIconButton } from '../../../../../../../PowerIconButton';
 import { PowerMenu } from '../../../../../../../PowerMenu';
-import { useTableStateContext } from '../../../../../table-state-provider';
-
-const internalColumns = ['mrt-row-actions', 'mrt-row-drag', 'mrt-row-numbers', 'mrt-row-select', 'mrt-row-expand'];
+import { INTERNAL_COLUMN_IDS, useTableStateContext } from '../../../../../table-state-provider';
 
 type ColumnsVisibilityButtonProps = {
   disabled?: boolean;
@@ -20,8 +18,8 @@ type ColumnsVisibilityButtonProps = {
 export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
   const tableStateContext = useTableStateContext();
   const columnsToExclude = props.rowNumberAppearanceControl
-    ? internalColumns.filter((c) => c !== 'mrt-row-numbers')
-    : internalColumns;
+    ? INTERNAL_COLUMN_IDS.filter((c) => c !== 'mrt-row-numbers')
+    : INTERNAL_COLUMN_IDS;
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 

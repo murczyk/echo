@@ -1,12 +1,31 @@
 import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Button, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import type { AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
 
-export function CompactListCell({ items, maxVisible = 3 }: { items: string[]; maxVisible?: number }) {
+type ExpandableInlineListCellProps<T> = {
+  items: T[];
+  maxVisible: number;
+  renderItem: (item: T, index: number) => ReactNode;
+  tooltipTitle?: ReactNode;
+  collapsedLabel?: (hiddenCount: number) => string;
+  expandedLabel?: string;
+};
+
+function ExpandableInlineListCell<T>({
+  items,
+  maxVisible,
+  renderItem,
+  tooltipTitle,
+  collapsedLabel = (hiddenCount) => `+${hiddenCount} ще`,
+  expandedLabel = 'Згорнути',
+}: ExpandableInlineListCellProps<T>) {
+  const [expanded, setExpanded] = useState(false);
+
   if (items.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -15,38 +34,69 @@ export function CompactListCell({ items, maxVisible = 3 }: { items: string[]; ma
     );
   }
 
-  const visibleItems = items.slice(0, maxVisible);
-  const hiddenCount = items.length - visibleItems.length;
-
-  return (
-    <Tooltip title={items.join(', ')}>
-      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-      {visibleItems.map((item, index) => (
-        <Typography
-          key={`${item}-${index}`}
-          component="span"
-          variant="body2"
-          noWrap
-          title={item}
-          sx={{ minWidth: 0, lineHeight: 1.35, cursor: 'default' }}
+  const visibleItems = expanded ? items : items.slice(0, maxVisible);
+  const hiddenCount = Math.max(items.length - maxVisible, 0);
+  const content = (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) auto',
+        alignItems: 'center',
+        columnGap: 0.75,
+        minWidth: 0,
+        width: '100%',
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          minWidth: 0,
+          overflow: expanded ? 'visible' : 'hidden',
+          whiteSpace: expanded ? 'normal' : 'nowrap',
+          flexWrap: expanded ? 'wrap' : 'nowrap',
+        }}
+      >
+        {visibleItems.map((item, index) => renderItem(item, index))}
+      </Box>
+      {items.length > maxVisible ? (
+        <Button
+          size="small"
+          variant="text"
+          onClick={() => setExpanded((current) => !current)}
+          aria-label={expanded ? expandedLabel : `Показати ще ${hiddenCount}`}
+          sx={{
+            minWidth: 0,
+            px: 0.5,
+            py: 0,
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+            fontWeight: 600,
+            lineHeight: 1.2,
+          }}
         >
-          {item}
-        </Typography>
-      ))}
-      {hiddenCount > 0 ? (
-        <Typography component="span" variant="caption" color="text.secondary" sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-          +{hiddenCount} ще
-        </Typography>
+          {expanded ? expandedLabel : collapsedLabel(hiddenCount)}
+        </Button>
       ) : null}
-      </Stack>
-    </Tooltip>
+    </Box>
   );
+
+  return tooltipTitle ? <Tooltip title={tooltipTitle}>{content}</Tooltip> : content;
 }
 
-export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTableRowView['callsignChips'] }) {
+function ExpandableTextListCell({
+  items,
+  maxVisible,
+  tooltipTitle,
+}: {
+  items: string[];
+  maxVisible: number;
+  tooltipTitle?: ReactNode;
+}) {
   const [expanded, setExpanded] = useState(false);
 
-  if (callsigns.length === 0) {
+  if (items.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
         —
@@ -54,54 +104,103 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
     );
   }
 
-  const visibleCallsigns = expanded ? callsigns : callsigns.slice(0, 3);
-  const hasExpandableOverflow = callsigns.length > 3;
-  const hiddenCount = callsigns.length - visibleCallsigns.length;
+  const visibleItems = expanded ? items : items.slice(0, maxVisible);
+  const hiddenCount = Math.max(items.length - maxVisible, 0);
+  const collapsedText = visibleItems.join(', ');
+  const expandedText = items.join(', ');
 
-  return (
-    <Stack
-      direction="row"
-      spacing={0.5}
-      alignItems="center"
-      useFlexGap
+  const content = (
+    <Box
       sx={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) auto',
+        alignItems: 'center',
+        columnGap: 0.75,
         minWidth: 0,
-        overflow: expanded ? 'visible' : 'hidden',
-        whiteSpace: expanded ? 'normal' : 'nowrap',
-        flexWrap: expanded ? 'wrap' : 'nowrap',
+        width: '100%',
       }}
     >
-        {visibleCallsigns.map((entry, index) => {
-          const hintIcon =
-            entry.iconClass === 'info-circle-fill' ? <InfoIcon fontSize="inherit" /> : entry.iconClass === 'info-circle' ? <InfoOutlinedIcon fontSize="inherit" /> : null;
-          const chip = (
-            <PowerChip
-              label={
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  {entry.tooltip && hintIcon ? hintIcon : null}
-                  <span>{entry.callsign.toUpperCase()}</span>
-                </span>
-              }
-              size="small"
-              color={entry.tooltip ? 'primary' : 'default'}
-              selected={entry.isHighlighted}
-              title={entry.tooltip ?? entry.callsign.toUpperCase()}
-              sx={{ maxWidth: '100%', minWidth: 0, cursor: 'default' }}
-            />
-          );
-
-          return (
-            <Tooltip key={`${entry.callsign}-${index}`} title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
-              <span>{chip}</span>
-            </Tooltip>
-          );
-        })}
-      {hasExpandableOverflow ? (
-        <Button size="small" variant="text" onClick={() => setExpanded((current) => !current)} sx={{ minWidth: 0, px: 0.5, py: 0, flexShrink: 0, whiteSpace: 'nowrap' }}>
+      <Typography
+        component="span"
+        variant="body2"
+        title={expanded ? expandedText : collapsedText}
+        sx={{
+          minWidth: 0,
+          width: '100%',
+          overflow: expanded ? 'visible' : 'hidden',
+          whiteSpace: expanded ? 'normal' : 'nowrap',
+          textOverflow: expanded ? 'clip' : 'ellipsis',
+          lineHeight: 1.35,
+        }}
+      >
+        {expanded ? expandedText : collapsedText}
+      </Typography>
+      {items.length > maxVisible ? (
+        <Button
+          size="small"
+          variant="text"
+          onClick={() => setExpanded((current) => !current)}
+          aria-label={expanded ? 'Згорнути' : `Показати ще ${hiddenCount}`}
+          sx={{
+            minWidth: 0,
+            px: 0.5,
+            py: 0,
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+            fontWeight: 600,
+            lineHeight: 1.2,
+          }}
+        >
           {expanded ? 'Згорнути' : `+${hiddenCount} ще`}
         </Button>
       ) : null}
-    </Stack>
+    </Box>
+  );
+
+  return tooltipTitle ? <Tooltip title={tooltipTitle}>{content}</Tooltip> : content;
+}
+
+export function CompactListCell({ items, maxVisible = 2 }: { items: string[]; maxVisible?: number }) {
+  return (
+    <ExpandableTextListCell
+      items={items}
+      maxVisible={maxVisible}
+      tooltipTitle={items.join(', ')}
+    />
+  );
+}
+
+export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTableRowView['callsignChips'] }) {
+  return (
+    <ExpandableInlineListCell
+      items={callsigns}
+      maxVisible={3}
+      renderItem={(entry, index) => {
+        const hintIcon =
+          entry.iconClass === 'info-circle-fill' ? <InfoIcon fontSize="inherit" /> : entry.iconClass === 'info-circle' ? <InfoOutlinedIcon fontSize="inherit" /> : null;
+        const chip = (
+          <PowerChip
+            label={
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {entry.tooltip && hintIcon ? hintIcon : null}
+                <span>{entry.callsign.toUpperCase()}</span>
+              </span>
+            }
+            size="small"
+            color={entry.tooltip ? 'primary' : 'default'}
+            selected={entry.isHighlighted}
+            title={entry.tooltip ?? entry.callsign.toUpperCase()}
+            sx={{ maxWidth: '100%', minWidth: 0, cursor: 'default' }}
+          />
+        );
+
+        return (
+          <Tooltip key={`${entry.callsign}-${index}`} title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
+            <span>{chip}</span>
+          </Tooltip>
+        );
+      }}
+    />
   );
 }
 

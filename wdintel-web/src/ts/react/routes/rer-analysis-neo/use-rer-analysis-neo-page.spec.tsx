@@ -343,7 +343,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.centerTab).toBe('messages');
   });
 
-  it('adds a frequency filter through the summary sidebar without dropping existing selections', async () => {
+  it('adds a frequency filter through the stats sidebar without dropping existing selections', async () => {
     renderHook();
     await flushEffects();
 

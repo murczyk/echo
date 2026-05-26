@@ -30,7 +30,6 @@ export const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [{ id: 'count', desc: true
 const rowActionsDisplayColumnDef = CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'] as Partial<
   MRT_ColumnDef<AnalysisSummaryTableRowView>
 >;
-const defaultBodyCellSx = ((CUSTOM_STYLES.muiTableBodyCellProps as { sx?: object }).sx ?? {});
 
 export function buildAnalysisSummaryTableColumns({
   onRenameUnit,
@@ -102,29 +101,21 @@ export function buildAnalysisSummaryTableColumns({
       header: 'Позивні',
       accessorFn: (row) => row.callsignChips.map((entry) => entry.callsign).join(' '),
       id: 'callsignSearchText',
-      size: 224,
-      muiTableBodyCellProps: {
-        sx: {
-          ...defaultBodyCellSx,
-          overflow: 'visible',
-          whiteSpace: 'normal',
-          textOverflow: 'clip',
-        },
-      },
+      size: 248,
       Cell: ({ row }) => <CallsignChipsCell callsigns={row.original.callsignChips} />,
     },
     {
       header: 'Підрозділи',
       accessorFn: (row) => row.unitLabels.join(' '),
       id: 'unitSearchText',
-      size: 208,
+      size: 224,
       Cell: ({ row }) => <CompactListCell items={row.original.unitLabels} maxVisible={2} />,
     },
     {
       header: 'Локації',
       accessorFn: (row) => row.locationLabels.join(' '),
       id: 'locationSearchText',
-      size: 168,
+      size: 208,
       Cell: ({ row }) => <CompactListCell items={row.original.locationLabels} maxVisible={2} />,
     },
   ];
