@@ -1,4 +1,4 @@
-module Pages.RerAnalysis exposing (Model, Msg, page)
+module Pages.RerAnalysis exposing (Model, Msg, init, page, update)
 
 import Api
 import Auth
@@ -253,6 +253,7 @@ init route _ =
             , mapPoints = NotAsked
             , mapNetworkUnits = []
             , mapOpenMessages = NotAsked
+            , mapOpenMessagesLoadRequestId = 0
             , mapOpenMessagesRequestId = 0
             , adjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectAdjacentFreqsRange")
@@ -3899,24 +3900,32 @@ update user shared route msg model =
         LoadMessagesForMap ids ->
             let
                 requestId =
-                    model.mapOpenMessagesRequestId + 1
+                    model.mapOpenMessagesLoadRequestId + 1
 
                 m2 =
-                    { model | mapOpenMessages = Loading, mapOpenMessagesRequestId = requestId }
+                    { model | mapOpenMessages = Loading, mapOpenMessagesLoadRequestId = requestId }
             in
             ( m2, E.getMessagesByIds (GotMessagesForMap requestId) { messageIds = ids } )
 
         GotMessagesForMap requestId (Ok rsp) ->
-            if requestId /= model.mapOpenMessagesRequestId then
+            if requestId /= model.mapOpenMessagesLoadRequestId then
                 ( model, E.none )
 
             else
-                ( { model | mapOpenMessages = Success rsp.messages }
-                , loadNetworksForMessages shared model rsp.messages
-                )
+                let
+                    m2 =
+                        { model | mapOpenMessages = Success rsp.messages }
+                in
+                if List.isEmpty rsp.messages then
+                    ( m2, E.none )
+
+                else
+                    ( { m2 | mapOpenMessagesRequestId = model.mapOpenMessagesRequestId + 1 }
+                    , loadNetworksForMessages shared m2 rsp.messages
+                    )
 
         GotMessagesForMap requestId (Err err) ->
-            if requestId /= model.mapOpenMessagesRequestId then
+            if requestId /= model.mapOpenMessagesLoadRequestId then
                 ( model, E.none )
 
             else
