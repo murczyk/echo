@@ -1,6 +1,10 @@
 import { messagesCountText } from '../../maps/utils/language-utils';
 import type { ContentNode } from '../../../Bindings';
-import { Message, NetworkUnit } from './types';
+import { Message } from './types';
+import {
+  normalizeUnknownUnitFilterValue,
+  normalizeUnknownUnitDisplayValue,
+} from '../../react/routes/shared/analysis-unit-filter';
 import { updateStateUrl } from './url-state';
 
 function escapeHtml(value: string): string {
@@ -83,13 +87,17 @@ function renderMessageText(message: Message[1]): string {
 }
 
 function liTemplate(message_: Message, selectedUnits: string[]) {
-  const unitName = message_[1].unit ?? 'Не визначено';
+  const rawUnit = message_[1].unit;
+  const unitValue = normalizeUnknownUnitFilterValue(rawUnit);
+  const unitDisplay = normalizeUnknownUnitDisplayValue(rawUnit);
+  const escapedDisplay = escapeHtml(unitDisplay);
+  const escapedAttr = escapeHtml(unitValue);
   const unitBlock = `
             <div>
               <span style="font-weight: 700; line-height: 22px;">Підрозділ:</span> 
-              <span class="pointer" style="color: #0d6efd" id="map-message-id-${message_[0]}", data-unitname="${unitName}">
-                ${unitName}
-                <i class="bi bi-${selectedUnits.includes(unitName) ? 'dash' : 'plus'}-square" > </i>
+              <span class="pointer" style="color: #0d6efd" id="map-message-id-${message_[0]}" data-unitname="${escapedAttr}">
+                ${escapedDisplay}
+                <i class="bi bi-${selectedUnits.includes(unitValue) ? 'dash' : 'plus'}-square" > </i>
               </span>
             </div>
             `;
@@ -108,7 +116,7 @@ function liTemplate(message_: Message, selectedUnits: string[]) {
     `;
 }
 
-export function getPointPopupTemplate(sortedMessages: Message[], _networkUnits: NetworkUnit[], selectedUnits: string[]) {
+export function getPointPopupTemplate(sortedMessages: Message[], selectedUnits: string[]) {
   const body = sortedMessages
     .map((message) => {
       return liTemplate(message, selectedUnits);

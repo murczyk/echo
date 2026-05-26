@@ -22,7 +22,7 @@ describe('getPointPopupTemplate', () => {
       ] as unknown as Message[1]['text_marked'],
     });
 
-    const html = getPointPopupTemplate([message], [] as NetworkUnit[], []);
+    const html = getPointPopupTemplate([message], []);
 
     expect(html).toContain('Оріон');
     expect(html).toContain('P-1');
@@ -34,7 +34,7 @@ describe('getPointPopupTemplate', () => {
       text_marked: [{ CNCallsignC: { text: 'БОРОДА', begin: 0, end: 6, etalon: 'БОРОДА' } }] as unknown as Message[1]['text_marked'],
     });
 
-    const html = getPointPopupTemplate([message], [] as NetworkUnit[], []);
+    const html = getPointPopupTemplate([message], []);
 
     expect(html).toContain('БОРОДА');
     expect(html).toContain('badge-highlighed-token--callsign');
@@ -47,13 +47,7 @@ describe('getPointPopupTemplate', () => {
       unit: 'Header Unit',
     });
 
-    const html = getPointPopupTemplate(
-      [message],
-      [
-        { name: 'Unit A', frequencies: ['145.5'] },
-      ],
-      [],
-    );
+    const html = getPointPopupTemplate([message], []);
 
     expect(html).toContain('Header Unit');
     expect(html).not.toContain('Unit A');
@@ -65,11 +59,7 @@ describe('getPointPopupTemplate', () => {
       network_ids: [1],
     });
 
-    const html = getPointPopupTemplate(
-      [message],
-      [{ name: 'Unit A', frequencies: ['145.5'] }],
-      [],
-    );
+    const html = getPointPopupTemplate([message], []);
 
     expect(html).toContain('Не визначено');
     expect(html).not.toContain('Unit A');
