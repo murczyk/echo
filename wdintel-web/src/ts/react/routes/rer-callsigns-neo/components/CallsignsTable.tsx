@@ -14,6 +14,7 @@ import type { CSSProperties } from 'react';
 
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import type { DevelopingFilter } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
@@ -646,7 +647,7 @@ function CallsignsTableComponent({
               disabled={loading || loadingMore}
               startIcon={loadingMore ? <CircularProgress color="inherit" size={16} /> : null}
             >
-              {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
+              {loadingMore ? `Завантаження${ELLIPSIS}` : 'Завантажити ще'}
             </Button>
           </Box>
         ) : null}

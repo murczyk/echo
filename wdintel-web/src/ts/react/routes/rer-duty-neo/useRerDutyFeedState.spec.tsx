@@ -138,6 +138,44 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
   });
 
+  it('keeps existing items visible while a filter reload is pending', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([1]);
+
+    let resolveReload: (value: InboxMessagesRsp) => void = () => {};
+    hoisted.fetchInboxMessages.mockImplementationOnce(
+      () =>
+        new Promise<InboxMessagesRsp>((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+
+    await act(async () => {
+      apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(true);
+    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([1]);
+
+    await act(async () => {
+      resolveReload(inboxRsp([[2, minimalInboxMessage({ timestamp: 200, text: 'reloaded' })]]));
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([2]);
+  });
+
   it('updates unreadCount from poll when count > 0 and column has items', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
     await act(async () => {

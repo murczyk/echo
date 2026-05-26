@@ -5,6 +5,7 @@ import { Box, Button, CircularProgress, IconButton, Paper, Stack, Tooltip, Typog
 import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
 
+import { ELLIPSIS } from '../../../utils/misc';
 import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
@@ -417,7 +418,7 @@ export function NetworkCallsignRelationsGraphStage({
           <Stack spacing={1.5} alignItems="center" sx={{ color: graphOverlayText }}>
             <CircularProgress size={28} />
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Оновлюємо граф зв&apos;язків…
+              {`Оновлюємо граф зв'язків${ELLIPSIS}`}
             </Typography>
           </Stack>
         </Box>

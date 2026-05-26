@@ -25,7 +25,10 @@ import {
 } from '../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
+import { ELLIPSIS } from '../../utils/misc';
 import { GoiAssociationRowView } from './use-goi-associations-page';
+
+const LOADING_MORE_TEXT = `Завантаження${ELLIPSIS}`;
 
 const defaultMRTOptions = getDefaultMRTOptions<GoiAssociationRowView>();
 
@@ -359,7 +362,7 @@ export function GoiAssociationsTable(props: Props) {
                 ) : null
               }
             >
-              {props.loadingMore ? 'Завантаження…' : 'Завантажити ще'}
+              {props.loadingMore ? LOADING_MORE_TEXT : 'Завантажити ще'}
             </Button>
           </Box>
         ) : null}

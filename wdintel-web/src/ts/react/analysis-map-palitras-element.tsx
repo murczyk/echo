@@ -16,6 +16,7 @@ import { PalitraDetails } from '../maps/palitra-types';
 import { useNeoMuiTheme } from './mui-theme';
 import { PowerChip } from './components/PowerChip';
 import { SearchInput } from './components/SearchInput';
+import { ELLIPSIS } from './utils/misc';
 
 type PalitraGroup = {
   key: string;
@@ -563,7 +564,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   if (!canInteract) {
     const hintText = (() => {
       if (loadState === 'loading') {
-        return 'Палітри завантажуються...';
+        return `Палітри завантажуються${ELLIPSIS}`;
       }
       if (loadState === 'success' && !hasPalitras) {
         return 'Доступних палітр немає';

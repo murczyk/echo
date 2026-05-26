@@ -3,6 +3,7 @@ import { Alert, Box, Button, Drawer, Stack, Typography } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
+import { ELLIPSIS } from '../../../utils/misc';
 import { CALLSIGN_FORM_HINT, RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR } from '../helpers';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignEditForm } from '../types';
@@ -109,7 +110,7 @@ export function EditCallsignDrawer({ open, form, units, sources, submitting, err
           Скасувати
         </Button>
         <Button onClick={onSave} variant='contained' disabled={submitting || !form}>
-          {submitting ? 'Збереження…' : 'Зберегти'}
+          {submitting ? `Збереження${ELLIPSIS}` : 'Зберегти'}
         </Button>
       </Box>
     </Drawer>

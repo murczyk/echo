@@ -5,6 +5,7 @@ import { act } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ELLIPSIS } from '../../../utils/misc';
 
 import type { InboxMessage } from '../../../../../Bindings';
 
@@ -27,6 +28,8 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
     onComment: () => void;
     onDelete: () => void;
     onEditDetails: () => void;
+    onCopyEtalon?: () => void;
+    onCopyLocation?: () => void;
     messageComments?: Array<{ id: number; login: string; comment: string }>;
     senderName?: string | null;
     tagsLayout?: string;
@@ -45,6 +48,16 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
       <button type="button" onClick={props.onEditDetails}>
         edit-{props.id}
       </button>
+      {props.onCopyEtalon != null ? (
+        <button type="button" onClick={props.onCopyEtalon}>
+          copy-etalon-{props.id}
+        </button>
+      ) : null}
+      {props.onCopyLocation != null ? (
+        <button type="button" onClick={props.onCopyLocation}>
+          copy-location-{props.id}
+        </button>
+      ) : null}
       {props.analysisCallsignActions != null ? <span>analysis-callsigns</span> : null}
       {props.analysisCallsignActions != null ? (
         <button type="button" onClick={() => props.analysisCallsignActions?.onRemoveCallsign('ALPHA')}>
@@ -148,6 +161,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
+    onAddFrequencyToFilter: vi.fn(),
     profiles: {},
     users: {},
     tagsMap: {},
@@ -260,7 +274,7 @@ describe('AnalysisMessagesPane', () => {
 
     expect(view.container.textContent).toContain('loading');
     expect(view.container.textContent).not.toContain('Завантажити ще');
-    expect(view.container.textContent).not.toContain('Завантаження...');
+    expect(view.container.textContent).not.toContain(`Завантаження${ELLIPSIS}`);
   });
 
   it('wires comment save into the page callback', async () => {
@@ -349,6 +363,29 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('analysis-callsigns');
+  });
+
+  it('passes the copy menu etalon action into analysis message cards', async () => {
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage({ unit: '1-й танк' })]],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('button').textContent).toContain('comment-7');
+    expect(view.container.textContent).toContain('copy-etalon-7');
+  });
+
+  it('passes the copy menu location action into analysis message cards when no networks resolve', async () => {
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage({ networkIds: [], location: 'ПІЩАНКА' })]],
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('copy-location-7');
   });
 
   it('normalizes callsigns when removing them through the analysis card', async () => {

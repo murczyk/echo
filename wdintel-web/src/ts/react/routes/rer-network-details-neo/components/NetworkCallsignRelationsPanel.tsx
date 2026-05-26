@@ -3,6 +3,7 @@ import { Box, Button, Stack, Typography } from '@mui/material';
 import { useId } from 'react';
 
 import type { NetworkCallsignRelationsRsp } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 import { NetworkDetailsLoadingState } from './NetworkDetailsLoadingState';
@@ -82,7 +83,7 @@ export function NetworkCallsignRelationsPanel({
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків
           </Typography>
-          <NetworkDetailsLoadingState message="Завантажуємо граф зв'язків…" />
+          <NetworkDetailsLoadingState message={`Завантажуємо граф зв'язків${ELLIPSIS}`} />
         </Stack>
       </Box>
     );

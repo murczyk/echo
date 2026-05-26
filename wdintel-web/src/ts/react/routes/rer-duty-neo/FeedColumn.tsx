@@ -13,7 +13,7 @@ import type {
   Tag,
   Unit,
 } from '../../../../Bindings';
-import type { TagsLayoutVariant, MessageFeedState } from './utils';
+import type { MessageEntityFilterKind, TagsLayoutVariant, MessageFeedState } from './utils';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import {
   getStoredDutyNotificationSettingsForFeed,
@@ -54,7 +54,7 @@ export type FeedColumnModel = {
     callsignInfoMap: Record<string, CallsignInfoRes>;
     groupInfos: Record<string, SignalGroupEntry>;
     profiles: Record<string, SignalProfileEntry | null>;
-    /** When true, empty network ids show "Не встановлена" only (no unit fallback). Server `featureStrictNetworks`. */
+    /** When true, empty network ids do not fall back to `msg.unit`. Server `featureStrictNetworks`. */
     featureStrictNetworks: boolean;
     tagsLayout: TagsLayoutVariant;
     tagsMap: Record<number, Tag>;
@@ -64,8 +64,10 @@ export type FeedColumnModel = {
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
     onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+    onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
     onMessageCopy: (text: string, feedbackId: string) => void;
     onMessageComment: (msgId: number, currentComment: string | null) => void;
+    onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
     onScrollToTop?: () => void;
     /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */

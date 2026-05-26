@@ -1,6 +1,7 @@
 import { Box, Chip, Stack, Typography } from '@mui/material';
 
 import type { NetworkFreqsRes } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import { formatNetworkFreqValue } from '../frequency-utils';
 import { typeLabelFromKind } from '../use-rer-network-details-neo-page.shared';
 
@@ -11,7 +12,7 @@ type Props = {
 function formatCallsigns(callsigns: Array<string> | null | undefined): string {
   const values = (callsigns ?? []).map((callsign) => callsign.trim()).filter((callsign) => callsign !== '');
   if (values.length === 0) return '—';
-  return values.slice(0, 3).join(', ') + (values.length > 3 ? '…' : '');
+  return values.slice(0, 3).join(', ') + (values.length > 3 ? ELLIPSIS : '');
 }
 
 export function NetworkFreqSummaryHeader({ freq }: Props) {

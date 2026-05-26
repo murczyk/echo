@@ -4,6 +4,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
 import { useNeoMuiTheme } from './mui-theme';
+import { ELLIPSIS } from './utils/misc';
 
 type AnalysisCountChipProps = {
   selectedCount: number;
@@ -21,7 +22,7 @@ function AnalysisCountChip(props: AnalysisCountChipProps) {
         size="small"
         variant="outlined"
         label={label}
-        title={props.isReloading ? 'Оновлюється…' : undefined}
+        title={props.isReloading ? `Оновлюється${ELLIPSIS}` : undefined}
         aria-label={`Показано ${props.selectedCount} з ${props.overallCount}`}
         sx={{
           height: 28,

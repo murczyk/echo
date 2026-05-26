@@ -46,6 +46,121 @@ export type TagsLayoutVariant = 'full' | 'compact' | 'hidden';
 /** When `rerDutyNeo` prefs omit a value or loading fails (settings + operative feed). */
 export const DEFAULT_DUTY_TAGS_LAYOUT: TagsLayoutVariant = 'compact';
 
+export type MessageEntityFilterKind = 'group' | 'sender' | 'freq' | 'post';
+
+export type MessageEntityExcludeMenuOption = {
+  entity: MessageEntityFilterKind;
+  value: string;
+  label: string;
+};
+
+export type MessageEntityValueSource = {
+  value: string | null | undefined;
+  label: string | null | undefined;
+};
+
+function normalizeFilterValues(values: readonly string[] | null | undefined): string[] {
+  const next: string[] = [];
+  const seen = new Set<string>();
+  (values ?? []).forEach((value) => {
+    const trimmed = value.trim();
+    if (trimmed === '' || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    next.push(trimmed);
+  });
+  return next;
+}
+
+function appendUniqueValue(values: readonly string[] | null | undefined, value: string): string[] {
+  const trimmed = value.trim();
+  const next = normalizeFilterValues(values);
+  if (trimmed !== '' && !next.includes(trimmed)) next.push(trimmed);
+  return next;
+}
+
+function filterValuesForEntity(
+  filters: RerDutyFeedFilterState,
+  entity: MessageEntityFilterKind,
+): { selected: readonly string[] | null | undefined; denied: readonly string[] | null | undefined } {
+  switch (entity) {
+    case 'group':
+      return { selected: filters.groupsSelected, denied: filters.groupsDenied };
+    case 'sender':
+      return { selected: filters.sendersSelected, denied: filters.deniedSenders };
+    case 'freq':
+      return { selected: filters.freqsSelected, denied: filters.freqsDenied };
+    case 'post':
+      return { selected: filters.postsSelected, denied: filters.postsDenied };
+  }
+}
+
+function setEntityFilterValues(
+  filters: RerDutyFeedFilterState,
+  entity: MessageEntityFilterKind,
+  nextSelected: string[] | null,
+  nextDenied: string[] | null,
+): RerDutyFeedFilterState {
+  switch (entity) {
+    case 'group':
+      return { ...filters, groupsSelected: nextSelected, groupsDenied: nextDenied };
+    case 'sender':
+      return { ...filters, sendersSelected: nextSelected, deniedSenders: nextDenied };
+    case 'freq':
+      return { ...filters, freqsSelected: nextSelected, freqsDenied: nextDenied };
+    case 'post':
+      return { ...filters, postsSelected: nextSelected, postsDenied: nextDenied };
+  }
+}
+
+export function isMessageEntityExcluded(filters: RerDutyFeedFilterState, entity: MessageEntityFilterKind, value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === '') return false;
+  const { denied } = filterValuesForEntity(filters, entity);
+  return normalizeFilterValues(denied).includes(trimmed);
+}
+
+export function excludeMessageEntityFromFilters(
+  filters: RerDutyFeedFilterState,
+  entity: MessageEntityFilterKind,
+  value: string,
+): RerDutyFeedFilterState {
+  const trimmed = value.trim();
+  if (trimmed === '') return filters;
+  const { selected, denied } = filterValuesForEntity(filters, entity);
+  const currentSelected = normalizeFilterValues(selected);
+  const currentDenied = normalizeFilterValues(denied);
+  if (currentDenied.length > 0) {
+    return setEntityFilterValues(filters, entity, null, appendUniqueValue(currentDenied, trimmed));
+  }
+  if (currentSelected.length > 0) {
+    return setEntityFilterValues(filters, entity, null, [trimmed]);
+  }
+  return setEntityFilterValues(filters, entity, null, [trimmed]);
+}
+
+export function buildVisibleExcludeMenuOptions(
+  filters: RerDutyFeedFilterState,
+  sources: Record<MessageEntityFilterKind, MessageEntityValueSource | null | undefined>,
+): MessageEntityExcludeMenuOption[] {
+  const definitions: Array<{
+    entity: MessageEntityFilterKind;
+    value: string | null | undefined;
+    label: string | null | undefined;
+  }> = [
+    { entity: 'group', value: sources.group?.value, label: sources.group?.label },
+    { entity: 'sender', value: sources.sender?.value, label: sources.sender?.label },
+    { entity: 'freq', value: sources.freq?.value, label: sources.freq?.label },
+    { entity: 'post', value: sources.post?.value, label: sources.post?.label },
+  ];
+  return definitions.flatMap(({ entity, value, label }) => {
+    const trimmedValue = value?.trim() ?? '';
+    const trimmedLabel = label?.trim() ?? '';
+    if (trimmedValue === '' || trimmedLabel === '') return [];
+    if (isMessageEntityExcluded(filters, entity, trimmedValue)) return [];
+    return [{ entity, value: trimmedValue, label: trimmedLabel }];
+  });
+}
+
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
     groupsSelected: null,

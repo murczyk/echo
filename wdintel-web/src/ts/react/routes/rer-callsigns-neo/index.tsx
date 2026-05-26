@@ -8,6 +8,7 @@ import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialo
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { ELLIPSIS } from '../../utils/misc';
 import { CreateCallsignsDrawer } from './components/CreateCallsignsDrawer';
 import { CallsignsDateInputs, CallsignsFiltersTopRow } from './components/CallsignsFilters';
 import {
@@ -21,6 +22,9 @@ import { UnitStatsSidebar } from './components/UnitStatsSidebar';
 import { DESKTOP_LAYOUT_MIN_WIDTH_PX, getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
 import { PowerAlert } from '../../components/PowerAlert';
+
+const CSV_LOADING_TEXT = `Завантаження CSV${ELLIPSIS}`;
+const XLSX_LOADING_TEXT = `Завантаження XLSX${ELLIPSIS}`;
 
 type SidebarToggleRailProps = {
   open: boolean;
@@ -110,22 +114,22 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         onClick={page.onDownloadCsv}
         disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
         variant="outlined"
-        aria-label={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
-        title={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        aria-label={page.downloadInProgress === 'csv' ? CSV_LOADING_TEXT : 'Завантажити CSV'}
+        title={page.downloadInProgress === 'csv' ? CSV_LOADING_TEXT : 'Завантажити CSV'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        {page.downloadInProgress === 'csv' ? CSV_LOADING_TEXT : 'Завантажити CSV'}
       </Button>
       <Button
         startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
         onClick={page.onDownloadXlsx}
         disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
         variant="outlined"
-        aria-label={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
-        title={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        aria-label={page.downloadInProgress === 'xlsx' ? XLSX_LOADING_TEXT : 'Завантажити XLSX'}
+        title={page.downloadInProgress === 'xlsx' ? XLSX_LOADING_TEXT : 'Завантажити XLSX'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        {page.downloadInProgress === 'xlsx' ? XLSX_LOADING_TEXT : 'Завантажити XLSX'}
       </Button>
     </Stack>
   ) : null;
@@ -136,22 +140,22 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         onClick={page.onDownloadCsv}
         disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
         variant="outlined"
-        aria-label={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
-        title={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        aria-label={page.downloadInProgress === 'csv' ? CSV_LOADING_TEXT : 'Завантажити CSV'}
+        title={page.downloadInProgress === 'csv' ? CSV_LOADING_TEXT : 'Завантажити CSV'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        {page.downloadInProgress === 'csv' ? CSV_LOADING_TEXT : 'Завантажити CSV'}
       </Button>
       <Button
         startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
         onClick={page.onDownloadXlsx}
         disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
         variant="outlined"
-        aria-label={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
-        title={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        aria-label={page.downloadInProgress === 'xlsx' ? XLSX_LOADING_TEXT : 'Завантажити XLSX'}
+        title={page.downloadInProgress === 'xlsx' ? XLSX_LOADING_TEXT : 'Завантажити XLSX'}
         sx={{ whiteSpace: 'nowrap' }}
       >
-        {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        {page.downloadInProgress === 'xlsx' ? XLSX_LOADING_TEXT : 'Завантажити XLSX'}
       </Button>
     </Stack>
   ) : null;

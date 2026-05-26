@@ -25,7 +25,7 @@ import { PowerButton } from '../../components/PowerButton';
 import { createTag, deleteTagKeyword, getTagModelErrors, listTags, updateTag } from '../../services/api/tags';
 import type { TagModelErrorFE } from '../../services/api/tags';
 import { navigateWithinSpa } from '../../utils/browser';
-import { formatDate } from '../../utils/misc';
+import { ELLIPSIS, formatDate } from '../../utils/misc';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -286,7 +286,7 @@ function KeywordsTable(props: {
                       onClick={() => props.onDelete(keyword.tagKeywordId)}
                       disabled={deleting}
                     >
-                      {deleting ? 'Видалення...' : 'Видалити'}
+                      {deleting ? `Видалення${ELLIPSIS}` : 'Видалити'}
                     </PowerButton>
                   </div>
                 </td>

@@ -8,6 +8,8 @@ import {
   DEFAULT_DUTY_TAGS_LAYOUT,
   feedUnreadDisplayCount,
   feedsUnreadDisplayTotal,
+  excludeMessageEntityFromFilters,
+  type MessageEntityFilterKind,
   type MessageFeedState,
   type TagsLayoutVariant,
 } from './utils';
@@ -163,13 +165,16 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       tagsLayout,
       tagsMap,
     },
-    actions: {
-      onLoadOlder: () => loadFeedOlderMessages(feed.id),
-      onRemoveColumn: () => removeMessageFeed(feed.id),
-      onMessageBookmark: (msgId, currentlyBookmarked) => handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
-      onMessageImportant: (msgId, currentlyImportant) => handleMessageImportant(feed.id, msgId, currentlyImportant),
-      onMessageCopy: handleMessageCopy,
-      onMessageComment: (msgId, currentComment) => openCommentDialog(msgId, feed.id, currentComment),
+      actions: {
+        onLoadOlder: () => loadFeedOlderMessages(feed.id),
+        onRemoveColumn: () => removeMessageFeed(feed.id),
+        onMessageBookmark: (msgId, currentlyBookmarked) => handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
+        onMessageImportant: (msgId, currentlyImportant) => handleMessageImportant(feed.id, msgId, currentlyImportant),
+        onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feed.id, freq),
+        onMessageCopy: handleMessageCopy,
+        onMessageComment: (msgId, currentComment) => openCommentDialog(msgId, feed.id, currentComment),
+        onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) =>
+          applyFilter(feed.id, excludeMessageEntityFromFilters(feed.filter, entity, value)),
       onMessageToggleTag: (msgId, tagId) => handleToggleTag(feed.id, msgId, tagId),
       onScrollToTop: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
       onReachedBottom: () => {
@@ -219,6 +224,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     handleDeleteSelectedSavedFilter,
     handleMessageBookmark,
     handleMessageImportant,
+    addFrequencyToFilter,
     handleMessageCopy,
     handleDeleteConfirm,
     setDeleteConfirmId,
@@ -292,9 +298,10 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   }, [messageFeeds]);
 
   const dutyTabUnreadTotal = useMemo(() => feedsUnreadDisplayTotal(messageFeeds), [messageFeeds]);
-  const anyFeedLoading = messageFeeds.some((feed) => feed.loading);
-  const isInitialLoading = !hasCompletedInitialLoad && anyFeedLoading;
-  const showLoadingBackdrop = hasCompletedInitialLoad && anyFeedLoading;
+  const anyFeedInitialLoading = messageFeeds.some((feed) => feed.loading && feed.items.length === 0);
+  const anyFeedReloading = messageFeeds.some((feed) => feed.loading && feed.items.length > 0);
+  const isInitialLoading = !hasCompletedInitialLoad && anyFeedInitialLoading;
+  const showLoadingBackdrop = hasCompletedInitialLoad && anyFeedReloading;
   useEffect(() => startDutyNeoDocumentTitleTracking(), []);
   useEffect(() => {
     setDutyNeoDocumentTitleUnreadCount(dutyTabUnreadTotal);

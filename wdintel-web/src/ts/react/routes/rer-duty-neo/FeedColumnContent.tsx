@@ -3,11 +3,12 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 import type { ComponentProps, Ref, RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { isNullOrUndefined, isPresent } from '../../utils/misc';
+import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './FeedColumn';
 import { profileLabel } from './utils';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
+import { resolveMessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
@@ -90,8 +91,10 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
     onLoadOlder,
     onMessageBookmark,
     onMessageImportant,
+    onMessageAddFrequencyToFilter,
     onMessageCopy,
     onMessageComment,
+    onMessageExcludeEntity,
     onMessageToggleTag,
     onScrollToTop,
     onReachedBottom,
@@ -220,7 +223,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
                 }}
               >
                 <CircularProgress size={18} />
-                <Typography variant="body2">Завантаження старіших…</Typography>
+                <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
               </Box>
             ) : feed.hasReachedStart ? (
               <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 1.5 }}>
@@ -238,6 +241,12 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
         itemContent={(_index, [id, msg]) => {
           const senderName = isPresent(msg.sender) ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
           const groupName = isPresent(msg.groupMasterKey) ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
+          const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
+            featureStrictNetworks,
+            networkDisplayMap,
+            networkMap,
+            networks: networkMap ? Object.values(networkMap) : undefined,
+          });
           return (
             <DutyMessageCard
               id={id}
@@ -261,9 +270,22 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               onImportant={() => onMessageImportant(id, msg.important)}
               onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
               onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
+              onCopyEtalon={
+                etalonDisplayModel.copyEtalonValue == null
+                  ? undefined
+                  : () => onMessageCopy(etalonDisplayModel.copyEtalonValue ?? '', `etalon-${id}`)
+              }
+              onCopyLocation={
+                etalonDisplayModel.copyLocationValue == null
+                  ? undefined
+                  : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
+              }
+              onAddFrequencyToFilter={(freq) => onMessageAddFrequencyToFilter(feed.id, freq)}
               onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
+              onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
               onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
               rightHeaderInsetPx={0}
+              filterState={feed.filter}
             />
           );
         }}
