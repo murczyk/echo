@@ -23,6 +23,7 @@ type Props = {
   value: string[];
   disabled?: boolean;
   loading?: boolean;
+  normalizeUnknownAliases?: boolean;
   onChange: (next: string[]) => void;
 };
 
@@ -39,11 +40,14 @@ function toAutocompleteOption(option: AnalysisFilterOption, index: number): Auto
   };
 }
 
-function optionContainsValue(option: AutocompleteOption, selected: string): boolean {
-  return option.value === selected || option.values.includes(selected);
+function optionContainsValue(option: AutocompleteOption, selected: string, normalizeUnknownAliases: boolean): boolean {
+  if (option.value === selected || option.values.includes(selected)) {
+    return true;
+  }
+  return normalizeUnknownAliases && option.value === '' && (selected === '' || selected === 'Не визначено');
 }
 
-export function AnalysisFilterField({ label, options, value, disabled, loading, onChange }: Props) {
+export function AnalysisFilterField({ label, options, value, disabled, loading, normalizeUnknownAliases = false, onChange }: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
   const labelCacheRef = useRef<Record<string, string>>({});
   autocompleteOptions.forEach((option) => {
@@ -52,9 +56,9 @@ export function AnalysisFilterField({ label, options, value, disabled, loading, 
       labelCacheRef.current[value] = option.label;
     });
   });
-  const autocompleteValue = autocompleteOptions.filter((option) => value.some((selected) => optionContainsValue(option, selected)));
+  const autocompleteValue = autocompleteOptions.filter((option) => value.some((selected) => optionContainsValue(option, selected, normalizeUnknownAliases)));
   const unknownAutocompleteValue = value
-    .filter((selected) => !autocompleteOptions.some((option) => optionContainsValue(option, selected)))
+    .filter((selected) => !autocompleteOptions.some((option) => optionContainsValue(option, selected, normalizeUnknownAliases)))
     .map((selected) => {
       const label = labelCacheRef.current[selected] ?? selected;
       return { key: selected, label, value: selected, count: 0, values: [selected] };

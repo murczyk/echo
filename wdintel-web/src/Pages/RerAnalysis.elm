@@ -59,6 +59,19 @@ type alias Msg =
     Pages_.RerAnalysis.Msg.Msg
 
 
+normalizeUnitNameFromMap : String -> String
+normalizeUnitNameFromMap unitName =
+    let
+        trimmed =
+            String.trim unitName
+    in
+    if trimmed == "Не визначено" || trimmed == "Не вказано" then
+        ""
+
+    else
+        trimmed
+
+
 init : Route () -> () -> ( Model, Effect Msg )
 init route _ =
     let
@@ -3942,10 +3955,14 @@ update user shared route msg model =
             )
 
         SetUnitFilterFromMap unitName ->
-            if List.member unitName model.unitsSelected then
+            let
+                normalizedUnitName =
+                    normalizeUnitNameFromMap unitName
+            in
+            if List.member normalizedUnitName model.unitsSelected then
                 let
                     m1 =
-                        { model | unitsSelected = List.filter (\x -> x /= unitName) model.unitsSelected }
+                        { model | unitsSelected = List.filter (\x -> x /= normalizedUnitName) model.unitsSelected }
 
                     inboxReq =
                         getInboxReq m1
@@ -3963,7 +3980,7 @@ update user shared route msg model =
             else
                 let
                     m1 =
-                        { model | unitsSelected = [ unitName ], mapPoints = Loading }
+                        { model | unitsSelected = [ normalizedUnitName ], mapPoints = Loading }
 
                     inboxReq =
                         getInboxReq m1

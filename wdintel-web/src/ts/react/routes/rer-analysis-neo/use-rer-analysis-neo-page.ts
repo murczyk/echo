@@ -4,6 +4,7 @@ import { useTheme } from '@mui/material/styles';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
+import { normalizeUnknownUnitFilterValue } from '../shared/analysis-unit-filter';
 import {
   buildAnalysisReq,
   createInitialQueryState,
@@ -172,13 +173,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [queryState]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
-    if (!unitName) return;
+    if (unitName === null) return;
+    const normalizedUnitName = normalizeUnknownUnitFilterValue(unitName);
     data.invalidateFilterSectionLoads();
     setQueryState((current) => ({
       ...current,
-      unitsSelected: current.unitsSelected.includes(unitName)
-        ? current.unitsSelected.filter((item) => item !== unitName)
-        : [...current.unitsSelected, unitName],
+      unitsSelected: current.unitsSelected.includes(normalizedUnitName)
+        ? current.unitsSelected.filter((item) => item !== normalizedUnitName)
+        : [...current.unitsSelected, normalizedUnitName],
     }));
   }, [data.invalidateFilterSectionLoads]);
 

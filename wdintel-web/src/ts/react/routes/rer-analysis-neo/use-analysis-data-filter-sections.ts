@@ -100,7 +100,10 @@ export function useAnalysisFilterSections({
   );
 
   const loadInitialFilterSections = useCallback(
-    async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => {
+    async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload = false) => {
+      if (forceReload) {
+        invalidateFilterSectionLoads();
+      }
       const sections = filterSectionsForInitialLoad(queryState);
       if (sections.length === 0) return;
 
@@ -135,6 +138,7 @@ export function useAnalysisFilterSections({
       );
     },
     [
+      invalidateFilterSectionLoads,
       onError,
       onUnauthorized,
       queryState,

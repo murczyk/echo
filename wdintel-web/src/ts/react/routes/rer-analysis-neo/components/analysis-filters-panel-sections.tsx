@@ -175,6 +175,7 @@ export function AnalysisFiltersPanelSections({
             options={derived.unitsOptions}
             loading={isSectionLoading('units')}
             value={queryState.unitsSelected}
+            normalizeUnknownAliases
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
           <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>

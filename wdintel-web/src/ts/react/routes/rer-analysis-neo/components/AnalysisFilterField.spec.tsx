@@ -92,6 +92,29 @@ describe('AnalysisFilterField', () => {
     });
   });
 
+  it('matches the unknown unit alias to the canonical empty filter option', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [{ value: '', label: '<Не вказано>', count: 4 }],
+      value: ['Не визначено'],
+      normalizeUnknownAliases: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    expect(props.value.map((option) => ({ value: option.value, label: option.label }))).toEqual([
+      { value: '', label: '<Не вказано>' },
+    ]);
+
+    props.onChange(null, props.options);
+    expect(onChange).toHaveBeenCalledWith(['']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('keeps unknown selected values visible with a safe fallback label and zero count', () => {
     const { root } = renderFilterField({
       label: 'Мережі',

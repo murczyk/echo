@@ -382,7 +382,7 @@ type ReloadParams = {
   loadMessageComments?: (messages: Array<[number, InboxMessage]>, forceReload?: boolean) => Promise<void>;
   invalidateSummaryLoads?: () => void;
   invalidateTopSidebarLoads?: () => void;
-  loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => Promise<void>;
+  loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload?: boolean) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
 };
 
@@ -528,11 +528,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         label: normalizeFilterLabel(freq),
         count: nextFreqCountsByValue.get(freq) ?? 0,
       }));
-      params.setOptions({
-        ...emptyOptions,
+      params.setOptions((current) => ({
+        ...current,
         freqs: nextFreqOptions,
         newFreqs: nextNewFreqs,
-      });
+      }));
+      await params.loadInitialFilterSections(resolvedAnalysisReq, true);
       params.setTopFreqs(topItems(effectiveFreqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
@@ -553,6 +554,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     if (isNullOrUndefined(criticalData) || isStaleReload()) return;
 
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
+    params.setFiltersLoading(false);
     params.setMessagesLoading(false);
 
     const loadCountsData = async () => {
@@ -628,13 +630,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     const secondaryLoads = [
       loadCountsData(),
       loadReferenceData(),
-      (async () => {
-        try {
-          await params.loadInitialFilterSections(criticalData.resolvedAnalysisReq);
-        } finally {
-          if (!isStaleReload()) params.setFiltersLoading(false);
-        }
-      })(),
       loadMapData(),
     ];
     if (params.shouldLoadNewCallsigns) {
