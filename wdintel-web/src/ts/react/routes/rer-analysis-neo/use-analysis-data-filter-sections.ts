@@ -5,6 +5,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 
 import { buildAnalysisReq } from './helpers';
+import { emptyOptions } from './use-analysis-data.shared';
 import {
   buildAnalysisReqForFilterSection,
   filterSectionCacheKey,
@@ -102,7 +103,10 @@ export function useAnalysisFilterSections({
   const loadInitialFilterSections = useCallback(
     async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload = false) => {
       if (forceReload) {
+        // Reset loaded keys and clear all existing options so we don't preserve
+        // stale non-initial sections (units/locations/posts/etc.) across reloads.
         invalidateFilterSectionLoads();
+        setOptions(emptyOptions);
       }
       const sections = filterSectionsForInitialLoad(queryState);
       if (sections.length === 0) return;
