@@ -6,7 +6,6 @@ import {
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
 import { APP_TIME_ZONE, combineDateTimeInputToMs, formatDateTimeInputValueInTimeZone, isNullOrUndefined } from '../../utils/misc';
-import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -89,10 +88,10 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
   const url = new URL(window.location.href);
   const flatStateFromUrl = parseRerAnalysisQueryStateFromSearchParams(url.searchParams);
 
-  return normalizeQueryState({
+  return {
     ...emptyQueryState(),
     ...(flatStateFromUrl ?? {}),
-  });
+  };
 }
 
 export function createInitialQueryState(
@@ -157,10 +156,7 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
     next = { ...next, orWithCoords: false };
   }
 
-  return {
-    ...next,
-    unitsSelected: normalizeUnknownUnitSelections(next.unitsSelected),
-  };
+  return next;
 }
 
 export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: string[] = []): AnalysisStatsReq | null {

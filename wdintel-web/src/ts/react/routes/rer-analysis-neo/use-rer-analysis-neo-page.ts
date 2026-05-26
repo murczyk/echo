@@ -21,7 +21,6 @@ import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
 import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
 import { useDutySettings } from '../../hooks/use-duty-settings';
-import { normalizeUnknownUnitFilterValue, normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
 
 function initState(): AnalysisQueryState {
@@ -173,18 +172,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [queryState]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
-    if (unitName == null) return;
-    const nextUnitName = normalizeUnknownUnitFilterValue(unitName);
+    if (!unitName) return;
     data.invalidateFilterSectionLoads();
-    setQueryState((current) => {
-      const currentUnits = normalizeUnknownUnitSelections(current.unitsSelected);
-      return {
-        ...current,
-        unitsSelected: currentUnits.includes(nextUnitName)
-          ? currentUnits.filter((item) => item !== nextUnitName)
-          : [...currentUnits, nextUnitName],
-      };
-    });
+    setQueryState((current) => ({
+      ...current,
+      unitsSelected: current.unitsSelected.includes(unitName)
+        ? current.unitsSelected.filter((item) => item !== unitName)
+        : [...current.unitsSelected, unitName],
+    }));
   }, [data.invalidateFilterSectionLoads]);
 
   const resetFilters = useCallback(() => {

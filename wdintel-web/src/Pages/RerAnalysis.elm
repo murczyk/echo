@@ -3933,17 +3933,10 @@ update user shared route msg model =
             )
 
         SetUnitFilterFromMap unitName ->
-            let
-                normalizedUnitName =
-                    Query.normalizeUnitNameFromMap unitName
-
-                normalizedUnitsSelected =
-                    Query.normalizeUnitSelections model.unitsSelected
-            in
-            if List.member normalizedUnitName normalizedUnitsSelected then
+            if List.member unitName model.unitsSelected then
                 let
                     m1 =
-                        { model | unitsSelected = List.filter (\x -> x /= normalizedUnitName) normalizedUnitsSelected }
+                        { model | unitsSelected = List.filter (\x -> x /= unitName) model.unitsSelected }
 
                     inboxReq =
                         getInboxReq m1
@@ -3961,7 +3954,7 @@ update user shared route msg model =
             else
                 let
                     m1 =
-                        { model | unitsSelected = [ normalizedUnitName ], mapPoints = Loading }
+                        { model | unitsSelected = [ unitName ], mapPoints = Loading }
 
                     inboxReq =
                         getInboxReq m1

@@ -29,20 +29,6 @@ type Params = {
   setTagsMap: Dispatch<SetStateAction<Record<number, Tag>>>;
 };
 
-export function buildFilterSectionsToLoad(
-  queryState: AnalysisQueryState,
-  loadedSections: AnalysisFilterSectionId[],
-  forceReload: boolean,
-): AnalysisFilterSectionId[] {
-  const sections = new Set<AnalysisFilterSectionId>(filterSectionsForInitialLoad(queryState));
-
-  if (forceReload) {
-    loadedSections.forEach((section) => sections.add(section));
-  }
-
-  return Array.from(sections);
-}
-
 export function useAnalysisFilterSections({
   queryState,
   optionsFreqValues,
@@ -64,11 +50,6 @@ export function useAnalysisFilterSections({
     filterSectionLoadVersionRef.current += 1;
     loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
   }, []);
-
-  const getLoadedFilterSections = useCallback(
-    () => Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[],
-    [],
-  );
 
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
@@ -119,12 +100,8 @@ export function useAnalysisFilterSections({
   );
 
   const loadInitialFilterSections = useCallback(
-    async (
-      analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
-      forceReload = false,
-      loadedSections: AnalysisFilterSectionId[] = [],
-    ) => {
-      const sections = buildFilterSectionsToLoad(queryState, loadedSections, forceReload);
+    async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => {
+      const sections = filterSectionsForInitialLoad(queryState);
       if (sections.length === 0) return;
 
       await Promise.all(
@@ -173,7 +150,6 @@ export function useAnalysisFilterSections({
   );
 
   return {
-    getLoadedFilterSections,
     invalidateFilterSectionLoads,
     loadFilterSection,
     loadInitialFilterSections,

@@ -363,35 +363,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
   });
 
-  it('normalizes legacy undefined-unit selections before toggling the map unit filter off', async () => {
-    renderHook();
-    await flushEffects();
-
-    await act(async () => {
-      latest?.updateQueryState({ unitsSelected: ['Не визначено'] });
-    });
-    await flushEffects();
-
-    await act(async () => {
-      latest?.toggleUnitFromMap('');
-    });
-    await flushEffects();
-
-    expect(latest?.queryState.unitsSelected).toEqual([]);
-  });
-
-  it('canonicalizes undefined-unit clicks before toggling the map unit filter on', async () => {
-    renderHook();
-    await flushEffects();
-
-    await act(async () => {
-      latest?.toggleUnitFromMap('Не визначено');
-    });
-    await flushEffects();
-
-    expect(latest?.queryState.unitsSelected).toEqual(['']);
-  });
-
   it('does not duplicate a frequency already in the analysis filter', async () => {
     renderHook();
     await flushEffects();

@@ -118,12 +118,12 @@ describe('rer-analysis-neo helpers', () => {
     expect(nextUrl.searchParams.getAll('metadataHash')).toEqual(['hash-1']);
     expect(parseQueryStateFromWindow()).toMatchObject({
       withoutNetwork: true,
+      networksSelected: ['7'],
       withoutMetadata: true,
-      networksSelected: [],
-      metadataCc: [],
-      metadataSender: [],
-      metadataReceiver: [],
-      metadataHash: [],
+      metadataCc: ['cc-1'],
+      metadataSender: ['sender-1'],
+      metadataReceiver: ['receiver-1'],
+      metadataHash: ['hash-1'],
     });
 
     expect(buildAnalysisReq(state)).toMatchObject({
@@ -138,23 +138,6 @@ describe('rer-analysis-neo helpers', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
-  it('normalizes legacy unit aliases when parsing the url state', () => {
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: {
-        location: {
-          href: 'https://example.test/rer-analysis-neo?units=%D0%9D%D0%B5%20%D0%B2%D0%B8%D0%B7%D0%BD%D0%B0%D1%87%D0%B5%D0%BD%D0%BE',
-        },
-      },
-    });
-
-    expect(parseQueryStateFromWindow()).toMatchObject({
-      unitsSelected: [''],
-    });
-
-    delete (globalThis as { window?: Window }).window;
-  });
-
   it('keeps the saved filter clean when only the date range differs', () => {
     const savedFilter = createSavedFilter(createQueryState());
     const currentState = createQueryState({
@@ -165,25 +148,6 @@ describe('rer-analysis-neo helpers', () => {
     expect(queryStateMatchesSavedFilter(currentState, savedFilter)).toBe(true);
     expect(queryStateComparisonKey(currentState)).toBe(queryStateComparisonKey(createQueryState()));
     expect(queryStateReloadKey(currentState)).not.toBe(queryStateReloadKey(createQueryState()));
-  });
-
-  it('normalizes legacy unit aliases when restoring a saved filter', () => {
-    const savedFilter = createSavedFilter(
-      createQueryState({
-        unitsSelected: ['Unit A'],
-      }),
-    );
-    const legacySavedFilter = {
-      ...savedFilter,
-      req: {
-        ...savedFilter.req,
-        selectedUnits: ['Не визначено'],
-      },
-    } as SavedFilter;
-
-    expect(queryStateFromSavedFilter(legacySavedFilter, createQueryState())).toMatchObject({
-      unitsSelected: [''],
-    });
   });
 
   it('treats non-date filter changes as dirty', () => {

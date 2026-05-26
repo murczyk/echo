@@ -39,15 +39,4 @@ describe('getPointPopupTemplate', () => {
     expect(html).toContain('БОРОДА');
     expect(html).toContain('badge-highlighed-token--callsign');
   });
-
-  it('shows the selected icon for canonical empty unit selections', () => {
-    const message = buildMessage({
-      unit: 'Не визначено',
-    });
-
-    const html = getPointPopupTemplate([message], [] as NetworkUnit[], ['']);
-
-    expect(html).toContain('Не визначено');
-    expect(html).toContain('bi-dash-square');
-  });
 });

@@ -1,9 +1,8 @@
-module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, emptyQueryState, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, updModelFromQueryState, updModelFromSavedFilter)
+module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, emptyQueryState, modelQueryState, updModelFromQueryState, updModelFromSavedFilter)
 
 import Bindings as B
 import Pages_.RerAnalysis.Model exposing (..)
 import Shared.Components.DateTime
-import String
 import Time exposing (Posix)
 import Utils.Utils exposing (..)
 
@@ -44,37 +43,6 @@ emptyQueryState =
     , filterTagsOption = Nothing
     , reportTagsOnlyThisUnit = Nothing
     }
-
-
-normalizeUnitNameFromMap : String -> String
-normalizeUnitNameFromMap unitName =
-    let
-        trimmed =
-            String.trim unitName
-    in
-    if trimmed == "" || trimmed == "Не визначено" || trimmed == "Не вказано" then
-        ""
-
-    else
-        trimmed
-
-
-normalizeUnitSelections : List String -> List String
-normalizeUnitSelections unitNames =
-    List.foldl
-        (\unitName acc ->
-            let
-                normalized =
-                    normalizeUnitNameFromMap unitName
-            in
-            if List.member normalized acc then
-                acc
-
-            else
-                acc ++ [ normalized ]
-        )
-        []
-        unitNames
 
 
 normalizeQueryStateMetadata : B.RerAnalysisQueryState -> B.RerAnalysisQueryState
@@ -135,7 +103,7 @@ modelQueryState model =
             , sendersSelected = model.sendersSelected
             , freqsSelected = model.freqsSelected
             , callsignsSelected = model.callsignsSelected
-            , unitsSelected = normalizeUnitSelections model.unitsSelected
+            , unitsSelected = model.unitsSelected
             , locationsSelected = model.locationsSelected
             , postsSelected = model.postsSelected
             , networksSelected = model.networksSelected
@@ -184,7 +152,7 @@ updModelFromQueryState model ms =
                 , sendersSelected = queryState.sendersSelected
                 , freqsSelected = queryState.freqsSelected
                 , callsignsSelected = queryState.callsignsSelected
-                , unitsSelected = normalizeUnitSelections queryState.unitsSelected
+                , unitsSelected = queryState.unitsSelected
                 , locationsSelected = queryState.locationsSelected
                 , postsSelected = queryState.postsSelected
                 , networksSelected = queryState.networksSelected
@@ -252,7 +220,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , selectedSenders = emptyToNothing model.sendersSelected
         , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)
         , selectedCallsigns = emptyToNothing model.callsignsSelected
-        , selectedUnits = emptyToNothing (normalizeUnitSelections model.unitsSelected)
+        , selectedUnits = emptyToNothing model.unitsSelected
         , selectedLocations = emptyToNothing model.locationsSelected
         , selectedPosts = emptyToNothing model.postsSelected
         , selectedAors =
@@ -332,7 +300,7 @@ updModelFromRerAnalysisStatsReq model req =
         , sendersSelected = normalizedReq.selectedSenders |> def []
         , freqsSelected = normalizedReq.selectedFreqs |> def []
         , callsignsSelected = normalizedReq.selectedCallsigns |> def []
-        , unitsSelected = normalizedReq.selectedUnits |> def [] |> normalizeUnitSelections
+        , unitsSelected = normalizedReq.selectedUnits |> def []
         , tagsSelected = normalizedReq.selectedTags |> def []
         , orWithExtendedForm = normalizedReq.orWithExtendedForm |> def False
         , orBookmarked = normalizedReq.orBookmarked |> def False
