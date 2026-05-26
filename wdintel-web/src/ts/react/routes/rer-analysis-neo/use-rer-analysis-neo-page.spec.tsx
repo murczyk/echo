@@ -380,6 +380,23 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.freqsSelected).toEqual(['123.4']);
   });
 
+  it('normalizes legacy undefined-unit selections before toggling the map unit filter off', async () => {
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.updateQueryState({ unitsSelected: ['Не визначено'] });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.toggleUnitFromMap('');
+    });
+    await flushEffects();
+
+    expect(latest?.queryState.unitsSelected).toEqual([]);
+  });
+
   it('moves the active map away from the sidebar when the setting turns off', async () => {
     userSettingsMock.fetchUserSettings.mockResolvedValueOnce({
       tagsLayout: 'compact',

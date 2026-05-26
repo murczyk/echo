@@ -13,6 +13,18 @@ export function normalizeUnknownUnitFilterValue(value: string | null | undefined
   return isUnknownUnitFilterValue(normalizedValue) ? UNKNOWN_UNIT_FILTER_VALUE : normalizedValue;
 }
 
+export function normalizeUnknownUnitSelections(values: string[]): string[] {
+  const normalized: string[] = [];
+
+  for (const value of values) {
+    const nextValue = normalizeUnknownUnitFilterValue(value);
+    if (normalized.includes(nextValue)) continue;
+    normalized.push(nextValue);
+  }
+
+  return normalized;
+}
+
 export function normalizeUnknownUnitDisplayValue(value: string | null | undefined): string {
   const normalizedValue = value?.trim() ?? '';
   return isUnknownUnitFilterValue(normalizedValue) ? 'Не визначено' : normalizedValue;

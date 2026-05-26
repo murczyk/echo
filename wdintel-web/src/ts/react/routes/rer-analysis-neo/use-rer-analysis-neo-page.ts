@@ -4,7 +4,7 @@ import { useTheme } from '@mui/material/styles';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
-import { normalizeUnknownUnitFilterValue } from '../shared/analysis-unit-filter';
+import { normalizeUnknownUnitFilterValue, normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import {
   buildAnalysisReq,
   createInitialQueryState,
@@ -178,9 +178,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     data.invalidateFilterSectionLoads();
     setQueryState((current) => ({
       ...current,
-      unitsSelected: current.unitsSelected.includes(normalizedUnitName)
-        ? current.unitsSelected.filter((item) => item !== normalizedUnitName)
-        : [...current.unitsSelected, normalizedUnitName],
+      unitsSelected: (() => {
+        const normalizedUnits = normalizeUnknownUnitSelections(current.unitsSelected);
+        return normalizedUnits.includes(normalizedUnitName)
+          ? normalizedUnits.filter((item) => item !== normalizedUnitName)
+          : [...normalizedUnits, normalizedUnitName];
+      })(),
     }));
   }, [data.invalidateFilterSectionLoads]);
 

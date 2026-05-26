@@ -64,4 +64,14 @@ describe('getPointPopupTemplate', () => {
     expect(html).toContain('Не визначено');
     expect(html).not.toContain('Unit A');
   });
+
+  it('shows the selected icon for legacy undefined unit selections', () => {
+    const message = buildMessage({
+      unit: 'Не визначено',
+    });
+
+    const html = getPointPopupTemplate([message], ['Не визначено']);
+
+    expect(html).toContain('bi-dash-square');
+  });
 });

@@ -92,12 +92,13 @@ function liTemplate(message_: Message, selectedUnits: string[]) {
   const unitDisplay = normalizeUnknownUnitDisplayValue(rawUnit);
   const escapedDisplay = escapeHtml(unitDisplay);
   const escapedAttr = escapeHtml(unitValue);
+  const isUnitSelected = selectedUnits.some((selectedUnit) => normalizeUnknownUnitFilterValue(selectedUnit) === unitValue);
   const unitBlock = `
             <div>
               <span style="font-weight: 700; line-height: 22px;">Підрозділ:</span> 
               <span class="pointer" style="color: #0d6efd" id="map-message-id-${message_[0]}" data-unitname="${escapedAttr}">
                 ${escapedDisplay}
-                <i class="bi bi-${selectedUnits.includes(unitValue) ? 'dash' : 'plus'}-square" > </i>
+                <i class="bi bi-${isUnitSelected ? 'dash' : 'plus'}-square" > </i>
               </span>
             </div>
             `;

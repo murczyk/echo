@@ -3,6 +3,7 @@ module RerAnalysisMapRegressionTests exposing (suite)
 import Bindings as B
 import Expect
 import Pages.RerAnalysis as RerAnalysis
+import Pages_.RerAnalysis.Query as Query
 import Pages_.RerAnalysis.Msg exposing (Msg(..))
 import Le.Waterfall.MessagesTests exposing (messageStub)
 import Route
@@ -113,4 +114,9 @@ suite =
                             , \_ -> emptySuccessModel.mapOpenMessages |> Expect.equal (Success [])
                             ]
                             ()
+        , test "normalizes legacy unit aliases before toggling" <|
+            \_ ->
+                Expect.equal
+                    [ "" ]
+                    (Query.normalizeUnitSelections [ "Не визначено", "" ])
         ]

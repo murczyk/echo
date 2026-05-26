@@ -3958,11 +3958,14 @@ update user shared route msg model =
             let
                 normalizedUnitName =
                     normalizeUnitNameFromMap unitName
+
+                normalizedUnitsSelected =
+                    Query.normalizeUnitSelections model.unitsSelected
             in
-            if List.member normalizedUnitName model.unitsSelected then
+            if List.member normalizedUnitName normalizedUnitsSelected then
                 let
                     m1 =
-                        { model | unitsSelected = List.filter (\x -> x /= normalizedUnitName) model.unitsSelected }
+                        { model | unitsSelected = List.filter (\x -> x /= normalizedUnitName) normalizedUnitsSelected }
 
                     inboxReq =
                         getInboxReq m1
