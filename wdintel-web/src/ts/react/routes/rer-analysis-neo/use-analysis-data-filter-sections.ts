@@ -103,10 +103,15 @@ export function useAnalysisFilterSections({
   const loadInitialFilterSections = useCallback(
     async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload = false) => {
       if (forceReload) {
-        // Reset loaded keys and clear all existing options so we don't preserve
-        // stale non-initial sections (units/locations/posts/etc.) across reloads.
+        // Reset loaded keys and clear non-frequency options.
+        // Preserved freqs/newFreqs, because they are updated on a separate path before this reload,
+        // and are not repopulated by the initial-section loader.
         invalidateFilterSectionLoads();
-        setOptions(emptyOptions);
+        setOptions((prev) => ({
+          ...emptyOptions,
+          freqs: prev?.freqs ?? emptyOptions.freqs,
+          newFreqs: prev?.newFreqs ?? emptyOptions.newFreqs,
+        }));
       }
       const sections = filterSectionsForInitialLoad(queryState);
       if (sections.length === 0) return;
