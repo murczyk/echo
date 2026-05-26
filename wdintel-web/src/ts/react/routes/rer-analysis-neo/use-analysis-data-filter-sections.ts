@@ -15,6 +15,26 @@ import {
 import { toErrorMessage } from './use-analysis-data.shared';
 import type { AnalysisAorEntry, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState } from './types';
 
+export function buildFilterSectionsToLoad(
+  queryState: AnalysisQueryState,
+  loadedSections: AnalysisFilterSectionId[],
+  forceReload: boolean,
+): AnalysisFilterSectionId[] {
+  const sections = new Set(filterSectionsForInitialLoad(queryState));
+  if (forceReload) {
+    loadedSections.forEach((section) => sections.add(section));
+  }
+  return Array.from(sections);
+}
+
+export function resetFilterOptionsForForcedReload(prev: AnalysisFilterOptions): AnalysisFilterOptions {
+  return {
+    ...emptyOptions,
+    freqs: prev.freqs,
+    newFreqs: prev.newFreqs,
+  };
+}
+
 type Params = {
   queryState: AnalysisQueryState;
   optionsFreqValues: string[];
@@ -102,18 +122,14 @@ export function useAnalysisFilterSections({
 
   const loadInitialFilterSections = useCallback(
     async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload = false) => {
+      const previouslyLoadedSections = forceReload ? (Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[]) : [];
       if (forceReload) {
-        // Reset loaded keys and clear non-frequency options.
-        // Preserved freqs/newFreqs, because they are updated on a separate path before this reload,
-        // and are not repopulated by the initial-section loader.
+        // Reset loaded keys and clear non-frequency options, preserving freqs/newFreqs.
+        // Previously loaded lazy sections are reloaded below for the new request.
         invalidateFilterSectionLoads();
-        setOptions((prev) => ({
-          ...emptyOptions,
-          freqs: prev?.freqs ?? emptyOptions.freqs,
-          newFreqs: prev?.newFreqs ?? emptyOptions.newFreqs,
-        }));
+        setOptions(resetFilterOptionsForForcedReload);
       }
-      const sections = filterSectionsForInitialLoad(queryState);
+      const sections = buildFilterSectionsToLoad(queryState, previouslyLoadedSections, forceReload);
       if (sections.length === 0) return;
 
       await Promise.all(
