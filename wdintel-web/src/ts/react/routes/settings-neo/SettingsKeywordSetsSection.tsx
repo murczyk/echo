@@ -1,3 +1,4 @@
+import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import {
   Box,
@@ -205,17 +206,6 @@ export function SettingsKeywordSetsSection() {
               Видалити
             </Button>
           ) : null}
-          {!isDirty ? (
-            <PowerButton
-              size="small"
-              variant="outlined"
-              onClick={() => void handleCreate()}
-              disabled={saving || loading}
-              sx={{ flexShrink: 0 }}
-            >
-              Створити набір
-            </PowerButton>
-          ) : null}
         </Stack>
         {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
         {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
@@ -226,6 +216,19 @@ export function SettingsKeywordSetsSection() {
         ) : null}
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
           <Box sx={{ width: { xs: '100%', md: 240 }, flexShrink: 0 }}>
+            {!isDirty ? (
+              <PowerButton
+                size="small"
+                variant="outlined"
+                fullWidth
+                startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
+                onClick={() => void handleCreate()}
+                disabled={saving || loading}
+                sx={{ mb: 1 }}
+              >
+                Створити набір
+              </PowerButton>
+            ) : null}
             <List
               dense
               disablePadding

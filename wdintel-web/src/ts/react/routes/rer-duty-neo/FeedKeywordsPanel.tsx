@@ -66,50 +66,23 @@ export function FeedKeywordsPanel({
     >
       <Stack spacing={1.25} sx={{ minHeight: 0 }}>
 
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          spacing={1}
-          sx={{ minWidth: 0, flexWrap: 'wrap', rowGap: 0.5 }}
-        >
-          <FormControlLabel
-            sx={{
-              alignItems: 'center',
-              m: 0,
-              gap: 1,
-              flex: 1,
-              minWidth: 0,
-              '& .MuiTypography-root': { typography: 'body2' },
-            }}
-            control={
-              <Switch
-                size="small"
-                checked={enabled}
-                onChange={(_, checked) => setFilter({ highlightKeywordsEnabled: checked })}
-              />
-            }
-            label="Підсвічувати ключові слова"
-          />
-          <Button
-            size="small"
-            variant="outlined"
-            component="a"
-            href={createSetHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
-            endIcon={<OpenInNewOutlinedIcon sx={{ fontSize: 16 }} />}
-            sx={{
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-              height: 32,
-              borderColor: 'divider',
-            }}
-          >
-            Створити набір
-          </Button>
-        </Stack>
+        <FormControlLabel
+          sx={{
+            alignItems: 'center',
+            m: 0,
+            gap: 1,
+            minWidth: 0,
+            '& .MuiTypography-root': { typography: 'body2' },
+          }}
+          control={
+            <Switch
+              size="small"
+              checked={enabled}
+              onChange={(_, checked) => setFilter({ highlightKeywordsEnabled: checked })}
+            />
+          }
+          label="Підсвічувати ключові слова"
+        />
 
         <Stack direction="row" spacing={1} alignItems="stretch" sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
           <FormControl
@@ -143,7 +116,7 @@ export function FeedKeywordsPanel({
               ))}
             </Select>
           </FormControl>
-          {canEdit && editHref ? (
+          {selectedSet != null && canEdit && editHref ? (
             <Button
               size="small"
               variant="text"
@@ -164,6 +137,29 @@ export function FeedKeywordsPanel({
               }}
             >
               Редагувати набір
+            </Button>
+          ) : selectedSet == null ? (
+            <Button
+              size="small"
+              variant="text"
+              component="a"
+              href={createSetHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
+              endIcon={<OpenInNewOutlinedIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                flexShrink: 0,
+                alignSelf: 'stretch',
+                height: 40,
+                minHeight: 40,
+                whiteSpace: 'nowrap',
+                px: { xs: 0.75, sm: 1 },
+                border: 'none',
+                boxShadow: 'none',
+              }}
+            >
+              Створити набір
             </Button>
           ) : null}
         </Stack>
