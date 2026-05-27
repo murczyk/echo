@@ -363,6 +363,21 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
   });
 
+  it('clears the loaded saved filter when filters are reset', async () => {
+    const savedFilters = buildSavedFilters();
+    useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
+
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.resetFilters();
+    });
+    await flushEffects();
+
+    expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
+  });
+
   it('does not duplicate a frequency already in the analysis filter', async () => {
     renderHook();
     await flushEffects();

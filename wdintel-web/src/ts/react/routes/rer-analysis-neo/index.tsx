@@ -12,7 +12,6 @@ import {
   Badge,
   Box,
   Button,
-  CircularProgress,
   FormControlLabel,
   IconButton,
   Paper,
@@ -30,6 +29,7 @@ import { useTheme } from '@mui/material/styles';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerChip } from '../../components/PowerChip';
 import { PowerAlert } from '../../components/PowerAlert';
+import { NO_DATA_LABEL } from '../../utils/misc';
 import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
@@ -600,29 +600,21 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         justifyContent="flex-end"
                         sx={{ ml: 'auto', minWidth: 0, flexShrink: 0, width: 'auto' }}
                       >
-                        {page.countsLoading ? (
-                          <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 32, px: 1.5 }}>
-                            <CircularProgress size={18} thickness={5} />
-                          </Box>
-                        ) : (
-                          <>
-                            <PowerChip
-                              label={'Всього: ' + (page.counts?.countOverall ?? 0)}
-                              color="default"
-                              size="small"
-                              fontSize="0.875rem"
-                              labelPaddingX={0.75}
-                            />
-                            <PowerChip
-                              label={'Обрано: ' + (page.counts?.countSelected ?? 0)}
-                              color="primary"
-                              selected
-                              size="small"
-                              fontSize="0.875rem"
-                              labelPaddingX={0.75}
-                            />
-                          </>
-                        )}
+                        <PowerChip
+                          label={`Всього: ${page.countsLoading ? NO_DATA_LABEL : (page.counts?.countOverall ?? 0)}`}
+                          color="default"
+                          size="small"
+                          fontSize="0.875rem"
+                          labelPaddingX={0.75}
+                        />
+                        <PowerChip
+                          label={`Обрано: ${page.countsLoading ? NO_DATA_LABEL : (page.counts?.countSelected ?? 0)}`}
+                          color="primary"
+                          selected
+                          size="small"
+                          fontSize="0.875rem"
+                          labelPaddingX={0.75}
+                        />
                       </Stack>
                     </Stack>
                   ) : null}

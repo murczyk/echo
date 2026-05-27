@@ -850,7 +850,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(resetFilters).not.toHaveBeenCalled();
   });
 
-  it('shows loading indicators for filter counters while the initial filters load is still in flight', async () => {
+  it('shows static placeholders for filter counters while the initial filters load is still in flight', async () => {
     const view = await renderComponent(
       buildProps({
         filtersLoading: true,
@@ -858,7 +858,8 @@ describe('AnalysisFiltersPanel', () => {
     );
     rendered.push(view);
 
-    expect(view.container.querySelectorAll('[data-testid="spinner"]').length).toBeGreaterThan(0);
+    expect(view.container.querySelectorAll('[data-testid="spinner"]').length).toBe(0);
+    expect(view.container.textContent).toContain('—');
   });
 
   it('renders the loaded saved filter as a status chip above the important section and orders sections alphabetically', async () => {
@@ -908,6 +909,7 @@ describe('AnalysisFiltersPanel', () => {
     const chipProps = powerChipSpy.mock.calls.at(-1)?.[0] as { onDelete?: () => void } | undefined;
     expect(chipProps?.onDelete).toBeUndefined();
     expect(view.container.querySelector('[data-testid="saved-filter-chip"]')?.textContent).toBe('Saved filter');
+    expect(view.container.textContent).toContain('Обраний фільтр:');
 
     expect(
       uniqueInOrder(

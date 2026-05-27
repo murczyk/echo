@@ -1,0 +1,296 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { createRoot } from 'react-dom/client';
+import { act } from 'react';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { emptyQueryState } from './helpers';
+
+const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@mui/material', () => ({
+  Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
+  FormControlLabel: ({ control, label }: { control: ReactNode; label: ReactNode }) => (
+    <div>
+      {control}
+      {label}
+    </div>
+  ),
+  IconButton: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
+  Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  Skeleton: ({ children }: { children?: ReactNode }) => <div>{children ?? 'skeleton'}</div>,
+  Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (_event: Event, value: boolean) => void }) => (
+    <button type="button" onClick={() => onChange?.(new Event('change'), !checked)}>
+      {checked ? 'on' : 'off'}
+    </button>
+  ),
+  Tab: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
+  Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useMediaQuery: () => false,
+}));
+
+vi.mock('@mui/material/styles', () => ({
+  useTheme: () => ({ breakpoints: { down: () => '(max-width: 600px)' } }),
+}));
+
+vi.mock('./use-rer-analysis-neo-page', () => ({
+  useRerAnalysisNeoPage: useRerAnalysisNeoPageMock,
+}));
+
+vi.mock('../../components/PageHeader', () => ({
+  PageHeader: ({ title, middle }: { title: string; middle?: ReactNode }) => (
+    <header>
+      <div>{title}</div>
+      {middle}
+    </header>
+  ),
+}));
+
+vi.mock('../../components/PowerAlert', () => ({
+  PowerAlert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('../../components/PowerChip', () => ({
+  PowerChip: ({ label }: { label: ReactNode }) => <div>{label}</div>,
+}));
+
+vi.mock('./components/AnalysisFiltersPanel', () => ({
+  AnalysisFiltersPanel: () => <div data-testid="filters-panel" />,
+}));
+
+vi.mock('./components/AnalysisHeaderControls', () => ({
+  AnalysisHeaderControls: () => <div data-testid="header-controls" />,
+}));
+
+vi.mock('./components/AnalysisMapPane', () => ({
+  AnalysisMapPane: () => <div data-testid="map-pane" />,
+}));
+
+vi.mock('./components/AnalysisMessagesPane', () => ({
+  AnalysisMessagesPane: () => <div data-testid="messages-pane" />,
+}));
+
+vi.mock('./components/AnalysisReportDialog', () => ({
+  AnalysisReportDialog: () => <div data-testid="report-dialog" />,
+}));
+
+vi.mock('./components/AnalysisSidebar', () => ({
+  AnalysisSidebar: () => <div data-testid="sidebar" />,
+}));
+
+vi.mock('./components/AnalysisSummaryTableCard', () => ({
+  AnalysisSummaryTableCard: () => <div data-testid="summary-card" />,
+}));
+
+vi.mock('./use-min-duration-busy', () => ({
+  useMinDurationBusy: (value: boolean) => value,
+}));
+
+vi.mock('@mui/icons-material/BarChartOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/ChevronLeftOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/DescriptionOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/FilterAltOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/PeopleOutlineOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/MapOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/MessageOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/PersonAddOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/TableRowsOutlined', () => ({ default: () => <span /> }));
+
+import { RerAnalysisNeoPage } from './index';
+
+function buildPage() {
+  return {
+    authUserName: null,
+    aorEntries: [],
+    canResetFilters: false,
+    analysisMapInSidebar: false,
+    centerTab: 'messages',
+    centerTabPending: false,
+    copiedFeedbackId: null,
+    currentUser: null,
+    counts: null,
+    countsLoading: true,
+    error: null,
+    editorMessage: null,
+    editorSaveInFlight: false,
+    filtersLoading: false,
+    groupInfos: {},
+    includeOnlyNewFreqs: false,
+    inboxReq: null,
+    isDirty: false,
+    loadedSavedFilter: null,
+    leftPanelOpen: true,
+    callsignGraph: null,
+    callsignGraphLoading: false,
+    callsignGraphLoadVersion: 0,
+    callsignGraphNolimit: false,
+    correlatedFreqs: [],
+    correlatedFreqsLoading: false,
+    groupsActivity: null,
+    groupsActivityLoadedFreq: null,
+    groupsActivityLoadedPeriod: null,
+    groupsActivityLoading: false,
+    hasLoadedInitialMessages: true,
+    mapAttrs: {
+      daterange: '',
+      daterangeLoading: '',
+      messages: '',
+      palitras: '',
+      palitrasLoaded: '',
+      palitrasLoadState: 'idle',
+      points: '',
+      selectedUnits: '',
+    },
+    messageActionLoading: false,
+    messageComments: {},
+    messages: [],
+    messagesLoading: false,
+    messagesPaging: false,
+    networkDisplayMap: {},
+    networks: [],
+    newCallsigns: { notSeen24h: [], notSeen7days: [], notSeen30days: [] },
+    newCallsignsLoading: false,
+    noMoreToLoad: false,
+    newestFirst: true,
+    nolimitShown: false,
+    options: {
+      tags: [],
+      aors: [],
+      groups: [],
+      senders: [],
+      freqs: [],
+      newFreqs: [],
+      callsigns: [],
+      units: [],
+      locations: [],
+      posts: [],
+      networks: [],
+      metadataCcs: [],
+      metadataSenders: [],
+      metadataReceivers: [],
+      metadataHashes: [],
+    },
+    profiles: {},
+    queryState: emptyQueryState(),
+    report: { open: false },
+    reportDownloadInFlight: false,
+    reportProgressExpanded: false,
+    reportTaskRuns: [],
+    rightPanelOpen: false,
+    rightSidebarLoading: false,
+    rightSidebarTab: null,
+    saveInFlight: false,
+    savedFilterName: '',
+    savedFilters: [],
+    summaryCallsignsInfo: {},
+    summaryHasLoadedOnce: false,
+    summaryLoading: false,
+    summaryLoaded: false,
+    summaryRows: [],
+    tagsLayout: 'compact',
+    tagsMap: {},
+    topCallsigns: [],
+    topFreqs: [],
+    topLocations: [],
+    topUnits: [],
+    unitsMap: {},
+    users: {},
+    validationError: null,
+    openEditor: vi.fn(),
+    closeEditor: vi.fn(),
+    saveEditor: vi.fn(),
+    saveMessageUpdate: vi.fn(),
+    onDeleteMessage: vi.fn(),
+    onSaveMessageComment: vi.fn(),
+    onToggleMessageBookmark: vi.fn(),
+    onToggleMessageImportant: vi.fn(),
+    onToggleMessageTag: vi.fn(),
+    onUpdateLocalMessage: vi.fn(),
+    addFrequencyToFilter: vi.fn(),
+    closeReport: vi.fn(),
+    downloadGeojson: vi.fn(),
+    downloadKmz: vi.fn(),
+    downloadReport: vi.fn(),
+    downloadSummaryXlsx: vi.fn(),
+    loadAllMessages: vi.fn(),
+    loadCallsignGraph: vi.fn(),
+    loadCorrelatedFreqs: vi.fn(),
+    loadFilterSection: vi.fn(),
+    loadGroupsActivity: vi.fn(),
+    loadMessagesForMap: vi.fn(),
+    loadMoreMessages: vi.fn(),
+    loadNewCallsigns: vi.fn(),
+    openReport: vi.fn(),
+    repeatReportTaskRun: vi.fn(),
+    refreshMapDateRange: vi.fn(),
+    renameSummaryUnit: vi.fn(),
+    setCenterTab: vi.fn(),
+    setNewestFirst: vi.fn(),
+    setReportProgressExpanded: vi.fn(),
+    setRightSidebarTab: vi.fn(),
+    showFreqOnMap: vi.fn(),
+    toggleCallsignGraphNolimit: vi.fn(),
+    toggleLeftPanel: vi.fn(),
+    toggleReportTaskRunLogs: vi.fn(),
+    toggleRightPanel: vi.fn(),
+    toggleUnitFromMap: vi.fn(),
+    updateQueryState: vi.fn(),
+    updateReport: vi.fn(),
+    applySavedFilter: vi.fn(),
+    deleteLoadedSavedFilter: vi.fn(),
+    renameExistingSavedFilter: vi.fn(),
+    resetFilters: vi.fn(),
+    saveAsNew: vi.fn(),
+    setIncludeOnlyNewFreqs: vi.fn(),
+    setSavedFilterName: vi.fn(),
+    updateExisting: vi.fn(),
+  };
+}
+
+describe('RerAnalysisNeoPage', () => {
+  const rendered: HTMLDivElement[] = [];
+
+  beforeEach(() => {
+    useRerAnalysisNeoPageMock.mockReset();
+    useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
+  });
+
+  afterEach(async () => {
+    for (const container of rendered.splice(0)) {
+      document.body.removeChild(container);
+    }
+  });
+
+  it('shows placeholder chips for totals while counts are loading', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.textContent).toContain('Всього: —');
+    expect(container.textContent).toContain('Обрано: —');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+});
