@@ -14,6 +14,8 @@ import {
   getAccessSummary,
   getAvailableAccessTypes,
   getInitialCreateForm,
+  getSelectedDownloadablePalitras,
+  getSelectedModifiablePalitras,
   canEditScopedLogins,
   canModifyPalitra,
   normalizeFolderPathForUi,
@@ -72,7 +74,7 @@ function makePalitra(id: number, folder: string | null, author = 'operator', las
   } as Palitra;
 }
 
-function makeRow(id: number, folder: string | null, canSelect = true): PalitraRowView {
+function makeRow(id: number, folder: string | null, canSelect = true, canModify = canSelect): PalitraRowView {
   return {
     id,
     kind: 'palitra',
@@ -85,7 +87,7 @@ function makeRow(id: number, folder: string | null, canSelect = true): PalitraRo
     lastUploadedAtTs: null,
     author: 'operator',
     accessSummary: '—',
-    canModify: canSelect,
+    canModify,
     canSelect,
     archiveInFlight: false,
     deleteInFlight: false,
@@ -409,6 +411,13 @@ describe('rer-palitra helpers', () => {
         preview,
       }),
     ).toEqual(['Обрано палітр: 3', 'Уже в цій папці: 1', 'Недоступно для зміни: 1']);
+  });
+
+  it('keeps read-only palitras downloadable but not modifiable in bulk selections', () => {
+    const rows = [makeRow(1, null, true, true), makeRow(2, null, true, false)];
+
+    expect(getSelectedDownloadablePalitras(rows, [1, 2]).map((palitra) => palitra.id)).toEqual([1, 2]);
+    expect(getSelectedModifiablePalitras(rows, [1, 2]).map((palitra) => palitra.id)).toEqual([1]);
   });
 
   it('builds bulk result summaries', () => {

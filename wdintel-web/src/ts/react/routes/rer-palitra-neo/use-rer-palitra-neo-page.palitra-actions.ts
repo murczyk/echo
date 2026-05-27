@@ -3,7 +3,19 @@ import type { ChangeEvent, Dispatch, MutableRefObject, SetStateAction } from 're
 import type { AnalyzeKmzResponse, MyScope, Palitra, User } from '../../../../Bindings';
 import { analyzePalitraKmz, archivePalitra, createPalitraBasicWithKmz, createPalitraWithKmz, deletePalitra, downloadPalitras, unarchivePalitra, updatePalitra, uploadPalitraPoints } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
-import { applyRestrictedAccess, buildPalitraNameWithSuffix, DEFAULT_COLOR_HEX, formatErrorMessage, getInitialCreateForm, isFormValid, kmzColorOptionsFromAnalysis, palitraToForm, toCreateReq } from './helpers';
+import {
+  applyRestrictedAccess,
+  buildPalitraNameWithSuffix,
+  DEFAULT_COLOR_HEX,
+  formatErrorMessage,
+  getInitialCreateForm,
+  getSelectedDownloadablePalitras,
+  getSelectedModifiablePalitras,
+  isFormValid,
+  kmzColorOptionsFromAnalysis,
+  palitraToForm,
+  toCreateReq,
+} from './helpers';
 import type { KmzColorOption, PalitraCreateMode, PalitraFormState, PalitraRowView, UiStatus } from './types';
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
@@ -33,6 +45,7 @@ type Props = {
   bulkDeleteDialogPalitras: Palitra[];
   bulkDeleteDialogOpen: boolean;
   bulkDeleteInFlight: boolean;
+  bulkDownloadInFlight: boolean;
   inFlightArchiveId: number | null;
   inFlightDeleteId: number | null;
   inFlightDownloadId: number | null;
@@ -69,6 +82,7 @@ type Props = {
   setBulkDeleteDialogPalitras: SetState<Palitra[]>;
   setBulkDeleteDialogOpen: SetState<boolean>;
   setBulkDeleteInFlight: SetState<boolean>;
+  setBulkDownloadInFlight: SetState<boolean>;
   reloadPalitras: () => Promise<void>;
 };
 
@@ -204,10 +218,9 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   function requestBulkDelete() {
-    if (props.archiveDialogOpen || props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.deleteDialogOpen || props.folderActionsBlocked) return;
+    if (props.archiveDialogOpen || props.bulkDeleteInFlight || props.bulkDownloadInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.deleteDialogOpen || props.folderActionsBlocked) return;
 
-    const selectedSet = new Set(props.selectedPalitraIds);
-    const selected = props.palitraRows.filter((row) => selectedSet.has(row.id) && row.canSelect).map((row) => row.palitra);
+    const selected = getSelectedModifiablePalitras(props.palitraRows, props.selectedPalitraIds);
     if (selected.length === 0) return;
 
     props.setBulkDeleteDialogPalitras(selected);
@@ -215,12 +228,12 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   function cancelBulkDelete() {
-    if (props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null) return;
+    if (props.bulkDeleteInFlight || props.bulkDownloadInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null) return;
     props.setBulkDeleteDialogOpen(false);
   }
 
   async function confirmBulkDelete() {
-    if (props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.folderActionsBlocked) return;
+    if (props.bulkDeleteInFlight || props.bulkDownloadInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.folderActionsBlocked) return;
 
     const palitrasToDelete = [...props.bulkDeleteDialogPalitras];
     if (palitrasToDelete.length === 0) return;
@@ -268,11 +281,30 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   function handleDownload(palitra: Palitra) {
-    if (props.inFlightDownloadId !== null || props.downloadDialogOpen || props.folderActionsBlocked) return;
+    if (props.inFlightDownloadId !== null || props.bulkDownloadInFlight || props.downloadDialogOpen || props.folderActionsBlocked) return;
     props.setStatus(null);
     props.setDownloadDialogPalitra(palitra);
     props.setDownloadSplitForDelta(false);
     props.setDownloadDialogOpen(true);
+  }
+
+  async function handleBulkDownload() {
+    if (props.bulkDownloadInFlight || props.inFlightDownloadId !== null || props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.folderActionsBlocked) return;
+
+    const selected = getSelectedDownloadablePalitras(props.palitraRows, props.selectedPalitraIds);
+    if (selected.length === 0) return;
+
+    props.setBulkDownloadInFlight(true);
+    props.setStatus(null);
+
+    try {
+      const blob = await downloadPalitras(selected.map((palitra) => palitra.id));
+      downloadBlob(blob, 'palitras-selected.zip');
+    } catch (downloadError) {
+      props.setStatus({ kind: 'error', text: 'Не вдалося завантажити обрані палітри: ' + formatErrorMessage(downloadError) });
+    } finally {
+      props.setBulkDownloadInFlight(false);
+    }
   }
 
   function cancelDownload() {
@@ -453,6 +485,7 @@ export function createPalitraPageActionHandlers(props: Props) {
     handleUnarchive,
     requestUploadPoints,
     handleDownload,
+    handleBulkDownload,
     cancelDownload,
     confirmDownload,
     onDownloadDialogExited,

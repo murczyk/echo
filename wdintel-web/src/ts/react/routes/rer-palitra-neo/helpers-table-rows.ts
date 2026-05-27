@@ -48,7 +48,7 @@ export function mapPalitraToRowView({
     author: palitra.author,
     accessSummary: getAccessSummary(palitra, user, myScope, organisms, aors),
     canModify,
-    canSelect: canModify && !archiveInFlight && !deleteInFlight && !downloadInFlight && !uploadInFlight,
+    canSelect: palitra.id >= 0 && !archiveInFlight && !deleteInFlight && !downloadInFlight && !uploadInFlight,
     archiveInFlight,
     deleteInFlight,
     downloadInFlight,
@@ -185,6 +185,11 @@ export function buildTableRows(args: {
 }
 
 export function getSelectedModifiablePalitras(rows: PalitraRowView[], selectedIds: number[]): Palitra[] {
+  const selectedIdSet = new Set(selectedIds);
+  return rows.filter((row) => selectedIdSet.has(row.id) && row.canSelect && row.canModify).map((row) => row.palitra);
+}
+
+export function getSelectedDownloadablePalitras(rows: PalitraRowView[], selectedIds: number[]): Palitra[] {
   const selectedIdSet = new Set(selectedIds);
   return rows.filter((row) => selectedIdSet.has(row.id) && row.canSelect).map((row) => row.palitra);
 }
