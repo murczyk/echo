@@ -17,7 +17,7 @@ import {
 } from '@mui/material';
 import type { Dayjs } from 'dayjs';
 import dayjs from 'dayjs';
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -109,11 +109,28 @@ export function NetworkEtalonkaReportDialog({
 }: Props) {
   const isExtended = report.reportType === 'ExtendedReport';
   const dateTimeDisabled = report.downloading || !isExtended;
+  const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
+  const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
+
+  useEffect(() => {
+    setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
+    setToDateTimeDraft(parseDateTime(report.toDateTimeStr));
+  }, [report.fromDateTimeStr, report.toDateTimeStr]);
+
+  const resetDrafts = () => {
+    setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
+    setToDateTimeDraft(parseDateTime(report.toDateTimeStr));
+  };
+
+  const handleClose = () => {
+    resetDrafts();
+    onClose();
+  };
 
   return (
     <Dialog
       open={report.dialogOpen}
-      onClose={report.downloading ? undefined : onClose}
+      onClose={report.downloading ? undefined : handleClose}
       fullWidth
       maxWidth={false}
       disableEscapeKeyDown={report.downloading}
@@ -201,9 +218,11 @@ export function NetworkEtalonkaReportDialog({
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
                     <PowerDateTimePicker
                       label="Від"
-                      value={parseDateTime(report.fromDateTimeStr)}
+                      value={fromDateTimeDraft}
                       allowEmpty={false}
-                      onChange={(value) => onFromDateTimeStrChange(formatDateTime(value))}
+                      onChange={setFromDateTimeDraft}
+                      onAccept={(value) => onFromDateTimeStrChange(formatDateTime(value))}
+                      onClose={resetDrafts}
                       disabled={dateTimeDisabled}
                       minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
                       format="DD.MM.YYYY HH:mm"
@@ -217,9 +236,11 @@ export function NetworkEtalonkaReportDialog({
                     />
                     <PowerDateTimePicker
                       label="До"
-                      value={parseDateTime(report.toDateTimeStr)}
+                      value={toDateTimeDraft}
                       allowEmpty={false}
-                      onChange={(value) => onToDateTimeStrChange(formatDateTime(value))}
+                      onChange={setToDateTimeDraft}
+                      onAccept={(value) => onToDateTimeStrChange(formatDateTime(value))}
+                      onClose={resetDrafts}
                       disabled={dateTimeDisabled}
                       minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
                       format="DD.MM.YYYY HH:mm"
@@ -279,7 +300,7 @@ export function NetworkEtalonkaReportDialog({
           Еталонний опис для мережі
         </Typography>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
-          <Button onClick={onClose} disabled={report.downloading}>
+          <Button onClick={handleClose} disabled={report.downloading}>
             Закрити
           </Button>
           <Button
