@@ -6,7 +6,6 @@ import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { ELLIPSIS } from '../../../utils/misc';
-import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
@@ -39,11 +38,13 @@ type Props = {
   relationsShowLabels: boolean;
   denseGraph: boolean;
   graphIsFilteredEmpty: boolean;
+  relationsSearch: string;
   graphWarning: boolean;
   legendFreqs: NetworkCallsignRelationFreqView[];
   relationsEnabledFreqs: string[];
   relationsMinIntensity: number;
   relationsLoading: boolean;
+  onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
   onOpenFilters: (anchorEl: HTMLElement) => void;
@@ -77,11 +78,13 @@ export function NetworkCallsignRelationsGraphStage({
   relationsShowLabels,
   denseGraph,
   graphIsFilteredEmpty,
+  relationsSearch,
   graphWarning,
   legendFreqs,
   relationsEnabledFreqs,
   relationsMinIntensity,
   relationsLoading,
+  onSearchChange,
   onEnabledFreqsChange,
   onMinIntensityChange,
   onOpenFilters,
@@ -289,24 +292,25 @@ export function NetworkCallsignRelationsGraphStage({
             <Typography variant="body1" sx={{ color: graphOverlayTextSecondary }}>
               {EMPTY_STATE_NO_RESULTS_TEXT}
             </Typography>
-            <Button
-              variant="text"
-              onClick={() => {
-                onEnabledFreqsChange(legendFreqs.map((freq) => freq.freq));
-                onMinIntensityChange(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
-              }}
-              data-testid="clear-empty-filters"
-              sx={{
-                fontWeight: 400,
-                p: 0.5,
-                px: 2.5,
-                '&:hover': {
-                  bgcolor: theme.palette.action.hover,
-                },
-              }}
-            >
-              Очистити фільтри
-            </Button>
+            {relationsSearch.trim() !== '' ? (
+              <Button
+                variant="text"
+                onClick={() => {
+                  onSearchChange('');
+                }}
+                data-testid="clear-empty-filters"
+                sx={{
+                  fontWeight: 400,
+                  p: 0.5,
+                  px: 2.5,
+                  '&:hover': {
+                    bgcolor: theme.palette.action.hover,
+                  },
+                }}
+              >
+                Очистити фільтри
+              </Button>
+            ) : null}
           </Stack>
         </Box>
       ) : (

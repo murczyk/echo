@@ -264,6 +264,58 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
   });
 
+  it('hides the empty-state clear action when search is empty', () => {
+    const view = renderPanel(undefined, {
+      relationsSearch: '',
+      relationsMinIntensity: 25,
+    });
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relationsMinIntensity={25}
+          relationsEnabledFreqs={['652.111']}
+          relationsSearch=""
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).toBeNull();
+  });
+
+  it('clears only search from the empty-state action', () => {
+    const view = renderPanel(undefined, {
+      relationsSearch: 'alpha',
+      relationsMinIntensity: 25,
+    });
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relationsMinIntensity={25}
+          relationsEnabledFreqs={['652.111']}
+          relationsSearch="alpha"
+        />,
+      );
+    });
+
+    const clearButton = view.container.querySelector<HTMLButtonElement>('[data-testid="clear-empty-filters"]');
+    expect(clearButton).not.toBeNull();
+
+    act(() => {
+      clearButton?.click();
+    });
+
+    expect(view.props.onSearchChange).toHaveBeenCalledWith('');
+    expect(view.props.onEnabledFreqsChange).not.toHaveBeenCalled();
+    expect(view.props.onMinIntensityChange).not.toHaveBeenCalled();
+  });
+
   it('lets the user close an opened relation edge drill-down', () => {
     const view = renderPanel(undefined, {
       relationsSelectedEdgeId: 'ALPHA__BRAVO',

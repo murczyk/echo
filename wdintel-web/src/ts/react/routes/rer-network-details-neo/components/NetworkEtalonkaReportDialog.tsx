@@ -15,21 +15,15 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import dayjs from 'dayjs';
-import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
-import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import dayjs from 'dayjs';
+import { type ReactNode } from 'react';
 
+import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../../../utils/misc';
 import { type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from '../use-rer-network-details-neo-page.etalonka-report';
-
-dayjs.locale('uk');
 
 type Props = {
   report: NetworkEtalonkaReportState;
@@ -115,16 +109,6 @@ export function NetworkEtalonkaReportDialog({
 }: Props) {
   const isExtended = report.reportType === 'ExtendedReport';
   const dateTimeDisabled = report.downloading || !isExtended;
-  const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
-  const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
-
-  useEffect(() => {
-    setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
-  }, [report.fromDateTimeStr]);
-
-  useEffect(() => {
-    setToDateTimeDraft(parseDateTime(report.toDateTimeStr));
-  }, [report.toDateTimeStr]);
 
   return (
     <Dialog
@@ -152,24 +136,9 @@ export function NetworkEtalonkaReportDialog({
         <Stack spacing={2}>
           {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
 
-          <RadioGroup
-            row
-            value={report.reportType}
-            onChange={(_event, value) => onTypeChange(value as NetworkEtalonkaReportType)}
-            sx={{ gap: 2 }}
-          >
-            <FormControlLabel
-              value="AccordingToTheForm"
-              control={<Radio />}
-              label="Згідно форми"
-              disabled={report.downloading}
-            />
-            <FormControlLabel
-              value="ExtendedReport"
-              control={<Radio />}
-              label="Розширений"
-              disabled={report.downloading}
-            />
+          <RadioGroup row value={report.reportType} onChange={(_event, value) => onTypeChange(value as NetworkEtalonkaReportType)} sx={{ gap: 2 }}>
+            <FormControlLabel value="AccordingToTheForm" control={<Radio />} label="Згідно форми" disabled={report.downloading} />
+            <FormControlLabel value="ExtendedReport" control={<Radio />} label="Розширений" disabled={report.downloading} />
           </RadioGroup>
 
           <Box
@@ -228,91 +197,69 @@ export function NetworkEtalonkaReportDialog({
               minHeight={190}
             >
               {isExtended ? (
-                <LocalizationProvider
-                  dateAdapter={AdapterDayjs}
-                  adapterLocale="uk"
-                  localeText={{
-                    cancelButtonLabel: 'Скасувати',
-                    todayButtonLabel: 'Сьогодні',
-                    okButtonLabel: 'ОК',
-                  }}
-                >
-                  <Stack spacing={2}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-                      <DateTimePicker
-                        label="Від"
-                        value={fromDateTimeDraft}
-                        onChange={setFromDateTimeDraft}
-                        onAccept={(value) => onFromDateTimeStrChange(formatDateTime(value))}
-                        onClose={() => setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr))}
-                        disabled={dateTimeDisabled}
-                        minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
-                        format="DD.MM.YYYY HH:mm"
-                        ampm={false}
-                        closeOnSelect={false}
-                        slotProps={{
-                          textField: {
-                            size: 'small',
-                            fullWidth: true,
-                            InputLabelProps: { shrink: true },
-                          },
-                          actionBar: {
-                            actions: ['today', 'cancel', 'accept'],
-                          },
-                        }}
-                      />
-                      <DateTimePicker
-                        label="До"
-                        value={toDateTimeDraft}
-                        onChange={setToDateTimeDraft}
-                        onAccept={(value) => onToDateTimeStrChange(formatDateTime(value))}
-                        onClose={() => setToDateTimeDraft(parseDateTime(report.toDateTimeStr))}
-                        disabled={dateTimeDisabled}
-                        minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
-                        format="DD.MM.YYYY HH:mm"
-                        ampm={false}
-                        closeOnSelect={false}
-                        slotProps={{
-                          textField: {
-                            size: 'small',
-                            fullWidth: true,
-                            InputLabelProps: { shrink: true },
-                          },
-                          actionBar: {
-                            actions: ['today', 'cancel', 'accept'],
-                          },
-                        }}
-                      />
-                    </Box>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                    <PowerDateTimePicker
+                      label="Від"
+                      value={parseDateTime(report.fromDateTimeStr)}
+                      allowEmpty={false}
+                      onChange={(value) => onFromDateTimeStrChange(formatDateTime(value))}
+                      disabled={dateTimeDisabled}
+                      minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                      format="DD.MM.YYYY HH:mm"
+                      slotProps={{
+                        textField: {
+                          size: 'small',
+                          fullWidth: true,
+                          InputLabelProps: { shrink: true },
+                        },
+                      }}
+                    />
+                    <PowerDateTimePicker
+                      label="До"
+                      value={parseDateTime(report.toDateTimeStr)}
+                      allowEmpty={false}
+                      onChange={(value) => onToDateTimeStrChange(formatDateTime(value))}
+                      disabled={dateTimeDisabled}
+                      minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                      format="DD.MM.YYYY HH:mm"
+                      slotProps={{
+                        textField: {
+                          size: 'small',
+                          fullWidth: true,
+                          InputLabelProps: { shrink: true },
+                        },
+                      }}
+                    />
+                  </Box>
 
-                    <Stack spacing={0.75}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={report.includeUnitCallsigns}
-                            onChange={(_event, checked) => onIncludeUnitCallsignsChange(checked)}
-                            disabled={report.downloading}
-                            sx={{ p: 0.5 }}
-                          />
-                        }
-                        label="Включити позивні підрозділів"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={report.includePelengsMap}
-                            onChange={(_event, checked) => onIncludePelengsMapChange(checked)}
-                            disabled={report.downloading}
-                            sx={{ p: 0.5 }}
-                          />
-                        }
-                        label="Включити карту пеленгів"
-                      />
-                    </Stack>
+                  <Stack spacing={0.75}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={report.includeUnitCallsigns}
+                          onChange={(_event, checked) => onIncludeUnitCallsignsChange(checked)}
+                          disabled={report.downloading}
+                          sx={{ p: 0.5 }}
+                        />
+                      }
+                      label="Включити позивні підрозділів"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={report.includePelengsMap}
+                          onChange={(_event, checked) => onIncludePelengsMapChange(checked)}
+                          disabled={report.downloading}
+                          sx={{ p: 0.5 }}
+                        />
+                      }
+                      label="Включити карту пеленгів"
+                    />
                   </Stack>
-                </LocalizationProvider>
+                </Stack>
               ) : null}
             </ReportSectionCard>
           </Box>
