@@ -225,6 +225,7 @@ export function PowerDatePicker({
       <DatePicker
         {...props}
         {...desktopModeProps}
+        value={draftValue}
         open={open}
         closeOnSelect={false}
         onOpen={handleOpen}
@@ -252,6 +253,7 @@ export function PowerDatePicker({
             setDraftValue(value);
             return;
           }
+          setDraftValue(value);
           onChange(value);
         }}
         slots={{
@@ -407,6 +409,7 @@ export function PowerDateTimePicker({
       setDraftValue(value);
       return;
     }
+    setDraftValue(value);
     onChange(value);
   };
 
@@ -423,6 +426,7 @@ export function PowerDateTimePicker({
       <DateTimePicker
         {...props}
         {...desktopModeProps}
+        value={draftValue}
         open={open}
         closeOnSelect={false}
         ampm={false}
