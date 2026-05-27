@@ -237,7 +237,6 @@ function AnalysisSummaryTableCardInner({
     columns,
     data,
     ...defaultMRTOptions,
-    layoutMode: 'grid-no-grow',
     getRowId: (row) => row.freq,
     enableSorting: true,
     enableSortingRemoval: false,

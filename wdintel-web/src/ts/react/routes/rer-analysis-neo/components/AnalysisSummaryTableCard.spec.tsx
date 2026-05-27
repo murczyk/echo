@@ -17,8 +17,14 @@ vi.mock('@mui/icons-material/MapOutlined', () => ({ default: () => <span>map</sp
 vi.mock('@mui/material', () => ({
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: (props: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
-    <button type="button" onClick={props.onClick} disabled={props.disabled}>
+  Button: (props: { children: ReactNode; onClick?: () => void; disabled?: boolean; disableRipple?: boolean; disableTouchRipple?: boolean }) => (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      data-disable-ripple={props.disableRipple ? 'true' : undefined}
+      data-disable-touch-ripple={props.disableTouchRipple ? 'true' : undefined}
+    >
       {props.children}
     </button>
   ),
@@ -100,7 +106,6 @@ vi.mock('material-react-table', () => ({
             ))}
           </tbody>
         </table>
-        <div data-testid="spacer-visible-in-menu">{String(table.displayColumnDefOptions?.['mrt-row-spacer']?.visibleInShowHideMenu ?? false)}</div>
       </>
     );
   },
@@ -303,7 +308,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Локації');
     expect(view.container.textContent).toContain('Дії');
     expect(view.container.textContent).toContain('XLSX');
-    expect(view.container.querySelector('[data-testid="spacer-visible-in-menu"]')?.textContent).toBe('false');
     expect(view.container.querySelector('[data-testid="default-head-bg"]')?.textContent).toBe('var(--bs-body-bg)');
   });
 
@@ -465,6 +469,8 @@ describe('AnalysisSummaryTableCard', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('+2 ще');
+    expect(getButton(view.container, '+2 ще').dataset.disableRipple).toBe('true');
+    expect(getButton(view.container, '+2 ще').dataset.disableTouchRipple).toBe('true');
     await click(getButton(view.container, '+2 ще'));
     expect(view.container.textContent).toContain('DELTA');
     expect(view.container.textContent).toContain('Згорнути');

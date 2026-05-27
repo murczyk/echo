@@ -14,6 +14,8 @@ type ExpandableInlineListCellProps<T> = {
   tooltipTitle?: ReactNode;
   collapsedLabel?: (hiddenCount: number) => string;
   expandedLabel?: string;
+  collapsedButtonWidth?: string;
+  collapseFadeWidth?: string;
 };
 
 function ExpandableInlineListCell<T>({
@@ -23,6 +25,8 @@ function ExpandableInlineListCell<T>({
   tooltipTitle,
   collapsedLabel = (hiddenCount) => `+${hiddenCount} ще`,
   expandedLabel = 'Згорнути',
+  collapsedButtonWidth,
+  collapseFadeWidth,
 }: ExpandableInlineListCellProps<T>) {
   const [expanded, setExpanded] = useState(false);
 
@@ -36,6 +40,11 @@ function ExpandableInlineListCell<T>({
 
   const visibleItems = expanded ? items : items.slice(0, maxVisible);
   const hiddenCount = Math.max(items.length - maxVisible, 0);
+  const hasOverflow = items.length > maxVisible;
+  const fadeWidth = collapseFadeWidth ?? '4rem';
+  const maskImage = hasOverflow && !expanded
+    ? `linear-gradient(to right, #000 0, #000 calc(100% - ${fadeWidth}), transparent 100%)`
+    : 'none';
   const content = (
     <Box
       sx={{
@@ -45,6 +54,7 @@ function ExpandableInlineListCell<T>({
         columnGap: 0.75,
         minWidth: 0,
         width: '100%',
+        height: '100%',
       }}
     >
       <Box
@@ -53,31 +63,57 @@ function ExpandableInlineListCell<T>({
           alignItems: 'center',
           gap: 0.5,
           minWidth: 0,
+          height: '100%',
+          position: 'relative',
           overflow: expanded ? 'visible' : 'hidden',
           whiteSpace: expanded ? 'normal' : 'nowrap',
           flexWrap: expanded ? 'wrap' : 'nowrap',
+          WebkitMaskImage: maskImage,
+          maskImage,
         }}
-      >
+        >
         {visibleItems.map((item, index) => renderItem(item, index))}
       </Box>
-      {items.length > maxVisible ? (
-        <Button
-          size="small"
-          variant="text"
-          onClick={() => setExpanded((current) => !current)}
-          aria-label={expanded ? expandedLabel : `Показати ще ${hiddenCount}`}
+      {hasOverflow ? (
+        <Box
           sx={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: expanded ? 'flex-start' : 'center',
+            justifyContent: 'flex-end',
             minWidth: 0,
-            px: 0.5,
-            py: 0,
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-            fontWeight: 600,
-            lineHeight: 1.2,
+            height: '100%',
+            alignSelf: 'stretch',
           }}
         >
-          {expanded ? expandedLabel : collapsedLabel(hiddenCount)}
-        </Button>
+          <Button
+            size="small"
+            variant="text"
+            disableRipple
+            disableTouchRipple
+            onClick={() => setExpanded((current) => !current)}
+            aria-label={expanded ? expandedLabel : `Показати ще ${hiddenCount}`}
+            sx={{
+              minWidth: 0,
+              width: expanded ? 'auto' : collapsedButtonWidth ?? 'auto',
+              px: 0.5,
+              py: 0,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+              fontWeight: 500,
+              fontSize: '0.92rem',
+              lineHeight: 1.2,
+              justifyContent: expanded || !collapsedButtonWidth ? 'center' : 'flex-end',
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '0.01em',
+              background: 'transparent',
+              '&:hover': { background: 'transparent' },
+              '& .MuiTouchRipple-root': { display: 'none' },
+            }}
+          >
+            {expanded ? expandedLabel : collapsedLabel(hiddenCount)}
+          </Button>
+        </Box>
       ) : null}
     </Box>
   );
@@ -175,6 +211,8 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
     <ExpandableInlineListCell
       items={callsigns}
       maxVisible={3}
+      collapsedButtonWidth="4.25rem"
+      collapseFadeWidth="6rem"
       renderItem={(entry, index) => {
         const hintIcon =
           entry.iconClass === 'info-circle-fill' ? <InfoIcon fontSize="inherit" /> : entry.iconClass === 'info-circle' ? <InfoOutlinedIcon fontSize="inherit" /> : null;
@@ -207,14 +245,6 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
 export function SummaryTableLoadingState() {
   return (
     <Stack spacing={1.25} sx={{ px: 1.5, py: 1.5, minHeight: 0, flex: 1, overflow: 'hidden' }}>
-      <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" justifyContent="space-between">
-        <Skeleton variant="rounded" width={220} height={36} />
-        <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent="flex-end">
-          <Skeleton variant="rounded" width={80} height={30} />
-          <Skeleton variant="rounded" width={80} height={30} />
-          <Skeleton variant="rounded" width={80} height={30} />
-        </Stack>
-      </Stack>
       <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
         {Array.from({ length: 8 }).map((_, index) => (
           <Skeleton key={index} variant="rounded" height={60} />

@@ -55,7 +55,7 @@ vi.mock('../../../../../../../PowerMenu', () => ({
 }));
 
 vi.mock('../../../../../table-state-provider', () => ({
-  INTERNAL_COLUMN_IDS: ['mrt-row-actions', 'mrt-row-drag', 'mrt-row-numbers', 'mrt-row-select', 'mrt-row-expand', 'mrt-row-spacer'],
+  INTERNAL_COLUMN_IDS: ['mrt-row-actions', 'mrt-row-drag', 'mrt-row-numbers', 'mrt-row-select', 'mrt-row-expand'],
   useTableStateContext: () => ({
     columnOrderTouched: false,
     columnSizeTouched: false,
@@ -79,7 +79,6 @@ vi.mock('../../../../../table-state-provider', () => ({
         { id: 'mrt-row-numbers', columnDef: { id: 'mrt-row-numbers', header: '' } },
         { id: 'freq', columnDef: { id: 'freq', header: 'Частота' } },
         { id: 'locationSearchText', columnDef: { id: 'locationSearchText', header: 'Локації' } },
-        { id: 'mrt-row-spacer', columnDef: { id: 'mrt-row-spacer', header: '' } },
       ],
     },
   }),
@@ -121,7 +120,7 @@ describe('ColumnsVisibilityButton', () => {
     vi.clearAllMocks();
   });
 
-  it('omits the MRT spacer column from the show-hide menu', async () => {
+  it('omits internal columns from the show-hide menu', async () => {
     const view = await renderComponent();
     rendered.push(view);
 
@@ -134,6 +133,6 @@ describe('ColumnsVisibilityButton', () => {
 
     expect(labels).toEqual(expect.arrayContaining(['Зміна порядку стовпців', 'Зміна розміру стовпців', 'Частота', 'Локації']));
     expect(labels).not.toContain('');
-    expect(labels).not.toContain('mrt-row-spacer');
+    expect(labels).not.toContain('mrt-row-actions');
   });
 });

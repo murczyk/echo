@@ -217,50 +217,6 @@ export const CUSTOM_STYLES = {
         },
       },
     },
-    'mrt-row-spacer': {
-      size: 0,
-      minSize: 0,
-      maxSize: 0,
-      grow: false,
-      enableHiding: false,
-      enableColumnOrdering: false,
-      visibleInShowHideMenu: false,
-      enableColumnActions: false,
-      muiTableHeadCellProps: {
-        sx: {
-          minWidth: 0,
-          width: 0,
-          padding: 0,
-          borderRight: 0,
-          borderBottom: 0,
-          backgroundColor: 'transparent',
-          '& .Mui-TableHeadCell-Content': {
-            display: 'none',
-          },
-        },
-      },
-      muiTableBodyCellProps: {
-        sx: {
-          minWidth: 0,
-          width: 0,
-          padding: 0,
-          borderRight: 0,
-          borderBottom: 0,
-          backgroundColor: 'transparent',
-          overflow: 'hidden',
-        },
-      },
-      muiTableFooterCellProps: {
-        sx: {
-          minWidth: 0,
-          width: 0,
-          padding: 0,
-          borderRight: 0,
-          borderBottom: 0,
-          backgroundColor: 'transparent',
-        },
-      },
-    },
   },
   muiTablePaperProps: ({ table }: { table: any }) => ({
     'data-table-watermark': getAuthUserNameFromShell(),

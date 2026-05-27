@@ -22,7 +22,6 @@ export const INTERNAL_COLUMN_IDS = [
   'mrt-row-numbers',
   'mrt-row-select',
   'mrt-row-expand',
-  'mrt-row-spacer',
 ];
 
 function isInternalColumnId(columnId: string) {

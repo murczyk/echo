@@ -15,15 +15,6 @@ describe('normalizeColumnOrder', () => {
     ).toEqual(['mrt-row-numbers', 'mrt-row-actions', 'callsign', 'position']);
   });
 
-  it('treats the MRT spacer as an internal column during normalization', () => {
-    expect(
-      normalizeColumnOrder(
-        ['mrt-row-spacer', 'mrt-row-numbers', 'callsign'],
-        ['mrt-row-numbers', 'mrt-row-spacer', 'callsign'],
-      ),
-    ).toEqual(['mrt-row-numbers', 'mrt-row-spacer', 'callsign']);
-  });
-
   it('falls back to the default order when the column sets do not match', () => {
     expect(
       normalizeColumnOrder(

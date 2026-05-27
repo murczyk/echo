@@ -12,6 +12,7 @@ import { ELLIPSIS } from '../../../utils/misc';
 import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
 import { emptyFilter } from '../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from './MessageCard';
+import { MessageCardHeader } from './MessageCardHeader';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -269,6 +270,20 @@ type Rendered = {
   root: Root;
 };
 
+type ResizeObserverCallback = () => void;
+
+const resizeObserverCallbacks: ResizeObserverCallback[] = [];
+
+class ResizeObserverMock {
+  constructor(private readonly callback: ResizeObserverCallback) {
+    resizeObserverCallbacks.push(callback);
+  }
+
+  observe() {}
+
+  disconnect() {}
+}
+
 function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   return {
     text: 'Повідомлення для перевірки вузького макета',
@@ -340,6 +355,60 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
   return { container, root };
 }
 
+async function renderHeader(overrides: Partial<ComponentProps<typeof MessageCardHeader>> = {}): Promise<Rendered> {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const msg = buildMessage();
+  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
+    featureStrictNetworks: false,
+    networkDisplayMap: { 7: 'р/м Alpha' },
+    networkMap: { 7: { id: 7, name: 'Alpha', unitIds: [], location: null } as Network },
+    networks: undefined,
+  });
+  const props: ComponentProps<typeof MessageCardHeader> = {
+    compact: true,
+    displayMode: 'duty',
+    excludeMenuOptions: [],
+    networkRowContentWidthPct: 90,
+    id: 42,
+    msg,
+    copiedFeedbackId: null,
+    groupName: "Куп'янськ пеленг",
+    senderName: 'Dow_Jones_2',
+    etalonDisplayModel,
+    mapHref: undefined,
+    analysisHref: undefined,
+    rightInsetPx: 0,
+    topRight: <div />,
+    onBookmark: vi.fn(),
+    onImportant: vi.fn(),
+    onComment: vi.fn(),
+    onCopyText: vi.fn(),
+    onCopyFreq: vi.fn(),
+    onCopyEtalon: vi.fn(),
+    onCopyLocation: vi.fn(),
+    onAddFrequencyToFilter: vi.fn(),
+    onDelete: vi.fn(),
+    onEditDetails: vi.fn(),
+    onExcludeMessageEntity: vi.fn(),
+    ...overrides,
+  };
+
+  await act(async () => {
+    root.render(<MessageCardHeader {...props} />);
+  });
+
+  return { container, root };
+}
+
+function setClientWidth(element: HTMLElement, width: number) {
+  Object.defineProperty(element, 'clientWidth', {
+    configurable: true,
+    value: width,
+  });
+}
+
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label));
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
@@ -364,6 +433,8 @@ describe('MessageCard', () => {
   const rendered: Rendered[] = [];
 
   afterEach(() => {
+    resizeObserverCallbacks.splice(0);
+    vi.unstubAllGlobals();
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
@@ -721,6 +792,47 @@ describe('MessageCard', () => {
       NAVIGATE_TITLE,
       'Більше дій',
     ]);
+  });
+
+  it('keeps the compact duty toolbar inline when the action column still has room', async () => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    const view = await renderHeader();
+    rendered.push(view);
+
+    const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
+    const root = toolbar.parentElement;
+    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
+
+    setClientWidth(root, 240);
+    await act(async () => {
+      resizeObserverCallbacks.at(-1)?.();
+    });
+
+    const updatedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(updatedToolbar instanceof HTMLElement)) throw new Error('toolbar not found after resize');
+    expect(updatedToolbar.getAttribute('role')).toBeNull();
+  });
+
+  it('wraps the compact duty toolbar into a 3-column grid when the action column is narrow', async () => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    const view = await renderHeader();
+    rendered.push(view);
+
+    const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
+    const root = toolbar.parentElement;
+    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
+
+    setClientWidth(root, 180);
+    await act(async () => {
+      resizeObserverCallbacks.at(-1)?.();
+    });
+
+    const updatedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(updatedToolbar instanceof HTMLElement)) throw new Error('toolbar not found after resize');
+    expect(updatedToolbar.getAttribute('role')).toBe('group');
+    expect(updatedToolbar.getAttribute('data-action-grid-columns')).toBe('3');
   });
 
   it('hides overflow in duty mode when no edit or delete actions are available', async () => {
