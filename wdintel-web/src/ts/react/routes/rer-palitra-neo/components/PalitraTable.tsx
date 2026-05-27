@@ -1,11 +1,10 @@
-import { Box, Stack } from '@mui/material';
+import { Box } from '@mui/material';
 import type { MRT_VisibilityState } from 'material-react-table';
 import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
 import type { Palitra } from '../../../../../Bindings';
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
-import { ActiveFiltersButton } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-button';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -288,16 +287,7 @@ export function PalitraTable({
         overflowX: showTableOverlay ? 'hidden' : 'auto',
       }}
     >
-      <Stack sx={{ height: '100%', minHeight: 0 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', pb: 1.5 }}>
-          <ActiveFiltersButton
-            table={table}
-            columnFilters={tableStateContext.columnFilters}
-            globalFilter={tableStateContext.globalFilter}
-          />
-        </Box>
-        <MaterialReactTable table={table} />
-      </Stack>
+      <MaterialReactTable table={table} />
     </Box>
   );
 }
