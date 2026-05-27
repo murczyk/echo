@@ -6,6 +6,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { ELLIPSIS } from '../../../utils/misc';
+import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
@@ -59,6 +60,18 @@ type Props = {
   zoomOutFactor: number;
 };
 
+function getDefaultEnabledFreqs(legendFreqs: NetworkCallsignRelationFreqView[]): string[] {
+  const enabledByDefaultFreqs = legendFreqs.filter((freq) => freq.enabledByDefault).map((freq) => freq.freq);
+  return enabledByDefaultFreqs.length > 0 ? enabledByDefaultFreqs : legendFreqs.map((freq) => freq.freq);
+}
+
+function sameFreqs(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+
+  const rightFreqs = new Set(right);
+  return left.every((freq) => rightFreqs.has(freq));
+}
+
 export function NetworkCallsignRelationsGraphStage({
   headingId,
   filterButtonId,
@@ -101,6 +114,11 @@ export function NetworkCallsignRelationsGraphStage({
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
   const graphTheme = getNetworkRelationsGraphTheme(theme);
+  const defaultEnabledFreqs = getDefaultEnabledFreqs(legendFreqs);
+  const hasResettableGraphFilters =
+    relationsSearch.trim() !== '' ||
+    relationsMinIntensity !== NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY ||
+    !sameFreqs(relationsEnabledFreqs, defaultEnabledFreqs);
 
   return (
     <Paper
@@ -282,11 +300,13 @@ export function NetworkCallsignRelationsGraphStage({
             <Typography variant="body1" sx={{ color: graphTheme.overlayTextSecondary }}>
               {EMPTY_STATE_NO_RESULTS_TEXT}
             </Typography>
-            {relationsSearch.trim() !== '' ? (
+            {hasResettableGraphFilters ? (
               <Button
                 variant="text"
                 onClick={() => {
                   onSearchChange('');
+                  onEnabledFreqsChange(defaultEnabledFreqs);
+                  onMinIntensityChange(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
                 }}
                 data-testid="clear-empty-filters"
                 sx={{
