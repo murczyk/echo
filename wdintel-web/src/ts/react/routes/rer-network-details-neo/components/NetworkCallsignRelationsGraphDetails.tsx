@@ -1,18 +1,18 @@
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import { Box, Chip, Divider, IconButton, Paper, Stack, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 import type {
   NetworkCallsignRelationsEdgeView,
   NetworkCallsignRelationsNodeView,
 } from '../network-relations';
+import { getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
 
 type Props = {
   selectedNode: NetworkCallsignRelationsNodeView | null;
   selectedEdge: NetworkCallsignRelationsEdgeView | null;
   selectedNodeEdges: NetworkCallsignRelationsEdgeView[];
   selectedEdgeId: string | null;
-  overlayBorder: string;
-  overlayTextSecondary: string;
   onSelectNodeId: (nodeId: string | null) => void;
   onSelectEdgeId: (edgeId: string | null) => void;
 };
@@ -22,11 +22,12 @@ export function NetworkCallsignRelationsGraphDetails({
   selectedEdge,
   selectedNodeEdges,
   selectedEdgeId,
-  overlayBorder,
-  overlayTextSecondary,
   onSelectNodeId,
   onSelectEdgeId,
 }: Props) {
+  const theme = useTheme();
+  const graphTheme = getNetworkRelationsGraphTheme(theme);
+
   return (
     <Box
       sx={{
@@ -49,10 +50,10 @@ export function NetworkCallsignRelationsGraphDetails({
           flexDirection: 'column',
           overflow: 'hidden',
           borderRadius: 2,
-          bgcolor: 'rgba(12,12,12,0.94)',
-          border: `1px solid ${overlayBorder}`,
-          boxShadow: '0 12px 28px rgba(0,0,0,0.35)',
-          color: 'inherit',
+          bgcolor: graphTheme.overlayBg,
+          border: `1px solid ${graphTheme.overlayBorder}`,
+          boxShadow: graphTheme.overlayShadow,
+          color: graphTheme.overlayText,
         }}
       >
         <Box
@@ -60,7 +61,7 @@ export function NetworkCallsignRelationsGraphDetails({
             p: 1.5,
             position: 'relative',
             pr: selectedEdge || selectedNode ? 4.5 : 1.5,
-            borderBottom: selectedEdge || selectedNode ? `1px solid ${overlayBorder}` : 'none',
+            borderBottom: selectedEdge || selectedNode ? `1px solid ${graphTheme.overlayBorder}` : 'none',
             flexShrink: 0,
           }}
         >
@@ -69,7 +70,7 @@ export function NetworkCallsignRelationsGraphDetails({
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                 {selectedEdge.source} ↔ {selectedEdge.target}
               </Typography>
-              <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
+              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
                 {selectedEdge.visibleWeight} перехоплень у {selectedEdge.visibleByFreq.length} частотах
               </Typography>
             </Stack>
@@ -78,7 +79,7 @@ export function NetworkCallsignRelationsGraphDetails({
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                 {selectedNode.label}
               </Typography>
-              <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
+              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
                 {selectedNode.position ?? 'Позиція не вказана'} · {selectedNode.unitName ?? 'Підрозділ не вказаний'}
               </Typography>
             </Stack>
@@ -87,7 +88,7 @@ export function NetworkCallsignRelationsGraphDetails({
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                 Виберіть вузол або зв'язок
               </Typography>
-              <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
+              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
                 Підсвітка сусідів з'явиться тут
               </Typography>
             </Stack>
@@ -127,11 +128,11 @@ export function NetworkCallsignRelationsGraphDetails({
               <Stack spacing={1.5}>
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                   {selectedEdge.visibleByFreq.map((item) => (
-                    <Chip key={item.freq} size="small" label={`${item.freq} · ${item.weight}`} sx={{ bgcolor: 'rgba(255,255,255,0.06)' }} />
+                    <Chip key={item.freq} size="small" label={`${item.freq} · ${item.weight}`} sx={{ bgcolor: graphTheme.surfaceBg }} />
                   ))}
                 </Stack>
-                <Divider sx={{ borderColor: overlayBorder }} />
-                <Typography variant="body2" sx={{ color: overlayTextSecondary }}>
+                <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
+                <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary }}>
                   Зв'язок побудовано за перехопленнями та частотами.
                 </Typography>
               </Stack>
@@ -142,13 +143,13 @@ export function NetworkCallsignRelationsGraphDetails({
                   <Chip size="small" label={`Зв'язків: ${selectedNode.relationCount}`} />
                   {selectedNode.knownCallsignId ? <Chip size="small" label={`ID: ${selectedNode.knownCallsignId}`} /> : null}
                 </Stack>
-                <Divider sx={{ borderColor: overlayBorder }} />
+                <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
                 <Stack spacing={0.75}>
-                  <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
+                  <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
                     Хто говорив з цим позивним
                   </Typography>
                   {selectedNodeEdges.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: overlayTextSecondary }}>
+                    <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary }}>
                       Немає зв'язків у поточних фільтрах
                     </Typography>
                   ) : (
@@ -160,8 +161,8 @@ export function NetworkCallsignRelationsGraphDetails({
                           variant="outlined"
                           sx={{
                             p: 1,
-                            bgcolor: 'rgba(255,255,255,0.02)',
-                            borderColor: selectedEdgeId === edge.id ? 'rgba(224, 162, 94, 0.9)' : overlayBorder,
+                            bgcolor: graphTheme.surfaceBg,
+                            borderColor: selectedEdgeId === edge.id ? theme.palette.primary.main : graphTheme.surfaceBorder,
                             cursor: 'pointer',
                           }}
                           onClick={() => onSelectEdgeId(edge.id)}
@@ -171,13 +172,13 @@ export function NetworkCallsignRelationsGraphDetails({
                               <Typography variant="body2" sx={{ fontWeight: 700 }}>
                                 {partner}
                               </Typography>
-                              <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
+                              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
                                 {edge.visibleWeight}
                               </Typography>
                             </Stack>
                             <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
                               {edge.visibleByFreq.slice(0, 3).map((item) => (
-                                <Chip key={item.freq} size="small" label={`${item.freq} · ${item.weight}`} sx={{ bgcolor: 'rgba(255,255,255,0.06)' }} />
+                                <Chip key={item.freq} size="small" label={`${item.freq} · ${item.weight}`} sx={{ bgcolor: graphTheme.surfaceBg }} />
                               ))}
                             </Stack>
                           </Stack>

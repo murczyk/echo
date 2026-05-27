@@ -343,7 +343,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.centerTab).toBe('messages');
   });
 
-  it('adds a frequency filter through the summary sidebar without dropping existing selections', async () => {
+  it('adds a frequency filter through the stats sidebar without dropping existing selections', async () => {
     renderHook();
     await flushEffects();
 
@@ -361,6 +361,21 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightSidebarTab).toBe('stats');
     expect(latest?.queryState.freqsSelected).toEqual(['111.1', '123.4']);
     expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
+  });
+
+  it('clears the loaded saved filter when filters are reset', async () => {
+    const savedFilters = buildSavedFilters();
+    useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
+
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.resetFilters();
+    });
+    await flushEffects();
+
+    expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
   });
 
   it('does not duplicate a frequency already in the analysis filter', async () => {

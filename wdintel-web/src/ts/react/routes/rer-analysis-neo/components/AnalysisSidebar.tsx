@@ -2,7 +2,6 @@ import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
-import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 import { Box, Tab, Tabs, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
@@ -12,7 +11,6 @@ import { AnalysisCallsignsPane } from './AnalysisCallsignsPane';
 import { AnalysisMapPane } from './AnalysisMapPane';
 import { AnalysisStatsPane } from './AnalysisStatsPane';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
-import { AnalysisSummaryTableCard } from './AnalysisSummaryTableCard';
 
 type Props = Pick<
   AnalysisPageState,
@@ -29,8 +27,6 @@ type Props = Pick<
   | 'groupsActivityLoading'
   | 'mapAttrs'
   | 'analysisMapInSidebar'
-  | 'networkDisplayMap'
-  | 'networks'
   | 'newCallsigns'
   | 'newCallsignsLoading'
   | 'rightSidebarLoading'
@@ -41,12 +37,6 @@ type Props = Pick<
   | 'topFreqs'
   | 'topLocations'
   | 'topUnits'
-  | 'summaryCallsignsInfo'
-  | 'summaryHasLoadedOnce'
-  | 'summaryLoaded'
-  | 'summaryLoading'
-  | 'summaryRows'
-  | 'unitsMap'
   > &
   Pick<
     AnalysisPageActions,
@@ -54,12 +44,9 @@ type Props = Pick<
     | 'loadCorrelatedFreqs'
     | 'loadGroupsActivity'
     | 'loadMessagesForMap'
-    | 'downloadSummaryXlsx'
-    | 'renameSummaryUnit'
     | 'selectOnlyFreq'
     | 'setRightSidebarTab'
     | 'refreshMapDateRange'
-    | 'showFreqOnMap'
     | 'toggleCallsignGraphNolimit'
     | 'toggleUnitFromMap'
   >;
@@ -78,33 +65,22 @@ export function AnalysisSidebar({
   groupsActivityLoading,
   mapAttrs,
   analysisMapInSidebar,
-  downloadSummaryXlsx,
   loadCallsignGraph,
   loadCorrelatedFreqs,
   loadGroupsActivity,
   loadMessagesForMap,
-  networkDisplayMap,
-  networks,
   newCallsigns,
   newCallsignsLoading,
   rightSidebarLoading,
   queryState,
   rightPanelOpen,
   rightSidebarTab,
-  renameSummaryUnit,
   selectOnlyFreq,
   setRightSidebarTab,
-  showFreqOnMap,
-  summaryCallsignsInfo,
-  summaryHasLoadedOnce,
-  summaryLoaded,
-  summaryLoading,
-  summaryRows,
   topCallsigns,
   topFreqs,
   topLocations,
   topUnits,
-  unitsMap,
   refreshMapDateRange,
   toggleCallsignGraphNolimit,
   toggleUnitFromMap,
@@ -172,11 +148,6 @@ export function AnalysisSidebar({
             if (tab === 'callsigns') {
               return (
                 <Tab key={tab} value={tab} icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Позивні" />
-              );
-            }
-            if (tab === 'summary') {
-              return (
-                <Tab key={tab} value={tab} icon={<TableRowsOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Таблиця: Частоти" />
               );
             }
             return (
@@ -256,27 +227,6 @@ export function AnalysisSidebar({
         {sidebarTab === 'newCallsigns' ? (
           <Box>
             <AnalysisNewCallsignsCard loading={newCallsignsLoading} newCallsigns={newCallsigns} />
-          </Box>
-        ) : null}
-        {sidebarTab === 'summary' ? (
-          <Box sx={{ height: '100%', minHeight: 0, display: 'flex' }}>
-            <AnalysisSummaryTableCard
-              callsignInfoMap={summaryCallsignsInfo}
-              networkDisplayMap={networkDisplayMap}
-              networks={networks}
-              onDownloadXlsx={downloadSummaryXlsx}
-              onRenameUnit={renameSummaryUnit}
-              onSelectFreq={selectOnlyFreq}
-              onShowFreqOnMap={showFreqOnMap}
-              loaded={summaryHasLoadedOnce}
-              loading={summaryLoading}
-              rows={summaryRows}
-              sx={{ flex: 1, minWidth: 0 }}
-              tableContainerSx={{ maxHeight: '100%' }}
-              sidebarMode
-              title="Таблиця частот"
-              unitsMap={unitsMap}
-            />
           </Box>
         ) : null}
       </Box>

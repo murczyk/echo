@@ -361,10 +361,12 @@ export function NetworkCallsignRelationsGraph({
           relationsShowLabels={relationsShowLabels}
           denseGraph={denseGraph}
           graphIsFilteredEmpty={!hasRenderableGraph}
+          relationsSearch={relationsSearch}
           graphWarning={renderGraphView.warning}
           legendFreqs={legendFreqs}
           relationsEnabledFreqs={relationsEnabledFreqs}
           relationsMinIntensity={relationsMinIntensity}
+          onSearchChange={onSearchChange}
           onEnabledFreqsChange={onEnabledFreqsChange}
           onMinIntensityChange={onMinIntensityChange}
           onOpenFilters={(anchorEl) => setFilterAnchorEl(anchorEl)}

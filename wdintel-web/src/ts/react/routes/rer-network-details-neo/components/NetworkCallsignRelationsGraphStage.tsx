@@ -6,10 +6,10 @@ import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { ELLIPSIS } from '../../../utils/misc';
-import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
+import { getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
 import type {
   NetworkCallsignRelationFreqView,
   NetworkCallsignRelationsEdgeView,
@@ -39,11 +39,13 @@ type Props = {
   relationsShowLabels: boolean;
   denseGraph: boolean;
   graphIsFilteredEmpty: boolean;
+  relationsSearch: string;
   graphWarning: boolean;
   legendFreqs: NetworkCallsignRelationFreqView[];
   relationsEnabledFreqs: string[];
   relationsMinIntensity: number;
   relationsLoading: boolean;
+  onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
   onOpenFilters: (anchorEl: HTMLElement) => void;
@@ -77,11 +79,13 @@ export function NetworkCallsignRelationsGraphStage({
   relationsShowLabels,
   denseGraph,
   graphIsFilteredEmpty,
+  relationsSearch,
   graphWarning,
   legendFreqs,
   relationsEnabledFreqs,
   relationsMinIntensity,
   relationsLoading,
+  onSearchChange,
   onEnabledFreqsChange,
   onMinIntensityChange,
   onOpenFilters,
@@ -96,18 +100,7 @@ export function NetworkCallsignRelationsGraphStage({
 }: Props) {
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
-  const graphFrameBg = isDarkMode ? '#0f0f0f' : theme.palette.background.paper;
-  const graphFrameBorder = alpha(theme.palette.divider, isDarkMode ? 0.6 : 0.85);
-  const graphGridLine = isDarkMode ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.05)';
-  const graphOverlayBg = isDarkMode ? 'rgba(12,12,12,0.94)' : alpha(theme.palette.background.paper, 0.98);
-  const graphOverlayBorder = alpha(theme.palette.divider, isDarkMode ? 0.5 : 0.85);
-  const graphOverlayShadow = isDarkMode ? '0 12px 28px rgba(0,0,0,0.35)' : '0 12px 24px rgba(0,0,0,0.10)';
-  const graphOverlayText = theme.palette.text.primary;
-  const graphOverlayTextSecondary = alpha(theme.palette.text.primary, isDarkMode ? 0.72 : 0.62);
-  const graphZoomControlBg = isDarkMode ? '#24272d' : alpha(theme.palette.background.paper, 0.96);
-  const graphZoomControlBorder = isDarkMode ? 'rgba(255,255,255,0.28)' : alpha(theme.palette.text.primary, 0.35);
-  const graphZoomControlHoverBg = isDarkMode ? 'rgba(255,255,255,0.08)' : alpha(theme.palette.text.primary, 0.06);
-  const graphZoomControlText = isDarkMode ? '#f3f5f7' : theme.palette.text.primary;
+  const graphTheme = getNetworkRelationsGraphTheme(theme);
 
   return (
     <Paper
@@ -118,18 +111,18 @@ export function NetworkCallsignRelationsGraphStage({
         position: 'relative',
         overflow: 'hidden',
         borderRadius: 2,
-        borderColor: graphFrameBorder,
-        bgcolor: graphFrameBg,
-        boxShadow: isDarkMode ? 'inset 0 1px 0 rgba(255,255,255,0.03)' : 'inset 0 1px 0 rgba(0,0,0,0.03)',
+        borderColor: graphTheme.frameBorder,
+        bgcolor: graphTheme.frameBg,
+        boxShadow: theme.palette.mode === 'dark' ? 'inset 0 1px 0 rgba(255,255,255,0.03)' : 'inset 0 1px 0 rgba(0,0,0,0.03)',
       }}
     >
       <Box
         sx={{
           position: 'absolute',
           inset: 0,
-          backgroundImage: `linear-gradient(${graphGridLine} 1px, transparent 1px), linear-gradient(90deg, ${graphGridLine} 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(${graphTheme.gridLine} 1px, transparent 1px), linear-gradient(90deg, ${graphTheme.gridLine} 1px, transparent 1px)`,
           backgroundSize: '48px 48px',
-          opacity: isDarkMode ? 0.5 : 0.38,
+          opacity: theme.palette.mode === 'dark' ? 0.5 : 0.38,
           pointerEvents: 'none',
         }}
       />
@@ -147,11 +140,11 @@ export function NetworkCallsignRelationsGraphStage({
             display: 'flex',
             overflow: 'hidden',
             borderRadius: '8px',
-            bgcolor: graphZoomControlBg,
-            border: `1px solid ${graphZoomControlBorder}`,
-            boxShadow: isDarkMode ? '0 2px 10px rgba(0,0,0,0.22)' : '0 2px 10px rgba(0,0,0,0.12)',
+            bgcolor: graphTheme.zoomControlBg,
+            border: `1px solid ${graphTheme.zoomControlBorder}`,
+            boxShadow: theme.palette.mode === 'dark' ? '0 2px 10px rgba(0,0,0,0.22)' : '0 2px 10px rgba(0,0,0,0.12)',
             '& .MuiIconButton-root + .MuiIconButton-root': {
-              borderLeft: `1px solid ${graphZoomControlBorder}`,
+              borderLeft: `1px solid ${graphTheme.zoomControlBorder}`,
             },
           }}
         >
@@ -162,21 +155,21 @@ export function NetworkCallsignRelationsGraphStage({
               width: 44,
               height: 44,
               borderRadius: 0,
-              color: graphZoomControlText,
+              color: graphTheme.zoomControlText,
               flex: '0 0 44px',
               minWidth: 44,
               bgcolor: 'transparent',
               '&:hover': {
-                bgcolor: graphZoomControlHoverBg,
-                color: graphZoomControlText,
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
               },
               '&:focus-visible': {
                 outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
                 outlineOffset: -3,
               },
               '&:active': {
-                bgcolor: graphZoomControlHoverBg,
-                color: graphZoomControlText,
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
               },
               '& .MuiSvgIcon-root': {
                 color: 'inherit',
@@ -192,21 +185,21 @@ export function NetworkCallsignRelationsGraphStage({
               width: 44,
               height: 44,
               borderRadius: 0,
-              color: graphZoomControlText,
+              color: graphTheme.zoomControlText,
               flex: '0 0 44px',
               minWidth: 44,
               bgcolor: 'transparent',
               '&:hover': {
-                bgcolor: graphZoomControlHoverBg,
-                color: graphZoomControlText,
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
               },
               '&:focus-visible': {
                 outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
                 outlineOffset: -3,
               },
               '&:active': {
-                bgcolor: graphZoomControlHoverBg,
-                color: graphZoomControlText,
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
               },
               '& .MuiSvgIcon-root': {
                 color: 'inherit',
@@ -222,27 +215,27 @@ export function NetworkCallsignRelationsGraphStage({
               aria-describedby={filterAnchorEl ? filterPopoverId : undefined}
               onClick={(event) => onOpenFilters(event.currentTarget)}
               sx={{
-                width: 44,
-                height: 44,
-                borderRadius: 0,
-                color: graphZoomControlText,
-                flex: '0 0 44px',
-                minWidth: 44,
-                bgcolor: 'transparent',
-                '&:hover': {
-                  bgcolor: graphZoomControlHoverBg,
-                  color: graphZoomControlText,
-                },
-                '&:focus-visible': {
-                  outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
-                  outlineOffset: -3,
-                },
-                '&:active': {
-                  bgcolor: graphZoomControlHoverBg,
-                  color: graphZoomControlText,
-                },
-                '& .MuiSvgIcon-root': {
-                  color: 'inherit',
+              width: 44,
+              height: 44,
+              borderRadius: 0,
+              color: graphTheme.zoomControlText,
+              flex: '0 0 44px',
+              minWidth: 44,
+              bgcolor: 'transparent',
+              '&:hover': {
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
+              },
+              '&:focus-visible': {
+                outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
+                outlineOffset: -3,
+              },
+              '&:active': {
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
+              },
+              '& .MuiSvgIcon-root': {
+                color: 'inherit',
                 },
               }}
             >
@@ -265,10 +258,10 @@ export function NetworkCallsignRelationsGraphStage({
           }}
         >
           <Stack spacing={1} alignItems="center">
-            <Typography variant="h6" sx={{ color: graphOverlayText }}>
+            <Typography variant="h6" sx={{ color: graphTheme.overlayText }}>
               Забагато зв'язків для відображення
             </Typography>
-            <Typography variant="body2" sx={{ color: graphOverlayTextSecondary, maxWidth: 480 }}>
+            <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary, maxWidth: 480 }}>
               Збільшіть інтенсивність, звузьте період або вимкніть частоти.
             </Typography>
           </Stack>
@@ -286,27 +279,28 @@ export function NetworkCallsignRelationsGraphStage({
           }}
         >
           <Stack spacing={1.25} alignItems="center">
-            <Typography variant="body1" sx={{ color: graphOverlayTextSecondary }}>
+            <Typography variant="body1" sx={{ color: graphTheme.overlayTextSecondary }}>
               {EMPTY_STATE_NO_RESULTS_TEXT}
             </Typography>
-            <Button
-              variant="text"
-              onClick={() => {
-                onEnabledFreqsChange(legendFreqs.map((freq) => freq.freq));
-                onMinIntensityChange(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
-              }}
-              data-testid="clear-empty-filters"
-              sx={{
-                fontWeight: 400,
-                p: 0.5,
-                px: 2.5,
-                '&:hover': {
-                  bgcolor: theme.palette.action.hover,
-                },
-              }}
-            >
-              Очистити фільтри
-            </Button>
+            {relationsSearch.trim() !== '' ? (
+              <Button
+                variant="text"
+                onClick={() => {
+                  onSearchChange('');
+                }}
+                data-testid="clear-empty-filters"
+                sx={{
+                  fontWeight: 400,
+                  p: 0.5,
+                  px: 2.5,
+                  '&:hover': {
+                    bgcolor: theme.palette.action.hover,
+                  },
+                }}
+              >
+                Очистити фільтри
+              </Button>
+            ) : null}
           </Stack>
         </Box>
       ) : (
@@ -320,13 +314,13 @@ export function NetworkCallsignRelationsGraphStage({
               px: 1.25,
               py: 0.75,
               borderRadius: 2,
-              bgcolor: graphOverlayBg,
-              border: `1px solid ${graphOverlayBorder}`,
-              color: graphOverlayText,
+              bgcolor: graphTheme.overlayBg,
+              border: `1px solid ${graphTheme.overlayBorder}`,
+              color: graphTheme.overlayText,
             }}
           >
             <Stack spacing={0.5}>
-              <Typography variant="caption" sx={{ color: graphOverlayTextSecondary }}>
+              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
                 Інтенсивність
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -345,12 +339,12 @@ export function NetworkCallsignRelationsGraphStage({
               py: 1.25,
               minWidth: 150,
               borderRadius: 2,
-              bgcolor: graphOverlayBg,
-              border: `1px solid ${graphOverlayBorder}`,
-              color: graphOverlayText,
+              bgcolor: graphTheme.overlayBg,
+              border: `1px solid ${graphTheme.overlayBorder}`,
+              color: graphTheme.overlayText,
             }}
           >
-            <Typography variant="overline" sx={{ color: graphOverlayTextSecondary, letterSpacing: 1 }}>
+            <Typography variant="overline" sx={{ color: graphTheme.overlayTextSecondary, letterSpacing: 1 }}>
               Частоти
             </Typography>
             <Stack spacing={0.8} sx={{ mt: 0.5 }}>
@@ -369,12 +363,10 @@ export function NetworkCallsignRelationsGraphStage({
           </Box>
 
           <NetworkCallsignRelationsGraphDetails
-          selectedNode={selectedNode}
-          selectedEdge={selectedEdge}
-          selectedNodeEdges={selectedNodeEdges}
+            selectedNode={selectedNode}
+            selectedEdge={selectedEdge}
+            selectedNodeEdges={selectedNodeEdges}
             selectedEdgeId={selectedEdgeId}
-            overlayBorder={graphOverlayBorder}
-            overlayTextSecondary={graphOverlayTextSecondary}
             onSelectNodeId={onSelectNodeId}
             onSelectEdgeId={onSelectEdgeId}
           />
@@ -415,7 +407,7 @@ export function NetworkCallsignRelationsGraphStage({
             backdropFilter: 'blur(2px)',
           }}
         >
-          <Stack spacing={1.5} alignItems="center" sx={{ color: graphOverlayText }}>
+          <Stack spacing={1.5} alignItems="center" sx={{ color: graphTheme.overlayText }}>
             <CircularProgress size={28} />
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
               {`Оновлюємо граф зв'язків${ELLIPSIS}`}

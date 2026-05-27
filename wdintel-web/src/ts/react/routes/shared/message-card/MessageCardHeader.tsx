@@ -28,7 +28,7 @@ import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Box, Button, ButtonGroup, Menu, MenuItem, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
 
@@ -45,7 +45,7 @@ const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
 
-/** Where the card is shown: duty columns use a 4-wide action grid when stacked; analysis uses 3. */
+/** Where the card is shown: both modes use a 3-column stacked action grid when the toolbar wraps. */
 export type MessageCardDisplayMode = 'duty' | 'analysis';
 
 type ActionIconsRowProps = {
@@ -351,7 +351,7 @@ function ActionIconsRow({
     ) : null,
   ].filter(Boolean);
 
-  const actionGridColumns = displayMode === 'duty' ? 4 : 3;
+  const actionGridColumns = 3;
   const lastRowButtonCount =
     buttons.length === 0
       ? 0
@@ -359,32 +359,24 @@ function ActionIconsRow({
         ? actionGridColumns
         : buttons.length % actionGridColumns;
 
-  useEffect(() => {
-    if (compact) {
-      setStackedLayout(true);
-      return;
-    }
-
+  useLayoutEffect(() => {
     const root = rootRef.current;
-    const header = root?.closest('[data-message-header-grid="true"]') as HTMLDivElement | null;
-    if (!root || typeof ResizeObserver === 'undefined') {
-      setStackedLayout(false);
+    if (!root) {
       return;
     }
 
-    const minInlineWidth = buttons.length * 30 + 2;
-    const minHeaderWidthForInline = Math.max(680, buttons.length * 90);
+    const minInlineWidth = buttons.length * 32;
     const updateLayout = () => {
-      const availableWidth = header?.clientWidth ?? root.clientWidth;
-      setStackedLayout(availableWidth < Math.max(minInlineWidth, minHeaderWidthForInline));
+      setStackedLayout(root.clientWidth < minInlineWidth);
     };
 
     updateLayout();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
     const observer = new ResizeObserver(updateLayout);
     observer.observe(root);
-    if (isPresent(header) && header !== root) {
-      observer.observe(header);
-    }
     return () => observer.disconnect();
   }, [buttons.length, compact]);
 
@@ -395,6 +387,7 @@ function ActionIconsRow({
           <Box
             role="group"
             aria-label="Дії повідомлення"
+            data-action-grid-columns={actionGridColumns}
             sx={[
               {
                 display: 'grid',

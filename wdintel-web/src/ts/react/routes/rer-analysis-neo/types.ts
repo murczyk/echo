@@ -107,15 +107,15 @@ export type AnalysisMapAttrs = {
   palitrasLoadState: AnalysisPalitrasLoadState;
 };
 
-export type AnalysisCenterTab = 'messages' | 'map';
-export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns' | 'summary';
+export type AnalysisCenterTab = 'messages' | 'summary' | 'map';
+export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';
 
 export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCenterTab[] {
-  return analysisMapInSidebar ? ['messages'] : ['messages', 'map'];
+  return analysisMapInSidebar ? ['messages', 'summary'] : ['messages', 'map', 'summary'];
 }
 
 export function getAnalysisSidebarTabs(analysisMapInSidebar: boolean): AnalysisSidebarTab[] {
-  return analysisMapInSidebar ? ['map', 'stats', 'callsigns', 'newCallsigns', 'summary'] : ['stats', 'callsigns', 'newCallsigns', 'summary'];
+  return analysisMapInSidebar ? ['map', 'stats', 'callsigns', 'newCallsigns'] : ['stats', 'callsigns', 'newCallsigns'];
 }
 
 export type AnalysisPageState = {

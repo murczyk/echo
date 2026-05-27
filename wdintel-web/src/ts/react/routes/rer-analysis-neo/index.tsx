@@ -12,7 +12,6 @@ import {
   Badge,
   Box,
   Button,
-  CircularProgress,
   FormControlLabel,
   IconButton,
   Paper,
@@ -30,12 +29,14 @@ import { useTheme } from '@mui/material/styles';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerChip } from '../../components/PowerChip';
 import { PowerAlert } from '../../components/PowerAlert';
+import { NO_DATA_LABEL } from '../../utils/misc';
 import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { AnalysisSidebar } from './components/AnalysisSidebar';
+import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { getAnalysisCenterTabs, getAnalysisSidebarTabs } from './types';
@@ -50,6 +51,7 @@ const ANALYSIS_CENTER_TAB_META: Record<
   { icon: typeof MessageOutlinedIcon; label: string }
 > = {
   messages: { icon: MessageOutlinedIcon, label: 'Повідомлення' },
+  summary: { icon: TableRowsOutlinedIcon, label: 'Зведена таблиця' },
   map: { icon: MapOutlinedIcon, label: 'Мапа' },
 };
 
@@ -61,7 +63,6 @@ const ANALYSIS_SIDEBAR_TAB_META: Record<
   stats: { icon: BarChartOutlinedIcon, label: 'Зведення' },
   callsigns: { icon: PeopleOutlineOutlinedIcon, label: 'Позивні' },
   newCallsigns: { icon: PersonAddOutlinedIcon, label: 'Нові' },
-  summary: { icon: TableRowsOutlinedIcon, label: 'Таблиця: Частоти' },
 };
 
 export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPageProps = {}) {
@@ -70,8 +71,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
+  const summaryTabId = `${centerTabsId}-summary-tab`;
   const mapTabId = `${centerTabsId}-map-tab`;
   const messagesPanelId = `${centerTabsId}-messages-panel`;
+  const summaryPanelId = `${centerTabsId}-summary-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
   const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
   const fixedPanelWidth = '400px';
@@ -80,7 +83,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const rightColumnWidth = page.rightPanelOpen ? 'minmax(0,1fr)' : collapsedPanelWidth;
   const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar);
   const centerTab = page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
-  const activeTabId = centerTab === 'messages' ? messagesTabId : mapTabId;
+  const activeTabId = centerTab === 'messages' ? messagesTabId : centerTab === 'summary' ? summaryTabId : mapTabId;
   const rightSidebarTabs = getAnalysisSidebarTabs(page.analysisMapInSidebar);
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
   const gridTemplateColumns = {
@@ -269,6 +272,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ minHeight: 40, alignItems: 'center' }}>
                     <Skeleton variant="rounded" width={180} height={32} />
                     <Skeleton variant="rounded" width={108} height={32} />
+                    <Skeleton variant="rounded" width={160} height={32} />
                   </Stack>
                   <Stack direction="row" spacing={0.75} flexWrap="wrap" alignItems="center">
                     <Skeleton variant="rounded" width={148} height={36} />
@@ -541,6 +545,19 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                           />
                         );
                       }
+                      if (tab === 'summary') {
+                        return (
+                          <Tab
+                            key={tab}
+                            id={summaryTabId}
+                            aria-controls={summaryPanelId}
+                            value="summary"
+                            icon={<Icon sx={{ fontSize: 20 }} />}
+                            iconPosition="start"
+                            label={meta.label}
+                          />
+                        );
+                      }
                       return (
                         <Tab
                           key={tab}
@@ -583,29 +600,21 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                         justifyContent="flex-end"
                         sx={{ ml: 'auto', minWidth: 0, flexShrink: 0, width: 'auto' }}
                       >
-                        {page.countsLoading ? (
-                          <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 32, px: 1.5 }}>
-                            <CircularProgress size={18} thickness={5} />
-                          </Box>
-                        ) : (
-                          <>
-                            <PowerChip
-                              label={'Всього: ' + (page.counts?.countOverall ?? 0)}
-                              color="default"
-                              size="small"
-                              fontSize="0.875rem"
-                              labelPaddingX={0.75}
-                            />
-                            <PowerChip
-                              label={'Обрано: ' + (page.counts?.countSelected ?? 0)}
-                              color="primary"
-                              selected
-                              size="small"
-                              fontSize="0.875rem"
-                              labelPaddingX={0.75}
-                            />
-                          </>
-                        )}
+                        <PowerChip
+                          label={`Всього: ${page.countsLoading ? NO_DATA_LABEL : (page.counts?.countOverall ?? 0)}`}
+                          color="default"
+                          size="small"
+                          fontSize="0.875rem"
+                          labelPaddingX={0.75}
+                        />
+                        <PowerChip
+                          label={`Обрано: ${page.countsLoading ? NO_DATA_LABEL : (page.counts?.countSelected ?? 0)}`}
+                          color="primary"
+                          selected
+                          size="small"
+                          fontSize="0.875rem"
+                          labelPaddingX={0.75}
+                        />
                       </Stack>
                     </Stack>
                   ) : null}
@@ -672,6 +681,42 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                       networks={page.networks}
                       unitsMap={page.unitsMap}
                     />
+                  </Box>
+
+                  <Box
+                    id={summaryPanelId}
+                    role="tabpanel"
+                    hidden={centerTab !== 'summary'}
+                    aria-labelledby={summaryTabId}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 0,
+                      px: { xs: 1, lg: 2 },
+                      pb: { xs: 1, lg: 2 },
+                      pt: { xs: 0.5, lg: 1 },
+                      display: centerTab === 'summary' ? 'flex' : 'none',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {centerTab === 'summary' ? (
+                      <AnalysisSummaryTableCard
+                        callsignInfoMap={page.summaryCallsignsInfo}
+                        networkDisplayMap={page.networkDisplayMap}
+                        networks={page.networks}
+                        onDownloadXlsx={page.downloadSummaryXlsx}
+                        onRenameUnit={page.renameSummaryUnit}
+                        onSelectFreq={page.selectOnlyFreq}
+                        onShowFreqOnMap={page.showFreqOnMap}
+                        loaded={page.summaryHasLoadedOnce}
+                        loading={page.summaryLoading}
+                        rows={page.summaryRows}
+                        sx={{ flex: 1, minWidth: 0 }}
+                        tableContainerSx={{ maxHeight: '100%' }}
+                        title="Таблиця частот"
+                        unitsMap={page.unitsMap}
+                      />
+                    ) : null}
                   </Box>
 
                   <Box
