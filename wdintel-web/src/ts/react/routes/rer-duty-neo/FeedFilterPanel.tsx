@@ -1,4 +1,4 @@
-import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
+import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry, Unit } from '../../../../Bindings';
 import { FeedFilterPanelView } from './FeedFilterPanelView';
 import { useFeedFilterPanelViewModel } from './useFeedFilterPanelViewModel';
 
@@ -13,6 +13,8 @@ export type FeedFilterPanelModel = {
     freqsDenied: string[];
     postsSelected?: string[];
     postsDenied?: string[];
+    unitsSelected?: string[];
+    unitsDenied?: string[];
   };
   sources: {
     groupsList: string[];
@@ -21,11 +23,13 @@ export type FeedFilterPanelModel = {
     senderOptions: Array<{ id: string; label: string }>;
     freqs: string[];
     postsList?: string[];
+    unitsList?: Unit[];
   };
   toggles: {
     adjacentFreqsRange?: number;
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
+    unitsExactMatchOnly?: boolean;
     reloadFreqsLoading: boolean;
   };
   savedFilters: {
@@ -42,6 +46,9 @@ export type FeedFilterPanelModel = {
     onFreqsDeniedChange: (v: string[]) => void;
     onPostsChange?: (v: string[]) => void;
     onPostsDeniedChange?: (v: string[]) => void;
+    onUnitsChange?: (v: string[]) => void;
+    onUnitsDeniedChange?: (v: string[]) => void;
+    onUnitsExactMatchOnlyChange?: (v: boolean) => void;
     onAdjacentFreqsRangeChange?: (v: number) => void;
     onHighlightSignalsChange?: (v: boolean) => void;
     onOnlyMyUnitTagsChange?: (v: boolean) => void;

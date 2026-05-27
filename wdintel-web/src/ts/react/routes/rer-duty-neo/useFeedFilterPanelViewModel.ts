@@ -30,6 +30,10 @@ export type FeedFilterPanelViewModel = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionViewModel<string>;
+  units: FeedFilterSelectionViewModel<string> & {
+    unitsExactMatchOnly: boolean;
+    onUnitsExactMatchOnlyChange: (value: boolean) => void;
+  };
   advanced: {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
@@ -43,8 +47,14 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
   const { filterState, sources, toggles, actions } = panel;
-  const { groupsList, groupInfos, senderOptions, freqs, postsList } = sources;
-  const { adjacentFreqsRange, highlightSignalsEnabled, onlyMyUnitTagsEnabled, reloadFreqsLoading } = toggles;
+  const { groupsList, groupInfos, senderOptions, freqs, postsList, unitsList } = sources;
+  const {
+    adjacentFreqsRange,
+    highlightSignalsEnabled,
+    onlyMyUnitTagsEnabled,
+    unitsExactMatchOnly,
+    reloadFreqsLoading,
+  } = toggles;
   const {
     onGroupsChange,
     onDeniedGroupsChange,
@@ -54,6 +64,9 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     onFreqsDeniedChange,
     onPostsChange,
     onPostsDeniedChange,
+    onUnitsChange,
+    onUnitsDeniedChange,
+    onUnitsExactMatchOnlyChange,
     onAdjacentFreqsRangeChange,
     onHighlightSignalsChange,
     onOnlyMyUnitTagsChange,
@@ -97,11 +110,30 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
+  const unitSelectionState = useFeedFilterSelectionState<string>({
+    includeValues: filterState.unitsSelected ?? [],
+    excludeValues: filterState.unitsDenied ?? [],
+    onIncludeChange: onUnitsChange ?? (() => {}),
+    onExcludeChange: onUnitsDeniedChange ?? (() => {}),
+    toLocalValues: (values) => [...values],
+    toParentValues: (values) => [...values],
+  });
+
+  /** Built once from the units catalog: name list deduped & sorted, with "Не визначено" pinned on top for empty-unit messages. */
+  const unitOptions = useMemo(() => {
+    const names = new Set<string>();
+    (unitsList ?? []).forEach((u) => {
+      const name = (u.name ?? '').trim();
+      if (name.length > 0) names.add(name);
+    });
+    return ['Не визначено', ...Array.from(names).sort((a, b) => a.localeCompare(b))];
+  }, [unitsList]);
 
   const groupEmptyLabel = groupsSelectionState.mode === 'include' ? 'всі' : 'ніяка';
   const senderEmptyLabel = senderSelectionState.mode === 'include' ? 'всі' : 'ніхто';
   const freqEmptyLabel = freqSelectionState.mode === 'include' ? 'всі' : 'ніяка';
   const postEmptyLabel = postSelectionState.mode === 'include' ? 'всі' : 'ніяка';
+  const unitEmptyLabel = unitSelectionState.mode === 'include' ? 'всі' : 'жоден';
 
   return {
     isDarkMode,
@@ -152,6 +184,18 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       getOptionLabel: (option: string) => option,
       placeholder: postSelectionState.localValue.length === 0 ? postEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
+    },
+    units: {
+      mode: unitSelectionState.mode,
+      value: unitSelectionState.localValue,
+      onModeChange: unitSelectionState.setMode,
+      onValueChange: unitSelectionState.setLocalValue,
+      options: unitOptions,
+      getOptionLabel: (option: string) => option,
+      placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
+      autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
+      unitsExactMatchOnly: unitsExactMatchOnly ?? false,
+      onUnitsExactMatchOnlyChange: onUnitsExactMatchOnlyChange ?? (() => {}),
     },
     advanced: {
       highlightSignalsEnabled,

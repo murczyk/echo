@@ -1,4 +1,4 @@
-import { Box } from '@mui/material';
+import { Box, Checkbox, FormControlLabel } from '@mui/material';
 import type { SavedFilterDuty } from '../../../../Bindings';
 import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
@@ -43,6 +43,10 @@ export type FeedFilterPanelViewProps = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionConfig<string>;
+  units: FeedFilterSelectionConfig<string> & {
+    unitsExactMatchOnly: boolean;
+    onUnitsExactMatchOnlyChange: (value: boolean) => void;
+  };
   advanced: {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
@@ -58,6 +62,7 @@ export function FeedFilterPanelView({
   senders,
   freqs,
   posts,
+  units,
   advanced,
   savedFilters,
 }: FeedFilterPanelViewProps) {
@@ -155,6 +160,32 @@ export function FeedFilterPanelView({
           placeholder={posts.placeholder}
           autocompleteClassName={posts.autocompleteClassName}
         />
+
+        <Box>
+          <FeedFilterSelectionSection
+            title="Підрозділи"
+            mode={units.mode}
+            onModeChange={units.onModeChange}
+            value={units.value}
+            onValueChange={units.onValueChange}
+            options={units.options}
+            getOptionLabel={units.getOptionLabel}
+            placeholder={units.placeholder}
+            autocompleteClassName={units.autocompleteClassName}
+          />
+          <FormControlLabel
+            sx={{ mt: 0.5, ml: 0 }}
+            control={
+              <Checkbox
+                size="small"
+                checked={units.unitsExactMatchOnly}
+                onChange={(e) => units.onUnitsExactMatchOnlyChange(e.target.checked)}
+              />
+            }
+            label="точний збіг за еталонкою"
+            slotProps={{ typography: { variant: 'body2' } }}
+          />
+        </Box>
 
         <FeedFilterAdvancedSection
           highlightSignalsEnabled={advanced.highlightSignalsEnabled}

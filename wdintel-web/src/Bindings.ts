@@ -429,6 +429,7 @@ export type InboxMessagesReq = {
   deniedFreqs: Array<string> | null;
   selectedCallsigns: Array<string> | null;
   selectedUnits: Array<string> | null;
+  deniedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
   nolimit: boolean | null;
   orWithExtendedForm: boolean | null;
@@ -933,6 +934,9 @@ export type RerDutyQueryStateWf = {
   freqsDenied: Array<string> | null;
   postsSelected: Array<string> | null;
   postsDenied: Array<string> | null;
+  unitsSelected: Array<string> | null;
+  unitsDenied: Array<string> | null;
+  unitsExactMatchOnly: boolean | null;
   lastViewedMessageId: number | null;
   highlightKeywordsEnabled: boolean | null;
   highlightKeywordSetId: number | null;
