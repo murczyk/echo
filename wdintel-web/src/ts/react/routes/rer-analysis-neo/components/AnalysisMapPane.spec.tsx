@@ -105,4 +105,31 @@ describe('AnalysisMapPane', () => {
     expect(map?.getAttribute('messages-loading')).toBe('false');
     expect(map?.getAttribute('messages-load-serial')).toBe('1');
   });
+
+  it('does not advance the message serial when the load resolves without popup content', async () => {
+    const load = deferredPromise<boolean>();
+    const onLoadMessages = vi.fn(() => load.promise);
+
+    await act(async () => {
+      root.render(<AnalysisMapPane {...buildProps({ onLoadMessages })} />);
+    });
+
+    const map = container.querySelector('analysis-map');
+    expect(map).not.toBeNull();
+
+    await act(async () => {
+      map?.dispatchEvent(new CustomEvent('load-messages-description', { detail: { messageIds: [1] }, bubbles: true }));
+    });
+
+    expect(map?.getAttribute('messages-loading')).toBe('true');
+    expect(map?.getAttribute('messages-load-serial')).toBe('0');
+
+    await act(async () => {
+      load.resolve(false);
+      await load.promise;
+    });
+
+    expect(map?.getAttribute('messages-loading')).toBe('false');
+    expect(map?.getAttribute('messages-load-serial')).toBe('0');
+  });
 });

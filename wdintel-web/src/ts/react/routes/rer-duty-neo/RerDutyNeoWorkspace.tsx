@@ -16,6 +16,84 @@ function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   return '100%';
 }
 
+function DutyNeoInitialLoadingSkeletonFeedHeader() {
+  return (
+    <Box
+      data-duty-skeleton-feed-header="true"
+      sx={{
+        display: 'flex',
+        alignItems: 'stretch',
+        justifyContent: 'space-between',
+        gap: 1,
+        flexShrink: 0,
+        minHeight: 48,
+        px: 1,
+        py: 1,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+        backgroundColor: 'background.paper',
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'stretch', minWidth: 0, gap: 0.5 }}>
+        <Skeleton variant="rounded" width={168} height={32} />
+        <Skeleton variant="rounded" width={32} height={32} />
+        <Skeleton variant="rounded" width={144} height={32} />
+      </Box>
+      <Skeleton variant="rounded" width={32} height={32} />
+    </Box>
+  );
+}
+
+function DutyNeoInitialLoadingSkeletonFeedColumn({ messageCount }: { messageCount: number }) {
+  return (
+    <Box
+      data-duty-skeleton-feed-column="true"
+      sx={{
+        display: 'flex',
+        minWidth: 0,
+        minHeight: 0,
+        flexDirection: 'column',
+        height: '100%',
+        flex: 1,
+        gap: 1.5,
+        p: 1.5,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+        backgroundColor: 'background.paper',
+      }}
+    >
+      <DutyNeoInitialLoadingSkeletonFeedHeader />
+      {Array.from({ length: messageCount }).map((_, messageIndex) => (
+        <Box
+          key={messageIndex}
+          sx={{
+            display: 'flex',
+            minWidth: 0,
+            flexDirection: 'column',
+            gap: 1.25,
+            pb: messageIndex + 1 === messageCount ? 0 : 2,
+            mb: messageIndex + 1 === messageCount ? 0 : 2,
+            borderBottom: messageIndex + 1 === messageCount ? 'none' : '1px solid rgba(148, 163, 184, 0.14)',
+          }}
+        >
+          <Skeleton variant="rounded" height={28} width={`${72 - Math.min(messageIndex * 6, 18)}%`} />
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+            <Skeleton variant="rounded" height={24} width={72 - messageIndex * 2} />
+            <Skeleton variant="rounded" height={24} width={92 - messageIndex * 3} />
+            <Skeleton variant="rounded" height={24} width={64 - messageIndex * 2} />
+          </Box>
+          <Skeleton variant="rounded" height={92} />
+          <Skeleton variant="rounded" height={18} width="92%" />
+          <Skeleton variant="rounded" height={18} width="84%" />
+          <Skeleton variant="rounded" height={18} width="76%" />
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function DutyNeoInitialLoadingSkeleton({ feedCount, narrow }: { feedCount: number; narrow: boolean }) {
   const skeletonFeedCount = narrow ? 1 : Math.max(1, feedCount);
   const skeletonMaxWidth = dutyFeedColumnMaxWidth(skeletonFeedCount, narrow);
@@ -23,32 +101,13 @@ function DutyNeoInitialLoadingSkeleton({ feedCount, narrow }: { feedCount: numbe
   return (
     <Box className="flex flex-1 min-h-0 h-full w-full overflow-hidden">
       <Box
-        className="flex flex-1 min-w-0 min-h-0 h-full flex-col gap-2"
+        className="flex flex-1 min-w-0 min-h-0 h-full flex-col"
         sx={{
           width: '100%',
           maxWidth: skeletonMaxWidth,
           mx: 'auto',
         }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            flexShrink: 0,
-            minHeight: 48,
-            px: 1,
-            py: 1,
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: 1,
-            backgroundColor: 'background.paper',
-          }}
-        >
-          <Skeleton variant="rounded" width={168} height={32} />
-          <Skeleton variant="rounded" width={192} height={32} />
-          <Box sx={{ flex: 1, minWidth: 0 }} />
-        </Box>
         <Box
           className="w-full min-h-0 h-full overflow-hidden"
           sx={{
@@ -63,50 +122,7 @@ function DutyNeoInitialLoadingSkeleton({ feedCount, narrow }: { feedCount: numbe
           }}
         >
           {Array.from({ length: skeletonFeedCount }).map((_, index) => (
-            <Box
-              key={index}
-              sx={{
-                display: 'flex',
-                minWidth: 0,
-                minHeight: 0,
-                flexDirection: 'column',
-                height: '100%',
-                flex: 1,
-                gap: 1.5,
-                p: 1.5,
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1,
-                backgroundColor: 'background.paper',
-              }}
-            >
-              {Array.from({ length: skeletonMessageCount }).map((__, messageIndex) => (
-                <Box
-                  key={messageIndex}
-                  sx={{
-                    display: 'flex',
-                    minWidth: 0,
-                    flexDirection: 'column',
-                    gap: 1.25,
-                    pb: messageIndex + 1 === skeletonMessageCount ? 0 : 2,
-                    mb: messageIndex + 1 === skeletonMessageCount ? 0 : 2,
-                    borderBottom:
-                      messageIndex + 1 === skeletonMessageCount ? 'none' : '1px solid rgba(148, 163, 184, 0.14)',
-                  }}
-                >
-                  <Skeleton variant="rounded" height={28} width={`${72 - Math.min(messageIndex * 6, 18)}%`} />
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                    <Skeleton variant="rounded" height={24} width={72 - messageIndex * 2} />
-                    <Skeleton variant="rounded" height={24} width={92 - messageIndex * 3} />
-                    <Skeleton variant="rounded" height={24} width={64 - messageIndex * 2} />
-                  </Box>
-                  <Skeleton variant="rounded" height={92} />
-                  <Skeleton variant="rounded" height={18} width="92%" />
-                  <Skeleton variant="rounded" height={18} width="84%" />
-                  <Skeleton variant="rounded" height={18} width="76%" />
-                </Box>
-              ))}
-            </Box>
+            <DutyNeoInitialLoadingSkeletonFeedColumn key={index} messageCount={skeletonMessageCount} />
           ))}
         </Box>
       </Box>

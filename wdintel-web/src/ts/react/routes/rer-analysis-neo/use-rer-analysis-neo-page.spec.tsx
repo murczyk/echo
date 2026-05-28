@@ -343,7 +343,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.centerTab).toBe('messages');
   });
 
-  it('adds a frequency filter through the summary sidebar without dropping existing selections', async () => {
+  it('adds a frequency filter through the stats sidebar without dropping existing selections', async () => {
     renderHook();
     await flushEffects();
 
@@ -363,6 +363,21 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
   });
 
+  it('clears the loaded saved filter when filters are reset', async () => {
+    const savedFilters = buildSavedFilters();
+    useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
+
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.resetFilters();
+    });
+    await flushEffects();
+
+    expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
+  });
+
   it('does not duplicate a frequency already in the analysis filter', async () => {
     renderHook();
     await flushEffects();
@@ -378,6 +393,23 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.queryState.freqsSelected).toEqual(['123.4']);
+  });
+
+  it('normalizes legacy undefined-unit selections before toggling the map unit filter off', async () => {
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.updateQueryState({ unitsSelected: ['Не визначено'] });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.toggleUnitFromMap('');
+    });
+    await flushEffects();
+
+    expect(latest?.queryState.unitsSelected).toEqual([]);
   });
 
   it('moves the active map away from the sidebar when the setting turns off', async () => {

@@ -1,7 +1,7 @@
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
-import { Badge, Box, Button, CircularProgress, Divider, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
+import { Badge, Box, Button, Divider, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 
@@ -208,13 +208,17 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
             >
               <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {loadedSavedFilter ? (
-                  <PowerChip
-                    label={loadedSavedFilter.name}
-                    selected
-                    color="default"
-                    sx={{ alignSelf: 'flex-start', mb: 1 }}
-                    title={`Збережений фільтр: ${loadedSavedFilter.name}`}
-                  />
+                  <Stack direction="row" spacing={0.75} alignItems="center" sx={{ alignSelf: 'flex-start', mb: 1 }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                      Обраний фільтр:
+                    </Typography>
+                    <PowerChip
+                      label={loadedSavedFilter.name}
+                      selected
+                      color="default"
+                      title={`Збережений фільтр: ${loadedSavedFilter.name}`}
+                    />
+                  </Stack>
                 ) : null}
 
                 <AnalysisFiltersPanelSections
@@ -224,7 +228,6 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}
                   isSectionLoading={isSectionLoading}
-                  loadingIndicator={<CircularProgress size={14} thickness={5} />}
                   loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
                   options={options}
                   queryState={queryState}
@@ -256,13 +259,17 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
             <>
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 {loadedSavedFilter ? (
-                  <PowerChip
-                    label={loadedSavedFilter.name}
-                    selected
-                    color="default"
-                    sx={{ alignSelf: 'flex-start', mb: 1 }}
-                    title={`Збережений фільтр: ${loadedSavedFilter.name}`}
-                  />
+                  <Stack direction="row" spacing={0.75} alignItems="center" sx={{ alignSelf: 'flex-start', mb: 1 }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                      Обраний фільтр:
+                    </Typography>
+                    <PowerChip
+                      label={loadedSavedFilter.name}
+                      selected
+                      color="default"
+                      title={`Збережений фільтр: ${loadedSavedFilter.name}`}
+                    />
+                  </Stack>
                 ) : null}
 
                 <AnalysisFiltersPanelSections
@@ -272,7 +279,6 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}
                   isSectionLoading={isSectionLoading}
-                  loadingIndicator={<CircularProgress size={14} thickness={5} />}
                   loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
                   options={options}
                   queryState={queryState}

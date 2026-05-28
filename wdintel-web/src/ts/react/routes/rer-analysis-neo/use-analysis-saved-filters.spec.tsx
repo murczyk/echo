@@ -119,4 +119,25 @@ describe('useAnalysisSavedFilters', () => {
     expect(latest?.loadedSavedFilter).toEqual(expect.objectContaining({ id: 1, name: 'Matched filter' }));
     expect(latest?.savedFilterName).toBe('Matched filter');
   });
+
+  it('clears the selected saved filter when applying null', async () => {
+    const savedFilter = buildSavedFilter();
+    await renderHook(['100.0000', '100.0030']);
+    await flushEffects();
+
+    await act(async () => {
+      latest?.applySavedFilter(savedFilter);
+    });
+    await flushEffects();
+
+    expect(latest?.loadedSavedFilter).toEqual(expect.objectContaining({ id: 1, name: 'Matched filter' }));
+
+    await act(async () => {
+      latest?.applySavedFilter(null);
+    });
+    await flushEffects();
+
+    expect(latest?.loadedSavedFilter).toBe(null);
+    expect(latest?.savedFilterName).toBe('');
+  });
 });

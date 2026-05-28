@@ -16,6 +16,7 @@ import Dict
 import Route exposing (Route)
 import Route.Path
 import Shared
+import Shared.Components.Navbar
 import View exposing (View)
 
 
@@ -38,10 +39,18 @@ Here, you can provide logic on where to redirect if a user is not signed in. Her
 
 -}
 onPageLoad : Shared.Model -> Route () -> Auth.Action.Action User
-onPageLoad shared _ =
+onPageLoad shared route =
     case shared.user of
         Just user ->
-            Auth.Action.loadPageWithUser user
+            if user.name /= "anonymous" && Shared.Components.Navbar.adminRouteIsBlocked route.path user then
+                Auth.Action.pushRoute
+                    { path = Route.Path.Home_
+                    , query = Dict.empty
+                    , hash = Nothing
+                    }
+
+            else
+                Auth.Action.loadPageWithUser user
 
         Nothing ->
             Auth.Action.pushRoute

@@ -33,23 +33,23 @@ export function isRer(user: User | null): boolean {
 }
 
 export function canEditScopedLogins(user: User | null): boolean {
-  return canManagePalitraAccess(user);
+  return isAdmin(user);
 }
 
 function canUseLoginAccess(user: User | null): boolean {
-  return canManagePalitraAccess(user);
+  return isAdmin(user) || isRer(user);
 }
 
 function canUseOrganismAccess(user: User | null, myScope: MyScope | null): boolean {
-  return canManagePalitraAccess(user) && (isAdmin(user) || Boolean(myScope?.organism));
+  return canUseLoginAccess(user) && (isAdmin(user) || Boolean(myScope?.organism));
 }
 
-function canUseAorAccess(user: User | null, myScope: MyScope | null): boolean {
-  return canManagePalitraAccess(user) && (isAdmin(user) || (myScope?.aorIds ?? []).length > 0);
+function canUseAorAccess(user: User | null): boolean {
+  return isAdmin(user);
 }
 
 function canManagePalitraAccess(user: User | null): boolean {
-  return isAdmin(user) || (isRer(user) && isEditor(user));
+  return isAdmin(user) || isRer(user);
 }
 
 export function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
@@ -60,7 +60,7 @@ export function getAvailableAccessTypes(user: User | null, myScope: MyScope | nu
   return [
     ...(canUseLoginAccess(user) ? (['logins'] as AccessType[]) : []),
     ...(canUseOrganismAccess(user, myScope) ? (['organisms'] as AccessType[]) : []),
-    ...(canUseAorAccess(user, myScope) ? (['aor'] as AccessType[]) : []),
+    ...(canUseAorAccess(user) ? (['aor'] as AccessType[]) : []),
   ];
 }
 
@@ -296,7 +296,7 @@ export function applyRestrictedAccess(
     };
   }
 
-  if (!canUseAorAccess(user, myScope)) {
+  if (!canUseAorAccess(user)) {
     return {
       ...form,
       aorIds: [],

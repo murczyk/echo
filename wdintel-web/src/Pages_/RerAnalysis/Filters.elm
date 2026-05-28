@@ -734,13 +734,13 @@ view isDark _ model =
                         (\unit ->
                             Select.customMenuItem
                                 { item = unit
-                                , label = unit
+                                , label = getLabelOrDefault unit
                                 , view =
                                     Html.Styled.fromUnstyled <|
                                         div []
-                                            [ text unit
+                                            [ text (getLabelOrDefault unit)
                                             , span [ class "badge rounded-pill text-bg-light" ]
-                                                [ text <| unit ]
+                                                [ text <| getLabelOrDefault unit ]
                                             ]
                                 }
                         )

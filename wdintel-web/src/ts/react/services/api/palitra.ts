@@ -24,7 +24,7 @@ import {
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import { listLogins } from './logins';
-import { listOrganismLogins, listOrganisms } from './organisms';
+import { listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
 
 type CreatePalitraReqBody = {
@@ -528,17 +528,13 @@ export async function fetchPalitraReferenceData(user: User): Promise<{
   aors: Awaited<ReturnType<typeof listAors>> | null;
 }> {
   const isAdmin = user.roles.includes('Admin');
-  const isEditor = user.roles.includes('UnitsEditor') || user.roles.includes('CallsignsEditor');
-  const hasPalitraAccess = user.roles.includes('Admin') || user.roles.includes('Full') || user.roles.includes('Rer');
 
   const [myScope, logins, organismLogins, organisms, aors] = await Promise.all([
     fetchMyScopeOptional(),
     isAdmin
       ? fetchAdminReferenceOptional(() => listLogins({ sortBy: null, filterByRoles: null }))
       : Promise.resolve(null),
-    !isAdmin && hasPalitraAccess && isEditor
-      ? fetchAdminReferenceOptional(() => listOrganismLogins())
-      : Promise.resolve(null),
+    Promise.resolve(null),
     isAdmin
       ? fetchAdminReferenceOptional(() => listOrganisms({ sortBy: null }))
       : Promise.resolve(null),

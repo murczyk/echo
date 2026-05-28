@@ -24,6 +24,7 @@ type Props = {
   filtersDisabled?: boolean;
   columnsVisibilityDisabled?: boolean;
   additionalInternalActions?: ReactNode;
+  trailingActionsAfterInternal?: ReactNode;
   rowNumberAppearanceControl?: boolean;
 };
 
@@ -70,6 +71,7 @@ export function TablePageToolbar(props: Props) {
           filter={props.filter}
           trailingActionsBeforeInternal={props.trailingActionsBeforeInternal}
           trailingActions={internalActions}
+          trailingActionsAfterInternal={props.trailingActionsAfterInternal}
         />
       ) : null}
     </Stack>

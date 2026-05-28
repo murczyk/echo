@@ -1154,13 +1154,21 @@ pub async fn callsign_unit_stats(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
+    let units = list_callsign_unit_stats(&env.dbx).await?;
+    Ok(Json(CallsignUnitStatsRsp { units }))
+}
+
+async fn list_callsign_unit_stats(
+    dbx: &DatabaseConnection,
+) -> Result<Vec<CallsignUnitStatRow>, AppError> {
     #[derive(FromQueryResult)]
     struct Row {
         unit_id: i64,
         count: i64,
     }
-    let units = sigint_callsign::Entity::find()
+    let rows = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .join_as(
             JoinType::InnerJoin,
             sigint_callsign::Relation::SigintUnit.def(),
@@ -1181,17 +1189,17 @@ pub async fn callsign_unit_stats(
         .group_by(sigint_unit::Column::Battalion)
         .group_by(sigint_unit::Column::Company)
         .into_model::<Row>()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .c(h!())?;
     let mut res = vec![];
-    for unit in units {
+    for row in rows {
         res.push(CallsignUnitStatRow {
-            unit_id: unit.unit_id,
-            count: unit.count,
+            unit_id: row.unit_id,
+            count: row.count,
         });
     }
-    Ok(Json(CallsignUnitStatsRsp { units: res }))
+    Ok(res)
 }
 
 pub async fn load_whitelist_from_file(
@@ -1401,6 +1409,67 @@ mod tests {
             (now + Duration::minutes(120)).and_utc().timestamp_millis(),
         );
         assert!(callsigns[0].created_at > callsigns[1].created_at);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_callsign_unit_stats_excludes_deleted_units() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let active_unit =
+            insert_test_unit(&env.dbx, &login.login, "ActiveUnit").await;
+        let deleted_unit =
+            insert_test_unit(&env.dbx, &login.login, "DeletedUnit").await;
+        let now = Utc::now().naive_utc();
+
+        sigint_unit::ActiveModel {
+            id: Set(active_unit.id),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_unit::ActiveModel {
+            id: Set(deleted_unit.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+
+        insert_test_callsign(&env.dbx, active_unit.id, "alpha", now, "").await;
+        sigint_callsign::ActiveModel {
+            callsign: Set("alpha-deleted".to_string()),
+            position: Set("pos".to_string()),
+            comment: Set("comment".to_string()),
+            full_name: Set(String::new()),
+            unit_id: Set(active_unit.id),
+            deleted: Set(true),
+            created_at: Set(now + Duration::minutes(1)),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(String::new()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        insert_test_callsign(&env.dbx, deleted_unit.id, "bravo", now, "").await;
+
+        let stats = list_callsign_unit_stats(&env.dbx).await.unwrap();
+
+        assert_eq!(
+            stats,
+            vec![CallsignUnitStatRow {
+                unit_id: active_unit.id,
+                count: 1,
+            }],
+        );
     }
 
     #[serial]

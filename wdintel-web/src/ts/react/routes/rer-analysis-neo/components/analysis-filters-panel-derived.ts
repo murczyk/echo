@@ -1,5 +1,9 @@
 import type { AnalysisFilterOption } from '../types';
 import { normalizeFilterLabel, sortFilterOptionsByLabel } from '../use-analysis-data.shared';
+import {
+  normalizeUnknownUnitFilterLabel,
+  normalizeUnknownUnitFilterValue,
+} from '../../shared/analysis-unit-filter';
 import { isPresent } from '../../../utils/misc';
 
 
@@ -125,7 +129,8 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
   const unitsOptions = sortFilterOptionsByLabel(
     options.units.map((option) => ({
       ...option,
-      label: normalizeFilterLabel(option.label ?? option.value),
+      value: normalizeUnknownUnitFilterValue(option.value),
+      label: normalizeUnknownUnitFilterLabel(option.label ?? option.value),
     })),
   );
 

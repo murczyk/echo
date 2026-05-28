@@ -45,7 +45,6 @@ pub use download::download_palitras_delta_split;
 #[derive(Clone)]
 struct UserScope {
     organism_ids: Vec<i64>,
-    aor_ids: Vec<i64>,
 }
 
 struct CreatePalitraMultipartPayload {
@@ -1408,48 +1407,41 @@ async fn ensure_palitra_permissions(
         bail!("Palitra access list may not be empty");
     }
 
-    ensure_palitra_management_permission(env, login)
-        .await
-        .c(h!())?;
     let is_admin = is_palitra_admin(env, login).await.c(h!())?;
+    let is_rer = has_role_or_false(env, login, "Rer").await.c(h!())?;
 
     match access {
         PalitraAccess::ByLogins { logins } => {
             if is_admin {
                 return Ok(());
             }
-            let permitted_logins =
-                crate::users::get_organism_logins_by_login(&env.dbx, login)
-                    .await
-                    .c(h!())?;
-            let all_known =
-                logins.iter().all(|value| permitted_logins.contains(value));
-            if !all_known {
-                bail!(
-                    "Editor may only manage palitra scoped to own organism logins"
-                );
+            if !is_rer {
+                bail!("Only Rer may manage login-scoped palitra");
+            }
+            let all_self = logins.iter().all(|l| l == login);
+            if !all_self {
+                bail!("Rer may only manage palitra scoped to own login");
             }
         }
         PalitraAccess::ByOrganisms { organism_ids } => {
             if is_admin {
                 return Ok(());
             }
+            if !is_rer {
+                bail!("Only Rer may manage organism-scoped palitra");
+            }
             let permitted: Vec<_> = scope.organism_ids.to_vec();
             let all_known =
                 organism_ids.iter().all(|id| permitted.contains(id));
             if !all_known {
-                bail!("Editor may only manage palitra scoped to own organism");
+                bail!("Rer may only manage palitra scoped to own organism");
             }
         }
-        PalitraAccess::ByAor { aor_ids } => {
+        PalitraAccess::ByAor { aor_ids: _ } => {
             if is_admin {
                 return Ok(());
             }
-            let permitted: Vec<_> = scope.aor_ids.to_vec();
-            let all_known = aor_ids.iter().all(|id| permitted.contains(id));
-            if !all_known {
-                bail!("Editor may only manage palitra scoped to own AOR");
-            }
+            bail!("Only Admin may manage AOR-scoped palitra");
         }
     };
     Ok(())
@@ -1463,20 +1455,12 @@ async fn ensure_palitra_management_permission(
         return Ok(());
     }
 
-    let is_rer = has_role_or_false(env, login, "Rer").await.c(h!())?;
-    let is_editor = has_any_role_or_false(
-        env,
-        login,
-        vec!["UnitsEditor", "CallsignsEditor"],
-    )
-    .await
-    .c(h!())?;
-    if is_rer && is_editor {
+    if has_role_or_false(env, login, "Rer").await.c(h!())? {
         return Ok(());
     }
 
     Err(AppError::Forbidden(
-        "Only Admin or Rer Editor may manage palitra".into(),
+        "Only Admin or Rer may manage palitra".into(),
     ))
 }
 
@@ -1493,18 +1477,6 @@ async fn has_role_or_false(
     role: &str,
 ) -> Result<bool, AppError> {
     match crate::users::has_role(&env.dbx, login, role).await {
-        Ok(()) => Ok(true),
-        Err(AppError::Forbidden(_)) => Ok(false),
-        Err(err) => Err(err),
-    }
-}
-
-async fn has_any_role_or_false(
-    env: &Data<Env>,
-    login: &str,
-    roles: Vec<&str>,
-) -> Result<bool, AppError> {
-    match crate::users::has_any_role(&env.dbx, login, roles).await {
         Ok(()) => Ok(true),
         Err(AppError::Forbidden(_)) => Ok(false),
         Err(err) => Err(err),
@@ -1531,29 +1503,17 @@ where
 
 async fn load_user_scope(
     dbx: &DatabaseConnection,
-    login: &str,
+    login_name: &str,
 ) -> anyhow::Result<UserScope> {
-    let organism_aors = organism_aor::Entity::find()
-        .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
-        .join(JoinType::InnerJoin, organism::Relation::Login.def())
-        .filter(login::Column::Login.eq(login.to_string()))
-        .all(dbx)
+    let login = login::Entity::find()
+        .filter(login::Column::Login.eq(login_name.to_string()))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(dbx)
         .await
+        .c(h!())?
         .c(h!())?;
-    let organism_ids =
-        organism_aors.iter().map(|o| o.organism_id).collect_vec();
-    let direct_aor_ids = organism_aors.iter().map(|o| o.aor_id).collect_vec();
-    let aor_ids = crate::sigint::aor::bl::expand_aor_ids_to_descendants(
-        dbx,
-        &direct_aor_ids,
-    )
-    .await
-    .c(h!())?
-    .into_iter()
-    .collect_vec();
     Ok(UserScope {
-        organism_ids,
-        aor_ids,
+        organism_ids: login.organism_id.into_iter().collect_vec(),
     })
 }
 

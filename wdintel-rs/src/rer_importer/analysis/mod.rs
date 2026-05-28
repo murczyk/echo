@@ -494,25 +494,31 @@ where
             units_contain_empty = true;
         }
         if units_contain_empty {
-            // частоти на яких був обмін в активних мережах, але всі підрозділи невідомі
-            let no_sigint_units = sigint_inbox_item::Column::Freq
-                .not_in_subquery(select_sigint_units_by_names(
-                    sigint_unit::Column::Name.is_not_null(),
-                ));
-            let no_freq = sigint_inbox_item::Column::Freq.is_null();
+            // повідомлення без жодного прив'язаного підрозділу мережі
+            let no_sigint_units = message_has_linked_unit(
+                Expr::col((
+                    Alias::new("selected_unit"),
+                    sigint_unit::Column::Name,
+                ))
+                .is_not_null(),
+            )
+            .not();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
                 .is_null()
                 .or(sigint_inbox_item::Column::UnitV2.eq(""));
-            let contains_empty =
-                unit_is_not_in_message.and(no_freq.or(no_sigint_units));
+            let contains_empty = unit_is_not_in_message.and(no_sigint_units);
             m_empty_filter = Some(contains_empty);
         }
         if !selected_units.is_empty() {
-            let in_subquery_condition = sigint_inbox_item::Column::Freq
-                .in_subquery(select_sigint_units_by_names(
-                    sigint_unit::Column::Name
-                        .eq_any(selected_units.clone().into_iter().collect()),
-                ));
+            let selected_units =
+                selected_units.clone().into_iter().collect_vec();
+            let in_subquery_condition = message_has_linked_unit(
+                Expr::col((
+                    Alias::new("selected_unit"),
+                    sigint_unit::Column::Name,
+                ))
+                .is_in(selected_units.clone()),
+            );
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
             let expr = if units_exact_match_only.unwrap_or(false) {
@@ -520,7 +526,7 @@ where
             } else {
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
                 sigint_inbox_item::Column::UnitV2
-                    .eq_any(selected_units.clone().into_iter().collect())
+                    .eq_any(selected_units.clone())
                     .or(in_subquery_condition)
             };
 
@@ -535,43 +541,142 @@ where
     }
 }
 
-/// Ця функція обирає тільки частоти для яких є активна мережа і підрозділ в ній, а також виконується додаткова умова
-///  * filter_expr -- додаткова умова фільтрування
+fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {
+    Expr::exists(select_sigint_units_by_names(filter_expr))
+}
+
+/// Ця функція обирає тільки ті повідомлення, для яких є активна мережа
+/// з прив'язаним підрозділом, який задовольняє `filter_expr`.
 fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
+    let inbox_network_alias = Alias::new("selected_unit_inbox_network");
+    let network_alias = Alias::new("selected_unit_network");
+    let network_freq_alias = Alias::new("selected_unit_network_freq");
+    let network_unit_alias = Alias::new("selected_unit_network_unit");
+    let unit_alias = Alias::new("selected_unit");
+    let message_datetime = Expr::col((
+        sigint_inbox_item::Entity,
+        sigint_inbox_item::Column::Datetime,
+    ));
     Query::select()
-        .column(sigint_network_freq::Column::Freq)
-        .distinct()
-        .from(sigint_network_freq::Entity)
-        .join(
+        .expr(Expr::value(1))
+        .from_as(
+            sigint_inbox_item_network::Entity,
+            inbox_network_alias.clone(),
+        )
+        .join_as(
             JoinType::InnerJoin,
             sigint_network::Entity,
-            Expr::col((sigint_network::Entity, sigint_network::Column::Id))
+            network_alias.clone(),
+            Expr::col((network_alias.clone(), sigint_network::Column::Id))
                 .equals((
-                    sigint_network_freq::Entity,
-                    sigint_network_freq::Column::NetworkId,
+                    inbox_network_alias.clone(),
+                    sigint_inbox_item_network::Column::SigintNetworkId,
                 )),
         )
-        .join(
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network_freq::Entity,
+            network_freq_alias.clone(),
+            Expr::col((
+                network_freq_alias.clone(),
+                sigint_network_freq::Column::NetworkId,
+            ))
+            .equals((network_alias.clone(), sigint_network::Column::Id)),
+        )
+        .join_as(
             JoinType::InnerJoin,
             sigint_network_unit::Entity,
+            network_unit_alias.clone(),
             Expr::col((
-                sigint_network_unit::Entity,
+                network_unit_alias.clone(),
                 sigint_network_unit::Column::NetworkId,
             ))
-            .equals((sigint_network::Entity, sigint_network::Column::Id)),
+            .equals((network_alias.clone(), sigint_network::Column::Id)),
         )
-        .join(
+        .join_as(
             JoinType::InnerJoin,
             sigint_unit::Entity,
-            Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)).equals((
-                sigint_network_unit::Entity,
+            unit_alias.clone(),
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Id)).equals((
+                network_unit_alias.clone(),
                 sigint_network_unit::Column::UnitId,
             )),
         )
-        .and_where(sigint_network_freq::Column::ActiveTo.is_null())
-        .and_where(sigint_network_freq::Column::Deleted.eq(false))
-        .and_where(sigint_unit::Column::Deleted.eq(false))
-        .and_where(sigint_network::Column::Deleted.eq(false))
+        .and_where(
+            Expr::col((
+                inbox_network_alias.clone(),
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .and_where(
+            Expr::col((
+                network_freq_alias.clone(),
+                sigint_network_freq::Column::Freq,
+            ))
+            .equals((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Freq,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                network_freq_alias.clone(),
+                sigint_network_freq::Column::ActiveFrom,
+            ))
+            .lte(message_datetime.clone()),
+        )
+        .and_where(
+            Expr::col((
+                network_freq_alias.clone(),
+                sigint_network_freq::Column::ActiveTo,
+            ))
+            .is_null()
+            .or(Expr::col((
+                network_freq_alias.clone(),
+                sigint_network_freq::Column::ActiveTo,
+            ))
+            .gte(message_datetime.clone())),
+        )
+        .and_where(
+            Expr::col((network_alias.clone(), sigint_network::Column::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((
+                network_freq_alias.clone(),
+                sigint_network_freq::Column::Deleted,
+            ))
+            .eq(false),
+        )
+        .and_where(
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((
+                network_alias.clone(),
+                sigint_network::Column::ActiveFrom,
+            ))
+            .is_null()
+            .or(Expr::col((
+                network_alias.clone(),
+                sigint_network::Column::ActiveFrom,
+            ))
+            .lte(message_datetime.clone())),
+        )
+        .and_where(
+            Expr::col((
+                network_alias.clone(),
+                sigint_network::Column::ActiveTo,
+            ))
+            .is_null()
+            .or(Expr::col((
+                network_alias.clone(),
+                sigint_network::Column::ActiveTo,
+            ))
+            .gte(message_datetime.clone())),
+        )
         .and_where(filter_expr)
         .to_owned()
 }

@@ -53,10 +53,6 @@ vi.mock('./AnalysisNewCallsignsCard', () => ({
   AnalysisNewCallsignsCard: () => <div>new-callsigns-card</div>,
 }));
 
-vi.mock('./AnalysisSummaryTableCard', () => ({
-  AnalysisSummaryTableCard: () => <div>summary-table-card</div>,
-}));
-
 import { AnalysisSidebar } from './AnalysisSidebar';
 
 type Rendered = {
@@ -78,7 +74,6 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     groupsActivityPeriod: 'selected',
     groupsActivityLoading: false,
     analysisMapInSidebar: false,
-    downloadSummaryXlsx: vi.fn(),
     mapAttrs: {
       daterange: '',
       daterangeLoading: '',
@@ -102,22 +97,12 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> =
     } as ComponentProps<typeof AnalysisSidebar>['queryState'],
     rightPanelOpen: true,
     rightSidebarTab: 'stats',
-    renameSummaryUnit: vi.fn(),
     selectOnlyFreq: vi.fn(),
     setRightSidebarTab: vi.fn(),
-    showFreqOnMap: vi.fn(),
-    summaryCallsignsInfo: {},
-    summaryHasLoadedOnce: false,
-    summaryLoaded: false,
-    summaryLoading: false,
-    summaryRows: [],
     topCallsigns: [],
     topFreqs: [],
     topLocations: [],
     topUnits: [],
-    networkDisplayMap: {},
-    networks: [],
-    unitsMap: {},
     refreshMapDateRange: vi.fn(),
     toggleCallsignGraphNolimit: vi.fn(),
     toggleUnitFromMap: vi.fn(),
@@ -191,14 +176,7 @@ describe('AnalysisSidebar', () => {
     expect(view.container.textContent).not.toContain('overview-card');
   });
 
-  it('renders the summary content for the summary tab', async () => {
-    const view = await renderComponent(buildProps({ rightSidebarTab: 'summary' }));
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('summary-table-card');
-  });
-
-  it('keeps the summary tab last in the sidebar tab order', async () => {
+  it('keeps the sidebar tab order without the summary table', async () => {
     const view = await renderComponent(buildProps({ analysisMapInSidebar: false }));
     rendered.push(view);
 
@@ -206,7 +184,8 @@ describe('AnalysisSidebar', () => {
       .map((button) => button.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(tabLabels.slice(0, 4)).toEqual(['Зведення', 'Позивні', 'Нові', 'Таблиця: Частоти']);
+    expect(tabLabels.slice(0, 3)).toEqual(['Зведення', 'Позивні', 'Нові']);
+    expect(tabLabels.some((label) => label.includes('Зведена таблиця'))).toBe(false);
   });
 
   it('routes tab clicks into the page callback', async () => {
@@ -222,21 +201,6 @@ describe('AnalysisSidebar', () => {
     await click(statsTab as HTMLButtonElement);
 
     expect(setRightSidebarTab).toHaveBeenCalledWith('stats');
-  });
-
-  it('routes the summary tab click into the page callback', async () => {
-    const setRightSidebarTab = vi.fn();
-    const view = await renderComponent(buildProps({ setRightSidebarTab }));
-    rendered.push(view);
-
-    const summaryTab = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Таблиця: Частоти'),
-    );
-    expect(summaryTab).toBeTruthy();
-
-    await click(summaryTab as HTMLButtonElement);
-
-    expect(setRightSidebarTab).toHaveBeenCalledWith('summary');
   });
 
   it('allows a null tab while the right panel is closed', async () => {

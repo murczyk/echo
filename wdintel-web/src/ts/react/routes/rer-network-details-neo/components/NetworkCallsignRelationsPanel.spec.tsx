@@ -13,6 +13,7 @@ vi.mock('./NetworkDatePickerField', () => ({
 
 import { NetworkCallsignRelationsPanel } from './NetworkCallsignRelationsPanel';
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
+import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -126,6 +127,16 @@ function createSparseRelations(): NetworkCallsignRelationsRsp {
     freqs: [
       { freq: '652.111', enabledByDefault: true },
       { freq: '852.111', enabledByDefault: true },
+    ],
+  };
+}
+
+function createSparseRelationsWithDisabledDefaultFreq(): NetworkCallsignRelationsRsp {
+  return {
+    ...createSparseRelations(),
+    freqs: [
+      { freq: '652.111', enabledByDefault: true },
+      { freq: '852.111', enabledByDefault: false },
     ],
   };
 }
@@ -262,6 +273,77 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
     expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).not.toBeNull();
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
+  });
+
+  it('shows the empty-state clear action when search is empty and graph filters hide all data', () => {
+    const view = renderPanel(undefined, {
+      relationsSearch: '',
+      relationsMinIntensity: 25,
+    });
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relationsMinIntensity={25}
+          relationsEnabledFreqs={['652.111']}
+          relationsSearch=""
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).not.toBeNull();
+  });
+
+  it('clears search and graph filters from the empty-state action', () => {
+    const view = renderPanel(createSparseRelationsWithDisabledDefaultFreq(), {
+      relationsSearch: 'alpha',
+      relationsMinIntensity: 25,
+    });
+    rendered.push(view);
+
+    act(() => {
+      view.root.render(
+        <NetworkCallsignRelationsPanel
+          {...(view.props as any)}
+          relationsMinIntensity={25}
+          relationsEnabledFreqs={['652.111']}
+          relationsSearch="alpha"
+        />,
+      );
+    });
+
+    const clearButton = view.container.querySelector<HTMLButtonElement>('[data-testid="clear-empty-filters"]');
+    expect(clearButton).not.toBeNull();
+
+    act(() => {
+      clearButton?.click();
+    });
+
+    expect(view.props.onSearchChange).toHaveBeenCalledWith('');
+    expect(view.props.onEnabledFreqsChange).toHaveBeenCalledWith(['652.111']);
+    expect(view.props.onMinIntensityChange).toHaveBeenCalledWith(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
+  });
+
+  it('hides the empty-state clear action when empty data has no active graph filters', () => {
+    const view = renderPanel(
+      {
+        nodes: [],
+        edges: [],
+        freqs: [],
+      },
+      {
+        relationsSearch: '',
+        relationsEnabledFreqs: [],
+        relationsMinIntensity: NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY,
+      },
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).toBeNull();
   });
 
   it('lets the user close an opened relation edge drill-down', () => {

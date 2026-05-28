@@ -1,7 +1,8 @@
 import { Box, Checkbox, Divider, FormControlLabel, Popover, Slider, Stack, Typography } from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 
 import type { NetworkCallsignRelationFreqView } from '../network-relations';
+import { getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
 
 type Props = {
   anchorEl: HTMLElement | null;
@@ -27,12 +28,7 @@ export function NetworkCallsignRelationsGraphFilters({
   onMinIntensityChange,
 }: Props) {
   const theme = useTheme();
-  const isDarkMode = theme.palette.mode === 'dark';
-  const overlayBg = isDarkMode ? 'rgba(12,12,12,0.94)' : alpha(theme.palette.background.paper, 0.98);
-  const overlayBorder = alpha(theme.palette.divider, isDarkMode ? 0.5 : 0.85);
-  const overlayShadow = isDarkMode ? '0 12px 28px rgba(0,0,0,0.35)' : '0 12px 24px rgba(0,0,0,0.10)';
-  const overlayText = theme.palette.text.primary;
-  const overlayTextSecondary = alpha(theme.palette.text.primary, isDarkMode ? 0.72 : 0.62);
+  const graphTheme = getNetworkRelationsGraphTheme(theme);
 
   return (
     <Popover
@@ -42,19 +38,19 @@ export function NetworkCallsignRelationsGraphFilters({
       onClose={onClose}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      slotProps={{
-        paper: {
-          sx: {
-            borderRadius: 2,
-            overflow: 'hidden',
-            bgcolor: overlayBg,
-            border: `1px solid ${overlayBorder}`,
-            boxShadow: overlayShadow,
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 2,
+              overflow: 'hidden',
+              bgcolor: graphTheme.overlayBg,
+              border: `1px solid ${graphTheme.overlayBorder}`,
+              boxShadow: graphTheme.overlayShadow,
+            },
           },
-        },
-      }}
+        }}
     >
-      <Box sx={{ width: 320, p: 2, color: overlayText, position: 'relative' }}>
+      <Box sx={{ width: 320, p: 2, color: graphTheme.overlayText, position: 'relative' }}>
         <Stack spacing={1.5}>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
             Налаштування
@@ -83,7 +79,7 @@ export function NetworkCallsignRelationsGraphFilters({
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 Інтенсивність
               </Typography>
-              <Typography variant="caption" sx={{ color: overlayTextSecondary }}>
+              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
                 {minIntensity}
               </Typography>
             </Stack>

@@ -1,5 +1,31 @@
-import { Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
+import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import {
+  Box,
+  Button,
+  Checkbox,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  FormControlLabel,
+  IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import type { MRT_SortingState } from 'material-react-table';
+import { useState } from 'react';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -18,8 +44,78 @@ import { PowerAlert } from '../../components/PowerAlert';
 
 const DEFAULT_PALITRA_SORTING: MRT_SortingState = [{ id: 'lastUploadedAtTs', desc: true }];
 
+type SelectedPalitraActionsMenuProps = {
+  downloadDisabled: boolean;
+  downloadInFlight: boolean;
+  assignDisabled: boolean;
+  deleteDisabled: boolean;
+  onDownloadSelected: () => void;
+  onRequestAssignFolder: () => void;
+  onRequestBulkDelete: () => void;
+};
+
+function SelectedPalitraActionsMenu(props: SelectedPalitraActionsMenuProps) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const open = anchorEl !== null;
+
+  function runAction(action: () => void) {
+    setAnchorEl(null);
+    action();
+  }
+
+  return (
+    <>
+      <Tooltip title='Дії з обраними палітрами'>
+        <span>
+          <IconButton
+            aria-label='Дії з обраними палітрами'
+            aria-controls={open ? 'selected-palitra-actions-menu' : undefined}
+            aria-expanded={open ? 'true' : undefined}
+            aria-haspopup='menu'
+            onClick={(event) => setAnchorEl(event.currentTarget)}
+          >
+            <MoreVertIcon />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Menu id='selected-palitra-actions-menu' open={open} anchorEl={anchorEl} onClose={() => setAnchorEl(null)}>
+        <MenuItem onClick={() => runAction(props.onDownloadSelected)} disabled={props.downloadDisabled}>
+          <ListItemIcon>
+            {props.downloadInFlight ? <CircularProgress size={18} color='inherit' /> : <DownloadIcon fontSize='small' />}
+          </ListItemIcon>
+          <ListItemText primary='Скачати обрані палітри' />
+        </MenuItem>
+        <MenuItem onClick={() => runAction(props.onRequestAssignFolder)} disabled={props.assignDisabled}>
+          <ListItemIcon>
+            <DriveFileMoveOutlinedIcon fontSize='small' />
+          </ListItemIcon>
+          <ListItemText primary='Перемістити в папку' />
+        </MenuItem>
+        <MenuItem onClick={() => runAction(props.onRequestBulkDelete)} disabled={props.deleteDisabled} sx={{ color: 'error.main' }}>
+          <ListItemIcon sx={{ color: 'error.main' }}>
+            <DeleteIcon fontSize='small' />
+          </ListItemIcon>
+          <ListItemText primary='Видалити палітри' />
+        </MenuItem>
+      </Menu>
+    </>
+  );
+}
+
 function RerPalitraNeoPageBody() {
   const page = useRerPalitraNeoPage();
+  const selectedPalitraIds = new Set(page.selectedPalitraIds);
+  const hasSelectedModifiablePalitras = page.rows.some(
+    (row) => row.kind === 'palitra' && selectedPalitraIds.has(row.id) && row.canSelect && row.canModify,
+  );
+  const selectedPalitraActionsBlocked =
+    page.selectedPalitraIds.length === 0 ||
+    page.folderActionsBlocked ||
+    page.bulkDeleteInFlight ||
+    page.bulkDownloadInFlight ||
+    page.inFlightArchiveId !== null ||
+    page.inFlightDeleteId !== null ||
+    page.inFlightDownloadId !== null;
 
   return (
     <Box className='w-full' sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
@@ -27,7 +123,6 @@ function RerPalitraNeoPageBody() {
         <TablePageToolbar
           title='Палітри'
           withGlobalTextFilter
-          filtersHidden
           filter={
             <ToggleButtonGroup
               value={page.archiveView}
@@ -76,33 +171,6 @@ function RerPalitraNeoPageBody() {
                 AlpineQuest конвертер
               </Button>
               <Button
-                variant='outlined'
-                onClick={page.requestAssignFolder}
-                disabled={
-                  page.selectedPalitraIds.length === 0 ||
-                  page.folderActionsBlocked ||
-                  page.bulkDeleteInFlight ||
-                  page.inFlightArchiveId !== null ||
-                  page.inFlightDeleteId !== null
-                }
-              >
-                Перемістити в папку
-              </Button>
-              <Button
-                variant='outlined'
-                color='error'
-                onClick={page.requestBulkDelete}
-                disabled={
-                  page.selectedPalitraIds.length === 0 ||
-                  page.bulkDeleteInFlight ||
-                  page.folderActionsBlocked ||
-                  page.inFlightArchiveId !== null ||
-                  page.inFlightDeleteId !== null
-                }
-              >
-                Видалити палітри
-              </Button>
-              <Button
                 variant='contained'
                 onClick={page.openCreate}
                 disabled={page.createInFlight || page.folderActionsBlocked || page.availableAccessTypes.length === 0}
@@ -110,6 +178,17 @@ function RerPalitraNeoPageBody() {
                 Додати палітру
               </Button>
             </Stack>
+          }
+          trailingActionsAfterInternal={
+            <SelectedPalitraActionsMenu
+              downloadDisabled={selectedPalitraActionsBlocked}
+              downloadInFlight={page.bulkDownloadInFlight}
+              assignDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}
+              deleteDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}
+              onDownloadSelected={page.handleBulkDownload}
+              onRequestAssignFolder={page.requestAssignFolder}
+              onRequestBulkDelete={page.requestBulkDelete}
+            />
           }
         />
 

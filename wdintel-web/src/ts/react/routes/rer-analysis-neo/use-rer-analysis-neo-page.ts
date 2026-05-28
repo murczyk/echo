@@ -4,6 +4,7 @@ import { useTheme } from '@mui/material/styles';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
+import { normalizeUnknownUnitFilterValue, normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import {
   buildAnalysisReq,
   createInitialQueryState,
@@ -172,24 +173,29 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [queryState]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
-    if (!unitName) return;
+    if (unitName === null) return;
+    const normalizedUnitName = normalizeUnknownUnitFilterValue(unitName);
     data.invalidateFilterSectionLoads();
     setQueryState((current) => ({
       ...current,
-      unitsSelected: current.unitsSelected.includes(unitName)
-        ? current.unitsSelected.filter((item) => item !== unitName)
-        : [...current.unitsSelected, unitName],
+      unitsSelected: (() => {
+        const normalizedUnits = normalizeUnknownUnitSelections(current.unitsSelected);
+        return normalizedUnits.includes(normalizedUnitName)
+          ? normalizedUnits.filter((item) => item !== normalizedUnitName)
+          : [...normalizedUnits, normalizedUnitName];
+      })(),
     }));
   }, [data.invalidateFilterSectionLoads]);
 
   const resetFilters = useCallback(() => {
     const nextState = createResetQueryState();
+    savedFilters.applySavedFilter(null);
     data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState);
-  }, [data]);
+  }, [data, savedFilters]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {

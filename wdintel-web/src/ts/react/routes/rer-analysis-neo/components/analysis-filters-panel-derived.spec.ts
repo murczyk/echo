@@ -41,4 +41,34 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
     expect(derived.importantSelectedCount).toBe(3);
     expect(derived.tagsSelectedCount).toBe(2);
   });
+
+  it('normalizes unknown unit stats to the canonical empty filter option', () => {
+    const derived = buildAnalysisFiltersPanelDerivedData({
+      aorEntries: [],
+      groupInfos: {},
+      options: {
+        tags: [],
+        aors: [],
+        groups: [],
+        senders: [],
+        freqs: [],
+        newFreqs: [],
+        callsigns: [],
+        units: [{ value: 'Не визначено', label: 'Не визначено', count: 7 }],
+        locations: [],
+        posts: [],
+        networks: [],
+        metadataCcs: [],
+        metadataSenders: [],
+        metadataReceivers: [],
+        metadataHashes: [],
+      },
+      queryState: emptyQueryState(),
+      tagsMap: {},
+    });
+
+    expect(derived.unitsOptions).toEqual([
+      { value: '', label: '<Не вказано>', count: 7 },
+    ]);
+  });
 });

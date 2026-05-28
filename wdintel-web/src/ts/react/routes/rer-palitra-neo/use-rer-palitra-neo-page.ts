@@ -51,6 +51,7 @@ export function useRerPalitraNeoPage() {
   const [bulkDeleteDialogPalitras, setBulkDeleteDialogPalitras] = useState<Palitra[]>([]);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleteInFlight, setBulkDeleteInFlight] = useState(false);
+  const [bulkDownloadInFlight, setBulkDownloadInFlight] = useState(false);
   const [status, setStatus] = useState<UiStatus>(null);
   const [folderDialogState, setFolderDialogState] = useState<FolderActionDialogState | null>(null);
   const [folderActionInFlight, setFolderActionInFlight] = useState(false);
@@ -277,6 +278,7 @@ export function useRerPalitraNeoPage() {
     handleUnarchive,
     requestUploadPoints,
     handleDownload,
+    handleBulkDownload,
     cancelDownload,
     confirmDownload,
     onDownloadDialogExited,
@@ -319,6 +321,7 @@ export function useRerPalitraNeoPage() {
     bulkDeleteDialogPalitras,
     bulkDeleteDialogOpen,
     bulkDeleteInFlight,
+    bulkDownloadInFlight,
     inFlightArchiveId,
     inFlightDeleteId,
     inFlightDownloadId,
@@ -355,6 +358,7 @@ export function useRerPalitraNeoPage() {
     setBulkDeleteDialogPalitras,
     setBulkDeleteDialogOpen,
     setBulkDeleteInFlight,
+    setBulkDownloadInFlight,
     reloadPalitras,
   });
 
@@ -423,6 +427,7 @@ export function useRerPalitraNeoPage() {
     bulkDeleteDialogPalitras,
     bulkDeleteDialogOpen,
     bulkDeleteInFlight,
+    bulkDownloadInFlight,
     createOpen,
     createMode,
     createForm,
@@ -475,6 +480,7 @@ export function useRerPalitraNeoPage() {
     handleEditSave,
     handleUploadPointsSelected,
     handleKmzSelected,
+    handleBulkDownload,
     requestAssignFolder,
     requestAssignFolderForPalitra,
     requestRenameFolder,

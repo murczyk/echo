@@ -382,7 +382,12 @@ type ReloadParams = {
   loadMessageComments?: (messages: Array<[number, InboxMessage]>, forceReload?: boolean) => Promise<void>;
   invalidateSummaryLoads?: () => void;
   invalidateTopSidebarLoads?: () => void;
-  loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => Promise<void>;
+  getLoadedFilterSections?: () => AnalysisFilterSectionId[];
+  loadInitialFilterSections: (
+    analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
+    forceReload?: boolean,
+    loadedSections?: AnalysisFilterSectionId[],
+  ) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
 };
 
@@ -391,6 +396,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.reloadRequestRef.current = requestId;
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
   let startedSecondaryLoads = false;
+  const loadedFilterSectionsBeforeReload = params.getLoadedFilterSections?.() ?? [];
 
   params.onError('');
   params.invalidateMessagePaging();
@@ -528,11 +534,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         label: normalizeFilterLabel(freq),
         count: nextFreqCountsByValue.get(freq) ?? 0,
       }));
-      params.setOptions({
-        ...emptyOptions,
+      params.setOptions((current) => ({
+        ...current,
         freqs: nextFreqOptions,
         newFreqs: nextNewFreqs,
-      });
+      }));
+      await params.loadInitialFilterSections(resolvedAnalysisReq, true, loadedFilterSectionsBeforeReload);
       params.setTopFreqs(topItems(effectiveFreqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
@@ -553,6 +560,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     if (isNullOrUndefined(criticalData) || isStaleReload()) return;
 
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
+    params.setFiltersLoading(false);
     params.setMessagesLoading(false);
 
     const loadCountsData = async () => {
@@ -628,13 +636,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     const secondaryLoads = [
       loadCountsData(),
       loadReferenceData(),
-      (async () => {
-        try {
-          await params.loadInitialFilterSections(criticalData.resolvedAnalysisReq);
-        } finally {
-          if (!isStaleReload()) params.setFiltersLoading(false);
-        }
-      })(),
       loadMapData(),
     ];
     if (params.shouldLoadNewCallsigns) {

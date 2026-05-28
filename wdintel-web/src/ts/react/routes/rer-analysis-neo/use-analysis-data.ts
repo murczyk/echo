@@ -180,20 +180,21 @@ export function useAnalysisData({
     setMessagesPaging(false);
   }, []);
 
-  const { invalidateFilterSectionLoads, loadFilterSection, loadInitialFilterSections } = useAnalysisFilterSections({
-    queryState,
-    optionsFreqValues,
-    unitsMapRef,
-    onError,
-    onUnauthorized,
-    setAorEntries,
-    setGroupInfos,
-    setNetworkDisplayMap,
-    setNetworks,
-    setOptions,
-    setProfiles,
-    setTagsMap,
-  });
+  const { getLoadedFilterSections, invalidateFilterSectionLoads, loadFilterSection, loadInitialFilterSections } =
+    useAnalysisFilterSections({
+      queryState,
+      optionsFreqValues,
+      unitsMapRef,
+      onError,
+      onUnauthorized,
+      setAorEntries,
+      setGroupInfos,
+      setNetworkDisplayMap,
+      setNetworks,
+      setOptions,
+      setProfiles,
+      setTagsMap,
+    });
 
   const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef,
@@ -389,14 +390,17 @@ export function useAnalysisData({
       setTopUnits,
       setUnitsMap,
       setHasLoadedInitialMessages,
-      invalidateSummaryLoads: () => invalidateSummaryData(rightSidebarVisible && rightSidebarTab === 'summary'),
+      invalidateSummaryLoads: () => invalidateSummaryData(centerTab === 'summary'),
       invalidateTopSidebarLoads: invalidateRightSidebarData,
+      getLoadedFilterSections,
       loadInitialFilterSections,
     });
   }, [
     clearAnalysisResults,
+    centerTab,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
+    getLoadedFilterSections,
     invalidateFilterSectionLoads,
     invalidateSummaryData,
     invalidateRightSidebarData,
@@ -407,8 +411,6 @@ export function useAnalysisData({
     onError,
     onUnauthorized,
     queryState,
-    rightSidebarTab,
-    rightSidebarVisible,
   ]);
 
   const {
@@ -500,7 +502,7 @@ export function useAnalysisData({
     if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
     lastReloadTriggerKeyRef.current = reloadTriggerKey;
     summaryReloadPendingKeyRef.current = reloadTriggerKey;
-    if (rightSidebarVisible && rightSidebarTab === 'summary') {
+    if (centerTab === 'summary') {
       invalidateSummaryData(true);
     }
     void reload().finally(() => {
@@ -508,13 +510,13 @@ export function useAnalysisData({
       summaryReloadPendingKeyRef.current = null;
       setSummaryReloadBarrier((current) => current + 1);
     });
-  }, [invalidateSummaryData, reload, reloadTriggerKey, rightSidebarTab, rightSidebarVisible]);
+  }, [centerTab, invalidateSummaryData, reload, reloadTriggerKey]);
 
   useEffect(() => {
-    if (!rightSidebarVisible || rightSidebarTab !== 'summary') return;
+    if (centerTab !== 'summary') return;
     if (summaryReloadPendingKeyRef.current !== null) return;
     void loadSummaryData();
-  }, [loadSummaryData, rightSidebarTab, rightSidebarVisible, summaryReloadBarrier]);
+  }, [centerTab, loadSummaryData, summaryReloadBarrier]);
 
   useEffect(() => {
     if (!rightSidebarVisible) return;

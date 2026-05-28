@@ -52,7 +52,7 @@ function normalizeHierarchyPart(part: string, level: number): string {
   return `Без ${HIERARCHY_LABELS[level].toLowerCase()}`;
 }
 
-function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
+export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
   const root: TreeNode[] = [];
   const groups = new Map<string, TreeGroupNode>();
 

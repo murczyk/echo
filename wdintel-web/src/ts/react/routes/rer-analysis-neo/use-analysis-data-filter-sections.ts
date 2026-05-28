@@ -5,6 +5,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 
 import { buildAnalysisReq } from './helpers';
+import { emptyOptions } from './use-analysis-data.shared';
 import {
   buildAnalysisReqForFilterSection,
   filterSectionCacheKey,
@@ -13,6 +14,26 @@ import {
 } from './use-analysis-data.reload';
 import { toErrorMessage } from './use-analysis-data.shared';
 import type { AnalysisAorEntry, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState } from './types';
+
+export function buildFilterSectionsToLoad(
+  queryState: AnalysisQueryState,
+  loadedSections: AnalysisFilterSectionId[],
+  forceReload: boolean,
+): AnalysisFilterSectionId[] {
+  const sections = new Set(filterSectionsForInitialLoad(queryState));
+  if (forceReload) {
+    loadedSections.forEach((section) => sections.add(section));
+  }
+  return Array.from(sections);
+}
+
+export function resetFilterOptionsForForcedReload(prev: AnalysisFilterOptions): AnalysisFilterOptions {
+  return {
+    ...emptyOptions,
+    freqs: prev.freqs,
+    newFreqs: prev.newFreqs,
+  };
+}
 
 type Params = {
   queryState: AnalysisQueryState;
@@ -50,6 +71,11 @@ export function useAnalysisFilterSections({
     filterSectionLoadVersionRef.current += 1;
     loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
   }, []);
+
+  const getLoadedFilterSections = useCallback(
+    () => Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[],
+    [],
+  );
 
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
@@ -100,8 +126,18 @@ export function useAnalysisFilterSections({
   );
 
   const loadInitialFilterSections = useCallback(
-    async (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>) => {
-      const sections = filterSectionsForInitialLoad(queryState);
+    async (
+      analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
+      forceReload = false,
+      loadedSections: AnalysisFilterSectionId[] = [],
+    ) => {
+      if (forceReload) {
+        // Reset loaded keys and clear non-frequency options, preserving freqs/newFreqs.
+        // Previously loaded lazy sections are reloaded below for the new request.
+        invalidateFilterSectionLoads();
+        setOptions(resetFilterOptionsForForcedReload);
+      }
+      const sections = buildFilterSectionsToLoad(queryState, loadedSections, forceReload);
       if (sections.length === 0) return;
 
       await Promise.all(
@@ -135,6 +171,7 @@ export function useAnalysisFilterSections({
       );
     },
     [
+      invalidateFilterSectionLoads,
       onError,
       onUnauthorized,
       queryState,
@@ -150,6 +187,7 @@ export function useAnalysisFilterSections({
   );
 
   return {
+    getLoadedFilterSections,
     invalidateFilterSectionLoads,
     loadFilterSection,
     loadInitialFilterSections,
