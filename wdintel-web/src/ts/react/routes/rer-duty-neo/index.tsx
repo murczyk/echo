@@ -134,7 +134,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         onUnitsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, unitsSelected: v.length ? v : null }),
         onUnitsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, unitsDenied: v.length ? v : null }),
-        onUnitsExactMatchOnlyChange: (v: boolean) =>
+        onUnitsExactMatchOnlyChange: (v: boolean | null) =>
           applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
         onAdjacentFreqsRangeChange: (v: number) =>
           setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, adjacentFreqsRange: v } : f))),

@@ -1,4 +1,4 @@
-import { Box, Checkbox, FormControlLabel } from '@mui/material';
+import { Box, FormControl, InputLabel, MenuItem, Select } from '@mui/material';
 import type { SavedFilterDuty } from '../../../../Bindings';
 import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
@@ -45,7 +45,7 @@ export type FeedFilterPanelViewProps = {
   posts: FeedFilterSelectionConfig<string>;
   units: FeedFilterSelectionConfig<string> & {
     unitsExactMatchOnly: boolean | null;
-    onUnitsExactMatchOnlyChange: (value: boolean) => void;
+    onUnitsExactMatchOnlyChange: (value: boolean | null) => void;
   };
   advanced: {
     highlightSignalsEnabled?: boolean;
@@ -173,19 +173,34 @@ export function FeedFilterPanelView({
             placeholder={units.placeholder}
             autocompleteClassName={units.autocompleteClassName}
           />
-          <FormControlLabel
-            sx={{ mt: 0.5, ml: 0 }}
-            control={
-              <Checkbox
-                size="small"
-                checked={units.unitsExactMatchOnly === true}
-                indeterminate={units.unitsExactMatchOnly === null}
-                onChange={(e) => units.onUnitsExactMatchOnlyChange(e.target.checked)}
-              />
-            }
-            label="точний збіг за еталонкою"
-            slotProps={{ typography: { variant: 'body2' } }}
-          />
+          <Box className="mt-2 flex justify-end">
+            <FormControl size="small" sx={{ minWidth: 260, width: '100%', maxWidth: 360 }}>
+              <InputLabel id="units-exact-match-only-label">Збіг з еталонкою</InputLabel>
+              <Select
+                labelId="units-exact-match-only-label"
+                value={
+                  units.unitsExactMatchOnly === null
+                    ? 'default'
+                    : units.unitsExactMatchOnly
+                      ? 'exact'
+                      : 'not-exact'
+                }
+                label="Збіг з еталонкою"
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === 'default') {
+                    units.onUnitsExactMatchOnlyChange(null);
+                    return;
+                  }
+                  units.onUnitsExactMatchOnlyChange(value === 'exact');
+                }}
+              >
+                <MenuItem value="default">За замовчуванням</MenuItem>
+                <MenuItem value="exact">Точний збіг</MenuItem>
+                <MenuItem value="not-exact">Не точний збіг</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
         </Box>
 
         <FeedFilterAdvancedSection

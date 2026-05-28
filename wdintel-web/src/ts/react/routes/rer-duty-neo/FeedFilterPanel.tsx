@@ -29,7 +29,7 @@ export type FeedFilterPanelModel = {
     adjacentFreqsRange?: number;
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
-    unitsExactMatchOnly?: boolean;
+    unitsExactMatchOnly?: boolean | null;
     reloadFreqsLoading: boolean;
   };
   savedFilters: {
@@ -48,7 +48,7 @@ export type FeedFilterPanelModel = {
     onPostsDeniedChange?: (v: string[]) => void;
     onUnitsChange?: (v: string[]) => void;
     onUnitsDeniedChange?: (v: string[]) => void;
-    onUnitsExactMatchOnlyChange?: (v: boolean) => void;
+    onUnitsExactMatchOnlyChange?: (v: boolean | null) => void;
     onAdjacentFreqsRangeChange?: (v: number) => void;
     onHighlightSignalsChange?: (v: boolean) => void;
     onOnlyMyUnitTagsChange?: (v: boolean) => void;

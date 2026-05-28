@@ -32,7 +32,7 @@ export type FeedFilterPanelViewModel = {
   posts: FeedFilterSelectionViewModel<string>;
   units: FeedFilterSelectionViewModel<string> & {
     unitsExactMatchOnly: boolean | null;
-    onUnitsExactMatchOnlyChange: (value: boolean) => void;
+    onUnitsExactMatchOnlyChange: (value: boolean | null) => void;
   };
   advanced: {
     highlightSignalsEnabled?: boolean;
