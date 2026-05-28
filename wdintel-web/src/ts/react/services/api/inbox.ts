@@ -304,7 +304,7 @@ export async function inboxMessageTagsRm(req: InboxMessageTagsRmReq): Promise<vo
 
 function rerDutyQueryStateWfToSnake(
   w: RerDutyFeedFilterState
-): Record<string, string[] | number | null> {
+): Record<string, string[] | number | boolean | null> {
   return {
     groups_selected: w.groupsSelected,
     groups_denied: w.groupsDenied,
@@ -314,6 +314,9 @@ function rerDutyQueryStateWfToSnake(
     freqs_denied: w.freqsDenied,
     posts_selected: w.postsSelected,
     posts_denied: w.postsDenied,
+    units_selected: w.unitsSelected,
+    units_denied: w.unitsDenied,
+    units_exact_match_only: w.unitsExactMatchOnly,
     last_viewed_message_id: w.lastViewedMessageId,
   };
 }
