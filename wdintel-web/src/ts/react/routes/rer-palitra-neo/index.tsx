@@ -170,15 +170,6 @@ function RerPalitraNeoPageBody() {
               >
                 AlpineQuest конвертер
               </Button>
-              <SelectedPalitraActionsMenu
-                downloadDisabled={selectedPalitraActionsBlocked}
-                downloadInFlight={page.bulkDownloadInFlight}
-                assignDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}
-                deleteDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}
-                onDownloadSelected={page.handleBulkDownload}
-                onRequestAssignFolder={page.requestAssignFolder}
-                onRequestBulkDelete={page.requestBulkDelete}
-              />
               <Button
                 variant='contained'
                 onClick={page.openCreate}
@@ -187,6 +178,17 @@ function RerPalitraNeoPageBody() {
                 Додати палітру
               </Button>
             </Stack>
+          }
+          trailingActionsAfterInternal={
+            <SelectedPalitraActionsMenu
+              downloadDisabled={selectedPalitraActionsBlocked}
+              downloadInFlight={page.bulkDownloadInFlight}
+              assignDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}
+              deleteDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}
+              onDownloadSelected={page.handleBulkDownload}
+              onRequestAssignFolder={page.requestAssignFolder}
+              onRequestBulkDelete={page.requestBulkDelete}
+            />
           }
         />
 

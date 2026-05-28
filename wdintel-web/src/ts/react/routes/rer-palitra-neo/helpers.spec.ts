@@ -107,38 +107,36 @@ describe('rer-palitra helpers', () => {
     expect(getAvailableAccessTypes(makeUser({ roles: ['Rer', 'UnitsEditor'] }), makeScope())).toEqual([
       'logins',
       'organisms',
-      'aor',
     ]);
 
     expect(getAvailableAccessTypes(makeUser({ roles: ['Full', 'CallsignsEditor'] }), makeScope())).toEqual([
       'logins',
       'organisms',
-      'aor',
     ]);
     expect(getAvailableAccessTypes(makeUser({ roles: ['UnitsEditor'] }), makeScope())).toEqual([]);
-    expect(getAvailableAccessTypes(makeUser({ roles: ['Rer'] }), makeScope())).toEqual([]);
-    expect(getAvailableAccessTypes(makeUser({ roles: ['Full'] }), makeScope())).toEqual([]);
+    expect(getAvailableAccessTypes(makeUser({ roles: ['Rer'] }), makeScope())).toEqual(['logins', 'organisms']);
+    expect(getAvailableAccessTypes(makeUser({ roles: ['Full'] }), makeScope())).toEqual(['logins', 'organisms']);
     expect(getAvailableAccessTypes(makeUser({ roles: ['Basic'] }), makeScope())).toEqual([]);
     expect(getAvailableAccessTypes(makeUser({ roles: [] }), null)).toEqual([]);
   });
 
   it('allows admins to edit scoped logins', () => {
     expect(canEditScopedLogins(makeUser({ roles: ['Admin'] }))).toBe(true);
-    expect(canEditScopedLogins(makeUser({ roles: ['Rer', 'UnitsEditor'] }))).toBe(true);
-    expect(canEditScopedLogins(makeUser({ roles: ['Full', 'CallsignsEditor'] }))).toBe(true);
+    expect(canEditScopedLogins(makeUser({ roles: ['Rer', 'UnitsEditor'] }))).toBe(false);
+    expect(canEditScopedLogins(makeUser({ roles: ['Full', 'CallsignsEditor'] }))).toBe(false);
     expect(canEditScopedLogins(makeUser({ roles: ['UnitsEditor'] }))).toBe(false);
     expect(canEditScopedLogins(makeUser({ roles: ['Rer'] }))).toBe(false);
     expect(canEditScopedLogins(makeUser({ roles: ['Full'] }))).toBe(false);
     expect(canEditScopedLogins(makeUser({ roles: [] }))).toBe(false);
   });
 
-  it('allows palitra row mutations only for admins or Rer editors who authored the palitra', () => {
+  it('allows palitra row mutations only for admins or Rer users who authored the palitra', () => {
     const palitra = makePalitra(1, null, 'operator');
 
     expect(canModifyPalitra(makeUser({ name: 'admin', roles: ['Admin'] }), palitra)).toBe(true);
     expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['Rer', 'UnitsEditor'] }), palitra)).toBe(true);
     expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['UnitsEditor'] }), palitra)).toBe(false);
-    expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['Rer'] }), palitra)).toBe(false);
+    expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['Rer'] }), palitra)).toBe(true);
     expect(canModifyPalitra(makeUser({ name: 'other', roles: ['Rer', 'UnitsEditor'] }), palitra)).toBe(false);
   });
 
@@ -155,7 +153,7 @@ describe('rer-palitra helpers', () => {
     expect(form.accessType).toBe('organisms');
     expect(form.logins).toEqual(['scout']);
     expect(form.organismIds).toEqual([5]);
-    expect(form.aorIds).toEqual([11, 12]);
+    expect(form.aorIds).toEqual([]);
   });
 
   it('does not prefill unavailable access scopes for non-palitra roles', () => {
@@ -186,7 +184,7 @@ describe('rer-palitra helpers', () => {
         scope,
         ['other', 'scout'],
       ).logins,
-    ).toEqual(['other', 'scout']);
+    ).toEqual(['scout']);
 
     expect(
       applyRestrictedAccess(
@@ -202,10 +200,10 @@ describe('rer-palitra helpers', () => {
         restrictedUser,
         scope,
       ).aorIds,
-    ).toEqual([11]);
+    ).toEqual([]);
   });
 
-  it('clears restricted access for Rer-equivalent users without editor role', () => {
+  it('restricts Rer-equivalent users without editor role to own login or organism', () => {
     const restrictedUser = makeUser({ name: 'scout', roles: ['Full'] });
     const scope = makeScope();
 
@@ -216,7 +214,7 @@ describe('rer-palitra helpers', () => {
         scope,
         ['other', 'scout'],
       ).logins,
-    ).toEqual([]);
+    ).toEqual(['scout']);
 
     expect(
       applyRestrictedAccess(
@@ -224,7 +222,7 @@ describe('rer-palitra helpers', () => {
         restrictedUser,
         scope,
       ).organismIds,
-    ).toEqual([]);
+    ).toEqual([5]);
 
     expect(
       applyRestrictedAccess(
@@ -277,7 +275,7 @@ describe('rer-palitra helpers', () => {
     ).toEqual(['scout']);
   });
 
-  it('defaults restricted AOR access to the current scope when nothing scoped is selected', () => {
+  it('clears restricted AOR access for non-admin users', () => {
     const restrictedUser = makeUser({ name: 'scout', roles: ['Rer', 'UnitsEditor'] });
     const scope = makeScope();
 
@@ -287,7 +285,7 @@ describe('rer-palitra helpers', () => {
         restrictedUser,
         scope,
       ).aorIds,
-    ).toEqual([11, 12]);
+    ).toEqual([]);
 
     expect(
       applyRestrictedAccess(
@@ -295,7 +293,7 @@ describe('rer-palitra helpers', () => {
         restrictedUser,
         scope,
       ).aorIds,
-    ).toEqual([11, 12]);
+    ).toEqual([]);
   });
 
   it('renders access summaries using visible names for admins and scoped users', () => {
