@@ -78,6 +78,16 @@ function appendUniqueValue(values: readonly string[] | null | undefined, value: 
   return next;
 }
 
+function readFilterValues(raw: Record<string, unknown>, keys: string[]): string[] | null {
+  for (const key of keys) {
+    if (!(key in raw)) continue;
+    const value = raw[key];
+    if (value == null) continue;
+    return emptyArrToNull(value as string[] | null);
+  }
+  return null;
+}
+
 function filterValuesForEntity(
   filters: RerDutyFeedFilterState,
   entity: MessageEntityFilterKind,
@@ -309,14 +319,14 @@ export function buildInboxReq(opts: {
 
 export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterState {
   return {
-    groupsSelected: emptyArrToNull((raw.groupsSelected ?? raw.groups_selected ?? null) as string[] | null),
-    groupsDenied: emptyArrToNull((raw.groupsDenied ?? raw.groups_denied ?? null) as string[] | null),
-    sendersSelected: emptyArrToNull((raw.sendersSelected ?? raw.senders_selected ?? null) as string[] | null),
-    deniedSenders: emptyArrToNull((raw.deniedSenders ?? raw.denied_senders ?? null) as string[] | null),
-    freqsSelected: emptyArrToNull((raw.freqsSelected ?? raw.freqs_selected ?? null) as string[] | null),
-    freqsDenied: emptyArrToNull((raw.freqsDenied ?? raw.freqs_denied ?? null) as string[] | null),
-    postsSelected: emptyArrToNull((raw.postsSelected ?? raw.posts_selected ?? null) as string[] | null),
-    postsDenied: emptyArrToNull((raw.postsDenied ?? raw.posts_denied ?? null) as string[] | null),
+    groupsSelected: readFilterValues(raw, ['groupsSelected', 'groups_selected']),
+    groupsDenied: readFilterValues(raw, ['groupsDenied', 'groups_denied']),
+    sendersSelected: readFilterValues(raw, ['sendersSelected', 'senders_selected']),
+    deniedSenders: readFilterValues(raw, ['deniedSenders', 'denied_senders']),
+    freqsSelected: readFilterValues(raw, ['freqsSelected', 'freqs_selected']),
+    freqsDenied: readFilterValues(raw, ['freqsDenied', 'freqs_denied']),
+    postsSelected: readFilterValues(raw, ['postsSelected', 'posts_selected']),
+    postsDenied: readFilterValues(raw, ['postsDenied', 'posts_denied']),
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as number | null,
   };
 }
