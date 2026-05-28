@@ -247,6 +247,7 @@ pub struct InboxMessagesReq {
     pub highlight_searchres: Option<bool>,
     pub highlight_signals: Option<bool>,
     pub highlight_points: Option<bool>,
+    pub highlight_keyword_set_id: Option<i64>,
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
@@ -1050,6 +1051,8 @@ pub struct RerDutyQueryStateWf {
     pub posts_selected: Option<Vec<String>>,
     pub posts_denied: Option<Vec<String>>,
     pub last_viewed_message_id: Option<i64>,
+    pub highlight_keywords_enabled: Option<bool>,
+    pub highlight_keyword_set_id: Option<i64>,
 }
 
 #[derive(

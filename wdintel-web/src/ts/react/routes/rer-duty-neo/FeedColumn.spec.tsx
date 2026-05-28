@@ -38,6 +38,10 @@ vi.mock('./FeedNotificationPanel', () => ({
   FeedNotificationPanel: () => <div data-testid="feed-notification-panel" />,
 }));
 
+vi.mock('./FeedKeywordsPanel', () => ({
+  FeedKeywordsPanel: () => <div data-testid="feed-keywords-panel" />,
+}));
+
 vi.mock('../shared/message-card/MessageCard', () => ({
   DutyMessageCard: (props: { onCopyEtalon?: () => void; onCopyLocation?: () => void }) => (
     <div data-testid="message-card">
@@ -143,6 +147,11 @@ function buildProps(): FeedColumnProps {
           onDeleteSelectedSavedFilter: vi.fn(async () => {}),
           onApplySavedFilter: vi.fn(),
         },
+      },
+      keywordsPanel: {
+        keywordSets: [],
+        onFilterChange: vi.fn(),
+        onKeywordSetsReload: vi.fn(async () => {}),
       },
       messageCard: {
         authUserName: null,
@@ -306,6 +315,62 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
+  });
+
+  it('closes other panels in the same feed when opening a different panel', async () => {
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    const filtersButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Фільтри'),
+    );
+    const keywordsButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Підсвітка'),
+    );
+    expect(filtersButton).not.toBeNull();
+    expect(keywordsButton).not.toBeNull();
+
+    await act(async () => {
+      filtersButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    });
+    expect(container.querySelector('[data-testid="feed-filter-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="feed-keywords-panel"]')).toBeNull();
+
+    await act(async () => {
+      keywordsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    });
+    expect(container.querySelector('[data-testid="feed-keywords-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
+  });
+
+  it('keeps panels open in another feed column when opening a panel in one feed', async () => {
+    const columnA = buildProps().column;
+    const columnB = buildProps().column;
+    columnB.feed.id = 'feed-2';
+    columnB.filterPanel.feedId = 'feed-2';
+
+    await act(async () => {
+      root.render(
+        <div>
+          <FeedColumn column={columnA} />
+          <FeedColumn column={columnB} />
+        </div>,
+      );
+    });
+
+    const containerEl = container;
+    const filtersButtons = Array.from(containerEl.querySelectorAll('button')).filter((button) =>
+      button.textContent?.includes('Фільтри'),
+    );
+    expect(filtersButtons).toHaveLength(2);
+
+    await act(async () => {
+      filtersButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      filtersButtons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    });
+
+    expect(containerEl.querySelectorAll('[data-testid="feed-filter-panel"]')).toHaveLength(2);
   });
 
   it('keeps the feed content visible while refreshing existing messages', async () => {

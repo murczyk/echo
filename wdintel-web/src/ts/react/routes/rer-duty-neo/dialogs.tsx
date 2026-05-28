@@ -1,4 +1,5 @@
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
 import type { InboxMessage } from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
 import { ELLIPSIS } from '../../utils/misc';
@@ -12,18 +13,41 @@ function blurActiveElement() {
 
 type DeleteConfirmDialogProps = {
   open: boolean;
+  title?: string;
+  content?: ReactNode;
   onClose: () => void;
   onConfirm: () => void;
+  confirmDisabled?: boolean;
+  /** When set, both action buttons use this size (for example compact panel dialogs). */
+  actionSize?: 'small' | 'medium';
+  cancelVariant?: 'text' | 'outlined';
 };
 
-export function DeleteConfirmDialog({ open, onClose, onConfirm }: DeleteConfirmDialogProps) {
+export function DeleteConfirmDialog({
+  open,
+  title = 'Видалити повідомлення?',
+  content = 'Цю дію не можна скасувати.',
+  onClose,
+  onConfirm,
+  confirmDisabled = false,
+  actionSize,
+  cancelVariant = 'text',
+}: DeleteConfirmDialogProps) {
   return (
-    <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Видалити повідомлення?</DialogTitle>
-      <DialogContent>Цю дію не можна скасувати.</DialogContent>
+    <Dialog open={open} onClose={confirmDisabled ? undefined : onClose}>
+      <DialogTitle>{title}</DialogTitle>
+      <DialogContent>{content}</DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button onClick={onClose}>Скасувати</Button>
-        <Button color="error" variant="contained" onClick={onConfirm}>
+        <Button size={actionSize} variant={cancelVariant} onClick={onClose} disabled={confirmDisabled}>
+          Скасувати
+        </Button>
+        <Button
+          size={actionSize}
+          color="error"
+          variant="contained"
+          onClick={onConfirm}
+          disabled={confirmDisabled}
+        >
           Видалити
         </Button>
       </DialogActions>

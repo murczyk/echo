@@ -73,6 +73,7 @@ pub async fn token_lexemes_batch(
         .send()
         .await
         .c(h!())?;
+    let rsp = crate::utils::check_status(rsp).c(h!())?;
     let rsp_t = rsp.text().await.c(h!())?;
     let rsp_e: Result<Vec<TokenNormalFormPyRsp>, serde_json::Error> =
         serde_json::from_str(&rsp_t);

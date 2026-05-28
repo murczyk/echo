@@ -69,6 +69,8 @@ fn short_state_filter(
         posts_selected: None,
         posts_denied: None,
         last_viewed_message_id: None,
+        highlight_keywords_enabled: None,
+        highlight_keyword_set_id: None,
     }
 }
 

@@ -238,6 +238,56 @@ describe('rer-duty utils', () => {
     );
   });
 
+  it('compares keyword highlight by set id in filtersEqual', () => {
+    const base = emptyFilter();
+    expect(
+      filtersEqual(
+        { ...base, highlightKeywordsEnabled: true, highlightKeywordSetId: 2 },
+        { ...base, highlightKeywordsEnabled: false, highlightKeywordSetId: 2 },
+      ),
+    ).toBe(true);
+    expect(
+      filtersEqual(
+        { ...base, highlightKeywordSetId: 1 },
+        { ...base, highlightKeywordSetId: 2 },
+      ),
+    ).toBe(false);
+  });
+
+  it('buildInboxReq highlights when a keyword set is selected', () => {
+    const req = buildInboxReq({
+      filter: { ...emptyFilter(), highlightKeywordSetId: 5 },
+    });
+    expect(req.highlightKeywords).toBe(true);
+    expect(req.highlightKeywordSetId).toBe(5);
+  });
+
+  it('buildInboxReq does not highlight when no keyword set is selected', () => {
+    const req = buildInboxReq({
+      filter: { ...emptyFilter(), highlightKeywordsEnabled: true, highlightKeywordSetId: null },
+    });
+    expect(req.highlightKeywords).toBe(false);
+    expect(req.highlightKeywordSetId).toBeNull();
+  });
+
+  it('parseStateFromUrl reads keyword fields from wf state', () => {
+    const state = {
+      messageFeeds: [
+        [
+          'mf-1',
+          {
+            highlight_keywords_enabled: false,
+            highlight_keyword_set_id: 3,
+          },
+        ],
+      ],
+    };
+    window.history.replaceState({}, '', `/?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const parsed = parseStateFromUrl();
+    expect(parsed.messageFeeds[0][1].highlightKeywordsEnabled).toBe(false);
+    expect(parsed.messageFeeds[0][1].highlightKeywordSetId).toBe(3);
+  });
+
   it('moves group filters from include to exclude and replaces the list', () => {
     const next = excludeMessageEntityFromFilters(
       { ...emptyFilter(), groupsSelected: ['group-a', 'group-b'], postsSelected: ['post-a'] },

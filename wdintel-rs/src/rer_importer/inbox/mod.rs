@@ -715,10 +715,7 @@ async fn do_submit_inbox(
             .await
             .c(h!())?,
         );
-        message.keyword_tokens = Some(
-            crate::rer_importer::highlight::extract_keywords(&message.text)
-                .c(h!())?,
-        );
+        message.keyword_tokens = None;
 
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in &all_ids {

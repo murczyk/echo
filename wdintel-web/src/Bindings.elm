@@ -1144,6 +1144,7 @@ type alias InboxMessagesReq =
     , highlightSearchres : Maybe (Bool)
     , highlightSignals : Maybe (Bool)
     , highlightPoints : Maybe (Bool)
+    , highlightKeywordSetId : Maybe (Int)
     , selectedTags : Maybe (List (Int))
     , selectedAors : Maybe (List (Int))
     , selectedNetworks : Maybe (List (Int))
@@ -1202,6 +1203,7 @@ inboxMessagesReqEncoder struct =
         , ( "highlight_searchres", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightSearchres )
         , ( "highlight_signals", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightSignals )
         , ( "highlight_points", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightPoints )
+        , ( "highlight_keyword_set_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.highlightKeywordSetId )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
@@ -2415,6 +2417,8 @@ type alias RerDutyQueryStateWf =
     , postsSelected : Maybe (List (String))
     , postsDenied : Maybe (List (String))
     , lastViewedMessageId : Maybe (Int)
+    , highlightKeywordsEnabled : Maybe (Bool)
+    , highlightKeywordSetId : Maybe (Int)
     }
 
 
@@ -2430,6 +2434,8 @@ rerDutyQueryStateWfEncoder struct =
         , ( "posts_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsSelected )
         , ( "posts_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsDenied )
         , ( "last_viewed_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastViewedMessageId )
+        , ( "highlight_keywords_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightKeywordsEnabled )
+        , ( "highlight_keyword_set_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.highlightKeywordSetId )
         ]
 
 
@@ -3778,6 +3784,68 @@ organismGroupEncoder struct =
     Json.Encode.object
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "organism_id", (Json.Encode.int) struct.organismId )
+        ]
+
+
+type alias OrganismKeywordSetDto =
+    { id : Int
+    , name : String
+    , words : List (String)
+    , authorLogin : Maybe (String)
+    , canEdit : Bool
+    , canDelete : Bool
+    }
+
+
+organismKeywordSetDtoEncoder : OrganismKeywordSetDto -> Json.Encode.Value
+organismKeywordSetDtoEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "words", (Json.Encode.list (Json.Encode.string)) struct.words )
+        , ( "author_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.authorLogin )
+        , ( "can_edit", (Json.Encode.bool) struct.canEdit )
+        , ( "can_delete", (Json.Encode.bool) struct.canDelete )
+        ]
+
+
+type alias OrganismKeywordSetUpsertReq =
+    { id : Maybe (Int)
+    , name : String
+    , words : List (String)
+    }
+
+
+organismKeywordSetUpsertReqEncoder : OrganismKeywordSetUpsertReq -> Json.Encode.Value
+organismKeywordSetUpsertReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "words", (Json.Encode.list (Json.Encode.string)) struct.words )
+        ]
+
+
+type alias OrganismKeywordSetInflectReq =
+    { lemmas : List (String)
+    }
+
+
+organismKeywordSetInflectReqEncoder : OrganismKeywordSetInflectReq -> Json.Encode.Value
+organismKeywordSetInflectReqEncoder struct =
+    Json.Encode.object
+        [ ( "lemmas", (Json.Encode.list (Json.Encode.string)) struct.lemmas )
+        ]
+
+
+type alias OrganismKeywordSetInflectRsp =
+    { words : List (String)
+    }
+
+
+organismKeywordSetInflectRspEncoder : OrganismKeywordSetInflectRsp -> Json.Encode.Value
+organismKeywordSetInflectRspEncoder struct =
+    Json.Encode.object
+        [ ( "words", (Json.Encode.list (Json.Encode.string)) struct.words )
         ]
 
 
@@ -8460,6 +8528,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_searchres" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_signals" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_points" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keyword_set_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
@@ -9097,6 +9166,8 @@ rerDutyQueryStateWfDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_viewed_message_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keyword_set_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 newCallsignsResDecoder : Json.Decode.Decoder NewCallsignsRes
@@ -9807,6 +9878,37 @@ organismGroupDecoder =
     Json.Decode.succeed OrganismGroup
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+
+
+organismKeywordSetDtoDecoder : Json.Decode.Decoder OrganismKeywordSetDto
+organismKeywordSetDtoDecoder =
+    Json.Decode.succeed OrganismKeywordSetDto
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "words" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author_login" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_delete" (Json.Decode.bool)))
+
+
+organismKeywordSetUpsertReqDecoder : Json.Decode.Decoder OrganismKeywordSetUpsertReq
+organismKeywordSetUpsertReqDecoder =
+    Json.Decode.succeed OrganismKeywordSetUpsertReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "words" (Json.Decode.list (Json.Decode.string))))
+
+
+organismKeywordSetInflectReqDecoder : Json.Decode.Decoder OrganismKeywordSetInflectReq
+organismKeywordSetInflectReqDecoder =
+    Json.Decode.succeed OrganismKeywordSetInflectReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lemmas" (Json.Decode.list (Json.Decode.string))))
+
+
+organismKeywordSetInflectRspDecoder : Json.Decode.Decoder OrganismKeywordSetInflectRsp
+organismKeywordSetInflectRspDecoder =
+    Json.Decode.succeed OrganismKeywordSetInflectRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "words" (Json.Decode.list (Json.Decode.string))))
 
 
 listGoiAssociationsSortByDecoder : Json.Decode.Decoder ListGoiAssociationsSortBy

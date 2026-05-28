@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { OrganismKeywordSetDto } from '../../../../Bindings';
+import { fetchOrganismKeywordSets } from '../../services/api/organism-keyword-sets';
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
@@ -93,6 +95,11 @@ function mergePostsFromMessages(
 }
 
 export function useRerDutyFeeds(authUserName: string | null) {
+  const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
+  const reloadKeywordSets = useCallback(async () => {
+    const sets = await fetchOrganismKeywordSets();
+    setKeywordSets(sets);
+  }, []);
   const filterOpts = useRerDutyFilterOptions();
   const [testEnabled, setTestEnabled] = useState(false);
   const [testSinceMs, setTestSinceMs] = useState(0);
@@ -117,6 +124,23 @@ export function useRerDutyFeeds(authUserName: string | null) {
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
+  useEffect(() => {
+    let cancelled = false;
+    fetchOrganismKeywordSets()
+      .then((sets) => {
+        if (cancelled) return;
+        setKeywordSets(sets);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const detail = error instanceof Error ? error.message : String(error);
+        setFeedError(`Не вдалося завантажити набори ключових слів: ${detail}`);
+        console.error(error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setFeedError]);
   useEffect(() => attachDutyNotificationAudioPrimingListeners(), []);
   useEffect(() => {
     let cancelled = false;
@@ -368,5 +392,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     loadingNewerFeedId: feedState.loadingNewerFeedId,
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
+    keywordSets,
+    reloadKeywordSets,
   };
 }

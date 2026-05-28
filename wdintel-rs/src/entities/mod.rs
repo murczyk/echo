@@ -58,6 +58,7 @@ pub mod nominatimres;
 pub mod organism;
 pub mod organism_aor;
 pub mod organism_group;
+pub mod organism_keyword_set;
 pub mod palitra;
 pub mod palitra_access_aor;
 pub mod palitra_access_login;
