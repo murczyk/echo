@@ -51,6 +51,17 @@ function getDescriptionEmptyText(descrType: NetworkDescrType): string {
   return descrType === 'Sign' ? 'Немає розвідувальних ознак' : "Немає обґрунтувань прив'язки";
 }
 
+const collapsedFallbackTextSx = {
+  fontWeight: 400,
+  fontSize: '1rem',
+  lineHeight: 1.35,
+  display: '-webkit-box',
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 1,
+  overflow: 'hidden',
+  userSelect: 'text',
+} as const;
+
 function DescriptionsSkeleton() {
   return (
     <Stack spacing={1.5} sx={{ minHeight: 0, height: '100%' }}>
@@ -140,15 +151,7 @@ function DescriptionItem({
                   <Typography
                     key={`${index}:${line}`}
                     variant="body2"
-                    sx={{
-                      fontWeight: 400,
-                      fontSize: '1rem',
-                      lineHeight: 1.35,
-                      display: 'block',
-                      whiteSpace: 'normal',
-                      wordBreak: 'break-word',
-                      userSelect: 'text',
-                    }}
+                    sx={collapsedFallbackTextSx}
                   >
                     {line}
                   </Typography>
@@ -156,15 +159,7 @@ function DescriptionItem({
                 {collapsedFallbackOverflow ? (
                   <Typography
                     variant="body2"
-                    sx={{
-                      fontWeight: 400,
-                      fontSize: '1rem',
-                      lineHeight: 1.35,
-                      display: 'block',
-                      whiteSpace: 'normal',
-                      wordBreak: 'break-word',
-                      userSelect: 'text',
-                    }}
+                    sx={collapsedFallbackTextSx}
                   >
                     {ELLIPSIS}
                   </Typography>
@@ -173,15 +168,7 @@ function DescriptionItem({
             ) : (
               <Typography
                 variant="body2"
-                sx={{
-                  fontWeight: 400,
-                  fontSize: '1rem',
-                  lineHeight: 1.35,
-                  display: 'block',
-                  whiteSpace: 'normal',
-                  wordBreak: 'break-word',
-                  userSelect: 'text',
-                }}
+                sx={collapsedFallbackTextSx}
               >
                 Без теми
               </Typography>
