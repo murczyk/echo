@@ -31,7 +31,7 @@ export type FeedFilterPanelViewModel = {
   };
   posts: FeedFilterSelectionViewModel<string>;
   units: FeedFilterSelectionViewModel<string> & {
-    unitsExactMatchOnly: boolean;
+    unitsExactMatchOnly: boolean | null;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
   advanced: {
@@ -194,7 +194,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       getOptionLabel: (option: string) => option,
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
-      unitsExactMatchOnly: unitsExactMatchOnly ?? false,
+      unitsExactMatchOnly: unitsExactMatchOnly ?? null,
       onUnitsExactMatchOnlyChange: onUnitsExactMatchOnlyChange ?? (() => {}),
     },
     advanced: {

@@ -570,10 +570,19 @@ where
             units_contain_empty = true;
         }
         if units_contain_empty {
-            let no_sigint_units = sigint_inbox_item::Column::Freq
-                .not_in_subquery(select_sigint_units_by_names(
-                    sigint_unit::Column::Name.is_not_null(),
-                ));
+            // Use EXISTS/NOT EXISTS like other unit-linked checks to avoid
+            // type-mismatch when the deny-list contains special empty
+            // values (e.g. "Не визначено" or ""). The previous
+            // NOT IN (SELECT 1 ...) built a predicate comparing a text
+            // column to an integer which could fail on Postgres.
+            let no_sigint_units = message_has_linked_unit(
+                Expr::col((
+                    Alias::new("selected_unit"),
+                    sigint_unit::Column::Name,
+                ))
+                .is_not_null(),
+            )
+            .not();
             let no_freq = sigint_inbox_item::Column::Freq.is_null();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
                 .is_null()

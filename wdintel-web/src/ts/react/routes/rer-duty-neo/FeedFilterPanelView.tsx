@@ -44,7 +44,7 @@ export type FeedFilterPanelViewProps = {
   };
   posts: FeedFilterSelectionConfig<string>;
   units: FeedFilterSelectionConfig<string> & {
-    unitsExactMatchOnly: boolean;
+    unitsExactMatchOnly: boolean | null;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
   advanced: {
@@ -178,7 +178,8 @@ export function FeedFilterPanelView({
             control={
               <Checkbox
                 size="small"
-                checked={units.unitsExactMatchOnly}
+                checked={units.unitsExactMatchOnly === true}
+                indeterminate={units.unitsExactMatchOnly === null}
                 onChange={(e) => units.onUnitsExactMatchOnlyChange(e.target.checked)}
               />
             }

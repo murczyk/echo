@@ -105,13 +105,13 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         postsList,
         unitsList: Object.values(unitsMap),
       },
-      toggles: {
-        adjacentFreqsRange: feed.adjacentFreqsRange,
-        highlightSignalsEnabled: feed.highlightSignalsEnabled,
-        onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
-        unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? false,
-        reloadFreqsLoading,
-      },
+        toggles: {
+          adjacentFreqsRange: feed.adjacentFreqsRange,
+          highlightSignalsEnabled: feed.highlightSignalsEnabled,
+          onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
+          unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? undefined,
+          reloadFreqsLoading,
+        },
       savedFilters: {
         savedFilters,
         selectedSavedId: selectedSavedIdByFeedId[feed.id] ?? null,
