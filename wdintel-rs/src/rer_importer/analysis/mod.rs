@@ -560,15 +560,16 @@ where
     let mut m_empty_filter = None;
     let mut m_filter = None;
     if let Some(denied_units) = denied_units.as_ref() {
-        let mut denied_units: BTreeSet<String> =
+        let mut denied_set: BTreeSet<String> =
             denied_units.iter().cloned().collect::<BTreeSet<_>>();
         let mut units_contain_empty = false;
-        if denied_units.remove("Не визначено") {
+        if denied_set.remove("Не визначено") {
             units_contain_empty = true;
         }
-        if denied_units.remove("") {
+        if denied_set.remove("") {
             units_contain_empty = true;
         }
+
         if units_contain_empty {
             // повідомлення без жодного прив'язаного підрозділу мережі
             let no_sigint_units = message_has_linked_unit(
@@ -585,25 +586,27 @@ where
             let contains_empty = unit_is_not_in_message.and(no_sigint_units);
             m_empty_filter = Some(contains_empty);
         }
-        if !denied_units.is_empty() {
-            let denied_units =
-                denied_units.clone().into_iter().collect_vec();
-            let in_subquery_condition = message_has_linked_unit(
+
+        if !denied_set.is_empty() {
+            let denied_units_vec: Vec<String> =
+                denied_set.into_iter().collect();
+
+            let linked_denial_condition = message_has_linked_unit(
                 Expr::col((
                     Alias::new("selected_unit"),
                     sigint_unit::Column::Name,
                 ))
-                .is_in(denied_units.clone()),
+                .is_not_in(denied_units_vec.clone()),
             );
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
             let expr = if units_exact_match_only.unwrap_or(false) {
-                in_subquery_condition.not()
+                linked_denial_condition
             } else {
                 // NULL-safe "unit_v2 is not among denied".
                 sigint_inbox_item::Column::UnitV2
-                    .ne_any(denied_units.clone())
-                    .and(in_subquery_condition)
+                    .ne_any(denied_units_vec.clone())
+                    .and(linked_denial_condition)
             };
 
             m_filter = Some(expr);
