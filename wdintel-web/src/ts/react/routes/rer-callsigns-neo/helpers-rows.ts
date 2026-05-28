@@ -39,15 +39,20 @@ export function mergeUnitStatsWithUnits(unitStats: CallsignUnitStatRow[], unitsB
   return unitStats
     .map((stat) => {
       const unit = unitsById.get(stat.unitId);
+      if (!unit) {
+        return null;
+      }
+
       return {
         ...stat,
-        unitName: unit?.name ?? `#${stat.unitId}`,
-        army: unit?.army ?? '',
-        division: unit?.division ?? '',
-        regiment: unit?.regiment ?? '',
-        battalion: unit?.battalion ?? '',
+        unitName: unit.name,
+        army: unit.army,
+        division: unit.division,
+        regiment: unit.regiment,
+        battalion: unit.battalion,
       };
     })
+    .filter((row): row is UnitStatView => row !== null)
     .sort((a, b) => b.count - a.count || a.unitName.localeCompare(b.unitName, 'uk'));
 }
 
