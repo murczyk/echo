@@ -585,15 +585,11 @@ where
         if !denied_units.is_empty() {
             let denied_vec = denied_units.clone().into_iter().collect_vec();
             // NULL-safe "freq does not match any denied unit via Еталонна мережа".
-            // `freq IN (subquery)` evaluates to NULL when freq is NULL, so the
-            // raw `.not()` of the match expression would drop such rows.
-            let freq_not_matches = sigint_inbox_item::Column::Freq
-                .is_null()
-                .or(sigint_inbox_item::Column::Freq.not_in_subquery(
-                    select_sigint_units_by_names(
-                        sigint_unit::Column::Name.eq_any(denied_vec.clone()),
-                    ),
-                ));
+            // `EXISTS` evaluates to false for empty subqueries, so `NOT EXISTS` is true.
+            let freq_not_matches = message_has_linked_unit(
+                sigint_unit::Column::Name.eq_any(denied_vec.clone()),
+            )
+            .not();
 
             let keep_expr = if units_exact_match_only.unwrap_or(false) {
                 freq_not_matches
