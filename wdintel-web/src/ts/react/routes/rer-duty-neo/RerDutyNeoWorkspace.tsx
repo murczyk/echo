@@ -1,10 +1,12 @@
 import AddIcon from '@mui/icons-material/Add';
-import { Backdrop, Box, ButtonBase, CircularProgress, Fab, Skeleton } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import { Backdrop, Box, ButtonBase, CircularProgress, Fab, IconButton, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { FeedColumn, type FeedColumnHandle, type FeedColumnModel } from './FeedColumn';
-import { dutyTopAddFabSx } from './top-action-styles';
+import { DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS } from './FeedColumnHeader';
+import { dutyTopActionButtonSx, dutyTopAddFabSx } from './top-action-styles';
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './useRerDutyFeeds';
 
@@ -120,6 +122,7 @@ type RerDutyNeoWorkspaceProps = {
   isInitialLoading: boolean;
   messageFeeds: MessageFeedState[];
   narrowScreen: boolean;
+  onRemoveActiveFeed?: () => void;
   onSelectFeed: Dispatch<SetStateAction<string | null>>;
   showLoadingBackdrop: boolean;
 };
@@ -132,11 +135,14 @@ export function RerDutyNeoWorkspace({
   isInitialLoading,
   messageFeeds,
   narrowScreen,
+  onRemoveActiveFeed,
   onSelectFeed,
   showLoadingBackdrop,
 }: RerDutyNeoWorkspaceProps) {
   const activeFeedIndex = isPresent(activeFeedId) ? messageFeeds.findIndex((feed) => feed.id === activeFeedId) : -1;
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
+  const compactFeedTabs = messageFeeds.length >= DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS;
+  const showMobileTabClose = narrowScreen && messageFeeds.length > 1 && onRemoveActiveFeed != null;
 
   return (
     <Box className="flex flex-1 min-h-0 w-full overflow-hidden">
@@ -153,71 +159,140 @@ export function RerDutyNeoWorkspace({
           <Box className="flex flex-1 min-w-0 min-h-0 flex-col gap-2">
             {narrowScreen && messageFeeds.length > 1 && isPresent(activeFeedId) && (
               <Box
-                role="tablist"
-                aria-label="Потоки"
                 sx={{
                   flexShrink: 0,
-                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'stretch',
                   height: 48,
                   backgroundColor: 'background.paper',
                   borderRadius: 1,
                   overflow: 'hidden',
+                  border: '1px solid',
+                  borderColor: 'divider',
                 }}
               >
                 <Box
+                  role="tablist"
+                  aria-label="Потоки"
                   sx={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
+                    flex: '1 1 auto',
+                    minWidth: 0,
+                    position: 'relative',
                     height: '100%',
                   }}
                 >
-                  {messageFeeds.map((feed, index) => {
-                    const selected = feed.id === activeFeedId;
-                    return (
-                      <ButtonBase
-                        key={feed.id}
-                        role="tab"
-                        aria-selected={selected}
-                        onClick={() => onSelectFeed(feed.id)}
-                        sx={{
-                          minWidth: 0,
-                          minHeight: 0,
-                          height: '100%',
-                          px: 1,
-                          color: selected ? 'primary.main' : 'text.primary',
-                          fontWeight: 500,
-                          fontSize: '0.875rem',
-                          lineHeight: 1.43,
-                          letterSpacing: '0.01071em',
-                          textTransform: 'uppercase',
-                          opacity: selected ? 1 : 0.72,
-                          transition: 'color 0.15s ease',
-                          '&:hover': {
-                            backgroundColor: 'action.hover',
-                            opacity: 1,
-                          },
-                        }}
-                      >
-                        Стрічка {index + 1}
-                      </ButtonBase>
-                    );
-                  })}
-                </Box>
-                {activeFeedIndex >= 0 && (
                   <Box
-                    aria-hidden
                     sx={{
-                      position: 'absolute',
-                      left: `calc(${activeFeedIndex} * (100% / ${messageFeeds.length}))`,
-                      bottom: 0,
-                      width: `calc(100% / ${messageFeeds.length})`,
-                      height: 4,
-                      borderRadius: 999,
-                      backgroundColor: 'primary.main',
-                      transition: 'left 0.2s ease, width 0.2s ease',
+                      display: 'grid',
+                      gridTemplateColumns: `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
+                      height: '100%',
                     }}
-                  />
-                )}
+                  >
+                    {messageFeeds.map((feed, index) => {
+                      const selected = feed.id === activeFeedId;
+                      const tabLabel = `Стрічка ${index + 1}`;
+                      return (
+                        <ButtonBase
+                          key={feed.id}
+                          role="tab"
+                          aria-selected={selected}
+                          aria-label={tabLabel}
+                          onClick={() => onSelectFeed(feed.id)}
+                          sx={{
+                            minWidth: 0,
+                            minHeight: 0,
+                            height: '100%',
+                            px: compactFeedTabs ? 0.5 : 1,
+                            color: selected ? 'primary.main' : 'text.primary',
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                            lineHeight: 1.43,
+                            letterSpacing: '0.01071em',
+                            textTransform: compactFeedTabs ? 'none' : 'uppercase',
+                            opacity: selected ? 1 : 0.72,
+                            transition: 'color 0.15s ease',
+                            overflow: 'hidden',
+                            '&:hover': {
+                              backgroundColor: 'action.hover',
+                              opacity: 1,
+                            },
+                          }}
+                        >
+                          {compactFeedTabs ? (
+                            <Tooltip title={tabLabel}>
+                              <Box
+                                component="span"
+                                aria-hidden
+                                sx={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: '50%',
+                                  border: '2px solid',
+                                  borderColor: selected ? 'primary.main' : 'text.secondary',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '0.8125rem',
+                                  fontWeight: 700,
+                                  lineHeight: 1,
+                                }}
+                              >
+                                {index + 1}
+                              </Box>
+                            </Tooltip>
+                          ) : (
+                            <Box
+                              component="span"
+                              sx={{
+                                display: 'block',
+                                width: '100%',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {tabLabel}
+                            </Box>
+                          )}
+                        </ButtonBase>
+                      );
+                    })}
+                  </Box>
+                  {activeFeedIndex >= 0 && (
+                    <Box
+                      aria-hidden
+                      sx={{
+                        position: 'absolute',
+                        left: `calc(${activeFeedIndex} * (100% / ${messageFeeds.length}))`,
+                        bottom: 0,
+                        width: `calc(100% / ${messageFeeds.length})`,
+                        height: 4,
+                        borderRadius: 999,
+                        backgroundColor: 'primary.main',
+                        transition: 'left 0.2s ease, width 0.2s ease',
+                      }}
+                    />
+                  )}
+                </Box>
+                {showMobileTabClose ? (
+                  <Tooltip title="Закрити стрічку">
+                    <IconButton
+                      size="small"
+                      aria-label="Закрити стрічку"
+                      onClick={onRemoveActiveFeed}
+                      sx={{
+                        ...dutyTopActionButtonSx,
+                        flexShrink: 0,
+                        alignSelf: 'stretch',
+                        borderLeft: '1px solid',
+                        borderLeftColor: 'divider',
+                        borderRadius: 0,
+                      }}
+                    >
+                      <CloseIcon />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
               </Box>
             )}
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>

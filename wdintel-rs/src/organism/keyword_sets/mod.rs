@@ -91,9 +91,8 @@ pub async fn resolve_inbox_keyword_words(
         .await
         .c(h!())?;
     let Some(row) = row else {
-        return Err(AppError::BL {
-            msg: "Набір ключових слів не знайдено".to_string(),
-        });
+        // Stale/deleted set id in a saved filter must not break inbox loading.
+        return Ok(vec![]);
     };
     normalize_keyword_words(&row.words)
 }

@@ -60,9 +60,6 @@ toLayout user route _ =
                 "reports" ->
                     "settings-neo"
 
-                "keywords" ->
-                    "settings-neo-keywords"
-
                 _ ->
                     "settings-neo"
         }

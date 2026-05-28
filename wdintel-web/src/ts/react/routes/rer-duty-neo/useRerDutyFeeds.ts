@@ -96,6 +96,10 @@ function mergePostsFromMessages(
 
 export function useRerDutyFeeds(authUserName: string | null) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
+  const reloadKeywordSets = useCallback(async () => {
+    const sets = await fetchOrganismKeywordSets();
+    setKeywordSets(sets);
+  }, []);
   const filterOpts = useRerDutyFilterOptions();
   const [testEnabled, setTestEnabled] = useState(false);
   const [testSinceMs, setTestSinceMs] = useState(0);
@@ -389,5 +393,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
     keywordSets,
+    reloadKeywordSets,
   };
 }

@@ -5,15 +5,25 @@ type UseDocumentClickAwayParams = {
   enabled: boolean;
   refs: readonly RefObject<Element | null>[];
   ignoreSelectors?: readonly string[];
+  /** When false, the outside click is ignored and panels stay open. */
+  shouldDismiss?: (event: MouseEvent) => boolean;
   onClickAway: () => void;
 };
 
-export function useDocumentClickAway({ enabled, refs, ignoreSelectors = [], onClickAway }: UseDocumentClickAwayParams): void {
+export function useDocumentClickAway({
+  enabled,
+  refs,
+  ignoreSelectors = [],
+  shouldDismiss,
+  onClickAway,
+}: UseDocumentClickAwayParams): void {
   const refsRef = useRef(refs);
   const ignoreSelectorsRef = useRef(ignoreSelectors);
+  const shouldDismissRef = useRef(shouldDismiss);
   const onClickAwayRef = useRef(onClickAway);
   refsRef.current = refs;
   ignoreSelectorsRef.current = ignoreSelectors;
+  shouldDismissRef.current = shouldDismiss;
   onClickAwayRef.current = onClickAway;
 
   useEffect(() => {
@@ -29,6 +39,7 @@ export function useDocumentClickAway({ enabled, refs, ignoreSelectors = [], onCl
       ) {
         return;
       }
+      if (shouldDismissRef.current && !shouldDismissRef.current(event)) return;
       onClickAwayRef.current();
     };
 

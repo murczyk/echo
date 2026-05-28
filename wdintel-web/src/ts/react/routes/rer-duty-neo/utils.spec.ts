@@ -175,20 +175,14 @@ describe('rer-duty utils', () => {
     );
   });
 
-  it('compares keyword highlight fields in filtersEqual', () => {
+  it('compares keyword highlight by set id in filtersEqual', () => {
     const base = emptyFilter();
-    expect(
-      filtersEqual(
-        { ...base, highlightKeywordsEnabled: true, highlightKeywordSetId: 2 },
-        { ...base, highlightKeywordsEnabled: true, highlightKeywordSetId: 2 },
-      ),
-    ).toBe(true);
     expect(
       filtersEqual(
         { ...base, highlightKeywordsEnabled: true, highlightKeywordSetId: 2 },
         { ...base, highlightKeywordsEnabled: false, highlightKeywordSetId: 2 },
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       filtersEqual(
         { ...base, highlightKeywordSetId: 1 },
@@ -197,17 +191,17 @@ describe('rer-duty utils', () => {
     ).toBe(false);
   });
 
-  it('buildInboxReq maps keyword set id when highlighting enabled', () => {
+  it('buildInboxReq highlights when a keyword set is selected', () => {
     const req = buildInboxReq({
-      filter: { ...emptyFilter(), highlightKeywordsEnabled: true, highlightKeywordSetId: 5 },
+      filter: { ...emptyFilter(), highlightKeywordSetId: 5 },
     });
     expect(req.highlightKeywords).toBe(true);
     expect(req.highlightKeywordSetId).toBe(5);
   });
 
-  it('buildInboxReq omits keyword set when highlighting disabled', () => {
+  it('buildInboxReq does not highlight when no keyword set is selected', () => {
     const req = buildInboxReq({
-      filter: { ...emptyFilter(), highlightKeywordsEnabled: false, highlightKeywordSetId: 5 },
+      filter: { ...emptyFilter(), highlightKeywordsEnabled: true, highlightKeywordSetId: null },
     });
     expect(req.highlightKeywords).toBe(false);
     expect(req.highlightKeywordSetId).toBeNull();

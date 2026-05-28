@@ -151,6 +151,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     keywordsPanel: {
       keywordSets,
       onFilterChange: applyFilter,
+      onKeywordSetsReload: reloadKeywordSets,
     },
     messageCard: {
       authUserName,
@@ -267,6 +268,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     copiedFeedbackId,
     setMessageFeeds,
     keywordSets,
+    reloadKeywordSets,
     applyFilter,
   } = useRerDutyFeeds(authUserName);
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
@@ -345,6 +347,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         isInitialLoading={isInitialLoading}
         messageFeeds={messageFeeds}
         narrowScreen={narrowScreen}
+        onRemoveActiveFeed={
+          isPresent(activeFeedIdSafe) && messageFeeds.length > 1
+            ? () => removeMessageFeed(activeFeedIdSafe)
+            : undefined
+        }
         onSelectFeed={setActiveFeedId}
         showLoadingBackdrop={showLoadingBackdrop}
       />

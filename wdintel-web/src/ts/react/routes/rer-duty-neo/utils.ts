@@ -208,7 +208,6 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.freqsDenied, b.freqsDenied) &&
     optArrEqual(a.postsSelected, b.postsSelected) &&
     optArrEqual(a.postsDenied, b.postsDenied) &&
-    a.highlightKeywordsEnabled === b.highlightKeywordsEnabled &&
     a.highlightKeywordSetId === b.highlightKeywordSetId
   );
 }
@@ -284,15 +283,8 @@ export function buildInboxReq(opts: {
     newestFirst: null,
     search: null,
     highlightCallsigns: true,
-    highlightKeywords: (() => {
-      const enabled = f.highlightKeywordsEnabled ?? true;
-      return enabled;
-    })(),
-    highlightKeywordSetId: (() => {
-      const enabled = f.highlightKeywordsEnabled ?? true;
-      if (!enabled) return null;
-      return f.highlightKeywordSetId ?? null;
-    })(),
+    highlightKeywords: f.highlightKeywordSetId != null,
+    highlightKeywordSetId: f.highlightKeywordSetId ?? null,
     highlightSearchres: true,
     highlightSignals: opts.highlightSignals ?? false,
     highlightPoints: true,
