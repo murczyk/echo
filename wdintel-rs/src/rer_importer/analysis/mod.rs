@@ -596,8 +596,9 @@ where
                     Alias::new("selected_unit"),
                     sigint_unit::Column::Name,
                 ))
-                .is_not_in(denied_units_vec.clone()),
-            );
+                .is_in(denied_units_vec.clone()),
+            )
+            .not();
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
             let expr = if units_exact_match_only.unwrap_or(false) {
