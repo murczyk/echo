@@ -6,6 +6,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Divider, Ic
 import { alpha } from '@mui/material/styles';
 
 import type { Network, NetworkDescrType } from '../../../../../Bindings';
+import { ELLIPSIS } from '../../../utils/misc';
 import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 
 type NetworkDescription = Network['descriptions'][number];
@@ -14,22 +15,28 @@ function formatCollapsedDescriptionText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-function getFirstNonEmptyLine(value: string): string {
-  const lines = value.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = formatCollapsedDescriptionText(line);
-    if (trimmed !== '') return trimmed;
-  }
-
-  return '';
-}
-
 function getCollapsedDescriptionTopic(description: NetworkDescription): string {
   const topic = description.topic?.trim();
   if (topic) return formatCollapsedDescriptionText(topic);
 
-  const descriptionText = getFirstNonEmptyLine(description.description);
-  return descriptionText === '' ? 'Без теми' : descriptionText;
+  return '';
+}
+
+function getCollapsedDescriptionFallbackLines(description: NetworkDescription): string[] {
+  return description.description
+    .split(/\r?\n/)
+    .map(formatCollapsedDescriptionText)
+    .filter((line) => line !== '')
+    .slice(0, 3);
+}
+
+function hasCollapsedDescriptionOverflow(description: NetworkDescription): boolean {
+  const nonEmptyLines = description.description
+    .split(/\r?\n/)
+    .map(formatCollapsedDescriptionText)
+    .filter((line) => line !== '');
+
+  return nonEmptyLines.length > 3;
 }
 
 function getDescriptionTypeLabel(descrType: NetworkDescrType): string {
@@ -43,6 +50,17 @@ function getDescriptionSectionTitle(descrType: NetworkDescrType): string {
 function getDescriptionEmptyText(descrType: NetworkDescrType): string {
   return descrType === 'Sign' ? 'Немає розвідувальних ознак' : "Немає обґрунтувань прив'язки";
 }
+
+const collapsedFallbackTextSx = {
+  fontWeight: 400,
+  fontSize: '1rem',
+  lineHeight: 1.35,
+  display: '-webkit-box',
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 1,
+  overflow: 'hidden',
+  userSelect: 'text',
+} as const;
 
 function DescriptionsSkeleton() {
   return (
@@ -77,6 +95,9 @@ function DescriptionItem({
   onDelete: () => void;
 }) {
   const descriptionTypeLabel = getDescriptionTypeLabel(description.descrType);
+  const collapsedTopic = getCollapsedDescriptionTopic(description);
+  const collapsedFallbackLines = collapsedTopic === '' ? getCollapsedDescriptionFallbackLines(description) : [];
+  const collapsedFallbackOverflow = collapsedTopic === '' && hasCollapsedDescriptionOverflow(description);
 
   return (
     <Accordion
@@ -108,20 +129,50 @@ function DescriptionItem({
       >
         <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ width: '100%', minWidth: 0 }}>
           <Box sx={{ minWidth: 0, flex: 1, pr: 2.5 }}>
-            <Typography
-              variant="body2"
-              sx={{
-                fontWeight: 600,
-                fontSize: '1rem',
-                lineHeight: 1.35,
-                overflow: 'hidden',
-                display: 'block',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {getCollapsedDescriptionTopic(description)}
-            </Typography>
+            {collapsedTopic !== '' ? (
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  lineHeight: 1.35,
+                  overflow: 'hidden',
+                  display: 'block',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                  userSelect: 'text',
+                }}
+              >
+                {collapsedTopic}
+              </Typography>
+            ) : collapsedFallbackLines.length > 0 ? (
+              <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                {collapsedFallbackLines.map((line, index) => (
+                  <Typography
+                    key={`${index}:${line}`}
+                    variant="body2"
+                    sx={collapsedFallbackTextSx}
+                  >
+                    {line}
+                  </Typography>
+                ))}
+                {collapsedFallbackOverflow ? (
+                  <Typography
+                    variant="body2"
+                    sx={collapsedFallbackTextSx}
+                  >
+                    {ELLIPSIS}
+                  </Typography>
+                ) : null}
+              </Stack>
+            ) : (
+              <Typography
+                variant="body2"
+                sx={collapsedFallbackTextSx}
+              >
+                Без теми
+              </Typography>
+            )}
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 0.75, alignItems: 'center', minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                 {description.login}
@@ -164,19 +215,6 @@ function DescriptionItem({
                 opacity: 1,
               })}
             />
-            <Typography
-              variant="overline"
-              sx={{
-                display: 'block',
-                fontSize: '0.95rem',
-                lineHeight: 1.2,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                color: 'text.secondary',
-              }}
-            >
-              Матеріали радіоперехоплення
-            </Typography>
             <Typography variant="body2" sx={{ whiteSpace: 'pre-line', lineHeight: 1.6 }}>
               {description.description}
             </Typography>
