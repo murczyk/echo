@@ -596,7 +596,11 @@ where
             // NULL-safe "freq does not match any denied unit via Еталонна мережа".
             // `EXISTS` evaluates to false for empty subqueries, so `NOT EXISTS` is true.
             let freq_not_matches = message_has_linked_unit(
-                sigint_unit::Column::Name.eq_any(denied_vec.clone()),
+                Expr::col((
+                    Alias::new("selected_unit"),
+                    sigint_unit::Column::Name,
+                ))
+                .is_in(denied_vec.clone()),
             )
             .not();
 

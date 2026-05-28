@@ -199,6 +199,7 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     denied_freqs: emptyArrToNull(req.deniedFreqs),
     selected_callsigns: emptyArrToNull(req.selectedCallsigns),
     selected_units: emptyArrToNull(req.selectedUnits),
+    denied_units: emptyArrToNull(req.deniedUnits),
     selected_locations: emptyArrToNull(req.selectedLocations),
     nolimit: req.nolimit,
     or_with_extended_form: req.orWithExtendedForm,
