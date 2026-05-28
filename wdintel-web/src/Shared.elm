@@ -22,6 +22,7 @@ import PagePorts.SharedPorts as Ports
 import Process
 import Route exposing (Route)
 import Route.Path
+import Shared.Components.Navbar
 import Shared.Components.Toast
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
@@ -143,7 +144,7 @@ update req msg model =
                 [ if req.path == Route.Path.Login then
                     E.replaceRoutePath Route.Path.Home_
 
-                  else if shouldRedirectUnauthorizedRerPage req.path user then
+                  else if shouldRedirectUnauthorizedPage req.path user then
                     E.replaceRoutePath Route.Path.Home_
 
                   else
@@ -540,14 +541,14 @@ pollEvents lastEventId =
 -- HELPERS
 
 
-shouldRedirectUnauthorizedRerPage : Route.Path.Path -> B.User -> Bool
-shouldRedirectUnauthorizedRerPage path user =
+shouldRedirectUnauthorizedPage : Route.Path.Path -> B.User -> Bool
+shouldRedirectUnauthorizedPage path user =
     case path of
         Route.Path.RerPalitraNeo ->
             not (Core.Auth.hasRole "Rer" user)
 
         _ ->
-            False
+            Shared.Components.Navbar.adminRouteIsBlocked path user
 
 
 formatError : ApiError -> String

@@ -1,6 +1,6 @@
-module Shared.Components.Navbar exposing (navBar)
+module Shared.Components.Navbar exposing (adminMenuIsVisible, adminRouteIsBlocked, navBar)
 
-import Auth
+import Bindings exposing (User)
 import Core.Auth exposing (hasRole, serverModeIs)
 import Dict
 import Html exposing (..)
@@ -9,9 +9,8 @@ import Html.Events exposing (on, onClick)
 import Json.Decode
 import Route
 import Route.Path
-import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
-import Shared.Model exposing (ThemeMode)
+import Shared.Model as SharedModel exposing (ThemeMode)
 import String
 import Utils.Utils exposing (..)
 
@@ -114,7 +113,26 @@ isActiveName itemActiveName activeName =
         || (itemActiveName == "settings-neo" && String.startsWith "settings-neo" activeName)
 
 
-navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
+adminMenuIsVisible : User -> Bool
+adminMenuIsVisible user =
+    hasRole "Admin" user
+
+
+adminRouteIsBlocked : Route.Path.Path -> User -> Bool
+adminRouteIsBlocked path user =
+    isAdminRoutePath path && not (adminMenuIsVisible user)
+
+
+isAdminRoutePath : Route.Path.Path -> Bool
+isAdminRoutePath path =
+    let
+        pathString =
+            Route.Path.toString path
+    in
+    pathString == "/admin" || String.startsWith "/admin/" pathString
+
+
+navBar : User -> SharedModel.Model -> String -> Props msg -> Html msg
 navBar user shared activeName props =
     let
         fullscreenToggleLabel =
@@ -251,7 +269,7 @@ navBar user shared activeName props =
                     [ menuWithSubs "other-tools" "Інше" otherSubs ]
                 , ifOrEmpty (hasRole "Basic" user)
                     [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "general" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
-                , ifOrEmpty (hasRole "Admin" user)
+                , ifOrEmpty (adminMenuIsVisible user)
                     [ menuWithSubs "admin" "Адмін" adminSubs ]
                 ]
 
