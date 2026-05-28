@@ -558,7 +558,7 @@ where
     Q: QueryFilter,
 {
     let mut m_empty_filter = None;
-    let mut m_filter = None;
+    let mut m_keep_filter = None;
     if let Some(denied_units) = denied_units.as_ref() {
         let mut denied_units: BTreeSet<String> =
             denied_units.iter().cloned().collect::<BTreeSet<_>>();
@@ -583,31 +583,39 @@ where
             m_empty_filter = Some(contains_empty);
         }
         if !denied_units.is_empty() {
-            let in_subquery_condition = sigint_inbox_item::Column::Freq
-                .in_subquery(select_sigint_units_by_names(
-                    sigint_unit::Column::Name
-                        .eq_any(denied_units.clone().into_iter().collect()),
+            let denied_vec = denied_units.clone().into_iter().collect_vec();
+            // NULL-safe "freq does not match any denied unit via Еталонна мережа".
+            // `freq IN (subquery)` evaluates to NULL when freq is NULL, so the
+            // raw `.not()` of the match expression would drop such rows.
+            let freq_not_matches = sigint_inbox_item::Column::Freq
+                .is_null()
+                .or(sigint_inbox_item::Column::Freq.not_in_subquery(
+                    select_sigint_units_by_names(
+                        sigint_unit::Column::Name.eq_any(denied_vec.clone()),
+                    ),
                 ));
 
-            let expr = if units_exact_match_only.unwrap_or(false) {
-                in_subquery_condition
+            let keep_expr = if units_exact_match_only.unwrap_or(false) {
+                freq_not_matches
             } else {
-                sigint_inbox_item::Column::UnitV2
-                    .eq_any(denied_units.clone().into_iter().collect())
-                    .or(in_subquery_condition)
+                // NULL-safe "unit_v2 is not among denied".
+                let unit_not_matches = sigint_inbox_item::Column::UnitV2
+                    .is_null()
+                    .or(sigint_inbox_item::Column::UnitV2
+                        .is_not_in(denied_vec.clone()));
+                unit_not_matches.and(freq_not_matches)
             };
 
-            m_filter = Some(expr);
+            m_keep_filter = Some(keep_expr);
         }
     }
-    match (m_filter, m_empty_filter) {
+    match (m_keep_filter, m_empty_filter) {
         (None, None) => Ok(q),
         (None, Some(f)) => Ok(q.filter(f.not())),
-        (Some(f), None) => Ok(q.filter(f.not())),
-        (Some(f1), Some(f2)) => Ok(q.filter(f1.or(f2).not())),
+        (Some(f), None) => Ok(q.filter(f)),
+        (Some(f1), Some(f2)) => Ok(q.filter(f1.and(f2.not()))),
     }
 }
-
 
 fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {
     Expr::exists(select_sigint_units_by_names(filter_expr))
