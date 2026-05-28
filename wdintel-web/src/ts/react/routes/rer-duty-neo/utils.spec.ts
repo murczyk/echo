@@ -24,6 +24,7 @@ import {
   getShortStateIdFromUrl,
   isMessageEntityExcluded,
   messageHasPalitraTag,
+  normalizeFeed,
   uniquePointEtalonsForMapSearch,
   parseStateFromUrl,
   pushShortStateToUrl,
@@ -63,7 +64,7 @@ describe('rer-duty utils', () => {
     const feeds = [
       {
         id: 'mf-1',
-        filter: { ...emptyFilter(), freqsSelected: ['100.1'] },
+        filter: { ...emptyFilter(), freqsSelected: ['100.1'], groupsDenied: ['group-a'], freqsDenied: ['200.1'] },
         items: [],
         loading: false,
         loadingOlder: false,
@@ -79,7 +80,9 @@ describe('rer-duty utils', () => {
     ];
     const shortState = toShortQueryState(feeds);
     const restored = toRerDutyStateFromShort(shortState);
-    expect(restored.messageFeeds).toEqual([['mf-1', { ...emptyFilter(), freqsSelected: ['100.1'] }]]);
+    expect(restored.messageFeeds).toEqual([
+      ['mf-1', { ...emptyFilter(), freqsSelected: ['100.1'], groupsDenied: ['group-a'], freqsDenied: ['200.1'] }],
+    ]);
   });
 
   it('keeps default feeds when short waterfalls are empty or invalid', () => {
@@ -91,7 +94,13 @@ describe('rer-duty utils', () => {
     const feeds = [
       {
         id: 'mf-1',
-        filter: { ...emptyFilter(), groupsSelected: null, sendersSelected: ['sender-1'] },
+        filter: {
+          ...emptyFilter(),
+          groupsSelected: null,
+          groupsDenied: ['group-a'],
+          sendersSelected: ['sender-1'],
+          freqsDenied: ['200.0'],
+        },
         items: [],
         loading: false,
         loadingOlder: false,
@@ -106,8 +115,62 @@ describe('rer-duty utils', () => {
       },
     ];
     expect(toShortQueryState(feeds)).toEqual({
-      waterfalls: [['mf-1', { ...emptyFilter(), groupsSelected: null, sendersSelected: ['sender-1'] }]],
+      waterfalls: [
+        [
+          'mf-1',
+          {
+            ...emptyFilter(),
+            groupsSelected: null,
+            groupsDenied: ['group-a'],
+            sendersSelected: ['sender-1'],
+            freqsDenied: ['200.0'],
+          },
+        ],
+      ],
     });
+  });
+
+  it('normalizes camelCase and snake_case feed payload keys', () => {
+    const expected = {
+      ...emptyFilter(),
+      groupsSelected: ['group-a'],
+      groupsDenied: ['group-b'],
+      sendersSelected: ['sender-a'],
+      deniedSenders: ['sender-b'],
+      freqsSelected: ['100.0'],
+      freqsDenied: ['200.0'],
+      postsSelected: ['post-a'],
+      postsDenied: ['post-b'],
+      lastViewedMessageId: 42,
+    };
+
+    expect(
+      normalizeFeed({
+        groupsSelected: ['group-a'],
+        groupsDenied: ['group-b'],
+        sendersSelected: ['sender-a'],
+        deniedSenders: ['sender-b'],
+        freqsSelected: ['100.0'],
+        freqsDenied: ['200.0'],
+        postsSelected: ['post-a'],
+        postsDenied: ['post-b'],
+        lastViewedMessageId: 42,
+      }),
+    ).toEqual(expected);
+
+    expect(
+      normalizeFeed({
+        groups_selected: ['group-a'],
+        groups_denied: ['group-b'],
+        senders_selected: ['sender-a'],
+        denied_senders: ['sender-b'],
+        freqs_selected: ['100.0'],
+        freqs_denied: ['200.0'],
+        posts_selected: ['post-a'],
+        posts_denied: ['post-b'],
+        last_viewed_message_id: 42,
+      }),
+    ).toEqual(expected);
   });
 
   it('builds network text with unit names and normalized location', () => {
@@ -358,7 +421,7 @@ describe('rer-duty utils', () => {
   it('parses and writes query state in the url', () => {
     const state = {
       messageFeeds: [
-        ['mf-1', { ...emptyFilter(), groups_selected: ['legacy-group'], last_viewed_message_id: 42 }],
+        ['mf-1', { groups_selected: ['legacy-group'], last_viewed_message_id: 42 }],
       ],
     };
 

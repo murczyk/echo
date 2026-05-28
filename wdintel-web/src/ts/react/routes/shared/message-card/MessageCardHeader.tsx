@@ -724,9 +724,9 @@ function NetworkEtalonSection({
                 wordBreak: 'break-word',
               }}
             >
-              <Box component="span">
+              <Typography component="strong" variant="body2" sx={{ fontWeight: 700 }}>
                 {label}
-              </Box>
+              </Typography>
               {badge ? (
                 <Box
                   component="span"
@@ -749,7 +749,7 @@ function NetworkEtalonSection({
       <Typography
         component="span"
         variant="body2"
-        sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 400, display: 'inline-flex', alignItems: 'center' }}
+        sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}
       >
         {displayValue}
       </Typography>

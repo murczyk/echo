@@ -532,6 +532,18 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
   });
 
+  it('renders the network label in the header as bold text', async () => {
+    const view = await renderHeader();
+    rendered.push(view);
+
+    const networkLabel = Array.from(view.container.querySelectorAll('strong')).find((element) =>
+      element.textContent?.includes('р/м Alpha'),
+    );
+
+    expect(networkLabel).not.toBeNull();
+    expect(networkLabel?.textContent).toBe('р/м Alpha');
+  });
+
   it('renders duty actions with timer and the shared navigation menu button', async () => {
     const view = await renderCard();
     rendered.push(view);

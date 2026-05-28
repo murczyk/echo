@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 export type FeedFilterMode = 'include' | 'exclude';
@@ -19,10 +19,6 @@ type SelectionStateResult<TLocal> = {
   setMode: (mode: FeedFilterMode) => void;
 };
 
-function selectionSignature<T>(mode: FeedFilterMode, values: readonly T[]): string {
-  return `${mode}:${JSON.stringify(values)}`;
-}
-
 function sameSelection<T>(a: readonly T[], b: readonly T[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -40,35 +36,39 @@ export function useFeedFilterSelectionState<TLocal>({
   const [localValue, setLocalValue] = useState<TLocal[]>(() =>
     toLocalValues(initialMode === 'include' ? includeValues : excludeValues),
   );
-  const pendingResyncRef = useRef<string | null>(null);
-
+  const skipWritebackRef = useRef(false);
+  const previousSelectionKeyRef = useRef<string | null>(null);
   const includeKey = useMemo(() => JSON.stringify(includeValues), [includeValues]);
   const excludeKey = useMemo(() => JSON.stringify(excludeValues), [excludeValues]);
 
-  useEffect(() => {
-    setMode((currentMode) => {
-      const includeLen = includeValues.length;
-      const excludeLen = excludeValues.length;
-      if (currentMode === 'include' && includeLen === 0 && excludeLen > 0) return 'exclude';
-      if (currentMode === 'exclude' && excludeLen === 0 && includeLen > 0) return 'include';
-      return currentMode;
-    });
-  }, [includeKey, excludeKey, includeValues.length, excludeValues.length]);
-
-  useEffect(() => {
-    const activeValues = mode === 'include' ? includeValues : excludeValues;
+  useLayoutEffect(() => {
+    const nextMode: FeedFilterMode =
+      mode === 'include'
+        ? includeValues.length === 0 && excludeValues.length > 0
+          ? 'exclude'
+          : 'include'
+        : excludeValues.length === 0 && includeValues.length > 0
+          ? 'include'
+          : 'exclude';
+    const activeValues = nextMode === 'include' ? includeValues : excludeValues;
     const nextLocalValues = toLocalValues(activeValues);
-    setLocalValue((prev) => {
-      if (sameSelection(prev, nextLocalValues)) return prev;
-      pendingResyncRef.current = selectionSignature(mode, nextLocalValues);
-      return nextLocalValues;
-    });
-  }, [excludeKey, includeKey, includeValues, excludeValues, mode, toLocalValues]);
+    const selectionKey = `${nextMode}:${nextMode === 'include' ? includeKey : excludeKey}`;
+    const selectionChanged = previousSelectionKeyRef.current !== selectionKey;
+    const localStillMatchesParent = sameSelection(toParentValues(localValue), activeValues);
+    const shouldRefreshLocal = selectionChanged || localStillMatchesParent;
+    if (selectionChanged && shouldRefreshLocal) {
+      skipWritebackRef.current = true;
+    }
+    if (nextMode !== mode) setMode(nextMode);
+    if (shouldRefreshLocal) {
+      setLocalValue((prev) => (sameSelection(prev, nextLocalValues) ? prev : nextLocalValues));
+    }
+    previousSelectionKeyRef.current = selectionKey;
+  }, [excludeKey, includeKey, includeValues, excludeValues, localValue, mode, toLocalValues, toParentValues]);
 
   useEffect(() => {
-    const nextSignature = selectionSignature(mode, localValue);
-    if (pendingResyncRef.current === nextSignature) {
-      pendingResyncRef.current = null;
+    if (skipWritebackRef.current) {
+      skipWritebackRef.current = false;
       return;
     }
     const currentValues = mode === 'include' ? includeValues : excludeValues;
