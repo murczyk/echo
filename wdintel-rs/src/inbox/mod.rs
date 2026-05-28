@@ -96,8 +96,6 @@ where
         crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
             .await
             .c(h!())?;
-    let keyword_tokens =
-        crate::rer_importer::highlight::extract_keywords(&body)?;
     let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
         &callsign_tokens
             .iter()
@@ -207,9 +205,7 @@ where
         callsign_tokens: Set(Some(
             serde_json::to_value(callsign_tokens).c(h!())?,
         )),
-        keyword_tokens: Set(Some(
-            serde_json::to_value(keyword_tokens).c(h!())?,
-        )),
+        keyword_tokens: Set(None),
         nominatimres_id: NotSet,
         location: Set(location),
         location_v2: Set(location_v2),

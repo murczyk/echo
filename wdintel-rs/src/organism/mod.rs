@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 pub mod bl;
 pub mod goi;
+pub mod keyword_sets;
 pub mod oneoff;
 pub mod types;
 

@@ -148,6 +148,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         onApplySavedFilter: (saved) => handleApplySavedFilter(feed.id, saved),
       },
     },
+    keywordsPanel: {
+      keywordSets,
+      onFilterChange: applyFilter,
+      onKeywordSetsReload: reloadKeywordSets,
+    },
     messageCard: {
       authUserName,
       copiedFeedbackId,
@@ -213,7 +218,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     removeMessageFeed,
     loadFeedInitialMessages,
     loadFeedOlderMessages,
-    applyFilter,
     handleSaveFilter,
     handleApplySavedFilter,
     handleUpdateSelectedSavedFilter,
@@ -263,6 +267,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     arrowResultByFeedId,
     copiedFeedbackId,
     setMessageFeeds,
+    keywordSets,
+    reloadKeywordSets,
+    applyFilter,
   } = useRerDutyFeeds(authUserName);
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
     ? activeFeedId
@@ -340,6 +347,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         isInitialLoading={isInitialLoading}
         messageFeeds={messageFeeds}
         narrowScreen={narrowScreen}
+        onRemoveActiveFeed={
+          isPresent(activeFeedIdSafe) && messageFeeds.length > 1
+            ? () => removeMessageFeed(activeFeedIdSafe)
+            : undefined
+        }
         onSelectFeed={setActiveFeedId}
         showLoadingBackdrop={showLoadingBackdrop}
       />

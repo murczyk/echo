@@ -56,6 +56,7 @@ pub use super::nominatimres::Entity as Nominatimres;
 pub use super::organism::Entity as Organism;
 pub use super::organism_aor::Entity as OrganismAor;
 pub use super::organism_group::Entity as OrganismGroup;
+pub use super::organism_keyword_set::Entity as OrganismKeywordSet;
 pub use super::palitra::Entity as Palitra;
 pub use super::palitra_access_aor::Entity as PalitraAccessAor;
 pub use super::palitra_access_login::Entity as PalitraAccessLogin;

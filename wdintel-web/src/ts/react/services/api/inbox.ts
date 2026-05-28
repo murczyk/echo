@@ -211,6 +211,7 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     search: req.search,
     highlight_callsigns: req.highlightCallsigns,
     highlight_keywords: req.highlightKeywords,
+    highlight_keyword_set_id: req.highlightKeywordSetId,
     highlight_searchres: req.highlightSearchres,
     highlight_signals: req.highlightSignals,
     highlight_points: req.highlightPoints,

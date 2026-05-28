@@ -42,6 +42,7 @@ pub struct InboxMessageDesc {
     pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
     pub signal_tokens: Option<serde_json::Value>,
+    #[allow(dead_code)]
     pub keyword_tokens: Option<serde_json::Value>,
     pub location_v2: Option<String>,
     pub date: Option<String>,
@@ -194,6 +195,36 @@ pub async fn aggregate_to_inbox_messages(
             .push(media);
     }
 
+    let highlight_keywords = req.highlight_keywords.unwrap_or(false);
+    let keyword_set: Option<BTreeSet<String>> = if !highlight_keywords {
+        None
+    } else {
+        match crate::organism::keyword_sets::try_resolve_viewer_organism_id(
+            &env.dbx, login,
+        )
+        .await
+        .c(h!())?
+        {
+            Some(oid) => {
+                let words =
+                    crate::organism::keyword_sets::resolve_inbox_keyword_words(
+                        &env.dbx,
+                        oid,
+                        req.highlight_keyword_set_id,
+                        true,
+                    )
+                    .await
+                    .c(h!())?;
+                if words.is_empty() {
+                    None
+                } else {
+                    Some(keyword_set_from_words(&words))
+                }
+            }
+            None => None,
+        }
+    };
+
     let highlight_points = req.highlight_points.unwrap_or(false);
     let mut palitra_points_by_message = if highlight_points {
         get_palitra_points_by_message(
@@ -289,11 +320,10 @@ pub async fn aggregate_to_inbox_messages(
             None => None,
             Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
         };
-        let m_keyword_tokens: Option<Vec<CNHighlight>> =
-            match message.keyword_tokens {
-                None => None,
-                Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
-            };
+        let m_keyword_tokens: Vec<CNHighlight> = match &keyword_set {
+            Some(set) => extract_keywords_with_set(&body, set)?,
+            None => vec![],
+        };
         let ts_headline = match m_str_trim(&req.search) {
             None => None,
             Some(ref search) => {
@@ -315,7 +345,7 @@ pub async fn aggregate_to_inbox_messages(
             Some(&no_headers_body),
             &m_callsign_tokens.clone().unwrap_or_default(),
             &m_point_tokens.clone().unwrap_or_default(),
-            &m_keyword_tokens.clone().unwrap_or_default(),
+            &m_keyword_tokens,
             &m_signal_tokens.clone().unwrap_or_default(),
             ts_headline,
             crate::rer_importer::highlight::HighlightOpts {
@@ -366,7 +396,7 @@ pub async fn aggregate_to_inbox_messages(
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
                 point_tokens: m_point_tokens,
-                keyword_tokens: m_keyword_tokens,
+                keyword_tokens: None,
                 signal_tokens: m_signal_tokens,
                 text_marked: Some(text_marked),
                 post: message.post_name.clone(),
@@ -881,9 +911,7 @@ pub async fn submit_upsert_inbox_item(
             callsign_tokens: Set(Some(
                 serde_json::to_value(&message.callsign_tokens).context(h!())?,
             )),
-            keyword_tokens: Set(Some(
-                serde_json::to_value(&message.keyword_tokens).context(h!())?,
-            )),
+            keyword_tokens: Set(None),
             lat: Set(lat),
             lng: Set(lng),
             nominatimres_id: Set(None),

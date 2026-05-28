@@ -1,14 +1,26 @@
 import { Box } from '@mui/material';
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { type VirtuosoHandle } from 'react-virtuoso';
+import type { VirtuosoHandle } from 'react-virtuoso';
 
-
-import type { CallsignInfoRes, Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
-import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
-import type { MessageFeedState } from './utils';
+import type {
+  CallsignInfoRes,
+  Network,
+  OrganismKeywordSetDto,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+  Unit,
+} from '../../../../Bindings';
+import type { MessageEntityFilterKind, TagsLayoutVariant, MessageFeedState } from './utils';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
-import { getStoredDutyNotificationSettingsForFeed, requestBrowserNotificationPermission, resumeDutyNotificationAudioFromUserGesture, setStoredDutyNotificationSettingsForFeed } from './notifications';
+import {
+  getStoredDutyNotificationSettingsForFeed,
+  requestBrowserNotificationPermission,
+  resumeDutyNotificationAudioFromUserGesture,
+  setStoredDutyNotificationSettingsForFeed,
+} from './notifications';
 import { FeedColumnHeader } from './FeedColumnHeader';
 import { FeedColumnContent } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
@@ -28,6 +40,11 @@ export type FeedColumnModel = {
     unreadCount?: number;
   };
   filterPanel: FeedFilterPanelModel;
+  keywordsPanel: {
+    keywordSets: OrganismKeywordSetDto[];
+    onFilterChange: (feedId: string, nextFilter: RerDutyFeedFilterState) => void;
+    onKeywordSetsReload: () => Promise<void>;
+  };
   messageCard: {
     /** Current auth user display name for message watermarks */
     authUserName: string | null;
@@ -74,14 +91,17 @@ export type FeedColumnProps = {
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn({ column }, ref) {
-  const { feed, view, filterPanel, actions } = column;
-  const { narrowScreen = false, canRemove, maxWidth } = view;
+  const { feed, view, filterPanel, keywordsPanel, actions } = column;
+  const { narrowScreen = false, canRemove, maxWidth, feedCount = 1 } = view;
   const { onRemoveColumn } = actions;
   const [showFilters, setShowFilters] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+  const [showKeywordsPanel, setShowKeywordsPanel] = useState(false);
+  const columnRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const filtersPanelRef = useRef<HTMLDivElement | null>(null);
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
+  const keywordsPanelRef = useRef<HTMLDivElement | null>(null);
   const [notificationStorageSyncKey, setNotificationStorageSyncKey] = useState(0);
   const bumpNotificationStorageSync = useCallback(() => {
     setNotificationStorageSyncKey((k) => k + 1);
@@ -91,7 +111,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [feed.id, notificationStorageSyncKey],
   );
   const dutyNotificationsOn = dutyNotificationSummary.soundEnabled || dutyNotificationSummary.browserEnabled;
-
   const handleBellToggleDutyNotifications = useCallback(
     async (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
@@ -117,17 +136,62 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const closeNotificationPanel = useCallback(() => {
     setShowNotificationPanel(false);
   }, []);
+  const closeKeywordsPanel = useCallback(() => {
+    setShowKeywordsPanel(false);
+  }, []);
+  const closeOtherPanels = useCallback((except: 'filters' | 'notifications' | 'keywords') => {
+    if (except !== 'filters') setShowFilters(false);
+    if (except !== 'notifications') setShowNotificationPanel(false);
+    if (except !== 'keywords') setShowKeywordsPanel(false);
+  }, []);
+  const onToggleFilters = useCallback(() => {
+    setShowFilters((open) => {
+      const next = !open;
+      if (next) closeOtherPanels('filters');
+      return next;
+    });
+  }, [closeOtherPanels]);
+  const onToggleNotificationPanel = useCallback(() => {
+    setShowNotificationPanel((open) => {
+      const next = !open;
+      if (next) closeOtherPanels('notifications');
+      return next;
+    });
+  }, [closeOtherPanels]);
+  const onToggleKeywordsPanel = useCallback(() => {
+    setShowKeywordsPanel((open) => {
+      const next = !open;
+      if (next) closeOtherPanels('keywords');
+      return next;
+    });
+  }, [closeOtherPanels]);
+  const shouldDismissPanelClick = useCallback((event: globalThis.MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return true;
+    const clickedColumn = target.closest('[data-duty-feed-column]');
+    if (clickedColumn && clickedColumn !== columnRef.current) return false;
+    return true;
+  }, []);
   useDocumentClickAway({
     enabled: showFilters,
-    refs: [headerRef, filtersPanelRef],
+    refs: [columnRef],
     ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
+    shouldDismiss: shouldDismissPanelClick,
     onClickAway: closeFilters,
   });
   useDocumentClickAway({
     enabled: showNotificationPanel,
-    refs: [headerRef, notificationPanelRef],
+    refs: [columnRef],
     ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
+    shouldDismiss: shouldDismissPanelClick,
     onClickAway: closeNotificationPanel,
+  });
+  useDocumentClickAway({
+    enabled: showKeywordsPanel,
+    refs: [columnRef],
+    ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
+    shouldDismiss: shouldDismissPanelClick,
+    onClickAway: closeKeywordsPanel,
   });
 
   useImperativeHandle(
@@ -147,6 +211,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
 
   return (
     <Box
+      ref={columnRef}
+      data-duty-feed-column
       className={[
         'flex flex-col min-w-0 gap-0 min-h-0 h-full',
         narrowScreen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
@@ -160,25 +226,25 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       }}
     >
       <FeedColumnHeader
+        feedCount={feedCount}
         canRemove={canRemove}
         showFilters={showFilters}
         showNotificationPanel={showNotificationPanel}
+        showKeywordsPanel={showKeywordsPanel}
         dutyNotificationsOn={dutyNotificationsOn}
-        onToggleFilters={() => {
-          setShowFilters((s) => !s);
-          setShowNotificationPanel(false);
-        }}
-        onToggleNotificationPanel={() => {
-          setShowNotificationPanel((s) => !s);
-          setShowFilters(false);
-        }}
+        onToggleFilters={onToggleFilters}
+        onToggleNotificationPanel={onToggleNotificationPanel}
+        onToggleKeywordsPanel={onToggleKeywordsPanel}
         onToggleDutyNotifications={handleBellToggleDutyNotifications}
         onRemoveColumn={onRemoveColumn}
         headerRef={headerRef}
         filtersPanelRef={filtersPanelRef}
         notificationPanelRef={notificationPanelRef}
+        keywordsPanelRef={keywordsPanelRef}
         filterPanel={filterPanel}
         feedId={feed.id}
+        feedFilter={feed.filter}
+        keywordsPanel={keywordsPanel}
         notificationStorageSyncKey={notificationStorageSyncKey}
         onNotificationPersisted={bumpNotificationStorageSync}
       />

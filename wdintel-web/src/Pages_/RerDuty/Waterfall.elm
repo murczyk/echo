@@ -419,6 +419,7 @@ getBasicInboxParams model =
     , highlightCallsigns = Just True
     , highlightSignals = Just model.highlightSignalsEnabled
     , highlightKeywords = Just True
+    , highlightKeywordSetId = Nothing
     , highlightSearchres = Just True
     , highlightPoints = Just True
     , metadataCc = Nothing
@@ -863,6 +864,8 @@ updateFilters msg model =
                     , postsSelected = Just m.postsSelect.selected
                     , postsDenied = Just m.postsDeniedSelect.selected
                     , lastViewedMessageId = WUtils.lastViewedIdToMaybe m.lastViewedMessageId
+                    , highlightKeywordsEnabled = Nothing
+                    , highlightKeywordSetId = Nothing
                     }
 
                 req : B.SavedFilterDutyUpsertReq

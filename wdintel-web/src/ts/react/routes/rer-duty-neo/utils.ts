@@ -172,6 +172,8 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsSelected: null,
     postsDenied: null,
     lastViewedMessageId: null,
+    highlightKeywordsEnabled: null,
+    highlightKeywordSetId: null,
   };
 }
 
@@ -205,7 +207,8 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.freqsSelected, b.freqsSelected) &&
     optArrEqual(a.freqsDenied, b.freqsDenied) &&
     optArrEqual(a.postsSelected, b.postsSelected) &&
-    optArrEqual(a.postsDenied, b.postsDenied)
+    optArrEqual(a.postsDenied, b.postsDenied) &&
+    a.highlightKeywordSetId === b.highlightKeywordSetId
   );
 }
 
@@ -280,7 +283,8 @@ export function buildInboxReq(opts: {
     newestFirst: null,
     search: null,
     highlightCallsigns: true,
-    highlightKeywords: true,
+    highlightKeywords: f.highlightKeywordSetId != null,
+    highlightKeywordSetId: f.highlightKeywordSetId ?? null,
     highlightSearchres: true,
     highlightSignals: opts.highlightSignals ?? false,
     highlightPoints: true,
@@ -318,6 +322,12 @@ export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterSt
     postsSelected: emptyArrToNull((raw.postsSelected ?? raw.posts_selected ?? null) as string[] | null),
     postsDenied: emptyArrToNull((raw.postsDenied ?? raw.posts_denied ?? null) as string[] | null),
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as number | null,
+    highlightKeywordsEnabled: (raw.highlightKeywordsEnabled ??
+      raw.highlight_keywords_enabled ??
+      null) as boolean | null,
+    highlightKeywordSetId: (raw.highlightKeywordSetId ?? raw.highlight_keyword_set_id ?? null) as
+      | number
+      | null,
   };
 }
 

@@ -1,6 +1,6 @@
 ---
 name: frontend-react-mui-implementation
-description: Implement or refactor React + MUI features in wdintel-web/src/ts/react using custom-element entrypoints, useNeoMuiTheme, route hook splitting, user-settings hooks, and typed API service patterns.
+description: Implement or refactor React + MUI features in wdintel-web/src/ts/react using custom-element entrypoints, useNeoMuiTheme, Power* MUI wrappers, route hook splitting, user-settings hooks, and typed API service patterns.
 ---
 
 # Frontend React+MUI Implementation
@@ -30,7 +30,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Throw/handle `HttpRequestError`.
 - Handle 401 with `isUnauthorizedError(error)` and redirect:
 - `window.location.assign('/login')`
-- Keep UI errors visible via `Alert` or established UI messaging pattern.
+- Keep UI errors visible via `PowerAlert` (or the established UI messaging pattern on the page).
 - Prefer existing styling mix:
 - MUI `sx` for component-level styles.
 - Existing utility classes (`className`) where already used.
@@ -58,8 +58,16 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - For save-on-change settings, queue saves with refs so rapid toggles coalesce and later values are not lost.
 - Prefer shared controls for repeated UX:
 - `SavedFiltersControl` for saved filter CRUD.
-- `PowerAlert` for dismissible severity-based alerts.
 - `PageHeader` and existing top-action styles for neo page headers/actions.
+- **Power wrappers** (`wdintel-web/src/ts/react/components/`): prefer these over raw MUI when the use case matches.
+  | MUI | Use instead |
+  | --- | --- |
+  | `Alert` | `PowerAlert` — auto-hide, dismissible severity alerts (errors/warnings/info/success) |
+  | `Button` | `PowerButton` — debounced double-submit guard |
+  | `IconButton` | `PowerIconButton` |
+  | `Chip` (selectable/filter tags) | `PowerChip` or `CompactPowerChip` |
+  | `Menu` | `PowerMenu` — Escape does not bubble to parent drawers |
+  | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI.
 - For React pages that need date selection, prefer MUI X `DatePicker` / `DateTimePicker` with the app locale/theme conventions.
 - Do not use native `input type="date"` / `datetime-local` unless there is a documented repo-specific reason.
 - Reuse the existing date-picker patterns in `DateTimeRangeControl.tsx` and `NetworkFreqDatePickerField.tsx` instead of adding ad hoc native inputs.
@@ -89,6 +97,7 @@ if (isUnauthorizedError(error)) {
 - Inspect diff for endpoint/method/path changes in `services/api/*`.
 - Verify request and response shape transforms stayed compatible.
 - Verify loading/empty/error states and disabled-in-flight behavior.
+- New or touched neo UI uses `Power*` wrappers where a matching one exists (especially `PowerAlert` for page/drawer errors).
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
 - Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
 - Check keyboard access and focus trapping for dialogs/drawers.
