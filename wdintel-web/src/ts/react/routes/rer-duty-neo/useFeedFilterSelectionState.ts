@@ -37,7 +37,7 @@ export function useFeedFilterSelectionState<TLocal>({
     toLocalValues(initialMode === 'include' ? includeValues : excludeValues),
   );
   const skipWritebackRef = useRef(false);
-  const previousSelectionKeysRef = useRef<{ includeKey: string; excludeKey: string } | null>(null);
+  const previousSelectionKeyRef = useRef<string | null>(null);
   const includeKey = useMemo(() => JSON.stringify(includeValues), [includeValues]);
   const excludeKey = useMemo(() => JSON.stringify(excludeValues), [excludeValues]);
 
@@ -50,18 +50,21 @@ export function useFeedFilterSelectionState<TLocal>({
         : excludeValues.length === 0 && includeValues.length > 0
           ? 'include'
           : 'exclude';
-    const nextLocalValues = toLocalValues(nextMode === 'include' ? includeValues : excludeValues);
-    const selectionKeysChanged =
-      previousSelectionKeysRef.current == null ||
-      previousSelectionKeysRef.current.includeKey !== includeKey ||
-      previousSelectionKeysRef.current.excludeKey !== excludeKey;
-    if (selectionKeysChanged && (nextMode !== mode || !sameSelection(localValue, nextLocalValues))) {
+    const activeValues = nextMode === 'include' ? includeValues : excludeValues;
+    const nextLocalValues = toLocalValues(activeValues);
+    const selectionKey = `${nextMode}:${nextMode === 'include' ? includeKey : excludeKey}`;
+    const selectionChanged = previousSelectionKeyRef.current !== selectionKey;
+    const localStillMatchesParent = sameSelection(toParentValues(localValue), activeValues);
+    const shouldRefreshLocal = selectionChanged || localStillMatchesParent;
+    if (selectionChanged && shouldRefreshLocal) {
       skipWritebackRef.current = true;
     }
     if (nextMode !== mode) setMode(nextMode);
-    setLocalValue((prev) => (sameSelection(prev, nextLocalValues) ? prev : nextLocalValues));
-    previousSelectionKeysRef.current = { includeKey, excludeKey };
-  }, [excludeKey, includeKey, includeValues, excludeValues, mode, toLocalValues]);
+    if (shouldRefreshLocal) {
+      setLocalValue((prev) => (sameSelection(prev, nextLocalValues) ? prev : nextLocalValues));
+    }
+    previousSelectionKeyRef.current = selectionKey;
+  }, [excludeKey, includeKey, includeValues, excludeValues, localValue, mode, toLocalValues, toParentValues]);
 
   useEffect(() => {
     if (skipWritebackRef.current) {
