@@ -15,6 +15,7 @@ import {
   getSortDescriptor,
   getUnitSelectionError,
   normalizeDuplicateLookupValue,
+  mergeUnitStatsWithUnits,
   nextSortState,
   parseTabDelimitedInput,
   parseDateTimeLocalToMs,
@@ -25,6 +26,7 @@ import {
   validateDraftRows,
   validateEditForm,
 } from './helpers';
+import { buildUnitTree } from './components/UnitStatsSidebar';
 import type { CallsignsSortState } from './types';
 import type { Callsign, Unit, User } from '../../../../Bindings';
 import { filterUnitsBySearch, findExactUnitSearchMatch } from '../../utils/unit-search';
@@ -164,6 +166,82 @@ describe('rer-callsigns helpers', () => {
     expect(findExactUnitSearchMatch(units, '4 омсбр')?.id).toBe(4);
     expect(getUnitSelectionError('78 мсп 42 мсд', null)).toBe(UNIT_SELECTION_REQUIRED_ERROR);
     expect(getUnitSelectionError('', null)).toBeNull();
+  });
+
+  it('merges known unit stats with hierarchy and name data', () => {
+    const unitsById = new Map<number, Unit>([
+      [
+        10,
+        {
+          id: 10,
+          name: '11 АК',
+          army: '1 ОА',
+          division: '3 мсд',
+          regiment: '11 мсп',
+          battalion: '2 мсб',
+        } as Unit,
+      ],
+    ]);
+
+    expect(
+      mergeUnitStatsWithUnits(
+        [
+          { unitId: 10, count: 4 },
+        ],
+        unitsById,
+      ),
+    ).toEqual([
+      {
+        unitId: 10,
+        count: 4,
+        unitName: '11 АК',
+        army: '1 ОА',
+        division: '3 мсд',
+        regiment: '11 мсп',
+        battalion: '2 мсб',
+      },
+    ]);
+  });
+
+  it('ignores missing unit stats so the tree never gets a root #id leaf', () => {
+    const unitsById = new Map<number, Unit>([
+      [
+        10,
+        {
+          id: 10,
+          name: '11 АК',
+          army: '1 ОА',
+          division: '3 мсд',
+          regiment: '',
+          battalion: '',
+        } as Unit,
+      ],
+    ]);
+
+    const tree = buildUnitTree(
+      mergeUnitStatsWithUnits(
+        [
+          { unitId: 10, count: 4 },
+          { unitId: 99, count: 7 },
+        ],
+        unitsById,
+      ),
+    );
+
+    expect(tree).toHaveLength(1);
+    expect(tree[0]).toMatchObject({
+      kind: 'group',
+      label: '1 ОА',
+      count: 4,
+    });
+    expect('children' in tree[0] ? tree[0].children : []).toEqual([
+      expect.objectContaining({
+        kind: 'group',
+        label: '3 мсд',
+        count: 4,
+      }),
+    ]);
+    expect(JSON.stringify(tree)).not.toContain('#99');
   });
 
   it('keeps callsign edit access aligned with backend roles', () => {
