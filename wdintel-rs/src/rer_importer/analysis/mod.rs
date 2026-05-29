@@ -583,10 +583,11 @@ where
                 .is_null()
                 .or(sigint_inbox_item::Column::UnitV2.eq(""));
             let contains_empty = unit_is_not_in_message.and(no_sigint_units);
-            m_empty_filter = Some(contains_empty);
+            m_empty_filter = Some(contains_empty.not());
         }
         if !denied_units.is_empty() {
-            let selected_units = denied_units.clone().into_iter().collect_vec();
+            let selected_units = denied_units.into_iter().collect_vec();
+
             let in_subquery_condition = message_has_linked_unit(
                 Expr::col((
                     Alias::new("selected_unit"),
@@ -597,13 +598,16 @@ where
             .not();
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
+            let header_unit_not_denied = sigint_inbox_item::Column::UnitV2
+                .is_null()
+                .or(sigint_inbox_item::Column::UnitV2.eq(""))
+                .or(sigint_inbox_item::Column::UnitV2
+                    .ne_any(selected_units.clone()));
             let expr = if units_exact_match_only.unwrap_or(false) {
                 in_subquery_condition
             } else {
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
-                sigint_inbox_item::Column::UnitV2
-                    .ne_any(selected_units.clone())
-                    .and(in_subquery_condition)
+                header_unit_not_denied.and(in_subquery_condition)
             };
 
             m_filter = Some(expr);
@@ -611,9 +615,9 @@ where
     }
     match (m_filter, m_empty_filter) {
         (None, None) => Ok(q),
-        (None, Some(f)) => Ok(q.filter(f.not())),
+        (None, Some(f)) => Ok(q.filter(f)),
         (Some(f), None) => Ok(q.filter(f)),
-        (Some(f1), Some(f2)) => Ok(q.filter(f1.or(f2.not()))),
+        (Some(f1), Some(f2)) => Ok(q.filter(f1.and(f2))),
     }
 }
 
