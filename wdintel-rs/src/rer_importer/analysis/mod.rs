@@ -602,7 +602,7 @@ where
                 .is_null()
                 .or(sigint_inbox_item::Column::UnitV2.eq(""))
                 .or(sigint_inbox_item::Column::UnitV2
-                    .ne_any(selected_units.clone()));
+                    .ne_all(selected_units.clone()));
             let expr = if units_exact_match_only.unwrap_or(false) {
                 in_subquery_condition
             } else {
