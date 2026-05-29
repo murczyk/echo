@@ -319,7 +319,7 @@ export function buildInboxReq(opts: {
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,
-    unitsExactMatchOnly: null,
+    unitsExactMatchOnly: f.unitsExactMatchOnly ?? null,
     calculateFreqPelengsSummary: null,
     skipGroupStats: true,
     filterTagsOption: null,
