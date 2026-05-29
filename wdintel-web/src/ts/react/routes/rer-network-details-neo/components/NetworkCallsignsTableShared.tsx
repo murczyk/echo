@@ -18,7 +18,7 @@ export const NETWORK_STATUS_FILTER_LABELS: Record<NetworkCallsignStatusFilter, s
   Unknown: 'Невідомо',
 };
 
-export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing', 'Catalog', 'Unknown'];
+export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Developing', 'Verified', 'Catalog', 'Unknown'];
 
 export const NETWORK_COLUMNS_VISIBILITY = {
   callsign: true,

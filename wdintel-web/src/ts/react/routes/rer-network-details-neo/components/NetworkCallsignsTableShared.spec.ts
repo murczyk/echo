@@ -3,7 +3,11 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { buildNetworkColumnOrder, buildNetworkLoadingRows } from './NetworkCallsignsTableShared';
+import {
+  buildNetworkColumnOrder,
+  buildNetworkLoadingRows,
+  NETWORK_STATUS_FILTER_ORDER,
+} from './NetworkCallsignsTableShared';
 
 describe('network callsigns table shared helpers', () => {
   it('keeps row numbers before actions in the default order', () => {
@@ -19,5 +23,9 @@ describe('network callsigns table shared helpers', () => {
       mainRadioStation: false,
       commandControl: false,
     });
+  });
+
+  it('prioritizes developing before verified in the status filter order', () => {
+    expect(NETWORK_STATUS_FILTER_ORDER.slice(0, 4)).toEqual(['All', 'Developing', 'Verified', 'Catalog']);
   });
 });

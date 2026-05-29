@@ -16,7 +16,9 @@ import {
   mergeNetworkCallsigns,
   normalizeCallsignDisplay,
   removeKnownCallsignIdsFromNetworkCallsignGroups,
+  getNetworkCallsignMarkerState,
   type NetworkCallsignRowView,
+  type NetworkCallsignMarkerMode,
 } from './network-callsigns';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 
@@ -130,11 +132,9 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState, 
     }
   }, [canManageCallsignActions, defaultNetworkUnitId, setState, state.callsignCreateInFlightCallsigns, state.network]);
 
-  const toggleNetworkCallsignMainRadioStation = useCallback(async (networkCallsign: NetworkCallsignRowView) => {
+  const setNetworkCallsignMarkerMode = useCallback(async (networkCallsign: NetworkCallsignRowView, markerMode: NetworkCallsignMarkerMode) => {
     if (!canManageCallsignActions || !state.network) return;
     if (state.callsignUpdateInFlightIds.includes(networkCallsign.id)) return;
-
-    const nextMainRadioStation = !networkCallsign.mainRadioStation;
 
     setState((current) => ({
       ...current,
@@ -159,64 +159,7 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState, 
             mainRadioStation: networkCallsign.mainRadioStation,
             commandControl: networkCallsign.commandControl,
           },
-          { mainRadioStation: nextMainRadioStation },
-        ),
-      });
-
-      setState((current) => {
-        const nextNetworkCallsigns = mergeNetworkCallsigns(current.networkCallsigns, [updatedNetworkCallsign]);
-        const derived = buildNetworkCallsignTabData(current.networkCallsignGroups, current.callsignActivityMap, nextNetworkCallsigns);
-
-        return {
-          ...current,
-          networkCallsigns: nextNetworkCallsigns,
-          catalogCallsignGroups: derived.catalogCallsignGroups,
-          unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
-          callsignCount: nextNetworkCallsigns.length,
-          callsignUpdateInFlightIds: current.callsignUpdateInFlightIds.filter((item) => item !== networkCallsign.id),
-          callsignWarning: null,
-        };
-      });
-    } catch (error) {
-      const errorMessage = formatErrorMessage(error);
-      setState((current) => ({
-        ...current,
-        callsignUpdateInFlightIds: current.callsignUpdateInFlightIds.filter((item) => item !== networkCallsign.id),
-        callsignWarning: errorMessage,
-      }));
-    }
-  }, [canManageCallsignActions, setState, state.callsignUpdateInFlightIds, state.network]);
-
-  const toggleNetworkCallsignCommandControl = useCallback(async (networkCallsign: NetworkCallsignRowView) => {
-    if (!canManageCallsignActions || !state.network) return;
-    if (state.callsignUpdateInFlightIds.includes(networkCallsign.id)) return;
-
-    const nextCommandControl = !networkCallsign.commandControl;
-
-    setState((current) => ({
-      ...current,
-      callsignWarning: null,
-      callsignUpdateInFlightIds: [...current.callsignUpdateInFlightIds, networkCallsign.id],
-    }));
-
-    try {
-      const updatedNetworkCallsign = await updateNetworkCallsign({
-        id: networkCallsign.id,
-        ...buildNetworkCallsignWritePayload(
-          {
-            networkId: networkCallsign.networkId,
-            callsign: networkCallsign.callsign,
-            position: networkCallsign.position,
-            comment: networkCallsign.comment,
-            sourceId: networkCallsign.sourceId,
-            radioFreq: networkCallsign.radioFreq ?? '',
-            unitId: networkCallsign.unitId,
-            unitDeveloping: networkCallsign.unitDeveloping,
-            developing: networkCallsign.developing,
-            mainRadioStation: networkCallsign.mainRadioStation,
-            commandControl: networkCallsign.commandControl,
-          },
-          { commandControl: nextCommandControl },
+          getNetworkCallsignMarkerState(markerMode),
         ),
       });
 
@@ -247,7 +190,6 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState, 
   return {
     addKnownCallsignsToNetwork: addKnownCallsignsToCurrentNetwork,
     addInterceptedCallsignToNetwork,
-    toggleNetworkCallsignMainRadioStation,
-    toggleNetworkCallsignCommandControl,
+    setNetworkCallsignMarkerMode,
   };
 }

@@ -5,7 +5,6 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { ELLIPSIS, isNullOrUndefined } from '../../../utils/misc';
 import {
-  Autocomplete,
   Box,
   Button,
   Divider,
@@ -23,6 +22,7 @@ import {
 
 import type { Source, Unit } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
+import { SearchableOptionAutocomplete } from '../../../components/SearchableOptionAutocomplete';
 import {
   CALLSIGN_FORM_HINT,
   RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR,
@@ -32,7 +32,7 @@ import {
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignDraftRow, CallsignDuplicateHintGroup } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { filterUnitsBySearch, findExactUnitSearchMatch, getUnitDisplayLabel } from '../../../utils/unit-search';
+import { getUnitDisplayLabel } from '../../../utils/unit-search';
 
 type Props = {
   open: boolean;
@@ -239,25 +239,6 @@ export function CreateCallsignsDrawer({
     setPastedInput('');
     onClose();
   }, [onClose]);
-  const handleUnitInputChange = useCallback((_: unknown, value: string, reason: string) => {
-    setUnitSearchInput(value);
-
-    if (reason !== 'input' && reason !== 'clear') return;
-
-    const exactMatch = reason === 'clear' ? null : findExactUnitSearchMatch(units, value);
-    onAddUnitIdChange(exactMatch?.id ?? null);
-  }, [onAddUnitIdChange, units]);
-
-  const handleUnitBlur = useCallback(() => {
-    if (!isNullOrUndefined(addUnitId)) return;
-
-    const exactMatch = findExactUnitSearchMatch(units, unitSearchInput);
-    if (!exactMatch) return;
-
-    onAddUnitIdChange(exactMatch.id);
-    setUnitSearchInput(getUnitDisplayLabel(exactMatch));
-  }, [addUnitId, onAddUnitIdChange, unitSearchInput, units]);
-
   useEffect(() => {
     if (!open) {
       setUnitSearchInput('');
@@ -301,40 +282,23 @@ export function CreateCallsignsDrawer({
           ) : null}
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <Autocomplete
-              sx={{ flex: 1 }}
-              size="small"
-              options={units}
-              value={selectedUnit}
-              inputValue={unitSearchInput}
-              onInputChange={handleUnitInputChange}
-              onChange={(_, value) => onAddUnitIdChange(value?.id ?? null)}
-              disabled={formDisabled}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              getOptionLabel={getUnitDisplayLabel}
-              filterOptions={(options, state) => filterUnitsBySearch(options, state.inputValue)}
-              renderOption={(props, unit) => {
-                const { key: _ignoredKey, ...optionProps } = props;
-                return (
-                  <li {...optionProps} key={unit.id}>
-                    {getUnitDisplayLabel(unit)}
-                  </li>
-                );
-              }}
-              clearOnBlur={false}
-              noOptionsText="Нічого не знайдено"
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Підрозділ"
-                  placeholder="Пошук підрозділу"
-                  required
-                  error={unitSelectionError !== null}
-                  helperText={unitSelectionError ?? 'Почніть вводити назву або оберіть підрозділ зі списку'}
-                  onBlur={handleUnitBlur}
-                />
-              )}
-            />
+            <Box sx={{ flex: 1 }}>
+              <SearchableOptionAutocomplete
+                label="Підрозділ"
+                placeholder="Пошук підрозділу"
+                required
+                options={units}
+                valueId={addUnitId}
+                onValueIdChange={onAddUnitIdChange}
+                disabled={formDisabled}
+                inputValue={unitSearchInput}
+                onInputValueChange={setUnitSearchInput}
+                error={unitSelectionError !== null}
+                helperText={unitSelectionError ?? 'Почніть вводити назву або оберіть підрозділ зі списку'}
+                noOptionsText="Нічого не знайдено"
+                getOptionLabel={getUnitDisplayLabel}
+              />
+            </Box>
 
             <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
               <InputLabel id={sourceSelectLabelId} shrink>

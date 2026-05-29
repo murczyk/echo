@@ -7,7 +7,7 @@ import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typograp
 import { useEffect, useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
-import type { NetworkCallsignRowView, NetworkCallsignStatusFilter } from '../network-callsigns';
+import type { NetworkCallsignMarkerMode, NetworkCallsignRowView, NetworkCallsignStatusFilter } from '../network-callsigns';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -22,7 +22,6 @@ import { InternalTableActions } from '../../../components/mui-customized/table/c
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerChip } from '../../../components/PowerChip';
-import { PowerMenu } from '../../../components/PowerMenu';
 import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
 import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
@@ -44,7 +43,7 @@ const NETWORK_MRT_LOCALIZATION = {
 };
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing', 'Catalog'];
+const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Developing', 'Verified', 'Catalog'];
 const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Unknown'>, string> = {
   All: 'Всі',
   Verified: 'Верифіковано',
@@ -71,8 +70,7 @@ type Props = {
   onStatusFilterChange: (next: NetworkCallsignStatusFilter) => void;
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
-  onToggleMainRadioStation: (row: NetworkCallsignRowView) => void;
-  onToggleCommandControl: (row: NetworkCallsignRowView) => void;
+  onSetMarkerMode: (row: NetworkCallsignRowView, markerMode: NetworkCallsignMarkerMode) => void;
   onReload: () => void;
   inFlightUpdateIds: number[];
   inFlightDeleteIds: number[];
@@ -87,8 +85,7 @@ export function NetworkCallsignsNetworkTable({
   onStatusFilterChange,
   onOpenEditDrawer,
   onOpenDeleteDialog,
-  onToggleMainRadioStation,
-  onToggleCommandControl,
+  onSetMarkerMode,
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
@@ -110,8 +107,7 @@ export function NetworkCallsignsNetworkTable({
         onStatusFilterChange={onStatusFilterChange}
         onOpenEditDrawer={onOpenEditDrawer}
         onOpenDeleteDialog={onOpenDeleteDialog}
-        onToggleMainRadioStation={onToggleMainRadioStation}
-        onToggleCommandControl={onToggleCommandControl}
+        onSetMarkerMode={onSetMarkerMode}
         onReload={onReload}
         inFlightUpdateIds={inFlightUpdateIds}
         inFlightDeleteIds={inFlightDeleteIds}
@@ -129,8 +125,7 @@ function NetworkCallsignsNetworkTableContent({
   onStatusFilterChange,
   onOpenEditDrawer,
   onOpenDeleteDialog,
-  onToggleMainRadioStation,
-  onToggleCommandControl,
+  onSetMarkerMode,
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
@@ -420,7 +415,7 @@ function NetworkCallsignsNetworkTableContent({
         {rowMenuTarget ? (
           <MenuItem
             onClick={() => {
-              onToggleMainRadioStation(rowMenuTarget);
+              onSetMarkerMode(rowMenuTarget, 'mainRadioStation');
               setRowMenuAnchorEl(null);
               setRowMenuTarget(null);
             }}
@@ -429,13 +424,13 @@ function NetworkCallsignsNetworkTableContent({
             <ListItemIcon sx={{ color: rowMenuTarget.mainRadioStation ? 'warning.main' : 'text.secondary' }}>
               <StarIcon fontSize="small" />
             </ListItemIcon>
-            {rowMenuTarget.mainRadioStation ? 'Зняти головну' : 'Зробити головною'}
+            Зробити головною
           </MenuItem>
         ) : null}
         {rowMenuTarget ? (
           <MenuItem
             onClick={() => {
-              onToggleCommandControl(rowMenuTarget);
+              onSetMarkerMode(rowMenuTarget, 'commandControl');
               setRowMenuAnchorEl(null);
               setRowMenuTarget(null);
             }}
@@ -444,7 +439,24 @@ function NetworkCallsignsNetworkTableContent({
             <ListItemIcon sx={{ color: rowMenuTarget.commandControl ? 'info.main' : 'text.secondary' }}>
               <MilitaryTechOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            {rowMenuTarget.commandControl ? 'Зняти ланку управління' : 'Зробити ланкою управління'}
+            Зробити ланкою управління
+          </MenuItem>
+        ) : null}
+        {rowMenuTarget ? (
+          <MenuItem
+            onClick={() => {
+              onSetMarkerMode(rowMenuTarget, 'none');
+              setRowMenuAnchorEl(null);
+              setRowMenuTarget(null);
+            }}
+            disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
+          >
+            <ListItemIcon sx={{ color: 'text.secondary' }}>
+              <Box component="span" sx={{ width: 18, display: 'inline-flex', justifyContent: 'center' }}>
+                −
+              </Box>
+            </ListItemIcon>
+            Очистити маркер
           </MenuItem>
         ) : null}
         {rowMenuTarget ? (

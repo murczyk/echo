@@ -1,11 +1,11 @@
-import { createFilterOptions } from '@mui/material/Autocomplete';
+import { createRankedFilterOptions } from '../../../utils/search-filter';
 
 export type NetworkEditLookupOption = {
   id: number;
   label: string;
 };
 
-export const networkEditLookupFilterOptions = createFilterOptions<NetworkEditLookupOption>({
-  stringify: (option) => option.label,
-  limit: 10,
-});
+export const networkEditLookupFilterOptions = createRankedFilterOptions<NetworkEditLookupOption>(
+  (option) => option.label,
+  20,
+);
