@@ -25,7 +25,7 @@ describe('network callsigns table shared helpers', () => {
     });
   });
 
-  it('prioritizes developing before verified in the status filter order', () => {
-    expect(NETWORK_STATUS_FILTER_ORDER.slice(0, 4)).toEqual(['All', 'Developing', 'Verified', 'Catalog']);
+  it('prioritizes developing before catalog in the status filter order', () => {
+    expect(NETWORK_STATUS_FILTER_ORDER.slice(0, 4)).toEqual(['All', 'Developing', 'Catalog', 'Unknown']);
   });
 });

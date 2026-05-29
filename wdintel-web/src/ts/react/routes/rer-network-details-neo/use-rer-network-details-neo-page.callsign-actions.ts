@@ -26,10 +26,11 @@ type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
+  defaultNetworkUnitId: number | null;
   loadCallsigns: (networkId: number) => Promise<void>;
 };
 
-export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, loadCallsigns }: Args) {
+export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, defaultNetworkUnitId, loadCallsigns }: Args) {
   const canManageCallsignActions = canManageNetworkCallsignActions(state.currentUser);
 
   const reloadCallsignsData = useCallback(async () => {
@@ -56,14 +57,14 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, lo
       callsignDrawerOpen: true,
       callsignDrawerMode: 'create',
       callsignDrawerForm: {
-        ...createDefaultNetworkCallsignDrawerForm(state.network?.id ?? 0, null),
+        ...createDefaultNetworkCallsignDrawerForm(state.network?.id ?? 0, defaultNetworkUnitId),
         ...(overrides ?? {}),
       },
       callsignDrawerSaving: false,
       callsignDrawerError: null,
       callsignWarning: null,
     }));
-  }, [canManageCallsignActions, setState, state.network]);
+  }, [canManageCallsignActions, defaultNetworkUnitId, setState, state.network]);
 
   const openCallsignDrawerForEdit = useCallback((networkCallsign: NetworkCallsignRowView) => {
     if (!canManageCallsignActions || !state.network) return;
