@@ -255,33 +255,18 @@ export function AdminSystemSettingsNeoPage() {
                   Оперативний: Short UUID URL
                 </Typography>
 
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Switch
-                      sx={{ m: 0 }}
+                <FormControlLabel
+                  control={
+                    <Switch
                       checked={draftShortUrlEnabled}
                       onChange={(_, checked) => {
+                        setSaveSuccess(null);
                         setDraftShortUrlEnabled(checked);
                       }}
-                  />
-                  <ButtonBase
-                      component="button"
-                      type="button"
-                      onClick={() => {
-                        setDraftShortUrlEnabled(!draftShortUrlEnabled);
-                      }}
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        textAlign: 'left',
-                        borderRadius: 0.5,
-                        typography: 'body1',
-                        fontWeight: 400,
-                        color: 'text.primary',
-                      }}
-                  >
-                    Увімкнути которкий URL для оперативного
-                  </ButtonBase>
-                </Box>
+                    />
+                  }
+                  label="Увімкнути которкий URL для оперативного"
+                />
 
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
                   <PowerButton
