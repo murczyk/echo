@@ -791,7 +791,6 @@ type alias ServerInfo =
     , grafanaAddress : String
     , featureDelta : Bool
     , featureAnalysisMap : Bool
-    , featureRerDutyShortState : Bool
     , featureStrictNetworks : Bool
     , version : String
     }
@@ -805,7 +804,6 @@ serverInfoEncoder struct =
         , ( "grafana_address", (Json.Encode.string) struct.grafanaAddress )
         , ( "feature_delta", (Json.Encode.bool) struct.featureDelta )
         , ( "feature_analysis_map", (Json.Encode.bool) struct.featureAnalysisMap )
-        , ( "feature_rer_duty_short_state", (Json.Encode.bool) struct.featureRerDutyShortState )
         , ( "feature_strict_networks", (Json.Encode.bool) struct.featureStrictNetworks )
         , ( "version", (Json.Encode.string) struct.version )
         ]
@@ -7326,6 +7324,7 @@ type alias SystemSettingsItem =
     , updatedAt : Int
     , updatedBy : Maybe (String)
     , deleted : Bool
+    , shortUrlEnabled : Bool
     }
 
 
@@ -7343,6 +7342,7 @@ systemSettingsItemEncoder struct =
         , ( "updated_at", (Json.Encode.int) struct.updatedAt )
         , ( "updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedBy )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         ]
 
 
@@ -7365,6 +7365,7 @@ type alias CreateSystemSettingsReq =
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
+    , shortUrlEnabled : Bool
     }
 
 
@@ -7377,6 +7378,7 @@ createSystemSettingsReqEncoder struct =
         , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
+        , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         ]
 
 
@@ -8302,7 +8304,6 @@ serverInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grafana_address" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_delta" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_analysis_map" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_rer_duty_short_state" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_strict_networks" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
 
@@ -12242,6 +12243,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -12259,6 +12261,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

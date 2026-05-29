@@ -12,6 +12,7 @@ type SystemSettingsItemRaw = {
   updated_at: number;
   updated_by?: string | null;
   deleted: boolean;
+  short_url_enabled: boolean;
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -22,6 +23,7 @@ type SystemSettingsCurrentRspRaw = {
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
+  short_url_enabled: boolean;
 };
 
 type SystemSettingsListRspRaw = {
@@ -35,6 +37,7 @@ type CreateSystemSettingsReqRaw = {
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
+  short_url_enabled: boolean;
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -53,6 +56,7 @@ export type SystemSettingsItem = {
   updatedAt: number;
   updatedBy: string | null;
   deleted: boolean;
+  rerShortUrlEnabled: boolean;
 };
 
 export type SystemSettingsCurrent = {
@@ -63,6 +67,7 @@ export type SystemSettingsCurrent = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerShortUrlEnabled: boolean;
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -80,6 +85,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     updatedAt: raw.updated_at,
     updatedBy: raw.updated_by ?? null,
     deleted: raw.deleted,
+    rerShortUrlEnabled: raw.short_url_enabled,
   };
 }
 
@@ -94,6 +100,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
+    rerShortUrlEnabled: raw.short_url_enabled,
   };
 }
 
@@ -111,6 +118,7 @@ export async function createSystemSettings(
   rerDutyTestSinceMs: number,
   rerDutyTestLimit: number,
   rerDutyPollIntervalSec: number,
+  rerDutyShortUrl: boolean,
 ): Promise<SystemSettingsItem> {
   const req: CreateSystemSettingsReqRaw = {
     rer_analysis_units_exact_match_only_default:
@@ -121,6 +129,7 @@ export async function createSystemSettings(
     rer_duty_test_since_ms: rerDutyTestSinceMs,
     rer_duty_test_limit: rerDutyTestLimit,
     rer_duty_poll_interval_sec: rerDutyPollIntervalSec,
+    short_url_enabled: rerDutyShortUrl,
   };
   const data = await postJson<SystemSettingsItemRaw>(
     '/api/admin/system-settings/create',

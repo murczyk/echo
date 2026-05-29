@@ -61,7 +61,6 @@ function serverInfoResponse() {
     grafana_address: 'https://echo.localhost/grafana',
     feature_delta: true,
     feature_analysis_map: true,
-    feature_rer_duty_short_state: true,
     feature_strict_networks: false,
     version: 'test',
   };

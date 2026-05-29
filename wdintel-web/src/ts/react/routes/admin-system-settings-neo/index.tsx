@@ -42,6 +42,7 @@ export function AdminSystemSettingsNeoPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
+  const [draftShortUrlEnabled, setDraftShortUrlEnabled] = useState(false);
 
   useEffect(() => {
     async function loadSystemSettings() {
@@ -69,6 +70,7 @@ export function AdminSystemSettingsNeoPage() {
         setInitialDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
         setInitialDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
         setInitialDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
+        setDraftShortUrlEnabled(activeSettings?.rerShortUrlEnabled ?? false);
       } catch (error) {
         setLoadError(
           `Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`,
@@ -115,6 +117,7 @@ export function AdminSystemSettingsNeoPage() {
         testSinceMs,
         testLimit,
         pollIntervalSec,
+        draftShortUrlEnabled,
       );
       setDraftDutyTestSinceMs(testSinceMs);
       setDraftDutyTestLimit(testLimit);
@@ -247,6 +250,38 @@ export function AdminSystemSettingsNeoPage() {
                   inputProps={{ min: 1, step: 1 }}
                   helperText="Як часто перевіряти нові повідомлення"
                 />
+
+                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+                  Оперативний: Short UUID URL
+                </Typography>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Switch
+                      sx={{ m: 0 }}
+                      checked={draftShortUrlEnabled}
+                      onChange={(_, checked) => {
+                        setDraftShortUrlEnabled(checked);
+                      }}
+                  />
+                  <ButtonBase
+                      component="button"
+                      type="button"
+                      onClick={() => {
+                        setDraftShortUrlEnabled(!draftShortUrlEnabled);
+                      }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        textAlign: 'left',
+                        borderRadius: 0.5,
+                        typography: 'body1',
+                        fontWeight: 400,
+                        color: 'text.primary',
+                      }}
+                  >
+                    Увімкнути которкий URL для оперативного
+                  </ButtonBase>
+                </Box>
 
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
                   <PowerButton
