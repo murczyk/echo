@@ -14,6 +14,7 @@ import {
   createNetworkCallsignActivityMap,
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
+  getNetworkCallsignStatusLabel,
   getNetworkCallsignDrawerSaveError,
   flattenCatalogCallsignRows,
   normalizeCallsignDisplay,
@@ -124,7 +125,7 @@ describe('network-callsigns helpers', () => {
     });
   });
 
-  it('preserves both network markers in drawer forms', () => {
+    it('preserves primary marker and enforces exclusivity in drawer forms', () => {
     const row = {
       ...createNetworkCallsign({
         id: 8,
@@ -132,6 +133,8 @@ describe('network-callsigns helpers', () => {
         commandControl: true,
       }),
       status: 'verified',
+      statusLabel: getNetworkCallsignStatusLabel('verified'),
+      sourceName: 'Каталог 2024',
     } as NetworkCallsignRowView;
 
     expect(createDefaultNetworkCallsignDrawerForm(10, 4)).toEqual({
@@ -149,18 +152,31 @@ describe('network-callsigns helpers', () => {
       mainRadioStation: false,
       commandControl: false,
     });
-    expect(createNetworkCallsignDrawerForm(10, row)).toMatchObject({
-      id: 8,
-      networkId: 10,
-      status: 'verified',
-      mainRadioStation: true,
-      commandControl: true,
-    });
-    expect(getNetworkCallsignMarkerMode(row)).toBe('mainRadioStation');
+      expect(createNetworkCallsignDrawerForm(10, row)).toMatchObject({
+        id: 8,
+        networkId: 10,
+        status: 'catalog',
+        mainRadioStation: false,
+        commandControl: true,
+      });
+      // when both flags are present on the source row, prefer `commandControl` in the drawer
+      expect(getNetworkCallsignMarkerMode(row)).toBe('mainRadioStation');
     expect(getNetworkCallsignMarkerState('mainRadioStation')).toEqual({ mainRadioStation: true, commandControl: false });
     expect(getNetworkCallsignMarkerState('commandControl')).toEqual({ mainRadioStation: false, commandControl: true });
     expect(getNetworkCallsignMarkerState('none')).toEqual({ mainRadioStation: false, commandControl: false });
   });
+
+    it('never allows both markers to be true in drawer forms', () => {
+      const rowBoth = {
+        ...createNetworkCallsign({ mainRadioStation: true, commandControl: true }),
+        status: 'verified',
+        statusLabel: getNetworkCallsignStatusLabel('verified'),
+        sourceName: 'Каталог 2024',
+      } as NetworkCallsignRowView;
+
+      const form = createNetworkCallsignDrawerForm(10, rowBoth);
+      expect(Boolean(form.mainRadioStation && form.commandControl)).toBe(false);
+    });
 
   it('requires a callsign, source and RO radio frequency before saving a drawer form', () => {
     expect(getNetworkCallsignDrawerSaveError(null)).toBeNull();

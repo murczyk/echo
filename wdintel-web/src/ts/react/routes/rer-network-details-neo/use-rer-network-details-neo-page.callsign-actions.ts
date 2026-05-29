@@ -11,6 +11,8 @@ import {
   createDefaultNetworkCallsignDrawerForm,
   createNetworkCallsignDrawerForm,
   getNetworkCallsignDrawerSaveError,
+  getNetworkCallsignMarkerMode,
+  getNetworkCallsignMarkerState,
   type NetworkCallsignDrawerForm,
   type NetworkCallsignRowView,
   type NetworkCallsignSectionMode,
@@ -131,19 +133,26 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, lo
     }
 
     const callsign = normalizeCallsignDisplay(form.callsign);
-    const payload = buildNetworkCallsignWritePayload({
-      networkId: network.id,
-      callsign,
-      position: form.position,
-      comment: form.comment,
-      sourceId: form.sourceId,
-      radioFreq: form.radioFreq,
-      unitId: form.unitId,
-      unitDeveloping: form.unitDeveloping,
-      developing: form.developing,
-      mainRadioStation: form.mainRadioStation,
-      commandControl: form.commandControl,
-    });
+    // Enforce exclusive marker state before sending payload: derive canonical mode
+    // from the form and pass explicit overrides to the payload builder.
+    const markerMode = getNetworkCallsignMarkerMode(form);
+    const markerState = getNetworkCallsignMarkerState(markerMode);
+    const payload = buildNetworkCallsignWritePayload(
+      {
+        networkId: network.id,
+        callsign,
+        position: form.position,
+        comment: form.comment,
+        sourceId: form.sourceId,
+        radioFreq: form.radioFreq,
+        unitId: form.unitId,
+        unitDeveloping: form.unitDeveloping,
+        developing: form.developing,
+        mainRadioStation: form.mainRadioStation,
+        commandControl: form.commandControl,
+      },
+      { mainRadioStation: markerState.mainRadioStation, commandControl: markerState.commandControl },
+    );
     const updateCallsignId = state.callsignDrawerMode === 'edit' && form.id !== null ? form.id : null;
 
     setState((current) => ({

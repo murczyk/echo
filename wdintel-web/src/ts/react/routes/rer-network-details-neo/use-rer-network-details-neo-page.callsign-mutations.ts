@@ -15,6 +15,7 @@ import {
   buildNetworkCallsignTabData,
   mergeNetworkCallsigns,
   normalizeCallsignDisplay,
+  createDefaultNetworkCallsignDrawerForm,
   removeKnownCallsignIdsFromNetworkCallsignGroups,
   getNetworkCallsignMarkerState,
   type NetworkCallsignRowView,
@@ -77,60 +78,30 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState, 
     }
   }, [canManageCallsignActions, setState, state.callsignCatalogAddInFlightIds, state.network]);
 
-  const addInterceptedCallsignToNetwork = useCallback(async (callsign: string, developing: boolean) => {
+  const addInterceptedCallsignToNetwork = useCallback((callsign: string, developing: boolean) => {
     const network = state.network;
     if (!canManageCallsignActions || !network) return;
     const normalizedCallsign = normalizeCallsignDisplay(callsign);
     if (normalizedCallsign === '') return;
-    if (state.callsignCreateInFlightCallsigns.includes(normalizedCallsign)) return;
 
+    // Instead of creating immediately, open the create drawer so the user must select a source.
     setState((current) => ({
       ...current,
       callsignWarning: null,
-      callsignCreateInFlightCallsigns: [...current.callsignCreateInFlightCallsigns, normalizedCallsign],
+      callsignDrawerOpen: true,
+      callsignDrawerMode: 'create',
+      callsignDrawerForm: {
+        ...createDefaultNetworkCallsignDrawerForm(network.id, null),
+        callsign: normalizedCallsign,
+        developing,
+        status: developing ? 'developing' : 'catalog',
+        sourceId: null,
+        unitId: null,
+      },
+      callsignDrawerSaving: false,
+      callsignDrawerError: null,
     }));
-
-    try {
-      const createdNetworkCallsign = await createNetworkCallsign(
-        buildNetworkCallsignWritePayload({
-          networkId: network.id,
-          callsign: normalizedCallsign,
-          position: '',
-          comment: '',
-          sourceId: null,
-          radioFreq: '',
-          unitId: defaultNetworkUnitId,
-          unitDeveloping: false,
-          developing,
-          mainRadioStation: false,
-          commandControl: false,
-        }),
-      );
-
-      setState((current) => {
-        const nextNetworkCallsigns = mergeNetworkCallsigns(current.networkCallsigns, [createdNetworkCallsign]);
-        const derived = buildNetworkCallsignTabData(current.networkCallsignGroups, current.callsignActivityMap, nextNetworkCallsigns);
-
-        return {
-          ...current,
-          networkCallsigns: nextNetworkCallsigns,
-          catalogCallsignGroups: derived.catalogCallsignGroups,
-          unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
-          callsignCount: nextNetworkCallsigns.length,
-          callsignCreateInFlightCallsigns: current.callsignCreateInFlightCallsigns.filter((item) => item !== normalizedCallsign),
-          callsignWarning: null,
-        };
-      });
-    } catch (error) {
-      const errorMessage = formatErrorMessage(error);
-      setState((current) => ({
-        ...current,
-        callsignCreateInFlightCallsigns: current.callsignCreateInFlightCallsigns.filter((item) => item !== normalizedCallsign),
-        callsignWarning: errorMessage,
-      }));
-      return;
-    }
-  }, [canManageCallsignActions, defaultNetworkUnitId, setState, state.callsignCreateInFlightCallsigns, state.network]);
+  }, [canManageCallsignActions, setState, state.network]);
 
   const setNetworkCallsignMarkerMode = useCallback(async (networkCallsign: NetworkCallsignRowView, markerMode: NetworkCallsignMarkerMode) => {
     if (!canManageCallsignActions || !state.network) return;

@@ -95,11 +95,16 @@ function MarkerModeControl({
 
   return (
     <Box
-      sx={{
+      sx={(theme) => ({
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 2,
+        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
         gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
         gap: 0.75,
-      }}
+        p: 0.5,
+      })}
     >
       {markerOptions.map((option) => {
         const selected = markerMode === option.value;
@@ -120,14 +125,14 @@ function MarkerModeControl({
               fontSize: '0.9rem',
               fontWeight: 600,
               textAlign: 'left',
-              color: selected ? option.contrastText : theme.palette.text.secondary,
-              bgcolor: selected ? option.accentColor : 'transparent',
-              boxShadow: selected ? `inset 0 0 0 1px ${option.accentColor}` : 'none',
+              color: selected ? (option.value === 'none' ? theme.palette.text.primary : option.contrastText) : theme.palette.text.secondary,
+              bgcolor: selected ? (option.value === 'none' ? theme.palette.action.selected : option.accentColor) : 'transparent',
+              boxShadow: selected ? `inset 0 0 0 1px ${option.value === 'none' ? theme.palette.divider : option.accentColor}` : 'none',
               transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
                 duration: theme.transitions.duration.shortest,
               }),
               '&:hover': {
-                bgcolor: selected ? option.accentColor : theme.palette.action.hover,
+                bgcolor: selected ? (option.value === 'none' ? theme.palette.action.selected : option.accentColor) : theme.palette.action.hover,
               },
             })}
           >
@@ -152,7 +157,8 @@ function CallsignStatusControl({
   onChange: (nextStatus: NetworkCallsignStatus) => void;
 }) {
   const developingSelected = status === 'developing';
-  const verifiedSelected = !developingSelected;
+  const catalogSelected = status === 'catalog';
+  const verifiedSelected = status === 'verified';
 
   return (
     <Box
@@ -162,7 +168,7 @@ function CallsignStatusControl({
         borderRadius: 2,
         backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: 0.75,
         p: 0.5,
       })}
@@ -199,7 +205,7 @@ function CallsignStatusControl({
       </ButtonBase>
       <ButtonBase
         disabled={disabled}
-        onClick={() => onChange('verified')}
+        onClick={() => onChange('catalog')}
         sx={(theme) => ({
           minHeight: 38,
           borderRadius: 1.5,
@@ -211,20 +217,20 @@ function CallsignStatusControl({
           gap: 0.75,
           fontSize: '0.9rem',
           fontWeight: 600,
-          color: verifiedSelected ? theme.palette.success.contrastText : theme.palette.text.secondary,
-          bgcolor: verifiedSelected ? theme.palette.success.main : 'transparent',
-          boxShadow: verifiedSelected ? `inset 0 0 0 1px ${theme.palette.success.dark}` : 'none',
+          color: catalogSelected ? theme.palette.info.contrastText : theme.palette.text.secondary,
+          bgcolor: catalogSelected ? theme.palette.info.main : 'transparent',
+          boxShadow: catalogSelected ? `inset 0 0 0 1px ${theme.palette.info.dark}` : 'none',
           transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
             duration: theme.transitions.duration.shortest,
           }),
           '&:hover': {
-            bgcolor: verifiedSelected ? theme.palette.success.main : theme.palette.action.hover,
+            bgcolor: catalogSelected ? theme.palette.info.main : theme.palette.action.hover,
           },
         })}
       >
-        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: verifiedSelected ? 'common.white' : 'text.disabled' }} />
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: catalogSelected ? 'common.white' : 'text.disabled' }} />
         <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
-          Верифіковано
+          Каталог
         </Typography>
       </ButtonBase>
     </Box>

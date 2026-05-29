@@ -155,7 +155,7 @@ export function createNetworkCallsignDrawerForm(
     id: networkCallsign.id,
     networkId,
     callsign: networkCallsign.callsign,
-    status: networkCallsign.status,
+    status: networkCallsign.status === 'verified' ? 'catalog' : networkCallsign.status,
     position: networkCallsign.position,
     comment: networkCallsign.comment,
     sourceId: networkCallsign.sourceId,
@@ -163,8 +163,15 @@ export function createNetworkCallsignDrawerForm(
     unitId: networkCallsign.unitId,
     unitDeveloping: networkCallsign.unitDeveloping,
     developing: networkCallsign.developing,
-    mainRadioStation: networkCallsign.mainRadioStation,
-    commandControl: networkCallsign.commandControl,
+    // Ensure markers are exclusive in the drawer form: prefer `commandControl` when
+    // both flags are present on an existing record, otherwise use the canonical mode.
+    ...(() => {
+      const mode = networkCallsign.mainRadioStation && networkCallsign.commandControl
+        ? 'commandControl'
+        : getNetworkCallsignMarkerMode(networkCallsign);
+      const state = getNetworkCallsignMarkerState(mode);
+      return { mainRadioStation: state.mainRadioStation, commandControl: state.commandControl };
+    })(),
   };
 }
 

@@ -43,10 +43,9 @@ const NETWORK_MRT_LOCALIZATION = {
 };
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Developing', 'Verified', 'Catalog'];
-const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Unknown'>, string> = {
+const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Developing', 'Catalog'];
+const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Unknown' | 'Verified'>, string> = {
   All: 'Всі',
-  Verified: 'Верифіковано',
   Developing: 'В дорозвідці',
   Catalog: 'Каталог',
 };
@@ -56,7 +55,6 @@ function getNetworkStatusFilterCount(
   statusCounts: ReturnType<typeof countNetworkCallsignStatusRows>,
 ) {
   if (filter === 'All') return statusCounts.all;
-  if (filter === 'Verified') return statusCounts.verified;
   if (filter === 'Developing') return statusCounts.developing;
   return statusCounts.catalog;
 }
