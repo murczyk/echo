@@ -14,12 +14,15 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { useMediaQuery } from '@mui/material';
 import { useState } from 'react';
+import { useTheme } from '@mui/material/styles';
 
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
+import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { NetworkFreqCreateWizard } from './components/NetworkFreqCreateWizard';
 import { NetworkFreqEditDrawer } from './components/NetworkFreqEditDrawer';
@@ -45,11 +48,15 @@ type Props = {
 
 export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const page = useRerNetworkDetailsNeoPage(networkId);
+  const theme = useTheme();
+  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [showAllAors, setShowAllAors] = useState(false);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const aorVisible = showAllAors ? page.aorItems : page.aorItems.slice(0, 5);
   const aorCollapsedCount = Math.max(page.aorItems.length - aorVisible.length, 0);
   const statusDotColor = page.status.tone === 'success' ? 'success.main' : 'warning.main';
   const classicHref = `/rer-networks/${networkId}`;
+  const leftPanelVisible = isMobileLayout || leftPanelOpen;
   const title = page.network ? (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
       <Tooltip title={page.status.label} arrow placement="bottom-start">
@@ -141,7 +148,19 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
 
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-      <PageHeader title={title} actions={actions} />
+      <PageHeader
+        title={title}
+        titleLeadingActions={!isMobileLayout ? (
+          <SidePanelToggleButton
+            side="left"
+            active={leftPanelVisible}
+            label={leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
+            onClick={() => setLeftPanelOpen((current) => !current)}
+          />
+        ) : null}
+        titleLeadingGap={2}
+        actions={actions}
+      />
 
       {page.error ? <PowerAlert severity="error">{page.error}</PowerAlert> : null}
       {page.referenceWarning ? <PowerAlert severity="warning">{page.referenceWarning}</PowerAlert> : null}
@@ -153,32 +172,34 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
           minHeight: 0,
           display: 'grid',
           gap: 2,
-          gridTemplateColumns: { xs: '1fr', lg: 'minmax(360px, 420px) minmax(0,1fr)' },
+          gridTemplateColumns: { xs: '1fr', lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0,1fr)' : 'minmax(0,1fr)' },
           overflow: 'hidden',
         }}
       >
-        <Box
-          sx={{
-            minHeight: 0,
-            overflow: 'auto',
-          }}
-        >
-          <NetworkDetailsLeftPanel
-            isLoading={isLoading}
-            unitNames={page.unitNames}
-            network={page.network}
-            aorVisible={aorVisible}
-            aorCollapsedCount={aorCollapsedCount}
-            showAllAors={showAllAors}
-            onToggleShowAllAors={() => setShowAllAors((current) => !current)}
-            callsignCount={page.callsignCount}
-            statusTone={page.status.tone}
-            statusLabel={page.status.label}
-            rangeLabel={page.rangeLabel}
-            transferTypeLabel={page.transferTypeLabel}
-            postItems={page.postItems}
-          />
-        </Box>
+        {leftPanelVisible ? (
+          <Box
+            sx={{
+              minHeight: 0,
+              overflow: 'auto',
+            }}
+          >
+            <NetworkDetailsLeftPanel
+              isLoading={isLoading}
+              unitNames={page.unitNames}
+              network={page.network}
+              aorVisible={aorVisible}
+              aorCollapsedCount={aorCollapsedCount}
+              showAllAors={showAllAors}
+              onToggleShowAllAors={() => setShowAllAors((current) => !current)}
+              callsignCount={page.callsignCount}
+              statusTone={page.status.tone}
+              statusLabel={page.status.label}
+              rangeLabel={page.rangeLabel}
+              transferTypeLabel={page.transferTypeLabel}
+              postItems={page.postItems}
+            />
+          </Box>
+        ) : null}
 
         <NetworkDetailsTabPanel
           network={descriptionDrawerNetwork}

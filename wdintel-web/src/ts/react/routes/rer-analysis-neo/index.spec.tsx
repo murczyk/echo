@@ -52,10 +52,25 @@ vi.mock('./use-rer-analysis-neo-page', () => ({
 }));
 
 vi.mock('../../components/PageHeader', () => ({
-  PageHeader: ({ title, middle }: { title: string; middle?: ReactNode }) => (
+  PageHeader: ({
+    title,
+    titleLeadingActions,
+    titleActions,
+    middle,
+    actions,
+  }: {
+    title: ReactNode;
+    titleLeadingActions?: ReactNode;
+    titleActions?: ReactNode;
+    middle?: ReactNode;
+    actions?: ReactNode;
+  }) => (
     <header>
+      {titleLeadingActions}
       <div>{title}</div>
+      {titleActions}
       {middle}
+      {actions}
     </header>
   ),
 }));
@@ -66,6 +81,20 @@ vi.mock('../../components/PowerAlert', () => ({
 
 vi.mock('../../components/PowerChip', () => ({
   PowerChip: ({ label }: { label: ReactNode }) => <div>{label}</div>,
+}));
+
+vi.mock('../../components/SidePanelToggleButton', () => ({
+  SidePanelToggleButton: ({
+    label,
+    onClick,
+  }: {
+    label: string;
+    onClick: () => void;
+  }) => (
+    <button type="button" aria-label={label} onClick={onClick}>
+      {label}
+    </button>
+  ),
 }));
 
 vi.mock('./components/AnalysisFiltersPanel', () => ({
@@ -288,6 +317,36 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(container.textContent).toContain('Всього: —');
     expect(container.textContent).toContain('Обрано: —');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('wires the header toggle buttons to the existing panel handlers', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const leftToggle = container.querySelector<HTMLButtonElement>('[aria-label="Згорнути ліву панель"]');
+    const rightToggle = container.querySelector<HTMLButtonElement>('[aria-label="Розгорнути праву панель"]');
+
+    expect(leftToggle).not.toBeNull();
+    expect(rightToggle).not.toBeNull();
+
+    await act(async () => {
+      leftToggle?.click();
+      rightToggle?.click();
+    });
+
+    const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
+    expect(page.toggleLeftPanel).toHaveBeenCalledTimes(1);
+    expect(page.toggleRightPanel).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       root.unmount();

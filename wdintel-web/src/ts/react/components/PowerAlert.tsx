@@ -8,15 +8,17 @@ type PowerAlertProps = AlertProps & {
   dismissible?: boolean;
 };
 
-const defaultAutoHideDurationMsBySeverity: Partial<Record<NonNullable<AlertProps['severity']>, number>> = {
-  success: 3000,
-  error: 4000,
-  info: 6000,
+const defaultAutoHideDurationMsBySeverity: Partial<Record<NonNullable<AlertProps['severity']>, number | null>> = {
+  success: 6000,
+  error: 8000,
+  info: null,
 };
 
-function defaultAutoHideDurationForSeverity(severity: AlertProps['severity']): number {
+function defaultAutoHideDurationForSeverity(severity: AlertProps['severity']): number | null {
   const key = severity ?? 'success';
-  return defaultAutoHideDurationMsBySeverity[key] ?? 3000;
+  return key in defaultAutoHideDurationMsBySeverity
+    ? defaultAutoHideDurationMsBySeverity[key] ?? null
+    : 6000;
 }
 
 export function PowerAlert(props: PowerAlertProps) {
