@@ -55,7 +55,7 @@ export function useFeedFilterSavedFiltersViewModel(panel: FeedFilterPanelModel):
       JSON.stringify(filterState.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? []) &&
       JSON.stringify(filterState.unitsSelected ?? []) === JSON.stringify(loadedFilterNormalized.unitsSelected ?? []) &&
       JSON.stringify(filterState.unitsDenied ?? []) === JSON.stringify(loadedFilterNormalized.unitsDenied ?? []) &&
-      (toggles.unitsExactMatchOnly ?? null) === (loadedFilterNormalized.unitsExactMatchOnly ?? null)
+      (toggles.unitsExactMatchOnly ?? false) === (loadedFilterNormalized.unitsExactMatchOnly ?? false)
     );
 
   const runSavedFilterAction = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {

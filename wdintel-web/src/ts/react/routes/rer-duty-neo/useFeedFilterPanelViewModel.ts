@@ -1,5 +1,8 @@
 import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
+import type { Unit } from '../../../../Bindings';
+import type { SearchableOptionSelection } from '../../components/searchable-option.types';
+import { buildUnitFilterOptions, unitNamesFromSelections, unitSelectionsFromNames } from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import { useFeedFilterSavedFiltersViewModel, type FeedFilterSavedFiltersViewModel } from './useFeedFilterSavedFiltersViewModel';
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
@@ -30,9 +33,16 @@ export type FeedFilterPanelViewModel = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionViewModel<string>;
-  units: FeedFilterSelectionViewModel<string> & {
-    unitsExactMatchOnly: boolean | null;
-    onUnitsExactMatchOnlyChange: (value: boolean | null) => void;
+  units: {
+    mode: FeedFilterMode;
+    onModeChange: (mode: FeedFilterMode) => void;
+    options: readonly Unit[];
+    selected: readonly SearchableOptionSelection[];
+    onSelectedChange: (value: SearchableOptionSelection[]) => void;
+    placeholder?: string;
+    autocompleteClassName?: string;
+    unitsExactMatchOnly: boolean;
+    onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
   advanced: {
     highlightSignalsEnabled?: boolean;
@@ -119,15 +129,23 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     toParentValues: (values) => [...values],
   });
 
-  /** Built once from the units catalog: name list deduped & sorted, with "Не визначено" pinned on top for empty-unit messages. */
-  const unitOptions = useMemo(() => {
-    const names = new Set<string>();
-    (unitsList ?? []).forEach((u) => {
-      const name = (u.name ?? '').trim();
-      if (name.length > 0) names.add(name);
-    });
-    return ['Не визначено', ...Array.from(names).sort((a, b) => a.localeCompare(b))];
-  }, [unitsList]);
+  const unitsCatalogKey = useMemo(
+    () =>
+      (unitsList ?? [])
+        .map((unit) => `${unit.id}:${unit.name}`)
+        .sort()
+        .join('|'),
+    [unitsList],
+  );
+  const unitOptions = useMemo(
+    () => buildUnitFilterOptions(unitsList ?? []),
+    [unitsCatalogKey],
+  );
+
+  const unitSelected = useMemo(
+    () => unitSelectionsFromNames(unitSelectionState.localValue, unitOptions),
+    [unitSelectionState.localValue, unitOptions],
+  );
 
   const groupEmptyLabel = groupsSelectionState.mode === 'include' ? 'всі' : 'ніяка';
   const senderEmptyLabel = senderSelectionState.mode === 'include' ? 'всі' : 'ніхто';
@@ -187,14 +205,14 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     },
     units: {
       mode: unitSelectionState.mode,
-      value: unitSelectionState.localValue,
       onModeChange: unitSelectionState.setMode,
-      onValueChange: unitSelectionState.setLocalValue,
       options: unitOptions,
-      getOptionLabel: (option: string) => option,
+      selected: unitSelected,
+      onSelectedChange: (selections) =>
+        unitSelectionState.setLocalValue(unitNamesFromSelections(selections)),
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
-      unitsExactMatchOnly: unitsExactMatchOnly ?? null,
+      unitsExactMatchOnly: unitsExactMatchOnly ?? false,
       onUnitsExactMatchOnlyChange: onUnitsExactMatchOnlyChange ?? (() => {}),
     },
     advanced: {

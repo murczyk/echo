@@ -183,7 +183,7 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     unitsSelected: null,
     unitsDenied: null,
-    unitsExactMatchOnly: null,
+    unitsExactMatchOnly: false,
     lastViewedMessageId: null,
     highlightKeywordsEnabled: null,
     highlightKeywordSetId: null,
@@ -223,7 +223,7 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.postsDenied, b.postsDenied) &&
     optArrEqual(a.unitsSelected, b.unitsSelected) &&
     optArrEqual(a.unitsDenied, b.unitsDenied) &&
-    (a.unitsExactMatchOnly ?? null) === (b.unitsExactMatchOnly ?? null) &&
+    (a.unitsExactMatchOnly ?? false) === (b.unitsExactMatchOnly ?? false) &&
     a.highlightKeywordSetId === b.highlightKeywordSetId
   );
 }
