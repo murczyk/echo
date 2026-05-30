@@ -34,6 +34,7 @@ import Shared.Components.Pager as Pager
 import Shared.Components.Popup as Popup
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
+import Shared.Components.SegmentedControl as SegmentedControl
 import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
@@ -148,6 +149,37 @@ applyCallsignsActivity rsp callsigns =
                     callsign
         )
         callsigns
+
+
+type MarkerSelection
+    = MainRadioStation
+    | CommandControl
+    | NoMarker
+
+
+markerSelectionFromState : { a | mainRadioStation : Bool, commandControl : Bool } -> MarkerSelection
+markerSelectionFromState state =
+    if state.mainRadioStation then
+        MainRadioStation
+
+    else if state.commandControl then
+        CommandControl
+
+    else
+        NoMarker
+
+
+applyMarkerSelection : MarkerSelection -> { a | mainRadioStation : Bool, commandControl : Bool } -> { a | mainRadioStation : Bool, commandControl : Bool }
+applyMarkerSelection markerSelection state =
+    case markerSelection of
+        MainRadioStation ->
+            { state | mainRadioStation = True, commandControl = False }
+
+        CommandControl ->
+            { state | mainRadioStation = False, commandControl = True }
+
+        NoMarker ->
+            { state | mainRadioStation = False, commandControl = False }
 
 
 loadCatalogAndNetworkCallsigns : Int -> List (Effect CallsignsMsg)
@@ -1755,29 +1787,24 @@ callsignCreateSidebarContent shared model _ =
                         ]
                         []
                     ]
-                , div [ class "grid grid-cols-2 gap-4" ]
-                    [ div [ class "flex items-center" ]
-                        [ Checkbox.new
-                            { isChecked = Maybe.map .mainRadioStation model.callsignCreateState |> Maybe.withDefault False
-                            , onToggle =
-                                \_ ->
-                                    UpdateCallsignCreateField
-                                        (Maybe.map (\s -> { s | mainRadioStation = not s.mainRadioStation }))
-                            }
-                            |> Checkbox.withContent [ text "Головна радіостанція" ]
-                            |> Checkbox.view
+                , let
+                    markerSelection =
+                        Maybe.withDefault NoMarker <|
+                            Maybe.map markerSelectionFromState model.callsignCreateState
+                  in
+                  div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Маркер" ]
+                    , SegmentedControl.new
+                        markerSelection
+                        (\marker ->
+                            UpdateCallsignCreateField (Maybe.map (applyMarkerSelection marker))
+                        )
+                        [ { value = MainRadioStation, label = "Головна радіостанція" }
+                        , { value = CommandControl, label = "Ланка управління" }
+                        , { value = NoMarker, label = "Без маркера" }
                         ]
-                    , div [ class "flex items-center" ]
-                        [ Checkbox.new
-                            { isChecked = Maybe.map .commandControl model.callsignCreateState |> Maybe.withDefault False
-                            , onToggle =
-                                \_ ->
-                                    UpdateCallsignCreateField
-                                        (Maybe.map (\s -> { s | commandControl = not s.commandControl }))
-                            }
-                            |> Checkbox.withContent [ text "Ланка управління" ]
-                            |> Checkbox.view
-                        ]
+                        |> (\control -> { control | ariaLabel = Just "Маркер" })
+                        |> SegmentedControl.view
                     ]
                 , div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]
@@ -2071,29 +2098,24 @@ editCallsignSidebarContent shared model _ =
                         ]
                         []
                     ]
-                , div [ class "flex flex-col gap-2" ]
-                    [ div [ class "flex items-center" ]
-                        [ Checkbox.new
-                            { isChecked = Maybe.map .mainRadioStation model.editCallsignState |> Maybe.withDefault False
-                            , onToggle =
-                                \_ ->
-                                    UpdateEditCallsignField
-                                        (Maybe.map (\s -> { s | mainRadioStation = not s.mainRadioStation }))
-                            }
-                            |> Checkbox.withContent [ text "Головна радіостанція" ]
-                            |> Checkbox.view
+                , let
+                    markerSelection =
+                        Maybe.withDefault NoMarker <|
+                            Maybe.map markerSelectionFromState model.editCallsignState
+                  in
+                  div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Маркер" ]
+                    , SegmentedControl.new
+                        markerSelection
+                        (\marker ->
+                            UpdateEditCallsignField (Maybe.map (applyMarkerSelection marker))
+                        )
+                        [ { value = MainRadioStation, label = "Головна радіостанція" }
+                        , { value = CommandControl, label = "Ланка управління" }
+                        , { value = NoMarker, label = "Без маркера" }
                         ]
-                    , div [ class "flex items-center" ]
-                        [ Checkbox.new
-                            { isChecked = Maybe.map .commandControl model.editCallsignState |> Maybe.withDefault False
-                            , onToggle =
-                                \_ ->
-                                    UpdateEditCallsignField
-                                        (Maybe.map (\s -> { s | commandControl = not s.commandControl }))
-                            }
-                            |> Checkbox.withContent [ text "Ланка управління" ]
-                            |> Checkbox.view
-                        ]
+                        |> (\control -> { control | ariaLabel = Just "Маркер" })
+                        |> SegmentedControl.view
                     ]
                 , div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]

@@ -10,12 +10,14 @@ import {
 import {
   createDefaultNetworkCallsignDrawerForm,
   createNetworkCallsignDrawerForm,
+  getNetworkCallsignDrawerSaveError,
+  getNetworkCallsignMarkerMode,
+  getNetworkCallsignMarkerState,
   type NetworkCallsignDrawerForm,
   type NetworkCallsignRowView,
   type NetworkCallsignSectionMode,
   type NetworkCallsignStatusFilter,
   normalizeCallsignDisplay,
-  NetworkCallsignSourceId,
 } from './network-callsigns';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 
@@ -125,30 +127,33 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
 
     if (!canManageCallsignActions || !network || !form || state.callsignDrawerSaving) return;
 
+    const validationError = getNetworkCallsignDrawerSaveError(form);
+    if (validationError) {
+      setState((current) => ({ ...current, callsignDrawerError: validationError }));
+      return;
+    }
+
     const callsign = normalizeCallsignDisplay(form.callsign);
-    if (callsign === '') {
-      setState((current) => ({ ...current, callsignDrawerError: 'Позивний є обовʼязковим' }));
-      return;
-    }
-
-    if (form.sourceId === NetworkCallsignSourceId.RO && form.radioFreq.trim() === '') {
-      setState((current) => ({ ...current, callsignDrawerError: 'Для джерела "РО" частота є обовʼязковою' }));
-      return;
-    }
-
-    const payload = buildNetworkCallsignWritePayload({
-      networkId: network.id,
-      callsign,
-      position: form.position,
-      comment: form.comment,
-      sourceId: form.sourceId,
-      radioFreq: form.radioFreq,
-      unitId: form.unitId,
-      unitDeveloping: form.unitDeveloping,
-      developing: form.developing,
-      mainRadioStation: form.mainRadioStation,
-      commandControl: form.commandControl,
-    });
+    // Enforce exclusive marker state before sending payload: derive canonical mode
+    // from the form and pass explicit overrides to the payload builder.
+    const markerMode = getNetworkCallsignMarkerMode(form);
+    const markerState = getNetworkCallsignMarkerState(markerMode);
+    const payload = buildNetworkCallsignWritePayload(
+      {
+        networkId: network.id,
+        callsign,
+        position: form.position,
+        comment: form.comment,
+        sourceId: form.sourceId,
+        radioFreq: form.radioFreq,
+        unitId: form.unitId,
+        unitDeveloping: form.unitDeveloping,
+        developing: form.developing,
+        mainRadioStation: form.mainRadioStation,
+        commandControl: form.commandControl,
+      },
+      { mainRadioStation: markerState.mainRadioStation, commandControl: markerState.commandControl },
+    );
     const updateCallsignId = state.callsignDrawerMode === 'edit' && form.id !== null ? form.id : null;
 
     setState((current) => ({
