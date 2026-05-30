@@ -125,7 +125,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               color="primary"
               onClick={page.openReport}
               title="Відкрити конструктор звітів"
-              sx={{ height: 44, px: 2, display: { xs: 'none', md: 'inline-flex' } }}
+              sx={{ height: 40, px: 2, display: { xs: 'none', md: 'inline-flex' } }}
             >
               Конструктор звітів
             </Button>
