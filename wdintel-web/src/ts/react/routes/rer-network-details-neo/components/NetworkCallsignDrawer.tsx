@@ -4,33 +4,31 @@ import {
   Checkbox,
   ButtonBase,
   Drawer,
-  FormControl,
-  FormControlLabel,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
 import StarIcon from '@mui/icons-material/Star';
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
-import { memo, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { Source } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { SearchableOptionAutocomplete } from '../../../components/SearchableOptionAutocomplete';
 import { getFrequencyFormatError, type NetworkOption } from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
   normalizeCallsignDisplay,
   NetworkCallsignSourceId,
+  getNetworkCallsignMarkerMode,
+  getNetworkCallsignMarkerState,
   type NetworkCallsignStatus,
   type NetworkCallsignDrawerForm,
   type NetworkCallsignDrawerMode,
 } from '../network-callsigns';
-import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
+import { NEO_AUTOCOMPLETE_SLOT_PROPS } from './dropdownProps';
 
 type Props = {
   open: boolean;
@@ -54,58 +52,97 @@ function updateForm(
   onChange({ ...form, ...next });
 }
 
-function StatusFlagCheckbox({
-  checked,
-  disabled,
-  onChange,
-  label,
-  icon,
-  accentColor,
-}: {
-  checked: boolean;
-  disabled: boolean;
-  onChange: (next: boolean) => void;
+type MarkerOption = {
+  value: ReturnType<typeof getNetworkCallsignMarkerMode>;
   label: string;
   icon: JSX.Element;
   accentColor: string;
+  contrastText: string;
+};
+
+function MarkerModeControl({
+  disabled,
+  markerMode,
+  onChange,
+}: {
+  disabled: boolean;
+  markerMode: ReturnType<typeof getNetworkCallsignMarkerMode>;
+  onChange: (next: ReturnType<typeof getNetworkCallsignMarkerMode>) => void;
 }) {
+  const markerOptions: MarkerOption[] = [
+    {
+      value: 'mainRadioStation',
+      label: 'Головна радіостанція',
+      icon: <StarIcon fontSize="small" sx={{ color: 'warning.main' }} />,
+      accentColor: 'var(--mui-palette-warning-main)',
+      contrastText: 'var(--mui-palette-warning-contrastText)',
+    },
+    {
+      value: 'commandControl',
+      label: 'Ланка управління',
+      icon: <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main' }} />,
+      accentColor: 'var(--mui-palette-info-main)',
+      contrastText: 'var(--mui-palette-info-contrastText)',
+    },
+    {
+      value: 'none',
+      label: 'Без маркера',
+      icon: <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'text.disabled' }} />,
+      accentColor: 'var(--mui-palette-divider)',
+      contrastText: 'var(--mui-palette-text-primary)',
+    },
+  ];
+
   return (
     <Box
       sx={(theme) => ({
         border: '1px solid',
-        borderColor: checked ? accentColor : 'divider',
+        borderColor: 'divider',
         borderRadius: 2,
-        bgcolor: checked ? 'action.selected' : 'transparent',
-        px: 1.25,
-        py: 0.75,
+        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+        gap: 0.75,
+        p: 0.5,
       })}
     >
-      <FormControlLabel
-        sx={{
-          m: 0,
-          width: '100%',
-          alignItems: 'center',
-          '& .MuiFormControlLabel-label': {
-            width: '100%',
-          },
-        }}
-        control={
-          <Checkbox
-            checked={checked}
-            onChange={(event) => onChange(event.target.checked)}
+      {markerOptions.map((option) => {
+        const selected = markerMode === option.value;
+        return (
+          <ButtonBase
+            key={option.value}
             disabled={disabled}
-            size="small"
-          />
-        }
-        label={
-          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-            <Typography variant="body2" noWrap sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
-              {label}
+            onClick={() => onChange(option.value)}
+            sx={(theme) => ({
+              minHeight: 38,
+              borderRadius: 1.5,
+              px: 1.25,
+              py: 0.8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 0.75,
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              textAlign: 'left',
+              color: selected ? (option.value === 'none' ? theme.palette.text.primary : option.contrastText) : theme.palette.text.secondary,
+              bgcolor: selected ? (option.value === 'none' ? theme.palette.action.selected : option.accentColor) : 'transparent',
+              boxShadow: selected ? `inset 0 0 0 1px ${option.value === 'none' ? theme.palette.divider : option.accentColor}` : 'none',
+              transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
+                duration: theme.transitions.duration.shortest,
+              }),
+              '&:hover': {
+                bgcolor: selected ? (option.value === 'none' ? theme.palette.action.selected : option.accentColor) : theme.palette.action.hover,
+              },
+            })}
+          >
+            {option.icon}
+            <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
+              {option.label}
             </Typography>
-            {icon}
-          </Stack>
-        }
-      />
+          </ButtonBase>
+        );
+      })}
     </Box>
   );
 }
@@ -119,32 +156,9 @@ function CallsignStatusControl({
   disabled: boolean;
   onChange: (nextStatus: NetworkCallsignStatus) => void;
 }) {
-  if (status === 'catalog') {
-    return (
-      <Box
-        sx={(theme) => ({
-          minHeight: 52,
-          border: '1px solid',
-          borderColor: theme.palette.info.main,
-          borderRadius: 2,
-          bgcolor: theme.palette.mode === 'dark' ? 'rgba(33, 150, 243, 0.12)' : 'rgba(33, 150, 243, 0.08)',
-          px: 1.5,
-          display: 'flex',
-          alignItems: 'center',
-        })}
-      >
-        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'info.main', flexShrink: 0 }} />
-          <Typography variant="body2" sx={{ fontWeight: 700, color: 'info.main', fontSize: '0.9rem' }}>
-            Каталог
-          </Typography>
-        </Stack>
-      </Box>
-    );
-  }
-
-  const verifiedSelected = status === 'verified';
   const developingSelected = status === 'developing';
+  const catalogSelected = status === 'catalog';
+  const verifiedSelected = status === 'verified';
 
   return (
     <Box
@@ -154,41 +168,11 @@ function CallsignStatusControl({
         borderRadius: 2,
         backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: 0.75,
         p: 0.5,
       })}
     >
-      <ButtonBase
-        disabled={disabled}
-        onClick={() => onChange('verified')}
-        sx={(theme) => ({
-          minHeight: 38,
-          borderRadius: 1.5,
-          px: 1.5,
-          py: 0.8,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 0.75,
-          fontSize: '0.9rem',
-          fontWeight: 600,
-          color: verifiedSelected ? theme.palette.success.contrastText : theme.palette.text.secondary,
-          bgcolor: verifiedSelected ? theme.palette.success.main : 'transparent',
-          boxShadow: verifiedSelected ? `inset 0 0 0 1px ${theme.palette.success.dark}` : 'none',
-          transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
-            duration: theme.transitions.duration.shortest,
-          }),
-          '&:hover': {
-            bgcolor: verifiedSelected ? theme.palette.success.main : theme.palette.action.hover,
-          },
-        })}
-      >
-        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: verifiedSelected ? 'common.white' : 'text.disabled' }} />
-        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
-          Верифіковано
-        </Typography>
-      </ButtonBase>
       <ButtonBase
         disabled={disabled}
         onClick={() => onChange('developing')}
@@ -219,6 +203,36 @@ function CallsignStatusControl({
           В дорозвідці
         </Typography>
       </ButtonBase>
+      <ButtonBase
+        disabled={disabled}
+        onClick={() => onChange('catalog')}
+        sx={(theme) => ({
+          minHeight: 38,
+          borderRadius: 1.5,
+          px: 1.5,
+          py: 0.8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 0.75,
+          fontSize: '0.9rem',
+          fontWeight: 600,
+          color: catalogSelected ? theme.palette.info.contrastText : theme.palette.text.secondary,
+          bgcolor: catalogSelected ? theme.palette.info.main : 'transparent',
+          boxShadow: catalogSelected ? `inset 0 0 0 1px ${theme.palette.info.dark}` : 'none',
+          transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
+            duration: theme.transitions.duration.shortest,
+          }),
+          '&:hover': {
+            bgcolor: catalogSelected ? theme.palette.info.main : theme.palette.action.hover,
+          },
+        })}
+      >
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: catalogSelected ? 'common.white' : 'text.disabled' }} />
+        <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
+          Каталог
+        </Typography>
+      </ButtonBase>
     </Box>
   );
 }
@@ -239,15 +253,24 @@ export function NetworkCallsignDrawer({
   const sourceId = form?.sourceId ?? null;
   const isRoSource = sourceId === NetworkCallsignSourceId.RO;
   const [radioFreqTouched, setRadioFreqTouched] = useState(false);
+  const [sourceTouched, setSourceTouched] = useState(false);
   const radioFreqValidationError = isRoSource && form ? getFrequencyFormatError(form.radioFreq) : null;
   const radioFreqError = radioFreqTouched ? radioFreqValidationError : null;
-  const canSave = Boolean(form && normalizeCallsignDisplay(form.callsign) !== '' && (!isRoSource || radioFreqValidationError === null));
+  const sourceValidationError = sourceId === null ? 'Джерело є обовʼязковим' : null;
+  const showSourceValidationError = sourceValidationError !== null && (sourceTouched || error === sourceValidationError);
+  const canSave = Boolean(
+    form
+      && normalizeCallsignDisplay(form.callsign) !== ''
+      && sourceId !== null
+      && (!isRoSource || radioFreqValidationError === null),
+  );
   const title = mode === 'edit' ? 'Редагувати позивний мережі' : 'Створити позивний мережі';
   const selectedUnitId = form?.unitId ?? null;
 
   useEffect(() => {
     if (!open) return;
     setRadioFreqTouched(false);
+    setSourceTouched(false);
   }, [open]);
 
   return (
@@ -294,31 +317,16 @@ export function NetworkCallsignDrawer({
                 placeholder="Введіть позивний"
               />
 
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                  gap: 1.25,
-                }}
-              >
-                <StatusFlagCheckbox
-                  checked={form.mainRadioStation}
+              <Stack spacing={1}>
+                <Typography variant="body2" color="text.secondary">
+                  Маркер
+                </Typography>
+                <MarkerModeControl
                   disabled={saving}
-                  onChange={(nextMainRadioStation) => updateForm(form, { mainRadioStation: nextMainRadioStation }, onChange)}
-                  label="Головна радіостанція"
-                  accentColor="var(--mui-palette-warning-main)"
-                  icon={<StarIcon fontSize="small" sx={{ color: 'warning.main' }} />}
+                  markerMode={getNetworkCallsignMarkerMode(form)}
+                  onChange={(markerMode) => updateForm(form, getNetworkCallsignMarkerState(markerMode), onChange)}
                 />
-
-                <StatusFlagCheckbox
-                  checked={form.commandControl}
-                  disabled={saving}
-                  onChange={(nextCommandControl) => updateForm(form, { commandControl: nextCommandControl }, onChange)}
-                  label="Ланка управління"
-                  accentColor="var(--mui-palette-info-main)"
-                  icon={<MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main' }} />}
-                />
-              </Box>
+              </Stack>
 
               <Stack spacing={1}>
                 <Typography variant="body2" color="text.secondary">
@@ -340,7 +348,7 @@ export function NetworkCallsignDrawer({
 
               <Stack spacing={1}>
                 <Typography variant="body2" color="text.secondary">
-                  Джерело
+                  Джерело *
                 </Typography>
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   {sortNetworkCallsignSources(sources).map((source) => (
@@ -349,10 +357,23 @@ export function NetworkCallsignDrawer({
                       source={source}
                       selected={sourceId === source.id}
                       disabled={saving}
-                      onClick={() => updateForm(form, { sourceId: sourceId === source.id ? null : source.id }, onChange)}
+                      onClick={() => {
+                        setSourceTouched(true);
+                        updateForm(form, { sourceId: sourceId === source.id ? null : source.id }, onChange);
+                      }}
                     />
                   ))}
                 </Stack>
+                {showSourceValidationError ? (
+                  <Typography
+                    data-testid="network-callsign-source-error"
+                    variant="caption"
+                    color="error.main"
+                    sx={{ ml: 0.5 }}
+                  >
+                    {sourceValidationError}
+                  </Typography>
+                ) : null}
               </Stack>
 
               <Stack
@@ -360,28 +381,16 @@ export function NetworkCallsignDrawer({
                 spacing={1}
                 alignItems={{ xs: 'stretch', sm: 'center' }}
               >
-                <FormControl fullWidth size="small" disabled={saving} sx={{ minWidth: 0 }}>
-                  <InputLabel id="network-callsign-unit-label">Підрозділ</InputLabel>
-                  <Select
-                    labelId="network-callsign-unit-label"
-                    label="Підрозділ"
-                    value={selectedUnitId ?? ''}
-                    onChange={(event) => {
-                      const rawValue = event.target.value;
-                      onChange({ ...form, unitId: rawValue === '' ? null : Number(rawValue) });
-                    }}
-                    MenuProps={NEO_SELECT_MENU_PROPS}
-                  >
-                    <MenuItem value="">
-                      <em>Оберіть підрозділ</em>
-                    </MenuItem>
-                    {units.map((unit) => (
-                      <MenuItem key={unit.id} value={unit.id}>
-                        {unit.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <SearchableOptionAutocomplete
+                  label="Підрозділ"
+                  options={units}
+                  valueId={selectedUnitId}
+                  onValueIdChange={(unitId) => updateForm(form, { unitId }, onChange)}
+                  getOptionLabel={(unit) => unit.label}
+                  disabled={saving}
+                  placeholder="Оберіть підрозділ"
+                  slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
+                />
                 <Box
                   component="label"
                   sx={{

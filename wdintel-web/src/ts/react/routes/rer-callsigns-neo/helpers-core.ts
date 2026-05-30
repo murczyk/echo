@@ -15,6 +15,7 @@ import type {
   SortDescriptor,
   UnitHierarchyFilter,
 } from './types';
+import { normalizeUnitSearchValue } from '../../utils/unit-search';
 
 const DEFAULT_LIMIT = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -298,11 +299,4 @@ export function isDevelopingFilter(value: string): value is DevelopingFilter {
 function normalizeHierarchyFilterValue(value: UnitHierarchyFilter[keyof UnitHierarchyFilter] | undefined): string | null {
   if (isNullOrUndefined(value)) return null;
   return value.trim();
-}
-
-function normalizeUnitSearchValue(value: string): string {
-  return value
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLocaleLowerCase('uk-UA');
 }
