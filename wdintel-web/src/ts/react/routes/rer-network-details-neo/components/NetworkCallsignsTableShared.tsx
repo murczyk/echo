@@ -10,15 +10,14 @@ import type {
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../../components/mui-customized/table/custom-styles';
 import { buildDefaultColumnOrder } from '../../../components/mui-customized/table/get-default-table-options';
 
-export const NETWORK_STATUS_FILTER_LABELS: Record<NetworkCallsignStatusFilter, string> = {
+export const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Verified'>, string> = {
   All: 'Всі',
-  Verified: 'Верифіковано',
   Developing: 'В дорозвідці',
   Catalog: 'Каталог',
   Unknown: 'Невідомо',
 };
 
-export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Verified', 'Developing', 'Catalog', 'Unknown'];
+export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Developing', 'Catalog', 'Unknown'];
 
 export const NETWORK_COLUMNS_VISIBILITY = {
   callsign: true,

@@ -12,7 +12,9 @@ import {
 } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
+import { SearchableOptionAutocomplete } from '../../../components/SearchableOptionAutocomplete';
 import { RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, toUpperCaseCallsign } from '../helpers';
+import { getUnitDisplayLabel } from '../../../utils/unit-search';
 import type { CallsignDraftRow, CallsignEditForm } from '../types';
 
 type CommonFormValue = Pick<CallsignDraftRow, 'callsign' | 'position' | 'fullName' | 'comment' | 'developing' | 'radioFreq'> & {
@@ -55,7 +57,6 @@ export function CallsignFormFields<T extends CommonFormValue>({
 }: Props<T>) {
   const spacing = compact ? 1.5 : 2;
   const reactId = useId();
-  const unitLabelId = `${reactId}-unit-label`;
   const sourceLabelId = `${reactId}-source-label`;
   const confirmationSources = sources.filter((source) => source.id !== value.sourceId);
 
@@ -89,16 +90,19 @@ export function CallsignFormFields<T extends CommonFormValue>({
     <Stack spacing={spacing}>
       {controlsFirst && includeUnitSelect ? (
         <Stack direction={{ xs: "column", md: "row" }} spacing={spacing}>
-          <FormControl fullWidth size={compact ? "small" : "medium"} disabled={disabled}>
-            <InputLabel id={unitLabelId}>Підрозділ</InputLabel>
-            <Select labelId={unitLabelId} label="Підрозділ" value={value.unitId ?? ""} onChange={(event) => onChange({ ...value, unitId: Number(event.target.value) || 0 })}>
-              {units.map((unit) => (
-                <MenuItem key={unit.id} value={unit.id}>
-                  {unit.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <SearchableOptionAutocomplete
+            label="Підрозділ"
+            options={units}
+            valueId={value.unitId ?? null}
+            onValueIdChange={(unitId) => {
+              if (unitId === null) return;
+              onChange({ ...value, unitId });
+            }}
+            getOptionLabel={getUnitDisplayLabel}
+            disabled={disabled}
+            size={compact ? 'small' : 'medium'}
+            clearable={false}
+          />
           {includeSourceSelect ? (
             <FormControl fullWidth size={compact ? "small" : "medium"} disabled={disabled}>
               <InputLabel id={sourceLabelId}>Основне джерело</InputLabel>
@@ -213,21 +217,19 @@ export function CallsignFormFields<T extends CommonFormValue>({
       </Stack>
 
       {!controlsFirst && includeUnitSelect ? (
-        <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
-          <InputLabel id={unitLabelId}>Підрозділ</InputLabel>
-          <Select
-            labelId={unitLabelId}
-            label="Підрозділ"
-            value={value.unitId ?? ''}
-            onChange={(event) => onChange({ ...value, unitId: Number(event.target.value) || 0 })}
-          >
-            {units.map((unit) => (
-              <MenuItem key={unit.id} value={unit.id}>
-                {unit.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <SearchableOptionAutocomplete
+          label="Підрозділ"
+          options={units}
+          valueId={value.unitId ?? null}
+          onValueIdChange={(unitId) => {
+            if (unitId === null) return;
+            onChange({ ...value, unitId });
+          }}
+          getOptionLabel={getUnitDisplayLabel}
+          disabled={disabled}
+          size={compact ? 'small' : 'medium'}
+          clearable={false}
+        />
       ) : null}
 
       {!controlsFirst && includeSourceSelect ? (

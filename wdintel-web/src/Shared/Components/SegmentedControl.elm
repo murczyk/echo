@@ -10,6 +10,7 @@ type alias SegmentedControl a msg =
     , onChange : a -> msg
     , options : List (SegmentedOption a)
     , className : Maybe String
+    , ariaLabel : Maybe String
     }
 
 
@@ -25,6 +26,7 @@ new value onChange options =
     , onChange = onChange
     , options = options
     , className = Nothing
+    , ariaLabel = Nothing
     }
 
 
@@ -44,7 +46,7 @@ view control =
         , style "background-color" "var(--card-color)"
         , style "border" "1px solid var(--border-color)"
         , attribute "role" "radiogroup"
-        , attribute "aria-label" "Фільтр статусу"
+        , attribute "aria-label" (Maybe.withDefault "Фільтр статусу" control.ariaLabel)
         ]
         (List.map (renderOption control) control.options)
 

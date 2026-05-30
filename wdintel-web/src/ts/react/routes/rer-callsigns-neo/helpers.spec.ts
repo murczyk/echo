@@ -152,18 +152,20 @@ describe('rer-callsigns helpers', () => {
     expect(req.filterUnitBattalion).toBeNull();
   });
 
-  it('matches unit search by name and exact id only', () => {
+  it('ranks unit search by exact label before broader token matches', () => {
     const units = [
-      { id: 4, name: '4 омсбр' } as Unit,
-      { id: 14, name: '14 омсбр' } as Unit,
-      { id: 42, name: '78 мсп 42 мсд' } as Unit,
+      { id: 1, name: '3 шр 1 мсб 126 мсп 71 мсд 14 АК' } as Unit,
+      { id: 2, name: '3 мсб 126 мсп 71 мсд 14 АК' } as Unit,
+      { id: 3, name: '7 мср 3 мсб 126 мсп 71 мсд 14 АК' } as Unit,
+      { id: 4, name: '36 мсп 71 мсд 14 АК' } as Unit,
     ];
 
-    expect(filterUnitsBySearch(units, '4 омсбр').map((unit) => unit.id)).toEqual([4]);
-    expect(filterUnitsBySearch(units, '14').map((unit) => unit.id)).toEqual([14]);
-    expect(findExactUnitSearchMatch(units, '78 мсп 42 мсд')?.id).toBe(42);
-    expect(findExactUnitSearchMatch(units, '#42')?.id).toBe(42);
-    expect(findExactUnitSearchMatch(units, '4 омсбр')?.id).toBe(4);
+    expect(filterUnitsBySearch(units, '3 мсб 126 мсп').map((unit) => unit.id)).toEqual([2, 3, 1]);
+    expect(filterUnitsBySearch(units, '36 мсп').map((unit) => unit.id)).toEqual([4]);
+    expect(filterUnitsBySearch([{ id: 3, name: 'Альфа' } as Unit], '3')).toEqual([]);
+    expect(findExactUnitSearchMatch(units, '3 мсб 126 мсп 71 мсд 14 АК')?.id).toBe(2);
+    expect(findExactUnitSearchMatch(units, '36 мсп 71 мсд 14 АК')?.id).toBe(4);
+    expect(findExactUnitSearchMatch(units, '#4')).toBeNull();
     expect(getUnitSelectionError('78 мсп 42 мсд', null)).toBe(UNIT_SELECTION_REQUIRED_ERROR);
     expect(getUnitSelectionError('', null)).toBeNull();
   });

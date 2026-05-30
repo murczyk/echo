@@ -9,6 +9,7 @@ import type {
   NetworkCallsignInterceptedView,
   NetworkCallsignRowView,
   NetworkCallsignSectionMode,
+  NetworkCallsignMarkerMode,
   NetworkCallsignStatusFilter,
 } from '../network-callsigns';
 import { buildNetworkCallsignRowViews, flattenCatalogCallsignRows } from '../network-callsigns';
@@ -33,8 +34,7 @@ export type Props = {
   onOpenCreateDrawer: () => void;
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
-  onToggleMainRadioStation: (row: NetworkCallsignRowView) => void;
-  onToggleCommandControl: (row: NetworkCallsignRowView) => void;
+  onSetMarkerMode: (row: NetworkCallsignRowView, markerMode: NetworkCallsignMarkerMode) => void;
   onAddKnownCallsign: (knownCallsignId: number) => void;
   onAddInterceptedToDeveloping: (callsign: string) => void;
   onAddInterceptedToNetwork: (callsign: string) => void;
@@ -62,8 +62,7 @@ export function NetworkDetailsCallsignsPanel({
   onOpenCreateDrawer,
   onOpenEditDrawer,
   onOpenDeleteDialog,
-  onToggleMainRadioStation,
-  onToggleCommandControl,
+  onSetMarkerMode,
   onAddKnownCallsign,
   onAddInterceptedToDeveloping,
   onAddInterceptedToNetwork,
@@ -102,8 +101,7 @@ export function NetworkDetailsCallsignsPanel({
       onStatusFilterChange={onStatusFilterChange}
       onOpenEditDrawer={onOpenEditDrawer}
       onOpenDeleteDialog={onOpenDeleteDialog}
-      onToggleMainRadioStation={onToggleMainRadioStation}
-      onToggleCommandControl={onToggleCommandControl}
+      onSetMarkerMode={onSetMarkerMode}
       onReload={onReload}
       inFlightUpdateIds={inFlightUpdateIds}
       inFlightDeleteIds={inFlightDeleteIds}
