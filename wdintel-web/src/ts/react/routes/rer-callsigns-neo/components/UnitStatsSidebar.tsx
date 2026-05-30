@@ -4,7 +4,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
-import { Box, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Box, CircularProgress, Collapse, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 
@@ -380,11 +380,12 @@ export function UnitStatsSidebar({
         display: 'flex',
         flexDirection: 'column',
         borderRadius: 0,
-        borderRight: isDesktopLayout ? 'none' : undefined,
+        borderRight: '1px solid',
+        borderColor: 'divider',
       }}
       aria-busy={loading}
     >
-      <Stack spacing={1.5} sx={{ p: 2 }}>
+      <Stack spacing={1.5} sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="h6">Підрозділи</Typography>
           {onToggleOpen ? (
@@ -478,7 +479,6 @@ export function UnitStatsSidebar({
             : 'Натисніть на підрозділ, щоб обрати його. Стрілка ліворуч розгортає/згортає дочірні елементи.'}
         </Typography>
       </Stack>
-      <Divider />
       {loading && stats.length === 0 ? (
         <Stack alignItems="center" justifyContent="center" sx={{ p: 3 }} role="status" aria-live="polite">
           <CircularProgress size={24} color="primary" aria-label="Завантаження статистики" />
@@ -493,7 +493,7 @@ export function UnitStatsSidebar({
           <List
             dense
             disablePadding
-            sx={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+            sx={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', py: 0.5 }}
             aria-label="Дерево підрозділів"
           >
             {tree.map((node) => (

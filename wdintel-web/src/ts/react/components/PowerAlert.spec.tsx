@@ -63,10 +63,29 @@ describe('PowerAlert', () => {
     rendered.push(view);
 
     act(() => {
-      vi.advanceTimersByTime(4000);
+      vi.advanceTimersByTime(6000);
     });
 
     expect(view.container.textContent).not.toContain('done');
+  });
+
+  it('does not auto-hide info alerts by default', () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+
+    const view = renderComponent(
+      <PowerAlert severity="info" onClose={onClose}>
+        info
+      </PowerAlert>,
+    );
+    rendered.push(view);
+
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
   });
 
   it('shows close button for warning and error alerts', () => {
