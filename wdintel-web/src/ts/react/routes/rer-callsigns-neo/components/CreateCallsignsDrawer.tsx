@@ -23,6 +23,7 @@ import {
 import type { Source, Unit } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { SearchableOptionAutocomplete } from '../../../components/SearchableOptionAutocomplete';
+import { selectionFromId } from '../../../components/searchable-option.types';
 import {
   CALLSIGN_FORM_HINT,
   RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR,
@@ -32,7 +33,7 @@ import {
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignDraftRow, CallsignDuplicateHintGroup } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { getUnitDisplayLabel } from '../../../utils/unit-search';
+import { getUnitDisplayLabel, getUnitFilterValue } from '../../../utils/unit-search';
 
 type Props = {
   open: boolean;
@@ -288,8 +289,8 @@ export function CreateCallsignsDrawer({
                 placeholder="Пошук підрозділу"
                 required
                 options={units}
-                valueId={addUnitId}
-                onValueIdChange={onAddUnitIdChange}
+                value={selectionFromId(units, addUnitId, getUnitFilterValue)}
+                onChange={(selection) => onAddUnitIdChange(selection?.id ?? null)}
                 disabled={formDisabled}
                 inputValue={unitSearchInput}
                 onInputValueChange={setUnitSearchInput}
@@ -297,6 +298,7 @@ export function CreateCallsignsDrawer({
                 helperText={unitSelectionError ?? 'Почніть вводити назву або оберіть підрозділ зі списку'}
                 noOptionsText="Нічого не знайдено"
                 getOptionLabel={getUnitDisplayLabel}
+                getStoredValue={getUnitFilterValue}
               />
             </Box>
 

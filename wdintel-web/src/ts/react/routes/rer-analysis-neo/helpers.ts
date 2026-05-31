@@ -232,6 +232,7 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
     deniedFreqs: null,
     selectedCallsigns: req.selectedCallsigns,
     selectedUnits: req.selectedUnits,
+    deniedUnits: null,
     selectedLocations: req.selectedLocations,
     nolimit: null,
     orWithExtendedForm: req.orWithExtendedForm,

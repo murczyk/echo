@@ -1126,6 +1126,7 @@ type alias InboxMessagesReq =
     , deniedFreqs : Maybe (List (String))
     , selectedCallsigns : Maybe (List (String))
     , selectedUnits : Maybe (List (String))
+    , deniedUnits : Maybe (List (String))
     , selectedLocations : Maybe (List (String))
     , nolimit : Maybe (Bool)
     , orWithExtendedForm : Maybe (Bool)
@@ -1185,6 +1186,7 @@ inboxMessagesReqEncoder struct =
         , ( "denied_freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedFreqs )
         , ( "selected_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedCallsigns )
         , ( "selected_units", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedUnits )
+        , ( "denied_units", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedUnits )
         , ( "selected_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedLocations )
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.nolimit )
         , ( "or_with_extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithExtendedForm )
@@ -2414,6 +2416,9 @@ type alias RerDutyQueryStateWf =
     , freqsDenied : Maybe (List (String))
     , postsSelected : Maybe (List (String))
     , postsDenied : Maybe (List (String))
+    , unitsSelected : Maybe (List (String))
+    , unitsDenied : Maybe (List (String))
+    , unitsExactMatchOnly : Maybe (Bool)
     , lastViewedMessageId : Maybe (Int)
     , highlightKeywordsEnabled : Maybe (Bool)
     , highlightKeywordSetId : Maybe (Int)
@@ -2431,6 +2436,9 @@ rerDutyQueryStateWfEncoder struct =
         , ( "freqs_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.freqsDenied )
         , ( "posts_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsSelected )
         , ( "posts_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsDenied )
+        , ( "units_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitsSelected )
+        , ( "units_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitsDenied )
+        , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.unitsExactMatchOnly )
         , ( "last_viewed_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastViewedMessageId )
         , ( "highlight_keywords_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightKeywordsEnabled )
         , ( "highlight_keyword_set_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.highlightKeywordSetId )
@@ -8162,7 +8170,7 @@ networkLinkDecoder =
 
 
 nodeDecoder : Json.Decode.Decoder Node
-nodeDecoder = 
+nodeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.map NFolder (Json.Decode.field "Folder" (folderDecoder))
         , Json.Decode.map NDocument (Json.Decode.field "Document" (documentDecoder))
@@ -8323,7 +8331,7 @@ uploadPdfResDecoder =
 
 
 bgtaskErrorCodeDecoder : Json.Decode.Decoder BgtaskErrorCode
-bgtaskErrorCodeDecoder = 
+bgtaskErrorCodeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -8451,7 +8459,7 @@ inboxMessageTagDecoder =
 
 
 inboxMessagesSortByDecoder : Json.Decode.Decoder InboxMessagesSortBy
-inboxMessagesSortByDecoder = 
+inboxMessagesSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -8474,7 +8482,7 @@ inboxMessagesSortByDecoder =
         ]
 
 tagFilterOptionDecoder : Json.Decode.Decoder TagFilterOption
-tagFilterOptionDecoder = 
+tagFilterOptionDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -8515,6 +8523,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_freqs" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_callsigns" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_units" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_units" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_locations" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_extended_form" (Json.Decode.nullable (Json.Decode.bool))))
@@ -9168,6 +9177,9 @@ rerDutyQueryStateWfDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_viewed_message_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keyword_set_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -9316,7 +9328,7 @@ inboxGroupStatsDecoder =
 
 
 palitraAccessDecoder : Json.Decode.Decoder PalitraAccess
-palitraAccessDecoder = 
+palitraAccessDecoder =
         let
             elmRsConstructByLogins logins =
                         ByLogins { logins = logins }
@@ -9565,7 +9577,7 @@ cnPointDecoder =
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode
-contentNodeDecoder = 
+contentNodeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.map CnTextC (Json.Decode.field "CNTextC" (cnTextDecoder))
         , Json.Decode.string
@@ -9659,7 +9671,7 @@ loginDecoder =
 
 
 listLoginsSortByDecoder : Json.Decode.Decoder ListLoginsSortBy
-listLoginsSortByDecoder = 
+listLoginsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9730,7 +9742,7 @@ keepAliveReqDecoder =
 
 
 deactivationReasonTypeDecoder : Json.Decode.Decoder DeactivationReasonType
-deactivationReasonTypeDecoder = 
+deactivationReasonTypeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9788,7 +9800,7 @@ myScopeDecoder =
 
 
 listOrganismsSortByDecoder : Json.Decode.Decoder ListOrganismsSortBy
-listOrganismsSortByDecoder = 
+listOrganismsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -9915,7 +9927,7 @@ organismKeywordSetInflectRspDecoder =
 
 
 listGoiAssociationsSortByDecoder : Json.Decode.Decoder ListGoiAssociationsSortBy
-listGoiAssociationsSortByDecoder = 
+listGoiAssociationsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10094,7 +10106,7 @@ listGoiAssociationsRspDecoder =
 
 
 listGoiKnowledgeSortByDecoder : Json.Decode.Decoder ListGoiKnowledgeSortBy
-listGoiKnowledgeSortByDecoder = 
+listGoiKnowledgeSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10535,7 +10547,7 @@ networkFrequenciesReportSettingsDecoder =
 
 
 reportAggregationDecoder : Json.Decode.Decoder ReportAggregation
-reportAggregationDecoder = 
+reportAggregationDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10572,7 +10584,7 @@ reportPreviewReqDecoder =
 
 
 reportTypeDecoder : Json.Decode.Decoder ReportType
-reportTypeDecoder = 
+reportTypeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10651,7 +10663,7 @@ senderReportSettingsDecoder =
 
 
 listUnitsSortByDecoder : Json.Decode.Decoder ListUnitsSortBy
-listUnitsSortByDecoder = 
+listUnitsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10744,7 +10756,7 @@ unitSearchReqDecoder =
 
 
 listSignalsSortByDecoder : Json.Decode.Decoder ListSignalsSortBy
-listSignalsSortByDecoder = 
+listSignalsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -10866,7 +10878,7 @@ callsignActivityRecordDecoder =
 
 
 listCallsignsSortByDecoder : Json.Decode.Decoder ListCallsignsSortBy
-listCallsignsSortByDecoder = 
+listCallsignsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11015,7 +11027,7 @@ listCallsignsSortByDecoder =
         ]
 
 developingFilterDecoder : Json.Decode.Decoder DevelopingFilter
-developingFilterDecoder = 
+developingFilterDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11076,7 +11088,7 @@ listCallsignsRspDecoder =
 
 
 listNetworkCallsignsSortByDecoder : Json.Decode.Decoder ListNetworkCallsignsSortBy
-listNetworkCallsignsSortByDecoder = 
+listNetworkCallsignsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11276,7 +11288,7 @@ etalonkaSettingsDecoder =
 
 
 etalonkaReportTypeDecoder : Json.Decode.Decoder EtalonkaReportType
-etalonkaReportTypeDecoder = 
+etalonkaReportTypeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.map AccordingToTheForm (Json.Decode.field "AccordingToTheForm" (etalonkaSettingsDecoder))
         , Json.Decode.map ExtendedReport (Json.Decode.field "ExtendedReport" (etalonkaExtendedSettingsDecoder))
@@ -11387,7 +11399,7 @@ listFreqsRspDecoder =
 
 
 listFreqsSortByDecoder : Json.Decode.Decoder ListFreqsSortBy
-listFreqsSortByDecoder = 
+listFreqsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11592,7 +11604,7 @@ networkDecoder =
 
 
 networkStatusDecoder : Json.Decode.Decoder NetworkStatus
-networkStatusDecoder = 
+networkStatusDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11807,7 +11819,7 @@ listNetworksReqDecoder =
 
 
 listNetworksSortByDecoder : Json.Decode.Decoder ListNetworksSortBy
-listNetworksSortByDecoder = 
+listNetworksSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -11992,7 +12004,7 @@ postDecoder =
 
 
 listPostsSortByDecoder : Json.Decode.Decoder ListPostsSortBy
-listPostsSortByDecoder = 
+listPostsSortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12043,7 +12055,7 @@ deletePostReqDecoder =
 
 
 networkDescrTypeDecoder : Json.Decode.Decoder NetworkDescrType
-networkDescrTypeDecoder = 
+networkDescrTypeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12348,7 +12360,7 @@ updateAreaOfResponsibilityReportOrderReqDecoder =
 
 
 reoReportFileTypeDecoder : Json.Decode.Decoder ReoReportFileType
-reoReportFileTypeDecoder = 
+reoReportFileTypeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12371,7 +12383,7 @@ reoReportFileTypeDecoder =
         ]
 
 listAreasOfResponsibilitySortByDecoder : Json.Decode.Decoder ListAreasOfResponsibilitySortBy
-listAreasOfResponsibilitySortByDecoder = 
+listAreasOfResponsibilitySortByDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12426,7 +12438,7 @@ zoneDatasourceGroupAddRspDecoder =
 
 
 eventTypeDecoder : Json.Decode.Decoder EventType
-eventTypeDecoder = 
+eventTypeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -12627,7 +12639,7 @@ type DutyTagsLayout
 
 
 dutyTagsLayoutDecoder : Json.Decode.Decoder DutyTagsLayout
-dutyTagsLayoutDecoder = 
+dutyTagsLayoutDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen

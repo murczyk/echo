@@ -199,6 +199,7 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     denied_freqs: emptyArrToNull(req.deniedFreqs),
     selected_callsigns: emptyArrToNull(req.selectedCallsigns),
     selected_units: emptyArrToNull(req.selectedUnits),
+    denied_units: emptyArrToNull(req.deniedUnits),
     selected_locations: emptyArrToNull(req.selectedLocations),
     nolimit: req.nolimit,
     or_with_extended_form: req.orWithExtendedForm,
@@ -303,7 +304,7 @@ export async function inboxMessageTagsRm(req: InboxMessageTagsRmReq): Promise<vo
 
 function rerDutyQueryStateWfToSnake(
   w: RerDutyFeedFilterState
-): Record<string, string[] | number | null> {
+): Record<string, string[] | number | boolean | null> {
   return {
     groups_selected: w.groupsSelected,
     groups_denied: w.groupsDenied,
@@ -313,6 +314,9 @@ function rerDutyQueryStateWfToSnake(
     freqs_denied: w.freqsDenied,
     posts_selected: w.postsSelected,
     posts_denied: w.postsDenied,
+    units_selected: w.unitsSelected,
+    units_denied: w.unitsDenied,
+    units_exact_match_only: w.unitsExactMatchOnly,
     last_viewed_message_id: w.lastViewedMessageId,
   };
 }

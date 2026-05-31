@@ -541,6 +541,87 @@ where
     }
 }
 
+/// Фільтрує запит, виключаючи повідомлення, що відповідають вказаним підрозділам.
+///
+/// Симетрична до [`filter_selected_units`]: «окрім» = NOT(умова, що дала б «лише»).
+/// Прапорець `units_exact_match_only` працює так само — звужує область виключення
+/// лише до прив'язки через Еталонні мережі (інакше — також за `unit_v2` з шапки).
+///
+/// Спецзначення `"Не визначено"` / `""` виключає повідомлення без відомого підрозділу
+/// (немає `unit_v2` І немає прив'язки через Еталонку).
+pub fn filter_denied_units<Q>(
+    q: Q,
+    denied_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let mut m_empty_filter = None;
+    let mut m_filter = None;
+    if let Some(denied_units) = denied_units.as_ref() {
+        let mut denied_units: BTreeSet<String> =
+            denied_units.iter().cloned().collect::<BTreeSet<_>>();
+        let mut units_contain_empty = false;
+        if denied_units.remove("Не визначено") {
+            units_contain_empty = true;
+        }
+        if denied_units.remove("") {
+            units_contain_empty = true;
+        }
+        if units_contain_empty {
+            // повідомлення без жодного прив'язаного підрозділу мережі
+            let no_sigint_units = message_has_linked_unit(
+                Expr::col((
+                    Alias::new("selected_unit"),
+                    sigint_unit::Column::Name,
+                ))
+                .is_not_null(),
+            )
+            .not();
+            let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
+                .is_null()
+                .or(sigint_inbox_item::Column::UnitV2.eq(""));
+            let contains_empty = unit_is_not_in_message.and(no_sigint_units);
+            m_empty_filter = Some(contains_empty.not());
+        }
+        if !denied_units.is_empty() {
+            let selected_units = denied_units.into_iter().collect_vec();
+
+            let in_subquery_condition = message_has_linked_unit(
+                Expr::col((
+                    Alias::new("selected_unit"),
+                    sigint_unit::Column::Name,
+                ))
+                .is_in(selected_units.clone()),
+            )
+            .not();
+
+            let expr = if units_exact_match_only.unwrap_or(false) {
+                in_subquery_condition
+            } else {
+                // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
+                let header_unit_not_denied = sigint_inbox_item::Column::UnitV2
+                    .is_null()
+                    .or(sigint_inbox_item::Column::UnitV2.eq(""))
+                    .or(sigint_inbox_item::Column::UnitV2
+                        .ne_all(selected_units));
+
+                // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
+                header_unit_not_denied.and(in_subquery_condition)
+            };
+
+            m_filter = Some(expr);
+        }
+    }
+    match (m_filter, m_empty_filter) {
+        (None, None) => Ok(q),
+        (None, Some(f)) => Ok(q.filter(f)),
+        (Some(f), None) => Ok(q.filter(f)),
+        (Some(f1), Some(f2)) => Ok(q.filter(f1.and(f2))),
+    }
+}
+
 fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {
     Expr::exists(select_sigint_units_by_names(filter_expr))
 }
