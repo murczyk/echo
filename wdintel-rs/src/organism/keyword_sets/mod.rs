@@ -53,16 +53,10 @@ fn dto_from_model(
     is_admin: bool,
 ) -> OrganismKeywordSetDto {
     let words = row.words.clone();
-    let can_edit = keyword_set_can_edit(
-        row.author_login.as_deref(),
-        login,
-        is_admin,
-    );
-    let can_delete = keyword_set_can_delete(
-        row.author_login.as_deref(),
-        login,
-        is_admin,
-    );
+    let can_edit =
+        keyword_set_can_edit(row.author_login.as_deref(), login, is_admin);
+    let can_delete =
+        keyword_set_can_delete(row.author_login.as_deref(), login, is_admin);
     OrganismKeywordSetDto {
         id: row.id,
         name: row.name,

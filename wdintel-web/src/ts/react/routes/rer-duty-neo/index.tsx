@@ -93,6 +93,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         freqsDenied: feed.filter.freqsDenied ?? [],
         postsSelected: feed.filter.postsSelected ?? [],
         postsDenied: feed.filter.postsDenied ?? [],
+        unitsSelected: feed.filter.unitsSelected ?? [],
+        unitsDenied: feed.filter.unitsDenied ?? [],
       },
       sources: {
         groupsList,
@@ -101,13 +103,15 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         senderOptions,
         freqs,
         postsList,
+        unitsList: Object.values(unitsMap),
       },
-      toggles: {
-        adjacentFreqsRange: feed.adjacentFreqsRange,
-        highlightSignalsEnabled: feed.highlightSignalsEnabled,
-        onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
-        reloadFreqsLoading,
-      },
+        toggles: {
+          adjacentFreqsRange: feed.adjacentFreqsRange,
+          highlightSignalsEnabled: feed.highlightSignalsEnabled,
+          onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
+          unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? undefined,
+          reloadFreqsLoading,
+        },
       savedFilters: {
         savedFilters,
         selectedSavedId: selectedSavedIdByFeedId[feed.id] ?? null,
@@ -127,6 +131,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         onPostsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, postsSelected: v.length ? v : null }),
         onPostsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, postsDenied: v.length ? v : null }),
+        onUnitsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, unitsSelected: v.length ? v : null }),
+        onUnitsDeniedChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, unitsDenied: v.length ? v : null }),
+        onUnitsExactMatchOnlyChange: (v: boolean) =>
+          applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
         onAdjacentFreqsRangeChange: (v: number) =>
           setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, adjacentFreqsRange: v } : f))),
         onHighlightSignalsChange: (v: boolean) => {

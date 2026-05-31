@@ -1,9 +1,28 @@
-import { Box } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { Box, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
 import type { SavedFilterDuty } from '../../../../Bindings';
 import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
 import { FeedFilterFrequencySection } from './FeedFilterFrequencySection';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
+import { FeedFilterUnitsSection } from './FeedFilterUnitsSection';
+import type { SearchableOptionSelection } from '../../components/searchable-option.types';
+import type { Unit } from '../../../../Bindings';
+
+type UnitsExactMatchSelectValue = 'exact' | 'not-exact';
+
+const UNITS_EXACT_MATCH_OPTIONS: ReadonlyArray<{ value: UnitsExactMatchSelectValue; label: string }> = [
+  { value: 'not-exact', label: 'Неточний збіг' },
+  { value: 'exact', label: 'Точний збіг' },
+];
+
+function unitsExactMatchSelectValue(unitsExactMatchOnly: boolean): UnitsExactMatchSelectValue {
+  return unitsExactMatchOnly ? 'exact' : 'not-exact';
+}
+
+function unitsExactMatchSelectLabel(value: UnitsExactMatchSelectValue): string {
+  return UNITS_EXACT_MATCH_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
 
 export type FeedFilterSelectionConfig<T> = {
   mode: 'include' | 'exclude';
@@ -43,6 +62,17 @@ export type FeedFilterPanelViewProps = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionConfig<string>;
+  units: {
+    mode: 'include' | 'exclude';
+    onModeChange: (mode: 'include' | 'exclude') => void;
+    options: readonly Unit[];
+    selected: readonly SearchableOptionSelection[];
+    onSelectedChange: (value: SearchableOptionSelection[]) => void;
+    placeholder?: string;
+    autocompleteClassName?: string;
+    unitsExactMatchOnly: boolean;
+    onUnitsExactMatchOnlyChange: (value: boolean) => void;
+  };
   advanced: {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
@@ -58,6 +88,7 @@ export function FeedFilterPanelView({
   senders,
   freqs,
   posts,
+  units,
   advanced,
   savedFilters,
 }: FeedFilterPanelViewProps) {
@@ -155,6 +186,60 @@ export function FeedFilterPanelView({
           placeholder={posts.placeholder}
           autocompleteClassName={posts.autocompleteClassName}
         />
+
+        <Box>
+          <FeedFilterUnitsSection
+            title="Підрозділи"
+            mode={units.mode}
+            onModeChange={units.onModeChange}
+            options={units.options}
+            selected={units.selected}
+            onSelectedChange={units.onSelectedChange}
+            placeholder={units.placeholder}
+            autocompleteClassName={units.autocompleteClassName}
+          />
+          <Box className="mt-3 flex w-full items-center gap-1">
+            <Tooltip
+              arrow
+              placement="right"
+              slotProps={{ tooltip: { sx: { maxWidth: 280 } } }}
+              title="Точний збіг — лише підрозділи з прив'язки в Еталонних мережах. Неточний — також підрозділ з шапки повідомлення."
+            >
+              <Box
+                component="span"
+                aria-label="Пояснення збігу з еталонкою"
+                sx={{
+                  display: 'inline-flex',
+                  flexShrink: 0,
+                  lineHeight: 0,
+                  cursor: 'default',
+                  color: 'text.secondary',
+                }}
+              >
+                <InfoOutlinedIcon sx={{ fontSize: 18 }} />
+              </Box>
+            </Tooltip>
+            <FormControl fullWidth size="small">
+              <InputLabel id="units-exact-match-only-label">Збіг з еталонкою</InputLabel>
+              <Select
+                labelId="units-exact-match-only-label"
+                value={unitsExactMatchSelectValue(units.unitsExactMatchOnly)}
+                label="Збіг з еталонкою"
+                renderValue={(value) => unitsExactMatchSelectLabel(value as UnitsExactMatchSelectValue)}
+                onChange={(e) => {
+                  const value = e.target.value as UnitsExactMatchSelectValue;
+                  units.onUnitsExactMatchOnlyChange(value === 'exact');
+                }}
+              >
+                {UNITS_EXACT_MATCH_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+        </Box>
 
         <FeedFilterAdvancedSection
           highlightSignalsEnabled={advanced.highlightSignalsEnabled}

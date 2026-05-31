@@ -19,7 +19,7 @@ export type FeedFilterSavedFiltersViewModel = {
 };
 
 export function useFeedFilterSavedFiltersViewModel(panel: FeedFilterPanelModel): FeedFilterSavedFiltersViewModel {
-  const { feedId, filterState, savedFilters, actions } = panel;
+  const { feedId, filterState, toggles, savedFilters, actions } = panel;
   const {
     savedFilters: savedFilterItems,
     selectedSavedId,
@@ -52,7 +52,10 @@ export function useFeedFilterSavedFiltersViewModel(panel: FeedFilterPanelModel):
       JSON.stringify(filterState.freqsSelected) === JSON.stringify(loadedFilterNormalized.freqsSelected ?? []) &&
       JSON.stringify(filterState.freqsDenied) === JSON.stringify(loadedFilterNormalized.freqsDenied ?? []) &&
       JSON.stringify(filterState.postsSelected ?? []) === JSON.stringify(loadedFilterNormalized.postsSelected ?? []) &&
-      JSON.stringify(filterState.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? [])
+      JSON.stringify(filterState.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? []) &&
+      JSON.stringify(filterState.unitsSelected ?? []) === JSON.stringify(loadedFilterNormalized.unitsSelected ?? []) &&
+      JSON.stringify(filterState.unitsDenied ?? []) === JSON.stringify(loadedFilterNormalized.unitsDenied ?? []) &&
+      (toggles.unitsExactMatchOnly ?? false) === (loadedFilterNormalized.unitsExactMatchOnly ?? false)
     );
 
   const runSavedFilterAction = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {

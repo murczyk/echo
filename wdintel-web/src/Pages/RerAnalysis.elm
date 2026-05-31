@@ -341,6 +341,7 @@ getInboxReq model =
             |> emptyToNothing
     , selectedCallsigns = emptyToNothing model.callsignsSelected
     , selectedUnits = emptyToNothing model.unitsSelected
+    , deniedUnits = Nothing
     , selectedLocations = emptyToNothing model.locationsSelected
     , includePelengLocations = Just model.includePelengLocations
     , selectedTags = emptyToNothing model.tagsSelected

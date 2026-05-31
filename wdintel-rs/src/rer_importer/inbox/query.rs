@@ -111,6 +111,8 @@ pub(crate) async fn build_inbox_query(
         &req.selected_units,
         &req.units_exact_match_only,
     )?;
+    let q =
+        filter_denied_units(q, &req.denied_units, &req.units_exact_match_only)?;
     let q = filter_selected_tags(
         q,
         &req.selected_tags,

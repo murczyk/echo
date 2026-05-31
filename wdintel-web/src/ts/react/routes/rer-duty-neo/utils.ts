@@ -181,6 +181,9 @@ export function emptyFilter(): RerDutyFeedFilterState {
     freqsDenied: null,
     postsSelected: null,
     postsDenied: null,
+    unitsSelected: null,
+    unitsDenied: null,
+    unitsExactMatchOnly: false,
     lastViewedMessageId: null,
     highlightKeywordsEnabled: null,
     highlightKeywordSetId: null,
@@ -218,6 +221,9 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.freqsDenied, b.freqsDenied) &&
     optArrEqual(a.postsSelected, b.postsSelected) &&
     optArrEqual(a.postsDenied, b.postsDenied) &&
+    optArrEqual(a.unitsSelected, b.unitsSelected) &&
+    optArrEqual(a.unitsDenied, b.unitsDenied) &&
+    (a.unitsExactMatchOnly ?? false) === (b.unitsExactMatchOnly ?? false) &&
     a.highlightKeywordSetId === b.highlightKeywordSetId
   );
 }
@@ -280,7 +286,8 @@ export function buildInboxReq(opts: {
     deniedPosts: emptyArrToNull(f.postsDenied),
     deniedFreqs,
     selectedCallsigns: null,
-    selectedUnits: null,
+    selectedUnits: emptyArrToNull(f.unitsSelected ?? null),
+    deniedUnits: emptyArrToNull(f.unitsDenied ?? null),
     selectedLocations: null,
     nolimit: opts.nolimit ?? null,
     orWithExtendedForm: null,
@@ -312,7 +319,7 @@ export function buildInboxReq(opts: {
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,
-    unitsExactMatchOnly: null,
+    unitsExactMatchOnly: f.unitsExactMatchOnly ?? null,
     calculateFreqPelengsSummary: null,
     skipGroupStats: true,
     filterTagsOption: null,
@@ -331,6 +338,9 @@ export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterSt
     freqsDenied: readFilterValues(raw, ['freqsDenied', 'freqs_denied']),
     postsSelected: readFilterValues(raw, ['postsSelected', 'posts_selected']),
     postsDenied: readFilterValues(raw, ['postsDenied', 'posts_denied']),
+    unitsSelected: readFilterValues(raw, ['unitsSelected', 'units_selected']),
+    unitsDenied: readFilterValues(raw, ['unitsDenied', 'units_denied']),
+    unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? false) as boolean | null,
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as number | null,
     highlightKeywordsEnabled: (raw.highlightKeywordsEnabled ??
       raw.highlight_keywords_enabled ??

@@ -1,5 +1,8 @@
 import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
+import type { Unit } from '../../../../Bindings';
+import type { SearchableOptionSelection } from '../../components/searchable-option.types';
+import { buildUnitFilterOptions, unitNamesFromSelections, unitSelectionsFromNames } from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import { useFeedFilterSavedFiltersViewModel, type FeedFilterSavedFiltersViewModel } from './useFeedFilterSavedFiltersViewModel';
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
@@ -30,6 +33,17 @@ export type FeedFilterPanelViewModel = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionViewModel<string>;
+  units: {
+    mode: FeedFilterMode;
+    onModeChange: (mode: FeedFilterMode) => void;
+    options: readonly Unit[];
+    selected: readonly SearchableOptionSelection[];
+    onSelectedChange: (value: SearchableOptionSelection[]) => void;
+    placeholder?: string;
+    autocompleteClassName?: string;
+    unitsExactMatchOnly: boolean;
+    onUnitsExactMatchOnlyChange: (value: boolean) => void;
+  };
   advanced: {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
@@ -43,8 +57,14 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
   const { filterState, sources, toggles, actions } = panel;
-  const { groupsList, groupInfos, senderOptions, freqs, postsList } = sources;
-  const { adjacentFreqsRange, highlightSignalsEnabled, onlyMyUnitTagsEnabled, reloadFreqsLoading } = toggles;
+  const { groupsList, groupInfos, senderOptions, freqs, postsList, unitsList } = sources;
+  const {
+    adjacentFreqsRange,
+    highlightSignalsEnabled,
+    onlyMyUnitTagsEnabled,
+    unitsExactMatchOnly,
+    reloadFreqsLoading,
+  } = toggles;
   const {
     onGroupsChange,
     onDeniedGroupsChange,
@@ -54,6 +74,9 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     onFreqsDeniedChange,
     onPostsChange,
     onPostsDeniedChange,
+    onUnitsChange,
+    onUnitsDeniedChange,
+    onUnitsExactMatchOnlyChange,
     onAdjacentFreqsRangeChange,
     onHighlightSignalsChange,
     onOnlyMyUnitTagsChange,
@@ -97,11 +120,38 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
+  const unitSelectionState = useFeedFilterSelectionState<string>({
+    includeValues: filterState.unitsSelected ?? [],
+    excludeValues: filterState.unitsDenied ?? [],
+    onIncludeChange: onUnitsChange ?? (() => {}),
+    onExcludeChange: onUnitsDeniedChange ?? (() => {}),
+    toLocalValues: (values) => [...values],
+    toParentValues: (values) => [...values],
+  });
+
+  const unitsCatalogKey = useMemo(
+    () =>
+      (unitsList ?? [])
+        .map((unit) => `${unit.id}:${unit.name}`)
+        .sort()
+        .join('|'),
+    [unitsList],
+  );
+  const unitOptions = useMemo(
+    () => buildUnitFilterOptions(unitsList ?? []),
+    [unitsCatalogKey],
+  );
+
+  const unitSelected = useMemo(
+    () => unitSelectionsFromNames(unitSelectionState.localValue, unitOptions),
+    [unitSelectionState.localValue, unitOptions],
+  );
 
   const groupEmptyLabel = groupsSelectionState.mode === 'include' ? 'всі' : 'ніяка';
   const senderEmptyLabel = senderSelectionState.mode === 'include' ? 'всі' : 'ніхто';
   const freqEmptyLabel = freqSelectionState.mode === 'include' ? 'всі' : 'ніяка';
   const postEmptyLabel = postSelectionState.mode === 'include' ? 'всі' : 'ніяка';
+  const unitEmptyLabel = unitSelectionState.mode === 'include' ? 'всі' : 'жоден';
 
   return {
     isDarkMode,
@@ -152,6 +202,18 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       getOptionLabel: (option: string) => option,
       placeholder: postSelectionState.localValue.length === 0 ? postEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
+    },
+    units: {
+      mode: unitSelectionState.mode,
+      onModeChange: unitSelectionState.setMode,
+      options: unitOptions,
+      selected: unitSelected,
+      onSelectedChange: (selections) =>
+        unitSelectionState.setLocalValue(unitNamesFromSelections(selections)),
+      placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
+      autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
+      unitsExactMatchOnly: unitsExactMatchOnly ?? false,
+      onUnitsExactMatchOnlyChange: onUnitsExactMatchOnlyChange ?? (() => {}),
     },
     advanced: {
       highlightSignalsEnabled,
