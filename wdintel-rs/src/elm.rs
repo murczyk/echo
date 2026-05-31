@@ -20,6 +20,12 @@ const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT: &str =
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str =
     r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.int)"#;
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)"#;
+const RER_DUTY_WF_UNITS_SELECTED_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))"#;
+const RER_DUTY_WF_UNITS_SELECTED_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))"#;
+const RER_DUTY_WF_UNITS_DENIED_AND_EXACT_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool))))"#;
+const RER_DUTY_WF_UNITS_DENIED_AND_EXACT_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing]))"#;
 
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
@@ -912,5 +918,13 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW,
             RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
+        )
+        .replace(
+            RER_DUTY_WF_UNITS_SELECTED_STRICT_DECODER,
+            RER_DUTY_WF_UNITS_SELECTED_COMPAT_DECODER,
+        )
+        .replace(
+            RER_DUTY_WF_UNITS_DENIED_AND_EXACT_STRICT_DECODER,
+            RER_DUTY_WF_UNITS_DENIED_AND_EXACT_COMPAT_DECODER,
         )
 }

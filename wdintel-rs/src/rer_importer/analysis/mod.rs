@@ -597,15 +597,16 @@ where
             )
             .not();
 
-            // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
-            let header_unit_not_denied = sigint_inbox_item::Column::UnitV2
-                .is_null()
-                .or(sigint_inbox_item::Column::UnitV2.eq(""))
-                .or(sigint_inbox_item::Column::UnitV2
-                    .ne_all(selected_units.clone()));
             let expr = if units_exact_match_only.unwrap_or(false) {
                 in_subquery_condition
             } else {
+                // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
+                let header_unit_not_denied = sigint_inbox_item::Column::UnitV2
+                    .is_null()
+                    .or(sigint_inbox_item::Column::UnitV2.eq(""))
+                    .or(sigint_inbox_item::Column::UnitV2
+                        .ne_all(selected_units));
+
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
                 header_unit_not_denied.and(in_subquery_condition)
             };
