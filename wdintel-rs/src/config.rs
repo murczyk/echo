@@ -242,7 +242,6 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
-    pub feature_rer_duty_short_state: Option<bool>,
     pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,
     secret_config: Option<SecretConfig>,

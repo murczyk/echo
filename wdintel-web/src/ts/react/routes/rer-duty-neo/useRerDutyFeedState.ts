@@ -14,7 +14,6 @@ import {
   rerDutyShortStateCreate,
   rerDutyShortStateGet,
 } from '../../services/api/inbox';
-import { fetchServerInfo } from '../../services/api/server-info';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
@@ -37,6 +36,7 @@ import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 import { notifyDutyNewMessages } from './notifications';
 import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
 import { useRerDutyReferenceData } from './useRerDutyReferenceData';
+import {currentSystemSettings} from "../../services/api/system-settings";
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -142,9 +142,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     let cancelled = false;
     const loadShortState = async () => {
       try {
-        const serverInfo = await fetchServerInfo();
+        const systemSettings = await currentSystemSettings();
         if (cancelled) return;
-        const enabled = serverInfo.featureRerDutyShortState ?? false;
+        const enabled = systemSettings.rerShortUrlEnabled ?? false;
         setFeatureShortStateEnabled(enabled);
         const shortId = shortStateIdRef.current;
         if (enabled && shortId) {

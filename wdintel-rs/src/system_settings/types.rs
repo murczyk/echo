@@ -12,6 +12,7 @@ pub struct SystemSettingsCurrentRsp {
     pub rer_duty_test_since_ms: i64,
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
+    pub short_url_enabled: bool,
 }
 
 #[derive(
@@ -29,6 +30,7 @@ pub struct SystemSettingsItem {
     pub updated_at: i64,
     pub updated_by: Option<String>,
     pub deleted: bool,
+    pub short_url_enabled: bool,
 }
 
 #[derive(
@@ -48,6 +50,7 @@ pub struct CreateSystemSettingsReq {
     pub rer_duty_test_since_ms: i64,
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
+    pub short_url_enabled: bool,
 }
 
 #[derive(

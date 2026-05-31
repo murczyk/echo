@@ -42,6 +42,8 @@ export function AdminSystemSettingsNeoPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
+  const [draftShortUrlEnabled, setDraftShortUrlEnabled] = useState(false);
+  const [initialShortUrlEnabled, setInitialShortUrlEnabled] = useState(false);
 
   useEffect(() => {
     async function loadSystemSettings() {
@@ -69,6 +71,8 @@ export function AdminSystemSettingsNeoPage() {
         setInitialDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
         setInitialDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
         setInitialDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
+        setDraftShortUrlEnabled(activeSettings?.rerShortUrlEnabled ?? false);
+        setInitialShortUrlEnabled(activeSettings?.rerShortUrlEnabled ?? false);
       } catch (error) {
         setLoadError(
           `Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`,
@@ -88,7 +92,8 @@ export function AdminSystemSettingsNeoPage() {
       initialDutyInsertHistoricalInterceptions ||
     draftDutyTestSinceMs !== initialDutyTestSinceMs ||
     draftDutyTestLimit !== initialDutyTestLimit ||
-    draftDutyPollIntervalSec !== initialDutyPollIntervalSec;
+    draftDutyPollIntervalSec !== initialDutyPollIntervalSec ||
+    draftShortUrlEnabled !== initialShortUrlEnabled;
 
   function handleExactMatchOnlyChange(checked: boolean) {
     setSaveSuccess(null);
@@ -115,6 +120,7 @@ export function AdminSystemSettingsNeoPage() {
         testSinceMs,
         testLimit,
         pollIntervalSec,
+        draftShortUrlEnabled,
       );
       setDraftDutyTestSinceMs(testSinceMs);
       setDraftDutyTestLimit(testLimit);
@@ -127,6 +133,7 @@ export function AdminSystemSettingsNeoPage() {
       setInitialDutyTestSinceMs(testSinceMs);
       setInitialDutyTestLimit(testLimit);
       setInitialDutyPollIntervalSec(pollIntervalSec);
+      setInitialShortUrlEnabled(draftShortUrlEnabled);
       setSaveSuccess('Нове системне налаштування збережено.');
     } catch (error) {
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
@@ -184,7 +191,7 @@ export function AdminSystemSettingsNeoPage() {
                   </ButtonBase>
                 </Box>
 
-                <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
+                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
                   Оперативний: тестові повідомлення
                 </Typography>
                 <FormControlLabel
@@ -246,6 +253,23 @@ export function AdminSystemSettingsNeoPage() {
                   }}
                   inputProps={{ min: 1, step: 1 }}
                   helperText="Як часто перевіряти нові повідомлення"
+                />
+
+                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+                  Оперативний: Короткий URL
+                </Typography>
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={draftShortUrlEnabled}
+                      onChange={(_, checked) => {
+                        setSaveSuccess(null);
+                        setDraftShortUrlEnabled(checked);
+                      }}
+                    />
+                  }
+                  label="Увімкнути которкий URL для оперативного"
                 />
 
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>

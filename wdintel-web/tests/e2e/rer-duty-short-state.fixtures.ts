@@ -51,6 +51,7 @@ function emptySystemSettingsResponse() {
     rer_duty_test_since_ms: 0,
     rer_duty_test_limit: 1,
     rer_duty_poll_interval_sec: 1,
+    short_url_enabled: true,
   };
 }
 
@@ -61,7 +62,6 @@ function serverInfoResponse() {
     grafana_address: 'https://echo.localhost/grafana',
     feature_delta: true,
     feature_analysis_map: true,
-    feature_rer_duty_short_state: true,
     feature_strict_networks: false,
     version: 'test',
   };

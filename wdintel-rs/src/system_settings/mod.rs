@@ -35,6 +35,7 @@ fn map_system_settings_item(
         updated_at: settings.updated_at.and_utc().timestamp_millis(),
         updated_by: settings.updated_by,
         deleted: settings.deleted,
+        short_url_enabled: settings.short_url_enabled,
     })
 }
 
@@ -104,6 +105,7 @@ pub async fn current_system_settings(
             rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
             rer_duty_test_limit: settings.rer_duty_test_limit,
             rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
+            short_url_enabled: settings.short_url_enabled,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -113,6 +115,7 @@ pub async fn current_system_settings(
             rer_duty_test_since_ms: 0,
             rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec: 1,
+            short_url_enabled: false,
         },
     }))
 }
@@ -126,7 +129,7 @@ pub async fn list_system_settings(
         .await
         .c(h!())?;
 
-    let items = system_settings::Entity::find()
+    let items: Vec<SystemSettingsItem> = system_settings::Entity::find()
         .order_by_desc(system_settings::Column::Deleted)
         .order_by_desc(system_settings::Column::UpdatedAt)
         .all(&env.dbx)
@@ -169,6 +172,7 @@ pub async fn create_system_settings(
         updated_at: sea_orm::ActiveValue::NotSet,
         updated_by: Set(Some(login)),
         deleted: Set(false),
+        short_url_enabled: Set(req.short_url_enabled),
     }
     .insert(&txn)
     .await

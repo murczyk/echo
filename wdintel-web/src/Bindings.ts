@@ -285,7 +285,6 @@ export type ServerInfo = {
   grafanaAddress: string;
   featureDelta: boolean;
   featureAnalysisMap: boolean;
-  featureRerDutyShortState: boolean;
   featureStrictNetworks: boolean;
   version: string;
 };
@@ -2811,6 +2810,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  shortUrlEnabled: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -2825,6 +2825,7 @@ export type SystemSettingsItem = {
   updatedAt: number;
   updatedBy: string | null;
   deleted: boolean;
+  shortUrlEnabled: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -2838,6 +2839,7 @@ export type CreateSystemSettingsReq = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  shortUrlEnabled: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
