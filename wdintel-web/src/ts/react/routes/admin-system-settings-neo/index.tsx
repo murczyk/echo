@@ -191,7 +191,7 @@ export function AdminSystemSettingsNeoPage() {
                   </ButtonBase>
                 </Box>
 
-                <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
+                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
                   Оперативний: тестові повідомлення
                 </Typography>
                 <FormControlLabel
@@ -256,7 +256,7 @@ export function AdminSystemSettingsNeoPage() {
                 />
 
                 <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-                  Оперативний: Short UUID URL
+                  Оперативний: Короткий URL
                 </Typography>
 
                 <FormControlLabel
