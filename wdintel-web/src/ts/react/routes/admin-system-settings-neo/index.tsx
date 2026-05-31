@@ -8,7 +8,52 @@ import { PowerButton } from '../../components/PowerButton';
 import {
   createSystemSettings,
   listSystemSettings,
+  type SystemSettingsItem,
 } from '../../services/api/system-settings';
+
+type SystemSettingsForm = {
+  exactMatchOnlyDefault: boolean;
+  dutyTestEnabled: boolean;
+  dutyInsertHistoricalInterceptions: boolean;
+  dutyTestSinceMs: number;
+  dutyTestLimit: number;
+  dutyPollIntervalSec: number;
+  shortUrlEnabled: boolean;
+};
+
+const EMPTY_FORM: SystemSettingsForm = {
+  exactMatchOnlyDefault: true,
+  dutyTestEnabled: false,
+  dutyInsertHistoricalInterceptions: false,
+  dutyTestSinceMs: 0,
+  dutyTestLimit: 1,
+  dutyPollIntervalSec: 1,
+  shortUrlEnabled: false,
+};
+
+function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsForm {
+  return {
+    exactMatchOnlyDefault: item?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
+    dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
+    dutyInsertHistoricalInterceptions: item?.rerDutyInsertHistoricalInterceptions ?? false,
+    dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
+    dutyTestLimit: item?.rerDutyTestLimit ?? 1,
+    dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
+    shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
+  };
+}
+
+function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
+  return (
+    a.exactMatchOnlyDefault === b.exactMatchOnlyDefault &&
+    a.dutyTestEnabled === b.dutyTestEnabled &&
+    a.dutyInsertHistoricalInterceptions === b.dutyInsertHistoricalInterceptions &&
+    a.dutyTestSinceMs === b.dutyTestSinceMs &&
+    a.dutyTestLimit === b.dutyTestLimit &&
+    a.dutyPollIntervalSec === b.dutyPollIntervalSec &&
+    a.shortUrlEnabled === b.shortUrlEnabled
+  );
+}
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -21,29 +66,13 @@ function formatErrorMessage(error: unknown): string {
 }
 
 export function AdminSystemSettingsNeoPage() {
-  const [draftExactMatchOnlyDefault, setDraftExactMatchOnlyDefault] =
-    useState(true);
-  const [initialExactMatchOnlyDefault, setInitialExactMatchOnlyDefault] =
-    useState(true);
-  const [draftDutyTestEnabled, setDraftDutyTestEnabled] = useState(false);
-  const [draftDutyInsertHistoricalInterceptions, setDraftDutyInsertHistoricalInterceptions] =
-    useState(false);
-  const [draftDutyTestSinceMs, setDraftDutyTestSinceMs] = useState(0);
-  const [draftDutyTestLimit, setDraftDutyTestLimit] = useState(1);
-  const [draftDutyPollIntervalSec, setDraftDutyPollIntervalSec] = useState(1);
-  const [initialDutyTestEnabled, setInitialDutyTestEnabled] = useState(false);
-  const [initialDutyInsertHistoricalInterceptions, setInitialDutyInsertHistoricalInterceptions] =
-    useState(false);
-  const [initialDutyTestSinceMs, setInitialDutyTestSinceMs] = useState(0);
-  const [initialDutyTestLimit, setInitialDutyTestLimit] = useState(1);
-  const [initialDutyPollIntervalSec, setInitialDutyPollIntervalSec] = useState(1);
+  const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
+  const [form, setForm] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [loadInProgress, setLoadInProgress] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
-  const [draftShortUrlEnabled, setDraftShortUrlEnabled] = useState(false);
-  const [initialShortUrlEnabled, setInitialShortUrlEnabled] = useState(false);
 
   useEffect(() => {
     async function loadSystemSettings() {
@@ -53,26 +82,9 @@ export function AdminSystemSettingsNeoPage() {
       try {
         const settings = await listSystemSettings();
         const activeSettings = settings.find((item) => !item.deleted);
-        const nextValue =
-          activeSettings?.rerAnalysisUnitsExactMatchOnlyDefault ?? true;
-        setDraftExactMatchOnlyDefault(nextValue);
-        setInitialExactMatchOnlyDefault(nextValue);
-        setDraftDutyTestEnabled(activeSettings?.rerDutyTestEnabled ?? false);
-        setDraftDutyInsertHistoricalInterceptions(
-          activeSettings?.rerDutyInsertHistoricalInterceptions ?? false,
-        );
-        setDraftDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
-        setDraftDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
-        setDraftDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
-        setInitialDutyTestEnabled(activeSettings?.rerDutyTestEnabled ?? false);
-        setInitialDutyInsertHistoricalInterceptions(
-          activeSettings?.rerDutyInsertHistoricalInterceptions ?? false,
-        );
-        setInitialDutyTestSinceMs(activeSettings?.rerDutyTestSinceMs ?? 0);
-        setInitialDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
-        setInitialDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
-        setDraftShortUrlEnabled(activeSettings?.rerShortUrlEnabled ?? false);
-        setInitialShortUrlEnabled(activeSettings?.rerShortUrlEnabled ?? false);
+        const nextForm = formFromSettings(activeSettings);
+        setSaved(nextForm);
+        setForm(nextForm);
       } catch (error) {
         setLoadError(
           `Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`,
@@ -85,19 +97,11 @@ export function AdminSystemSettingsNeoPage() {
     loadSystemSettings();
   }, []);
 
-  const isDirty =
-    draftExactMatchOnlyDefault !== initialExactMatchOnlyDefault ||
-    draftDutyTestEnabled !== initialDutyTestEnabled ||
-    draftDutyInsertHistoricalInterceptions !==
-      initialDutyInsertHistoricalInterceptions ||
-    draftDutyTestSinceMs !== initialDutyTestSinceMs ||
-    draftDutyTestLimit !== initialDutyTestLimit ||
-    draftDutyPollIntervalSec !== initialDutyPollIntervalSec ||
-    draftShortUrlEnabled !== initialShortUrlEnabled;
+  const isDirty = !formsEqual(form, saved);
 
-  function handleExactMatchOnlyChange(checked: boolean) {
+  function patchForm(patch: Partial<SystemSettingsForm>) {
     setSaveSuccess(null);
-    setDraftExactMatchOnlyDefault(checked);
+    setForm((prev) => ({ ...prev, ...patch }));
   }
 
   async function handleSaveSystemSettings(event?: FormEvent) {
@@ -110,30 +114,23 @@ export function AdminSystemSettingsNeoPage() {
     setSaveSuccess(null);
 
     try {
-      const testSinceMs = Math.max(0, Math.floor(draftDutyTestSinceMs) || 0);
-      const testLimit = Math.max(1, Math.floor(draftDutyTestLimit) || 1);
-      const pollIntervalSec = Math.max(1, Math.floor(draftDutyPollIntervalSec) || 1);
+      const nextForm: SystemSettingsForm = {
+        ...form,
+        dutyTestSinceMs: Math.max(0, Math.floor(form.dutyTestSinceMs) || 0),
+        dutyTestLimit: Math.max(1, Math.floor(form.dutyTestLimit) || 1),
+        dutyPollIntervalSec: Math.max(1, Math.floor(form.dutyPollIntervalSec) || 1),
+      };
       await createSystemSettings(
-        draftExactMatchOnlyDefault,
-        draftDutyTestEnabled,
-        draftDutyInsertHistoricalInterceptions,
-        testSinceMs,
-        testLimit,
-        pollIntervalSec,
-        draftShortUrlEnabled,
+        nextForm.exactMatchOnlyDefault,
+        nextForm.dutyTestEnabled,
+        nextForm.dutyInsertHistoricalInterceptions,
+        nextForm.dutyTestSinceMs,
+        nextForm.dutyTestLimit,
+        nextForm.dutyPollIntervalSec,
+        nextForm.shortUrlEnabled,
       );
-      setDraftDutyTestSinceMs(testSinceMs);
-      setDraftDutyTestLimit(testLimit);
-      setDraftDutyPollIntervalSec(pollIntervalSec);
-      setInitialExactMatchOnlyDefault(draftExactMatchOnlyDefault);
-      setInitialDutyTestEnabled(draftDutyTestEnabled);
-      setInitialDutyInsertHistoricalInterceptions(
-        draftDutyInsertHistoricalInterceptions,
-      );
-      setInitialDutyTestSinceMs(testSinceMs);
-      setInitialDutyTestLimit(testLimit);
-      setInitialDutyPollIntervalSec(pollIntervalSec);
-      setInitialShortUrlEnabled(draftShortUrlEnabled);
+      setForm(nextForm);
+      setSaved(nextForm);
       setSaveSuccess('Нове системне налаштування збережено.');
     } catch (error) {
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
@@ -166,16 +163,16 @@ export function AdminSystemSettingsNeoPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Switch
                     sx={{ m: 0 }}
-                    checked={draftExactMatchOnlyDefault}
+                    checked={form.exactMatchOnlyDefault}
                     onChange={(_, checked) => {
-                      handleExactMatchOnlyChange(checked);
+                      patchForm({ exactMatchOnlyDefault: checked });
                     }}
                   />
                   <ButtonBase
                     component="button"
                     type="button"
                     onClick={() => {
-                      handleExactMatchOnlyChange(!draftExactMatchOnlyDefault);
+                      patchForm({ exactMatchOnlyDefault: !form.exactMatchOnlyDefault });
                     }}
                     sx={{
                       display: 'inline-flex',
@@ -197,10 +194,9 @@ export function AdminSystemSettingsNeoPage() {
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={draftDutyTestEnabled}
+                      checked={form.dutyTestEnabled}
                       onChange={(_, checked) => {
-                        setSaveSuccess(null);
-                        setDraftDutyTestEnabled(checked);
+                        patchForm({ dutyTestEnabled: checked });
                       }}
                     />
                   }
@@ -209,10 +205,9 @@ export function AdminSystemSettingsNeoPage() {
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={draftDutyInsertHistoricalInterceptions}
+                      checked={form.dutyInsertHistoricalInterceptions}
                       onChange={(_, checked) => {
-                        setSaveSuccess(null);
-                        setDraftDutyInsertHistoricalInterceptions(checked);
+                        patchForm({ dutyInsertHistoricalInterceptions: checked });
                       }}
                     />
                   }
@@ -221,11 +216,10 @@ export function AdminSystemSettingsNeoPage() {
                 <TextField
                   label="Дата старту (timestamp ms)"
                   type="number"
-                  value={draftDutyTestSinceMs}
+                  value={form.dutyTestSinceMs}
                   onChange={(event) => {
-                    setSaveSuccess(null);
                     const next = Number(event.target.value);
-                    setDraftDutyTestSinceMs(Number.isFinite(next) ? next : 0);
+                    patchForm({ dutyTestSinceMs: Number.isFinite(next) ? next : 0 });
                   }}
                   inputProps={{ min: 0, step: 1000 }}
                   helperText="Використовується як sinceDateInclusiveMs"
@@ -233,11 +227,10 @@ export function AdminSystemSettingsNeoPage() {
                 <TextField
                   label="Ліміт повідомлень"
                   type="number"
-                  value={draftDutyTestLimit}
+                  value={form.dutyTestLimit}
                   onChange={(event) => {
-                    setSaveSuccess(null);
                     const next = Number(event.target.value);
-                    setDraftDutyTestLimit(Number.isFinite(next) ? next : 1);
+                    patchForm({ dutyTestLimit: Number.isFinite(next) ? next : 1 });
                   }}
                   inputProps={{ min: 1, step: 1 }}
                   helperText="Мінімум 1"
@@ -245,11 +238,10 @@ export function AdminSystemSettingsNeoPage() {
                 <TextField
                   label="Інтервал запиту нових повідомлень (сек)"
                   type="number"
-                  value={draftDutyPollIntervalSec}
+                  value={form.dutyPollIntervalSec}
                   onChange={(event) => {
-                    setSaveSuccess(null);
                     const next = Number(event.target.value);
-                    setDraftDutyPollIntervalSec(Number.isFinite(next) ? next : 1);
+                    patchForm({ dutyPollIntervalSec: Number.isFinite(next) ? next : 1 });
                   }}
                   inputProps={{ min: 1, step: 1 }}
                   helperText="Як часто перевіряти нові повідомлення"
@@ -262,10 +254,9 @@ export function AdminSystemSettingsNeoPage() {
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={draftShortUrlEnabled}
+                      checked={form.shortUrlEnabled}
                       onChange={(_, checked) => {
-                        setSaveSuccess(null);
-                        setDraftShortUrlEnabled(checked);
+                        patchForm({ shortUrlEnabled: checked });
                       }}
                     />
                   }
