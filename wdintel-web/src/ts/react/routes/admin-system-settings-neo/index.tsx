@@ -43,6 +43,7 @@ export function AdminSystemSettingsNeoPage() {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [draftShortUrlEnabled, setDraftShortUrlEnabled] = useState(false);
+  const [initialShortUrlEnabled, setInitialShortUrlEnabled] = useState(false);
 
   useEffect(() => {
     async function loadSystemSettings() {
@@ -71,6 +72,7 @@ export function AdminSystemSettingsNeoPage() {
         setInitialDutyTestLimit(activeSettings?.rerDutyTestLimit ?? 1);
         setInitialDutyPollIntervalSec(activeSettings?.rerDutyPollIntervalSec ?? 1);
         setDraftShortUrlEnabled(activeSettings?.rerShortUrlEnabled ?? false);
+        setInitialShortUrlEnabled(activeSettings?.rerShortUrlEnabled ?? false);
       } catch (error) {
         setLoadError(
           `Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`,
@@ -90,7 +92,8 @@ export function AdminSystemSettingsNeoPage() {
       initialDutyInsertHistoricalInterceptions ||
     draftDutyTestSinceMs !== initialDutyTestSinceMs ||
     draftDutyTestLimit !== initialDutyTestLimit ||
-    draftDutyPollIntervalSec !== initialDutyPollIntervalSec;
+    draftDutyPollIntervalSec !== initialDutyPollIntervalSec ||
+    draftShortUrlEnabled !== initialShortUrlEnabled;
 
   function handleExactMatchOnlyChange(checked: boolean) {
     setSaveSuccess(null);
@@ -130,6 +133,7 @@ export function AdminSystemSettingsNeoPage() {
       setInitialDutyTestSinceMs(testSinceMs);
       setInitialDutyTestLimit(testLimit);
       setInitialDutyPollIntervalSec(pollIntervalSec);
+      setInitialShortUrlEnabled(draftShortUrlEnabled);
       setSaveSuccess('Нове системне налаштування збережено.');
     } catch (error) {
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);

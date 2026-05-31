@@ -4,7 +4,6 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { emptyFilter } from './utils';
@@ -16,6 +15,7 @@ const hoisted = vi.hoisted(() => ({
   rerDutyShortStateCreate: vi.fn(),
   rerDutyShortStateGet: vi.fn(),
   fetchServerInfo: vi.fn(),
+  systemSettingsCurrent: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
@@ -25,8 +25,8 @@ vi.mock('../../services/api/inbox', () => ({
   rerDutyShortStateGet: hoisted.rerDutyShortStateGet,
 }));
 
-vi.mock('../../services/api/server-info', () => ({
-  fetchServerInfo: hoisted.fetchServerInfo,
+vi.mock('../../services/api/system-settings', () => ({
+  currentSystemSettings: hoisted.systemSettingsCurrent,
 }));
 
 vi.mock('../../services/api/networks', () => ({
@@ -84,15 +84,15 @@ describe('useRerDutyFeedState — loading', () => {
     window.history.replaceState({}, '', '/');
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
-    hoisted.fetchServerInfo.mockResolvedValue({
-      mode: '',
-      publicHost: '',
-      grafanaAddress: '',
-      featureDelta: false,
-      featureAnalysisMap: false,
-      featureRerDutyShortState: false,
-      featureStrictNetworks: false,
-      version: '',
+    hoisted.systemSettingsCurrent.mockResolvedValue({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: false,
     });
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -422,15 +422,15 @@ describe('useRerDutyFeedState — loading', () => {
 
   describe('short state persistence', () => {
     it('stores short state and updates url on create success', async () => {
-      hoisted.fetchServerInfo.mockResolvedValueOnce({
-        mode: '',
-        publicHost: '',
-        grafanaAddress: '',
-        featureDelta: false,
-        featureAnalysisMap: false,
-        featureRerDutyShortState: true,
-        featureStrictNetworks: false,
-        version: '',
+      hoisted.systemSettingsCurrent.mockResolvedValueOnce({
+        id: 1,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 1,
+        rerDutyPollIntervalSec: 1,
+        rerShortUrlEnabled: true,
       });
       hoisted.rerDutyShortStateCreate.mockResolvedValue({ id: 'short-123' });
 
@@ -455,15 +455,15 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     it('falls back to long state url when short state create fails', async () => {
-      hoisted.fetchServerInfo.mockResolvedValueOnce({
-        mode: '',
-        publicHost: '',
-        grafanaAddress: '',
-        featureDelta: false,
-        featureAnalysisMap: false,
-        featureRerDutyShortState: true,
-        featureStrictNetworks: false,
-        version: '',
+      hoisted.systemSettingsCurrent.mockResolvedValueOnce({
+        id: 1,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 1,
+        rerDutyPollIntervalSec: 1,
+        rerShortUrlEnabled: true,
       });
       hoisted.rerDutyShortStateCreate.mockRejectedValue(new Error('create failed'));
 
