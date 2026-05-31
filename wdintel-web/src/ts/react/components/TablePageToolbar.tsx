@@ -9,6 +9,11 @@ import { useTableStateContext } from './mui-customized/table/table-state-provide
 type Props = {
   title: ReactNode;
   titleInfo?: ReactNode;
+  titleLeadingActions?: ReactNode;
+  titleLeadingGap?: number | string;
+  titleActions?: ReactNode;
+  titleActionsGap?: number | string;
+  middleGap?: number | string;
   actions?: ReactNode;
   withGlobalTextFilter?: boolean;
   filter?: ReactNode;
@@ -63,7 +68,16 @@ export function TablePageToolbar(props: Props) {
 
   return (
     <Stack spacing={hasControls ? 2 : 0}>
-      <PageHeader title={props.title} titleInfo={props.titleInfo} actions={headerActions} />
+      <PageHeader
+        title={props.title}
+        titleInfo={props.titleInfo}
+        titleLeadingActions={props.titleLeadingActions}
+        titleLeadingGap={props.titleLeadingGap}
+        titleActions={props.titleActions}
+        titleActionsGap={props.titleActionsGap}
+        middleGap={props.middleGap}
+        actions={headerActions}
+      />
       {hasControls ? (
         <TableToolbarControls
           hideGlobalTextFilter={props.hideGlobalTextFilter}
