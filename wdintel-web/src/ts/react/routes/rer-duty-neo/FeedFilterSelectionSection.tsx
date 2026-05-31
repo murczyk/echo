@@ -6,8 +6,9 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createRankedFilterOptions } from '../../utils/search-filter';
 import { isNullOrUndefined } from '../../utils/misc';
 
 type FeedFilterSelectionMode = 'include' | 'exclude';
@@ -27,6 +28,7 @@ export type FeedFilterSelectionSectionProps<T> = {
   headerRight?: ReactNode;
   includeLabel?: string;
   excludeLabel?: string;
+  rankedSearch?: boolean;
 };
 
 export function FeedFilterSelectionSection<T>({
@@ -44,6 +46,7 @@ export function FeedFilterSelectionSection<T>({
   headerRight,
   includeLabel = 'лише',
   excludeLabel = 'окрім',
+  rankedSearch = false,
 }: FeedFilterSelectionSectionProps<T>) {
   const toggleGroupSx = useMemo(
     () =>
@@ -97,6 +100,12 @@ export function FeedFilterSelectionSection<T>({
       }) as const,
     [],
   );
+  const filterOptions = useMemo(
+    () => (rankedSearch ? createRankedFilterOptions(getOptionLabel) : undefined),
+    [getOptionLabel, rankedSearch],
+  );
+  const [inputValue, setInputValue] = useState('');
+  const applyResetAfterSelectionRef = useRef(false);
 
   return (
     <Box>
@@ -123,11 +132,33 @@ export function FeedFilterSelectionSection<T>({
         <Autocomplete
           multiple
           size="small"
-          options={options}
+          options={options as T[]}
           getOptionLabel={getOptionLabel}
           value={value as T[]}
-          onChange={(_, nextValue) => onValueChange(nextValue)}
+          inputValue={rankedSearch ? inputValue : undefined}
+          onChange={(_, nextValue) => {
+            if (rankedSearch) {
+              applyResetAfterSelectionRef.current = true;
+            }
+            onValueChange(nextValue);
+          }}
+          onInputChange={
+            rankedSearch
+              ? (_, nextValue, reason) => {
+                  if (reason === 'reset') {
+                    if (applyResetAfterSelectionRef.current) {
+                      applyResetAfterSelectionRef.current = false;
+                      setInputValue(nextValue);
+                    }
+                    return;
+                  }
+
+                  setInputValue(nextValue);
+                }
+              : undefined
+          }
           isOptionEqualToValue={isOptionEqualToValue}
+          filterOptions={filterOptions}
           filterSelectedOptions
           clearOnEscape
           disablePortal

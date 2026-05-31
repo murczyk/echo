@@ -13,9 +13,8 @@ import {
 
 import type { Source, Unit } from '../../../../../Bindings';
 import { SearchableOptionAutocomplete } from '../../../components/SearchableOptionAutocomplete';
-import { selectionFromId } from '../../../components/searchable-option.types';
 import { RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, toUpperCaseCallsign } from '../helpers';
-import { getUnitDisplayLabel, getUnitFilterValue } from '../../../utils/unit-search';
+import { getUnitDisplayLabel } from '../../../utils/unit-search';
 import type { CallsignDraftRow, CallsignEditForm } from '../types';
 
 type CommonFormValue = Pick<CallsignDraftRow, 'callsign' | 'position' | 'fullName' | 'comment' | 'developing' | 'radioFreq'> & {
@@ -94,13 +93,12 @@ export function CallsignFormFields<T extends CommonFormValue>({
           <SearchableOptionAutocomplete
             label="Підрозділ"
             options={units}
-            value={selectionFromId(units, value.unitId ?? null, getUnitFilterValue)}
-            onChange={(selection) => {
-              if (selection === null) return;
-              onChange({ ...value, unitId: selection.id });
+            valueId={value.unitId ?? null}
+            onValueIdChange={(unitId) => {
+              if (unitId === null) return;
+              onChange({ ...value, unitId });
             }}
             getOptionLabel={getUnitDisplayLabel}
-            getStoredValue={getUnitFilterValue}
             disabled={disabled}
             size={compact ? 'small' : 'medium'}
             clearable={false}
@@ -222,13 +220,12 @@ export function CallsignFormFields<T extends CommonFormValue>({
         <SearchableOptionAutocomplete
           label="Підрозділ"
           options={units}
-          value={selectionFromId(units, value.unitId ?? null, getUnitFilterValue)}
-          onChange={(selection) => {
-            if (selection === null) return;
-            onChange({ ...value, unitId: selection.id });
+          valueId={value.unitId ?? null}
+          onValueIdChange={(unitId) => {
+            if (unitId === null) return;
+            onChange({ ...value, unitId });
           }}
           getOptionLabel={getUnitDisplayLabel}
-          getStoredValue={getUnitFilterValue}
           disabled={disabled}
           size={compact ? 'small' : 'medium'}
           clearable={false}

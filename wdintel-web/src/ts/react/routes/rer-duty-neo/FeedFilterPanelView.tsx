@@ -5,8 +5,6 @@ import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
 import { FeedFilterFrequencySection } from './FeedFilterFrequencySection';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
-import { FeedFilterUnitsSection } from './FeedFilterUnitsSection';
-import type { SearchableOptionSelection } from '../../components/searchable-option.types';
 import type { Unit } from '../../../../Bindings';
 
 type UnitsExactMatchSelectValue = 'exact' | 'not-exact';
@@ -35,6 +33,7 @@ export type FeedFilterSelectionConfig<T> = {
   isOptionEqualToValue?: (option: T, value: T) => boolean;
   placeholder?: string;
   autocompleteClassName?: string;
+  rankedSearch?: boolean;
 };
 
 type FeedFilterSavedFiltersConfig = {
@@ -62,14 +61,7 @@ export type FeedFilterPanelViewProps = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionConfig<string>;
-  units: {
-    mode: 'include' | 'exclude';
-    onModeChange: (mode: 'include' | 'exclude') => void;
-    options: readonly Unit[];
-    selected: readonly SearchableOptionSelection[];
-    onSelectedChange: (value: SearchableOptionSelection[]) => void;
-    placeholder?: string;
-    autocompleteClassName?: string;
+  units: FeedFilterSelectionConfig<Unit> & {
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
@@ -188,13 +180,17 @@ export function FeedFilterPanelView({
         />
 
         <Box>
-          <FeedFilterUnitsSection
+          <FeedFilterSelectionSection
             title="Підрозділи"
             mode={units.mode}
             onModeChange={units.onModeChange}
+            value={units.value}
+            onValueChange={units.onValueChange}
             options={units.options}
-            selected={units.selected}
-            onSelectedChange={units.onSelectedChange}
+            getOptionLabel={units.getOptionLabel}
+            getOptionKey={units.getOptionKey}
+            isOptionEqualToValue={units.isOptionEqualToValue}
+            rankedSearch={units.rankedSearch}
             placeholder={units.placeholder}
             autocompleteClassName={units.autocompleteClassName}
           />
