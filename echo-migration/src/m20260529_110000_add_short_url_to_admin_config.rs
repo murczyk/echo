@@ -9,7 +9,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             r#"
-                alter table system_settings add column if not exists short_url_enabled boolean not null default false;
+                alter table system_settings add column if not exists short_url_enabled boolean not null default true;
             "#,
         )
         .await?;
