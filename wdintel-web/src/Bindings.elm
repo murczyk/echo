@@ -7296,6 +7296,7 @@ type alias SystemSettingsCurrentRsp =
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
+    , shortUrlEnabled : Bool
     }
 
 
@@ -7309,6 +7310,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
+        , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         ]
 
 
@@ -12227,6 +12229,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem

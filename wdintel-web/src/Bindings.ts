@@ -2806,6 +2806,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  shortUrlEnabled: boolean;
 };
 
 export type SystemSettingsItem = {
