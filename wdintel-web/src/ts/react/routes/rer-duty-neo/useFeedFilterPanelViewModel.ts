@@ -1,13 +1,6 @@
 import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
-import type { Unit } from '../../../../Bindings';
-import {
-  buildUnitFilterOptions,
-  getUnitDisplayLabel,
-  getUnitFilterValue,
-  unitNamesFromUnits,
-  unitsFromNames,
-} from '../../utils/unit-search';
+import { buildUnitFilterOptions, getUnitFilterValue } from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import { useFeedFilterSavedFiltersViewModel, type FeedFilterSavedFiltersViewModel } from './useFeedFilterSavedFiltersViewModel';
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
@@ -39,7 +32,7 @@ export type FeedFilterPanelViewModel = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionViewModel<string>;
-  units: FeedFilterSelectionViewModel<Unit> & {
+  units: FeedFilterSelectionViewModel<string> & {
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
@@ -127,14 +120,17 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
         .join('|'),
     [unitsList],
   );
-  const unitOptions = useMemo(() => buildUnitFilterOptions(unitsList ?? []), [unitsCatalogKey]);
-  const unitSelectionState = useFeedFilterSelectionState<Unit>({
+  const unitOptions = useMemo(
+    () => buildUnitFilterOptions(unitsList ?? []).map(getUnitFilterValue),
+    [unitsCatalogKey],
+  );
+  const unitSelectionState = useFeedFilterSelectionState<string>({
     includeValues: filterState.unitsSelected ?? [],
     excludeValues: filterState.unitsDenied ?? [],
     onIncludeChange: onUnitsChange ?? (() => {}),
     onExcludeChange: onUnitsDeniedChange ?? (() => {}),
-    toLocalValues: (names) => unitsFromNames(names, unitOptions),
-    toParentValues: (units) => unitNamesFromUnits(units),
+    toLocalValues: (values) => [...values],
+    toParentValues: (values) => [...values],
   });
 
   const groupEmptyLabel = groupsSelectionState.mode === 'include' ? 'всі' : 'ніяка';
@@ -199,9 +195,8 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       onModeChange: unitSelectionState.setMode,
       onValueChange: unitSelectionState.setLocalValue,
       options: unitOptions,
-      getOptionLabel: getUnitDisplayLabel,
-      getOptionKey: (unit: Unit) => String(unit.id),
-      isOptionEqualToValue: (option: Unit, selected: Unit) => option.id === selected.id,
+      getOptionLabel: (name: string) => name,
+      getOptionKey: (name: string) => name,
       rankedSearch: true,
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',

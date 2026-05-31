@@ -5,7 +5,6 @@ import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
 import { FeedFilterFrequencySection } from './FeedFilterFrequencySection';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
-import type { Unit } from '../../../../Bindings';
 
 type UnitsExactMatchSelectValue = 'exact' | 'not-exact';
 
@@ -61,7 +60,7 @@ export type FeedFilterPanelViewProps = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionConfig<string>;
-  units: FeedFilterSelectionConfig<Unit> & {
+  units: FeedFilterSelectionConfig<string> & {
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
