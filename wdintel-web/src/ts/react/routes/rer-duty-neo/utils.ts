@@ -340,7 +340,7 @@ export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterSt
     postsDenied: readFilterValues(raw, ['postsDenied', 'posts_denied']),
     unitsSelected: readFilterValues(raw, ['unitsSelected', 'units_selected']),
     unitsDenied: readFilterValues(raw, ['unitsDenied', 'units_denied']),
-    unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? null) as boolean | null,
+    unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? false) as boolean | null,
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as number | null,
     highlightKeywordsEnabled: (raw.highlightKeywordsEnabled ??
       raw.highlight_keywords_enabled ??
