@@ -1,10 +1,8 @@
-import ChevronLeftOutlinedIcon from '@mui/icons-material/ChevronLeftOutlined';
-import ChevronRightOutlinedIcon from '@mui/icons-material/ChevronRightOutlined';
-import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
-import { Badge, Box, Button, CircularProgress, IconButton, Paper, Stack, Tooltip, useMediaQuery } from '@mui/material';
+import { Box, Button, CircularProgress, Stack, useMediaQuery } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
+import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
@@ -26,68 +24,6 @@ import { PowerAlert } from '../../components/PowerAlert';
 const CSV_LOADING_TEXT = `Завантаження CSV${ELLIPSIS}`;
 const XLSX_LOADING_TEXT = `Завантаження XLSX${ELLIPSIS}`;
 
-type SidebarToggleRailProps = {
-  open: boolean;
-  hasActiveUnitFilter: boolean;
-  onToggleOpen: () => void;
-};
-
-function SidebarToggleRail({ open, hasActiveUnitFilter, onToggleOpen }: SidebarToggleRailProps) {
-  return (
-    <Paper
-      variant="outlined"
-      sx={{
-        width: 56,
-        minWidth: 56,
-        flexShrink: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'flex-start',
-        gap: 0,
-        py: 0,
-        borderRadius: 0,
-        overflow: 'hidden',
-        bgcolor: 'background.paper',
-      }}
-    >
-      <Tooltip title={open ? 'Сховати підрозділи' : 'Показати підрозділи'} arrow placement="right">
-        <IconButton
-          size="small"
-          onClick={onToggleOpen}
-          aria-label={open ? 'Сховати підрозділи' : 'Показати підрозділи'}
-          sx={{ width: 56, height: 56, p: 0, borderRadius: 0 }}
-        >
-          {open ? (
-            <ChevronLeftOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
-          ) : (
-            <ChevronRightOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
-          )}
-        </IconButton>
-      </Tooltip>
-      <Box sx={{ width: 56, borderBottom: '1px solid', borderColor: 'divider' }} />
-      <Tooltip title={hasActiveUnitFilter ? 'Є активний фільтр підрозділу' : 'Фільтр підрозділу'} arrow placement="right">
-        <Box
-          sx={{
-            pt: 1.25,
-            width: 44,
-            height: 44,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Badge color="error" variant="dot" invisible={!hasActiveUnitFilter}>
-            <FilterAltOutlinedIcon
-              sx={{ fontSize: 20, color: hasActiveUnitFilter ? 'primary.main' : 'text.secondary' }}
-            />
-          </Badge>
-        </Box>
-      </Tooltip>
-    </Paper>
-  );
-}
-
 function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerCallsignsNeoPage({ authUserRoles });
   const isDesktopLayout = useMediaQuery(`(min-width:${DESKTOP_LAYOUT_MIN_WIDTH_PX}px)`);
@@ -96,7 +32,6 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
   const filtersDisabled = page.loading || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
   const showExportButtons = shellPermissions.canExport || page.permissions.canExport;
   const showExportPlaceholders = page.loading && !showExportButtons;
-  const hasActiveUnitFilter = page.selectedSidebarUnitFilter !== null || page.filters.filterUnit.trim() !== '';
   const hasActiveFilters =
     page.filters.filterText.trim() !== '' ||
     page.filters.filterCallsign.trim() !== '' ||
@@ -224,6 +159,15 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
       >
         <TablePageToolbar
           title="Позивні"
+          titleLeadingActions={!isDesktopLayout ? null : (
+            <SidePanelToggleButton
+              side="left"
+              active={page.sidebarOpen}
+              label={page.sidebarOpen ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
+              onClick={() => page.setSidebarOpen((prev: boolean) => !prev)}
+            />
+          )}
+          titleLeadingGap={2}
           internalActionsHidden
           actions={page.permissions.canEdit ? (
             <Stack direction="row" spacing={2}>
@@ -261,21 +205,20 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
           }}
         >
           {isDesktopLayout ? (
-            <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0 }}>
-              <UnitStatsSidebar
-                stats={page.unitStatsView}
-                open={page.sidebarOpen}
-                isDesktopLayout={isDesktopLayout}
-                loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
-                onPickUnitFilter={page.onPickUnitFilter}
-                selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
-              />
-              <SidebarToggleRail
-                open={page.sidebarOpen}
-                hasActiveUnitFilter={hasActiveUnitFilter}
-                onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
-              />
-            </Box>
+            <>
+              {page.sidebarOpen ? (
+                <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0 }}>
+                  <UnitStatsSidebar
+                    stats={page.unitStatsView}
+                    open={page.sidebarOpen}
+                    isDesktopLayout={isDesktopLayout}
+                    loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
+                    onPickUnitFilter={page.onPickUnitFilter}
+                    selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
+                  />
+                </Box>
+              ) : null}
+            </>
           ) : (
             <UnitStatsSidebar
               stats={page.unitStatsView}
