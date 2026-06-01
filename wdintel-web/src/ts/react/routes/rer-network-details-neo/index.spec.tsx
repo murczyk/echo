@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
+import { NO_DATA_LABEL } from '../../utils/misc';
 
 const useRerNetworkDetailsNeoPageMock = vi.hoisted(() => vi.fn());
 
@@ -53,13 +54,16 @@ vi.mock('../../components/PageErrorState', () => ({
 
 vi.mock('../../components/PageHeader', () => ({
   PageHeader: ({
+    title,
     titleLeadingActions,
     actions,
   }: {
+    title?: ReactNode;
     titleLeadingActions?: ReactNode;
     actions?: ReactNode;
   }) => (
     <header>
+      {title}
       {titleLeadingActions}
       {actions}
     </header>
@@ -373,5 +377,19 @@ describe('RerNetworkDetailsNeoPage', () => {
     expect(view.container.querySelector('[data-testid="left-panel"]')?.getAttribute('data-placement')).toBe('top');
     const toggleButton = view.container.querySelector('button[aria-label="Панель відображається зверху"]');
     expect(toggleButton?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows the empty-network fallback for loaded unnamed networks', async () => {
+    useRerNetworkDetailsNeoPageMock.mockReturnValue(
+      buildPage({
+        network: { name: '', status: 'NetworkActive', deleted: false },
+        unitNames: [],
+      }),
+    );
+    const view = await renderPage();
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('skeleton');
+    expect(view.container.textContent).toContain(NO_DATA_LABEL);
   });
 });

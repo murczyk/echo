@@ -58,35 +58,32 @@ function buildClassicHref(networkId: number): string {
 }
 
 function buildPageTitle(
-  networkName: string | null | undefined,
+  network: { name?: string | null } | null,
   unitNames: string[],
-  statusLabel: string,
-  statusTone: 'success' | 'warning',
+  status: { label: string; tone: 'success' | 'warning' },
 ) {
-  const name = networkName?.trim() ?? '';
-
-  if (name === '' && unitNames.length === 0) {
+  if (!network) {
     return <Skeleton width={240} />;
   }
 
-  return (
+    return (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-      <Tooltip title={statusLabel} arrow placement="bottom-start">
+      <Tooltip title={status.label} arrow placement="bottom-start">
         <Box
           component="span"
-          aria-label={statusLabel}
+          aria-label={status.label}
           sx={{
             width: 10,
             height: 10,
             borderRadius: '50%',
-            bgcolor: statusTone === 'success' ? 'success.main' : 'warning.main',
+            bgcolor: status.tone === 'success' ? 'success.main' : 'warning.main',
             flexShrink: 0,
             cursor: 'default',
           }}
         />
       </Tooltip>
       <Box component="span" sx={{ minWidth: 0 }}>
-        {formatClassicNetworkHeaderName(networkName, unitNames)}
+        {formatClassicNetworkHeaderName(network?.name, unitNames)}
       </Box>
     </Box>
   );
@@ -120,7 +117,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const techFreq = page.freqTechDrawerForm
     ? page.freqs.find((freq) => freq.networkFreqId === page.freqTechDrawerForm?.networkFreqId) ?? null
     : null;
-  const title = buildPageTitle(page.network?.name, page.unitNames, page.status.label, page.status.tone);
+  const title = buildPageTitle(page.network, page.unitNames, page.status);
   const toggleSidePanelLabel = isTopPanel
     ? 'Панель відображається зверху'
     : leftPanelVisible
