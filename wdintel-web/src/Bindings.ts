@@ -1285,6 +1285,7 @@ export type User = {
   goiFullAccessForOrganism: boolean;
   goiHost: string | null;
   goiIntegrations: Array<GoiUserIntegration>;
+  lastReleaseSeen: string | null;
 };
 
 export type GoiUserIntegration = {

@@ -19,6 +19,7 @@ type UserLike = {
   goi_host?: string | null;
   goiIntegrations?: unknown[] | null;
   goi_integrations?: unknown[] | null;
+  lastReleaseSeen?: string | null;
 };
 
 type SettingsSaveReqBody = {
@@ -39,6 +40,7 @@ function normalizeUser(raw: UserLike | null | undefined): User {
     goiHost: raw?.goiHost ?? raw?.goi_host ?? null,
     goiIntegrations:
       (raw?.goiIntegrations ?? raw?.goi_integrations ?? []) as User['goiIntegrations'],
+    lastReleaseSeen: raw?.lastReleaseSeen ?? null,
   };
 }
 
