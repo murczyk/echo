@@ -1547,6 +1547,7 @@ mod tests {
                 last_active_at: Set(Some(Utc::now().naive_utc())),
                 deactivation_reason: Set(None),
                 deleted_permanently: Set(false),
+                last_release_seen: Default::default(),
             },
         )
         .await
@@ -1614,6 +1615,7 @@ mod tests {
                     last_active_at: Set(Some(Utc::now().naive_utc())),
                     deactivation_reason: Set(None),
                     deleted_permanently: Set(false),
+                    last_release_seen: Default::default(),
                 },
             )
             .await
@@ -1681,6 +1683,7 @@ mod tests {
                     last_active_at: Set(Some(Utc::now().naive_utc())),
                     deactivation_reason: Set(None),
                     deleted_permanently: Set(false),
+                    last_release_seen: Default::default(),
                 },
             )
             .await
@@ -1701,6 +1704,7 @@ mod tests {
                 last_active_at: Set(Some(Utc::now().naive_utc())),
                 deactivation_reason: Set(None),
                 deleted_permanently: Set(false),
+                last_release_seen: Default::default(),
             },
         )
         .await
@@ -1749,6 +1753,7 @@ mod tests {
             last_active_at: Set(Some(Utc::now().naive_utc())),
             deactivation_reason: Set(None),
             deleted_permanently: Set(true),
+            last_release_seen: Default::default(),
         }
         .insert(&env.dbx)
         .await
@@ -1768,6 +1773,7 @@ mod tests {
                 last_active_at: Set(Some(Utc::now().naive_utc())),
                 deactivation_reason: NotSet,
                 deleted_permanently: NotSet,
+                last_release_seen: Default::default(),
             },
         )
         .await
