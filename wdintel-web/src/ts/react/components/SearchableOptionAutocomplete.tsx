@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Autocomplete, TextField } from '@mui/material';
 import type { AutocompleteProps } from '@mui/material/Autocomplete';
 
 import { createRankedFilterOptions } from '../utils/search-filter';
-import type { SearchableOption, SearchableOptionSelection } from './searchable-option.types';
 
-export type { SearchableOptionSelection } from './searchable-option.types';
-export { selectionFromId } from './searchable-option.types';
+type SearchableOption = {
+  id: number;
+};
 
-type BaseProps<T extends SearchableOption> = {
+type Props<T extends SearchableOption> = {
+  label: string;
   options: T[];
+  valueId: number | null;
+  onValueIdChange: (valueId: number | null) => void;
   getOptionLabel: (option: T) => string;
-  getStoredValue: (option: T) => string;
-  label?: string;
   disabled?: boolean;
   required?: boolean;
   size?: 'small' | 'medium';
@@ -25,42 +26,15 @@ type BaseProps<T extends SearchableOption> = {
   onInputValueChange?: (value: string) => void;
   className?: string;
   disablePortal?: boolean;
-  filterSelectedOptions?: boolean;
-  slotProps?: AutocompleteProps<T, boolean, boolean, false>['slotProps'];
+  slotProps?: AutocompleteProps<T, false, false, false>['slotProps'];
 };
 
-type SingleProps<T extends SearchableOption> = BaseProps<T> & {
-  multiple?: false;
-  value: SearchableOptionSelection | null;
-  onChange: (value: SearchableOptionSelection | null) => void;
-};
-
-type MultiProps<T extends SearchableOption> = BaseProps<T> & {
-  multiple: true;
-  value: SearchableOptionSelection[];
-  onChange: (value: SearchableOptionSelection[]) => void;
-};
-
-export type SearchableOptionAutocompleteProps<T extends SearchableOption> =
-  | SingleProps<T>
-  | MultiProps<T>;
-
-export function SearchableOptionAutocomplete<T extends SearchableOption>(
-  props: SearchableOptionAutocompleteProps<T>,
-) {
-  if (props.multiple) {
-    return <MultiSearchableOptionAutocomplete {...props} />;
-  }
-  return <SingleSearchableOptionAutocomplete {...props} />;
-}
-
-function SingleSearchableOptionAutocomplete<T extends SearchableOption>({
+export function SearchableOptionAutocomplete<T extends SearchableOption>({
   label,
   options,
-  value,
-  onChange,
+  valueId,
+  onValueIdChange,
   getOptionLabel,
-  getStoredValue,
   disabled = false,
   required = false,
   size = 'small',
@@ -74,15 +48,9 @@ function SingleSearchableOptionAutocomplete<T extends SearchableOption>({
   className,
   disablePortal,
   slotProps,
-}: SingleProps<T>) {
-  const selectedOption = useMemo(() => {
-    if (value === null) return null;
-    return options.find((option) => option.id === value.id) ?? null;
-  }, [options, value]);
-  const selectedLabel = useMemo(
-    () => (selectedOption ? getOptionLabel(selectedOption) : ''),
-    [getOptionLabel, selectedOption],
-  );
+}: Props<T>) {
+  const selectedOption = useMemo(() => options.find((option) => option.id === valueId) ?? null, [options, valueId]);
+  const selectedLabel = useMemo(() => (selectedOption ? getOptionLabel(selectedOption) : ''), [getOptionLabel, selectedOption]);
   const [internalInputValue, setInternalInputValue] = useState(() => selectedLabel);
   const controlledInput = inputValue !== undefined;
   const displayedInputValue = controlledInput ? inputValue : internalInputValue;
@@ -115,14 +83,12 @@ function SingleSearchableOptionAutocomplete<T extends SearchableOption>({
       slotProps={slotProps}
       noOptionsText={noOptionsText}
       getOptionLabel={getOptionLabel}
-      isOptionEqualToValue={(option, nextValue) => option.id === nextValue.id}
+      isOptionEqualToValue={(option, value) => option.id === value.id}
       filterOptions={filterOptions}
       onChange={(_, nextOption) => {
-        onChange(
-          nextOption ? { id: nextOption.id, value: getStoredValue(nextOption) } : null,
-        );
+        onValueIdChange(nextOption?.id ?? null);
       }}
-      onInputChange={(event, nextValue, reason) => {
+      onInputChange={(_event, nextValue, reason) => {
         if (reason === 'clear') {
           if (!clearable) {
             updateInputValue(selectedLabel);
@@ -130,7 +96,7 @@ function SingleSearchableOptionAutocomplete<T extends SearchableOption>({
           }
 
           updateInputValue(nextValue);
-          onChange(null);
+          onValueIdChange(null);
           return;
         }
 
@@ -150,93 +116,6 @@ function SingleSearchableOptionAutocomplete<T extends SearchableOption>({
               updateInputValue(selectedLabel);
             }
           }}
-        />
-      )}
-    />
-  );
-}
-
-function MultiSearchableOptionAutocomplete<T extends SearchableOption>({
-  label,
-  options,
-  value,
-  onChange,
-  getOptionLabel,
-  getStoredValue,
-  disabled = false,
-  required = false,
-  size = 'small',
-  placeholder,
-  helperText,
-  error = false,
-  noOptionsText = 'Нічого не знайдено',
-  clearable = true,
-  className,
-  disablePortal,
-  filterSelectedOptions,
-  slotProps,
-}: MultiProps<T>) {
-  const valueKey = useMemo(() => value.map((selection) => selection.id).join(','), [value]);
-  const selectedOptions = useMemo(
-    () =>
-      value.flatMap((selection) => {
-        const option = options.find((item) => item.id === selection.id);
-        return option ? [option] : [];
-      }),
-    [options, valueKey],
-  );
-  const filterOptions = useMemo(() => createRankedFilterOptions(getOptionLabel), [getOptionLabel]);
-  const [inputValue, setInputValue] = useState('');
-  const applyResetAfterSelectionRef = useRef(false);
-
-  return (
-    <Autocomplete<T, true, boolean, false>
-      multiple
-      fullWidth
-      size={size}
-      className={className}
-      options={options}
-      value={selectedOptions}
-      inputValue={inputValue}
-      disabled={disabled}
-      disableClearable={!clearable}
-      disablePortal={disablePortal}
-      filterSelectedOptions={filterSelectedOptions}
-      clearOnEscape
-      slotProps={slotProps}
-      noOptionsText={noOptionsText}
-      getOptionLabel={getOptionLabel}
-      isOptionEqualToValue={(option, nextValue) => option.id === nextValue.id}
-      filterOptions={filterOptions}
-      onChange={(_, nextOptions) => {
-        applyResetAfterSelectionRef.current = true;
-        onChange(
-          nextOptions.map((option) => ({
-            id: option.id,
-            value: getStoredValue(option),
-          })),
-        );
-      }}
-      onInputChange={(_, nextValue, reason) => {
-        if (reason === 'reset') {
-          if (applyResetAfterSelectionRef.current) {
-            applyResetAfterSelectionRef.current = false;
-            setInputValue(nextValue);
-          }
-          return;
-        }
-
-        setInputValue(nextValue);
-      }}
-      renderInput={(params) => (
-        <TextField
-          {...params}
-          label={label}
-          required={required}
-          placeholder={placeholder}
-          error={error}
-          helperText={helperText}
-          size={size}
         />
       )}
     />

@@ -17,7 +17,6 @@ import { ELLIPSIS } from '../../../utils/misc';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { SearchableOptionAutocomplete } from '../../../components/SearchableOptionAutocomplete';
-import { selectionFromId } from '../../../components/searchable-option.types';
 import { getFrequencyFormatError, type NetworkOption } from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
@@ -385,10 +384,9 @@ export function NetworkCallsignDrawer({
                 <SearchableOptionAutocomplete
                   label="Підрозділ"
                   options={units}
-                  value={selectionFromId(units, selectedUnitId, (unit) => unit.label)}
-                  onChange={(selection) => updateForm(form, { unitId: selection?.id ?? null }, onChange)}
+                  valueId={selectedUnitId}
+                  onValueIdChange={(unitId) => updateForm(form, { unitId }, onChange)}
                   getOptionLabel={(unit) => unit.label}
-                  getStoredValue={(unit) => unit.label}
                   disabled={saving}
                   placeholder="Оберіть підрозділ"
                   slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}

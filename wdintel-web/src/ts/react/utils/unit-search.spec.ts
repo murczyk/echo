@@ -5,8 +5,8 @@ import {
   UNIT_FILTER_UNSET_ID,
   buildUnitFilterOptions,
   getUnitFilterValue,
-  unitNamesFromSelections,
-  unitSelectionsFromNames,
+  unitNamesFromUnits,
+  unitsFromNames,
 } from './unit-search';
 
 function makeUnit(id: number, name: string): Unit {
@@ -39,21 +39,18 @@ describe('buildUnitFilterOptions', () => {
   });
 });
 
-describe('unitSelectionsFromNames / unitNamesFromSelections', () => {
+describe('unitsFromNames / unitNamesFromUnits', () => {
   const options = buildUnitFilterOptions([makeUnit(2, '3 мсб'), makeUnit(4, '4 мсб')]);
 
-  it('round-trips saved names through selections', () => {
+  it('round-trips saved names through unit options', () => {
     const names = ['Не визначено', '3 мсб'];
-    const selections = unitSelectionsFromNames(names, options);
+    const units = unitsFromNames(names, options);
 
-    expect(selections).toEqual([
-      { id: UNIT_FILTER_UNSET_ID, value: 'Не визначено' },
-      { id: 2, value: '3 мсб' },
-    ]);
-    expect(unitNamesFromSelections(selections)).toEqual(names);
+    expect(units.map((unit) => unit.id)).toEqual([UNIT_FILTER_UNSET_ID, 2]);
+    expect(unitNamesFromUnits(units)).toEqual(names);
   });
 
   it('omits unknown saved names', () => {
-    expect(unitSelectionsFromNames(['missing unit'], options)).toEqual([]);
+    expect(unitsFromNames(['missing unit'], options)).toEqual([]);
   });
 });

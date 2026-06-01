@@ -1,8 +1,6 @@
 import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
-import type { Unit } from '../../../../Bindings';
-import type { SearchableOptionSelection } from '../../components/searchable-option.types';
-import { buildUnitFilterOptions, unitNamesFromSelections, unitSelectionsFromNames } from '../../utils/unit-search';
+import { buildUnitFilterOptions, getUnitFilterValue } from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import { useFeedFilterSavedFiltersViewModel, type FeedFilterSavedFiltersViewModel } from './useFeedFilterSavedFiltersViewModel';
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
@@ -20,6 +18,7 @@ type FeedFilterSelectionViewModel<T> = {
   isOptionEqualToValue?: (option: T, value: T) => boolean;
   placeholder?: string;
   autocompleteClassName?: string;
+  rankedSearch?: boolean;
 };
 
 export type FeedFilterPanelViewModel = {
@@ -33,14 +32,7 @@ export type FeedFilterPanelViewModel = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionViewModel<string>;
-  units: {
-    mode: FeedFilterMode;
-    onModeChange: (mode: FeedFilterMode) => void;
-    options: readonly Unit[];
-    selected: readonly SearchableOptionSelection[];
-    onSelectedChange: (value: SearchableOptionSelection[]) => void;
-    placeholder?: string;
-    autocompleteClassName?: string;
+  units: FeedFilterSelectionViewModel<string> & {
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
@@ -120,15 +112,6 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
-  const unitSelectionState = useFeedFilterSelectionState<string>({
-    includeValues: filterState.unitsSelected ?? [],
-    excludeValues: filterState.unitsDenied ?? [],
-    onIncludeChange: onUnitsChange ?? (() => {}),
-    onExcludeChange: onUnitsDeniedChange ?? (() => {}),
-    toLocalValues: (values) => [...values],
-    toParentValues: (values) => [...values],
-  });
-
   const unitsCatalogKey = useMemo(
     () =>
       (unitsList ?? [])
@@ -138,14 +121,17 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     [unitsList],
   );
   const unitOptions = useMemo(
-    () => buildUnitFilterOptions(unitsList ?? []),
+    () => buildUnitFilterOptions(unitsList ?? []).map(getUnitFilterValue),
     [unitsCatalogKey],
   );
-
-  const unitSelected = useMemo(
-    () => unitSelectionsFromNames(unitSelectionState.localValue, unitOptions),
-    [unitSelectionState.localValue, unitOptions],
-  );
+  const unitSelectionState = useFeedFilterSelectionState<string>({
+    includeValues: filterState.unitsSelected ?? [],
+    excludeValues: filterState.unitsDenied ?? [],
+    onIncludeChange: onUnitsChange ?? (() => {}),
+    onExcludeChange: onUnitsDeniedChange ?? (() => {}),
+    toLocalValues: (values) => [...values],
+    toParentValues: (values) => [...values],
+  });
 
   const groupEmptyLabel = groupsSelectionState.mode === 'include' ? 'всі' : 'ніяка';
   const senderEmptyLabel = senderSelectionState.mode === 'include' ? 'всі' : 'ніхто';
@@ -205,11 +191,13 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     },
     units: {
       mode: unitSelectionState.mode,
+      value: unitSelectionState.localValue,
       onModeChange: unitSelectionState.setMode,
+      onValueChange: unitSelectionState.setLocalValue,
       options: unitOptions,
-      selected: unitSelected,
-      onSelectedChange: (selections) =>
-        unitSelectionState.setLocalValue(unitNamesFromSelections(selections)),
+      getOptionLabel: (name: string) => name,
+      getOptionKey: (name: string) => name,
+      rankedSearch: true,
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
       unitsExactMatchOnly: unitsExactMatchOnly ?? false,

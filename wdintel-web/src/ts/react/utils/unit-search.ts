@@ -1,5 +1,4 @@
 import type { Unit } from '../../../Bindings';
-import type { SearchableOptionSelection } from '../components/searchable-option.types';
 import { createRankedFilterOptions, findExactSearchMatch, normalizeSearchValue } from './search-filter';
 
 export const UNIT_FILTER_UNSET_ID = 0;
@@ -49,22 +48,17 @@ export function buildUnitFilterOptions(unitsList: Unit[]): Unit[] {
   return [createSyntheticUnsetUnit(), ...sorted];
 }
 
-export function unitSelectionsFromNames(
-  names: readonly string[],
-  options: readonly Unit[],
-): SearchableOptionSelection[] {
+export function unitsFromNames(names: readonly string[], options: readonly Unit[]): Unit[] {
   const optionByValue = new Map(options.map((option) => [getUnitFilterValue(option), option]));
 
   return names.flatMap((name) => {
     const option = optionByValue.get(name);
-    return option ? [{ id: option.id, value: getUnitFilterValue(option) }] : [];
+    return option ? [option] : [];
   });
 }
 
-export function unitNamesFromSelections(
-  selections: readonly SearchableOptionSelection[],
-): string[] {
-  return selections.map((selection) => selection.value);
+export function unitNamesFromUnits(units: readonly Unit[]): string[] {
+  return units.map(getUnitFilterValue);
 }
 
 export function findExactUnitSearchMatch(units: Unit[], inputValue: string): Unit | null {

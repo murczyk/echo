@@ -159,6 +159,55 @@ describe('useFeedFilterSelectionState', () => {
     expect(onExcludeChange).toHaveBeenCalledWith(['group-b']);
   });
 
+  it('preserves parent unit names before the option catalog is available', async () => {
+    const apiRef: MutableRefObject<{
+      mode: 'include' | 'exclude';
+      localValue: string[];
+      setLocalValue: Dispatch<SetStateAction<string[]>>;
+      setMode: (mode: 'include' | 'exclude') => void;
+    } | null> = { current: null };
+    const onIncludeChange = vi.fn();
+    const onExcludeChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <Harness
+          apiRef={apiRef}
+          includeValues={['3 мсб']}
+          excludeValues={[]}
+          onIncludeChange={onIncludeChange}
+          onExcludeChange={onExcludeChange}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.localValue).toEqual(['3 мсб']);
+    expect(onIncludeChange).not.toHaveBeenCalled();
+    expect(onExcludeChange).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.render(
+        <Harness
+          apiRef={apiRef}
+          includeValues={['3 мсб']}
+          excludeValues={[]}
+          onIncludeChange={vi.fn(onIncludeChange)}
+          onExcludeChange={vi.fn(onExcludeChange)}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.localValue).toEqual(['3 мсб']);
+    expect(onIncludeChange).not.toHaveBeenCalledWith([]);
+    expect(onExcludeChange).not.toHaveBeenCalled();
+  });
+
   it('refreshes local labels when reference data changes but the parent selection stays the same', async () => {
     function SenderHarness(props: {
       apiRef: MutableRefObject<
