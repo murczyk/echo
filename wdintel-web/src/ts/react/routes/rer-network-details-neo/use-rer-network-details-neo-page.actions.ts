@@ -12,7 +12,7 @@ import {
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
 } from './use-rer-network-details-neo-page.shared';
-import { formatUnitSummaryText, type MainInfoSnapshot } from './components/NetworkDetailsLeftPanel.content';
+import { formatUnitSummaryText, type MainInfoSnapshot } from './components/NetworkDetailsLeftPanel.shared';
 import { useRerNetworkDetailsNeoPageDescriptionActions } from './use-rer-network-details-neo-page.description-actions';
 import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-details-neo-page.report-actions';
 import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
