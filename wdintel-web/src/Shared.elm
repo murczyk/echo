@@ -76,6 +76,7 @@ init flagsResult _ =
                 , goiFullAccessForOrganism = False
                 , goiHost = Nothing
                 , goiIntegrations = []
+                , lastReleaseSeen = Nothing
                 }
       , themeMode =
             if flags.isDark then
@@ -142,7 +143,7 @@ update req msg model =
                 ( model, E.none )
 
         GotUser (Ok user) ->
-            ( { model | user = Just user }
+            ( { model | user = Just user, changelogLastSeen = user.lastReleaseSeen }
             , E.batch
                 [ if req.path == Route.Path.Login then
                     E.replaceRoutePath Route.Path.Home_
@@ -243,8 +244,14 @@ update req msg model =
 
         SaveChangelogLastSeen version ->
             ( { model | changelogLastSeen = Just version }
-            , E.sendCmd <| Ports.shared_saveLastSeenChangelog version
+            , E.batch
+                [ E.sendCmd <| Ports.shared_saveLastSeenChangelog version
+                , E.sendCmd <| Api.api_mark_release_seen version (\_ -> ReleaseSeenApiSaved)
+                ]
             )
+
+        ReleaseSeenApiSaved ->
+            ( model, E.none )
 
         TriggerResize ->
             ( model

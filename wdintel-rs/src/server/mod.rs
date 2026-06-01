@@ -584,6 +584,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::users::delete_login)
             .service(crate::users::update_login)
             .service(crate::users::keep_alive)
+            .service(crate::users::mark_release_seen)
             .service(crate::organism::list_organisms)
             .service(crate::organism::create_organism)
             .service(crate::organism::update_organism)

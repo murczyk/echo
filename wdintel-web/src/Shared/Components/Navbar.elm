@@ -463,14 +463,6 @@ changelogDropdown props maybeData =
                     else
                         props.onDropdownToggle (Just dropdownKey)
 
-                badge =
-                    if data.unseen then
-                        span
-                            [ class "ml-1 inline-block h-2 w-2 rounded-full bg-amber-300" ]
-                            []
-
-                    else
-                        text ""
             in
             div [ class "relative" ]
                 [ button
@@ -489,12 +481,20 @@ changelogDropdown props maybeData =
                     , title "Останні зміни"
                     , type_ "button"
                     ]
-                    [ i
-                        [ class "bi bi-megaphone text-lg leading-none"
-                        , attribute "aria-hidden" "true"
+                    [ div [ class "relative" ]
+                        [ i
+                            [ class "bi bi-megaphone text-lg leading-none"
+                            , attribute "aria-hidden" "true"
+                            ]
+                            []
+                        , if data.unseen then
+                            span
+                                [ class "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-white/30" ]
+                                []
+
+                          else
+                            text ""
                         ]
-                        []
-                    , badge
                     ]
                 , div [ class "absolute right-0 pt-2 z-[3001]" ]
                     [ ul
@@ -508,15 +508,25 @@ changelogDropdown props maybeData =
                             [ text ("Останні зміни: Реліз " ++ String.replace "-" "." data.version) ]
                         , ul [ class "space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1" ]
                             (List.map renderChangelogLine data.preview)
-                        , div [ class "mt-3 flex items-center justify-between" ]
+                        , div [ class "mt-3 flex items-center justify-between gap-3" ]
                             [ a
                                 [ href data.fullUrl
                                 , target "_blank"
                                 , rel "noopener noreferrer"
-                                , class "text-sm font-semibold text-amber-600 hover:text-amber-500"
+                                , class "text-sm font-semibold text-[var(--color-text)] hover:underline"
                                 , onClick (props.onChangelogSeen data.version)
                                 ]
                                 [ text "Читати повністю" ]
+                            , if data.unseen then
+                                button
+                                    [ type_ "button"
+                                    , class "text-sm font-semibold text-red-500 hover:text-red-400 border-0 appearance-none bg-transparent cursor-pointer"
+                                    , onClick (props.onChangelogSeen data.version)
+                                    ]
+                                    [ text "Відмітити прочитаним" ]
+
+                              else
+                                text ""
                             ]
                         ]
                     ]
