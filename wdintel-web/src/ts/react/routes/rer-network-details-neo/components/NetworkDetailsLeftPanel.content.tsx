@@ -613,6 +613,30 @@ export function MainContentSections({
 }
 
 function LeftPanelSkeleton() {
+  const rowHeights = [36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36];
+
+  return (
+    <Box
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.25,
+        height: '100%',
+      }}
+    >
+      <Skeleton variant="text" width="38%" height={30} />
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: 0 }}>
+        {rowHeights.map((height, index) => (
+          <Skeleton key={index} variant="rounded" height={height} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+function TopPanelSkeleton() {
   return (
     <Box
       sx={{
@@ -649,6 +673,6 @@ function LeftPanelSkeleton() {
   );
 }
 
-export function NetworkDetailsLeftPanelSkeleton() {
-  return <LeftPanelSkeleton />;
+export function NetworkDetailsLeftPanelSkeleton({ placement }: { placement: Placement }) {
+  return placement === 'top' ? <TopPanelSkeleton /> : <LeftPanelSkeleton />;
 }

@@ -260,7 +260,7 @@ export function NetworkDetailsLeftPanel({
         )}
 
         {isLoading ? (
-          <NetworkDetailsLeftPanelSkeleton />
+          <NetworkDetailsLeftPanelSkeleton placement={placement} />
         ) : showCollapsedTopSummary ? null : (
           <MainContentSections
             layout={placement}
