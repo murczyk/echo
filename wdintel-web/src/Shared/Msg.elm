@@ -54,4 +54,4 @@ type Msg
     | EventReceived B.EventMsg -- Event received from backend
     | SubscribeToEvents Route.Path.Path (List B.EventType) -- Page subscribes to event types
     | UnsubscribeFromEvents Route.Path.Path -- Page unsubscribes from all events
-    | ReleaseSeenApiSaved
+    | ReleaseSeenApiSaved (Result ApiError ())

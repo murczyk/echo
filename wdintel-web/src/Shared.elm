@@ -246,12 +246,17 @@ update req msg model =
             ( { model | changelogLastSeen = Just version }
             , E.batch
                 [ E.sendCmd <| Ports.shared_saveLastSeenChangelog version
-                , E.sendCmd <| Api.api_mark_release_seen version (\_ -> ReleaseSeenApiSaved)
+                , E.sendCmd <| Api.api_mark_release_seen version ReleaseSeenApiSaved
                 ]
             )
 
-        ReleaseSeenApiSaved ->
+        ReleaseSeenApiSaved (Ok _) ->
             ( model, E.none )
+
+        ReleaseSeenApiSaved (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження прочитаного релізу" err
+            )
 
         TriggerResize ->
             ( model
