@@ -265,8 +265,37 @@ pub async fn bl_update_network_callsign(
         }
     }
 
-    // If unit_developing is true, we should not link to any known sigint_callsign, just update a network callsign
+    // If unit_developing is true, we should not link to any known sigint_callsign, just update a network callsign.
+    // However, if developing is being turned off and a linked catalog callsign still has developing=true,
+    // we must sync it — otherwise sc_developing keeps the callsign displayed as "в дорозвідці".
     if req.unit_developing {
+        if !req.developing {
+            if let Some(sigint_callsign_id) = network_callsign.sigint_callsign_id {
+                let known_callsign = find_callsign(txn, sigint_callsign_id)
+                    .await
+                    .context(h!())?;
+                if known_callsign.developing {
+                    let known_callsign_req = UpdateCallsignReq {
+                        id: known_callsign.id,
+                        callsign: known_callsign.callsign.clone(),
+                        position: known_callsign.position.clone(),
+                        comment: known_callsign.comment.clone(),
+                        full_name: Some(known_callsign.full_name.clone()),
+                        full_name_is_missing: false,
+                        unit_id: known_callsign.unit_id,
+                        active: known_callsign.deleted,
+                        source_id: known_callsign.source_id,
+                        callsign_additional_sources: vec![],
+                        created_at: known_callsign.created_at.and_utc().timestamp_millis(),
+                        developing: false,
+                        radio_freq: Some(known_callsign.radio_freq.clone()),
+                    };
+                    bl_callsign_update(&known_callsign_req, user_id, txn)
+                        .await
+                        .context(h!())?;
+                }
+            }
+        }
         return update_network_callsign_not_linked(req, user_id, txn).await;
     }
 
