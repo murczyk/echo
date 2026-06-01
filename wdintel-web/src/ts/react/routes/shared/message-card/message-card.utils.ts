@@ -164,6 +164,91 @@ export function resolveEtalonBindingDisplayValue(
   };
 }
 
+const MESSAGE_DATETIME_LINE_REGEXP = /^\d{2}\.\d{2}\.\d{4},\s*\d{2}:\d{2}:\d{2}/;
+const STANDALONE_FREQUENCY_LINE_REGEXP = /^\d{1,4}[.,]\d+$/;
+const EMBEDDED_FREQUENCY_REGEXP = /\s*(?:F=)?\d{1,4}[.,]?\d*(?:\s*\(МГц\)|\s*МГц|\s*MHz|\s*\(MHz\))\s*/gi;
+
+function findMessageDateTimeLineIndex(lines: string[]): number {
+  return lines.findIndex((line) => MESSAGE_DATETIME_LINE_REGEXP.test(line.trim()));
+}
+
+function isStandaloneFrequencyLine(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed !== '' && STANDALONE_FREQUENCY_LINE_REGEXP.test(trimmed);
+}
+
+function stripEmbeddedFrequencyFromLine(line: string): string {
+  return line.replace(EMBEDDED_FREQUENCY_REGEXP, ' ').replace(/\s{2,}/g, ' ').trimEnd();
+}
+
+function isMessageBodyLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (trimmed === '') return false;
+  if (trimmed.startsWith('—')) return true;
+  if (trimmed.startsWith('- ') || trimmed.startsWith('--')) return true;
+  if (/^\d+\s*[—–-]\s/.test(trimmed)) return true;
+  if (/^\d+\.\s+\S/.test(trimmed)) return true;
+  return false;
+}
+
+export function extractMessageTextForCopy(rawText: string): string {
+  const lines = rawText.split('\n');
+  const startIndex = findMessageDateTimeLineIndex(lines);
+  const relevantLines = startIndex >= 0 ? lines.slice(startIndex) : [...lines];
+  const processed = relevantLines
+    .filter((line) => !isStandaloneFrequencyLine(line))
+    .map((line) => (line.trim() === '' ? line : stripEmbeddedFrequencyFromLine(line)));
+
+  while (processed.length > 0 && processed[processed.length - 1]?.trim() === '') {
+    processed.pop();
+  }
+
+  return processed.join('\n').trimEnd();
+}
+
+function insertNetworkNameIntoExtractedMessage(extractedText: string, networkName: string): string {
+  const lines = extractedText.split('\n');
+  const datetimeIndex = findMessageDateTimeLineIndex(lines);
+  if (datetimeIndex < 0) {
+    return `${networkName}\n${extractedText}`.trim();
+  }
+
+  let replaceIndex = datetimeIndex + 1;
+  while (replaceIndex < lines.length && lines[replaceIndex]?.trim() === '') {
+    replaceIndex += 1;
+  }
+
+  if (replaceIndex >= lines.length) {
+    return [...lines, networkName].join('\n');
+  }
+
+  if (isMessageBodyLine(lines[replaceIndex] ?? '')) {
+    lines.splice(replaceIndex, 0, networkName);
+    return lines.join('\n');
+  }
+
+  lines[replaceIndex] = networkName;
+  return lines.join('\n');
+}
+
+export function buildCopyTextWithNetworkName(rawText: string, networkName: string | null | undefined): string {
+  const extractedText = extractMessageTextForCopy(rawText);
+  const network = normalizeLabel(networkName);
+  if (network === '') return extractedText;
+  return insertNetworkNameIntoExtractedMessage(extractedText, network);
+}
+
+export function buildCopyTextWithNetworkAndNote(
+  rawText: string,
+  networkName: string | null | undefined,
+  note: string | null | undefined,
+): string {
+  const noteText = normalizeLabel(note);
+  const messageWithNetwork = buildCopyTextWithNetworkName(rawText, networkName);
+  if (noteText === '') return messageWithNetwork;
+  return `${noteText}\n\n${messageWithNetwork}`;
+}
+
 export function resolveMessageCardEtalonDisplayModel(
   msg: InboxMessage,
   options: ResolveEtalonBindingDisplayValueOptions = {},

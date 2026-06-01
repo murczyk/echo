@@ -82,6 +82,8 @@ export type MessageCardProps = {
   onImportant: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onCopyTextWithNetwork?: () => void;
+  onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onAddFrequencyToFilter?: (freq: string) => void;
@@ -120,6 +122,8 @@ export function MessageCard({
   onImportant,
   onCopyText,
   onCopyFreq,
+  onCopyTextWithNetwork,
+  onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
   onAddFrequencyToFilter,
@@ -211,6 +215,8 @@ export function MessageCard({
     onComment,
     onCopyText,
     onCopyFreq,
+    onCopyTextWithNetwork,
+    onCopyTextWithNetworkAndNote,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
     onAddFrequencyToFilter,

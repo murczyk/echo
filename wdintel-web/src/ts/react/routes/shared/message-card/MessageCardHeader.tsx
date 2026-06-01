@@ -62,6 +62,8 @@ type ActionIconsRowProps = {
   onComment: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onCopyTextWithNetwork?: () => void;
+  onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onDelete?: () => void;
@@ -182,6 +184,8 @@ function ActionIconsRow({
   onComment,
   onCopyText,
   onCopyFreq,
+  onCopyTextWithNetwork,
+  onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
   onDelete,
@@ -203,6 +207,8 @@ function ActionIconsRow({
   const canShowNavigationMenu = navigationMenuItems.length > 0;
   const navigationMenuHasNetwork = navigationMenuItems.some((item) => item.kind === 'network');
   const hasFrequencyCopy = isPresent(msg.freq) && String(msg.freq).trim() !== '';
+  const hasCopyTextWithNetwork = isPresent(onCopyTextWithNetwork);
+  const hasCopyTextWithNetworkAndNote = isPresent(onCopyTextWithNetworkAndNote);
   const hasEtalonCopy = isPresent(onCopyEtalon);
   const canShowLocationCopy = etalonDisplayModel.primaryKind === 'location' && isPresent(onCopyLocation);
   const overflowMenuItems = [
@@ -492,6 +498,22 @@ function ActionIconsRow({
             <span>Копіювати повідомлення</span>
           </Box>
         </MenuItem>
+        {hasCopyTextWithNetwork ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
+              <PeopleIcon fontSize="small" />
+              <span>Копіювати повідомлення з назвою мережі</span>
+            </Box>
+          </MenuItem>
+        ) : null}
+        {hasCopyTextWithNetworkAndNote ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
+              <ChatBubbleOutlineOutlinedIcon fontSize="small" />
+              <span>Копіювати повідомлення з мережею та коментарем</span>
+            </Box>
+          </MenuItem>
+        ) : null}
         {hasFrequencyCopy ? (
           <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq)}>
             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
@@ -807,6 +829,8 @@ export type MessageCardHeaderProps = {
   onComment: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onCopyTextWithNetwork?: () => void;
+  onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onAddFrequencyToFilter?: (freq: string) => void;
@@ -835,6 +859,8 @@ export function MessageCardHeader({
   onComment,
   onCopyText,
   onCopyFreq,
+  onCopyTextWithNetwork,
+  onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
   onAddFrequencyToFilter,
@@ -932,6 +958,8 @@ export function MessageCardHeader({
             onComment={onComment}
             onCopyText={onCopyText}
             onCopyFreq={onCopyFreq}
+            onCopyTextWithNetwork={onCopyTextWithNetwork}
+            onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
             onCopyEtalon={onCopyEtalon}
             onCopyLocation={onCopyLocation}
             onDelete={onDelete}
@@ -1054,6 +1082,8 @@ export function MessageCardHeader({
           onComment={onComment}
           onCopyText={onCopyText}
           onCopyFreq={onCopyFreq}
+          onCopyTextWithNetwork={onCopyTextWithNetwork}
+          onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
           onCopyEtalon={onCopyEtalon}
           onCopyLocation={onCopyLocation}
           onDelete={onDelete}
