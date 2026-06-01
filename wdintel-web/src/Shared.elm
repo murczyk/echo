@@ -143,7 +143,16 @@ update req msg model =
                 ( model, E.none )
 
         GotUser (Ok user) ->
-            ( { model | user = Just user, changelogLastSeen = user.lastReleaseSeen }
+            ( { model
+                | user = Just user
+                , changelogLastSeen =
+                    case user.lastReleaseSeen of
+                        Just _ ->
+                            user.lastReleaseSeen
+
+                        Nothing ->
+                            model.changelogLastSeen
+              }
             , E.batch
                 [ if req.path == Route.Path.Login then
                     E.replaceRoutePath Route.Path.Home_

@@ -628,7 +628,7 @@ api_mark_release_seen :
 api_mark_release_seen releaseId toMsg =
     Http.post
         { url = "/api/user/release-seen"
-        , body = Http.jsonBody (Encode.object [ ( "release_id", Encode.string releaseId ) ])
+        , body = Http.jsonBody (markReleaseSeenReqEncoder { releaseId = releaseId })
         , expect = leExpectJson toMsg (Decode.succeed ())
         }
 

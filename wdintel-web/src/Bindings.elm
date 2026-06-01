@@ -3583,6 +3583,18 @@ keepAliveReqEncoder struct =
         ]
 
 
+type alias MarkReleaseSeenReq =
+    { releaseId : String
+    }
+
+
+markReleaseSeenReqEncoder : MarkReleaseSeenReq -> Json.Encode.Value
+markReleaseSeenReqEncoder struct =
+    Json.Encode.object
+        [ ( "release_id", (Json.Encode.string) struct.releaseId )
+        ]
+
+
 type DeactivationReasonType
     = Admin
     | Inactive
@@ -9788,6 +9800,12 @@ keepAliveReqDecoder : Json.Decode.Decoder KeepAliveReq
 keepAliveReqDecoder =
     Json.Decode.succeed KeepAliveReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_id" (Json.Decode.nullable (Json.Decode.string))))
+
+
+markReleaseSeenReqDecoder : Json.Decode.Decoder MarkReleaseSeenReq
+markReleaseSeenReqDecoder =
+    Json.Decode.succeed MarkReleaseSeenReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "release_id" (Json.Decode.string)))
 
 
 deactivationReasonTypeDecoder : Json.Decode.Decoder DeactivationReasonType

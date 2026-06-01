@@ -1365,6 +1365,10 @@ export type KeepAliveReq = {
   pageId: string | null;
 };
 
+export type MarkReleaseSeenReq = {
+  releaseId: string;
+};
+
 export type DeactivationReasonType =
   | 'Admin'
   | 'Inactive'
