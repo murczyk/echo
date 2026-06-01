@@ -192,7 +192,16 @@ export function NetworkDetailsNeoPageBody({
   if (panelPlacement === 'top') {
     return (
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-        <Box sx={{ minHeight: 0, flexShrink: 0 }}>
+        <Box
+          sx={{
+            minHeight: 0,
+            flex: '0 1 auto',
+            maxHeight: { xs: '45dvh', md: 'min(50dvh, 560px)' },
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            overscrollBehavior: 'contain',
+          }}
+        >
           <NetworkDetailsLeftPanel placement="top" collapsed={topPanelCollapsed} {...sharedLeftPanelProps} />
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>{detailsTabPanel}</Box>
