@@ -3,13 +3,16 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { deleteNetwork, updateNetwork, updateNetworkPosts, updateNetworkUnits } from '../../services/api/networks';
 import { navigateWithinSpa } from '../../utils/browser';
+import { NO_DATA_LABEL } from '../../utils/misc';
 import {
+  formatAorSummaryText,
   formatClassicNetworkHeaderName,
   formatErrorMessage,
   toNetworkEditForm,
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
 } from './use-rer-network-details-neo-page.shared';
+import { formatUnitSummaryText, type MainInfoSnapshot } from './components/NetworkDetailsLeftPanel.content';
 import { useRerNetworkDetailsNeoPageDescriptionActions } from './use-rer-network-details-neo-page.description-actions';
 import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-details-neo-page.report-actions';
 import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
@@ -37,6 +40,47 @@ function syncNetworkRelations(editForm: NetworkEditForm) {
       unitIds: [...editForm.unitIds],
     }),
   );
+}
+
+function addCopyLine(lines: string[], label: string, value: string | null | undefined) {
+  const trimmed = value?.trim() ?? '';
+  if (trimmed === '' || trimmed === NO_DATA_LABEL || trimmed === '—') return;
+  lines.push(`${label}: ${trimmed}`);
+}
+
+export function buildMainInfoCopyText({
+  unitNames,
+  location,
+  aorLabels,
+  aorCollapsedCount,
+  callsignCount,
+  activityLabel,
+}: {
+  unitNames: string[];
+  location: string | null | undefined;
+  aorLabels: string[];
+  aorCollapsedCount: number;
+  callsignCount: number | null;
+  activityLabel: string | null;
+}) {
+  const lines: string[] = [];
+  const units = unitNames.map((unitName) => unitName.trim()).filter((unitName) => unitName !== '');
+  const unitsText = formatUnitSummaryText(units);
+  if (unitsText) {
+    lines.push(`${units.length === 1 ? 'Підрозділ' : 'Підрозділи'}: ${unitsText}`);
+  }
+
+  addCopyLine(lines, 'Район функціонування', location);
+  addCopyLine(lines, 'Смуги', formatAorSummaryText(aorLabels, aorCollapsedCount));
+  if (callsignCount !== null) {
+    lines.push(`Склад кореспондентів: ${callsignCount}`);
+  }
+
+  if (activityLabel) {
+    lines.push(`Активність: ${activityLabel}`);
+  }
+
+  return lines.join('\n');
 }
 
 export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames, reloadGeneration, currentNetworkIdRef, loadCallsigns }: Args) {
@@ -181,17 +225,43 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
 
     try {
       await navigator.clipboard.writeText(parts.join(', '));
-      setState((current) => ({ ...current, copyStatus: 'Назву й район скопійовано' }));
+      setState((current) => ({ ...current, copyStatus: 'Назву й район скопійовано', copyStatusTone: 'success' }));
       window.setTimeout(() => {
-        setState((current) => ({ ...current, copyStatus: null }));
+        setState((current) => ({ ...current, copyStatus: null, copyStatusTone: null }));
       }, 1800);
     } catch (error) {
-      setState((current) => ({ ...current, copyStatus: formatErrorMessage(error) }));
+      setState((current) => ({ ...current, copyStatus: formatErrorMessage(error), copyStatusTone: 'error' }));
       window.setTimeout(() => {
-        setState((current) => ({ ...current, copyStatus: null }));
+        setState((current) => ({ ...current, copyStatus: null, copyStatusTone: null }));
       }, 2400);
     }
   }, [setState, state.network?.location, state.network?.name, unitNames]);
+
+  const handleCopyMainInfo = useCallback(async (snapshot: MainInfoSnapshot) => {
+    const text = buildMainInfoCopyText({
+      unitNames: snapshot.unitNames,
+      location: snapshot.location,
+      aorLabels: snapshot.aorLabels,
+      aorCollapsedCount: snapshot.aorCollapsedCount,
+      callsignCount: snapshot.callsignCount,
+      activityLabel: snapshot.activityLabel,
+    });
+
+    if (text.trim() === '') return;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setState((current) => ({ ...current, copyStatus: 'Основне скопійовано', copyStatusTone: 'success' }));
+      window.setTimeout(() => {
+        setState((current) => ({ ...current, copyStatus: null, copyStatusTone: null }));
+      }, 1800);
+    } catch (error) {
+      setState((current) => ({ ...current, copyStatus: formatErrorMessage(error), copyStatusTone: 'error' }));
+      window.setTimeout(() => {
+        setState((current) => ({ ...current, copyStatus: null, copyStatusTone: null }));
+      }, 2400);
+    }
+  }, [setState]);
 
   const setEditForm = useCallback((editForm: NetworkEditForm | null) => {
     setState((current) => ({ ...current, editForm }));
@@ -212,6 +282,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
     saveNetworkEdit,
     handleDelete,
     handleCopyNetworkInfo,
+    handleCopyMainInfo,
     setEditForm,
   };
 }
