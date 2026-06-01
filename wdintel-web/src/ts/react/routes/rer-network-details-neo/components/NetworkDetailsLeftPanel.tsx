@@ -1,104 +1,132 @@
-import { Box, Button, Chip, Divider, Paper, Skeleton, Stack, Typography } from '@mui/material';
-import type { ReactNode } from 'react';
+import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
+import KeyboardArrowDownOutlinedIcon from '@mui/icons-material/KeyboardArrowDownOutlined';
+import KeyboardArrowLeftOutlinedIcon from '@mui/icons-material/KeyboardArrowLeftOutlined';
+import KeyboardArrowUpOutlinedIcon from '@mui/icons-material/KeyboardArrowUpOutlined';
+import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
+import { Box, IconButton, ListItemIcon, MenuItem, Paper, Stack, Tooltip } from '@mui/material';
+import { useState } from 'react';
 
 import type { Network } from '../../../../../Bindings';
-import { NO_DATA_LABEL, formatUtcDateOnly } from '../../../utils/misc';
-import { normalizeLookupName } from '../use-rer-network-details-neo-page.shared';
+import { PowerMenu } from '../../../components/PowerMenu';
+import {
+  buildCollapsedTopSummaryItems,
+  buildTopSummarySections,
+  formatActivityLabel,
+  MainContentSections,
+  NetworkDetailsLeftPanelSkeleton,
+  TopSummaryRow,
+  type MainInfoSnapshot,
+  type Placement,
+} from './NetworkDetailsLeftPanel.content';
 
-function FieldRow({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: '180px minmax(0,1fr)' },
-        gap: 1,
-        alignItems: 'start',
-      }}
-    >
-      <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-        {label}
-      </Typography>
-      <Box sx={{ minWidth: 0 }}>{value}</Box>
-    </Box>
-  );
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return (
-    <Typography
-      variant="overline"
-      sx={{
-        display: 'block',
-        fontSize: '0.95rem',
-        lineHeight: 1.2,
-        fontWeight: 700,
-        letterSpacing: '0.04em',
-        color: 'text.secondary',
-      }}
-    >
-      {children}
-    </Typography>
-  );
-}
-
-function ChipList({
-  labels,
-  collapsedCountLabel,
-  onToggleCollapsed,
+function TopPanelActions({
+  placement,
   collapsed,
+  onToggleCollapsed,
+  onPlacementChange,
+  onCollapsedChange,
+  mainInfoSnapshot,
+  onCopyMainInfo,
 }: {
-  labels: string[];
-  collapsedCountLabel?: string;
-  onToggleCollapsed?: () => void;
-  collapsed?: boolean;
+  placement: Placement;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onPlacementChange: (placement: Placement) => void;
+  onCollapsedChange: (collapsed: boolean) => void;
+  mainInfoSnapshot: MainInfoSnapshot;
+  onCopyMainInfo: (snapshot: MainInfoSnapshot) => void;
 }) {
-  return (
-    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-      {labels.map((label) => (
-        <Chip key={label} size="small" label={label} />
-      ))}
-      {collapsedCountLabel && onToggleCollapsed ? (
-        <Button size="small" onClick={onToggleCollapsed} variant="text" sx={{ minWidth: 0, px: 0.5 }}>
-          {collapsed ? collapsedCountLabel : 'Згорнути'}
-        </Button>
-      ) : null}
-    </Stack>
-  );
-}
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [pendingPlacement, setPendingPlacement] = useState<Placement | null>(null);
+  const isMenuOpen = anchorEl !== null;
+  const collapseLabel = collapsed ? 'Розгорнути панель' : 'Згорнути панель';
+  const placementLabel = placement === 'left' ? 'Відображати зверху' : 'Відображати ліворуч';
 
-function formatUnitLabel(unitCount: number): string {
-  return unitCount === 1 ? 'Підрозділ' : 'Підрозділи';
-}
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
 
-function LeftPanelSkeleton() {
+  const handleMenuExited = () => {
+    if (pendingPlacement) {
+      onPlacementChange(pendingPlacement);
+      if (pendingPlacement === 'top') {
+        onCollapsedChange(false);
+      }
+      setPendingPlacement(null);
+    }
+  };
+
   return (
-    <Box
-      sx={{
-        flex: 1,
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
-      }}
-    >
-      <Skeleton variant="text" width="28%" height={28} />
-      <Skeleton variant="rounded" height={28} />
-      <Skeleton variant="rounded" height={88} />
-      <Skeleton variant="rounded" height={28} />
-      <Skeleton variant="rounded" height={28} />
-      <Skeleton variant="text" width="24%" height={28} />
-      <Skeleton variant="rounded" height={28} />
-      <Skeleton variant="rounded" height={28} />
-      <Skeleton variant="rounded" height={88} />
-      <Skeleton variant="text" width="24%" height={28} />
-      <Skeleton variant="rounded" height={28} />
-      <Skeleton variant="rounded" height={28} />
-      <Skeleton variant="rounded" height={28} />
-    </Box>
+    <>
+      <Stack
+        direction="row"
+        spacing={0.5}
+        alignItems="center"
+        sx={{ width: 'fit-content', flexShrink: 0 }}
+        data-testid="network-details-panel-actions"
+      >
+        <Tooltip title="Дії" arrow>
+          <span>
+            <IconButton
+              size="small"
+              onClick={(event) => setAnchorEl(event.currentTarget)}
+              aria-haspopup="true"
+              aria-controls={isMenuOpen ? 'network-details-panel-menu' : undefined}
+              aria-label="Дії панелі"
+            >
+              <MoreVertOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        {placement === 'top' ? (
+          <Tooltip title={collapseLabel} arrow>
+            <span>
+              <IconButton size="small" onClick={onToggleCollapsed} aria-label={collapseLabel}>
+                {collapsed ? <KeyboardArrowDownOutlinedIcon fontSize="small" /> : <KeyboardArrowUpOutlinedIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
+        ) : null}
+      </Stack>
+
+      <PowerMenu
+        id="network-details-panel-menu"
+        anchorEl={anchorEl}
+        open={isMenuOpen}
+        onClose={handleMenuClose}
+        TransitionProps={{ onExited: handleMenuExited }}
+        slotProps={{ paper: { sx: { minWidth: 260 } } }}
+      >
+        <MenuItem
+          onClick={() => {
+            setPendingPlacement(placement === 'left' ? 'top' : 'left');
+            handleMenuClose();
+          }}
+        >
+          <ListItemIcon>
+            {placement === 'left' ? <KeyboardArrowUpOutlinedIcon fontSize="small" /> : <KeyboardArrowLeftOutlinedIcon fontSize="small" />}
+          </ListItemIcon>
+          {placementLabel}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            handleMenuClose();
+            onCopyMainInfo(mainInfoSnapshot);
+          }}
+        >
+          <ListItemIcon>
+            <ContentCopyOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Копіювати основне
+        </MenuItem>
+      </PowerMenu>
+    </>
   );
 }
 
 type Props = {
+  placement: Placement;
+  collapsed: boolean;
   isLoading: boolean;
   unitNames: string[];
   network: Network | null;
@@ -112,9 +140,15 @@ type Props = {
   rangeLabel: string;
   transferTypeLabel: string;
   postItems: Array<{ id: number; label: string }>;
+  onPlacementChange: (placement: Placement) => void;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onToggleCollapsed: () => void;
+  onCopyMainInfo: (snapshot: MainInfoSnapshot) => void;
 };
 
 export function NetworkDetailsLeftPanel({
+  placement,
+  collapsed,
   isLoading,
   unitNames,
   network,
@@ -128,143 +162,122 @@ export function NetworkDetailsLeftPanel({
   rangeLabel,
   transferTypeLabel,
   postItems,
+  onPlacementChange,
+  onCollapsedChange,
+  onToggleCollapsed,
+  onCopyMainInfo,
 }: Props) {
+  const isTopPlacement = placement === 'top';
+  const compact = isTopPlacement;
+  const aorLabels = aorVisible.map((item) => item.label);
+  const activityLabel = formatActivityLabel(network, statusTone, statusLabel);
+  const mainInfoSnapshot: MainInfoSnapshot = {
+    unitNames,
+    location: network?.location,
+    aorLabels,
+    aorCollapsedCount,
+    callsignCount,
+    activityLabel,
+  };
+  const topSummarySections = buildTopSummarySections({
+    snapshot: mainInfoSnapshot,
+    network,
+    rangeLabel,
+    transferTypeLabel,
+    postItems,
+  });
+  const collapsedTopSummaryItems = buildCollapsedTopSummaryItems({
+    snapshot: mainInfoSnapshot,
+    network,
+    statusTone,
+  });
+  const showCollapsedTopSummary = isTopPlacement && collapsed && !isLoading;
+
   return (
     <Paper
       variant="outlined"
       sx={{
-        height: '100%',
+        height: isTopPlacement ? 'auto' : '100%',
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         boxSizing: 'border-box',
-        overflow: 'auto',
+        overflow: isTopPlacement ? 'hidden' : 'auto',
       }}
     >
-      <Box
-        sx={{
-          minHeight: 0,
-          p: 2,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2.5,
+        <Box
+          sx={{
+            minHeight: 0,
+            p: isTopPlacement ? 1.5 : 2,
+            pt: isTopPlacement ? (collapsed ? 1.5 : 2) : 2,
+            pr: isTopPlacement ? 1.5 : 4,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: isTopPlacement ? 1.5 : 2.5,
           boxSizing: 'border-box',
+          overflow: 'visible',
+          position: 'relative',
         }}
       >
-        {isLoading ? (
-          <LeftPanelSkeleton />
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <SectionTitle>Основне</SectionTitle>
-              <FieldRow
-                label={formatUnitLabel(unitNames.length)}
-                value={
-                  unitNames.length > 0 ? (
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        whiteSpace: 'normal',
-                        overflowWrap: 'anywhere',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {unitNames.join(', ')}
-                    </Typography>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      {NO_DATA_LABEL}
-                    </Typography>
-                  )
-                }
-              />
-              <FieldRow label="Район функціонування" value={<Typography variant="body2">{normalizeLookupName(network?.location)}</Typography>} />
-              <FieldRow
-                label="Смуги"
-                value={
-                  aorVisible.length > 0 ? (
-                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                      {aorVisible.map((item) => (
-                        <Chip key={item.id} size="small" label={item.label} />
-                      ))}
-                      {aorCollapsedCount > 0 ? (
-                        <Button size="small" onClick={onToggleShowAllAors} sx={{ minWidth: 0, px: 0.5 }}>
-                          {showAllAors ? 'Згорнути' : `+${aorCollapsedCount}`}
-                        </Button>
-                      ) : null}
-                    </Stack>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      {NO_DATA_LABEL}
-                    </Typography>
-                  )
-                }
-              />
-              <FieldRow label="Склад кореспондентів" value={<Typography variant="body2">{callsignCount ?? NO_DATA_LABEL}</Typography>} />
-              <FieldRow
-                label="Активність"
-                value={
-                  statusTone === 'success' && network?.activeFrom ? (
-                    <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 700 }}>
-                      {formatUtcDateOnly(network.activeFrom)} — досі
-                    </Typography>
-                  ) : (
-                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                      <Chip size="small" color={statusTone === 'success' ? 'success' : 'warning'} label={statusLabel} />
-                    </Stack>
-                  )
-                }
-              />
+        {showCollapsedTopSummary ? (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              alignItems: 'center',
+              gap: 1.5,
+              minWidth: 0,
+            }}
+            data-testid="network-details-panel-collapsed-summary"
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <TopSummaryRow items={collapsedTopSummaryItems} />
             </Box>
-
-            <Divider />
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <SectionTitle>Операційні</SectionTitle>
-              <FieldRow label="Призначення" value={<Typography variant="body2">{normalizeLookupName(network?.purpose)}</Typography>} />
-              <FieldRow label="Діапазон" value={<Typography variant="body2">{rangeLabel}</Typography>} />
-              <FieldRow label="Тип передачі" value={<Typography variant="body2">{transferTypeLabel}</Typography>} />
-              <FieldRow label="Режим" value={<Typography variant="body2">{normalizeLookupName(network?.operationMode)}</Typography>} />
-              <FieldRow label="Характер" value={<Typography variant="body2">{normalizeLookupName(network?.operationType)}</Typography>} />
-              <FieldRow
-                label="Період функціонування"
-                value={<Typography variant="body2">{normalizeLookupName(network?.operationPeriod)}</Typography>}
+            <Box data-testid="network-details-panel-actions">
+              <TopPanelActions
+                placement={placement}
+                collapsed={collapsed}
+                onToggleCollapsed={onToggleCollapsed}
+                onPlacementChange={onPlacementChange}
+                onCollapsedChange={onCollapsedChange}
+                mainInfoSnapshot={mainInfoSnapshot}
+                onCopyMainInfo={onCopyMainInfo}
               />
-              <FieldRow
-                label="Пости"
-                value={
-                  postItems.length > 0 ? (
-                    <ChipList labels={postItems.map((item) => item.label)} />
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      {NO_DATA_LABEL}
-                    </Typography>
-                  )
-                }
-              />
-              <FieldRow
-                label="Радіостанція"
-                value={
-                  network?.radioStation?.trim() ? (
-                    <Typography variant="body2">{normalizeLookupName(network.radioStation)}</Typography>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      {NO_DATA_LABEL}
-                    </Typography>
-                  )
-                }
-              />
-            </Box>
-
-            <Divider />
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pb: 2 }}>
-              <SectionTitle>Додатково</SectionTitle>
-              <FieldRow label="Створено" value={<Typography variant="body2">{formatUtcDateOnly(network?.createdAt)}</Typography>} />
-              <FieldRow label="Оновлено" value={<Typography variant="body2">{formatUtcDateOnly(network?.lastUpdatedAt)}</Typography>} />
-              <FieldRow label="Оператор" value={<Typography variant="body2">{normalizeLookupName(network?.lastUpdatedBy)}</Typography>} />
             </Box>
           </Box>
+        ) : (
+          <Box sx={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }} data-testid="network-details-panel-actions">
+            <TopPanelActions
+              placement={placement}
+              collapsed={collapsed}
+              onToggleCollapsed={onToggleCollapsed}
+              onPlacementChange={onPlacementChange}
+              onCollapsedChange={onCollapsedChange}
+              mainInfoSnapshot={mainInfoSnapshot}
+              onCopyMainInfo={onCopyMainInfo}
+            />
+          </Box>
+        )}
+
+        {isLoading ? (
+          <NetworkDetailsLeftPanelSkeleton placement={placement} />
+        ) : showCollapsedTopSummary ? null : (
+          <MainContentSections
+            layout={placement}
+            compact={compact}
+            unitNames={unitNames}
+            network={network}
+            aorVisible={aorVisible}
+            aorCollapsedCount={aorCollapsedCount}
+            showAllAors={showAllAors}
+            onToggleShowAllAors={onToggleShowAllAors}
+            callsignCount={callsignCount}
+            statusTone={statusTone}
+            statusLabel={statusLabel}
+            rangeLabel={rangeLabel}
+            transferTypeLabel={transferTypeLabel}
+            postItems={postItems}
+          />
         )}
       </Box>
     </Paper>

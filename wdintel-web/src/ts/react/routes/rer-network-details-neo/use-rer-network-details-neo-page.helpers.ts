@@ -29,6 +29,16 @@ export function formatClassicNetworkHeaderName(networkName: string | null | unde
   return ['р/м', name, units.join(', ')].filter((part) => part !== '').join(' ');
 }
 
+export function formatAorSummaryText(aorLabels: string[], hiddenCount: number): string {
+  const labels = aorLabels.map((label) => label.trim()).filter((label) => label !== '');
+
+  if (labels.length === 0) {
+    return hiddenCount > 0 ? `(+${hiddenCount})` : NO_DATA_LABEL;
+  }
+
+  return `${labels.join(', ')}${hiddenCount > 0 ? ` (+${hiddenCount})` : ''}`;
+}
+
 export function networkStatusDisplay(network: Network | null): DisplayNetworkStatus {
   if (!network) {
     return { label: 'Завантаження', tone: 'warning' };
