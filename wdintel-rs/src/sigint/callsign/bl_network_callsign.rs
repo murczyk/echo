@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::sigint::callsign::types::*;
 use crate::sigint::callsign::{
     bl_callsign_create, bl_callsign_update, find_callsign,
+    list_callsign_additional_source_ids,
 };
 use crate::sigint::etalonka::query::*;
 use crate::sigint::network::bl::find_network;
@@ -275,6 +276,10 @@ pub async fn bl_update_network_callsign(
                     .await
                     .context(h!())?;
                 if known_callsign.developing {
+                    let additional_sources =
+                        list_callsign_additional_source_ids(txn, known_callsign.id)
+                            .await
+                            .context(h!())?;
                     let known_callsign_req = UpdateCallsignReq {
                         id: known_callsign.id,
                         callsign: known_callsign.callsign.clone(),
@@ -285,7 +290,7 @@ pub async fn bl_update_network_callsign(
                         unit_id: known_callsign.unit_id,
                         active: known_callsign.deleted,
                         source_id: known_callsign.source_id,
-                        callsign_additional_sources: vec![],
+                        callsign_additional_sources: additional_sources,
                         created_at: known_callsign.created_at.and_utc().timestamp_millis(),
                         developing: false,
                         radio_freq: Some(known_callsign.radio_freq.clone()),
