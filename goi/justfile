@@ -241,6 +241,23 @@ deploy-goi-echo-worker server:
       sudo systemctl status goi-echo-worker --no-pager
     "
 
+[arg('server', long='server')]
+deploy-echo-swapp server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+
+    echo "Installing fresh echo-swapp on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      sudo apt-get install -y --reinstall echo-swapp
+      sudo systemctl enable --now echo-swapp
+      sudo systemctl restart echo-swapp
+      sudo systemctl status echo-swapp --no-pager
+    "
+
 # Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
 
 # Use only on Linux, preferrably 22.04 host
@@ -385,6 +402,7 @@ deploy server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER"
 
 [arg('server', long='server')]
 deploy-first server:
@@ -470,6 +488,7 @@ deploy-first server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER"
 
 [arg('server', long='server')]
 deploy-swapp server:

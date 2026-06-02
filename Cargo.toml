@@ -3,6 +3,7 @@ members = [
     "wdintel-rs",
     "echo-migration", "echo-install",
     "docs/echo-docs", "echo-ai", "goi-echo-worker",
+    "goi/echo-swapp",
 ]
 resolver = "2"
 

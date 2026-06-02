@@ -1,0 +1,33 @@
+[package]
+name = "echo-swapp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Swapp-compatible GOI messenger API wrapper"
+
+[dependencies]
+actix-web = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+env_logger = "0.11.9"
+log = { workspace = true }
+regex = "1.12.3"
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "signal"] }
+toml = "0.9.12"
+
+[dependencies.echo-im]
+git = "ssh://git@github.com/echoua/echo-im.git"
+rev = "3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df"
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = [{ unit-name = "echo-swapp" }]
+depends = ""
+assets = [
+    ["target/release/echo-swapp", "usr/bin/", "755"],
+    ["config.toml.example", "etc/echo-swapp/config.toml.example", "644"],
+]

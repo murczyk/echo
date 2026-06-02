@@ -2303,6 +2303,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "echo-swapp"
+version = "0.1.1-rc.202605311034"
+dependencies = [
+ "actix-web",
+ "anyhow",
+ "chrono",
+ "echo-im",
+ "env_logger 0.11.9",
+ "log",
+ "regex",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
