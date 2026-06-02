@@ -26,6 +26,10 @@ import { formatClassicNetworkHeaderName } from './use-rer-network-details-neo-pa
 import { NetworkDetailsNeoPageBody } from './components/NetworkDetailsNeoPageBody';
 import { NetworkDetailsNeoPageDialogs } from './components/NetworkDetailsNeoPageDialogs';
 import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
+import {
+  buildRerNetworkDetailsHref,
+  saveRerNetworkDetailsPreferredView,
+} from './network-details-preference';
 
 const PANEL_PLACEMENT_STORAGE_KEY = 'rer-network-details-neo.panelPlacement';
 const TOP_PANEL_COLLAPSED_STORAGE_KEY = 'rer-network-details-neo.topPanelCollapsed';
@@ -51,10 +55,6 @@ function readStoredTopPanelCollapsed(): boolean {
   }
 
   return window.localStorage.getItem(TOP_PANEL_COLLAPSED_STORAGE_KEY) === 'true';
-}
-
-function buildClassicHref(networkId: number): string {
-  return `/rer-networks/${networkId}`;
 }
 
 function buildPageTitle(
@@ -106,9 +106,13 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
     window.localStorage.setItem(TOP_PANEL_COLLAPSED_STORAGE_KEY, String(topPanelCollapsed));
   }, [topPanelCollapsed]);
 
+  useEffect(() => {
+    saveRerNetworkDetailsPreferredView('neo');
+  }, []);
+
   const isTopPanel = panelPlacement === 'top';
   const leftPanelVisible = !isTopPanel && (isMobileLayout || leftPanelOpen);
-  const classicHref = buildClassicHref(networkId);
+  const classicHref = buildRerNetworkDetailsHref(networkId, 'classic');
   const aorVisible = showAllAors ? page.aorItems : page.aorItems.slice(0, 5);
   const aorCollapsedCount = Math.max(page.aorItems.length - aorVisible.length, 0);
   const editFreq = page.freqEditDrawerForm
@@ -146,7 +150,14 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         titleLeadingGap={2}
         actions={
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button onClick={() => navigateWithinSpa(classicHref)}>Повернутись до класичної версії</Button>
+            <Button
+              onClick={() => {
+                saveRerNetworkDetailsPreferredView('classic');
+                navigateWithinSpa(classicHref);
+              }}
+            >
+              Повернутись до класичної версії
+            </Button>
             <Tooltip title="Скопіювати назву і район">
               <span>
                 <IconButton

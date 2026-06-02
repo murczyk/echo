@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
 import { NO_DATA_LABEL } from '../../utils/misc';
+import { navigateWithinSpa } from '../../utils/browser';
 
 const useRerNetworkDetailsNeoPageMock = vi.hoisted(() => vi.fn());
 
@@ -121,6 +122,9 @@ vi.mock('@mui/icons-material/Delete', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Edit', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/MoreVertOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/SummarizeOutlined', () => ({ default: () => <span /> }));
+vi.mock('../../utils/browser', () => ({
+  navigateWithinSpa: vi.fn(),
+}));
 
 import { RerNetworkDetailsNeoPage } from './index';
 
@@ -366,6 +370,7 @@ describe('RerNetworkDetailsNeoPage', () => {
     expect(view.container.querySelector('[data-testid="left-panel"]')?.getAttribute('data-placement')).toBe('left');
     const toggleButton = view.container.querySelector('button[aria-label="Згорнути ліву панель"]');
     expect(toggleButton?.hasAttribute('disabled')).toBe(false);
+    expect(window.localStorage.getItem('rer-network-details.preferredView')).toBe('neo');
   });
 
   it('disables the side toggle immediately when storage says top placement', async () => {
@@ -391,5 +396,23 @@ describe('RerNetworkDetailsNeoPage', () => {
 
     expect(view.container.textContent).not.toContain('skeleton');
     expect(view.container.textContent).toContain(NO_DATA_LABEL);
+  });
+
+  it('stores classic preference before navigating to the classic page', async () => {
+    useRerNetworkDetailsNeoPageMock.mockReturnValue(buildPage());
+    const view = await renderPage();
+    rendered.push(view);
+
+    const button = Array.from(view.container.querySelectorAll('button')).find((element) =>
+      element.textContent?.includes('Повернутись до класичної версії'),
+    );
+    if (!(button instanceof HTMLButtonElement)) throw new Error('button not found');
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(window.localStorage.getItem('rer-network-details.preferredView')).toBe('classic');
+    expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks/42?view=classic');
   });
 });

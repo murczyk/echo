@@ -29,6 +29,7 @@ import Shared.Msg exposing (Msg(..))
 import Task
 import TimeZone
 import Url
+import String
 import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
@@ -82,6 +83,7 @@ init flagsResult _ =
 
             else
                 Shared.Model.Light
+      , rerNetworkDetailsPreferredView = Shared.Model.Neo
       , location = Nothing
       , serverInfo = Nothing
       , changelogPreview = Nothing
@@ -109,6 +111,7 @@ init flagsResult _ =
         , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         , E.sendCmd <| Ports.shared_loadThemeMode ()
         , E.sendCmd <| Ports.shared_loadLastSeenChangelog ()
+        , E.sendCmd <| Ports.shared_loadRerNetworkDetailsPreferredView ()
         ]
     )
 
@@ -188,6 +191,38 @@ update req msg model =
         ThemeModeLoaded themeModeStr ->
             ( { model | themeMode = Shared.Model.themeModeFromString themeModeStr }
             , E.none
+            )
+
+        RerNetworkDetailsPreferredViewLoaded preferredViewStr ->
+            if isRerNetworkDetailsPath req.url.path then
+                ( { model
+                    | rerNetworkDetailsPreferredView =
+                        if Dict.get "view" req.query == Just "classic" then
+                            Shared.Model.Classic
+
+                        else
+                            Shared.Model.Neo
+                  }
+                , E.none
+                )
+
+            else
+                ( { model
+                    | rerNetworkDetailsPreferredView =
+                        Shared.Model.rerNetworkDetailsPreferredViewFromString preferredViewStr
+                  }
+                , E.none
+                )
+
+        SetRerNetworkDetailsPreferredView preferredView ->
+            ( { model | rerNetworkDetailsPreferredView = preferredView }
+            , E.sendCmd <|
+                case preferredView of
+                    Shared.Model.Classic ->
+                        Ports.shared_saveRerNetworkDetailsPreferredView "classic"
+
+                    Shared.Model.Neo ->
+                        Ports.shared_saveRerNetworkDetailsPreferredView "neo"
             )
 
         LastSeenChangelogLoaded value ->
@@ -508,12 +543,23 @@ update req msg model =
             )
 
 
+isRerNetworkDetailsPath : String -> Bool
+isRerNetworkDetailsPath path =
+    case String.split "/" path of
+        [ "", "rer-networks", id ] ->
+            String.toInt id /= Nothing
+
+        _ ->
+            False
+
+
 subscriptions : Route () -> Model -> Sub Msg
 subscriptions _ _ =
     Sub.batch
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
         , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
+        , Ports.shared_loadRerNetworkDetailsPreferredViewRes RerNetworkDetailsPreferredViewLoaded
         ]
 
 

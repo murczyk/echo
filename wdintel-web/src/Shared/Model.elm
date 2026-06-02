@@ -1,4 +1,4 @@
-module Shared.Model exposing (Model, ThemeMode(..), isDarkMode, themeModeFromString, themeModeToString)
+module Shared.Model exposing (Model, RerNetworkDetailsPreferredView(..), isDarkMode, rerNetworkDetailsPreferredViewFromString, rerNetworkDetailsPreferredViewToString, themeModeFromString, themeModeToString, ThemeMode(..))
 
 import Bindings as B
 import Core.EventTypes
@@ -13,6 +13,11 @@ type ThemeMode
     = Light
     | Dark
     | System
+
+
+type RerNetworkDetailsPreferredView
+    = Neo
+    | Classic
 
 
 {-| Helper function to convert ThemeMode to Bool for backward compatibility
@@ -71,9 +76,30 @@ themeModeToString themeMode =
             "system"
 
 
+rerNetworkDetailsPreferredViewFromString : String -> RerNetworkDetailsPreferredView
+rerNetworkDetailsPreferredViewFromString str =
+    case str of
+        "classic" ->
+            Classic
+
+        _ ->
+            Neo
+
+
+rerNetworkDetailsPreferredViewToString : RerNetworkDetailsPreferredView -> String
+rerNetworkDetailsPreferredViewToString preferredView =
+    case preferredView of
+        Classic ->
+            "classic"
+
+        Neo ->
+            "neo"
+
+
 type alias Model =
     { user : Maybe B.User
     , themeMode : ThemeMode
+    , rerNetworkDetailsPreferredView : RerNetworkDetailsPreferredView
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
     , changelogPreview : Maybe ChangelogPreview

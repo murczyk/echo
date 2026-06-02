@@ -68,6 +68,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY = 'rer-analysis-neo-alpha-banner-dismissed';
+const RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY = 'rer-network-details.preferredView';
 
 // Theme management functions
 type AppliedTheme = 'light' | 'dark';
@@ -737,6 +738,22 @@ export const onReady = ({ app, env }) => {
                 const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
                 app.ports.shared_loadThemeModeRes.send(systemTheme);
             }
+        });
+    }
+
+    if (
+        app.ports &&
+        app.ports.shared_saveRerNetworkDetailsPreferredView &&
+        app.ports.shared_loadRerNetworkDetailsPreferredView &&
+        app.ports.shared_loadRerNetworkDetailsPreferredViewRes
+    ) {
+        app.ports.shared_saveRerNetworkDetailsPreferredView.subscribe((preferredView: string) => {
+            localStorage.setItem(RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY, preferredView);
+        });
+
+        app.ports.shared_loadRerNetworkDetailsPreferredView.subscribe(() => {
+            const storedValue = localStorage.getItem(RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY);
+            app.ports.shared_loadRerNetworkDetailsPreferredViewRes.send(storedValue === 'classic' ? 'classic' : 'neo');
         });
     }
 

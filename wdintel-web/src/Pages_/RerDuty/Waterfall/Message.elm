@@ -22,12 +22,14 @@ import Pages_.RerAnalysis.Utils
 import Shared.Components.Popup as Popup
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
+import Shared.Model
 import Shared.MarkedText
 import String
 import Task
 import Time
 import Time.Extra
 import Url.Builder
+import Utils.RerNetworkDetails
 import Utils.Api.ErrorHandling
 import Utils.Time
 import Utils.Utils exposing (..)
@@ -76,6 +78,7 @@ type alias ViewParams =
     , tags : List ( Int, B.Tag )
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , masterUnits : Dict Int B.Unit
+    , networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView
     , signals : List B.Signal
     , copied : Maybe ClipboardObject
     , isMsgVisible : List Int
@@ -696,7 +699,7 @@ view ps messageTuple model =
         ]
 
 
-leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), masterUnits : Dict Int B.Unit, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
+leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), masterUnits : Dict Int B.Unit, networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
 leftColumn ( messageId, message ) ps model =
     let
         clipboardBlock msgType isBig =
@@ -1099,7 +1102,7 @@ rightColumn ( messageId, message ) ps model =
                                                                 Core.Unit.createMasterUnitText ps.masterUnits network
 
                                                             networkUrl =
-                                                                "/rer-networks/" ++ String.fromInt networkId
+                                                                Utils.RerNetworkDetails.href ps.networkDetailsViewPreference networkId
 
                                                             noUnitsBadge =
                                                                 case network.unitIds of
