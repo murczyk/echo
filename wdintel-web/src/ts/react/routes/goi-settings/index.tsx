@@ -44,6 +44,7 @@ function isAbortError(error: unknown): boolean {
 function restartServiceLabel(service: GoiRestartService): string {
   if (service === 'swapp') return 'Swapp';
   if (service === 'swapp_alt') return 'Swapp Додатковий';
+  if (service === 'echo_swapp') return 'Месенджери';
   return 'GOI';
 }
 
@@ -57,6 +58,20 @@ function swappAltUrl(swappUrl: string | null): string | null {
   try {
     const url = new URL(swappUrl);
     url.port = '4003';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function echoSwappUrl(goiUrl: string | null): string | null {
+  if (!goiUrl) return null;
+
+  try {
+    const url = new URL(goiUrl);
+    url.pathname = '/messengers/';
+    url.search = '';
+    url.hash = '';
     return url.toString();
   } catch {
     return null;
@@ -148,7 +163,9 @@ function ServiceTableRow(props: ServiceTableRowProps) {
 function IntegrationCard(props: IntegrationCardProps) {
   const { integration } = props;
   const integrationSwappAltUrl = swappAltUrl(integration.swappUrl);
+  const integrationEchoSwappUrl = echoSwappUrl(integration.goiUrl);
   const goiKey = `${integration.id}:restart:goi`;
+  const echoSwappKey = `${integration.id}:restart:echo_swapp`;
   const swappKey = `${integration.id}:restart:swapp`;
   const swappUnlinkKey = `${integration.id}:unlink:swapp`;
   const swappAltKey = `${integration.id}:restart:swapp_alt`;
@@ -187,6 +204,19 @@ function IntegrationCard(props: IntegrationCardProps) {
                   restartService="goi"
                   pendingKey={props.pendingKey}
                   restartPendingKey={goiKey}
+                  disabled={disabled}
+                  onRestart={props.onRestart}
+                  onUnlink={props.onUnlink}
+                />
+                <ServiceTableRow
+                  integrationId={integration.id}
+                  label="Месенджери"
+                  openLabel="Відкрити Месенджери"
+                  url={integrationEchoSwappUrl}
+                  unavailableLabel="URL Месенджерів не вказано"
+                  restartService="echo_swapp"
+                  pendingKey={props.pendingKey}
+                  restartPendingKey={echoSwappKey}
                   disabled={disabled}
                   onRestart={props.onRestart}
                   onUnlink={props.onUnlink}

@@ -1,6 +1,6 @@
 import { postJson } from './client';
 
-export type GoiRestartService = 'swapp' | 'swapp_alt' | 'goi';
+export type GoiRestartService = 'swapp' | 'swapp_alt' | 'goi' | 'echo_swapp';
 export type GoiWhatsappService = 'swapp' | 'swapp_alt';
 
 export type GoiUserIntegration = {

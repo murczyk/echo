@@ -78,8 +78,20 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const qrStatus = document.getElementById('qrStatus');
     let pollTimer = null;
 
+    function appBasePath() {
+      const path = window.location.pathname;
+      const base = path.endsWith('/') ? path.slice(0, -1) : path.replace(/\/[^/]*$/, '');
+      return base === '/' ? '' : base;
+    }
+
+    const basePath = appBasePath();
+
+    function appUrl(path) {
+      return `${basePath}${path}`;
+    }
+
     function apiBase(name) {
-      return `${window.location.origin}/api/${name}`;
+      return `${window.location.origin}${appUrl(`/api/${name}`)}`;
     }
 
     async function request(url, options = {}) {
@@ -94,7 +106,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     async function load() {
       list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Loading...</div>';
       try {
-        const data = await request('/ui-api/messengers');
+        const data = await request(appUrl('/ui-api/messengers'));
         if (data.length === 0) {
           list.innerHTML = '<div class="p-4 text-sm text-zinc-400">No messengers yet.</div>';
           return;
@@ -133,7 +145,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       event.preventDefault();
       formMsg.textContent = 'Creating...';
       try {
-        await request('/ui-api/messengers', {
+        await request(appUrl('/ui-api/messengers'), {
           method: 'POST',
           body: JSON.stringify({
             name: document.getElementById('nameInput').value.trim(),
@@ -167,10 +179,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
       qrStatus.textContent = 'Waiting for link...';
       qrDialog.showModal();
       try {
-        const rsp = await request(`/ui-api/messengers/${name}/link`, { method: 'POST' });
+        const rsp = await request(appUrl(`/ui-api/messengers/${name}/link`), { method: 'POST' });
         qrBox.innerHTML = `<img class="max-h-72 max-w-full" src="${rsp.qrCodeBase64}" alt="QR code" />`;
         pollTimer = setInterval(async () => {
-          const status = await request(`/ui-api/messengers/${name}/status`);
+          const status = await request(appUrl(`/ui-api/messengers/${name}/status`));
           if (status.isLinked) {
             clearInterval(pollTimer);
             qrStatus.textContent = 'Linked.';
