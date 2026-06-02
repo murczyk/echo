@@ -5,6 +5,7 @@ use crate::entities::*;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::sigint::aor::render_aor;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -126,6 +127,7 @@ pub async fn zones_datasources_group_update(
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
         allowed_users: rsp.allowed_users,
+        admin_logins: rsp.admin_logins,
         short_note: rsp.short_note,
         long_note: rsp.long_note,
     }))
@@ -156,6 +158,7 @@ pub async fn zones_datasources_group_add(
 
     bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
+        req.admin_logins.clone(),
         req.is_secret,
         req.short_note,
         req.long_note,
@@ -174,6 +177,14 @@ pub async fn zones_datasources_group_add(
         .into_iter()
         .map(|u| u.login)
         .collect::<Vec<_>>();
+    let admin_logins = bl::collect_signal_group_admins(
+        vec![szd.group_master_key.clone()],
+        &txn,
+    )
+    .await
+    .c(h!())?
+    .remove(&szd.group_master_key)
+    .unwrap_or_default();
 
     // Fetch the group name and notes
     let group_name = signal_group::Entity::find()
@@ -223,6 +234,7 @@ pub async fn zones_datasources_group_add(
             areas_of_responsibility,
             group_master_key,
             allowed_users,
+            admin_logins,
             short_note,
             long_note,
         },
@@ -259,6 +271,145 @@ pub async fn zones_datasources_group_delete(
     }
 
     Ok(Json(()))
+}
+
+#[post("/api/sigint/zones/my-admin-groups")]
+pub async fn my_admin_groups(
+    env: actix_web::web::Data<Env>,
+    user: actix_identity::Identity,
+) -> Result<Json<MyAdminSignalGroupsRsp>, AppError> {
+    let login = user.id().c(h!())?;
+
+    let groups = signal_group_admin::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group_admin::Relation::SignalGroup.def(),
+        )
+        .filter(signal_group_admin::Column::Deleted.eq(false))
+        .filter(signal_group_admin::Column::Login.eq(&login))
+        .filter(signal_group::Column::Deleted.eq(false))
+        .select_only()
+        .column_as(signal_group::Column::MasterKey, "master_key")
+        .column_as(signal_group::Column::Name, "name")
+        .column_as(signal_group::Column::DatasourceId, "datasource_id")
+        .column_as(signal_group::Column::IsSecret, "is_group_secret")
+        .order_by_asc(signal_group::Column::Name)
+        .into_tuple::<(String, Option<String>, Option<i64>, bool)>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+
+    let master_keys = groups
+        .iter()
+        .map(|(master_key, _, _, _)| master_key.clone())
+        .collect::<Vec<_>>();
+    let datasource_ids = groups
+        .iter()
+        .filter_map(|(_, _, datasource_id, _)| *datasource_id)
+        .collect::<Vec<_>>();
+
+    let group_aors = collect_group_aors(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let group_admins =
+        bl::collect_signal_group_admins(master_keys.clone(), &env.dbx)
+            .await
+            .c(h!())?;
+    let allowed_users = collect_secret_group_users(master_keys, &env.dbx)
+        .await
+        .c(h!())?;
+    let datasource_map = collect_datasources(datasource_ids, &env.dbx)
+        .await
+        .c(h!())?;
+
+    let groups = groups
+        .into_iter()
+        .map(|(master_key, name, datasource_id, is_group_secret)| {
+            let datasource =
+                datasource_id.and_then(|id| datasource_map.get(&id));
+            let fallback_name = master_key
+                .chars()
+                .rev()
+                .take(5)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            MyAdminSignalGroup {
+                name: name.unwrap_or(fallback_name),
+                datasource_name: datasource
+                    .map(|datasource| datasource.display_name.clone()),
+                datasource_kind: datasource
+                    .map(|datasource| datasource.kind.clone()),
+                areas_of_responsibility: group_aors.get(&master_key).cloned(),
+                allowed_users: allowed_users
+                    .get(&master_key)
+                    .cloned()
+                    .unwrap_or_default(),
+                admin_logins: group_admins
+                    .get(&master_key)
+                    .cloned()
+                    .unwrap_or_default(),
+                master_key,
+                is_group_secret,
+            }
+        })
+        .collect();
+
+    Ok(Json(MyAdminSignalGroupsRsp { groups }))
+}
+
+async fn collect_secret_group_users<'a, 'async_trait, C>(
+    master_keys: Vec<String>,
+    dbx: &'a C,
+) -> Result<HashMap<String, Vec<String>>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if master_keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq_any(master_keys))
+        .select_only()
+        .column(secret_group_user::Column::MasterKey)
+        .column(secret_group_user::Column::Login)
+        .order_by_asc(secret_group_user::Column::Login)
+        .into_tuple::<(String, String)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut res = HashMap::<String, Vec<String>>::new();
+    for (master_key, login) in rows {
+        res.entry(master_key).or_default().push(login);
+    }
+    Ok(res)
+}
+
+async fn collect_datasources<'a, 'async_trait, C>(
+    datasource_ids: Vec<i64>,
+    dbx: &'a C,
+) -> Result<HashMap<i64, datasource::Model>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if datasource_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let datasources = datasource::Entity::find()
+        .filter(datasource::Column::Deleted.eq(false))
+        .filter(datasource::Column::Id.eq_any(datasource_ids))
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(datasources
+        .into_iter()
+        .map(|datasource| (datasource.id, datasource))
+        .collect())
 }
 
 fn log_sigint_zone_datasource_event(

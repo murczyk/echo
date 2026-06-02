@@ -49,6 +49,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Organism,
+    #[sea_orm(has_many = "super::organism_keyword_set::Entity")]
+    OrganismKeywordSet,
     #[sea_orm(has_many = "super::palitra::Entity")]
     Palitra,
     #[sea_orm(has_many = "super::palitra_access_login::Entity")]
@@ -81,6 +83,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintZone,
+    #[sea_orm(has_many = "super::signal_group_admin::Entity")]
+    SignalGroupAdmin,
     #[sea_orm(has_many = "super::system_settings::Entity")]
     SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
@@ -116,6 +120,12 @@ impl Related<super::log_users_report_generation::Entity> for Entity {
 impl Related<super::organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Organism.def()
+    }
+}
+
+impl Related<super::organism_keyword_set::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrganismKeywordSet.def()
     }
 }
 
@@ -197,6 +207,12 @@ impl Related<super::sigint_zone::Entity> for Entity {
     }
 }
 
+impl Related<super::signal_group_admin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalGroupAdmin.def()
+    }
+}
+
 impl Related<super::system_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SystemSettings.def()
@@ -212,6 +228,15 @@ impl Related<super::tags_ordering::Entity> for Entity {
 impl Related<super::user_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserSettings.def()
+    }
+}
+
+impl Related<super::signal_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::signal_group_admin::Relation::SignalGroup.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::signal_group_admin::Relation::Login.def().rev())
     }
 }
 

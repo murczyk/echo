@@ -1,6 +1,7 @@
-import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { SyntheticEvent } from 'react';
+import type { MyAdminSignalGroup } from '../../../../Bindings';
 import { ELLIPSIS, isNullOrUndefined } from '../../utils/misc';
 
 import { PageHeader } from '../../components/PageHeader';
@@ -11,8 +12,9 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { SettingsReportsSection } from './SettingsReportsSection';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
+import { listMyAdminGroups } from '../../services/api/zones';
 
-export type SettingsSection = 'general' | 'duty' | 'analysis' | 'reports';
+export type SettingsSection = 'general' | 'myGroups' | 'duty' | 'analysis' | 'reports';
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
@@ -21,6 +23,9 @@ type SettingsNeoPageProps = {
 const SETTINGS_SECTION_QUERY_PARAM = 'section';
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
+  if (section === 'myGroups' || section === 'my-groups') {
+    return 'myGroups';
+  }
   if (section === 'duty' || section === 'analysis' || section === 'reports') {
     return section;
   }
@@ -38,6 +43,87 @@ function buildSettingsSectionUrl(section: SettingsSection): string {
   return url.pathname + url.search + url.hash;
 }
 
+function formatOptionalText(value: string | null | undefined): string {
+  if (!value || !value.trim()) return '—';
+  return value;
+}
+
+function formatAors(group: MyAdminSignalGroup): string {
+  const aors = group.areasOfResponsibility ?? [];
+  if (aors.length === 0) return '—';
+  return aors.map((aor) => aor.name).join(', ');
+}
+
+function formatAllowedUsers(group: MyAdminSignalGroup): string {
+  if (!group.isGroupSecret) return 'без обмежень';
+  if (group.allowedUsers.length === 0) return '—';
+  return group.allowedUsers.join(', ');
+}
+
+function SettingsMyGroupsSection(props: {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  groups: MyAdminSignalGroup[];
+  error: string | null;
+}) {
+  return (
+    <Box role="tabpanel" id="settings-neo-panel-my-groups" aria-labelledby="settings-neo-tab-my-groups">
+      <Box sx={{ p: 3 }}>
+        <Stack spacing={3}>
+          <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
+            Мої групи
+          </Typography>
+
+          <PowerAlert severity="info">
+            Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
+            <br />
+            1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу приватною, видиму користувачам Delta1, Delta2, Delta3
+            <br />
+            2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу публічною, на смугу 99АК
+          </PowerAlert>
+
+          {props.error ? <PowerAlert severity="error">{props.error}</PowerAlert> : null}
+
+          {props.status === 'loading' ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={18} />
+              <Typography variant="body2" color="text.secondary">
+                Завантаження груп{ELLIPSIS}
+              </Typography>
+            </Box>
+          ) : null}
+
+          {props.status === 'success' ? (
+            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 2 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Група</TableCell>
+                    <TableCell>Джерело</TableCell>
+                    <TableCell>Смуги</TableCell>
+                    <TableCell>Приватність</TableCell>
+                    <TableCell>Логіни приватної групи</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {props.groups.map((group) => (
+                    <TableRow key={group.masterKey}>
+                      <TableCell>{group.name || group.masterKey.slice(-5)}</TableCell>
+                      <TableCell>{formatOptionalText(group.datasourceName ?? group.datasourceKind)}</TableCell>
+                      <TableCell>{formatAors(group)}</TableCell>
+                      <TableCell>{group.isGroupSecret ? 'приватна' : 'публічна'}</TableCell>
+                      <TableCell>{formatAllowedUsers(group)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : null}
+        </Stack>
+      </Box>
+    </Box>
+  );
+}
+
 export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
     parseSettingsSection(section ?? readSettingsSectionFromUrl()),
@@ -45,6 +131,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
 
   const dutySettings = useDutySettings();
   const globalSettings = useGlobalSetting();
+  const [myGroupsStatus, setMyGroupsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [myGroups, setMyGroups] = useState<MyAdminSignalGroup[]>([]);
+  const [myGroupsError, setMyGroupsError] = useState<string | null>(null);
+  const hasMyGroups = myGroups.length > 0;
+  const effectiveSettingsSection =
+    hasMyGroups && settingsSection === 'general' ? 'myGroups' : settingsSection;
 
   useEffect(() => {
     if (isNullOrUndefined(section)) return;
@@ -63,6 +155,39 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     };
   }, []);
 
+  useEffect(() => {
+    const abortController = new AbortController();
+    setMyGroupsStatus('loading');
+    setMyGroupsError(null);
+
+    void listMyAdminGroups(abortController.signal)
+      .then((rsp) => {
+        if (abortController.signal.aborted) return;
+        setMyGroups(rsp.groups);
+        setMyGroupsStatus('success');
+      })
+      .catch((error) => {
+        if (abortController.signal.aborted) return;
+        setMyGroups([]);
+        setMyGroupsStatus('error');
+        setMyGroupsError(`Помилка завантаження груп: ${error instanceof Error ? error.message : 'невідома помилка'}`);
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (myGroupsStatus !== 'success') return;
+    if (myGroups.length > 0 && settingsSection === 'general') {
+      setSettingsSection('myGroups');
+    }
+    if (myGroups.length === 0 && settingsSection === 'myGroups') {
+      setSettingsSection('general');
+    }
+  }, [myGroups.length, myGroupsStatus, settingsSection]);
+
   function handleTabChange(_: SyntheticEvent, value: SettingsSection) {
     if (value === settingsSection) return;
 
@@ -80,7 +205,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden', backgroundColor: 'background.paper' }}
         >
           <Tabs
-            value={settingsSection}
+            value={effectiveSettingsSection}
             onChange={handleTabChange}
             variant="scrollable"
             allowScrollButtonsMobile
@@ -96,12 +221,22 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               },
             }}
           >
-            <Tab
-              value="general"
-              label="Загальні"
-              id="settings-neo-tab-general"
-              aria-controls="settings-neo-panel-general"
-            />
+            {!hasMyGroups ? (
+              <Tab
+                value="general"
+                label="Загальні"
+                id="settings-neo-tab-general"
+                aria-controls="settings-neo-panel-general"
+              />
+            ) : null}
+            {hasMyGroups || myGroupsStatus === 'loading' ? (
+              <Tab
+                value="myGroups"
+                label="Мої групи"
+                id="settings-neo-tab-my-groups"
+                aria-controls="settings-neo-panel-my-groups"
+              />
+            ) : null}
             <Tab
               value="duty"
               label="Оперативний"
@@ -122,7 +257,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           </Tabs>
 
-          {settingsSection === 'general' ? (
+          {effectiveSettingsSection === 'general' && !hasMyGroups ? (
             <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
               <Box component="form" onSubmit={(event) => { event.preventDefault(); void globalSettings.save(); }} noValidate sx={{ p: 3 }}>
                 <Stack spacing={3} sx={{ width: '100%' }}>
@@ -211,7 +346,15 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             </Box>
           ) : null}
 
-          {settingsSection === 'duty' ? (
+          {effectiveSettingsSection === 'myGroups' ? (
+            <SettingsMyGroupsSection
+              status={myGroupsStatus}
+              groups={myGroups}
+              error={myGroupsError}
+            />
+          ) : null}
+
+          {effectiveSettingsSection === 'duty' ? (
             <SettingsDutySection
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
@@ -237,7 +380,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           ) : null}
 
-          {settingsSection === 'analysis' ? (
+          {effectiveSettingsSection === 'analysis' ? (
             <Box
               id="settings-neo-panel-analysis"
               role="tabpanel"
@@ -312,9 +455,9 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             </Box>
           ) : null}
 
-          {settingsSection === 'reports' ? (
+          {effectiveSettingsSection === 'reports' ? (
             <SettingsReportsSection
-              active={settingsSection === 'reports'}
+              active={effectiveSettingsSection === 'reports'}
               userRoles={globalSettings.userRoles}
               rolesLoading={globalSettings.loadInProgress}
             />
