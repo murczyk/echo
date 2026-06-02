@@ -2173,6 +2173,7 @@ update shared user msg model =
 
                                     _ ->
                                         Dict.empty
+                            , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                             , callsignsInfo = model.callsignsInfo
                             , networks = networksDict
                             , zone = shared.timeZone
@@ -2525,6 +2526,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             , user = user
                                             , messageNetworkIds = messageNetworkIds
                                             , masterUnits = masterUnits
+                                            , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                                             , callsignsInfo = model.callsignsInfo
                                             , networks = networksDict
                                             , zone = shared.timeZone

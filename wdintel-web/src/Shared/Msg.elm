@@ -29,6 +29,7 @@ type Msg
     | GotChangelogLatest (Result ApiError ChangelogReleasePage)
     | SetThemeMode ThemeMode
     | ThemeModeLoaded String
+    | RerNetworkDetailsPreferredViewLoaded String
     | ToggleDarkMode
     | LastSeenChangelogLoaded String
     | SaveChangelogLastSeen String

@@ -10,6 +10,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Layouts
 import Page exposing (Page)
+import PagePorts.SharedPorts as Ports
 import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables
 import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
@@ -72,7 +73,7 @@ toLayout user _ =
 
 
 init : Route { id : String } -> Shared.Model -> () -> ( Model, Effect Msg )
-init route _ () =
+init route shared () =
     let
         networkId =
             String.toInt route.params.id
@@ -321,11 +322,21 @@ init route _ () =
       -- Delete confirmation dialog initialization
       , deleteDescriptionConfirmation = Nothing
       }
-    , if neoView then
-        E.none
+    , E.batch
+        [ if neoView then
+            E.none
 
-      else
-        loadClassicNetworkData networkId
+          else
+            loadClassicNetworkData networkId
+        , E.sendCmd <|
+            Ports.shared_saveRerNetworkDetailsPreferredView
+                (if neoView then
+                    "neo"
+
+                 else
+                    "classic"
+                )
+        ]
     )
 
 
@@ -949,16 +960,34 @@ update shared msg model =
             ( m2, eff2 )
 
         NetworkViewQueryChanged { to } ->
-            if isNeoQuery to then
-                ( model, E.none )
+            let
+                nextPreferredView =
+                    if to == Just "classic" then
+                        "classic"
 
-            else
-                case model.classicNetworkLoading of
-                    True ->
-                        ( model, E.none )
+                    else
+                        "neo"
+            in
+            case to of
+                Just "classic" ->
+                    case model.classicNetworkLoading of
+                        True ->
+                            ( model
+                            , E.sendCmd <| Ports.shared_saveRerNetworkDetailsPreferredView nextPreferredView
+                            )
 
-                    False ->
-                        ( { model | classicNetworkLoading = True }, loadClassicNetworkData model.networkId )
+                        False ->
+                            ( { model | classicNetworkLoading = True }
+                            , E.batch
+                                [ loadClassicNetworkData model.networkId
+                                , E.sendCmd <| Ports.shared_saveRerNetworkDetailsPreferredView nextPreferredView
+                                ]
+                            )
+
+                _ ->
+                    ( model
+                    , E.sendCmd <| Ports.shared_saveRerNetworkDetailsPreferredView nextPreferredView
+                    )
 
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
@@ -1299,12 +1328,7 @@ view user shared route model =
 
 isNeoView : Route { id : String } -> Bool
 isNeoView route =
-    Dict.get "view" route.query == Just "neo"
-
-
-isNeoQuery : Maybe String -> Bool
-isNeoQuery viewValue =
-    viewValue == Just "neo"
+    Dict.get "view" route.query /= Just "classic"
 
 
 loadClassicNetworkData : Maybe Int -> Effect Msg

@@ -29,6 +29,7 @@ import Utils.Api.ErrorHandling
 import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.Modulations as Modulations
 import Utils.NetworksUtils as NetworksUtils
+import Utils.RerNetworkDetails
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import View exposing (View)
@@ -610,7 +611,11 @@ update shared route msg model =
             case model.networkCreated of
                 Just network ->
                     ( model
-                    , E.pushRoute { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                    , E.pushRoute
+                        { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }
+                        , hash = Nothing
+                        , query = Utils.RerNetworkDetails.query shared.rerNetworkDetailsPreferredView
+                        }
                     )
 
                 Nothing ->

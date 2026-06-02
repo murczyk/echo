@@ -82,6 +82,7 @@ init flagsResult _ =
 
             else
                 Shared.Model.Light
+      , rerNetworkDetailsPreferredView = Shared.Model.Neo
       , location = Nothing
       , serverInfo = Nothing
       , changelogPreview = Nothing
@@ -109,6 +110,7 @@ init flagsResult _ =
         , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         , E.sendCmd <| Ports.shared_loadThemeMode ()
         , E.sendCmd <| Ports.shared_loadLastSeenChangelog ()
+        , E.sendCmd <| Ports.shared_loadRerNetworkDetailsPreferredView ()
         ]
     )
 
@@ -187,6 +189,14 @@ update req msg model =
 
         ThemeModeLoaded themeModeStr ->
             ( { model | themeMode = Shared.Model.themeModeFromString themeModeStr }
+            , E.none
+            )
+
+        RerNetworkDetailsPreferredViewLoaded preferredViewStr ->
+            ( { model
+                | rerNetworkDetailsPreferredView =
+                    Shared.Model.rerNetworkDetailsPreferredViewFromString preferredViewStr
+              }
             , E.none
             )
 
@@ -514,6 +524,7 @@ subscriptions _ _ =
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
         , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
+        , Ports.shared_loadRerNetworkDetailsPreferredViewRes RerNetworkDetailsPreferredViewLoaded
         ]
 
 

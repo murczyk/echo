@@ -21,10 +21,12 @@ import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
 import Shared.Components.Watermark as Watermark
+import Shared.Model
 import Shared.MarkedText
 import String exposing (fromInt, trim)
 import Time
 import Time.Extra as TimeExtra
+import Utils.RerNetworkDetails
 import Utils.Api.ErrorHandling
 import Utils.Time
 import Utils.Utils exposing (..)
@@ -44,6 +46,7 @@ type alias ViewParams =
     , serverInfo : Maybe B.ServerInfo
     , networks : Dict Int B.Network
     , masterUnits : Dict Int B.Unit
+    , networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView
     , currentRoute : Maybe (Route ())
     , pointTokenClickUrlFor : B.InboxMessage -> Maybe (String -> String)
     }
@@ -1311,7 +1314,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                                             Core.Unit.createMasterUnitText vps.masterUnits network
 
                                                         networkUrl =
-                                                            "/rer-networks/" ++ String.fromInt networkId
+                                                            Utils.RerNetworkDetails.href vps.networkDetailsViewPreference networkId
 
                                                         noUnitsBadge =
                                                             case network.unitIds of
