@@ -1,9 +1,33 @@
 import type { NetworkPoint } from '../../../../../Bindings';
+import { NO_DATA_LABEL, sortFrequenciesNumerically } from '../../../utils/misc';
 
 export const SATELLITE_TILE_URL = 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}&hl=uk';
 export const SATELLITE_TILE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3'];
 export const BASE_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const PELENG_TOOLTIP_ARROW_COLOR = '#000000';
+
+export function normalizePelengationFrequency(freq: string): string {
+  const trimmed = freq.trim();
+  return trimmed === '' ? NO_DATA_LABEL : trimmed;
+}
+
+export function getPelengationFrequencies(points: NetworkPoint[]): string[] {
+  return sortFrequenciesNumerically([
+    ...new Set(points.map((point) => normalizePelengationFrequency(point.freq))),
+  ]);
+}
+
+export function filterPelengationPoints(points: NetworkPoint[], search: string, enabledFreqs: string[]): NetworkPoint[] {
+  const normalizedSearch = search.trim().toLocaleUpperCase('uk-UA');
+  const enabledFreqSet = new Set(enabledFreqs.map(normalizePelengationFrequency));
+
+  return points.filter((point) => {
+    const freq = normalizePelengationFrequency(point.freq);
+    if (!enabledFreqSet.has(freq)) return false;
+    if (normalizedSearch === '') return true;
+    return freq.toLocaleUpperCase('uk-UA').includes(normalizedSearch);
+  });
+}
 
 export function createPelengationPopupContent(point: NetworkPoint, label: string) {
   const content = document.createElement('div');
@@ -19,6 +43,11 @@ export function createPelengationPopupContent(point: NetworkPoint, label: string
   title.style.fontSize = '14px';
   title.style.lineHeight = '1.2';
 
+  const freq = document.createElement('div');
+  freq.textContent = `Частота: ${normalizePelengationFrequency(point.freq)}`;
+  freq.style.fontSize = '13px';
+  freq.style.lineHeight = '1.35';
+
   const body = document.createElement('div');
   body.textContent = point.body?.trim() === '' ? 'Без тексту' : point.body;
   body.style.whiteSpace = 'pre-wrap';
@@ -30,7 +59,7 @@ export function createPelengationPopupContent(point: NetworkPoint, label: string
   coords.style.fontSize = '12px';
   coords.style.opacity = '0.8';
 
-  content.append(title, body, coords);
+  content.append(title, freq, body, coords);
   return content;
 }
 

@@ -401,7 +401,7 @@ describe('NetworkCallsignRelationsPanel', () => {
     });
 
     expect(view.container.textContent).toContain('Немає графових даних');
-    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними.");
+    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними");
     expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
   });
 

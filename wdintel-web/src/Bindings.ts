@@ -2483,6 +2483,7 @@ export type NetworkPoint = {
   lng: number;
   body: string;
   id: number;
+  freq: string;
 };
 
 export type NetworkCallsignRelationsReq = {

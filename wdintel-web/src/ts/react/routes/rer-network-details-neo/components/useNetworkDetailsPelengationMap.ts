@@ -10,7 +10,7 @@ import {
   SATELLITE_TILE_URL,
 } from './NetworkDetailsPelengationMap.shared';
 
-export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[]) {
+export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[], showLabels: boolean) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const satelliteLayerRef = useRef<L.TileLayer | null>(null);
@@ -180,7 +180,7 @@ export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[]) {
 
     const bounds = L.latLngBounds([]);
     pelengPoints.forEach((point, index) => {
-      const label = `P-${index + 1}`;
+      const label = point.freq.trim() === '' ? `P-${index + 1}` : point.freq.trim();
       const marker = L.circleMarker([point.lat, point.lng], {
         radius: 7,
         color: '#caa275',
@@ -189,14 +189,16 @@ export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[]) {
         fillOpacity: 0.92,
       });
 
-      marker.bindTooltip(label, {
-        permanent: true,
-        direction: 'top',
-        offset: [0, -8],
-        opacity: 1,
-        className: 'peleng-point-label',
-        sticky: false,
-      });
+      if (showLabels) {
+        marker.bindTooltip(label, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -8],
+          opacity: 1,
+          className: 'peleng-point-label',
+          sticky: false,
+        });
+      }
       marker.bindPopup(createPelengationPopupContent(point, label), {
         closeButton: true,
         className: 'peleng-point-popup',
@@ -243,7 +245,7 @@ export function useNetworkDetailsPelengationMap(pelengPoints: NetworkPoint[]) {
       animate: false,
       maxZoom: 16,
     });
-  }, [mapReady, pelengPoints]);
+  }, [mapReady, pelengPoints, showLabels]);
 
   useEffect(() => {
     if (!mapRef.current) return;

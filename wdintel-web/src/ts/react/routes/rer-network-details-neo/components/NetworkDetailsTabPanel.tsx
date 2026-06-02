@@ -48,6 +48,11 @@ type Props = {
   relationsSelectedEdgeId: string | null;
   relationsSince: string;
   relationsTill: string;
+  pelengSince: string;
+  pelengTill: string;
+  pelengSearch: string;
+  pelengEnabledFreqs: string[];
+  pelengShowLabels: boolean;
   onReloadRelations: () => void;
   onRelationsSearchChange: (value: string) => void;
   onRelationsEnabledFreqsChange: (freqs: string[]) => void;
@@ -57,6 +62,11 @@ type Props = {
   onRelationsSelectEdgeId: (edgeId: string | null) => void;
   onRelationsSinceChange: (value: string) => void;
   onRelationsTillChange: (value: string) => void;
+  onPelengSinceChange: (value: string) => void;
+  onPelengTillChange: (value: string) => void;
+  onPelengSearchChange: (value: string) => void;
+  onPelengEnabledFreqsChange: (freqs: string[]) => void;
+  onPelengShowLabelsChange: (value: boolean) => void;
   pelengPoints: NetworkPoint[];
   pelengPointsLoaded: boolean;
   pelengPointsLoading: boolean;
@@ -114,6 +124,11 @@ export function NetworkDetailsTabPanel({
   relationsSelectedEdgeId,
   relationsSince,
   relationsTill,
+  pelengSince,
+  pelengTill,
+  pelengSearch,
+  pelengEnabledFreqs,
+  pelengShowLabels,
   onReloadRelations,
   onRelationsSearchChange,
   onRelationsEnabledFreqsChange,
@@ -123,6 +138,11 @@ export function NetworkDetailsTabPanel({
   onRelationsSelectEdgeId,
   onRelationsSinceChange,
   onRelationsTillChange,
+  onPelengSinceChange,
+  onPelengTillChange,
+  onPelengSearchChange,
+  onPelengEnabledFreqsChange,
+  onPelengShowLabelsChange,
   pelengPoints,
   pelengPointsLoaded,
   pelengPointsLoading,
@@ -268,6 +288,16 @@ export function NetworkDetailsTabPanel({
                 pelengPointsLoading={pelengPointsLoading}
                 pelengPointsError={pelengPointsError}
                 onReloadPelengPoints={onReloadPelengPoints}
+                pelengSince={pelengSince}
+                pelengTill={pelengTill}
+                pelengSearch={pelengSearch}
+                pelengEnabledFreqs={pelengEnabledFreqs}
+                pelengShowLabels={pelengShowLabels}
+                onPelengSinceChange={onPelengSinceChange}
+                onPelengTillChange={onPelengTillChange}
+                onPelengSearchChange={onPelengSearchChange}
+                onPelengEnabledFreqsChange={onPelengEnabledFreqsChange}
+                onPelengShowLabelsChange={onPelengShowLabelsChange}
               />
             </Box>
           </Box>

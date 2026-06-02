@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../../utils/misc';
+import { combineDateTimeInputToMs, parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../../utils/misc';
 import { NetworkDetailsLeftPanel } from './NetworkDetailsLeftPanel';
 import { NetworkDetailsTabPanel } from './NetworkDetailsTabPanel';
 import { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
@@ -32,7 +32,12 @@ function buildRelationsReloadHandler(page: Page) {
 }
 
 function buildPelengReloadHandler(page: Page, networkId: number) {
-  return () => void page.loadPelengPoints(networkId, page.network?.activeFrom ?? null, page.network?.activeTo ?? null);
+  return () => {
+    const since = combineDateTimeInputToMs(page.pelengSince);
+    const till = combineDateTimeInputToMs(page.pelengTill);
+    if (since === null || till === null) return;
+    void page.loadPelengPoints(networkId, since, till);
+  };
 }
 
 function buildCallsignPanelProps(page: Page) {
@@ -186,6 +191,16 @@ export function NetworkDetailsNeoPageBody({
       relationsTill={page.relationsTill}
       onRelationsSinceChange={page.setRelationsSince}
       onRelationsTillChange={page.setRelationsTill}
+      pelengSince={page.pelengSince}
+      pelengTill={page.pelengTill}
+      pelengSearch={page.pelengSearch}
+      pelengEnabledFreqs={page.pelengEnabledFreqs}
+      pelengShowLabels={page.pelengShowLabels}
+      onPelengSinceChange={page.setPelengSince}
+      onPelengTillChange={page.setPelengTill}
+      onPelengSearchChange={page.setPelengSearch}
+      onPelengEnabledFreqsChange={page.setPelengEnabledFreqs}
+      onPelengShowLabelsChange={page.setPelengShowLabels}
     />
   );
 

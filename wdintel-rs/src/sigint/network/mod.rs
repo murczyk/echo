@@ -1255,6 +1255,7 @@ pub async fn list_network_points(
                 body: p.body,
                 lat: p.lat,
                 lng: p.lng,
+                freq: p.freq,
             })
             .collect::<Vec<NetworkPoint>>();
 

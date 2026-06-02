@@ -84,8 +84,18 @@ function renderPanel(): Rendered {
     pelengPointsLoaded: false,
     pelengPointsLoading: false,
     pelengPointsError: null,
+    pelengSince: '2026-05-20T00:00',
+    pelengTill: '2026-05-20T01:00',
+    pelengSearch: '',
+    pelengEnabledFreqs: [],
+    pelengShowLabels: true,
     onReloadNetworkActivity: vi.fn(),
     onReloadPelengPoints: vi.fn(),
+    onPelengSinceChange: vi.fn(),
+    onPelengTillChange: vi.fn(),
+    onPelengSearchChange: vi.fn(),
+    onPelengEnabledFreqsChange: vi.fn(),
+    onPelengShowLabelsChange: vi.fn(),
     modulations: [],
     expandedFrequencyGroupIds: [],
     toggleFrequencyGroupExpanded: vi.fn(),
@@ -170,6 +180,11 @@ describe('NetworkDetailsTabPanel', () => {
           relationsSelectedEdgeId={null}
           relationsSince=""
           relationsTill=""
+          pelengSince="2026-05-20T00:00"
+          pelengTill="2026-05-20T01:00"
+          pelengSearch=""
+          pelengEnabledFreqs={[]}
+          pelengShowLabels={true}
           onReloadRelations={vi.fn()}
           onRelationsSearchChange={vi.fn()}
           onRelationsEnabledFreqsChange={vi.fn()}
@@ -179,6 +194,11 @@ describe('NetworkDetailsTabPanel', () => {
           onRelationsSelectEdgeId={vi.fn()}
           onRelationsSinceChange={vi.fn()}
           onRelationsTillChange={vi.fn()}
+          onPelengSinceChange={vi.fn()}
+          onPelengTillChange={vi.fn()}
+          onPelengSearchChange={vi.fn()}
+          onPelengEnabledFreqsChange={vi.fn()}
+          onPelengShowLabelsChange={vi.fn()}
           pelengPoints={[]}
           pelengPointsLoaded={false}
           pelengPointsLoading={false}

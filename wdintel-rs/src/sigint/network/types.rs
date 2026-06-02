@@ -191,6 +191,7 @@ pub struct NetworkPoint {
     pub lng: f64,
     pub body: String,
     pub id: i64,
+    pub freq: String,
 }
 
 #[derive(
