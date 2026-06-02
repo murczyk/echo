@@ -200,6 +200,17 @@ update req msg model =
             , E.none
             )
 
+        SetRerNetworkDetailsPreferredView preferredView ->
+            ( { model | rerNetworkDetailsPreferredView = preferredView }
+            , E.sendCmd <|
+                case preferredView of
+                    Shared.Model.Classic ->
+                        Ports.shared_saveRerNetworkDetailsPreferredView "classic"
+
+                    Shared.Model.Neo ->
+                        Ports.shared_saveRerNetworkDetailsPreferredView "neo"
+            )
+
         LastSeenChangelogLoaded value ->
             let
                 trimmedValue =

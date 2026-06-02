@@ -32,6 +32,8 @@ import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
+import Shared.Model exposing (RerNetworkDetailsPreferredView(..))
+import Shared.Msg as SharedMsg
 import String
 import Utils.Api.ErrorHandling
 import Utils.Modulations as Modulations
@@ -960,34 +962,27 @@ update shared msg model =
             ( m2, eff2 )
 
         NetworkViewQueryChanged { to } ->
-            let
-                nextPreferredView =
-                    if to == Just "classic" then
-                        "classic"
-
-                    else
-                        "neo"
-            in
-            case to of
-                Just "classic" ->
-                    case model.classicNetworkLoading of
-                        True ->
-                            ( model
-                            , E.sendCmd <| Ports.shared_saveRerNetworkDetailsPreferredView nextPreferredView
-                            )
-
-                        False ->
-                            ( { model | classicNetworkLoading = True }
-                            , E.batch
-                                [ loadClassicNetworkData model.networkId
-                                , E.sendCmd <| Ports.shared_saveRerNetworkDetailsPreferredView nextPreferredView
-                                ]
-                            )
-
-                _ ->
+            if to == Just "classic" then
+                if model.classicNetworkLoading then
                     ( model
-                    , E.sendCmd <| Ports.shared_saveRerNetworkDetailsPreferredView nextPreferredView
+                    , E.sendSharedMsg <|
+                        SharedMsg.SetRerNetworkDetailsPreferredView Classic
                     )
+
+                else
+                    ( { model | classicNetworkLoading = True }
+                    , E.batch
+                        [ loadClassicNetworkData model.networkId
+                        , E.sendSharedMsg <|
+                            SharedMsg.SetRerNetworkDetailsPreferredView Classic
+                        ]
+                    )
+
+            else
+                ( model
+                , E.sendSharedMsg <|
+                    SharedMsg.SetRerNetworkDetailsPreferredView Neo
+                )
 
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
