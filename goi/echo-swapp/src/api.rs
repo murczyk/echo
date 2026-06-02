@@ -3,6 +3,7 @@ use crate::AppState;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashSet;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_messengers)
@@ -269,6 +270,11 @@ struct SignalSendReq {
     base64_attachments: Option<Vec<String>>,
 }
 
+struct SignalRecipientTargets {
+    phones: Vec<String>,
+    group_ids: Vec<String>,
+}
+
 #[post("/api/{name}/api/signal/send")]
 async fn signal_send(
     state: web::Data<AppState>,
@@ -278,17 +284,21 @@ async fn signal_send(
     let name = path.into_inner();
     require_kind(&state, &name, MessengerKind::Signal).await?;
     let req = req.into_inner();
-    let (phones, groups): (Vec<_>, Vec<_>) = req
-        .recipients
-        .into_iter()
-        .partition(|recipient| recipient.starts_with('+'));
+    let known_group_ids =
+        messenger::groups(&state.db, &name, MessengerKind::Signal)
+            .await
+            .map_err(error)?
+            .into_iter()
+            .map(|group| group.id)
+            .collect::<HashSet<_>>();
+    let targets = classify_signal_recipients(req.recipients, &known_group_ids);
     let _ = req.number;
     messenger::send(
         &state.db,
         &name,
         MessengerKind::Signal,
-        groups,
-        phones,
+        targets.group_ids,
+        targets.phones,
         req.message.unwrap_or_default(),
         req.base64_attachments.unwrap_or_default(),
     )
@@ -314,4 +324,89 @@ async fn require_kind(
 
 fn error(err: anyhow::Error) -> actix_web::Error {
     actix_web::error::ErrorInternalServerError(err.to_string())
+}
+
+fn classify_signal_recipients(
+    recipients: Vec<String>,
+    known_group_ids: &HashSet<String>,
+) -> SignalRecipientTargets {
+    let mut targets = SignalRecipientTargets {
+        phones: Vec::new(),
+        group_ids: Vec::new(),
+    };
+    for recipient in recipients {
+        if known_group_ids.contains(&recipient) {
+            targets.group_ids.push(recipient);
+        } else if is_signal_phone_recipient(&recipient) {
+            targets.phones.push(recipient);
+        } else {
+            targets.group_ids.push(recipient);
+        }
+    }
+    targets
+}
+
+fn is_signal_phone_recipient(recipient: &str) -> bool {
+    let Some(digits) = recipient.strip_prefix('+') else {
+        return false;
+    };
+    (7..=15).contains(&digits.len())
+        && digits.chars().all(|ch| ch.is_ascii_digit())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn known_group_ids(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn classifies_e164_recipient_as_phone() {
+        let targets = classify_signal_recipients(
+            vec!["+380501234567".to_string()],
+            &HashSet::new(),
+        );
+
+        assert_eq!(targets.phones, vec!["+380501234567"]);
+        assert!(targets.group_ids.is_empty());
+    }
+
+    #[test]
+    fn classifies_plus_prefixed_base64_like_recipient_as_group() {
+        let targets = classify_signal_recipients(
+            vec!["+AbCdEf/123==".to_string()],
+            &HashSet::new(),
+        );
+
+        assert!(targets.phones.is_empty());
+        assert_eq!(targets.group_ids, vec!["+AbCdEf/123=="]);
+    }
+
+    #[test]
+    fn known_group_id_takes_priority_over_phone_shape() {
+        let targets = classify_signal_recipients(
+            vec!["+380501234567".to_string()],
+            &known_group_ids(&["+380501234567"]),
+        );
+
+        assert!(targets.phones.is_empty());
+        assert_eq!(targets.group_ids, vec!["+380501234567"]);
+    }
+
+    #[test]
+    fn classifies_mixed_signal_recipients() {
+        let targets = classify_signal_recipients(
+            vec![
+                "+380501234567".to_string(),
+                "group.RGozSXow".to_string(),
+                "+AbCdEf/123==".to_string(),
+            ],
+            &known_group_ids(&["group.RGozSXow"]),
+        );
+
+        assert_eq!(targets.phones, vec!["+380501234567"]);
+        assert_eq!(targets.group_ids, vec!["group.RGozSXow", "+AbCdEf/123=="]);
+    }
 }
