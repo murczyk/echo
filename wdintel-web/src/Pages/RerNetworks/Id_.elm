@@ -330,13 +330,13 @@ init route shared () =
 
           else
             loadClassicNetworkData networkId
-        , E.sendCmd <|
-            Ports.shared_saveRerNetworkDetailsPreferredView
+        , E.sendSharedMsg <|
+            SharedMsg.SetRerNetworkDetailsPreferredView
                 (if neoView then
-                    "neo"
+                    Neo
 
                  else
-                    "classic"
+                    Classic
                 )
         ]
     )
