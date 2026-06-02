@@ -29,6 +29,7 @@ import Shared.Msg exposing (Msg(..))
 import Task
 import TimeZone
 import Url
+import String
 import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
@@ -193,12 +194,25 @@ update req msg model =
             )
 
         RerNetworkDetailsPreferredViewLoaded preferredViewStr ->
-            ( { model
-                | rerNetworkDetailsPreferredView =
-                    Shared.Model.rerNetworkDetailsPreferredViewFromString preferredViewStr
-              }
-            , E.none
-            )
+            if isRerNetworkDetailsPath req.url.path then
+                ( { model
+                    | rerNetworkDetailsPreferredView =
+                        if Dict.get "view" req.query == Just "classic" then
+                            Shared.Model.Classic
+
+                        else
+                            Shared.Model.Neo
+                  }
+                , E.none
+                )
+
+            else
+                ( { model
+                    | rerNetworkDetailsPreferredView =
+                        Shared.Model.rerNetworkDetailsPreferredViewFromString preferredViewStr
+                  }
+                , E.none
+                )
 
         SetRerNetworkDetailsPreferredView preferredView ->
             ( { model | rerNetworkDetailsPreferredView = preferredView }
@@ -527,6 +541,16 @@ update req msg model =
             ( { model | eventSubscriptions = Core.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
             , E.none
             )
+
+
+isRerNetworkDetailsPath : String -> Bool
+isRerNetworkDetailsPath path =
+    case String.split "/" path of
+        [ "", "rer-networks", id ] ->
+            String.toInt id /= Nothing
+
+        _ ->
+            False
 
 
 subscriptions : Route () -> Model -> Sub Msg
