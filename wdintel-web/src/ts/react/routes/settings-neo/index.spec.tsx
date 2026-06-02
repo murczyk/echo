@@ -239,6 +239,36 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('Версія: 1.0.0');
   });
 
+  it('keeps general settings active when admin groups exist', async () => {
+    listMyAdminGroupsMock.mockResolvedValueOnce({
+      groups: [
+        {
+          masterKey: 'signal:group-1',
+          name: 'Group 1',
+          datasourceName: null,
+          datasourceKind: 'signal',
+          isGroupSecret: false,
+          allowedUsers: [],
+          adminLogins: ['DeltaUser'],
+          areasOfResponsibility: null,
+        },
+      ],
+    });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="general" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).toContain('Мої групи');
+    expect(container.textContent).toContain('Версія: 1.0.0');
+    expect(container.textContent).not.toContain('Group 1');
+  });
+
   it('keeps required settings loaded when server info fails', async () => {
     fetchServerInfoMock.mockRejectedValueOnce(new Error('server down'));
     fetchCurrentUserMock.mockResolvedValueOnce({ sigintZoneId: 1, roles: ['Admin'] });

@@ -135,8 +135,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [myGroups, setMyGroups] = useState<MyAdminSignalGroup[]>([]);
   const [myGroupsError, setMyGroupsError] = useState<string | null>(null);
   const hasMyGroups = myGroups.length > 0;
-  const effectiveSettingsSection =
-    hasMyGroups && settingsSection === 'general' ? 'myGroups' : settingsSection;
+  const showMyGroupsTab = hasMyGroups || myGroupsStatus === 'loading' || settingsSection === 'myGroups';
 
   useEffect(() => {
     if (isNullOrUndefined(section)) return;
@@ -178,16 +177,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     };
   }, []);
 
-  useEffect(() => {
-    if (myGroupsStatus !== 'success') return;
-    if (myGroups.length > 0 && settingsSection === 'general') {
-      setSettingsSection('myGroups');
-    }
-    if (myGroups.length === 0 && settingsSection === 'myGroups') {
-      setSettingsSection('general');
-    }
-  }, [myGroups.length, myGroupsStatus, settingsSection]);
-
   function handleTabChange(_: SyntheticEvent, value: SettingsSection) {
     if (value === settingsSection) return;
 
@@ -205,7 +194,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden', backgroundColor: 'background.paper' }}
         >
           <Tabs
-            value={effectiveSettingsSection}
+            value={settingsSection}
             onChange={handleTabChange}
             variant="scrollable"
             allowScrollButtonsMobile
@@ -221,15 +210,13 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               },
             }}
           >
-            {!hasMyGroups ? (
-              <Tab
-                value="general"
-                label="Загальні"
-                id="settings-neo-tab-general"
-                aria-controls="settings-neo-panel-general"
-              />
-            ) : null}
-            {hasMyGroups || myGroupsStatus === 'loading' ? (
+            <Tab
+              value="general"
+              label="Загальні"
+              id="settings-neo-tab-general"
+              aria-controls="settings-neo-panel-general"
+            />
+            {showMyGroupsTab ? (
               <Tab
                 value="myGroups"
                 label="Мої групи"
@@ -257,7 +244,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           </Tabs>
 
-          {effectiveSettingsSection === 'general' && !hasMyGroups ? (
+          {settingsSection === 'general' ? (
             <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
               <Box component="form" onSubmit={(event) => { event.preventDefault(); void globalSettings.save(); }} noValidate sx={{ p: 3 }}>
                 <Stack spacing={3} sx={{ width: '100%' }}>
@@ -346,7 +333,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             </Box>
           ) : null}
 
-          {effectiveSettingsSection === 'myGroups' ? (
+          {settingsSection === 'myGroups' ? (
             <SettingsMyGroupsSection
               status={myGroupsStatus}
               groups={myGroups}
@@ -354,7 +341,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           ) : null}
 
-          {effectiveSettingsSection === 'duty' ? (
+          {settingsSection === 'duty' ? (
             <SettingsDutySection
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
@@ -380,7 +367,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           ) : null}
 
-          {effectiveSettingsSection === 'analysis' ? (
+          {settingsSection === 'analysis' ? (
             <Box
               id="settings-neo-panel-analysis"
               role="tabpanel"
@@ -455,9 +442,9 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             </Box>
           ) : null}
 
-          {effectiveSettingsSection === 'reports' ? (
+          {settingsSection === 'reports' ? (
             <SettingsReportsSection
-              active={effectiveSettingsSection === 'reports'}
+              active={settingsSection === 'reports'}
               userRoles={globalSettings.userRoles}
               rolesLoading={globalSettings.loadInProgress}
             />
