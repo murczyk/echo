@@ -85,8 +85,14 @@ dev-back-noproj:
 dev-back-sudo:
     (cd wdintel-rs && cargo build && cd .. && {{ rust_log }}sudo ./target/debug/wdintel-rs --mode=debug server {{ dev_back_args }})
 
-dev-north:
-    bash deploy/dev-north.sh "{{ pgpwd }}"
+ssh-pivnich:
+    bash deploy/ssh-pivnich.sh
+
+ssh-skhid:
+    bash deploy/ssh-skhid.sh
+
+ssh-zp2:
+    bash deploy/ssh-zp2.sh
 
 # mkdir -p ~/Downloads/storage
 
